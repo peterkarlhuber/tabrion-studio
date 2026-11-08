@@ -563,3 +563,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
   skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
   `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
+- **Review of #16 (`stu-052-td021-review.md`, accepted):** L-1 (German palette says "Darstellung" like the settings
+  view), L-2 (README: "no PyPI release is needed for now; a later publication needs a new decision and G-R") and L-3
+  (tests for IME composition, a shortcut another handler took, Escape not reaching the page; mutants K9, K12, K19) are
+  done in the STU-052 follow-up PR. Open Info items: I-1 (F6 replaces the browser's F6 inside Studio; Ctrl+L still
+  works), I-2 (move the focus to `#main` after "Go to …", with STU-053), I-3 (the docs sentence on F6's "first
+  control" applies to header and navigation only), I-4 ("Umschalt" instead of "Shift" in German, optional).

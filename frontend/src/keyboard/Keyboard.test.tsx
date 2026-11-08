@@ -159,6 +159,57 @@ describe('command palette', () => {
   });
 });
 
+describe('events the page shortcuts leave alone (L-3 of stu-052-td021-review.md)', () => {
+  it('Ctrl+K during an IME composition does nothing', () => {
+    renderApp();
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, isComposing: true, bubbles: true }),
+      );
+    });
+    expect(palette()).toBeNull();
+  });
+
+  it('Ctrl+K that another handler already took does nothing', () => {
+    renderApp();
+    const event = new KeyboardEvent('keydown', {
+      key: 'k',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    expect(palette()).toBeNull();
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }),
+      );
+    });
+    expect(palette()).not.toBeNull(); // the probe: the same shortcut without preventDefault opens it
+  });
+
+  it('Escape in the palette does not reach the page behind it', async () => {
+    const user = userEvent.setup();
+    const seen = vi.fn();
+    const listener = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') seen();
+    };
+    window.addEventListener('keydown', listener);
+    try {
+      renderApp();
+      await user.keyboard('{Control>}k{/Control}');
+      await user.keyboard('{Escape}');
+      expect(palette()).toBeNull();
+      expect(seen).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', listener);
+    }
+  });
+});
+
 describe('shortcut help', () => {
   it('Ctrl+/ opens it; it lists the shortcuts that work now', async () => {
     const user = userEvent.setup();

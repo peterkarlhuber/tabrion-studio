@@ -367,7 +367,7 @@
     },
     "commands": {
       "goTo": "Gehe zu {{page}}",
-      "theme": "Theme: {{theme}}",
+      "theme": "Darstellung: {{theme}}",
       "density": "Dichte: {{density}}",
       "language": "Sprache: {{language}}",
       "shortcuts": "Tastenkürzel anzeigen"
