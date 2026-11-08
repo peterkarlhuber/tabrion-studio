@@ -1,0 +1,132 @@
+{
+  "app": {
+    "name": "Tabrion Studio",
+    "skipToContent": "Zum Inhalt springen",
+    "title": "{{page}} – Tabrion Studio",
+    "connectionTitle": "[{{env}}] {{name}} – Tabrion Studio"
+  },
+  "nav": {
+    "label": "Hauptnavigation",
+    "start": "Start",
+    "connections": "Verbindungen",
+    "settings": "Einstellungen"
+  },
+  "header": {
+    "label": "Status",
+    "connection": {
+      "label": "Verbindung",
+      "none": "Keine Verbindung",
+      "manage": "Öffnet die Verbindungsverwaltung.",
+      "status": {
+        "connected": "verbunden",
+        "connectedLatency": "verbunden ({{ms}} ms)",
+        "connecting": "verbinde …",
+        "disconnected": "getrennt",
+        "error": "Fehler"
+      }
+    },
+    "env": {
+      "label": "Umgebung",
+      "dev": "DEV",
+      "test": "TEST",
+      "prod": "PROD"
+    },
+    "access": {
+      "readOnly": "Schreibgeschützt",
+      "readOnlyHint": "Diese Verbindung ist schreibgeschützt. Studio bietet in dieser Version keinen Schreibzugriff.",
+      "locked": "Schreiben gesperrt",
+      "lockedHint": "Produktionsverbindung: Schreiben ist immer gesperrt."
+    },
+    "tx": {
+      "none": "Keine Transaktion"
+    }
+  },
+  "tabs": {
+    "label": "Geöffnete Tabs"
+  },
+  "statusbar": {
+    "label": "Statusleiste",
+    "connecting": "Verbinde mit dem lokalen Server …",
+    "server": "Lokaler Server {{version}}",
+    "offline": "Der lokale Server antwortet nicht.",
+    "language": "Sprache: {{language}}"
+  },
+  "start": {
+    "title": "Willkommen",
+    "lead": "Tabrion Studio ist ein lokales Entwicklerwerkzeug für SQLite- und PostgreSQL-Datenbanken. Es läuft nur auf diesem Rechner und greift standardmäßig nur lesend zu.",
+    "logoAlt": "Tabrion Studio",
+    "projectsTitle": "Noch keine Projekte",
+    "projectsBody": "Starte <code>tabrion-studio</code> in einem Projektordner, um mit dessen Verbindungsprofilen zu arbeiten. Projekt- und Verbindungsansichten folgen mit den nächsten Versionen."
+  },
+  "connections": {
+    "title": "Verbindungen",
+    "emptyTitle": "Noch keine Verbindungen",
+    "emptyBody": "Die Verbindungsverwaltung folgt mit der nächsten Version. Bis dahin verbindet sich Studio mit keiner Datenbank."
+  },
+  "settings": {
+    "title": "Einstellungen",
+    "general": "Allgemein",
+    "language": "Sprache",
+    "theme": "Darstellung",
+    "themeSystem": "System",
+    "themeLight": "Hell",
+    "themeDark": "Dunkel",
+    "density": "Dichte",
+    "densityCompact": "Kompakt",
+    "densityNormal": "Normal",
+    "saved": "Die Einstellungen werden nur in diesem Browser gespeichert."
+  },
+  "languages": {
+    "en": "English",
+    "de": "Deutsch"
+  },
+  "session": {
+    "title": "Bei Tabrion Studio anmelden",
+    "used": "Dieser Anmeldelink wurde bereits verwendet. Starte <code>tabrion-studio</code> erneut, um Studio zu öffnen.",
+    "expired": "Dieser Anmeldelink ist abgelaufen. Starte <code>tabrion-studio</code> erneut, um Studio zu öffnen.",
+    "invalid": "Dieser Anmeldelink ist ungültig. Starte <code>tabrion-studio</code> erneut, um Studio zu öffnen.",
+    "none": "Nicht angemeldet. Starte <code>tabrion-studio</code> in deinem Projektordner, um Studio zu öffnen.",
+    "offline": "Der lokale Server antwortet nicht. Starte <code>tabrion-studio</code> erneut, um Studio zu öffnen.",
+    "ended": "Deine Sitzung wurde beendet. Starte <code>tabrion-studio</code> erneut, um Studio zu öffnen.",
+    "endedTitle": "Sitzung beendet"
+  },
+  "notFound": {
+    "title": "Seite nicht gefunden",
+    "body": "Diese Seite gibt es in Tabrion Studio nicht.",
+    "home": "Zur Startseite"
+  },
+  "dialog": {
+    "close": "Schließen",
+    "cancel": "Abbrechen"
+  },
+  "dialogs": {
+    "trustProject": {
+      "title": "Projektprofilen vertrauen?",
+      "titleChanged": "Die Projektprofile wurden geändert. Trotzdem vertrauen?",
+      "body_one": "{{file}} legt {{count}} Verbindung an: {{names}}. Prüfe die Angaben, bevor Studio Verbindungen herstellt.",
+      "body_other": "{{file}} legt {{count}} Verbindungen an: {{names}}. Prüfe die Angaben, bevor Studio Verbindungen herstellt.",
+      "hosts": "Hosts",
+      "files": "Datei-Referenzen",
+      "none": "keine",
+      "trust": "Vertrauen",
+      "reject": "Nicht laden"
+    },
+    "prodConnect": {
+      "title": "Produktionsdatenbank",
+      "body": "{{name}} ist als PROD gekennzeichnet. Studio bleibt schreibgeschützt; Abfragen sind auf {{seconds}} s begrenzt.",
+      "connect": "Verbinden"
+    },
+    "unsavedScript": {
+      "title": "Skript nicht gespeichert",
+      "body": "{{name}} enthält ungespeicherte Änderungen.",
+      "save": "Speichern",
+      "discard": "Verwerfen"
+    },
+    "quit": {
+      "title_one": "{{count}} Abfrage läuft",
+      "title_other": "{{count}} Abfragen laufen",
+      "body": "Beim Beenden werden sie abgebrochen.",
+      "quit": "Beenden"
+    }
+  }
+}

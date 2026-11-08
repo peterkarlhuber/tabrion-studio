@@ -1,0 +1,117 @@
+/* Base styles (pattern: axentra-studio src/styles/global.css, adapted to the --tb- tokens). */
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--tb-color-bg);
+  color: var(--tb-color-text);
+  font-family: var(--tb-font-sans);
+  font-size: var(--tb-text-md);
+  line-height: var(--tb-leading-normal);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  color: var(--tb-color-heading);
+  line-height: var(--tb-leading-tight);
+  font-weight: var(--tb-weight-semibold);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--tb-color-link);
+  text-underline-offset: 2px;
+}
+
+code,
+pre,
+kbd {
+  font-family: var(--tb-font-mono);
+  font-size: 0.92em;
+}
+
+code {
+  padding: 0 0.25em;
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-color-code-bg);
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+img,
+svg {
+  display: block;
+  max-width: 100%;
+}
+
+/* One focus ring for everything (2 px, 3:1 against every surface; 08 section 9). Never remove it without a
+   replacement. */
+:focus-visible {
+  outline: 2px solid var(--tb-color-focus);
+  outline-offset: 2px;
+}
+
+[tabindex='-1']:focus {
+  outline: none;
+}
+
+.tb-sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.tb-skip-link {
+  position: fixed;
+  top: var(--tb-space-2);
+  left: var(--tb-space-2);
+  z-index: calc(var(--tb-z-tooltip) + 1);
+  padding: var(--tb-space-2) var(--tb-space-4);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-surface);
+  color: var(--tb-color-text);
+  box-shadow: var(--tb-shadow-lg);
+  font-weight: var(--tb-weight-semibold);
+  transform: translateY(-200%);
+}
+
+.tb-skip-link:focus {
+  transform: translateY(0);
+}

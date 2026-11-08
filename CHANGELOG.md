@@ -24,7 +24,26 @@ All notable changes to this project are documented here. The format follows
   Every answer carries a strict Content-Security-Policy, `Cache-Control: no-store`, `nosniff`, `no-referrer`,
   `X-Frame-Options: DENY` and same-origin opener and resource policies (STU-T-001..006, -014, -025, -026).
 
+- App shell, design system and languages (STU-005, `docs/architecture/frontend.md`): header, activity bar, status
+  bar and the views Start, Connections, Settings and Not found; `--tb-` design tokens with a complete light and dark
+  theme (system default, selectable) and compact or normal density; components copied from axentra-studio with a
+  provenance note; German and English (i18next), with a completeness test. Contrast test of the tokens in both themes
+  and axe without serious or critical violations (jsdom in CI; Chromium with colour contrast in `frontend/e2e/`).
+- Status displays and dialogs (STU-051): environment badge (DEV, TEST, PROD) in the header, on every tab and in the
+  window title (`[PROD] name – Tabrion Studio`) with a red frame for PROD; access mode, transaction and connection
+  displays; the dialogs D-01, D-02, D-06 and D-08 with tested focus rules (initial focus on the safe option, focus
+  trap, Escape cancels, focus returns to the opener).
+- Brand assets (`assets/branding/`): the Tabrion Studio lockup, marks and favicons derived from Peter Karlhuber's logo
+  master with the shared brand kit (no redraw, no CSS filters), the social preview, and `TRADEMARKS.md` (the names and
+  logos are not MIT). The committed masters carry no C2PA or eXIf metadata; a test proves the pixels unchanged.
+- The command prints a hint when the default browser on Linux is a snap or a Flatpak, which cannot open the sign-in
+  file in a hidden state directory (TD-002, review S-4 of `stu-003-review.md`).
+
 ### Security
+
+- Review of PR #4 (`stu-003-review.md`), S-1: when the server no longer knows the tab's session (a restart, or a
+  program on another local port that replaced the session cookie), the page stops the heartbeat and says "Your session
+  has ended. Run `tabrion-studio` again to open Studio." The cookie-tossing residual risk is documented.
 
 - Review of PR #1 (`stu-002-018-review.md`): the control client makes the server prove the control token (HMAC over a
   client nonce) before it sends the token, and opens only launch URLs of that instance; stale info files are removed

@@ -1,0 +1,33 @@
+/* Adapted from axentra-studio src/components/ui/EmptyState.module.css at caa52b5 (MIT). */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--tb-space-2);
+  padding: var(--tb-space-10) var(--tb-space-6);
+  border: 1px dashed var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-color-surface);
+}
+.icon {
+  display: inline-flex;
+  padding: var(--tb-space-3);
+  border-radius: var(--tb-radius-full);
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-text-muted);
+}
+.icon svg {
+  width: 22px;
+  height: 22px;
+}
+.title {
+  font-size: var(--tb-text-lg);
+}
+.description {
+  max-width: 56ch;
+  color: var(--tb-color-text-muted);
+}
+.action {
+  margin-top: var(--tb-space-3);
+}

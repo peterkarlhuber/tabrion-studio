@@ -1,0 +1,95 @@
+/**
+ * The built frontend in a real `tabrion-studio` process: the launch link signs in, the page renders under the strict
+ * Content-Security-Policy of STU-003 without a single violation, the brand assets are served, a reload on a view path
+ * works, and axe (colour contrast included) finds no serious or critical violation in light and dark.
+ *
+ * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
+ * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel).
+ */
+import { spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { test, expect, type Page } from '@playwright/test';
+
+import { seriousViolations } from './support';
+
+const python = process.env.TABRION_STUDIO_E2E_PYTHON;
+test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
+test.describe.configure({ mode: 'serial' });
+
+let studio: ChildProcess | undefined;
+let base = '';
+const links: string[] = [];
+
+test.beforeAll(async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-e2e-'));
+  mkdirSync(join(root, 'project'));
+  studio = spawn(
+    python as string,
+    [
+      '-m',
+      'tabrion_studio',
+      join(root, 'project'),
+      '--no-browser',
+      '--print-url',
+      '--state-dir',
+      join(root, 'state'),
+    ],
+    { stdio: ['ignore', 'pipe', 'inherit'] },
+  );
+  const first = await new Promise<string>((resolve, reject) => {
+    let out = '';
+    const timer = setTimeout(() => reject(new Error(`no sign-in link: ${out}`)), 30_000);
+    studio?.stdout?.on('data', (chunk: Buffer) => {
+      out += chunk.toString();
+      const match = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/.exec(out);
+      if (match?.[1]) {
+        clearTimeout(timer);
+        resolve(match[1]);
+      }
+    });
+  });
+  links.push(first);
+  base = new URL(first).origin;
+});
+
+test.afterAll(() => {
+  studio?.kill('SIGTERM');
+});
+
+/** A fresh one-time link from the running server (a second `tabrion-studio --print-url --no-browser`). */
+async function signIn(page: Page): Promise<string[]> {
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
+  });
+  page.on('pageerror', (error) => violations.push(String(error)));
+  const link = links.shift();
+  expect(link, 'one sign-in link per test').toBeDefined();
+  await page.goto(link as string);
+  await expect(page.getByTestId('backend-status')).toContainText('Local server');
+  return violations;
+}
+
+test('the launch link signs in and the page runs under the CSP', async ({ page }) => {
+  const violations = await signIn(page);
+  await expect(page).toHaveURL(`${base}/`);
+  await expect(page.getByRole('heading', { level: 1, name: 'Welcome' })).toBeVisible();
+  // Favicon and logo come from the server (img-src 'self').
+  const logo = page.getByRole('img', { name: 'Tabrion Studio' });
+  await expect(logo).toBeVisible();
+  expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  expect((await page.request.get(`${base}/branding/favicon.ico`)).status()).toBe(200);
+  // A view path survives a reload (CLIENT_ROUTES); the session lives in this tab's sessionStorage.
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.reload();
+  await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  for (const theme of ['light', 'dark'] as const) {
+    await page.getByRole('radio', { name: theme === 'light' ? 'Light' : 'Dark' }).check();
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  expect(violations).toEqual([]);
+});

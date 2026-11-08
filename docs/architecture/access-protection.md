@@ -41,7 +41,15 @@ tabrion-studio                         server                                   
 
 **Known limit:** a browser in a sandbox that cannot read the state directory (for example the Firefox snap on Ubuntu,
 which cannot read hidden folders such as `~/.local/state`) cannot open the redirect file. Use `--print-url`, or set
-the state directory to a folder the browser can read (`--state-dir`). See docs/TODO.md, TD-002.
+the state directory to a folder the browser can read (`--state-dir`). On Linux the command detects a snap or Flatpak
+default browser (`xdg-settings get default-web-browser` and its desktop file, `src/tabrion_studio/browser.py`) and
+prints this advice before it opens the browser (review S-4). See docs/TODO.md, TD-002.
+
+**Browser history (review S-2).** The browser's global history keeps the spent launch URL
+`http://127.0.0.1:<port>/launch#<token>` and the redirect file's path, and a synced history (for example Chrome Sync)
+copies them to other devices. Once redeemed the token is worthless (`access.launch_used`); if the page's script never
+ran, it stays valid for at most 120 s. `LAUNCH_TTL_SECONDS` may be shortened once real-browser start times are known
+(docs/TODO.md, TD-005).
 
 ## Session and CSRF value (SQ-03, review F-09)
 
@@ -55,7 +63,18 @@ scoped to the origin including the port, and sends it as `X-Tabrion-CSRF` with e
 session needs both values. Cookies are not port-scoped: a program on another local port that the browser visits
 receives the Studio cookie, but it never sees the CSRF value, so the cookie alone opens nothing. A tab without the
 value (a new tab, or a tab opened by typing the address) shows "Not signed in"; running `tabrion-studio` again opens a
-signed-in tab. The server keeps only SHA-256 digests of session IDs (at most 32 sessions, the oldest is dropped), and
+signed-in tab.
+
+**Residual risk: cookie tossing (review S-1).** Because cookies are not port-scoped, a server of another local user
+on `127.0.0.1:<other port>` that the user visits can set a cookie with the same name and replace the Studio session
+cookie. No browser mechanism prevents this on http loopback (a `__Host-` prefix does not help: the other port is an
+equally trustworthy origin). The attacker learns nothing and gains no session (it has no valid session ID, so there
+is no fixation), but the Studio tab is signed out: a denial of service. The page does not hide it: when the
+heartbeat gets 401 (or 403 `access.csrf_invalid`), it stops and the page says "Your session has ended. Run
+`tabrion-studio` again to open Studio." (`frontend/src/heartbeat.ts`, `App.tsx`). Running the command again opens a
+new signed-in tab. The risk is accepted for a single-user loopback tool.
+
+The server keeps only SHA-256 digests of session IDs (at most 32 sessions, the oldest is dropped), and
 a restart ends every session.
 
 ## Checks on every request
@@ -72,8 +91,10 @@ a restart ends every session.
 | 6 | Unsafe `/api/*` requests need `Content-Type: application/json` | 415 `access.json_only` | T-02 |
 | 7 | Every `/api/*` route except `/api/health`, `/api/session` and the control endpoints (bearer token) needs the session cookie and its CSRF header | 401 `access.session_required`, 403 `access.csrf_invalid` | T-03, SQ-03, F-09 |
 
-A request that passes check 7 counts as activity for the idle timeout (review F-06, R-5). Navigations to `/` and
-`/launch` from other sites are allowed: the pages hold no data, and the redirect file is such a navigation.
+A request that passes check 7 counts as activity for the idle timeout (review F-06, R-5). Navigations to `/`,
+`/launch` and the frontend's own view paths (`/connections`, `/settings`; `CLIENT_ROUTES` in `app.py`) from other
+sites are allowed: these pages hold no data, and the redirect file is such a navigation. Every other unknown path is
+404.
 
 Every answer, including refusals and errors, gets these headers:
 
@@ -99,6 +120,12 @@ heartbeat counts because it carries the session. Supported are current Chrome, E
 exception: the proxy presents the backend's own `Host` and `Origin` (`frontend/vite.config.ts`). Start the backend
 with `tabrion-studio --port 8765 --no-browser --print-url` and open the printed link with the port changed to 5173.
 
+The proxy rewrites `Origin` to the backend's origin. The fetch-metadata check, the CSRF header and `SameSite=Strict`
+still keep other sites out, and Vite checks the `Host` header itself, but the development setup is **not for shared
+machines**: another local user could reach the backend through the proxy port (review S-5). The real-browser checks
+of the launch flow for Firefox and WebKit (the `file://` to http meta refresh, the CSP) belong to the e2e suite
+(TABRION QA-9); so far it was checked in Chrome only.
+
 ## Tests
 
 | Test ID | What | Tests |
@@ -114,3 +141,6 @@ with `tabrion-studio --port 8765 --no-browser --print-url` and open the printed 
 | STU-T-026 | `Cache-Control: no-store` on every API answer and refusal | `test_no_store_on_every_api_answer`, `test_security_headers_on_every_answer` |
 | F-06, R-5 | Only a valid session or control token counts as activity | `tests/unit/test_app.py`: `test_requests_that_do_not_count_as_activity`, `test_heartbeat_with_a_session_counts_as_activity`; `tests/process/test_process_model.py::test_activity_postpones_the_idle_exit` |
 | R-4 | Proof and token on one connection | `tests/security/test_impostor.py`: `test_proof_and_token_travel_on_one_connection`, `test_server_that_closes_after_the_proof_never_gets_the_token` |
+| S-1 | An ended session is reported and the heartbeat stops | `frontend/src/App.test.tsx` (`S-1: …`), `frontend/e2e/status.spec.ts` |
+| S-4 | Hint for a snap or Flatpak default browser | `tests/unit/test_browser.py` |
+| View paths | `/connections` and `/settings` serve the app with the same checks and headers; nothing else | `tests/unit/test_app.py`: `test_client_routes_serve_the_app`, `test_client_routes_match_the_frontend_router` |

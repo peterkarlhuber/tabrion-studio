@@ -5,8 +5,9 @@
 > (planning documents 03, 05, 07, 08 and 09; program status in `tabrion/docs/program/STATUS.md`, K-12). "TABRION
 > <WP-ID>" names a work package of that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (PR #4: STU-003 and the review
-> recommendations R-1..R-7 of `stu-002-018-review.md`; PR #1: STU-001, STU-002, STU-018, STU-031).
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (STU-005 and STU-051 with the review
+> recommendations S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and R-1..R-7 of `stu-002-018-review.md`; PR #1:
+> STU-001, STU-002, STU-018, STU-031).
 
 ## Summary
 
@@ -16,12 +17,16 @@
 | OA-001 make `ci-ok` a required check; check the ci-ok run link before every merge | P0 | Open (owner) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
-| OA-004 independent review of STU-003 (access protection) | P0 | Open (PR #4) |
-| STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | In progress (PR #4, TABRION STU-003) |
+| OA-004 independent review of STU-003 (access protection) | P0 | Accepted (`stu-003-review.md`, PR #4 merged) |
+| OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Open (this PR) |
+| STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| TD-002 sandboxed browsers cannot open the redirect file | P3 | Open |
+| TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open) |
 | TD-003 Windows: DACL check inside the profile (review R-6) | P3 | Open |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
+| TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented) |
+| TD-006 who may set the label `workflow-change-reviewed` (review S-3) | P3 | Open |
+| TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; QA-9) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -95,7 +100,22 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 - **What:** an independent review agent checks the access protection against the binding requirements below and the
   threat model (T-01, T-02, T-03, T-07, T-15), including the workflow-change gate changes (R-2, R-3), before the
   merge.
-- **Next step:** review PR #4; set the label `workflow-change-reviewed` after reading the `.github/` diff.
+- **Result:** `stu-003-review.md` (planning folder, `reviews/`): ACCEPTED, no High or Medium finding; the `.github/`
+  changes were accepted as a workflow-change review. Recommendations: S-1 is done with STU-005 (on 401 the page says
+  "session ended, run `tabrion-studio` again" and stops the heartbeat; the cookie-tossing residual risk is in
+  `docs/architecture/access-protection.md`), S-4 is TD-002 (raised to P2, hint done), S-2, S-3 and S-5 are TD-005,
+  TD-006 and TD-007.
+
+### OA-005 · Independent review of STU-005 and STU-051 (07 §6)
+
+- **Priority:** P1 High · **Status:** Open · **Refs:** `docs/architecture/frontend.md`, review S-1 and S-4
+- **What:** the pull request adds the app shell, the design system, de/en, the status displays and the dialogs, and
+  touches the access surface in three small places: the backend serves `index.html` for the view paths
+  `/connections` and `/settings` (`CLIENT_ROUTES`, same middleware and headers), the page reacts to a lost session
+  (S-1), and the command runs `xdg-settings` to detect a sandboxed browser (S-4, fixed arguments, 2 s timeout, no
+  shell). No `.github/` file changes, so the workflow-change label is not needed.
+- **Next step:** an independent review agent checks these three points, the CSP compatibility of the frontend (no
+  inline styles; native `<dialog>` instead of Radix Dialog) and the e2e evidence (`e2e/`, run locally until QA-9).
 
 ## STU-003 binding requirements (review of PR #1)
 
@@ -128,14 +148,14 @@ merge after OA-004.
 
 | WP | Title | Priority | Depends on | Note |
 |---|---|---|---|---|
-| TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | In progress (PR #4): STU-T-001..006, -014, -025, -026 and the *STU-003 binding requirements*; waits for OA-004 |
+| TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
 | TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | request log without query strings (Uvicorn's access log is off) |
-| TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | replaces the placeholder page |
-| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | adds the `e2e` job and the platforms e2e smoke (05 §3.5) |
+| TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | In progress (this PR, OA-005): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in CI, Chromium with contrast locally) and the token contrast test light/dark |
+| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); QA-9 adds the `e2e` CI job against the built wheel, the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | |
 | TABRION STU-007 | Secret management | P0 | STU-006 | |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown |
-| TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | |
+| TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | In progress (this PR): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-008, STU-010..STU-015 | Connection manager UI, explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | STU-008 adds the "openapi in sync" CI job (the first API types for the frontend); STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
@@ -165,13 +185,17 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-002 · Sandboxed browsers cannot open the redirect file (TABRION STU-003)
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** review F-02, `docs/architecture/access-protection.md`
+- **Priority:** P2 Medium (raised by review S-4: the Firefox snap is the default browser of Ubuntu desktop) ·
+  **Status:** In progress · **Refs:** review F-02, `stu-003-review.md` S-4, `docs/architecture/access-protection.md`
 - **What:** the browser is opened with a `file://` redirect file in the state directory. A browser in a sandbox that
   cannot read that folder (the Firefox snap on Ubuntu cannot read hidden folders such as `~/.local/state`; Flatpak
   browsers similarly) shows an error instead of Studio. Workaround: `--print-url`, or `--state-dir` in a folder the
   browser can read.
-- **Next step:** with STU-005 (app shell) or the first user feedback: detect a snap or Flatpak default browser and
-  print a hint, or place the redirect file (only that file) in a readable private folder.
+- **Done (STU-005 PR):** on Linux without `$BROWSER`, the command asks `xdg-settings get default-web-browser`, looks
+  up the desktop file and prints the `--print-url` / `--state-dir` advice when it is a snap or a Flatpak
+  (`src/tabrion_studio/browser.py`, `tests/unit/test_browser.py`).
+- **Next step:** the fix itself: place the redirect file (only that file) in a private folder the sandbox can read,
+  for example a non-hidden 0700 folder below the user's home, with the same checks as the state directory.
 
 ### TD-003 · Windows: check the DACL inside the profile too (review R-6)
 
@@ -189,3 +213,33 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   ("no open pull request found"), which is safe but could block a fork pull request by mistake.
 - **Next step:** check it on the first fork pull request; if needed, fall back to `GET /pulls?state=open` filtered by
   `head.sha`. Changing `ci_ok_status.py` needs the label (OA-003).
+
+### TD-005 · Spent launch URL in the browser history (review S-2)
+
+- **Priority:** P3 Low · **Status:** Accepted risk · **Refs:** `stu-003-review.md` S-2 (X-9),
+  `docs/architecture/access-protection.md` (Launch)
+- **What:** the global browser history (and a synced history) keeps `http://127.0.0.1:<port>/launch#<token>` and the
+  redirect file's path. The token is worthless once redeemed; if the page's script never ran, it stays valid for up to
+  120 s (`LAUNCH_TTL_SECONDS`).
+- **Next step:** shorten `LAUNCH_TTL_SECONDS` once real-browser start times are known (QA-9 measures them).
+
+### TD-006 · Who may set the label `workflow-change-reviewed` (review S-3)
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** `stu-003-review.md` S-3, `ci_ok_status.py:label_after_push`,
+  OA-003
+- **What:** the gate records the actor of the `labeled` event but does not restrict it: any user with triage or write
+  access, including an agent token, satisfies it, and the label is not bound to a SHA. Until then the "who sets the
+  label" rule in `docs/development/ci.md` is policy only.
+- **Next step:** optionally keep an allowlist of logins whose `labeled` events count, and optionally require the
+  label to follow a PR comment `reviewed <head sha>` by such a login. Changing `ci_ok_status.py` needs the label
+  itself (OA-003) and an independent workflow-change review.
+
+### TD-007 · Development proxy and real-browser launch checks (review S-5)
+
+- **Priority:** P3 Low · **Status:** Open (documented) · **Refs:** `stu-003-review.md` S-5, `frontend/vite.config.ts`,
+  `docs/architecture/access-protection.md` (Development server)
+- **What:** the Vite development proxy rewrites `Origin` to the backend's origin. Fetch metadata, the CSRF header and
+  `SameSite=Strict` still block cross-site use, and Vite checks `Host`, but the development setup is not for shared
+  machines (now said in the docs and in `vite.config.ts`). The launch flow (`file://` meta refresh to http, the CSP)
+  was checked in Chrome only.
+- **Next step:** QA-9 adds Firefox and WebKit runs of the launch flow against the built wheel.

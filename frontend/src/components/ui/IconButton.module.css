@@ -1,0 +1,40 @@
+/* Adapted from axentra-studio src/components/ui/IconButton.module.css at caa52b5 (MIT). */
+.iconButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: var(--tb-radius-md);
+  background: transparent;
+  color: var(--tb-color-text-muted);
+  cursor: pointer;
+}
+.iconButton:hover:not(:disabled) {
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-text);
+}
+.iconButton svg {
+  width: 18px;
+  height: 18px;
+}
+/* Tooltip: the label, on hover and on keyboard focus. */
+.iconButton:hover::after,
+.iconButton:focus-visible::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--tb-z-tooltip);
+  padding: var(--tb-space-1) var(--tb-space-2);
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-color-heading);
+  color: var(--tb-color-surface);
+  font-size: var(--tb-text-xs);
+  font-weight: var(--tb-weight-medium);
+  white-space: nowrap;
+  pointer-events: none;
+}

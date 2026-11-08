@@ -1,0 +1,14 @@
+.details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--tb-space-1) var(--tb-space-3);
+  margin: 0;
+  font-size: var(--tb-text-sm);
+}
+.details dt {
+  color: var(--tb-color-text-muted);
+}
+.details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

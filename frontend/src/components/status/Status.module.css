@@ -1,0 +1,97 @@
+.env {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--tb-radius-sm);
+  font-size: var(--tb-text-xs);
+  font-weight: var(--tb-weight-bold);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.small {
+  padding: 0 5px;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+}
+.dev {
+  background: var(--tb-env-dev-bg);
+  color: var(--tb-env-dev);
+}
+.test {
+  background: var(--tb-env-test-bg);
+  color: var(--tb-env-test);
+}
+.prod {
+  background: var(--tb-env-prod-bg);
+  color: var(--tb-env-prod);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-space-1);
+  min-height: 24px;
+  padding: 0 var(--tb-space-2);
+  border: 1px solid var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-full);
+  color: var(--tb-color-text-muted);
+  font-size: var(--tb-text-xs);
+  font-weight: var(--tb-weight-medium);
+  white-space: nowrap;
+}
+.locked {
+  border-color: var(--tb-color-danger);
+  color: var(--tb-color-danger);
+}
+.chipIcon {
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+.switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-space-2);
+  min-height: 32px;
+  max-width: 22rem;
+  padding: 0 var(--tb-space-3);
+  border: 1px solid var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-surface);
+  color: var(--tb-color-text);
+  font-size: var(--tb-text-sm);
+  cursor: pointer;
+}
+.switcher:hover {
+  background: var(--tb-color-surface-hover);
+}
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--tb-weight-semibold);
+}
+.status {
+  color: var(--tb-color-text-muted);
+  white-space: nowrap;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--tb-color-text-muted);
+}
+.connected {
+  background: var(--tb-color-success);
+}
+.connecting {
+  background: var(--tb-color-warning);
+}
+.disconnected {
+  background: var(--tb-color-text-muted);
+}
+.error {
+  background: var(--tb-color-danger);
+}

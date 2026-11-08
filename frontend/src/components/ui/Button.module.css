@@ -1,0 +1,73 @@
+/* Adapted from axentra-studio src/components/ui/Button.module.css at caa52b5 (MIT). */
+.button {
+  --btn-bg: var(--tb-color-surface);
+  --btn-fg: var(--tb-color-text);
+  --btn-border: var(--tb-color-control-border);
+  --btn-bg-hover: var(--tb-color-surface-hover);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--tb-space-2);
+  min-height: var(--tb-control-height);
+  min-width: 24px;
+  padding: 0 var(--tb-space-4);
+  border: 1px solid var(--btn-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  font-weight: var(--tb-weight-semibold);
+  font-size: var(--tb-text-md);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--tb-duration-fast) var(--tb-ease-standard);
+}
+.button:hover:not(:disabled) {
+  background: var(--btn-bg-hover);
+}
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.primary {
+  --btn-bg: var(--tb-color-primary);
+  --btn-fg: var(--tb-color-on-primary);
+  --btn-border: transparent;
+  --btn-bg-hover: var(--tb-color-primary-hover);
+}
+.secondary {
+  box-shadow: var(--tb-shadow-sm);
+}
+.ghost {
+  --btn-bg: transparent;
+  --btn-border: transparent;
+  --btn-bg-hover: var(--tb-color-surface-2);
+}
+.danger {
+  --btn-bg: var(--tb-color-danger);
+  --btn-fg: var(--tb-color-on-danger);
+  --btn-border: transparent;
+  --btn-bg-hover: var(--tb-color-danger-hover);
+}
+.dangerOutline {
+  --btn-bg: transparent;
+  --btn-fg: var(--tb-color-danger);
+  --btn-border: var(--tb-color-danger);
+  --btn-bg-hover: var(--tb-color-danger-bg);
+}
+.sm {
+  min-height: 28px;
+  padding: 0 var(--tb-space-3);
+  font-size: var(--tb-text-sm);
+}
+.icon {
+  display: inline-flex;
+}
+.icon svg {
+  width: 16px;
+  height: 16px;
+}
+.label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,176 @@
+/*
+ * Tabrion Studio design tokens (STU-005, planning document 08 section 8).
+ *
+ * The structure follows axentra-studio src/styles/tokens.css (semantic tokens, primitives only inside this file),
+ * with the prefix --tb-. The palette comes from the Tabrion logo, which has no hue: graphite neutrals sampled from
+ * the logo (black #0b0b0b, slate grey #4d4e52, light grey #cbccce) plus one indigo accent, the link colour of the
+ * Tabrion docs. Components use the semantic tokens only, so both themes stay consistent.
+ *
+ * The theme is set on <html data-theme="light|dark"> by src/theme.ts (the system setting unless the user chose one
+ * in the settings). The contrast test (src/styles/tokens.test.ts) parses this file: keep one declaration per line in
+ * the form `--name: value;`.
+ */
+
+:root {
+  /* ---- Typography (UI sans: system stack; code and values: monospace) ---- */
+  --tb-font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --tb-font-mono: ui-monospace, 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  --tb-text-xs: 0.75rem;
+  --tb-text-sm: 0.8125rem;
+  --tb-text-md: 0.875rem;
+  --tb-text-lg: 1rem;
+  --tb-text-xl: 1.25rem;
+  --tb-leading-tight: 1.25;
+  --tb-leading-normal: 1.5;
+  --tb-weight-regular: 400;
+  --tb-weight-medium: 500;
+  --tb-weight-semibold: 600;
+  --tb-weight-bold: 700;
+
+  /* ---- Spacing (4 px grid) ---- */
+  --tb-space-1: 0.25rem;
+  --tb-space-2: 0.5rem;
+  --tb-space-3: 0.75rem;
+  --tb-space-4: 1rem;
+  --tb-space-5: 1.25rem;
+  --tb-space-6: 1.5rem;
+  --tb-space-8: 2rem;
+  --tb-space-10: 2.5rem;
+  --tb-space-12: 3rem;
+
+  /* ---- Radii ---- */
+  --tb-radius-sm: 4px;
+  --tb-radius-md: 6px;
+  --tb-radius-lg: 10px;
+  --tb-radius-full: 999px;
+
+  /* ---- Motion (off with prefers-reduced-motion, below) ---- */
+  --tb-duration-fast: 120ms;
+  --tb-duration-normal: 180ms;
+  --tb-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+
+  /* ---- Layout and density (compact is the default; 08 section 1.4) ---- */
+  --tb-header-height: 48px;
+  --tb-statusbar-height: 28px;
+  --tb-activitybar-width: 52px;
+  --tb-row-height: 28px;
+  --tb-control-height: 32px;
+  --tb-prod-frame: 3px;
+  --tb-z-sticky: 10;
+  --tb-z-overlay: 50;
+  --tb-z-tooltip: 70;
+
+  /* ---- Light theme (default) ---- */
+  color-scheme: light;
+  --tb-color-bg: #f4f5f7;
+  --tb-color-surface: #ffffff;
+  --tb-color-surface-2: #eceef1;
+  --tb-color-surface-hover: #e4e7eb;
+  --tb-color-chrome: #ffffff;
+  --tb-color-overlay: rgba(11, 11, 13, 0.45);
+  --tb-color-border: #dadde3;
+  --tb-color-border-strong: #c3c7cf;
+  --tb-color-control-border: #7b808b;
+  --tb-color-text: #16181d;
+  --tb-color-text-muted: #4b505b;
+  --tb-color-text-subtle: #5d626e;
+  --tb-color-heading: #0b0b0d;
+  --tb-color-primary: #3949ab;
+  --tb-color-primary-hover: #2f3c8f;
+  --tb-color-primary-subtle: #e8eaf6;
+  --tb-color-on-primary: #ffffff;
+  --tb-color-focus: #3949ab;
+  --tb-color-link: #3949ab;
+  --tb-color-selected: #e8eaf6;
+  --tb-color-success: #17663f;
+  --tb-color-success-bg: #e2f3e9;
+  --tb-color-warning: #7f4b00;
+  --tb-color-warning-bg: #fcefcf;
+  --tb-color-danger: #b42232;
+  --tb-color-danger-hover: #951b29;
+  --tb-color-danger-bg: #fbe5e7;
+  --tb-color-on-danger: #ffffff;
+  --tb-color-info: #0b5f95;
+  --tb-color-info-bg: #e1eff9;
+  --tb-color-neutral: #4b505b;
+  --tb-color-neutral-bg: #eceef1;
+  --tb-color-code-bg: #f0f1f4;
+  /* Environments (08 section 3): DEV neutral grey, TEST amber, PROD red and filled. */
+  --tb-env-dev: #3f444e;
+  --tb-env-dev-bg: #e3e6ea;
+  --tb-env-test: #6e4100;
+  --tb-env-test-bg: #fbe3a6;
+  --tb-env-prod: #ffffff;
+  --tb-env-prod-bg: #b42232;
+  --tb-env-prod-frame: #b42232;
+  /* Values and changes. */
+  --tb-null: #5d626e;
+  --tb-diff-added: #e2f3e9;
+  --tb-diff-changed: #fcefcf;
+  --tb-diff-removed: #fbe5e7;
+  --tb-shadow-sm: 0 1px 2px rgba(11, 11, 13, 0.06);
+  --tb-shadow-lg: 0 16px 40px rgba(11, 11, 13, 0.18), 0 4px 12px rgba(11, 11, 13, 0.08);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --tb-color-bg: #0e1013;
+  --tb-color-surface: #16181d;
+  --tb-color-surface-2: #1d2026;
+  --tb-color-surface-hover: #252931;
+  --tb-color-chrome: #121418;
+  --tb-color-overlay: rgba(0, 0, 0, 0.62);
+  --tb-color-border: #2a2e36;
+  --tb-color-border-strong: #3a3f49;
+  --tb-color-control-border: #7a818e;
+  --tb-color-text: #e6e8ec;
+  --tb-color-text-muted: #a9aeb8;
+  --tb-color-text-subtle: #969ca8;
+  --tb-color-heading: #f5f6f8;
+  --tb-color-primary: #9fa8da;
+  --tb-color-primary-hover: #b8bfe5;
+  --tb-color-primary-subtle: #232742;
+  --tb-color-on-primary: #0e1013;
+  --tb-color-focus: #9fa8da;
+  --tb-color-link: #a9b1e0;
+  --tb-color-selected: #232742;
+  --tb-color-success: #5ad69c;
+  --tb-color-success-bg: #10281e;
+  --tb-color-warning: #f2c35c;
+  --tb-color-warning-bg: #2e240d;
+  --tb-color-danger: #ff8a94;
+  --tb-color-danger-hover: #ffa6ad;
+  --tb-color-danger-bg: #36161c;
+  --tb-color-on-danger: #0e1013;
+  --tb-color-info: #6cc6f0;
+  --tb-color-info-bg: #0f2635;
+  --tb-color-neutral: #a9aeb8;
+  --tb-color-neutral-bg: #252931;
+  --tb-color-code-bg: #121418;
+  --tb-env-dev: #d6d9df;
+  --tb-env-dev-bg: #30343d;
+  --tb-env-test: #f6cc6a;
+  --tb-env-test-bg: #3a2d0b;
+  --tb-env-prod: #ffffff;
+  --tb-env-prod-bg: #c32b3b;
+  --tb-env-prod-frame: #ff5d6c;
+  --tb-null: #969ca8;
+  --tb-diff-added: #10281e;
+  --tb-diff-changed: #2e240d;
+  --tb-diff-removed: #36161c;
+  --tb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --tb-shadow-lg: 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+
+/* Normal density (settings): 36 px rows instead of 28 px. */
+:root[data-density='normal'] {
+  --tb-row-height: 36px;
+  --tb-control-height: 36px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --tb-duration-fast: 0ms;
+    --tb-duration-normal: 0ms;
+  }
+}

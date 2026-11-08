@@ -1,0 +1,77 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-6);
+  max-width: 56rem;
+}
+.pageHeader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+}
+.title {
+  font-size: var(--tb-text-xl);
+}
+.lead {
+  max-width: 64ch;
+  color: var(--tb-color-text-muted);
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-3);
+  padding: var(--tb-space-4) 0 var(--tb-space-2);
+}
+.lockup {
+  width: 320px;
+  max-width: 100%;
+  height: auto;
+  margin-bottom: var(--tb-space-3);
+}
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-5);
+  padding: var(--tb-space-5);
+  border: 1px solid var(--tb-color-border);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-color-surface);
+}
+.cardTitle {
+  font-size: var(--tb-text-lg);
+}
+.fieldset {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+.legend {
+  margin-bottom: var(--tb-space-2);
+  padding: 0;
+  font-weight: var(--tb-weight-semibold);
+}
+.options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-space-2);
+}
+.option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-space-2);
+  min-height: var(--tb-control-height);
+  padding: 0 var(--tb-space-3);
+  border: 1px solid var(--tb-color-control-border);
+  border-radius: var(--tb-radius-md);
+  cursor: pointer;
+}
+.option:has(input:checked) {
+  border-color: var(--tb-color-primary);
+  background: var(--tb-color-selected);
+}
+.option input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--tb-color-primary);
+}
