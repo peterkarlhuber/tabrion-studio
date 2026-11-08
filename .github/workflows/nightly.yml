@@ -2,7 +2,7 @@ name: Nightly
 
 # STU-018 (05 section 3.5): the whole PR suite (ci.yml, on Linux, macOS and Windows) once a night on master, plus the
 # test-ID inventory, so that breakage from outside the repository (new dependency releases, advisories, runner
-# images, a moving tabrion pin) shows up as an open issue rather than on the next unrelated PR. Added by later work
+# images) shows up as an open issue rather than on the next unrelated PR. Added by later work
 # packages: e2e on WebKit (K12, QA-9) and the tabrion-HEAD compatibility run once tabrion has releases.
 on:
   schedule:

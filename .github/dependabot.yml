@@ -2,7 +2,7 @@
 # frontend's npm dependencies and GitHub Actions (the workflows pin every action by commit SHA; Dependabot keeps
 # those pins current). cooldown: a new release is proposed only after a few days (a week for majors), so a broken
 # or compromised release is usually withdrawn before it reaches a pull request; security updates are not delayed.
-# No auto-merge. tabrion itself is pinned by git SHA until v0.1.0 (docs/TODO.md) and is bumped by hand.
+# No auto-merge. tabrion (added with STU-009, docs/TODO.md TS-001) is bumped by hand along the Tabrion cascade.
 version: 2
 updates:
   - package-ecosystem: pip

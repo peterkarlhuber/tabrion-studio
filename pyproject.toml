@@ -26,11 +26,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # TEMPORARY PRE-RELEASE PIN (RC-8, docs/TODO.md "TABRION STU-001"): Tabrion has no final tag yet, so this
-    # unmerged branch pins the tabrion master commit by full SHA. Before this reaches master, or right after
-    # tabrion v0.1.0 is tagged, it becomes the final-only range from 05 section 3.2:
-    #     "tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2"
-    "tabrion[postgres,sqlalchemy,migrations] @ git+https://github.com/peterkarlhuber/tabrion.git@b0309c5987b1b2e06bf9c77a60735d315294e334",
+    # tabrion is not a dependency yet: nothing uses its API so far. The first work package that does (STU-009) adds
+    # "tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2" after tabrion v0.1.0 (RC-8: no git pin and no
+    # pre-release specifier on master; docs/TODO.md TS-001, tests/security/test_dependencies.py).
     "psycopg[binary]>=3.2,<4",
     "fastapi>=0.115,<1",
     # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).
@@ -66,10 +64,6 @@ Security = "https://github.com/peterkarlhuber/tabrion-studio/blob/master/SECURIT
 
 [tool.hatch.version]
 path = "src/tabrion_studio/_version.py"
-
-[tool.hatch.metadata]
-# Needed only for the temporary git pin of tabrion above; removed together with it (docs/TODO.md).
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/tabrion_studio"]

@@ -40,7 +40,10 @@ def test_wheel_contains_the_frontend(dist: Path) -> None:
     assert not any(n.startswith(("frontend/", "tests/", "scripts/")) for n in names)
     assert not any("node_modules" in n or n.endswith(".map") for n in names)
     assert "Requires-Dist: fastapi" in meta
-    assert "Requires-Dist: tabrion[migrations,postgres,sqlalchemy]" in meta or "Requires-Dist: tabrion" in meta
+    # RC-8: no direct reference (git or URL pin) in the published metadata.
+    requires = [line for line in meta.splitlines() if line.startswith("Requires-Dist:")]
+    assert requires
+    assert not any(" @ " in line for line in requires), requires
 
 
 def test_sdist_can_build_the_wheel(dist: Path) -> None:

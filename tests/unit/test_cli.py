@@ -16,7 +16,7 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
         cli.main(["--version"])
     assert exc.value.code == 0
     out = capsys.readouterr().out
-    assert out.startswith(f"tabrion-studio {__version__} (tabrion ")
+    assert out.strip() == f"tabrion-studio {__version__}"
 
 
 @pytest.mark.parametrize(

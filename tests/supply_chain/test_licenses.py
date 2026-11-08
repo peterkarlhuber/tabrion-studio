@@ -124,7 +124,7 @@ def test_collector_reports_this_environment(tmp_path: Path) -> None:
     ).stdout
     entries = json.loads(out)
     names = {e["name"].lower() for e in entries}
-    assert {"tabrion-studio", "tabrion", "fastapi"} <= names
+    assert {"tabrion-studio", "fastapi", "uvicorn"} <= names
     assert "pip" not in names
 
 

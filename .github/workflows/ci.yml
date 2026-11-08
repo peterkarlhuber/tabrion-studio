@@ -227,8 +227,9 @@ jobs:
           import json
           py = json.load(open("sbom/tabrion-studio-python.cdx.json"))
           names = {c["name"].lower() for c in py["components"]}
-          missing = {"tabrion", "fastapi", "uvicorn", "psycopg", "keyring"} - names
+          missing = {"fastapi", "uvicorn", "psycopg", "keyring"} - names
           assert py["bomFormat"] == "CycloneDX" and not missing, f"python SBOM lacks {missing}"
+          assert py["metadata"]["component"]["name"] == "tabrion-studio", py["metadata"]["component"]
           npm = json.load(open("sbom/tabrion-studio-frontend.cdx.json"))
           shipped = sorted(c["name"] for c in npm["components"] if c.get("scope") == "required")
           assert {"react", "react-dom"} <= set(shipped), shipped
@@ -258,8 +259,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: python -m pip install --upgrade pip
-      # The runtime dependencies and the development toolchain. tabrion comes from git until v0.1.0 and is reported
-      # as "not on PyPI, could not be audited".
+      # The runtime dependencies and the development toolchain.
       - run: pip install "pip-audit==2.10.1" -e ".[dev]"
       - run: pip-audit --skip-editable --progress-spinner off
       - run: npm ci --no-audit --no-fund

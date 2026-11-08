@@ -38,5 +38,4 @@ The same job writes CycloneDX SBOMs and uploads them as the artifact `sbom`:
 
 ## Dependency audit
 
-`pip-audit` over the development environment and `npm audit --omit=dev --audit-level=high`. Tabrion is installed
-from git until its first release and is reported as "not on PyPI, not audited".
+`pip-audit` over the development environment and `npm audit --omit=dev --audit-level=high`.

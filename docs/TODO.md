@@ -12,7 +12,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 temporary pre-release pin of tabrion | P0 | Blocked (tabrion v0.1.0) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Blocked (tabrion v0.1.0) |
 | OA-001 make `ci-ok` a required check | P0 | Open (owner) |
 | OA-002 independent review of the process model | P1 | Open |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
@@ -28,17 +28,13 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ## Temporary measures
 
-### TS-001 · Temporary pre-release pin of tabrion (TABRION STU-001, RC-8)
+### TS-001 · Add the tabrion dependency with the first API use (TABRION STU-009, RC-8)
 
-- **Priority:** P0 Critical · **Status:** Blocked (tabrion v0.1.0, TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
-- **What:** Tabrion has no final tag yet. `pyproject.toml` therefore pins
-  `tabrion[postgres,sqlalchemy,migrations] @ git+https://github.com/peterkarlhuber/tabrion.git@b0309c5987b1b2e06bf9c77a60735d315294e334`
-  (tabrion master after its M1 merge), with `[tool.hatch.metadata] allow-direct-references = true`. Under RC-8 a
-  pre-release pin is allowed on an unmerged branch only; master needs a final-only range.
-- **Next step:** after tabrion `v0.1.0` is tagged, replace the pin with `"tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2"`,
-  remove `allow-direct-references`, and let CI install tabrion from its tag (git URL of the tag SHA in CI, or PyPI
-  after G-R, V-B). **This branch must not be merged to master with the git pin** unless the owner explicitly
-  accepts that for the bootstrap.
+- **Priority:** P1 High · **Status:** Blocked (tabrion v0.1.0, TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
+- **What:** nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency (no git pin, no
+  pre-release specifier on master, RC-8; enforced by `tests/security/test_dependencies.py`).
+- **Next step:** add `tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2` with the first WP that uses the Tabrion API
+  (STU-009), after tabrion v0.1.0.
 
 ## Owner actions
 

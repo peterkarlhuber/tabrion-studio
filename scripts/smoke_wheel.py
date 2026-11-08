@@ -3,11 +3,10 @@
 
     python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
 
-Steps: create a venv in a temporary folder, ``pip install`` the wheel (its dependencies come from PyPI and, until
-tabrion v0.1.0, the git pin of tabrion), then run the installed ``tabrion-studio`` with a PATH from which every
-folder containing ``node`` is removed: ``--version``, a start with ``--no-browser``, the health endpoint, the
-served ``index.html`` and its script asset, a second start (reuses the instance) and ``--stop``. Exit code 0 when
-everything passed. Standard library only.
+Steps: create a venv in a temporary folder, ``pip install`` the wheel (its dependencies come from PyPI), then run
+the installed ``tabrion-studio`` with a PATH from which every folder containing ``node`` is removed: ``--version``,
+a start with ``--no-browser``, the health endpoint, the served ``index.html`` and its script asset, a second start
+(reuses the instance) and ``--stop``. Exit code 0 when everything passed. Standard library only.
 """
 
 from __future__ import annotations

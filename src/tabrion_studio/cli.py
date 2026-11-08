@@ -29,14 +29,6 @@ EXIT_ERROR = 1
 EXIT_USAGE = 2
 
 
-def _tabrion_version() -> str:
-    try:
-        import tabrion
-    except ImportError:  # pragma: no cover - tabrion is a required dependency
-        return "not installed"
-    return str(tabrion.__version__)
-
-
 def _port(value: str) -> int:
     port = int(value)
     if not 0 <= port <= 65535:
@@ -72,9 +64,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--state-dir", type=Path, default=None, help="state directory (default: the per-user state directory)"
     )
-    parser.add_argument(
-        "--version", action="version", version=f"tabrion-studio {__version__} (tabrion {_tabrion_version()})"
-    )
+    parser.add_argument("--version", action="version", version=f"tabrion-studio {__version__}")
     return parser
 
 
