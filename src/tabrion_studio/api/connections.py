@@ -23,13 +23,12 @@ from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
-import sqlalchemy
 from tabrion.errors import TabrionError
 
 from tabrion_studio.config.project import TrustError
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.problems import db_problem_response, is_problem_code, problem_response
-from tabrion_studio.services.connections import ConnectionRegistry, HealthError, RegistryError
+from tabrion_studio.services.connections import ConnectionRegistry, HealthError, RegistryError, pool_busy
 from tabrion_studio.services.readonly import StatementRefused
 
 logger = logging.getLogger("tabrion_studio.connections")
@@ -57,7 +56,7 @@ def connection_problem(exc: BaseException) -> Response | None:
             "connection failed", extra={"event": "studio.connection_failed", "error_kind": str(exc.classification.kind)}
         )
         return db_problem_response(exc.classification)
-    if isinstance(exc, TabrionError) and isinstance(exc.original, sqlalchemy.exc.TimeoutError):
+    if pool_busy(exc):
         # L-2 of stu-010-review.md: Studio's own pool had no free session within its timeout; the database is fine.
         logger.info("connection busy", extra={"event": "studio.connection_busy"})
         return problem_response("studio.connection_busy")

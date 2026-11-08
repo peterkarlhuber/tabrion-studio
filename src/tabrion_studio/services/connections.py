@@ -174,6 +174,12 @@ def startup_options(session: SessionSettings) -> str:
     return " ".join(f"-c {setting}={value}" for setting, value in pairs)
 
 
+def pool_busy(exc: BaseException) -> bool:
+    """Whether ``exc`` is tabrion's error for a pool without a free session within its timeout
+    (``studio.connection_busy``, L-2 of ``stu-010-review.md``): the database is fine, Studio's sessions are in use."""
+    return isinstance(exc, tabrion.TabrionError) and isinstance(exc.original, sqlalchemy.exc.TimeoutError)
+
+
 def driver_options(password: str | None, session: SessionSettings | None = None) -> dict[str, Any]:
     """psycopg connection options of every Studio PostgreSQL connection; constants, not connection targets.
 
