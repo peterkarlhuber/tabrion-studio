@@ -498,6 +498,19 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   checks every component against the network and automount forms before `lstat`
   (`test_a_relative_link_that_climbs_to_net_is_refused_before_lstat`). R-3 (refuse a leading `\??\` as text) is done
   as well.
+- **PR #14 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
+  - **L-1:** the D-01 password line starts with the connection name, which may be up to 200 characters and contain
+    `:` and `→`. A hostile name can push the real `secret → host:port` behind the 64-character cap ("Show full
+    value"). The marks, the TLS mode and the hosts and variables lists stay visible. Show the name, the secret and
+    the destination as three separately capped parts, or put the destination first.
+  - **I-1:** `sensitive_variable` is a heuristic. It does not mark `DATABASE_URL`, `STRIPE_KEY`, `KUBECONFIG`,
+    `SENTRY_DSN` or `*_KEY` in general; consider `_KEY`, `_PASSWORD` and `DATABASE_URL`. Every `env:` variable is
+    listed in D-01 anyway.
+  - **I-2:** after the upgrade, a project trusted before #14 shows every connection as "changed" without a reason.
+    Show a one-time note ("Studio now shows more about each connection; nothing in the file changed"), so that
+    users do not learn to click through a changed D-01.
+  - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
+    `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
 
 ### TD-011 · STU-008 parts that wait for STU-009 or a later package
 
@@ -517,5 +530,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
 - **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
   accepts them, but the page does not send them yet.
+- **PR #13 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
+  - **L-1:** in the assistant, `secretKept` hides `secretProblem`. When a retarget could neither remove the old
+    keyring entry nor store the new password, the page only says the old one was kept. Show both.
+  - **I-1:** no test pins the `_encodable` check of `parse_secret_ref` for `file:` (mutant M6).
+  - **I-2:** test gaps behind mutants M8 to M11: assert the keyring warning record, an unreadable file during the
+    recheck, the settings recheck, and `secret_removed: true` for an update that keeps the target.
+  - **I-3:** keyring entries saved before `sslmode` joined the fingerprint are no longer found (fails safe: the
+    password is asked again, and the old entry stays). Mention it in the release notes if an STU-008 build was ever
+    handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
