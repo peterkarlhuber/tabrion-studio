@@ -87,6 +87,18 @@ async function smallTargets(page: Page): Promise<string[]> {
   });
 }
 
+/** Texts cut with "…" whose full text no title shows (WCAG 1.4.10 "without loss of information"). */
+function untitledEllipses(): string[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('body *'))
+    .filter((el) => {
+      if (getComputedStyle(el).textOverflow !== 'ellipsis') return false;
+      if (el.scrollWidth <= el.clientWidth + 1) return false; // not cut
+      const text = (el.textContent ?? '').trim();
+      return !(el.closest<HTMLElement>('[title]')?.title ?? '').includes(text);
+    })
+    .map((el) => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}"`);
+}
+
 for (const [name, options, then] of STATES) {
   test(`${name}: targets are at least 24 x 24 px (2.5.8)`, async ({ page }) => {
     await open(page, options, then);
@@ -130,16 +142,18 @@ test('text spacing of 1.4.12 cuts no control text', async ({ page }) => {
         .filter((el) => {
           const style = getComputedStyle(el);
           if (style.overflow === 'visible' && style.overflowX === 'visible') return false;
-          if (style.textOverflow === 'ellipsis') return false; // names that may be long show "…" and a title
           return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
         })
         .map((el) => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}"`),
     );
+    // A name cut with "…" (connection, tab) must show in full in a title (1.4.10 without loss of information).
+    const untitled = await page.evaluate(untitledEllipses);
     const page_ = await page.evaluate(() => [
       document.documentElement.scrollWidth,
       document.documentElement.clientWidth,
     ]);
     expect(cut, path).toEqual([]);
+    expect(untitled, path).toEqual([]);
     expect(page_[0], path).toBeLessThanOrEqual(page_[1] ?? 0);
   }
 });
@@ -224,4 +238,113 @@ test('tooltips can be hovered and dismissed with Escape (1.4.13)', async ({ page
   expect(await tooltip()).toBeNull();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   expect(await tooltip()).toBe('"Connections"');
+});
+
+test('at 320 px the header wraps instead of squeezing its parts (1.4.10)', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await open(page, { scenario: 'prod' });
+  const header = page.getByRole('banner');
+  // Every part of the header keeps its content's width: nothing is squeezed, cut or overlaps.
+  const squeezed = await header.evaluate((root) =>
+    Array.from(root.querySelectorAll<HTMLElement>('*'))
+      // Visually hidden texts (1 x 1 px) are not shown, so they cannot be squeezed.
+      .filter((el) => el.getBoundingClientRect().width > 1)
+      .filter((el) => el.scrollWidth > el.clientWidth + 1)
+      .map((el) => `${el.tagName}.${el.className} ${el.scrollWidth}>${el.clientWidth}`),
+  );
+  expect(squeezed).toEqual([]);
+  // The logo mark keeps its 24 px.
+  const mark = await header.locator('img').first().boundingBox();
+  expect(mark?.width).toBe(24);
+  expect(mark?.height).toBe(24);
+  // The short connection name of the harness is shown in full, with its title.
+  const name = page.getByTestId('connection-switcher').locator('[title]');
+  await expect(name).toHaveAttribute('title', 'measure-central');
+  expect(await name.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  // The header wraps onto more rows rather than overflowing: the tools sit below the brand.
+  // Only the mark is shown, and the link keeps its name (4.1.2).
+  const brand = await header.getByRole('link', { name: 'Tabrion Studio' }).boundingBox();
+  const tools = await page.getByTestId('open-help').boundingBox();
+  if (brand === null || tools === null) throw new Error('no header boxes');
+  expect(tools.y).toBeGreaterThanOrEqual(brand.y + brand.height);
+});
+
+test('a long connection name is cut with "…" and shown in full in its title (1.4.10)', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 640 });
+  await open(page, { scenario: 'prod' });
+  const name = page.getByTestId('connection-switcher').locator('[title]');
+  const long = 'measure-central-replica-with-a-very-long-name-for-the-audit';
+  // The harness name is short; the text and the title are lengthened together, as React renders them.
+  await name.evaluate((el, text) => {
+    el.textContent = text;
+    el.setAttribute('title', text);
+  }, long);
+  expect(await name.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await page.evaluate(untitledEllipses)).toEqual([]);
+  const width = await page.evaluate(() => [
+    document.documentElement.scrollWidth,
+    document.documentElement.clientWidth,
+  ]);
+  expect(width[0]).toBeLessThanOrEqual(width[1] ?? 0);
+  await name.evaluate((el) => el.removeAttribute('title'));
+  expect(await page.evaluate(untitledEllipses)).toEqual([
+    expect.stringContaining('measure-central'),
+  ]);
+});
+
+/** The ::after tooltip text of an element, or null when none is shown. */
+function tooltipOf(element: Element): string | null {
+  const style = getComputedStyle(element, '::after');
+  return style.content === 'none' || style.display === 'none' ? null : style.content;
+}
+
+test('the header icon-button tooltip can be hovered and dismissed with Escape (1.4.13)', async ({
+  page,
+}) => {
+  await open(page, {});
+  const button = page.getByTestId('open-palette');
+  const label = `"${(await button.getAttribute('aria-label')) ?? ''}"`;
+  await button.hover();
+  expect(await button.evaluate(tooltipOf)).toBe(label);
+  // Hoverable, no gap: the pointer moves down through the 6 px spacing onto the tooltip without losing it.
+  const box = await button.boundingBox();
+  if (box === null) throw new Error('no button box');
+  for (const dy of [2, 5, 12]) {
+    await page.mouse.move(box.x + box.width - 4, box.y + box.height + dy, { steps: 2 });
+    expect(await button.evaluate(tooltipOf), `${dy} px below`).toBe(label);
+  }
+  // Dismissible: Escape hides it without moving the pointer or the focus.
+  await page.keyboard.press('Escape');
+  expect(await button.evaluate(tooltipOf)).toBeNull();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  expect(await button.evaluate(tooltipOf)).toBe(label);
+});
+
+test('a click beside a focused link or button does not activate it through its tooltip', async ({
+  page,
+}) => {
+  await open(page, {});
+  const link = page.getByRole('link', { name: 'Connections' });
+  // Keyboard focus shows the tooltip (:focus-visible) over the main area.
+  await page.keyboard.press('Shift');
+  await link.focus();
+  expect(await link.evaluate(tooltipOf)).toBe('"Connections"');
+  const box = await link.boundingBox();
+  if (box === null) throw new Error('no link box');
+  await page.mouse.click(box.x + box.width + 30, box.y + box.height / 2);
+  await page.waitForTimeout(100);
+  expect(new URL(page.url()).searchParams.get('path') ?? '/').not.toBe('/connections');
+  await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('Connections');
+
+  const button = page.getByTestId('open-palette');
+  await page.keyboard.press('Shift');
+  await button.focus();
+  expect(await button.evaluate(tooltipOf)).not.toBeNull();
+  const buttonBox = await button.boundingBox();
+  if (buttonBox === null) throw new Error('no button box');
+  await page.mouse.click(buttonBox.x + buttonBox.width - 4, buttonBox.y + buttonBox.height + 12);
+  await page.waitForTimeout(100);
+  await expect(page.getByTestId('command-palette')).toBeHidden();
 });

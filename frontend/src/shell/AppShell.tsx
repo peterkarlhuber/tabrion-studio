@@ -212,7 +212,9 @@ export function AppShell({
                   className={styles.tab}
                   data-testid="workspace-tab"
                 >
-                  <span className={styles.tabTitle}>{tab.title}</span>
+                  <span className={styles.tabTitle} title={tab.title}>
+                    {tab.title}
+                  </span>
                   <span className="tb-sr-only">, </span>
                   <EnvBadge environment={tab.environment} size="sm" />
                 </button>

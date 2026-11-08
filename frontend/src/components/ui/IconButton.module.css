@@ -39,6 +39,12 @@
   font-size: var(--tb-text-xs);
   font-weight: var(--tb-weight-medium);
   white-space: nowrap;
+  /* Shown only for the keyboard focus, the tooltip takes no clicks (STU-053 review L-1). */
+  pointer-events: none;
+}
+/* Hoverable (WCAG 1.4.13): only while the pointer is on the button does its tooltip take the pointer. */
+.iconButton:hover::after {
+  pointer-events: auto;
 }
 :global(:root[data-tooltips-hidden]) .iconButton::after {
   display: none;

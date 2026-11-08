@@ -23,7 +23,6 @@
   background: var(--tb-color-chrome);
 }
 .brand {
-  flex: none;
   display: inline-flex;
   align-items: center;
   gap: var(--tb-space-2);
@@ -128,6 +127,14 @@
   font-weight: var(--tb-weight-medium);
   white-space: nowrap;
   transform: translateY(-50%);
+  /* A tooltip shown only for the keyboard focus takes no clicks: a click beside the focused link must reach the
+     content below and not follow the link (STU-053 review L-1). */
+  pointer-events: none;
+}
+/* Hoverable (WCAG 1.4.13): only while the pointer is on the link does its tooltip take the pointer, so the pointer
+   can move onto it without losing it. */
+.navLink:hover::after {
+  pointer-events: auto;
 }
 /* Escape hides every tooltip until the pointer moves or the focus changes (src/lib/tooltips.ts). */
 :global(:root[data-tooltips-hidden]) .navLink::after {
@@ -217,8 +224,16 @@
   background: var(--tb-color-danger);
 }
 
+/* On narrow windows only the mark is shown; the name stays the link's accessible name (the mark's alt is empty),
+   so it is hidden visually like .tb-sr-only, not with display: none (WCAG 4.1.2, STU-053). */
 @media (max-width: 720px) {
   .brandName {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }

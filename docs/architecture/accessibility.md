@@ -33,7 +33,7 @@ the audited states; four findings were fixed in the STU-053 pull request (below)
 | 1.4.3 Contrast (minimum), 1.4.11 Non-text contrast | pass | `tokens.test.ts`, `contrast.spec.ts`, axe with colour contrast in both themes |
 | 1.4.4 Resize text, 1.4.10 Reflow | pass after F-1 | rem-based sizes; at 320 CSS px no view, dialog or the PROD header scrolls sideways, in English and German; `a11y-audit.spec.ts` |
 | 1.4.12 Text spacing | pass | with the spacing of the criterion no button, link, label or heading cuts its text and the page does not scroll sideways; `a11y-audit.spec.ts` |
-| 1.4.13 Content on hover or focus | pass after F-4 | the only hover content is the CSS tooltip of icon buttons and navigation links: it stays while hovered or focused, the pointer can move onto it, and Escape hides it; `a11y-audit.spec.ts` |
+| 1.4.13 Content on hover or focus | pass after F-4 | the only hover content is the CSS tooltip of icon buttons and navigation links: it stays while hovered or focused, the pointer can move onto it, and Escape hides it; a tooltip shown only for the keyboard focus takes no clicks; `a11y-audit.spec.ts` (activity bar and header buttons) |
 | 2.1.1 Keyboard, 2.1.2 No keyboard trap | pass | every control is a native button, link or input; dialogs trap Tab inside and release it on close; `dialogs.spec.ts` |
 | 2.1.4 Character key shortcuts | pass | no single-key shortcut |
 | 2.2.1 Timing adjustable | pass | the session ends after 30 minutes without a tab, which the user sets with `--idle-timeout`; an open tab keeps it alive (heartbeat) |
@@ -52,17 +52,18 @@ the audited states; four findings were fixed in the STU-053 pull request (below)
 | 3.2.1 On focus, 3.2.2 On input | pass | focus changes nothing; choosing a language or theme applies it in place without moving the focus |
 | 3.3.1 Error identification, 3.3.2 Labels or instructions, 3.3.3 Error suggestion | pass | invalid fields get `aria-invalid` and a message tied with `aria-describedby`; problems say what to change; `ConnectionsView.test.tsx` |
 | 3.3.7 Redundant entry, 3.3.8 Accessible authentication | pass | the assistant keeps entered values between its steps; sign-in is a one-time link, no cognitive test |
-| 4.1.2 Name, role, value | pass | native controls; the custom roles (tabs) have their states; axe |
+| 4.1.2 Name, role, value | pass after F-5 | native controls; the custom roles (tabs) have their states; axe; below 720 px the logo link keeps its name |
 | 4.1.3 Status messages | pass | the server status, the save results and the connection manager's messages are `role="status"` or in a polite live region |
 
 ## Findings fixed in the STU-053 pull request
 
 | ID | Criterion | Finding | Fix |
 |---|---|---|---|
-| F-1 | 1.4.10 Reflow | At 320 px a PROD workspace scrolled the whole page sideways by 78 px: the header did not wrap its status displays, and the absolutely positioned screen-reader texts in the tabs escaped the scrolling tab list (`.tb-sr-only` without a positioned ancestor). The logo mark was squeezed to 11 px. | The header wraps and grows (`minmax(48px, auto)` row), the brand does not shrink, the tab list is the containing block of its screen-reader texts, and the connection switcher is at most as wide as the header |
+| F-1 | 1.4.10 Reflow | At 320 px a PROD workspace scrolled the whole page sideways by 78 px: the header did not wrap its status displays, and the absolutely positioned screen-reader texts in the tabs escaped the scrolling tab list (`.tb-sr-only` without a positioned ancestor). The logo mark was squeezed to 11 px. | The header wraps and grows (`minmax(48px, auto)` row), so no part of it is squeezed (the mark keeps 24 px), the tab list is the containing block of its screen-reader texts, and the connection switcher is at most as wide as the header |
 | F-2 | 2.5.8 Target size | "Show full value" and "and N more" in D-01 were 20 px high | at least 24 px high |
-| F-4 | 1.4.13 Content on hover or focus | The tooltips of the activity bar and the icon buttons could not be dismissed without moving the pointer or the focus, and vanished when the pointer moved onto them (a gap and `pointer-events: none`) | Escape hides them until the pointer moves or the focus changes (`src/lib/tooltips.ts`); the tooltip touches its trigger, so it can be hovered |
-| F-3 | 1.4.10 Reflow | The connection switcher (a long profile name) was wider than the header at 320 px | `max-width: min(22rem, 100%)`, the name is cut with "…" (the full name stays in the accessible name) |
+| F-4 | 1.4.13 Content on hover or focus | The tooltips of the activity bar and the icon buttons could not be dismissed without moving the pointer or the focus, and vanished when the pointer moved onto them (a gap and `pointer-events: none`) | Escape hides them until the pointer moves or the focus changes (`src/lib/tooltips.ts`); the tooltip touches its trigger, so it can be hovered. It takes the pointer only while its trigger is hovered: a tooltip shown for the keyboard focus lets a click beside the link reach the content below (review L-1) |
+| F-3 | 1.4.10 Reflow | The connection switcher (a long profile name) was wider than the header at 320 px | `max-width: min(22rem, 100%)`; the name is cut with "…" and shown in full in its `title` and the accessible name, and the state ("Connected · 12 ms") is never cut, so it cannot run out of the button (review L-4). Tab titles cut with "…" have a `title` too; the audit fails on any text cut with "…" that no title shows |
+| F-5 | 4.1.2 Name, role, value | Below 720 px the header hid the "Tabrion Studio" text with `display: none`; the mark's `alt` is empty, so the logo link had no accessible name (found while pinning F-1, review L-2) | the text is hidden visually only, like `.tb-sr-only` |
 
 ## Waits for later packages
 

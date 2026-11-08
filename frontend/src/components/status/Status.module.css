@@ -63,9 +63,6 @@
   font-size: var(--tb-text-sm);
   cursor: pointer;
 }
-.switcher > * {
-  min-width: 0;
-}
 .switcher:hover {
   background: var(--tb-color-surface-hover);
 }
@@ -75,7 +72,9 @@
   white-space: nowrap;
   font-weight: var(--tb-weight-semibold);
 }
+/* The state is never cut: a long name gives way to it (flex: none), so it cannot run out of the button. */
 .status {
+  flex: none;
   color: var(--tb-color-text-muted);
   white-space: nowrap;
 }
