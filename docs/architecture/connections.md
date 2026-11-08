@@ -94,6 +94,9 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 - These `SET` forms are refused: `SET TRANSACTION`, `SET SESSION CHARACTERISTICS`, `SET [SESSION|LOCAL]
   default_transaction_read_only | transaction_read_only | ROLE | SESSION AUTHORIZATION`.
 - So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT`, `CLUSTER` and `DO`.
+- Since the STU-011 fix round, every other first word too: only `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a
+  query, `SHOW` and `PRAGMA` pass (an allowlist; see [Query engine](queries.md), "Statements and session state").
+  PostgreSQL connections also get Studio's session settings as startup options and run `RESET ALL` on check-in.
 
 **One statement, enforced by the server (H-1 of `stu-009-review.md`):** every PostgreSQL connection uses
 `prepare_threshold=0` (`driver_options`). So every statement is a prepared statement on the extended query protocol,

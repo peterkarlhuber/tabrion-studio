@@ -49,7 +49,7 @@ in the configuration folder (and the trust records in the state folder); **it ne
 | `POST /api/profiles` | `{"profile": {...}, "digest", "overwrite"?}` | 201 `{"id": "user:<name>", "digest"}` |
 | `PUT /api/profiles` | `{"id": "user:<name>", "profile": {...}, "digest", "overwrite"?}` | 200 `{"id", "digest"}`; the name cannot change (`config.rename_unsupported`) |
 | `DELETE /api/profiles` | `{"id": "user:<name>", "digest", "overwrite"?}` | 200 `{"digest"}`; also removes the profile's saved password (keyring and session) |
-| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
+| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?, "max_result_mb"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
 
 The id is in the body, not the path (03 section 6 sketches `/profiles/{id}`): a profile name may contain `/`, and
 `/api/profiles/{id}/secret` must never be read as a profile route. A profile has the keys of the file;

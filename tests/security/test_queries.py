@@ -21,21 +21,22 @@ from pathlib import Path
 import sqlite3
 import threading
 import time
-from typing import Any
+import tracemalloc
+from typing import Any, cast
 import uuid
 
 import pytest
 import sqlalchemy
 from tabrion.errors import TabrionError
 
-from tabrion_studio.config.schema import Profile, SecretRef, Settings
+from tabrion_studio.config.schema import Profile, SecretRef, Settings, validate_settings
 from tabrion_studio.logs import LogSetup, configure_logging
 from tabrion_studio.services import queries as queries_module
 from tabrion_studio.services import tabrion_compat
-from tabrion_studio.services.connections import ConnectionRegistry, RegistryError
+from tabrion_studio.services.connections import ConnectionRegistry, RegistryError, startup_options, studio_profile
 from tabrion_studio.services.queries import Query, QueryEngine, QueryError, json_value
 from tabrion_studio.services.readonly import StatementRefused
-from tabrion_studio.services.sqltext import ParameterError, bind, placeholders
+from tabrion_studio.services.sqltext import BoundStatement, ParameterError, bind, is_bound, placeholders
 from tabrion_studio.services.tabrion_compat import Cancel, Cancelled
 from tests.security.test_read_only import Source
 from tests.support.access import ORIGIN, make_studio
@@ -231,9 +232,10 @@ def test_writes_and_several_statements_are_refused(lite: tuple[QueryEngine, str,
     engine, connection_id, _ = lite
     with pytest.raises(StatementRefused):
         engine.start(connection_id, "SELECT 1; DELETE FROM part")
-    with pytest.raises(StatementRefused):
-        engine.start(connection_id, "COMMIT")
-    query = wait(engine.start(connection_id, "DELETE FROM part"))
+    for sql in ("COMMIT", "DELETE FROM part", "DECLARE c CURSOR FOR SELECT 1", "SET cache_size = 1"):
+        with pytest.raises(StatementRefused):
+            engine.start(connection_id, sql)
+    query = wait(engine.start(connection_id, "PRAGMA user_version = 7"))  # past the text check: SQLite refuses
     assert query.state == "failed" and query.problem is not None and query.problem.code.startswith("db.")
     assert wait(engine.start(connection_id, "SELECT count(*) FROM part")).rows == [[3001]]
 
@@ -462,11 +464,20 @@ def test_pg_stu_t_020_cancel_within_a_second(pg: tuple[QueryEngine, str, Source]
 @postgres
 def test_pg_writes_fail_and_one_statement_only(pg: tuple[QueryEngine, str, Source]) -> None:
     engine, connection_id, _ = pg
-    query = wait(engine.start(connection_id, "CREATE TABLE studio_query_probe (x int)"))
-    assert query.state == "failed" and query.problem is not None and query.problem.code == "db.read_only"
+    with pytest.raises(StatementRefused):
+        engine.start(connection_id, "CREATE TABLE studio_query_probe (x int)")
+    connection = engine.registry.get(connection_id)
+    with (
+        pytest.raises(TabrionError) as refused,
+        connection._read() as transaction,
+        tabrion_compat.stream(
+            transaction, "CREATE TABLE studio_query_probe (x int)", {}, cancel=Cancel(), server_side=False
+        ),
+    ):
+        pass
+    assert refused.value.classification is not None and refused.value.classification.kind.value == "read_only"
     # Past the text check, the server cursor's DECLARE is a prepared statement too: several commands are refused.
     escape = "SELECT '\\''; COMMIT; BEGIN READ WRITE; CREATE TABLE studio_query_probe (x int); COMMIT; SELECT ''''"
-    connection = engine.registry.get(connection_id)
     with (
         pytest.raises(TabrionError) as raised,
         connection._read() as transaction,
@@ -484,3 +495,337 @@ def test_cancel_threads_do_not_outlive_the_query(lite: tuple[QueryEngine, str, S
     query = wait(engine.start(connection_id, "SELECT 1"))
     engine.cancel(query.id)  # finished: no cancel thread
     assert threading.active_count() <= before + 1
+
+
+# The fix round of stu-011-review.md (M-1..M-3, L-1..L-3, I-3) and H-1 of tab-033-review.md.
+
+
+# L-1: what is executed is what was checked.
+
+
+@pytest.mark.parametrize(
+    "forged",
+    [
+        BoundStatement("SELECT 1", "DELETE FROM part", {}),
+        BoundStatement("SELECT 1; DELETE FROM part", "SELECT 1; DELETE FROM part", {}),
+        BoundStatement("DELETE FROM part", "DELETE FROM part", {}),
+        BoundStatement("SELECT :a", "SELECT :a", {"a": 1, "b": 2}),
+        BoundStatement("SELECT :a", "SELECT :a", {}),
+    ],
+)
+def test_l1_stream_refuses_a_statement_that_prepare_did_not_build(
+    lite: tuple[QueryEngine, str, Source], forged: BoundStatement
+) -> None:
+    engine, connection_id, _ = lite
+    connection = engine.registry.get(connection_id)
+    before = connection.fetch("SELECT count(*) FROM part")
+    with pytest.raises(StatementRefused):
+        connection.stream(forged, lambda cursor: cursor.fetch(1))
+    assert connection.fetch("SELECT count(*) FROM part") == before
+    assert connection.stream(connection.prepare("SELECT :a", {"a": 7}), lambda cursor: cursor.fetch(1)) == [(7,)]
+
+
+def test_l1_is_bound_compares_the_driver_text() -> None:
+    good = bind("SELECT '50%', :a", {"a": 1}, "postgresql")
+    assert is_bound(good, good.sql, "postgresql")
+    assert not is_bound(BoundStatement(good.sql, "SELECT '50%', %(a)s", good.values), good.sql, "postgresql")
+    assert not is_bound(BoundStatement(good.sql, good.driver_sql, {"b": 1}), good.sql, "postgresql")
+
+
+# L-2 and H-1: the cancel guards, with fake driver connections.
+
+
+class FakeCursor:
+    description = None
+
+    def __init__(self, on_execute: Any) -> None:
+        self.on_execute = on_execute
+
+    def execute(self, sql: str, values: Any) -> None:
+        self.on_execute()
+
+    def close(self) -> None:
+        pass
+
+
+class FakePsycopg:
+    """What ``tabrion_compat`` uses of a psycopg connection."""
+
+    def __init__(self) -> None:
+        self.cancels = 0
+        self.closed = False
+        self.on_execute: Any = lambda: None
+
+    def cancel_safe(self, timeout: float) -> None:
+        self.cancels += 1
+
+    def cursor(self, name: str | None = None) -> FakeCursor:
+        return FakeCursor(self.on_execute)
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class CountingSqlite(sqlite3.Connection):
+    interrupts = 0
+
+    def interrupt(self) -> None:
+        type(self).interrupts += 1
+        super().interrupt()
+
+
+class FakeTransaction:
+    def __init__(self, dbapi: Any, *, invalidate_fails: bool = False) -> None:
+        self.invalidated = 0
+        outer = self
+
+        class Connection:
+            class connection:
+                dbapi_connection = dbapi
+
+            @staticmethod
+            def invalidate() -> None:
+                if invalidate_fails:
+                    raise RuntimeError("cannot invalidate")
+                outer.invalidated += 1
+
+        self.connection = Connection
+
+
+def test_l2_m10_a_cancel_after_detach_reaches_nothing() -> None:
+    fake = FakePsycopg()
+    hook = Cancel()
+    hook.attach(fake)
+    assert hook.detach() is False
+    hook.cancel()
+    assert fake.cancels == 0
+    lite = sqlite3.connect(":memory:", factory=CountingSqlite)
+    CountingSqlite.interrupts = 0
+    hook = Cancel()
+    hook.attach(lite)
+    hook.detach()
+    hook.cancel()
+    assert CountingSqlite.interrupts == 0
+    lite.close()
+
+
+def fake_stream(transaction: FakeTransaction, hook: Cancel, *, server_side: bool) -> Any:
+    return tabrion_compat.stream(cast(Any, transaction), "SELECT 1", {}, cancel=hook, server_side=server_side)
+
+
+@pytest.mark.parametrize("engine", ["postgresql", "sqlite"])
+def test_l2_m7_a_connection_that_got_a_cancel_is_invalidated(engine: str) -> None:
+    dbapi: Any = FakePsycopg() if engine == "postgresql" else sqlite3.connect(":memory:", factory=CountingSqlite)
+    hook = Cancel()
+    transaction = FakeTransaction(dbapi)
+    if engine == "postgresql":
+        dbapi.on_execute = hook.cancel  # the cancel arrives while the statement runs
+        with pytest.raises(Cancelled), fake_stream(transaction, hook, server_side=True):
+            pass
+        assert dbapi.cancels == 1
+    else:
+        with pytest.raises(Cancelled), fake_stream(transaction, hook, server_side=False):
+            hook.cancel()
+    assert transaction.invalidated == 1
+    quiet = FakeTransaction(dbapi)
+    with fake_stream(quiet, Cancel(), server_side=False):
+        pass
+    assert quiet.invalidated == 0  # no cancel, no invalidation
+    if engine == "sqlite":
+        dbapi.close()
+
+
+def test_l2_a_connection_that_cannot_be_invalidated_is_closed() -> None:
+    fake = FakePsycopg()
+    hook = Cancel()
+    fake.on_execute = hook.cancel
+    with pytest.raises(Cancelled), fake_stream(FakeTransaction(fake, invalidate_fails=True), hook, server_side=True):
+        pass
+    assert fake.closed
+
+
+#: The reviewer's race: cancels after 0 to 30 ms (spread evenly, so the test is the same on every run).
+DELAYS = [(index * 7 % 31) / 1000 for index in range(60)]
+
+
+def test_h1_a_late_sqlite_interrupt_never_hits_the_next_statement(lite: tuple[QueryEngine, str, Source]) -> None:
+    """The reviewer's race on SQLite: a short query, a cancel after 0 to 30 ms, then the next statement."""
+    engine, connection_id, _ = lite
+    connection = engine.registry.get(connection_id)
+    for delay in DELAYS:
+        query = engine.start(connection_id, "SELECT count(*) FROM part a, part b WHERE a.id < 40")
+        threading.Event().wait(delay)
+        engine.cancel(query.id)
+        wait(query)
+        assert query.state in ("done", "canceled")
+        assert connection.fetch("SELECT 42") == [(42,)]
+
+
+# L-3: one cancel worker per query.
+
+
+def test_l3_one_cancel_worker_per_query(lite: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = lite
+    query = engine.start(connection_id, ENDLESS)
+    threading.Event().wait(0.05)
+    for _ in range(25):
+        engine.cancel(query.id)
+    workers = [thread for thread in threading.enumerate() if thread.name == "studio-cancel"]
+    assert len(workers) <= 1
+    assert wait(query, 3.0).state == "canceled"
+
+
+def test_l3_the_worker_keeps_asking_after_the_fast_attempts(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(queries_module, "CANCEL_ATTEMPTS", 2)
+    monkeypatch.setattr(queries_module, "CANCEL_SLOW_INTERVAL_S", 0.05)
+    asked: list[int] = []
+
+    class Stubborn(Cancel):
+        def cancel(self) -> None:
+            asked.append(1)
+            if len(asked) == 6:
+                query.done.set()  # the statement stops at the sixth request
+
+    query = queries_module.Query("q_x", "c_x", "sqlite", 1, 1, 0.0, hook=Stubborn())
+    QueryEngine._send_cancel(query)
+    assert len(asked) == 6
+
+
+# M-3: fetches within a byte budget; I-3: the configurable byte cap.
+
+WIDE = (
+    "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 8) "
+    "SELECT x, zeroblob(16000000) AS b FROM c"
+)
+
+
+def test_m3_a_wide_blob_result_keeps_peak_memory_bounded(lite: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = lite
+    tracemalloc.start()
+    try:
+        query = wait(engine.start(connection_id, WIDE), 30.0)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert query.state == "done", query.problem
+    assert len(query.rows) == 8 and query.truncated_cells  # each value is cut to the cell cap
+    # 8 values of 16 MB in one fetch would be 128 MB; the budget fetches them one at a time.
+    assert peak < 60 * 1024 * 1024, peak
+
+
+def test_i3_the_byte_cap_is_the_max_result_mb_setting(sqlite_file: Any) -> None:
+    source = sqlite_source(sqlite_file, max_result_mb=1)
+    registry = ConnectionRegistry(source)
+    engine = QueryEngine(registry, source.limits)
+    try:
+        connection_id = registry.open("project:parts").id
+        query = wait(engine.start(connection_id, "SELECT name, data FROM part", max_rows=5000))
+        assert query.max_bytes == 1024 * 1024 and query.truncated in ("bytes", None)
+        assert QueryEngine(registry).start(connection_id, "SELECT 1").max_bytes == 20 * 1024 * 1024
+    finally:
+        engine.close_all()
+        registry.close_all()
+    assert validate_settings({"limits": {"max_result_mb": 200}})[0].max_result_mb == 200
+    assert [issue.code for issue in validate_settings({"limits": {"max_result_mb": 201}})[1]] == ["config.range"]
+
+
+# M-2: startup options and the check-in reset.
+
+
+def test_m2_startup_options_carry_studios_session_settings() -> None:
+    settings = studio_profile(sqlite_source_profile(), Settings()).postgres
+    options = startup_options(settings)
+    assert options.split(" -c ")[0] == "-c default_transaction_read_only=on"
+    assert "-c statement_timeout=30000" in options and "-c lock_timeout=5000" in options
+    assert "-c TimeZone=UTC" in options
+
+
+def sqlite_source_profile() -> Any:
+    return Profile("pg", "postgresql", "dev", host="localhost", database="x")
+
+
+def _below_the_check(connection: Any, sql: str) -> list[tuple[Any, ...]]:
+    with (
+        connection._read() as transaction,
+        tabrion_compat.stream(transaction, sql, {}, cancel=Cancel(), server_side=False) as cursor,
+    ):
+        return list(cursor.fetch(10))
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    with pytest.raises(StatementRefused):
+        engine.start(connection_id, "SET statement_timeout = 0")
+    # Past the text check (what a function of the database could do): the setting must not survive check-in.
+    for sql in ("SET statement_timeout = 0", "SET lock_timeout = 0", "SET search_path = public, pg_catalog"):
+        for _ in range(3):  # whichever of the pool's connections it lands on
+            _below_the_check(connection, sql)
+    shown = {
+        name: {connection.fetch(f"SHOW {name}")[0][0] for _ in range(4)}
+        for name in ("statement_timeout", "lock_timeout", "search_path", "default_transaction_read_only")
+    }
+    assert shown["statement_timeout"] == {"1500ms"}
+    assert shown["lock_timeout"] == {"5s"}
+    assert shown["search_path"] == {'"$user", public'}
+    assert shown["default_transaction_read_only"] == {"on"}
+    assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_m1_a_held_cursor_is_refused(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    for sql in (
+        "DECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(5)",
+        "FETCH ALL FROM c",
+        "CLOSE ALL",
+        "EXPLAIN ANALYZE DECLARE c CURSOR FOR SELECT 1",
+    ):
+        with pytest.raises(StatementRefused):
+            engine.start(connection_id, sql)
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_h1_a_canceled_connection_leaves_the_pool(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    hook = Cancel()
+    seen: list[int] = []
+
+    def consume(cursor: tabrion_compat.ResultCursor) -> None:
+        seen.append(cursor.fetch(1)[0][0])
+        hook.cancel()  # a cancel sent while the statement is attached
+        cursor.fetch(1000)
+
+    statement = connection.prepare("SELECT pg_backend_pid(), pg_sleep(0.01) FROM generate_series(1, 1000)")
+    with pytest.raises(Exception):  # noqa: B017 - Cancelled, or the server's query_canceled
+        connection.stream(statement, consume, cancel=hook)
+    canceled_pid = seen[0]
+    later = {connection.fetch("SELECT pg_backend_pid()")[0][0] for _ in range(6)}
+    assert canceled_pid not in later
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        count = connection.fetch("SELECT count(*) FROM pg_stat_activity WHERE pid = :pid", {"pid": str(canceled_pid)})[
+            0
+        ][0]
+        if count == 0:
+            break
+        threading.Event().wait(0.1)
+    assert count == 0  # the backend is gone: no late cancel packet can reach anyone
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_h1_a_late_cancel_never_hits_the_next_statement(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    for delay in DELAYS[:40]:
+        query = engine.start(connection_id, "SELECT pg_sleep(0.01)")
+        threading.Event().wait(delay)
+        engine.cancel(query.id)
+        wait(query)
+        assert connection.fetch("SELECT 42") == [(42,)]

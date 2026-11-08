@@ -12,9 +12,11 @@ This module adds two guards:
   other than ``load_extension``, and pragmas that only read (or set ``query_only`` on). ``ATTACH``, ``DETACH`` (and
   so ``VACUUM INTO``, which attaches its target), every write, every schema change (also of temporary objects),
   ``ANALYZE`` and ``REINDEX`` are denied (STU-T-024).
-* :func:`check_statement`, which refuses a text with more than one statement and every statement of the
-  transaction-control classes (``BEGIN``, ``COMMIT``, ``SET TRANSACTION``, ``SET SESSION CHARACTERISTICS``,
-  ``RESET``, ``SET default_transaction_read_only``, ...). PostgreSQL runs a multi-statement text in one round trip,
+* :func:`check_statement`, which allows one statement by its first word (an allowlist, M-1/M-2/I-2 of
+  ``stu-011-review.md``: ``SELECT``, ``WITH``, ``VALUES``, ``TABLE``, ``EXPLAIN`` of a query, ``SHOW``, ``PRAGMA``)
+  and refuses a text with more than one statement and every statement of the transaction-control classes
+  (``BEGIN``, ``COMMIT``, ``SET TRANSACTION``, ``SET SESSION CHARACTERISTICS``, ``RESET``,
+  ``SET default_transaction_read_only``, ...). PostgreSQL runs a multi-statement text in one round trip,
   so ``COMMIT; BEGIN READ WRITE; INSERT ...`` would end Studio's read-only transaction and write: the probe in the
   STU-009 tests shows it. With one statement per ``read()``, a write fails in the database. ``COPY``, ``LOAD``,
   ``NOTIFY``, ``LISTEN``, ``LOCK``, ``VACUUM``, ``CHECKPOINT`` and ``CLUSTER`` are refused too.
@@ -299,8 +301,42 @@ def strip_leading(sql: str) -> str:
         text = text[index:]
 
 
+#: The first words a statement may have (M-1, M-2 and I-2 of ``stu-011-review.md``): an allowlist, since a read-only
+#: editor needs only queries, their plans, ``SHOW`` and SQLite's pragmas. Everything else is refused before it reaches
+#: the database, also what the database itself would refuse or allow without harm. A denylist missed two session
+#: effects that outlive Studio's one-statement transaction: ``DECLARE ... CURSOR WITH HOLD`` (materialized at
+#: ``COMMIT``, after the cancel hook is detached, so neither the timeout nor a cancel stops it; also ``FETCH``,
+#: ``MOVE``, ``CLOSE``) and a plain ``SET`` (it stays on the pooled connection: ``SET statement_timeout = 0``). The
+#: write statements (``INSERT``, ``CREATE``, ...) were never needed either; the read-only session stays the boundary
+#: for them, and the STU-T-010 tests send them below this check to prove it. ``PRAGMA`` is SQLite's only way to read
+#: its settings; the authorizer allows only reading pragmas (and PostgreSQL has no such statement).
+_FIRST_WORDS = frozenset({"select", "with", "values", "table", "explain", "show", "pragma"})
+#: What ``EXPLAIN`` may explain: a query (``EXPLAIN ANALYZE`` runs it, so no other statement).
+_QUERY_WORDS = frozenset({"select", "with", "values", "table"})
+#: Words between ``EXPLAIN`` and the statement it explains (PostgreSQL's old option syntax, SQLite's ``QUERY PLAN``).
+_EXPLAIN_OPTIONS = frozenset({"analyze", "analyse", "verbose", "query", "plan"})
+
+
+def _explains_a_query(tokens: list[str]) -> bool:
+    """Whether ``tokens`` (``EXPLAIN`` first) explain a query: options in parentheses or as words, then the query."""
+    index = 1
+    if tokens[index : index + 1] == ["("]:
+        depth = 0
+        while index < len(tokens):
+            depth += {"(": 1, ")": -1}.get(tokens[index], 0)
+            index += 1
+            if depth == 0:
+                break
+    while index < len(tokens) and tokens[index] in _EXPLAIN_OPTIONS:
+        index += 1
+    while index < len(tokens) and tokens[index] == "(":
+        index += 1
+    return index < len(tokens) and tokens[index] in _QUERY_WORDS
+
+
 def check_statement(sql: str) -> str:
-    """The one statement of ``sql``; :class:`StatementRefused` for none, several or a transaction-control statement."""
+    """The one statement of ``sql``; :class:`StatementRefused` for none, several, a transaction-control statement or
+    one whose first word is not in the allowlist (:data:`_FIRST_WORDS`)."""
     statements = split_statements(sql)
     if not statements:
         raise StatementRefused("studio.statement_empty")
@@ -322,4 +358,10 @@ def check_statement(sql: str) -> str:
             raise StatementRefused("studio.statement_transaction")
         if rest[:1] and rest[0] in _SESSION_SETTINGS:
             raise StatementRefused("studio.statement_transaction")
+    if first not in _FIRST_WORDS:
+        raise StatementRefused("studio.statement_refused")
+    if first == "explain" and not all(
+        _explains_a_query(_tokens(statements[0], backslash_strings=backslash)) for backslash in (False, True)
+    ):
+        raise StatementRefused("studio.statement_refused")
     return statements[0]
