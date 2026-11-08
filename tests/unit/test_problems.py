@@ -126,3 +126,18 @@ def test_framework_errors_are_problem_documents(static_dir: Path) -> None:
     assert wrong.json()["code"] == "studio.method_not_allowed"
     assert "GET" in wrong.headers["allow"]
     assert wrong.headers["content-type"] == PROBLEM_MEDIA_TYPE
+
+
+def test_issues_carry_fixed_key_names_and_config_codes_only() -> None:
+    """STU-008: the issues of a refused form are key paths of fixed names and config.* codes, never a value."""
+    doc = problem("studio.profile_invalid", issues=[("profile.host", "config.required")]).to_dict()
+    assert doc["issues"] == [{"pointer": "profile.host", "code": "config.required"}]
+    assert "issues" not in problem("studio.profile_invalid").to_dict()
+    for bad in (
+        [("profile.Host name", "config.required")],
+        [("profile.host", "my password")],
+        [("other.host", "config.required")],
+        [("profile.host", "config.required")] * 33,
+    ):
+        with pytest.raises(ValueError):
+            problem("studio.profile_invalid", issues=bad)

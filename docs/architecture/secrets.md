@@ -68,14 +68,15 @@ Codes: `studio.secret_file_outside`, `studio.secret_file_unsafe`, `studio.secret
 | `PUT /api/profiles/{id}/secret` | body `{"secret": "...", "store": "keyring" \| "session"}` (1 to 1024 characters); 204. `keyring` needs a `keyring:` profile; `session` also works for a profile without a reference. An `env:` or `file:` profile names its own source (`studio.secret_not_storable`) |
 | `DELETE /api/profiles/{id}/secret` | removes the session secret and, for a `keyring:` profile, the keyring entry; 204 |
 
-`{id}` is `user:<name>`, or `project:<name>` while the project file is trusted. The routes sit behind the access
+`{id}` is `user:<name>`, or `project:<name>` while the project file is trusted. The page puts it into the path with
+`encodeURIComponent` and sends `Content-Type: application/json` with a JSON body on `DELETE` too (STU-008: the
+password dialog and the "New connection" assistant). The routes sit behind the access
 middleware (session, CSRF header, Origin, JSON). The request log names the route template, never the path or the
 body. `Configuration.resolve_secret(id)` is what STU-009 calls when it connects.
 
 ## Not yet
 
 - Showing connection URLs through `tabrion.safe_url()` arrives with the first tabrion API use (STU-009, RC-8).
-- The UI that asks for a password and offers "save in keyring" is STU-008.
 - Importing `DATABASE_URL` from a project's `.env` into the keyring is a Studio 1.0 feature.
 
 ## Tests
