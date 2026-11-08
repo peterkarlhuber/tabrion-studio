@@ -1,0 +1,13 @@
+.harness {
+  position: fixed;
+  right: var(--tb-space-3);
+  bottom: calc(var(--tb-statusbar-height) + var(--tb-space-3));
+  display: flex;
+  align-items: center;
+  gap: var(--tb-space-2);
+  padding: var(--tb-space-2);
+  border: 1px dashed var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-surface);
+  font-size: var(--tb-text-xs);
+}

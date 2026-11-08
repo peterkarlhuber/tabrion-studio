@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import time
 
 import pytest
 
 from tabrion_studio import __version__
+from tabrion_studio.app import CLIENT_ROUTES
 from tabrion_studio.instance import control_proof
 from tests.support.access import CONTROL_AUTH, ORIGIN, TOKEN, make_studio
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_health(static_dir: Path) -> None:
@@ -31,6 +35,29 @@ def test_launch_serves_the_app(static_dir: Path) -> None:
     response = make_studio(static_dir).client.get("/launch")
     assert response.status_code == 200
     assert "<title>Tabrion Studio</title>" in response.text
+
+
+def test_client_routes_serve_the_app(static_dir: Path) -> None:
+    """A reload on a view of the single-page app gets index.html with the security headers; nothing else does."""
+    client = make_studio(static_dir).client
+    for path in CLIENT_ROUTES:
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert "<title>Tabrion Studio</title>" in response.text
+        assert "default-src 'self'" in response.headers["content-security-policy"]
+        assert response.headers["cache-control"] == "no-store"
+    for path in ("/settings/x", "/connections.json", "/nowhere"):
+        assert client.get(path).status_code == 404, path
+    # Another Host is still refused on these paths (DNS rebinding, STU-T-001).
+    assert client.get("/settings", headers={"Host": "rebind.test"}).status_code == 403
+
+
+def test_client_routes_match_the_frontend_router() -> None:
+    router = (ROOT / "frontend" / "src" / "router.ts").read_text(encoding="utf-8")
+    routes = re.search(r"ROUTES = \[([^\]]*)\]", router)
+    assert routes is not None
+    paths = set(re.findall(r"'(/[^']*)'", routes.group(1)))
+    assert paths - {"/"} == set(CLIENT_ROUTES)
 
 
 def test_without_a_built_frontend(tmp_path: Path) -> None:

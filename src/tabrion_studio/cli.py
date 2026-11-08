@@ -21,6 +21,7 @@ from typing import TextIO
 import webbrowser
 
 from tabrion_studio._version import __version__
+from tabrion_studio.browser import sandbox_hint, sandboxed_default_browser
 from tabrion_studio.idle import DEFAULT_IDLE_MINUTES
 from tabrion_studio.instance import (
     ControlError,
@@ -92,6 +93,13 @@ def _open_browser(url: str) -> None:
     webbrowser.open(url, new=2)
 
 
+def _warn_about_a_sandboxed_browser(state_dir: Path, err: TextIO) -> None:
+    """TD-002 (review S-4): a snap or Flatpak browser may not read the redirect file; say what to do instead."""
+    found = sandboxed_default_browser()
+    if found is not None:
+        print(sandbox_hint(*found, state_dir=state_dir), file=err, flush=True)
+
+
 def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     out = sys.stdout if out is None else out
     err = sys.stderr
@@ -117,6 +125,8 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
 
     if args.stop:
         return _stop(lock, acquired, paths, project, out, err)
+    if not args.no_browser:
+        _warn_about_a_sandboxed_browser(state_dir, err)
     if not acquired:
         return _reuse(paths, project, open_browser=not args.no_browser, print_url=args.print_url, out=out, err=err)
 

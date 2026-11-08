@@ -4,7 +4,8 @@ import { defineConfig } from 'vite';
 
 // `npm run dev` proxies /api to a running backend (`tabrion-studio --port 8765 --no-browser --print-url`). The backend
 // answers only its own Host and Origin (STU-003), so the proxy presents both as the backend's; the backend has no
-// development exception. Open the printed one-time link with the port changed to 5173 to sign in.
+// development exception. Open the printed one-time link with the port changed to 5173 to sign in. Because the proxy
+// rewrites Origin, the development setup is not for shared machines (review S-5, docs/TODO.md TD-007).
 const backend = process.env.TABRION_STUDIO_BACKEND ?? 'http://127.0.0.1:8765';
 
 export default defineConfig({

@@ -1,7 +1,8 @@
 """The FastAPI application factory (05 section 3.1).
 
 Routes: ``GET /api/health``, ``POST /api/session`` (launch token -> session cookie), ``GET /api/heartbeat``, the
-control endpoints of the process model, ``GET /launch`` and the built frontend from ``static/``.
+control endpoints of the process model, ``GET /launch``, the frontend's own view paths (:data:`CLIENT_ROUTES`) and the
+built frontend from ``static/``.
 
 Every request first passes :class:`tabrion_studio.security.access.AccessMiddleware` (STU-003): the Host allowlist,
 the Origin and fetch-metadata rules, JSON-only bodies, the session cookie plus CSRF header on every API route except
@@ -37,6 +38,9 @@ from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+#: Paths of the single-page app's own views (frontend/src/router.ts); a reload or a typed address on one of them gets
+#: index.html. Every other unknown path stays a 404.
+CLIENT_ROUTES = ("/connections", "/settings")
 #: How often expired launch tokens and their redirect files are removed.
 SWEEP_SECONDS = 5.0
 _MAX_BODY = 4096
@@ -166,6 +170,12 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         async def launch_page() -> Response:
             # The single-page app reads the token from the fragment and exchanges it (frontend/src/session.ts).
             return FileResponse(index, media_type="text/html")
+
+        async def client_route() -> Response:
+            return FileResponse(index, media_type="text/html")
+
+        for route in CLIENT_ROUTES:
+            app.add_api_route(route, client_route, methods=["GET"], include_in_schema=False)
 
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
     else:

@@ -2,23 +2,25 @@ site_name: Tabrion Studio
 site_description: Local developer tool for SQLite and PostgreSQL databases, built on Tabrion.
 repo_url: https://github.com/peterkarlhuber/tabrion-studio
 repo_name: peterkarlhuber/tabrion-studio
-copyright: Copyright &copy; 2026 Peter Karlhuber – MIT License
+copyright: Copyright &copy; 2026 Peter Karlhuber – code MIT License; names and logos are not MIT (TRADEMARKS.md)
 strict: true
 
 theme:
   name: material
+  logo: assets/branding/tabrion-studio-mark-on-dark-128.png  # the header bar is dark slate in both schemes
+  favicon: assets/branding/favicon-32.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
@@ -26,6 +28,9 @@ theme:
     - navigation.sections
     - navigation.top
     - content.code.copy
+
+extra_css:
+  - assets/stylesheets/tabrion-studio.css
 
 plugins:
   - search
@@ -38,6 +43,8 @@ validation:
 
 markdown_extensions:
   - admonition
+  - attr_list
+  - md_in_html
   - tables
   - toc:
       permalink: true
@@ -49,6 +56,7 @@ nav:
   - Architecture:
       - Process model: architecture/process-model.md
       - Access protection: architecture/access-protection.md
+      - App shell and design system: architecture/frontend.md
   - Development:
       - Building and testing: development/building.md
       - CI and supply chain: development/ci.md

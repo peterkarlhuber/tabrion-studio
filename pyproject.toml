@@ -9,7 +9,7 @@ description = "Local developer tool for SQLite and PostgreSQL databases built on
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "TRADEMARKS.md"]
 authors = [{ name = "Peter Karlhuber" }]
 keywords = ["database", "sqlite", "postgresql", "developer-tools", "tabrion"]
 classifiers = [
@@ -85,6 +85,7 @@ include = [
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
+    "TRADEMARKS.md",
     "mkdocs.yml",
     "pyproject.toml",
 ]

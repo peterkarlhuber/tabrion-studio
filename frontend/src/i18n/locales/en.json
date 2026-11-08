@@ -1,0 +1,132 @@
+{
+  "app": {
+    "name": "Tabrion Studio",
+    "skipToContent": "Skip to content",
+    "title": "{{page}} – Tabrion Studio",
+    "connectionTitle": "[{{env}}] {{name}} – Tabrion Studio"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "start": "Start",
+    "connections": "Connections",
+    "settings": "Settings"
+  },
+  "header": {
+    "label": "Status",
+    "connection": {
+      "label": "Connection",
+      "none": "No connection",
+      "manage": "Opens the connection manager.",
+      "status": {
+        "connected": "connected",
+        "connectedLatency": "connected ({{ms}} ms)",
+        "connecting": "connecting…",
+        "disconnected": "disconnected",
+        "error": "error"
+      }
+    },
+    "env": {
+      "label": "Environment",
+      "dev": "DEV",
+      "test": "TEST",
+      "prod": "PROD"
+    },
+    "access": {
+      "readOnly": "Read-only",
+      "readOnlyHint": "This connection is read-only. Studio does not offer write access in this version.",
+      "locked": "Writing locked",
+      "lockedHint": "Production connection: writing is always locked."
+    },
+    "tx": {
+      "none": "No transaction"
+    }
+  },
+  "tabs": {
+    "label": "Open tabs"
+  },
+  "statusbar": {
+    "label": "Status bar",
+    "connecting": "Connecting to the local server…",
+    "server": "Local server {{version}}",
+    "offline": "The local server does not answer.",
+    "language": "Language: {{language}}"
+  },
+  "start": {
+    "title": "Welcome",
+    "lead": "Tabrion Studio is a local developer tool for SQLite and PostgreSQL databases. It runs on this computer only and is read-only by default.",
+    "logoAlt": "Tabrion Studio",
+    "projectsTitle": "No projects yet",
+    "projectsBody": "Run <code>tabrion-studio</code> in a project folder to work with its connection profiles. The project and connection views arrive with the next versions."
+  },
+  "connections": {
+    "title": "Connections",
+    "emptyTitle": "No connections yet",
+    "emptyBody": "The connection manager arrives with the next version. Until then Studio does not connect to any database."
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "language": "Language",
+    "theme": "Theme",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "density": "Density",
+    "densityCompact": "Compact",
+    "densityNormal": "Normal",
+    "saved": "Settings are stored in this browser only."
+  },
+  "languages": {
+    "en": "English",
+    "de": "Deutsch"
+  },
+  "session": {
+    "title": "Sign in to Tabrion Studio",
+    "used": "This sign-in link was already used. Run <code>tabrion-studio</code> again to open Studio.",
+    "expired": "This sign-in link has expired. Run <code>tabrion-studio</code> again to open Studio.",
+    "invalid": "This sign-in link is not valid. Run <code>tabrion-studio</code> again to open Studio.",
+    "none": "Not signed in. Run <code>tabrion-studio</code> in your project folder to open Studio.",
+    "offline": "The local server does not answer. Run <code>tabrion-studio</code> again to open Studio.",
+    "ended": "Your session has ended. Run <code>tabrion-studio</code> again to open Studio.",
+    "endedTitle": "Session ended"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "body": "This page does not exist in Tabrion Studio.",
+    "home": "Go to the start page"
+  },
+  "dialog": {
+    "close": "Close",
+    "cancel": "Cancel"
+  },
+  "dialogs": {
+    "trustProject": {
+      "title": "Trust the project profiles?",
+      "titleChanged": "The project profiles have changed. Trust them?",
+      "body_one": "{{file}} defines {{count}} connection: {{names}}. Check these details before Studio connects.",
+      "body_other": "{{file}} defines {{count}} connections: {{names}}. Check these details before Studio connects.",
+      "hosts": "Hosts",
+      "files": "File references",
+      "none": "none",
+      "trust": "Trust",
+      "reject": "Don't load"
+    },
+    "prodConnect": {
+      "title": "Production database",
+      "body": "{{name}} is marked as PROD. Studio stays read-only; queries are limited to {{seconds}} s.",
+      "connect": "Connect"
+    },
+    "unsavedScript": {
+      "title": "Script not saved",
+      "body": "{{name}} has changes that are not saved.",
+      "save": "Save",
+      "discard": "Discard"
+    },
+    "quit": {
+      "title_one": "{{count}} query is running",
+      "title_other": "{{count}} queries are running",
+      "body": "Quitting Studio cancels them.",
+      "quit": "Quit"
+    }
+  }
+}

@@ -23,6 +23,15 @@ npm run typecheck      # tsc -b (strict)
 npm test               # vitest
 ```
 
+Browser tests (Playwright with axe; STU-005, STU-051). They start the Vite development server themselves and use the
+e2e harness `harness.html` with a fake local server; the CI job for them arrives with TABRION QA-9:
+
+```bash
+npx playwright install chromium                                  # once, or use an installed Chrome:
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npx playwright test
+STUDIO_SCREENSHOTS=/tmp/shots npx playwright test e2e/screenshots.spec.ts   # light and dark, 2x
+```
+
 For `npm run dev`, start the backend on the proxied port: `tabrion-studio --port 8765 --no-browser --print-url`,
 then open the printed one-time link with the port changed to 5173. The backend answers only its own Host and Origin
 (STU-003); the Vite proxy presents both as the backend's.

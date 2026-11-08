@@ -19,5 +19,9 @@ of a shared package, recommended).
 ## State in this repository
 
 The skeleton has React 19.3, TypeScript 5.9 and Vite 8 at the versions of axentra-studio, with the same lint and
-format setup; the other libraries arrive with the work packages that need them (STU-005 onward). The license check
-is in place (`scripts/check_licenses.py`).
+format setup. STU-005 added i18next/react-i18next, lucide-react, Playwright and @axe-core/playwright (dev) at the
+versions of axentra-studio, and copied Button, IconButton, EmptyState and Dialog from
+`axentra-studio/src/components/ui/` at `caa52b5`, each with a provenance note. **Deviation:** the dialog uses the
+native modal `<dialog>` instead of Radix Dialog, because Radix's scroll lock injects a `<style>` element that the
+strict CSP of STU-003 (`style-src 'self'`) refuses (`docs/architecture/frontend.md`). The other libraries arrive with
+the work packages that need them. The license check is in place (`scripts/check_licenses.py`).

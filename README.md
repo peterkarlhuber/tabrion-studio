@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/peterkarlhuber/tabrion-studio/master/assets/branding/tabrion-studio-logo-on-dark.png">
+    <img src="https://raw.githubusercontent.com/peterkarlhuber/tabrion-studio/master/assets/branding/tabrion-studio-logo.png" alt="Tabrion Studio" width="440">
+  </picture>
+</p>
+
 # Tabrion Studio
 
 Tabrion Studio is a **local developer tool** for SQLite files and PostgreSQL databases, built on
@@ -6,8 +13,9 @@ in your browser. It focuses on understanding schemas, running queries safely (re
 migration states and Tabrion profiles.
 
 > **Status: pre-alpha skeleton.** This repository currently contains the project skeleton, the command-line
-> process model, CI and the access protection (work packages STU-001, STU-002, STU-003, STU-018, STU-031). The page
-> it serves is a placeholder.
+> process model, CI, the access protection and the empty app shell with the design system, German and English, and the
+> status displays and dialogs (work packages STU-001, STU-002, STU-003, STU-005, STU-018, STU-031, STU-051). Studio
+> does not connect to databases yet.
 > There is no release; nothing is published to PyPI. See [docs/TODO.md](docs/TODO.md) for what comes next.
 
 **Non-goals:** no hosted service, no shared server, no multi-user login, no replacement for administration tools
@@ -47,4 +55,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+The code and documentation are MIT, see [LICENSE](LICENSE). The names "Tabrion" and "Tabrion Studio" and the logos are
+not covered by the MIT license; see [TRADEMARKS.md](TRADEMARKS.md).

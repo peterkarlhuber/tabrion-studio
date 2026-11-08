@@ -1,57 +1,96 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { fetchHealth, type Health } from './heartbeat';
+import { fetchHealth, startHeartbeat } from './heartbeat';
+import { usePath } from './router';
 import type { SessionState } from './session';
+import { AppShell, type ServerState } from './shell/AppShell';
+import { SessionNotice } from './shell/SessionNotice';
+import { ConnectionsView, NotFoundView, SettingsView, StartView } from './views/Views';
+import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
 
-type State = { kind: 'loading' } | { kind: 'ok'; health: Health } | { kind: 'offline' };
+export type AppSession = SessionState | 'ended';
 
-const SESSION_TEXT: Record<Exclude<SessionState, 'ok'>, string> = {
-  used: 'This sign-in link was already used. Run tabrion-studio again to open Studio.',
-  expired: 'This sign-in link has expired. Run tabrion-studio again to open Studio.',
-  invalid: 'This sign-in link is not valid. Run tabrion-studio again to open Studio.',
-  none: 'Not signed in. Run tabrion-studio in your project folder to open Studio.',
-  offline: 'The local server does not answer.',
-};
-
-/** Placeholder page of the skeleton (STU-001). The app shell, design system and i18n arrive with STU-005. */
-export function App({
-  fetcher = fetch,
-  session = 'ok',
-}: {
-  fetcher?: typeof fetch;
-  session?: SessionState;
-}) {
-  const [state, setState] = useState<State>({ kind: 'loading' });
-
+function useServer(fetcher: typeof fetch): [ServerState, () => void] {
+  const [server, setServer] = useState<ServerState>({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     void fetchHealth(fetcher).then((health) => {
-      if (active) {
-        setState(health === null ? { kind: 'offline' } : { kind: 'ok', health });
-      }
+      if (active) setServer(health === null ? { kind: 'offline' } : { kind: 'ok', health });
     });
     return () => {
       active = false;
     };
-  }, [fetcher]);
+  }, [fetcher, attempt]);
+  return [server, () => setAttempt((n) => n + 1)];
+}
 
+function View({ path }: { path: string }) {
+  switch (path) {
+    case '/':
+      return <StartView />;
+    case '/connections':
+      return <ConnectionsView />;
+    case '/settings':
+      return <SettingsView />;
+    default:
+      return <NotFoundView />;
+  }
+}
+
+const PAGE_TITLES: Record<string, string> = {
+  '/connections': 'connections.title',
+  '/settings': 'settings.title',
+};
+
+/**
+ * The page: the shell with a session, otherwise the sign-in notice (STU-003). While the tab is open it sends the
+ * heartbeat; when the server no longer knows the session (review S-1), the heartbeat stops and the page says so.
+ */
+export function App({
+  fetcher = fetch,
+  session = 'ok',
+  workspace = EMPTY_WORKSPACE,
+  heartbeat = true,
+}: {
+  fetcher?: typeof fetch;
+  session?: SessionState;
+  workspace?: Workspace;
+  heartbeat?: boolean;
+}) {
+  const { t } = useTranslation();
+  const path = usePath();
+  const [server, refreshServer] = useServer(fetcher);
+  const [ended, setEnded] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const wasOffline = useRef(false);
+
+  useEffect(() => {
+    if (session !== 'ok' || !heartbeat) return undefined;
+    return startHeartbeat(fetcher, (result) => {
+      if (result === 'ended') setEnded(true);
+      // Back after an outage (for example a sleeping laptop): read the server version again.
+      if (wasOffline.current && result === 'ok') refreshServer();
+      wasOffline.current = result === 'offline';
+      setOffline(result === 'offline');
+    });
+    // refreshServer only bumps a counter; it does not need to restart the heartbeat.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher, session, heartbeat]);
+
+  const state: AppSession = ended ? 'ended' : session;
+  if (state !== 'ok') {
+    return <SessionNotice state={state} />;
+  }
+  const pageKey = PAGE_TITLES[path];
+  const notFound = !['/', ...Object.keys(PAGE_TITLES)].includes(path);
+  const pageTitle = notFound ? t('notFound.title') : pageKey ? t(pageKey) : null;
   return (
-    <main className="placeholder">
-      <h1>Tabrion Studio</h1>
-      <p>
-        Local developer tool for SQLite and PostgreSQL databases. This is the pre-alpha skeleton;
-        the workspace arrives with the next work packages.
-      </p>
-      <p role="status" data-testid="backend-status">
-        {state.kind === 'loading' && 'Connecting to the local server…'}
-        {state.kind === 'ok' && `Local server ${state.health.version}: ${state.health.status}`}
-        {state.kind === 'offline' && 'The local server does not answer.'}
-      </p>
-      {session !== 'ok' && session !== 'offline' && (
-        <p role="alert" data-testid="session-status">
-          {SESSION_TEXT[session]}
-        </p>
-      )}
-    </main>
+    <WorkspaceContext.Provider value={workspace}>
+      <AppShell path={path} pageTitle={pageTitle} server={offline ? { kind: 'offline' } : server}>
+        <View path={path} />
+      </AppShell>
+    </WorkspaceContext.Provider>
   );
 }
