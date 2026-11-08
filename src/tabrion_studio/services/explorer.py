@@ -163,6 +163,31 @@ class Explorer:
                 return self.registry.get(connection_id), str(item["kind"])
         raise ExplorerError("studio.object_not_found")
 
+    def columns(
+        self, connection_id: object, schema: str, name: str
+    ) -> tuple[OpenConnection, str, list[dict[str, Any]], list[str]]:
+        """The connection, kind, columns (``name``, ``type``, ``nullable``) and primary key of a catalog object
+        (STU-013's data viewer; the table detail without constraints, indexes and incoming keys)."""
+        connection, kind = self._known(connection_id, schema, name)
+        if kind == "sequence":
+            return connection, kind, [], []
+        key = None if connection.engine == "sqlite" else schema
+
+        def read(found: sqlalchemy.Inspector) -> tuple[list[dict[str, Any]], list[str]]:
+            columns = [
+                {
+                    "name": str(column["name"]),
+                    "type": _type_name(column["type"]),
+                    "nullable": bool(column.get("nullable", True)),
+                }
+                for column in found.get_columns(name, schema=key)
+            ]
+            primary = found.get_pk_constraint(name, schema=key)
+            return columns, [str(n) for n in primary.get("constrained_columns") or []]
+
+        found_columns, primary = connection.inspect(read)
+        return connection, kind, found_columns, primary
+
     # Table detail
 
     def table(self, connection_id: object, schema: str, name: str) -> dict[str, Any]:

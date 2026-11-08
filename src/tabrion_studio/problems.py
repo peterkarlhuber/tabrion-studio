@@ -422,6 +422,41 @@ CATALOG: dict[str, Entry] = {
     "studio.query_too_large": Entry(
         413, ProblemKind.REQUEST, "Query too large", "The statement or its parameters are too large."
     ),
+    # Data viewer (STU-013).
+    "studio.viewer_column_unknown": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Column not found",
+        "The table has no column with this name.",
+        "Refresh the table; it may have changed.",
+    ),
+    "studio.viewer_filter_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Filter not valid",
+        "A filter is a list of at most 20 entries with a column, an operator and a text, number, true, false or null.",
+    ),
+    "studio.viewer_page_unknown": Entry(
+        404,
+        ProblemKind.NOT_FOUND,
+        "Page not found",
+        "Studio keeps only the most recent pages of the viewer, or there is no page after this one.",
+        "Load the table again.",
+    ),
+    "studio.viewer_cell_unavailable": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Cell not available",
+        "Rows of a view without a primary key cannot be found again, so the full value cannot be loaded.",
+        "Open the value with a query in the SQL editor.",
+    ),
+    "studio.viewer_row_gone": Entry(
+        409,
+        ProblemKind.DATABASE,
+        "Row changed",
+        "The row is no longer in the table, or its key changed.",
+        "Load the table again.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,
@@ -508,6 +543,12 @@ def db_kind_problem(kind: Kind) -> Problem:
 
 def db_problem_response(error: BaseException | Classification, *, log_id: str | None = None) -> Response:
     doc = db_problem(error, log_id=log_id)
+    return Response(doc.body(), status_code=doc.status, media_type=PROBLEM_MEDIA_TYPE)
+
+
+def db_kind_response(kind: Kind) -> Response:
+    """The answer for :func:`db_kind_problem`."""
+    doc = db_kind_problem(kind)
     return Response(doc.body(), status_code=doc.status, media_type=PROBLEM_MEDIA_TYPE)
 
 

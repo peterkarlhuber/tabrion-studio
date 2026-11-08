@@ -16,6 +16,7 @@ from tabrion_studio.security.sessions import CSRF_HEADER
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.viewer import Viewer
 
 TOKEN = "control-token-for-tests"
 PORT = 1234
@@ -61,6 +62,7 @@ def make_studio(
     connections: ConnectionRegistry | None = None,
     queries: QueryEngine | None = None,
     explorer: Explorer | None = None,
+    viewer: Viewer | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -75,6 +77,7 @@ def make_studio(
         connections=connections,
         queries=queries,
         explorer=explorer,
+        viewer=viewer,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

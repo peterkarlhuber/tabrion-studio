@@ -347,7 +347,8 @@ merge after OA-004.
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`). Open: the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
-| TABRION STU-012..STU-015 | SQL editor, data viewer, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
+| TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
@@ -595,8 +596,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
-  its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell (10 MB, 03
-  §5.3) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost warning for prod profiles come with STU-012/013.
+  its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell of a query
+  result (10 MB, 03 §5.3; the data viewer has it since STU-013) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost
+  warning for prod profiles come with STU-012.
+- **STU-013 data viewer:** it uses the same `tabrion_compat.stream` and `Cancel` (one statement per page, with the
+  profile's timeout), so the swap covers it; keep `test_viewer.py` (the `LIMIT` spy) unchanged as its acceptance.
+  The viewer's statements are SQLAlchemy Core compiled for the psycopg and pysqlite (named) dialects; check that
+  0.2's `stream` takes such text and its parameters as they are.
 - **Connections and running queries:** closing a connection (`DELETE /api/connections`, a stale profile) does not
   cancel its running queries; they end at their timeout or with the connection's error. A connection's pool has 2
   connections, shared by its queries (at most 2), the explorer and the health check; a third user waits up to the

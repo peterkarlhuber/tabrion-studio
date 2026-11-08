@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
+  `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
+  token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary
+  key, by `rowid` or `ctid` without one, and by `OFFSET` for views (`hint: unstable_order`). Column names must be
+  reflected columns, filter values are bound parameters, and key values stay in the backend. Past the profile's
+  timeout the answer is `db.timeout`.
 - STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
   until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
