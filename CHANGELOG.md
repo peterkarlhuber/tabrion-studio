@@ -100,8 +100,16 @@ All notable changes to this project are documented here. The format follows
   the file again just before it replaces it; the e2e server uses the null keyring; an `env:` password reads "set in
   the environment".
 
+- Network log check (QA-9, SQ-08): `e2e/network.spec.ts` visits every view, dialog and notice of the e2e harness, and
+  `e2e/backend.spec.ts` the real server, and fails if the page requests any other host (no CDN font, telemetry,
+  external image or script). It listens on the browser context, so popups, new pages and workers count too.
+
 ### Security
 
+- D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
+  secret's source, `host:port` and the TLS mode, marked for a host outside loopback, TLS weaker than `verify-full`, a
+  variable that looks like another service's credential and a password file outside the project. Projects trusted
+  before this change show as changed once and must be confirmed again.
 - Conditions of the reviews of PR #7 (`stu-004-review.md`) and PR #8 (`stu-006-review.md`):
   - L-1 (C-1): exception text that reaches a log record as its *message* is removed too. Records of the `asyncio`
     logger keep only a known fixed first line (no `repr` of a task, future or callback with its exception or

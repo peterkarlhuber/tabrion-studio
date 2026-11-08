@@ -17,7 +17,7 @@
 | Item | Priority | Status |
 |---|---|---|
 | TS-001 add the tabrion dependency with STU-009 | P1 | Blocked (tabrion v0.1.0) |
-| OA-001 make `ci-ok` a required check; check the ci-ok run link before every merge | P0 | Open (owner) |
+| OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
 | OA-004 independent review of STU-003 (access protection) | P0 | Accepted (`stu-003-review.md`, PR #4 merged) |
@@ -36,10 +36,10 @@
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
 | TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented) |
 | TD-006 who may set the label `workflow-change-reviewed` (review S-3) | P3 | Open |
-| TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; QA-9) |
+| TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; STU-050) |
 | TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
-| TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5; STU-007 L-1, I-4, I-5; R-1 done) | P2 | Open |
+| TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 
@@ -76,13 +76,14 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-001 · Make `ci-ok` a required check (TABRION STU-018, GOV-3)
 
-- **Priority:** P0 Critical · **Status:** Open · **Refs:** CI-FAST, 05 §1 (branch protection)
+- **Priority:** P4 Optional (governance change, tabrion PR #20) · **Status:** Open (owner, optional) · **Refs:**
+  CI-FAST, 05 §1 (branch protection)
 - **What:** `ci-ok.yml` runs from the default branch only (`workflow_run`), so it cannot judge the pull request
   that adds it. Once it is on master it posts the commit status `ci-ok` on every pull request head SHA.
-- **Next step (owner):** after the merge, protect `master` (no force push, no deletion, no required reviews per
+- **Next step (owner, optional):** protect `master` (no force push, no deletion, no required reviews per
   the agent flow) and add the status check `ci-ok` as required. Optionally list the CI job names as required checks
   for the first pull request.
-- **Before every merge (review R-1, TABRION STU-003 PR):** the latest `ci-ok` status on the head SHA must link
+- **Before every merge (review R-1, TABRION STU-003 PR; this rule stays binding):** the latest `ci-ok` status on the head SHA must link
   (`target_url`) to a run of the ci-ok workflow for that SHA, and the run ID at the end of its description
   (`[ci-ok run <id>]`) must be that run. A workflow in any other branch could forge the status, so this applies to
   every pull request, not only to workflow changes (`docs/development/ci.md`).
@@ -317,7 +318,7 @@ merge after OA-004.
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
 | TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | Done (PR #7, OA-007 accepted; C-1 done in PR #9): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
-| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
+| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Acceptance met in the QA-9 PR: smoke and axe green, and the network log shows 0 foreign hosts (SQ-08; `e2e/network.spec.ts` over every harness view, dialog and notice, and the real server in `backend.spec.ts`). QA-9 is closed with this PR (`stu-pr12-14-review.md`: accepted with condition C-1, the merge of master with CI green). The listener sits on the browser context (review L-1). The platforms e2e smoke (05 §3.5, `platforms.yml`), Firefox and WebKit belong to STU-050 (doc 07, doc 09); both change `.github/` and need a workflow-change review (TD-007). Review I-1 (visit the wizard steps, the settings forms after a change and the delete dialog too) is open |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
 | TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
@@ -429,7 +430,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `SameSite=Strict` still block cross-site use, and Vite checks `Host`, but the development setup is not for shared
   machines (now said in the docs and in `vite.config.ts`). The launch flow (`file://` meta refresh to http, the CSP)
   was checked in Chrome only.
-- **Next step:** QA-9 adds Firefox and WebKit runs of the launch flow against the built wheel.
+- **Next step:** Firefox and WebKit runs of the launch flow against the built wheel, and the `platforms.yml` smoke on
+  macOS and Windows (05 §3.5), both STU-050 (review I-2 of `stu-pr12-14-review.md`). Both add CI jobs (a
+  workflow-change review, OA-003) and browser installs; the network check of QA-9 (0 foreign hosts) is done in
+  Chromium.
 
 ### TD-008 · Add a windows-latest CI job for the T-2 checks (review C-2 of `stu-006-review.md`)
 
@@ -469,27 +473,26 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-010 · STU-006 review: remaining Low and Info items
 
-- **Priority:** P2 Medium (T-5 and STU-007 L-1 before STU-009) · **Status:** Open · **Refs:** `stu-006-review.md`
+- **Priority:** P2 Medium · **Status:** Open (T-4 rest, T-5 and STU-007 L-1 done in the D-01 flows PR) · **Refs:** `stu-006-review.md`
   T-1, T-4, T-5, I-1, I-3..I-5; `stu-007-review.md` L-1, I-4, I-5
 - **T-1 (rest):** the trust POST binds to the bytes only. If only the file system changes between the dialog and the
   click, the new review is stored without having been shown (the next GET compares against it). Bind the POST to a
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
   so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
-- **T-4 (rest):** D-01 does not show the TLS mode; mark a connection whose `sslmode` is weaker than `verify-full` on
-  a non-loopback host (T-10: a diagnostic finding for `disable` and `prefer`).
-- **T-5:** D-01 shows hosts, files and variables as separate lists; show one line per connection with host and
-  port, the secret's source and the TLS mode, and mark "secret sent to a host outside loopback".
+- **T-4 (rest), done:** D-01 shows each connection's TLS mode and marks `weak_tls` (weaker than `verify-full` on a
+  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` stays with STU-010.
+- **T-5, done:** D-01 shows one line per PostgreSQL connection with the secret's source, `host:port` and the TLS mode,
+  and marks `remote_host`.
 - **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
 - **I-3:** open `.tabrion` with `O_DIRECTORY|O_NOFOLLOW` and `studio.toml` with `dir_fd` (one path walk); test the
   dev/ino compare (mutant T2); on Windows compare `GetFinalPathNameByHandle` with the expected path.
 - **I-4:** check the configuration folder like the state folder (owner, 0700, no link): `--config-dir /tmp/x` would
   accept another user's `settings.toml`.
 - **I-5:** name STU-T-021 (T-10) in the `verify-full` test or note that it belongs to STU-010.
-- **STU-007 L-1 (`stu-007-review.md`, with T-5, before STU-009):** a trusted project can name any variable
-  (`env:AWS_SECRET_ACCESS_KEY`) and any file in the user's configuration folder and send it to a host of its choice.
-  Show one line per connection, "password from `env:X` / `file:Y` is sent to `host:port`"; consider limiting project
-  `file:` references to a subfolder such as `<config>/project-secrets/` and warning on well-known variables
-  (`AWS_*`, `GITHUB_TOKEN`, `*_SECRET*`).
+- **STU-007 L-1, done:** the D-01 line reads "password from `env:X` / `file:Y` is sent to `host:port`" and marks
+  well-known credential variables (`sensitive_variable`) and `file:` passwords outside the project
+  (`secret_outside`). Not done: limiting project `file:` references to a subfolder such as
+  `<config>/project-secrets/`; the marks are warnings, the user decides.
 - **STU-007 I-4:** `select_backend` refuses a denylist of backends; a third-party plain-text backend configured
   through `PYTHON_KEYRING_BACKEND` or `keyringrc.cfg` would be accepted (user configuration only). Consider an
   allowlist: `keyring.backends.macOS`, `Windows`, `SecretService`, `libsecret`, `kwallet`.
@@ -501,6 +504,19 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   checks every component against the network and automount forms before `lstat`
   (`test_a_relative_link_that_climbs_to_net_is_refused_before_lstat`). R-3 (refuse a leading `\??\` as text) is done
   as well.
+- **PR #14 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
+  - **L-1:** the D-01 password line starts with the connection name, which may be up to 200 characters and contain
+    `:` and `→`. A hostile name can push the real `secret → host:port` behind the 64-character cap ("Show full
+    value"). The marks, the TLS mode and the hosts and variables lists stay visible. Show the name, the secret and
+    the destination as three separately capped parts, or put the destination first.
+  - **I-1:** `sensitive_variable` is a heuristic. It does not mark `DATABASE_URL`, `STRIPE_KEY`, `KUBECONFIG`,
+    `SENTRY_DSN` or `*_KEY` in general; consider `_KEY`, `_PASSWORD` and `DATABASE_URL`. Every `env:` variable is
+    listed in D-01 anyway.
+  - **I-2:** after the upgrade, a project trusted before #14 shows every connection as "changed" without a reason.
+    Show a one-time note ("Studio now shows more about each connection; nothing in the file changed"), so that
+    users do not learn to click through a changed D-01.
+  - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
+    `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
 
 ### TD-011 · STU-008 parts that wait for STU-009 or a later package
 
@@ -520,6 +536,15 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
 - **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
   accepts them, but the page does not send them yet.
+- **PR #13 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
+  - **L-1:** in the assistant, `secretKept` hides `secretProblem`. When a retarget could neither remove the old
+    keyring entry nor store the new password, the page only says the old one was kept. Show both.
+  - **I-1:** no test pins the `_encodable` check of `parse_secret_ref` for `file:` (mutant M6).
+  - **I-2:** test gaps behind mutants M8 to M11: assert the keyring warning record, an unreadable file during the
+    recheck, the settings recheck, and `secret_removed: true` for an update that keeps the target.
+  - **I-3:** keyring entries saved before `sslmode` joined the fingerprint are no longer found (fails safe: the
+    password is asked again, and the old entry stays). Mention it in the release notes if an STU-008 build was ever
+    handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
 

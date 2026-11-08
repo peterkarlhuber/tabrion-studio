@@ -37,6 +37,7 @@ const SAME_IN_BOTH = new Set([
   'connections.wizard.port',
   'connections.wizard.name',
   'dialogs.trustProject.heading',
+  'dialogs.trustProject.flowTls',
   'app.name',
   'app.title',
   'app.connectionTitle',

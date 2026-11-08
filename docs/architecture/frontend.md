@@ -129,11 +129,13 @@ for matching and for display, so the palette, the help and the header buttons al
 | Keyboard (STU-052): shortcut matching and display per platform, the palette's commands and filter, the palette (combobox, arrows, Enter, Escape, focus return, Tab, no match), the help, F6 order, no page shortcut while a dialog is open | `src/keyboard/*.test.ts(x)` | `npm test` (CI) |
 | Keyboard only in Chromium: palette to Settings, F6 through every area with a visible ring, help and back; the palette is modal; axe for palette and help in light/dark, en/de | `e2e/keyboard.spec.ts` | Playwright, Chromium (CI `e2e`) |
 | The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 
 The Playwright tests run against the Vite development server and the e2e harness `frontend/harness.html`
 (`src/harness/main.tsx`), which renders the real app with a fake local server and a workspace, so states that the
 backend cannot produce yet (a PROD connection, the dialogs) are covered. `vite build` builds only `index.html`, so the
 harness never reaches the wheel (the packaging test checks this). The CI job `e2e` (review U-3) runs every suite
 except the screenshots in Chromium on each pull request, `e2e/backend.spec.ts` against the built wheel, and fails if
-one of them is skipped. TABRION QA-9 extends it with the platforms smoke, Firefox and WebKit. Local runs:
+one of them is skipped. The platforms smoke, Firefox and WebKit belong to STU-050; they need CI changes and are
+open (`docs/TODO.md`, TD-007). Local runs:
 `docs/development/building.md`.
