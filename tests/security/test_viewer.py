@@ -320,6 +320,16 @@ def test_the_viewer_routes(lite: tuple[Viewer, str, Path], tmp_path: Path) -> No
         answer = client.get(f"{base}/{path}", params=params, headers=headers)
         assert (answer.status_code, answer.json()["code"]) == (status, code)
     assert client.get(f"{base}/item/rows", params={"limit": 0}, headers=headers).status_code == 422
+    by_query = client.get(
+        f"/api/connections/{connection_id}/rows", params={"schema": "main", "name": "odd"}, headers=headers
+    ).json()
+    assert by_query["rows"] == odd["rows"]
+    full = client.get(
+        f"/api/connections/{connection_id}/cell",
+        params={"schema": "main", "name": "odd", "page": by_query["page"], "row": 2, "column": HOSTILE},
+        headers=headers,
+    )
+    assert full.json()["value"] == BIG
     assert client.get("/api/connections/c_nope/tables/main/item/rows", headers=headers).json()["code"] == (
         "studio.connection_not_found"
     )
@@ -342,6 +352,9 @@ def pg() -> Iterator[tuple[Viewer, str]]:
         "GROUP BY name",
         'CREATE VIEW "Studio Viewer".slow AS SELECT pg_sleep(10)::text AS s, 1 AS x',
         'CREATE TABLE "Studio Viewer".pair (a int, b int, v text, PRIMARY KEY (a, b))',
+        'CREATE TABLE "Studio Viewer".stamped (id uuid PRIMARY KEY, at timestamptz, amount numeric)',
+        'INSERT INTO "Studio Viewer".stamped SELECT md5(g::text)::uuid, '
+        "timestamptz '2026-01-01' + g * interval '1 hour', g / 3.0 FROM generate_series(1, 50) g",
     ]
     with admin.begin() as connection:
         for statement in statements:
@@ -408,6 +421,12 @@ def test_pg_keyset_pages_walk_every_row_once(
 def test_pg_composite_keys_ctid_offset_and_cells(pg: tuple[Viewer, str]) -> None:
     viewer, connection_id = pg
     schema = "Studio Viewer"
+    # Keys of other types (uuid, timestamptz, numeric) go back to the driver as it returned them.
+    rows, modes = walk(viewer, connection_id, schema, "stamped", limit=7, sort="at", desc=True)
+    assert modes == {"primary_key"} and len(rows) == 50 and len({row[0] for row in rows}) == 50
+    assert [row[1] for row in rows] == sorted((row[1] for row in rows), reverse=True)
+    rows, _ = walk(viewer, connection_id, schema, "stamped", limit=7, sort="amount")
+    assert len({row[0] for row in rows}) == 50
     rows, modes = walk(viewer, connection_id, schema, "pair", limit=4, sort="v", desc=True)
     assert modes == {"primary_key"} and [row[2] for row in rows] == sorted(
         (f"v{g}" for g in range(1, 31)), reverse=True

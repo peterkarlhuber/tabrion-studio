@@ -11,6 +11,7 @@ in its own `Database.read()` through `OpenConnection.stream` (see [Connections a
 |---|---|
 | `GET /api/connections/{id}/tables/{schema}/{name}/rows` | `{columns, rows, truncated_cells, page, next, paging, hint, sort, desc, limit}`. Query parameters: `limit` (1 to 1000, default 100), `sort` (a column), `desc=true`, `filter` (JSON, below), `after` (the `next` token of the page before) |
 | `GET /api/connections/{id}/tables/{schema}/{name}/cell?page=&row=&column=` | `{value, size, truncated}`: one value of a page in full, up to 10 MB |
+| `GET /api/connections/{id}/rows?schema=&name=...`, `GET /api/connections/{id}/cell?schema=&name=...` | the same, for a name with `/` |
 
 A filter is a JSON list of at most 20 entries `{"column", "op", "value"}`. `op` is `eq`, `ne`, `lt`, `le`, `gt`,
 `ge`, `contains`, `starts_with`, `is_null` or `not_null`; the value is text, a number, `true`, `false` or `null`.
@@ -51,6 +52,10 @@ Cells are encoded as in the query engine: 64 KB of text per cell, longer ones li
 `[row, column]`. The cell detail finds the row again by its key from the page and loads the value in full up to
 10 MB (`studio.viewer_row_gone` if the row is gone; `studio.viewer_cell_unavailable` for `offset` pages, whose rows
 cannot be found again).
+
+The statements are compiled with `:name` placeholders and go through the same driver-text derivation as user SQL
+(`sqltext.driver_text`), so `OpenConnection.stream` checks them like any other statement; key values go back to the
+driver as it returned them (dates, UUIDs, decimals).
 
 Each statement runs under the profile's statement timeout. Past it, the statement is canceled (the query engine's
 cancel, repeated every 0.1 s) and the answer is `db.timeout`, the same as for a query. Nothing is logged but events

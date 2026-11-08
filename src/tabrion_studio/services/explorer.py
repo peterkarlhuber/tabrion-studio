@@ -235,7 +235,7 @@ class Explorer:
             primary = found.get_pk_constraint(name, schema=key)
             return columns, [str(n) for n in primary.get("constrained_columns") or []]
 
-        found_columns, primary = connection.inspect(read)
+        found_columns, primary = self._reflect(connection, read)
         return connection, kind, found_columns, primary
 
     # Table detail

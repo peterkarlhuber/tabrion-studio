@@ -46,7 +46,7 @@ from sqlalchemy.sql import ColumnElement
 from tabrion_studio.services.connections import OpenConnection
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.queries import CANCEL_ATTEMPTS, CANCEL_INTERVAL_S, CELL_CHARS, json_value
-from tabrion_studio.services.sqltext import BoundStatement
+from tabrion_studio.services.sqltext import BoundStatement, Dialect, driver_text
 from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
 __all__ = ["FULL_CELL_CHARS", "MAX_PAGE", "PAGE", "Viewer", "ViewerError", "ViewerTimeout"]
@@ -59,9 +59,10 @@ MAX_FILTERS = 20
 OPERATORS = frozenset({"eq", "ne", "lt", "le", "gt", "ge", "contains", "starts_with", "is_null", "not_null"})
 _KEY = "__studio_key_"
 _T = TypeVar("_T")
+#: Both compile to ``:name`` placeholders, the form of a checked statement; ``sqltext.driver_text`` gives the driver's
+#: text from it (psycopg ``%(name)s``), exactly as for user SQL, so ``OpenConnection.stream`` accepts it (L-1).
 _DIALECTS: dict[str, sqlalchemy.Dialect] = {
-    "postgresql": postgresql.psycopg.dialect(),  # type: ignore[no-untyped-call]
-    # sqlite3 takes named parameters in a mapping; the dialect's default is qmark.
+    "postgresql": postgresql.psycopg.dialect(paramstyle="named"),  # type: ignore[no-untyped-call]
     "sqlite": sqlite.pysqlite.dialect(paramstyle="named"),
 }
 
@@ -346,7 +347,12 @@ class Viewer:
         text = str(compiled)
         if " LIMIT " not in f" {text.upper()} ".replace("\n", " "):  # pragma: no cover - every statement above limits
             raise ViewerError("studio.internal_error")
-        bound = BoundStatement(text, text, dict(compiled.params))
+        dialect: Dialect = "sqlite" if connection.engine == "sqlite" else "postgresql"
+        driver_sql, names = driver_text(text, dialect)
+        params = dict(compiled.params)
+        # Key values from a page may be any type the driver returned (dates, UUIDs, decimals): they go back to the
+        # driver as they came, so they skip sqltext's checks for user values (text, numbers, booleans, null).
+        bound = BoundStatement(text, driver_sql, {name: params[name] for name in names})
         hook, finished = Cancel(), threading.Event()
         timer = threading.Timer(connection.timeout_s, _expire, args=(hook, finished))
         timer.daemon = True

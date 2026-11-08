@@ -7,6 +7,8 @@
   Answer: ``{columns, rows, truncated_cells, page, next, paging, hint, sort, desc, limit}``.
 * ``GET /api/connections/{id}/tables/{schema}/{name}/cell?page=&row=&column=``: one value of a page in full (up to
   10 MB): ``{value, size, truncated}``.
+* ``GET /api/connections/{id}/rows?schema=&name=...`` and ``.../cell?schema=&name=...``: the same, for names with
+  ``/``.
 
 Errors: ``studio.viewer_*``, ``db.timeout`` (past the connection's statement timeout), ``studio.object_not_found``
 and the problems of the connection routes. The work runs in a worker thread
@@ -47,6 +49,8 @@ def add_viewer_routes(app: FastAPI, viewer: Viewer) -> None:
                 raise
             return refused
 
+    # The query-parameter forms (?schema=&name=) are for names with "/" (I-6 of stu-010-review.md).
+    @app.get("/api/connections/{connection_id}/rows")
     @app.get("/api/connections/{connection_id}/tables/{schema}/{name}/rows")
     async def get_rows(
         connection_id: str,
@@ -64,6 +68,7 @@ def add_viewer_routes(app: FastAPI, viewer: Viewer) -> None:
             viewer.rows, connection_id, schema, name, limit=limit, sort=sort, desc=desc, filters=filter, after=after
         )
 
+    @app.get("/api/connections/{connection_id}/cell")
     @app.get("/api/connections/{connection_id}/tables/{schema}/{name}/cell")
     async def get_cell(
         connection_id: str,
