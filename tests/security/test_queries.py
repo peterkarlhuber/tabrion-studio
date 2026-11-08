@@ -814,6 +814,13 @@ def test_m2_startup_options_carry_studios_session_settings() -> None:
     assert "-c TimeZone=UTC" in options
 
 
+def test_r_i1_settings_the_startup_options_cannot_match_are_refused() -> None:
+    settings = studio_profile(sqlite_source_profile(), Settings()).postgres
+    for change in ({"search_path": ("App", "public")}, {"transaction_timeout_ms": 60_000}):
+        with pytest.raises(RegistryError):
+            startup_options(replace(settings, **change))
+
+
 def sqlite_source_profile() -> Any:
     return Profile("pg", "postgresql", "dev", host="localhost", database="x")
 
@@ -846,6 +853,40 @@ def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Sou
     assert shown["search_path"] == {'"$user", public'}
     assert shown["default_transaction_read_only"] == {"on"}
     assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
+
+
+def test_r_h1_the_sqlite_nested_comment_probe_is_refused(lite: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = lite
+    with pytest.raises(StatementRefused):
+        engine.start(connection_id, "/* /* */ DELETE FROM part -- */ select\n")
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r_h1_the_carriage_return_probes_are_refused(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    for statement in (
+        "DECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(6)",
+        "DO $$BEGIN PERFORM pg_advisory_lock(4242); END$$",
+        "COPY (SELECT 'rr18d') TO '/tmp/studio_r_h1_copy.txt'",
+        "COMMIT",
+    ):
+        with pytest.raises(StatementRefused):
+            engine.start(connection_id, f"-- x\r{statement} /*\nshow */")
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r_h1_check_in_closes_held_cursors_and_advisory_locks(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    # Past the text check: what a function of the database could leave on the session.
+    _below_the_check(connection, "DECLARE studio_r_h1 CURSOR WITH HOLD FOR SELECT 1")
+    _below_the_check(connection, "SELECT pg_advisory_lock(424242)")
+    for _ in range(4):  # whichever of the pool's connections it lands on
+        assert connection.fetch("SELECT count(*) FROM pg_cursors WHERE name = 'studio_r_h1'") == [(0,)]
+    held = connection.fetch("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = 424242 AND granted")
+    assert held == [(0,)]
 
 
 @pytest.mark.postgres

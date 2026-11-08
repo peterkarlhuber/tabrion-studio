@@ -30,6 +30,14 @@ All notable changes to this project are documented here. The format follows
     - L-2, H-1: a connection that got a cancel is invalidated on both engines (closed if that fails), with tests of
       both cancel guards.
     - L-3: one cancel worker per query. I-3: the byte cap is the new `max_result_mb` setting (20 MB, up to 200 MB).
+  - Delta re-review of `stu-011-review.md`:
+    - R-H1: the first word of a statement comes from the lexer, read the way PostgreSQL (with and without backslash
+      escapes) and SQLite lex it; the readings must agree. `-- x\r<statement> /*\nshow */` and a SQLite nested
+      comment can no longer hide a statement. The check-in reset also closes held cursors and session-level advisory
+      locks.
+    - R-M1: the fetch budget follows the largest row so far, grows at most twice per fetch and counts arrays and json
+      in full.
+    - R-I1: a `search_path` or `transaction_timeout` session setting is refused at startup (Studio sets neither).
 - STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no
