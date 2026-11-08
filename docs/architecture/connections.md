@@ -43,9 +43,14 @@ Opening and closing run in a worker thread. Shutdown disposes every engine.
      confirmed containment again on the file system (review T-1). Studio opens exactly the real path it returns.
    - A relative path of the user's own profile is relative to the configuration folder.
    - A missing file is `studio.database_missing`; Studio never creates one.
-3. **PostgreSQL:** the password comes from `Configuration.resolve_secret(id)` when the connection opens.
+3. **PostgreSQL:** the password comes from `Configuration.resolve_entry_secret(entry)` when the connection opens:
+   the secret of the same entry the URL is built from, so both come from one read of the profile file (L-1 of
+   `stu-009-review.md`).
    - A profile without a `password` reference and without a password entered for the session connects without one
-     (trust or peer authentication, or `.pgpass`).
+     (trust, peer or certificate authentication). libpq gets no password of its own: `passfile` points to a path
+     that cannot exist, and the password is the empty string, so `PGPASSWORD`, `PGPASSFILE`, `~/.pgpass` and a
+     service file's password are never sent to the host a (project) profile names (M-1). Use `env:PGPASSWORD` to
+     send that variable on purpose.
 4. **The URL** is built by `connection_url` from the fields in `TARGET_FIELDS` and the password, and from nothing
    else. A stored password is bound to the fingerprint of exactly these fields (C-1 of `stu-007-review.md`; L-1 of
    `stu-008-review.md`, binding for STU-009).
@@ -59,7 +64,8 @@ Opening and closing run in a worker thread. Shutdown disposes every engine.
    - `require` and `verify-ca` map to `REQUIRE`.
    - `prefer`, `allow` and `disable` map to `INSECURE`: the user chose them explicitly, and D-01 marks them as
      `weak_tls`.
-   - A profile without `sslmode` (a loopback one) maps to `AUTO`.
+   - The parser always sets `sslmode` for PostgreSQL (`prefer` for loopback, `verify-full` otherwise). Only a
+     profile built in code has none; it maps to `AUTO`, which lets tabrion require TLS for a remote host.
    - tabrion refuses a weak mode for a remote host in `REQUIRE` and `VERIFY_FULL` (`studio.connection_tls`).
 
 Every use of a handle checks it again. If the profile is gone, no longer trusted, points to another target or a
@@ -89,25 +95,33 @@ different environment, or if `database_file` now resolves elsewhere, the connect
   default_transaction_read_only | transaction_read_only | ROLE | SESSION AUTHORIZATION`.
 - So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT` and `CLUSTER`.
 
-Why the single-statement rule matters: PostgreSQL runs a text with several statements in one round trip. Without the
-check, `COMMIT; BEGIN READ WRITE; INSERT ...` inside Studio's read-only transaction would end it and write. The STU-009
-probe reproduced this against PostgreSQL 16, and `test_the_known_gap_of_multiple_statements_is_closed_by_the_text_check`
-now refuses it. **Binding for STU-011:** user SQL goes through `check_statement`, with one `read()` per statement.
+**One statement, enforced by the server (H-1 of `stu-009-review.md`):** every PostgreSQL connection uses
+`prepare_threshold=0` (`driver_options`). So every statement is a prepared statement on the extended query protocol,
+and the server refuses a text with several commands (`42601`). The text split cannot be the boundary. With
+`standard_conforming_strings = off`, the review's text `SELECT '\''; ROLLBACK; BEGIN READ WRITE; INSERT ...` is one
+statement to `tabrion.sql.split_statements` and six to the server. Over the simple query protocol, the review's probe
+wrote three rows through Studio's read-only connection. Now the server refuses that text. `check_statement` also
+refuses `SET standard_conforming_strings`, `SET backslash_quote` and `set_config(` anywhere in the text (which also
+reaches `role`). SQLite's `execute` runs one statement only.
+
+**Binding for STU-011:** user SQL goes through `check_statement` and `OpenConnection.fetch`, with one `read()` per
+statement, and always through `ConnectionRegistry.get`: `fetch` does not check the handle again by itself. Send user
+SQL so that `:name` is not read as a bind parameter (`exec_driver_sql`, or escaped colons; review I-2).
 
 **Known limits** (documented in 03 section 5.1 and ADR R-S3):
 - `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function).
   Only the role's privileges are a hard boundary, so production profiles should use a role without write
   privileges. The diagnostics (STU-014) check this (`read_only_role`).
-- libpq also reads the user's own environment (`PGHOSTADDR`, `PGSERVICE`, `PGSSLROOTCERT`, ...) for what the URL
-  leaves out. That is the user's environment, not the project file's. A project file can change only the fingerprinted
-  fields.
+- libpq still reads other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`, `PGSSLROOTCERT`, ...)
+  for what the URL leaves out; its password fallbacks are off (M-1). That is the user's environment, not the project
+  file's. A project file can change only the fingerprinted fields.
 
 ## Tests
 
 | Test | Covers |
 |---|---|
-| `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile closes its connection; a missing file is never created; reuse and limit |
-| `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; the multi-statement gap is refused; a wrong password is `db.connection` without server text; `url` has no password |
+| `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
+| `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; a wrong password is `db.connection` without server text; `url` has no password |
 | `tests/security/test_connections_api.py` | open, reuse, list, test and close through the API; a changed profile and a changed project file close the connection; a project file opens only after trust; refusals as fixed problems; session and CSRF required; shutdown disposes the engines |
 | `tests/unit/test_problems.py` | `DB_KINDS` is `tabrion.errors.Kind`; a `db.<kind>` problem takes only the kind and the SQLSTATE from the error |
 

@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows
   - URLs only through `tabrion.safe_url`; the driver gets only the fingerprinted fields.
   - `db.<kind>` problems from `tabrion.errors.classify`, and tabrion's `DbErrorRedactionFilter` in the log handlers.
   - Engines are disposed on shutdown.
+  - Review `stu-009-review.md`:
+    - H-1: every PostgreSQL statement is a prepared statement (`prepare_threshold=0`), so the server refuses several
+      commands, whatever a text split thinks (the `standard_conforming_strings = off` escape no longer writes).
+      `SET standard_conforming_strings`, `SET backslash_quote` and `set_config(` are refused.
+    - M-1: without a password, libpq gets none of its own (no `PGPASSWORD`, `.pgpass` or service-file password).
+    - L-1: the password is resolved from the same entry as the URL.
+    - Info items: a connection test shares the connection limit.
+  - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
+    constraints file, and `pyproject.toml` keeps the final range with no direct reference.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).

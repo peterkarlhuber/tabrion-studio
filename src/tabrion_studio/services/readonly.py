@@ -19,8 +19,13 @@ This module adds two guards:
   STU-009 tests shows it. With one statement per ``read()``, a write fails in the database. ``COPY``, ``LOAD``,
   ``NOTIFY``, ``LISTEN``, ``LOCK``, ``VACUUM``, ``CHECKPOINT`` and ``CLUSTER`` are refused too.
 
-The text checks are a user-experience layer (03 section 5.1): the database settings above are the boundary, and
-the query engine (STU-011) must send user SQL through :func:`check_statement` and one ``read()`` per statement.
+The text checks are a user-experience layer (03 section 5.1). The boundary is in the database and the protocol: every
+PostgreSQL statement is a prepared statement (``prepare_threshold=0``, extended query protocol), so the server refuses
+a text with several commands whatever the split thinks (H-1 of ``stu-009-review.md``: with
+``standard_conforming_strings = off`` the split saw one statement where the server ran six); SQLite's ``execute``
+refuses several statements itself. ``SET standard_conforming_strings``, ``SET backslash_quote`` and ``set_config(``
+anywhere in the text are refused too. The query engine (STU-011) must send user SQL through :func:`check_statement`,
+one ``read()`` per statement, and always through ``ConnectionRegistry.get`` (which checks the handle again).
 """
 
 from __future__ import annotations
@@ -98,8 +103,20 @@ _CONTROL = frozenset(
     {"begin", "start", "commit", "end", "rollback", "abort", "savepoint", "release", "prepare", "reset", "discard"}
 )
 _SESSION_SETTINGS = frozenset(
-    {"transaction_read_only", "default_transaction_read_only", "session_authorization", "authorization", "role"}
+    {
+        "transaction_read_only",
+        "default_transaction_read_only",
+        "session_authorization",
+        "authorization",
+        "role",
+        # These change how the server lexes string literals, so a text split and the server could disagree on
+        # where a statement ends (H-1 of stu-009-review.md).
+        "standard_conforming_strings",
+        "backslash_quote",
+    }
 )
+#: ``set_config()`` reaches every setting above from inside a SELECT, where the SET check cannot see it.
+_SET_CONFIG = re.compile(r"set_config\s*\(", re.IGNORECASE)
 #: Statements with an effect outside the transaction's data, or none a read-only view needs (``COPY ... TO`` writes a
 #: server file under ``pg_write_server_files``; ``LOAD`` loads a library; ``NOTIFY`` reaches other sessions).
 _OTHER_EFFECTS = frozenset({"copy", "load", "notify", "listen", "unlisten", "lock", "vacuum", "checkpoint", "cluster"})
@@ -143,6 +160,8 @@ def check_statement(sql: str) -> str:
     if first in _CONTROL:
         raise StatementRefused("studio.statement_transaction")
     if first in _OTHER_EFFECTS:
+        raise StatementRefused("studio.statement_refused")
+    if _SET_CONFIG.search(statements[0]):
         raise StatementRefused("studio.statement_refused")
     if first == "set":
         rest = [word for word in words[1:] if word not in ("session", "local")]

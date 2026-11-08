@@ -3,5 +3,7 @@
 # Database, Profile and Database.read() (layer B, TAB-018) arrived after it.
 # pip constraints take no extras; the extras come from pyproject.toml.
 # Install: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
-# Never on master: tabrion v0.1.0 replaces this file with the final range in pyproject.toml.
+# tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): a constraints file with a full commit SHA is
+# how Studio pins it, also on master. With tabrion v0.1.0 this line pins the v0.1.0 commit, and pyproject.toml
+# carries the final range >=0.1,<0.2 (tests/security/test_dependencies.py).
 tabrion @ git+https://github.com/peterkarlhuber/tabrion@546d254a27df9f6b539d57c307ad3022d0ee3a4a

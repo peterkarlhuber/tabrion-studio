@@ -21,12 +21,15 @@ from tabrion.errors import TabrionError
 
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Settings
 from tabrion_studio.config.secrets import SecretError
+from tabrion_studio.logs import scrub
 from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services.connections import (
     ConnectionRegistry,
+    HealthError,
     OpenConnection,
     RegistryError,
     connection_url,
+    driver_options,
     studio_profile,
 )
 from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer
@@ -51,18 +54,23 @@ class Source:
     passwords: dict[str, str] = field(default_factory=dict)
     files: dict[str, Path] = field(default_factory=dict)
     calls: list[tuple[str, str]] = field(default_factory=list)
+    resolved: list[Entry] = field(default_factory=list)
+    entries: list[Entry] = field(default_factory=list)
     settings: Settings = field(default_factory=Settings)
 
     def entry(self, profile_id: str) -> Entry:
         if profile_id not in self.profiles:
             raise SecretError("studio.profile_not_found")
-        return Entry(profile_id, profile_id.partition(":")[0], self.profiles[profile_id])
+        entry = Entry(profile_id, profile_id.partition(":")[0], self.profiles[profile_id])
+        self.entries.append(entry)
+        return entry
 
-    def resolve_secret(self, profile_id: str) -> str:
-        self.calls.append(("resolve_secret", profile_id))
-        if profile_id not in self.passwords:
+    def resolve_entry_secret(self, entry: Entry) -> str:
+        self.calls.append(("resolve_entry_secret", entry.id))
+        self.resolved.append(entry)
+        if entry.id not in self.passwords:
             raise SecretError("studio.secret_missing")
-        return self.passwords[profile_id]
+        return self.passwords[entry.id]
 
     def database_file(self, profile_id: str) -> Path:
         self.calls.append(("database_file", profile_id))
@@ -234,6 +242,10 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("NOTIFY channel", "studio.statement_refused"),
         ("LOCK TABLE t", "studio.statement_refused"),
         ("VACUUM", "studio.statement_refused"),
+        ("SET standard_conforming_strings = off", "studio.statement_transaction"),
+        ("set session backslash_quote to on", "studio.statement_transaction"),
+        ("SELECT set_config('standard_conforming_strings','off',false)", "studio.statement_refused"),
+        ("SELECT pg_catalog.SET_CONFIG ('role', 'postgres', false)", "studio.statement_refused"),
     ],
 )
 def test_statements_studio_refuses(sql: str, code: str) -> None:
@@ -345,6 +357,51 @@ def test_a_connection_whose_profile_changes_is_closed(
     del source.profiles["project:parts"]
     with pytest.raises(SecretError):
         registry.open("project:parts")
+
+
+def test_sqlite_refuses_several_statements_itself(
+    sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source], sqlite_file: Path
+) -> None:
+    """Past Studio's text check, sqlite3 runs one statement per execute (H-1 holds for SQLite in the driver)."""
+    connection, _, _ = sqlite_connection
+    before = _sha(sqlite_file)
+    with pytest.raises((TabrionError, sqlite3.ProgrammingError)), connection._read() as transaction:
+        transaction.fetch_all(sqlalchemy.text("SELECT 1; INSERT INTO part (name) VALUES ('x')"))
+    assert _sha(sqlite_file) == before
+
+
+def test_a_changed_environment_closes_the_connection(
+    sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source],
+) -> None:
+    """Review I-3 (mutant R8): a profile moved from prod to dev is not the one the handle was opened for."""
+    connection, registry, source = sqlite_connection
+    source.profiles["project:parts"] = replace(source.profiles["project:parts"], environment="dev")
+    with pytest.raises(RegistryError) as raised:
+        registry.get(connection.id)
+    assert raised.value.code == "studio.connection_stale"
+
+
+def test_driver_options_keep_libpq_from_finding_a_password() -> None:
+    """M-1: without a password, libpq gets the empty password and a passfile that cannot exist; every connection
+    uses prepared statements (H-1)."""
+    without = driver_options(None)
+    assert without["password"] == "" and without["prepare_threshold"] == 0
+    assert not Path(without["passfile"]).exists() and Path(without["passfile"]).parent.is_file()
+    assert "password" not in driver_options("pw")  # never overrides the URL's password
+
+
+def test_a_connection_test_shares_the_limit(sqlite_file: Path) -> None:
+    """Review I-4: tests count against max_open, so concurrent tests cannot open engines without bound."""
+    source = Source(profiles={"user:p": Profile("p", "sqlite", "dev", path="p.db")}, files={"user:p": sqlite_file})
+    registry = ConnectionRegistry(source, max_open=1)
+    try:
+        assert registry.test("user:p")["ok"] is True
+        registry.open("user:p")
+        with pytest.raises(RegistryError) as raised:
+            registry.test("user:p")
+        assert raised.value.code == "studio.connection_limit"
+    finally:
+        registry.close_all()
 
 
 def test_a_missing_sqlite_file_is_never_created(tmp_path: Path) -> None:
@@ -492,3 +549,94 @@ def test_a_wrong_password_is_a_db_problem_without_server_text(pg: tuple[OpenConn
     doc: dict[str, Any] = db_problem(getattr(raised.value, "classification", raised.value)).to_dict()
     assert doc["code"] == "db.connection"
     assert "wrong-password-canary" not in str(doc) and "password authentication" not in str(doc)
+
+
+#: The escape of H-1 in stu-009-review.md, verbatim: one statement to the splitter with
+#: ``standard_conforming_strings = off``, six to the server.
+ESCAPE = "SELECT '\\''; ROLLBACK; BEGIN READ WRITE; INSERT INTO studio_ro_probe VALUES (42); COMMIT; SELECT ''''"
+
+
+@pytest.mark.postgres
+@postgres
+def test_h1_the_standard_conforming_strings_escape_does_not_write(pg: tuple[OpenConnection, sqlalchemy.Engine]) -> None:
+    connection, admin = pg
+    # Studio's text check refuses the first step ...
+    with pytest.raises(StatementRefused):
+        connection.fetch("SELECT set_config('standard_conforming_strings','off',false)")
+    # ... and past it, the server refuses the text: every statement is a prepared statement (extended protocol).
+    with connection._read() as transaction:
+        transaction.fetch_all(sqlalchemy.text("SELECT set_config('standard_conforming_strings','off',false)"))
+    assert check_statement(ESCAPE)  # the splitter sees one statement
+    for _ in range(3):
+        with pytest.raises(TabrionError) as raised, connection._read() as transaction:
+            transaction.fetch_all(sqlalchemy.text(ESCAPE))
+        assert raised.value.classification is not None and raised.value.classification.sqlstate == "42601"
+    with pytest.raises(TabrionError):
+        connection.fetch(ESCAPE)
+    assert _rows(admin) == 1
+
+
+@pytest.mark.postgres
+@postgres
+def test_h1_the_server_refuses_several_statements_past_the_text_check(
+    pg: tuple[OpenConnection, sqlalchemy.Engine],
+) -> None:
+    connection, admin = pg
+    for sql in (
+        "SELECT 1; SELECT 2",
+        "ROLLBACK; BEGIN READ WRITE; INSERT INTO studio_ro_probe VALUES (9); COMMIT",
+    ):
+        with pytest.raises(TabrionError) as raised, connection._read() as transaction:
+            transaction.fetch_all(sqlalchemy.text(sql))
+        assert raised.value.classification is not None and raised.value.classification.sqlstate == "42601"
+    assert _rows(admin) == 1
+
+
+@pytest.mark.postgres
+@postgres
+def test_m1_pgpassword_is_never_sent_for_a_profile_without_a_password(
+    pg: tuple[OpenConnection, sqlalchemy.Engine], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A (project) profile without a password reference must not make libpq send the user's PGPASSWORD or .pgpass
+    password to the host the profile names."""
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    assert url.password
+    passfile = tmp_path / "pgpass"
+    passfile.write_text(f"*:*:*:*:{url.password}\n", encoding="utf-8")
+    passfile.chmod(0o600)
+    monkeypatch.setenv("PGPASSWORD", url.password)
+    monkeypatch.setenv("PGPASSFILE", str(passfile))
+    profile = Profile("x", "postgresql", "dev", host=url.host, port=url.port, database=url.database, user=url.username)
+    source = Source(profiles={"project:x": profile})
+    with pytest.raises(HealthError) as raised:
+        ConnectionRegistry(source).open("project:x")
+    assert raised.value.classification.kind.value == "connection"
+
+
+@pytest.mark.postgres
+@postgres
+def test_l1_the_password_is_resolved_from_the_entry_the_url_comes_from(
+    pg: tuple[OpenConnection, sqlalchemy.Engine],
+) -> None:
+    """L-1 and review I-3 (mutant R9): one read of the profile per connect, and the password is redacted in logs."""
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    profile = Profile(
+        "y",
+        "postgresql",
+        "dev",
+        host=url.host,
+        port=url.port,
+        database=url.database,
+        user=url.username,
+        password=SecretRef("keyring", ""),
+    )
+    source = Source(profiles={"user:y": profile}, passwords={"user:y": url.password or ""})
+    registry = ConnectionRegistry(source)
+    try:
+        registry.open("user:y")
+    finally:
+        registry.close_all()
+    assert source.entries and source.resolved == [source.entries[0]]
+    assert url.password and url.password not in scrub(f"connect with {url.password}")

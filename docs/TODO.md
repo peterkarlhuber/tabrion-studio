@@ -16,7 +16,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Integration branch only (STU-009 draft PR, tabrion 546d254 pinned); master blocked until tabrion v0.1.0 |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Integration branch only (STU-009 draft PR, tabrion 546d254 pinned by SHA); master gets the final range plus the v0.1.0 commit SHA pin (no PyPI) |
 | OA-001 make `ci-ok` a required check; check the ci-ok run link before every merge | P0 | Open (owner) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -58,21 +58,29 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 - **Priority:** P1 High · **Status:** Integration branch only (STU-009 draft PR; master blocked until tabrion v0.1.0,
   TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
-- **What:** nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency (no git pin, no
-  pre-release specifier on master, RC-8; enforced by `tests/security/test_dependencies.py`).
-- **Next step:** add `tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2` with the first WP that uses the Tabrion API
-  (STU-009), after tabrion v0.1.0.
-- **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver (later
-  `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint, and a
-  connection is built from `Profile` only, never from unknown keys.
+- **What:** on master nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency.
+- **Rule (RC-8, amended by ADR 0009 in tabrion PR #20: tabrion is not published on PyPI, it is used through Git SHA
+  pins):** `project.dependencies` carries only the final range, with no git or URL reference and no pre-release
+  specifier. The commit is pinned by its **full SHA** in a constraints file
+  (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`; no branch, tag or short SHA). Both are
+  enforced by `tests/security/test_dependencies.py` on the STU-009 branch (`test_pyproject_follows_rc8`,
+  `test_pin_files_pin_only_full_commits`).
+- **Next step:** with tabrion v0.1.0, `tabrion[postgres,sqlalchemy]>=0.1,<0.2` in `pyproject.toml` and the v0.1.0
+  commit in `constraints/tabrion-integration.txt` (STU-009).
+- **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
+  profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
+  and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
+  every connection (`services.connections.driver_options`: `prepare_threshold=0`, `passfile`) are not targets.
 - **STU-009 integration branch (`claude/project-thread-rdo6g3-stu009`, draft, never merged before v0.1.0):**
   `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2`, and
   `constraints/tabrion-integration.txt` pins tabrion master `546d254a27df9f6b539d57c307ad3022d0ee3a4a`
   (0.1.0a2.dev0). The a1 commit `a463422` has only `tabrion.errors`, `sql` and `config`; STU-009 needs
   `Database`, `Profile`, `Database.read()` and `health()` (layer B, TAB-018), which arrived later.
-  `tests/security/test_dependencies.py::test_pyproject_follows_rc8` fails on that branch on purpose. With v0.1.0:
-  final range `>=0.1,<0.2`, the constraints file removed, a merge of master, then the PR is ready for review.
-  Done there: URLs only through `tabrion.safe_url()`, passwords only through `resolve_secret` when connecting,
+  `tests/security/test_dependencies.py::test_pyproject_follows_rc8` fails on that branch on purpose (pre-release
+  range). With v0.1.0: final range `>=0.1,<0.2`, the constraints file pinning the v0.1.0 commit by SHA, a merge of
+  master, then the PR is ready for review.
+  Done there: URLs only through `tabrion.safe_url()`; passwords only through the configuration's secrets when
+  connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
   project SQLite files only through `database_file`, every driver parameter in the fingerprint, `DB_KINDS` from
   `tabrion.errors.Kind`, `db.<kind>` problems from `classify`, `DbErrorRedactionFilter` in the log handlers
   (`docs/architecture/connections.md`).
@@ -516,20 +524,31 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-012 · STU-009 integration: what remains before it can merge
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
-- **tabrion v0.1.0 (TS-001):** switch to the final range, remove `constraints/tabrion-integration.txt`, merge
-  master, run every check, then mark the PR ready.
-- **The CI job `backend integration (PostgreSQL 17)`** changes `.github/` (workflow-change review, OA-003). Until
-  then, `tests/security/test_read_only.py` runs the PostgreSQL tests only with `TABRION_STUDIO_TEST_POSTGRES`. They
-  passed locally against PostgreSQL 16.
-- **Binding for STU-011:** user SQL goes through `services.readonly.check_statement`, with one `Database.read()` per
-  statement. PostgreSQL runs a text with several statements in one round trip, so `COMMIT; BEGIN READ WRITE; ...`
-  would write; the STU-009 probe showed it.
+- **Priority:** P1 High · **Status:** Open (`stu-009-review.md`: not accepted; H-1, M-1, L-1 fixed for the delta
+  re-review) · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **tabrion v0.1.0 (TS-001):** switch to the final range, pin the v0.1.0 commit by SHA in
+  `constraints/tabrion-integration.txt`, merge master, run every check, then mark the PR ready.
+- **CI installs tabrion from the pin (L-2 of `stu-009-review.md`, stays open under RC-8):** every Python job runs
+  `pip install -e ".[dev]"` without the constraints file and fails, since tabrion is not on PyPI. pip reads a
+  constraints file only from `-c`, `PIP_CONSTRAINT` or a pip configuration file outside the repository, so the fix
+  changes `.github/workflows/ci.yml` (and `nightly.yml`): add `-c constraints/tabrion-integration.txt` to every
+  install, and to the wheel installs of `build and install` and the SBOM job. That needs a workflow-change review
+  (OA-003). The wheel smoke install with the constraints file works locally.
+- **The CI job `backend integration (PostgreSQL 17)`** changes `.github/` as well (OA-003). It must run the
+  `postgres` marker with `TABRION_STUDIO_TEST_POSTGRES` (a database owned by the test role). Until then, the
+  PostgreSQL tests run only locally (PostgreSQL 16 here).
+- **Binding for STU-011:** user SQL goes through `services.readonly.check_statement` and `OpenConnection.fetch`
+  (prepared statements: the server refuses several commands, H-1), with one `Database.read()` per statement, and
+  always through `ConnectionRegistry.get` (`fetch` does not check the handle again by itself; review I-5). SQLAlchemy
+  `text()` treats `:name` as a bind parameter, also inside string literals: send user SQL with `exec_driver_sql` or
+  escape colons (review I-2).
 - **The page:** "Test connection" and "Connect" (TD-011) can now call `POST /api/connection-tests` and
-  `POST /api/connections`; the frontend part is not in the STU-009 draft.
-- **The libpq environment:** `PGHOSTADDR`, `PGSERVICE` and similar variables of the user's own environment apply to
-  what the URL leaves out. A project file cannot set them. Decide whether Studio should clear them for its
-  connections.
+  `POST /api/connections`; the frontend part is not in the STU-009 draft. D-01's "password asked when connecting"
+  holds now: without a reference, libpq gets no password of its own (M-1).
+- **The libpq environment:** `PGPASSWORD`, `PGPASSFILE`, `.pgpass` and a service file's password are off for every
+  Studio connection (M-1). Other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`,
+  `PGSSLROOTCERT`, ...) still apply to what the URL leaves out; a project file cannot set them. Decide whether
+  Studio should clear them too.
 
 ### TD-011 · STU-008 parts that wait for STU-009 or a later package
 

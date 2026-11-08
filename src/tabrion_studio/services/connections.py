@@ -14,10 +14,12 @@ A handle (:class:`OpenConnection`) exposes only reading. The engine and ``Databa
 module.
 
 **Where a password goes (C-1 of ``stu-007-review.md``, L-1 of ``stu-008-review.md``):** the driver gets the fields of
-:data:`tabrion_studio.config.schema.TARGET_FIELDS` and the password, nothing else (:func:`connection_url`); the
-password is resolved with ``Configuration.resolve_secret`` when the connection opens, and a stored one is bound to
-the fingerprint of those fields. Session settings (timeouts, ``application_name``) are not connection targets. A
-handle is checked again on every use: if its profile is gone, no longer trusted or points somewhere else, the
+:data:`tabrion_studio.config.schema.TARGET_FIELDS` and the password, nothing else (:func:`connection_url`), plus the
+constant options of :func:`driver_options`. The password is resolved with ``Configuration.resolve_entry_secret`` from
+the same entry the URL comes from (L-1 of ``stu-009-review.md``) when the connection opens, and a stored one is bound
+to the fingerprint of those fields. Without a password, libpq gets none of its own (``PGPASSWORD``, ``.pgpass``:
+M-1). Session settings (timeouts, ``application_name``) are not connection targets. A handle is checked again on
+every use: if its profile is gone, no longer trusted, points somewhere else or changed its environment, the
 connection is closed (``studio.connection_stale``).
 """
 
@@ -63,7 +65,9 @@ APPLICATION_NAME = "tabrion-studio"
 PROD_STATEMENT_TIMEOUT_MS = 15_000
 LOCK_TIMEOUT_MS = 5_000
 _TLS = {
-    None: tabrion.TLSMode.AUTO,  # a profile without sslmode is a loopback one (remote ones default to verify-full)
+    # The parser always sets sslmode for PostgreSQL (prefer for loopback, verify-full otherwise; review I-1), so None
+    # only reaches here for a profile built in code; AUTO lets tabrion require TLS for a remote host.
+    None: tabrion.TLSMode.AUTO,
     "verify-full": tabrion.TLSMode.VERIFY_FULL,
     "verify-ca": tabrion.TLSMode.REQUIRE,
     "require": tabrion.TLSMode.REQUIRE,
@@ -95,7 +99,7 @@ class ProfileSource(Protocol):
     """What the registry needs from the configuration (``tabrion_studio.api.config.Configuration``)."""
 
     def entry(self, profile_id: str) -> ProfileEntryLike: ...
-    def resolve_secret(self, profile_id: str) -> str: ...
+    def resolve_entry_secret(self, entry: Any) -> str: ...
     def database_file(self, profile_id: str) -> Path: ...
     def limits(self) -> Settings: ...
 
@@ -117,6 +121,25 @@ def connection_url(profile: Profile, password: str | None, database_file: Path |
         database=target["database"],
         query=query,
     )
+
+
+#: A path that cannot exist (below a regular file), for libpq's ``passfile``.
+_NO_PASSFILE = str(Path(__file__) / "no-passfile")
+
+
+def driver_options(password: str | None) -> dict[str, Any]:
+    """psycopg connection options of every Studio PostgreSQL connection; constants, not connection targets.
+
+    * ``prepare_threshold=0``: every statement goes through the extended query protocol (a prepared statement), so the
+      server refuses a text with several commands (``42601``), whatever a text split thinks the text holds (H-1 of
+      ``stu-009-review.md``, ``standard_conforming_strings = off``).
+    * ``passfile`` points to a path that cannot exist, and without a password ``password`` is the empty string, which
+      keeps libpq from reading ``PGPASSWORD``, ``PGPASSFILE``, ``~/.pgpass`` or a service file's password (M-1).
+    """
+    options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
+    if password is None:
+        options["password"] = ""
+    return options
 
 
 def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
@@ -211,17 +234,21 @@ class ConnectionRegistry:
             database_file = self.source.database_file(profile_id)
         else:
             try:
-                password = self.source.resolve_secret(profile_id)
+                # L-1 of stu-009-review.md: the secret of this very entry, so the URL and the password come from
+                # the same read of the profile file.
+                password = self.source.resolve_entry_secret(entry)
             except SecretError as exc:
-                # No reference and nothing entered: connect without one (trust or peer authentication, a .pgpass
-                # entry, which libpq matches by host, port, database and user).
+                # No reference and nothing entered: connect without a password (trust, peer or certificate
+                # authentication). libpq's own fallbacks are off (driver_options), so no PGPASSWORD or .pgpass
+                # password goes to a host the profile names (M-1).
                 if profile.password is not None or exc.code != "studio.secret_missing":
                     raise
             if password is not None:
                 register_secret(password)
         url = connection_url(profile, password, database_file)
+        options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password)}
         try:
-            db = tabrion.Database.from_url(url, profile=studio_profile(profile, limits))
+            db = tabrion.Database.from_url(url, profile=studio_profile(profile, limits), engine_options=options)
         except FileNotFoundError:
             raise RegistryError("studio.database_missing") from None
         except UnsafePath:
@@ -336,6 +363,10 @@ class ConnectionRegistry:
 
     def test(self, profile_id: str) -> dict[str, Any]:
         """The connection test (TD-011): open, check, close; never keeps the connection."""
+        with self._lock:
+            # A test shares the limit of open connections (review I-4).
+            if len(self._open) >= self.max_open:
+                raise RegistryError("studio.connection_limit")
         connection = self._connect(profile_id)
         try:
             health = connection.health()

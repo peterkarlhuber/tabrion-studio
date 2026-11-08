@@ -129,6 +129,10 @@ class Configuration:
         """The secret of a profile, resolved now (STU-009 calls this when it connects); raises :class:`SecretError`."""
         return self.secrets.resolve(self.entry(profile_id).secret)
 
+    def resolve_entry_secret(self, entry: ProfileEntry) -> str:
+        """The secret of ``entry`` as read once: the registry connects to this entry's target with it (STU-009)."""
+        return self.secrets.resolve(entry.secret)
+
     def database_file(self, profile_id: str) -> Path:
         """The real path of a SQLite profile's file, checked now (STU-009 opens exactly this path).
 
