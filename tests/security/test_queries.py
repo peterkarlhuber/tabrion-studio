@@ -713,6 +713,80 @@ def test_m3_a_wide_blob_result_keeps_peak_memory_bounded(lite: tuple[QueryEngine
     assert peak < 60 * 1024 * 1024, peak
 
 
+# R-M1 of the delta re-review: the budget follows the largest row so far, grows at most twice per fetch and counts
+# nested values.
+
+NULL_FIRST = (
+    "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 24) "
+    "SELECT x, CASE WHEN x > 1 THEN zeroblob(4000000) END AS b FROM c"
+)
+
+
+def peak_of(engine: QueryEngine, connection_id: str, sql: str) -> tuple[Query, int]:
+    tracemalloc.start()
+    try:
+        query = wait(engine.start(connection_id, sql), 60.0)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return query, peak
+
+
+def test_r_m1_a_null_first_row_does_not_open_the_budget(lite: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, source = lite
+    source.profiles["project:parts"] = replace(source.profiles["project:parts"], statement_timeout_ms=None)
+    query, peak = peak_of(engine, connection_id, NULL_FIRST)
+    assert query.state == "done", query.problem
+    assert len(query.rows) == 24
+    # Before: 1 row, then the other 23 in one fetch (92 MB). Now: 1, 2, then one at a time.
+    assert peak < 30 * 1024 * 1024, peak
+
+
+def test_r_m1_nested_values_count_in_full() -> None:
+    raw_size = queries_module._raw_size
+    assert raw_size((["x" * 1000] * 100,)) >= 100_000
+    assert raw_size(({"k": ["y" * 500, {"z": "w" * 500}]},)) >= 1000
+    deep: Any = "x"
+    for _ in range(10_000):  # deeper than the recursion limit
+        deep = [deep]
+    assert raw_size((deep,)) > 10_000
+    assert raw_size((None, 1, 2.5)) == 48
+
+
+def test_r_m1_batches_grow_at_most_twice_per_fetch() -> None:
+    sizes, fetched = [], 1
+    for _ in range(12):
+        fetched = queries_module.next_batch_rows(fetched, 100)
+        sizes.append(fetched)
+    assert sizes == [2, 4, 8, 16, 32, 64, 128, 256, 500, 500, 500, 500]
+    assert queries_module.next_batch_rows(256, 4_000_000) == 1  # one large row closes the budget again
+    assert queries_module.next_batch_rows(8, 300_000) == 6
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r_m1_wide_arrays_and_a_null_first_row_keep_peak_memory_bounded(
+    pg: tuple[QueryEngine, str, Source],
+) -> None:
+    engine, connection_id, source = pg
+    source.profiles["user:pg"] = replace(source.profiles["user:pg"], statement_timeout_ms=60_000)
+    engine.registry.close_all()
+    connection_id = engine.registry.open("user:pg").id
+    arrays, peak = peak_of(
+        engine, connection_id, "SELECT array_fill('xxxxxxxx'::text, ARRAY[100000]) FROM generate_series(1, 30)"
+    )
+    assert arrays.state == "done", arrays.problem
+    # Before: 1 row, then 29 rows of 100000 strings in one fetch (about 200 MB). Now one row at a time.
+    assert peak < 80 * 1024 * 1024, peak
+    nulls, peak = peak_of(
+        engine,
+        connection_id,
+        "SELECT CASE WHEN g > 1 THEN repeat('x', 4000000) END FROM generate_series(1, 24) AS g",
+    )
+    assert nulls.state == "done", nulls.problem
+    assert peak < 40 * 1024 * 1024, peak
+
+
 def test_i3_the_byte_cap_is_the_max_result_mb_setting(sqlite_file: Any) -> None:
     source = sqlite_source(sqlite_file, max_result_mb=1)
     registry = ConnectionRegistry(source)

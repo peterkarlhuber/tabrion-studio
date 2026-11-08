@@ -81,9 +81,11 @@ PER_CONNECTION = 2
 KEPT_QUERIES = 16
 KEPT_BYTES = 200 * 1024 * 1024
 BATCH_ROWS = 500
-#: M-3 of stu-011-review.md: what one fetch may load before the caps apply. The first fetch is one row; the next ones
-#: as many rows as fit this budget at the size of the rows so far (at most BATCH_ROWS). One value larger than the
-#: budget still loads in full: the database's own limit (1 GB in PostgreSQL) is the only bound for a single value.
+#: M-3 of stu-011-review.md and R-M1 of its delta re-review: what one fetch may load before the caps apply. The first
+#: fetch is one row; each next one at most twice the one before and as many rows as fit this budget at the size of the
+#: largest row so far (at most BATCH_ROWS). Text, binary and nested values (arrays, json) count in full. A run of small
+#: rows followed by large ones can still load one batch of that many large rows; one value larger than the budget
+#: loads in full: the database's own limit (1 GB in PostgreSQL) is the only bound for a single value.
 FETCH_BUDGET_BYTES = 2 * 1024 * 1024
 PAGE_ROWS = 1_000
 MAX_PAGE_ROWS = 5_000
@@ -97,8 +99,30 @@ _JS_SAFE_INTEGER = 2**53 - 1
 
 
 def _raw_size(row: tuple[Any, ...]) -> int:
-    """About what the driver loaded for ``row``: the length of text and binary values, 16 bytes for the others."""
-    return sum(len(value) if isinstance(value, str | bytes | bytearray | memoryview) else 16 for value in row)
+    """About what the driver loaded for ``row``: the length of text and binary values, nested values (psycopg's lists
+    for arrays, dicts and lists for json) element by element, 16 bytes for the others. Iterative, so a deep json
+    document cannot reach the recursion limit."""
+    size = 0
+    pending: list[Any] = list(row)
+    while pending:
+        value = pending.pop()
+        if isinstance(value, str | bytes | bytearray | memoryview):
+            size += len(value) + 16
+        elif isinstance(value, list | tuple):
+            size += 16
+            pending.extend(value)
+        elif isinstance(value, dict):
+            size += 16
+            pending.extend(value.keys())
+            pending.extend(value.values())
+        else:
+            size += 16
+    return size
+
+
+def next_batch_rows(fetched: int, largest: int) -> int:
+    """The size of the next fetch after one of ``fetched`` rows, with ``largest`` the largest row so far (R-M1)."""
+    return max(1, min(BATCH_ROWS, 2 * fetched, FETCH_BUDGET_BYTES // max(1, largest)))
 
 
 class QueryError(Exception):
@@ -356,14 +380,14 @@ class QueryEngine:
         with query._lock:
             query.columns = cursor.columns
             query._changed()
-        batch_rows = 1
+        batch_rows, largest = 1, 1
         while not query.hook.requested:
             wanted = min(batch_rows, query.max_rows + 1 - len(query.rows))
             batch = cursor.fetch(wanted)
             if not batch:
                 return
-            loaded = sum(_raw_size(row) for row in batch)
-            batch_rows = max(1, min(BATCH_ROWS, FETCH_BUDGET_BYTES * len(batch) // max(1, loaded)))
+            largest = max(largest, *(_raw_size(row) for row in batch))
+            batch_rows = next_batch_rows(len(batch), largest)
             with query._lock:
                 for row in batch:
                     if len(query.rows) >= query.max_rows:
