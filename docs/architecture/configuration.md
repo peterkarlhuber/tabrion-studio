@@ -1,8 +1,9 @@
-# Configuration, profiles and project trust (STU-006)
+# Configuration, profiles and project trust (STU-006, STU-008)
 
 Studio reads three kinds of files (03 section 4.3). The code is in `src/tabrion_studio/config/`: `schema.py` (TOML
 schema version 1), `files.py` (reading without following links), `project.py` (project profiles and trust) and
-`user.py` (the user's files). The routes are in `src/tabrion_studio/api/config.py`.
+`user.py` (the user's files), `writer.py` (writing the user's files, STU-008). The routes are in
+`src/tabrion_studio/api/config.py`.
 
 | File | Content | Trust |
 |---|---|---|
@@ -12,8 +13,60 @@ schema version 1), `files.py` (reading without following links), `project.py` (p
 | `<state dir>/trust-<key>.json` | the trust record of one project folder: the SHA-256 of the confirmed file and what the dialog showed | written by Studio, 0600 |
 
 The configuration folder is `--config-dir`, else `$TABRION_STUDIO_CONFIG_DIR`, else `<state dir>/config` when the
-state directory was given explicitly, else `platformdirs.user_config_dir("tabrion-studio")`. Studio 1.0 only reads
-these files; writing profiles and settings arrives with the connection manager and the settings view (STU-008).
+state directory was given explicitly, else `platformdirs.user_config_dir("tabrion-studio")`.
+
+## Writing the user's files (STU-008)
+
+Studio 1.0 is read-only towards databases. The only files it writes are its own `profiles.toml` and `settings.toml`
+in the configuration folder (and the trust records in the state folder); **it never writes the project's
+`.tabrion/studio.toml`** (a project profile gives `studio.profile_read_only`). Every save:
+
+1. **checks the folder** like the state folder (`ensure_private_dir`: created 0700, owned by the user, not a link or
+   junction, not writable by others; `studio.config_dir_unsafe` otherwise). A folder that only others may read or
+   search (0755, for example) is changed to 0700 on the first save, as the state folder is (I-4 of
+   `stu-008-review.md`); a folder others may write to is refused;
+2. **is bound to the bytes the page read:** the request names the SHA-256 the page got from `GET /api/profiles`
+   (`user_file.digest`) or `GET /api/settings` (`file.digest`), `null` for a missing file. A file changed by hand or
+   by another tab meanwhile gives `studio.config_stale` (409), and the page reads it again;
+3. **is checked again just before the replace:** the file is read once more and must still have the digest the save
+   started from, so a hand edit meanwhile wins (`studio.config_stale`). Studio takes no lock, so an edit within the
+   replace itself can still be lost (I-3 of `stu-008-review.md`, TD-011);
+4. **never drops what the user wrote:** a file with any issue, an unknown key included, is not rewritten
+   (`studio.config_invalid`). A file that is valid but not exactly what Studio would write (comments, another order:
+   `hand_written: true`) is rewritten only after the user confirmed it (`"overwrite": true`, else
+   `studio.config_hand_written`); the dialog says that comments and formatting are not kept;
+5. **serializes schema version 1** with a small strict writer (`writer.py`: basic strings with every control
+   character, U+2028 and U+2029 escaped, so no value can start a key or a table), parses the result back and checks
+   that it gives exactly the profiles or settings it was meant to (otherwise it writes nothing and answers 422
+   `studio.config_not_storable`). A value that is not UTF-8 (a lone surrogate, valid in JSON) is a form issue,
+   `config.encoding` (L-2 of `stu-008-review.md`);
+6. **writes atomically:** a temporary file in the same folder created with `O_CREAT | O_EXCL | O_NOFOLLOW` and mode
+   0600, `fsync`, `os.replace` (which replaces a link at the target instead of following it), and an `fsync` of the
+   folder on POSIX. A link planted at the temporary name is removed, never followed.
+
+| Route | Body | Answer |
+|---|---|---|
+| `POST /api/profiles` | `{"profile": {...}, "digest", "overwrite"?}` | 201 `{"id": "user:<name>", "digest"}` |
+| `PUT /api/profiles` | `{"id": "user:<name>", "profile": {...}, "digest", "overwrite"?}` | 200 `{"id", "digest"}`; the name cannot change (`config.rename_unsupported`) |
+| `DELETE /api/profiles` | `{"id": "user:<name>", "digest", "overwrite"?}` | 200 `{"digest"}`; also removes the profile's saved password (keyring and session) |
+| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
+
+The id is in the body, not the path (03 section 6 sketches `/profiles/{id}`): a profile name may contain `/`, and
+`/api/profiles/{id}/secret` must never be read as a profile route. A profile has the keys of the file;
+`password` is a reference (`"keyring:"`, `"env:NAME"`, `"file:PATH"`) or `null`, never a password
+(`config.plain_password`). A refused form gives `studio.profile_invalid` or `studio.settings_invalid` (422) with
+`issues`: `[{"pointer": "profile.host", "code": "config.required"}]`. The pointers name only fixed keys (an unknown
+key gives `{"pointer": "profile", "code": "config.unknown_key"}`, without the key), so nothing of the request is
+echoed. When a change of the password reference or of the connection target (engine, host, port, database, user,
+path) makes a saved password belong to the old profile, it is removed (C-1 of `stu-007-review.md`).
+
+The connection manager (`frontend/src/views/connections/`) uses these routes: a list grouped by project and user
+with a filter and a detail panel, the three-step "New connection" assistant of 08 section 4.2 (database; password
+source: keyring, variable, file, this session or none; name, the required environment and the read-only role), a
+delete confirmation whose default is Cancel, and a password dialog (`PUT /api/profiles/{id}/secret`). The settings
+view saves the query limits and the SQL logging opt-in (with its warning) to `settings.toml`; language, theme and
+density stay browser preferences. Testing and connecting need the connection registry (STU-009) and are shown
+disabled.
 
 ## Schema version 1
 
@@ -124,4 +177,7 @@ The dialog shows only data from the untrusted file, so it follows U-1 of `stu-00
 | `frontend/src/components/dialogs/StudioDialogs.test.tsx` | one Vitest test per U-1 point with hostile names (commas, newline, tab, U+202E, an overlong value, 20 entries) and the diff |
 | `frontend/src/shell/ProjectTrust.test.tsx` | the page sends back the digest it showed with the CSRF header; diff; `studio.trust_stale` shows the new content and says so; an invalid file shows a notice with its escaped issues; "Don't load" sends nothing; no dialog for other states or unexpected answers |
 | `frontend/e2e/dialogs.spec.ts`, `a11y.spec.ts` | the hostile, changed D-01 in Chromium: focus rules, escapes, caps, diff; axe without serious or critical violations in light/dark and en/de, also for the stale D-01 with removed unknown keys and the invalid-file notice |
-| `frontend/e2e/backend.spec.ts` | a real `tabrion-studio` with a project file: D-01 appears after sign-in, the project profiles are unused before "Trust" and used after it, and a reload asks no more |
+| `frontend/e2e/backend.spec.ts` | a real `tabrion-studio` with a project file: D-01 appears after sign-in, the project profiles are unused before "Trust" and used after it, and a reload asks no more; a profile created in the page lands in `profiles.toml` (0600) and is deleted again (STU-008) |
+| `tests/unit/test_config_writer.py` (STU-008) | hostile strings round-trip and never inject a key; profiles and settings read back exactly; created 0600 in a 0700 folder; a stale digest, a hand-written file (only with `overwrite`) and a file with issues (never); a link at the target or at the temporary name is not written through; an unsafe folder (link, shared, a file) is refused |
+| `tests/security/test_profiles_api.py` (STU-008) | create, change and delete user profiles; a plain password is refused without echo and never written; issues name fixed keys only; names unique and never renamed; project profiles never written; stale digest and hand-written file; settings; session, CSRF, Origin and JSON (DELETE too) required; a retargeted or deleted profile forgets its saved password |
+| `frontend/src/views/connections/ConnectionsView.test.tsx`, `frontend/e2e/connections.spec.ts` (STU-008) | groups and escaped names; the three steps with required fields; the password goes only to the secret route; issues at their fields; the hand-written confirmation; delete and password dialogs with Cancel as default; every write sends `Content-Type: application/json`, DELETE included; axe in light/dark and en/de for the list, every step and the dialogs |

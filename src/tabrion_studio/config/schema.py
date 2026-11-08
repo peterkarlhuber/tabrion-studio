@@ -31,7 +31,9 @@ change request 14) exists; it is meant to stay compatible with it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import ipaddress
+import json
 import re
 from typing import Any, Literal
 
@@ -104,6 +106,26 @@ class Profile:
         return doc
 
 
+#: The fields that say where and how a connection goes: a stored secret belongs to these (M-1 of stu-007-review.md;
+#: ``sslmode``, the effective one after the default, from L-1 of stu-008-review.md: a downgrade from ``verify-full``
+#: to ``disable`` must not keep the saved password). Binding for STU-009: every parameter Studio passes to the driver
+#: must be in this list, and connections are built from :class:`Profile` only.
+TARGET_FIELDS = ("engine", "host", "port", "database", "user", "path", "sslmode")
+
+
+def target_fingerprint(doc: dict[str, Any]) -> str:
+    """16 hex digits of the SHA-256 of a profile's target (``Profile.to_dict()`` form; port None means 5432).
+
+    A secret stored for a profile is bound to this: when a project commit keeps the name ``prod`` but changes the host,
+    the fingerprint changes and the stored password is not sent to the new host (C-1 of stu-007-review.md).
+    """
+    target: list[Any] = [doc.get(key) for key in TARGET_FIELDS]
+    if doc.get("engine") == "postgresql" and target[2] is None:
+        target[2] = 5432
+    text = json.dumps(target, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("ascii")).hexdigest()[:16]
+
+
 @dataclass
 class ProfileFile:
     """The result of validating a profile file: the valid profiles, every issue and the unknown keys."""
@@ -143,13 +165,26 @@ def is_loopback(host: str) -> bool:
         return False
 
 
+def _encodable(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def parse_secret_ref(value: str) -> SecretRef | None:
     """``keyring:``, ``env:NAME`` or ``file:PATH``; None for anything else (a plain password is never accepted)."""
     if value == "keyring:":
         return SecretRef("keyring", "")
     if value.startswith("env:") and _ENV_NAME.fullmatch(value[4:]):
         return SecretRef("env", value[4:])
-    if value.startswith("file:") and 0 < len(value) - 5 <= MAX_TEXT and not _CONTROL.search(value):
+    if (
+        value.startswith("file:")
+        and 0 < len(value) - 5 <= MAX_TEXT
+        and not _CONTROL.search(value)
+        and _encodable(value)
+    ):
         return SecretRef("file", value[5:])
     return None
 
@@ -163,6 +198,10 @@ def _text(raw: dict[str, Any], key: str, where: str, issues: list[Issue], *, lim
         return None
     if not value or len(value) > limit:
         issues.append(Issue(f"{where}.{key}", "config.length"))
+        return None
+    if not _encodable(value):
+        # A lone surrogate is valid JSON but not UTF-8: Studio could not write it (L-2 of stu-008-review.md).
+        issues.append(Issue(f"{where}.{key}", "config.encoding"))
         return None
     return value
 

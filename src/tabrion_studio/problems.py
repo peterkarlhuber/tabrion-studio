@@ -6,13 +6,16 @@ problem document with the media type ``application/problem+json``::
     {"code": "access.session_required", "kind": "access", "status": 401,
      "title": "Not signed in", "detail": "...", "hint": "..."}
 
-plus ``log_id`` for ``studio.internal_error`` and, from STU-011 on, ``sqlstate`` and ``position`` for database
+plus ``log_id`` for ``studio.internal_error``, ``issues`` for ``studio.profile_invalid`` and ``studio.settings_invalid``
+(``[{"pointer": "profile.host", "code": "config.required"}]``: a fixed key name and a ``config.*`` code) and, from
+STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
 **Nothing in a problem comes from an exception or from the request (threat T-05, SQ-04).** ``title``, ``detail`` and
 ``hint`` are fixed English texts of :data:`CATALOG`; the only variable parts are the log ID (random hex), a SQLSTATE
-(five characters ``[0-9A-Z]``) and a position (an integer). No path, no secret, no stack trace, no ``DETAIL`` text of
-a database server and no value of the request can reach the page. The page shows its own de/en text for ``code``.
+(five characters ``[0-9A-Z]``), a position (an integer) and issues (key paths of fixed names, ``config.*`` codes). No
+path, no secret, no stack trace, no ``DETAIL`` text of a database server and no value of the request can reach the
+page. The page shows its own de/en text for ``code``.
 
 ``kind`` names the error family: :class:`ProblemKind` for Studio's own errors; for ``db.<kind>`` it is one of
 :data:`DB_KINDS`, which mirrors ``tabrion.errors.Kind`` (doc 04 section 1.1, tabrion 0.1.0a1). Studio has no tabrion
@@ -75,6 +78,10 @@ DB_KINDS = frozenset(
 _SQLSTATE = re.compile(r"[0-9A-Z]{5}")
 _LOG_ID = re.compile(r"[0-9a-f]{12}")
 _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
+#: An issue of a rejected profile or settings form: a key path of fixed names and a config.* code (STU-008).
+_ISSUE_POINTER = re.compile(r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}")
+_ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}")
+MAX_ISSUES = 32
 
 
 @dataclass(frozen=True)
@@ -259,6 +266,67 @@ CATALOG: dict[str, Entry] = {
     "studio.trust_unavailable": Entry(
         500, ProblemKind.CONFIG, "Trust not saved", "Studio could not save the trust decision in its state folder."
     ),
+    "studio.config_stale": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "File changed",
+        "The configuration file changed after Studio showed it.",
+        "Reload the page and make the change again.",
+    ),
+    "studio.config_invalid": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "File has issues",
+        "Studio does not rewrite a configuration file that has issues, so nothing in it is lost.",
+        "Fix the issues in the file first.",
+    ),
+    "studio.config_hand_written": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "File written by hand",
+        "Saving rewrites the file; its comments and formatting are not kept.",
+        "Confirm to rewrite the file.",
+    ),
+    "studio.config_dir_unsafe": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Configuration folder not private",
+        "Studio writes its files only into a private folder of your own that is not a link.",
+        "Check the folder's owner and permissions (700).",
+    ),
+    "studio.config_unwritable": Entry(
+        500, ProblemKind.CONFIG, "File not saved", "Studio could not write the configuration file."
+    ),
+    "studio.config_not_storable": Entry(
+        422,
+        ProblemKind.CONFIG,
+        "Value not storable",
+        "Studio could not store these values so that it reads them back unchanged. Nothing was written.",
+        "Check the fields for unusual characters.",
+    ),
+    "studio.config_too_large": Entry(
+        422,
+        ProblemKind.CONFIG,
+        "File too large",
+        "The configuration file would be larger than Studio reads (256 KB).",
+        "Remove profiles you no longer use.",
+    ),
+    "studio.profile_invalid": Entry(
+        422, ProblemKind.CONFIG, "Profile not valid", "Some fields of the profile are missing or not valid."
+    ),
+    "studio.settings_invalid": Entry(
+        422, ProblemKind.CONFIG, "Settings not valid", "Some settings are missing or not valid."
+    ),
+    "studio.profile_exists": Entry(
+        409, ProblemKind.CONFIG, "Name in use", "Another of your profiles has this name.", "Choose another name."
+    ),
+    "studio.profile_read_only": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Project profile",
+        "Studio does not change the project's profile file.",
+        "Edit .tabrion/studio.toml in the project instead.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,
@@ -287,6 +355,7 @@ class Problem:
     log_id: str | None = None
     sqlstate: str | None = None
     position: int | None = None
+    issues: tuple[tuple[str, str], ...] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         doc: dict[str, Any] = {
@@ -301,6 +370,8 @@ class Problem:
             value = getattr(self, key)
             if value is not None:
                 doc[key] = value
+        if self.issues is not None:
+            doc["issues"] = [{"pointer": pointer, "code": code} for pointer, code in self.issues]
         return doc
 
     def body(self) -> bytes:
@@ -313,6 +384,7 @@ def problem(
     log_id: str | None = None,
     sqlstate: str | None = None,
     position: int | None = None,
+    issues: list[tuple[str, str]] | None = None,
 ) -> Problem:
     """The problem for ``code`` with its catalog texts.
 
@@ -328,8 +400,25 @@ def problem(
         raise ValueError("malformed SQLSTATE")
     if position is not None and (type(position) is not int or position < 0):
         raise ValueError("malformed position")
+    if issues is not None and (
+        len(issues) > MAX_ISSUES
+        or not all(
+            isinstance(p, str) and isinstance(c, str) and _ISSUE_POINTER.fullmatch(p) and _ISSUE_CODE.fullmatch(c)
+            for p, c in issues
+        )
+    ):
+        raise ValueError("malformed issues")
     return Problem(
-        code, entry.kind.value, entry.status, entry.title, entry.detail, entry.hint, log_id, sqlstate, position
+        code,
+        entry.kind.value,
+        entry.status,
+        entry.title,
+        entry.detail,
+        entry.hint,
+        log_id,
+        sqlstate,
+        position,
+        None if issues is None else tuple(issues),
     )
 
 
@@ -357,9 +446,15 @@ def well_formed_code(value: str) -> bool:
     return family != "db" or name in DB_KINDS
 
 
-def problem_response(code: str, *, log_id: str | None = None, headers: dict[str, str] | None = None) -> Response:
+def problem_response(
+    code: str,
+    *,
+    log_id: str | None = None,
+    headers: dict[str, str] | None = None,
+    issues: list[tuple[str, str]] | None = None,
+) -> Response:
     """A Starlette response with the problem for ``code``."""
-    doc = problem(code, log_id=log_id)
+    doc = problem(code, log_id=log_id, issues=issues)
     return Response(doc.body(), status_code=doc.status, media_type=PROBLEM_MEDIA_TYPE, headers=headers)
 
 

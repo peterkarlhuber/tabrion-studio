@@ -2,8 +2,10 @@
 
 The frontend in `frontend/` is a React 19 / TypeScript / Vite single-page app that the wheel serves from
 `tabrion_studio/static/`. This page describes the shell, the design system, the languages, the status displays and
-the dialogs, and how they are tested. The views that fill the shell (connections, explorer, SQL editor) arrive with
-STU-008 and later; Studio has **no write UI** (the Data Editor, STU-026, stays locked behind G-S2).
+the dialogs, and how they are tested. The connection manager and the server settings are STU-008
+(`docs/architecture/configuration.md`); the explorer and the SQL editor arrive later. Studio has **no write UI for
+databases** (the Data Editor, STU-026, stays locked behind G-S2); the only files it writes are its own profiles and
+settings.
 
 ## Shell
 

@@ -4,9 +4,10 @@ A profile names its password by reference only (``config.schema.SecretRef``); th
 when a connection is made (STU-009) and never reaches the frontend, a log or an error:
 
 * ``keyring:``: the OS keyring (macOS Keychain, Windows Credential Manager, Secret Service or KWallet), service
-  :data:`SERVICE`, one entry per profile (:func:`keyring_key`). **There is no plain-text fallback:** a backend that
-  stores secrets in a file (the ``keyrings.alt`` package) or that does nothing (``fail``, ``null``) counts as "no
-  keyring" (R-S4). Without a keyring, a ``keyring:`` profile can only use a secret entered for this session.
+  :data:`SERVICE`, one entry per profile and connection target (:func:`keyring_key`). **There is no plain-text
+  fallback:** a backend that stores secrets in a file (the ``keyrings.alt`` package) or that does nothing
+  (``fail``, ``null``) counts as "no keyring" (R-S4). Without a keyring, a ``keyring:`` profile can only use a
+  secret entered for this session.
 * ``env:NAME``: the variable of the Studio process.
 * ``file:PATH``: read by :func:`read_secret_file`, which enforces the binding requirement C-3 of
   ``stu-006-review.md`` at read time: no ``expanduser``, no URL decoding and no Unicode normalization (the value is
@@ -41,7 +42,7 @@ from tabrion_studio.config.locations import (
     network_or_device,
     safe_realpath,
 )
-from tabrion_studio.config.schema import SecretRef
+from tabrion_studio.config.schema import Profile, SecretRef, target_fingerprint
 from tabrion_studio.logs import register_secret
 
 SERVICE = "tabrion-studio"
@@ -178,7 +179,9 @@ def read_secret_file(text: str, base: Path, roots: list[Path] | None) -> str:
         value = data.decode("utf-8")
     except UnicodeDecodeError:
         raise SecretError("studio.secret_file_unreadable") from None
-    # Exactly one trailing line end is removed: "\r\n" (a file written on Windows) or "\n"; nothing else.
+    # One leading byte order mark (Notepad writes one; I-3 of stu-007-review.md) and exactly one trailing line end,
+    # "\r\n" (a file written on Windows) or "\n", are removed; nothing else.
+    value = value.removeprefix("\ufeff")
     value = value[:-2] if value.endswith("\r\n") else value.removesuffix("\n")
     if not value or "\x00" in value:
         raise SecretError("studio.secret_file_unreadable")
@@ -189,9 +192,18 @@ def read_secret_file(text: str, base: Path, roots: list[Path] | None) -> str:
 # --- keyring: ---------------------------------------------------------------------------------------------------
 
 
-def keyring_key(owner: Owner, name: str, project_key: str) -> str:
-    """The keyring entry of a profile: ``user:<name>``, or ``project:<project key>:<name>`` (unique per folder)."""
-    return f"user:{name}" if owner == "user" else f"project:{project_key}:{name}"
+def keyring_key(owner: Owner, profile: Profile, project_key: str) -> str:
+    """The keyring and session key of a profile: ``user:<name>:<target>`` or ``project:<project key>:<name>:<target>``.
+
+    ``<target>`` is :func:`~tabrion_studio.config.schema.target_fingerprint` (16 hex digits), so a stored secret is
+    used only for the engine, host, port, database, user and path it was entered for (C-1 of stu-007-review.md): a
+    profile that keeps its name but points elsewhere has no stored secret and the page asks again. The project key
+    and the fingerprint have a fixed length, so a name that contains ``:`` cannot make two keys equal.
+    """
+    target = target_fingerprint(profile.to_dict())
+    if owner == "user":
+        return f"user:{profile.name}:{target}"
+    return f"project:{project_key}:{profile.name}:{target}"
 
 
 def _allowed(backend: Any) -> bool:
@@ -276,10 +288,16 @@ class KeyringStore:
         backend = self.backend()
         if backend is None:
             return
+        from keyring.errors import PasswordDeleteError
+
         try:
             backend.delete_password(SERVICE, key)
-        except Exception:  # PasswordDeleteError when there is none: nothing to delete
-            return
+        except PasswordDeleteError:
+            return  # there is none: nothing to delete
+        except Exception:
+            # L-3 of stu-008-review.md: the entry stays, so say so (without the backend's message).
+            logger.warning("the keyring could not remove a secret", extra={"event": "studio.keyring_failed"})
+            raise SecretError("studio.keyring_failed") from None
 
 
 class SessionSecrets:

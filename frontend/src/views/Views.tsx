@@ -1,9 +1,21 @@
-/** The views of the empty shell (STU-005): start, connections, settings, not found. */
-import { Database, FolderOpen } from 'lucide-react';
-import type { ReactNode } from 'react';
+/** The views of the shell (STU-005): start, settings, not found; the connection manager is in connections/ (STU-008). */
+import { FolderOpen } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
+import type { Problem } from '../api/problem';
+import {
+  fetchSettings,
+  saveSettings,
+  type ServerSettings,
+  type SettingsState,
+} from '../api/profiles';
+import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
+import { MAX_ENTRIES, visible } from '../lib/visible';
+import connectionStyles from './connections/Connections.module.css';
+import { Field } from './connections/Field';
+import { issuesByField, problemText } from './connections/messages';
 import { currentLocale, setLocale, SUPPORTED_LOCALES } from '../i18n';
 import { navigate } from '../router';
 import {
@@ -60,20 +72,6 @@ export function StartView() {
   );
 }
 
-export function ConnectionsView() {
-  const { t } = useTranslation();
-  return (
-    <div className={styles.page}>
-      <PageHeader title={t('connections.title')} />
-      <EmptyState
-        icon={<Database />}
-        title={t('connections.emptyTitle')}
-        description={<p>{t('connections.emptyBody')}</p>}
-      />
-    </div>
-  );
-}
-
 function Choice<T extends string>({
   name,
   legend,
@@ -108,7 +106,175 @@ function Choice<T extends string>({
   );
 }
 
-export function SettingsView() {
+/**
+ * Queries and security (08 section 4.10), saved in Studio's own `settings.toml` (`PUT /api/settings`, STU-008). The
+ * limits take effect with the query engine (STU-011); SQL logging is an opt-in with a warning.
+ */
+function ServerSettingsForm({ fetcher }: { fetcher: typeof fetch }) {
+  const { t } = useTranslation();
+  const [state, setState] = useState<SettingsState | null | 'loading'>('loading');
+  const [form, setForm] = useState<{ logSql: boolean; maxRows: string; timeout: string } | null>(
+    null,
+  );
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [saved, setSaved] = useState(false);
+  const [overwrite, setOverwrite] = useState(false);
+
+  const apply = (next: SettingsState | null) => {
+    setState(next);
+    if (next !== null) {
+      setForm({
+        logSql: next.settings.logSql,
+        maxRows: String(next.settings.maxRows),
+        timeout: String(next.settings.statementTimeoutMs / 1000),
+      });
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    void fetchSettings(fetcher).then((next) => {
+      if (active) apply(next);
+    });
+    return () => {
+      active = false;
+    };
+  }, [fetcher]);
+
+  if (state === 'loading') return <p className={connectionStyles.hint}>{t('settings.loading')}</p>;
+  if (state === null || form === null) {
+    return <p className={connectionStyles.problem}>{t('settings.unavailable')}</p>;
+  }
+  const fields = issuesByField(problem);
+  const handWritten = state.file.handWritten || overwrite;
+  const errors = state.issues.filter((issue) => issue.severity !== 'warning');
+
+  const save = async () => {
+    const seconds = Number(form.timeout);
+    const settings: ServerSettings = {
+      logSql: form.logSql,
+      maxRows: /^\d+$/.test(form.maxRows) ? Number(form.maxRows) : NaN,
+      statementTimeoutMs: Number.isFinite(seconds) ? Math.round(seconds * 1000) : NaN,
+    };
+    const local = [
+      ...(Number.isNaN(settings.maxRows)
+        ? [{ pointer: 'settings.limits.max_rows', code: 'config.type' }]
+        : []),
+      ...(Number.isNaN(settings.statementTimeoutMs) || form.timeout.trim() === ''
+        ? [{ pointer: 'settings.limits.statement_timeout_ms', code: 'config.type' }]
+        : []),
+    ];
+    setSaved(false);
+    if (local.length > 0) {
+      setProblem({
+        code: 'studio.settings_invalid',
+        kind: 'config',
+        status: 0,
+        logId: null,
+        issues: local,
+      });
+      return;
+    }
+    const result = await saveSettings(fetcher, settings, state.file.digest, handWritten);
+    if (!result.ok) {
+      setProblem(result.problem);
+      if (result.problem.code === 'studio.config_hand_written') setOverwrite(true);
+      if (result.problem.code === 'studio.config_stale') apply(await fetchSettings(fetcher));
+      return;
+    }
+    setProblem(null);
+    setSaved(true);
+    apply(await fetchSettings(fetcher));
+  };
+
+  return (
+    <form
+      className={connectionStyles.form}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      {errors.length > 0 ? (
+        <div className={connectionStyles.warning} data-testid="settings-issues">
+          <p>{t('settings.fileIssues')}</p>
+          <ul className={connectionStyles.issues}>
+            {errors.slice(0, MAX_ENTRIES).map((issue, index) => (
+              <li key={index}>
+                <code>{visible(String(issue.pointer))}</code>{' '}
+                <code>{visible(String(issue.code))}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <section className={styles.card} aria-labelledby="settings-queries">
+        <h2 id="settings-queries" className={styles.cardTitle}>
+          {t('settings.queries')}
+        </h2>
+        <Field label={t('settings.maxRows')} issues={fields['limits.max_rows']}>
+          {(props) => (
+            <input
+              {...props}
+              className={connectionStyles.input}
+              inputMode="numeric"
+              value={form.maxRows}
+              onChange={(event) => setForm({ ...form, maxRows: event.target.value })}
+            />
+          )}
+        </Field>
+        <Field label={t('settings.timeout')} issues={fields['limits.statement_timeout_ms']}>
+          {(props) => (
+            <input
+              {...props}
+              className={connectionStyles.input}
+              inputMode="decimal"
+              value={form.timeout}
+              onChange={(event) => setForm({ ...form, timeout: event.target.value })}
+            />
+          )}
+        </Field>
+      </section>
+      <section className={styles.card} aria-labelledby="settings-security">
+        <h2 id="settings-security" className={styles.cardTitle}>
+          {t('settings.security')}
+        </h2>
+        <label className={connectionStyles.check}>
+          <input
+            type="checkbox"
+            checked={form.logSql}
+            aria-describedby="settings-log-sql-warning"
+            onChange={(event) => setForm({ ...form, logSql: event.target.checked })}
+          />
+          {t('settings.logSql')}
+        </label>
+        <p id="settings-log-sql-warning" className={connectionStyles.warning}>
+          {t('settings.logSqlWarning')}
+        </p>
+      </section>
+      {handWritten ? <p className={connectionStyles.warning}>{t('settings.handWritten')}</p> : null}
+      <div aria-live="polite">
+        {problem !== null && problem.code !== 'studio.config_hand_written' ? (
+          <p className={connectionStyles.problem} data-testid="settings-problem">
+            {problemText(t, problem)}
+          </p>
+        ) : null}
+        {saved ? (
+          <p className={connectionStyles.status} data-testid="settings-saved">
+            {t('settings.savedServer')}
+          </p>
+        ) : null}
+      </div>
+      <div>
+        <Button type="submit" variant="primary">
+          {t(handWritten ? 'settings.overwrite' : 'settings.save')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const { t } = useTranslation();
   const { preference, density } = useTheme();
   return (
@@ -120,6 +286,7 @@ export function SettingsView() {
         <h2 id="settings-general" className={styles.cardTitle}>
           {t('settings.general')}
         </h2>
+        <p className={connectionStyles.hint}>{t('settings.generalHint')}</p>
         <Choice
           name="language"
           legend={t('settings.language')}
@@ -153,6 +320,7 @@ export function SettingsView() {
           onChange={setDensity}
         />
       </section>
+      <ServerSettingsForm fetcher={fetcher} />
     </div>
   );
 }
