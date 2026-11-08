@@ -58,3 +58,15 @@ def test_probes_are_caught(toml: str) -> None:
 
 def test_final_range_passes() -> None:
     assert problems(tomllib.loads('project.dependencies = ["tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2"]')) == []
+
+
+CONSTRAINTS = PYPROJECT.parent / "constraints" / "tabrion-integration.txt"
+
+
+def test_the_integration_branch_pins_one_full_commit() -> None:
+    """STU-009 integration branch (RC-8): the pre-release range in pyproject.toml, the commit in the constraints
+    file. test_pyproject_follows_rc8 fails on this branch on purpose: it must not merge before tabrion v0.1.0."""
+    lines = [line for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
+    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@546d254a27df9f6b539d57c307ad3022d0ee3a4a"]
+    deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
+    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2"]

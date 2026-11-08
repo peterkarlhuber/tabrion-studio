@@ -50,12 +50,16 @@ Where the answers come from:
 
 ### Database errors (STU-009, STU-011)
 
-Doc 03 derives `kind` from `tabrion.errors.Kind` and the text from `tabrion.errors.safe_message`. Studio has no
-tabrion dependency before STU-009 (RC-8; `docs/TODO.md` TS-001), and nothing in Studio touches a database before
-then, so no database error can occur yet. `problems.DB_KINDS` mirrors the 20 values of `tabrion.errors.Kind` (doc 04
-section 1.1, tabrion 0.1.0a1) so that the format is fixed now. STU-009 replaces the mirror with the enum, maps
-`classify()` results to `db.<kind>` problems and installs `tabrion.errors.DbErrorRedactionFilter` next to Studio's
-own filter, which keeps the SQLSTATE and the constraint name in log records.
+`problems.DB_KINDS` is the set of `tabrion.errors.Kind` values (no mirror since STU-009). `problems.db_problem(error)`
+builds the `db.<kind>` problem from `tabrion.errors.classify` only: the kind selects fixed texts of
+`problems.DB_CATALOG` (status, title, detail, hint), and the SQLSTATE (five characters `[0-9A-Z]`) is the only part
+taken from the error. The server's message, its `DETAIL`, constraint and object names and every value stay out of the
+answer; `tabrion.errors.safe_message` is for the log only.
+
+The log handlers run Studio's `RedactionFilter` first (an exception becomes its types and frames, without any
+message) and then tabrion's `DbErrorRedactionFilter`, which rewrites database errors in the arguments and removes
+`DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts from the message. The other order would leave exception
+messages in the traceback text (`tests/security/test_canary.py`).
 
 ## Logging
 

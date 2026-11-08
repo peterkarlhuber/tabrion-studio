@@ -17,10 +17,10 @@ errors (``db.<kind>``).
 path, no secret, no stack trace, no ``DETAIL`` text of a database server and no value of the request can reach the
 page. The page shows its own de/en text for ``code``.
 
-``kind`` names the error family: :class:`ProblemKind` for Studio's own errors; for ``db.<kind>`` it is one of
-:data:`DB_KINDS`, which mirrors ``tabrion.errors.Kind`` (doc 04 section 1.1, tabrion 0.1.0a1). Studio has no tabrion
-dependency before STU-009 (RC-8, ``docs/TODO.md`` TS-001); STU-009 replaces the mirror with ``tabrion.errors.Kind``
-and builds database problems from ``tabrion.errors.classify`` and ``safe_message`` only.
+``kind`` names the error family: :class:`ProblemKind` for Studio's own errors; for ``db.<kind>`` it is a value of
+``tabrion.errors.Kind`` (doc 04 section 1.1; :data:`DB_KINDS`). :func:`db_problem` builds a database problem from
+``tabrion.errors.classify`` only: the kind picks fixed texts of :data:`DB_CATALOG`, and the SQLSTATE is the only part
+taken from the error. ``tabrion.errors.safe_message`` is for the log, never for the answer (STU-009).
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from typing import Any
 
 from starlette.responses import Response
 from starlette.types import Send
+from tabrion.errors import Classification, Kind, TabrionError, classify
 
 PROBLEM_MEDIA_TYPE = "application/problem+json"
 
@@ -45,35 +46,12 @@ class ProblemKind(enum.StrEnum):
     REQUEST = "request"
     NOT_FOUND = "not_found"
     CONFIG = "config"
+    DATABASE = "database"
     INTERNAL = "internal"
 
 
-#: The values of ``tabrion.errors.Kind`` (doc 04 section 1.1, tabrion a463422 = 0.1.0a1). STU-009 replaces this
-#: mirror with the enum itself (docs/TODO.md TS-001).
-DB_KINDS = frozenset(
-    {
-        "connection",
-        "timeout",
-        "canceled",
-        "locked",
-        "deadlock",
-        "serialization",
-        "unique",
-        "foreign_key",
-        "not_null",
-        "check",
-        "exclusion",
-        "data",
-        "undefined_object",
-        "syntax",
-        "permission",
-        "read_only",
-        "corrupt",
-        "disk_full",
-        "resource",
-        "unknown",
-    }
-)
+#: The values of ``tabrion.errors.Kind`` (doc 04 section 1.1), the names of ``db.<kind>`` problems.
+DB_KINDS = frozenset(kind.value for kind in Kind)
 
 _SQLSTATE = re.compile(r"[0-9A-Z]{5}")
 _LOG_ID = re.compile(r"[0-9a-f]{12}")
@@ -327,6 +305,73 @@ CATALOG: dict[str, Entry] = {
         "Studio does not change the project's profile file.",
         "Edit .tabrion/studio.toml in the project instead.",
     ),
+    # Connections (STU-009). A database's own error is a db.<kind> problem (DB_CATALOG).
+    "studio.connection_not_found": Entry(
+        404, ProblemKind.NOT_FOUND, "Connection not open", "There is no open connection with this ID."
+    ),
+    "studio.connection_stale": Entry(
+        409,
+        ProblemKind.DATABASE,
+        "Connection closed",
+        "The connection's profile changed, was removed or is no longer trusted, so Studio closed the connection.",
+        "Connect again.",
+    ),
+    "studio.connection_limit": Entry(
+        409,
+        ProblemKind.DATABASE,
+        "Too many connections",
+        "Studio keeps at most 8 connections open.",
+        "Close a connection first.",
+    ),
+    "studio.connection_failed": Entry(
+        502, ProblemKind.DATABASE, "Connection failed", "Studio could not reach the database."
+    ),
+    "studio.connection_tls": Entry(
+        422,
+        ProblemKind.DATABASE,
+        "TLS mode not accepted",
+        "The profile's TLS mode is weaker than the host needs.",
+        "Use sslmode verify-full or require for a host outside this computer.",
+    ),
+    "studio.connection_config": Entry(
+        422,
+        ProblemKind.DATABASE,
+        "Connection settings not valid",
+        "The driver did not accept the profile's settings.",
+    ),
+    "studio.database_missing": Entry(
+        404,
+        ProblemKind.DATABASE,
+        "Database file not found",
+        "The profile's SQLite file does not exist. Studio opens files read-only and never creates one.",
+    ),
+    "studio.database_unsafe": Entry(
+        409,
+        ProblemKind.DATABASE,
+        "Database file refused",
+        "The profile's SQLite file is a link or changed while it was opened.",
+    ),
+    "studio.statement_empty": Entry(400, ProblemKind.REQUEST, "No statement", "The text holds no SQL statement."),
+    "studio.statement_multiple": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "One statement at a time",
+        "Studio runs one statement at a time in read-only mode.",
+        "Run the statements one by one.",
+    ),
+    "studio.statement_transaction": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Transaction control not allowed",
+        "Studio runs every statement in its own read-only transaction; BEGIN, COMMIT, SET TRANSACTION and similar "
+        "statements are refused.",
+    ),
+    "studio.statement_refused": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Statement not allowed",
+        "Studio does not run this kind of statement in read-only mode.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,
@@ -335,6 +380,78 @@ CATALOG: dict[str, Entry] = {
         "The log entry with this log ID has the details.",
     ),
 }
+
+
+@dataclass(frozen=True)
+class DbEntry:
+    """The fixed texts of one ``db.<kind>`` problem."""
+
+    status: int
+    title: str
+    detail: str
+    hint: str | None = None
+
+
+#: One entry per ``tabrion.errors.Kind``; a kind tabrion adds later falls back to ``unknown``.
+DB_CATALOG: dict[str, DbEntry] = {
+    "connection": DbEntry(
+        502,
+        "Database not reachable",
+        "Studio could not connect to the database, or the connection was lost.",
+        "Check the host, the port, the user and the password.",
+    ),
+    "timeout": DbEntry(504, "Statement timed out", "The statement ran longer than the profile's timeout."),
+    "canceled": DbEntry(409, "Statement canceled", "The statement was canceled."),
+    "locked": DbEntry(409, "Database busy", "Another session holds a lock the statement needs.", "Try again later."),
+    "deadlock": DbEntry(409, "Deadlock", "The database ended the statement to resolve a deadlock.", "Try again."),
+    "serialization": DbEntry(409, "Concurrent change", "A concurrent change conflicted with the statement."),
+    "unique": DbEntry(409, "Duplicate value", "A unique constraint was violated."),
+    "foreign_key": DbEntry(409, "Reference violated", "A foreign key constraint was violated."),
+    "not_null": DbEntry(409, "Missing value", "A NOT NULL constraint was violated."),
+    "check": DbEntry(409, "Check failed", "A check constraint was violated."),
+    "exclusion": DbEntry(409, "Exclusion violated", "An exclusion constraint was violated."),
+    "data": DbEntry(422, "Value not valid", "A value does not fit its column or operation."),
+    "undefined_object": DbEntry(404, "Object not found", "A table, column, function or other object does not exist."),
+    "syntax": DbEntry(400, "SQL syntax error", "The database could not parse the statement."),
+    "permission": DbEntry(
+        403, "Permission denied", "The database role has no permission for this.", "Ask the database owner."
+    ),
+    "read_only": DbEntry(
+        403,
+        "Read-only connection",
+        "Studio connections are read-only; the database refused a change.",
+        "Studio 1.0 does not write to databases.",
+    ),
+    "corrupt": DbEntry(500, "Database damaged", "The database reported damaged data or a file that is no database."),
+    "disk_full": DbEntry(507, "Disk full", "The database ran out of disk space."),
+    "resource": DbEntry(503, "Database out of resources", "The database ran out of memory or another resource."),
+    "unknown": DbEntry(500, "Database error", "The database reported an error Studio does not classify."),
+}
+
+
+def db_problem(error: BaseException | Classification, *, log_id: str | None = None) -> Problem:
+    """The ``db.<kind>`` problem of a database error: fixed texts for the kind, plus the SQLSTATE (STU-009)."""
+    if isinstance(error, Classification):
+        classification: Classification | None = error
+    elif isinstance(error, TabrionError) and error.classification is not None:
+        classification = error.classification
+    else:
+        classification = classify(error)
+    kind = classification.kind.value if classification is not None else "unknown"
+    if kind not in DB_CATALOG:
+        kind = "unknown"
+    entry = DB_CATALOG[kind]
+    sqlstate = None if classification is None else classification.sqlstate
+    if sqlstate is not None and _SQLSTATE.fullmatch(sqlstate) is None:
+        sqlstate = None
+    if log_id is not None and _LOG_ID.fullmatch(log_id) is None:
+        raise ValueError("malformed log ID")
+    return Problem(f"db.{kind}", kind, entry.status, entry.title, entry.detail, entry.hint, log_id, sqlstate)
+
+
+def db_problem_response(error: BaseException | Classification, *, log_id: str | None = None) -> Response:
+    doc = db_problem(error, log_id=log_id)
+    return Response(doc.body(), status_code=doc.status, media_type=PROBLEM_MEDIA_TYPE)
 
 
 def new_log_id() -> str:
@@ -424,7 +541,7 @@ def problem(
 
 def is_problem_code(value: object) -> bool:
     """Whether ``value`` is a code of the catalog (used to log only known codes)."""
-    return isinstance(value, str) and value in CATALOG
+    return isinstance(value, str) and (value in CATALOG or (value.startswith("db.") and value[3:] in DB_CATALOG))
 
 
 def code_for_status(status: int) -> str:

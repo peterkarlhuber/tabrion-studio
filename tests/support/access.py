@@ -13,6 +13,7 @@ from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens
 from tabrion_studio.security.sessions import CSRF_HEADER
+from tabrion_studio.services.connections import ConnectionRegistry
 
 TOKEN = "control-token-for-tests"
 PORT = 1234
@@ -51,7 +52,11 @@ class Studio:
 
 
 def make_studio(
-    static_dir: Path, redirect_dir: Path | None = None, idle_seconds: float = 0, config: Configuration | None = None
+    static_dir: Path,
+    redirect_dir: Path | None = None,
+    idle_seconds: float = 0,
+    config: Configuration | None = None,
+    connections: ConnectionRegistry | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -63,6 +68,7 @@ def make_studio(
         launches=LaunchTokens(ORIGIN, redirect_dir=redirect_dir, prefix="studio-test", clock=clock),
         request_shutdown=shutdowns.append,
         config=config,
+        connections=connections,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

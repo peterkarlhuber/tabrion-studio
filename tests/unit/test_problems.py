@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import re
 
 import pytest
+from tabrion.errors import Kind, classify
 
 from tabrion_studio.problems import (
     CATALOG,
+    DB_CATALOG,
     DB_KINDS,
     PROBLEM_MEDIA_TYPE,
     ProblemKind,
     code_for_status,
+    db_problem,
     is_problem_code,
     new_log_id,
     problem,
@@ -88,7 +92,9 @@ def test_codes_and_kinds() -> None:
     assert well_formed_code("db.unique") and well_formed_code("db.read_only")
     assert not well_formed_code("db.nonsense") and not well_formed_code("other.x") and not well_formed_code("studio.")
     assert {kind.value for kind in ProblemKind}.isdisjoint(DB_KINDS - {"unknown"})
-    assert len(DB_KINDS) == 20  # tabrion.errors.Kind of doc 04 section 1.1
+    assert {kind.value for kind in Kind} == DB_KINDS  # tabrion.errors.Kind itself, no mirror (TS-001, STU-009)
+    assert len(DB_KINDS) == 20  # doc 04 section 1.1
+    assert is_problem_code("db.read_only") and not is_problem_code("db.nonsense")
     assert is_problem_code("studio.not_found") and not is_problem_code("x") and not is_problem_code(None)
     assert [code_for_status(s) for s in (404, 405, 400, 413, 500, 503)] == [
         "studio.not_found",
@@ -141,3 +147,27 @@ def test_issues_carry_fixed_key_names_and_config_codes_only() -> None:
     ):
         with pytest.raises(ValueError):
             problem("studio.profile_invalid", issues=bad)
+
+
+def test_every_database_kind_has_fixed_texts() -> None:
+    assert set(DB_CATALOG) == DB_KINDS
+    for entry in DB_CATALOG.values():
+        assert 400 <= entry.status < 600
+        for text in (entry.title, entry.detail, entry.hint or "x"):
+            assert text.isascii() and text.strip() == text and not re.search(r"[{}%]", text)
+
+
+def test_a_database_problem_takes_only_kind_and_sqlstate_from_the_error() -> None:
+    """STU-009: db.<kind> from tabrion.errors.classify; the server's message, DETAIL and values never reach it."""
+    import sqlite3
+
+    canary = "tabrion-canary-db-problem"
+    error = sqlite3.IntegrityError(f"UNIQUE constraint failed: users.email ({canary})")
+    error.sqlite_errorname = "SQLITE_CONSTRAINT_UNIQUE"
+    doc = db_problem(error).to_dict()
+    assert doc["code"] == "db.unique" and doc["kind"] == "unique" and doc["status"] == 409
+    assert canary not in json.dumps(doc) and "users" not in json.dumps(doc)
+    assert db_problem(classify(error)).to_dict() == doc
+    assert db_problem(RuntimeError(canary)).to_dict()["code"] == "db.unknown"
+    with pytest.raises(ValueError):
+        db_problem(error, log_id="not-hex")

@@ -16,7 +16,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Blocked (tabrion v0.1.0) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Integration branch only (STU-009 draft PR, tabrion 546d254 pinned); master blocked until tabrion v0.1.0 |
 | OA-001 make `ci-ok` a required check; check the ci-ok run link before every merge | P0 | Open (owner) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -40,7 +40,8 @@
 | TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5; STU-007 L-1, I-4, I-5; R-1 done) | P2 | Open |
-| TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
+| TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
+| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -55,7 +56,8 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### TS-001 · Add the tabrion dependency with the first API use (TABRION STU-009, RC-8)
 
-- **Priority:** P1 High · **Status:** Blocked (tabrion v0.1.0, TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
+- **Priority:** P1 High · **Status:** Integration branch only (STU-009 draft PR; master blocked until tabrion v0.1.0,
+  TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
 - **What:** nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency (no git pin, no
   pre-release specifier on master, RC-8; enforced by `tests/security/test_dependencies.py`).
 - **Next step:** add `tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2` with the first WP that uses the Tabrion API
@@ -63,6 +65,17 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver (later
   `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint, and a
   connection is built from `Profile` only, never from unknown keys.
+- **STU-009 integration branch (`claude/project-thread-rdo6g3-stu009`, draft, never merged before v0.1.0):**
+  `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2`, and
+  `constraints/tabrion-integration.txt` pins tabrion master `546d254a27df9f6b539d57c307ad3022d0ee3a4a`
+  (0.1.0a2.dev0). The a1 commit `a463422` has only `tabrion.errors`, `sql` and `config`; STU-009 needs
+  `Database`, `Profile`, `Database.read()` and `health()` (layer B, TAB-018), which arrived later.
+  `tests/security/test_dependencies.py::test_pyproject_follows_rc8` fails on that branch on purpose. With v0.1.0:
+  final range `>=0.1,<0.2`, the constraints file removed, a merge of master, then the PR is ready for review.
+  Done there: URLs only through `tabrion.safe_url()`, passwords only through `resolve_secret` when connecting,
+  project SQLite files only through `database_file`, every driver parameter in the fingerprint, `DB_KINDS` from
+  `tabrion.errors.Kind`, `db.<kind>` problems from `classify`, `DbErrorRedactionFilter` in the log handlers
+  (`docs/architecture/connections.md`).
 - **Also with STU-009 (from STU-007):** show connection URLs only through `tabrion.safe_url()`, resolve passwords
   only through `Configuration.resolve_secret(id)` when connecting, and open project SQLite files only through
   `ProjectConfig.database_file` (review T-1).
@@ -320,7 +333,7 @@ merge after OA-004.
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
 | TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
-| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
+| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Draft PR on the integration branch (tabrion 546d254 pinned, RC-8; not before v0.1.0): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`. Open: the `backend integration (PostgreSQL 17)` job (OA-003), the page (TD-011, TD-012) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
@@ -363,8 +376,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** 05 §3.2, AC-1
 - **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages. STU-006 adds `api`
-  and `config` (the profiles layer; `config` never imports `api`, the app, the server, the CLI or `security`); the
-  `services` layer arrives with STU-009. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
+  and `config` (the profiles layer; `config` never imports `api`, the app, the server, the CLI or `security`).
+  STU-009 (integration branch) adds `services` (the connection registry): it never imports `api`, the app, the
+  server, the CLI or `security`, `config` never imports it, and only it imports SQLAlchemy and psycopg. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
 
@@ -499,6 +513,23 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   checks every component against the network and automount forms before `lstat`
   (`test_a_relative_link_that_climbs_to_net_is_refused_before_lstat`). R-3 (refuse a leading `\??\` as text) is done
   as well.
+
+### TD-012 · STU-009 integration: what remains before it can merge
+
+- **Priority:** P1 High · **Status:** Open · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **tabrion v0.1.0 (TS-001):** switch to the final range, remove `constraints/tabrion-integration.txt`, merge
+  master, run every check, then mark the PR ready.
+- **The CI job `backend integration (PostgreSQL 17)`** changes `.github/` (workflow-change review, OA-003). Until
+  then, `tests/security/test_read_only.py` runs the PostgreSQL tests only with `TABRION_STUDIO_TEST_POSTGRES`. They
+  passed locally against PostgreSQL 16.
+- **Binding for STU-011:** user SQL goes through `services.readonly.check_statement`, with one `Database.read()` per
+  statement. PostgreSQL runs a text with several statements in one round trip, so `COMMIT; BEGIN READ WRITE; ...`
+  would write; the STU-009 probe showed it.
+- **The page:** "Test connection" and "Connect" (TD-011) can now call `POST /api/connection-tests` and
+  `POST /api/connections`; the frontend part is not in the STU-009 draft.
+- **The libpq environment:** `PGHOSTADDR`, `PGSERVICE` and similar variables of the user's own environment apply to
+  what the URL leaves out. A project file cannot set them. Decide whether Studio should clear them for its
+  connections.
 
 ### TD-011 · STU-008 parts that wait for STU-009 or a later package
 

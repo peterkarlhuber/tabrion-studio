@@ -38,6 +38,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tabrion_studio._version import __version__
 from tabrion_studio.api.config import Configuration, add_config_routes
+from tabrion_studio.api.connections import add_connection_routes
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
 from tabrion_studio.logs import register_secret
@@ -46,6 +47,7 @@ from tabrion_studio.request_log import RequestLogMiddleware
 from tabrion_studio.security.access import AccessMiddleware
 from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
+from tabrion_studio.services.connections import ConnectionRegistry
 
 _logger = logging.getLogger("tabrion_studio.app")
 
@@ -78,6 +80,8 @@ class Runtime:
     sessions: Sessions = field(default_factory=Sessions)
     #: Profiles, settings and project trust (STU-006); None serves no configuration routes.
     config: Configuration | None = None
+    #: The open, read-only database connections (STU-009); None serves no connection routes.
+    connections: ConnectionRegistry | None = None
 
 
 def _problem(code: str) -> Response:
@@ -130,6 +134,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+                if runtime.connections is not None:
+                    # Engines are disposed on shutdown (STU-009).
+                    await asyncio.to_thread(runtime.connections.close_all)
         except Exception:
             _logger.exception("application %s failed", phase, extra={"event": "studio.lifespan_failed"})
             raise
@@ -206,6 +213,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
 
     if runtime.config is not None:
         add_config_routes(app, runtime.config)
+    if runtime.connections is not None:
+        add_connection_routes(app, runtime.connections)
 
     index = static_dir / "index.html"
     if index.is_file():
