@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, replace
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import sqlite3
 from typing import Any
 
@@ -355,7 +356,8 @@ def test_the_driver_gets_only_the_fingerprinted_fields() -> None:
     for key, value in changes.items():
         assert connection_url(replace(PG_PROFILE, **{key: value}), "pw") != url, key
     sqlite = connection_url(Profile("p", "sqlite", "dev", path="x.db"), None, Path("/real/x.db"))
-    assert (sqlite.drivername, sqlite.database, sqlite.host, dict(sqlite.query)) == ("sqlite", "/real/x.db", None, {})
+    assert (sqlite.drivername, sqlite.host, dict(sqlite.query)) == ("sqlite", None, {})
+    assert sqlite.database == str(Path("/real/x.db"))  # the path as given (backslashes on Windows)
 
 
 def test_a_connection_whose_profile_changes_is_closed(
@@ -374,7 +376,7 @@ def test_a_connection_whose_profile_changes_is_closed(
     source.profiles["project:parts"] = replace(source.profiles["project:parts"], path="data/parts.db")
     again = registry.open("project:parts")
     other = tmp_path / "swapped.db"
-    sqlite_file.rename(other)
+    shutil.copyfile(sqlite_file, other)  # not a rename: Windows keeps an open file in place
     source.files["project:parts"] = other  # database_file now resolves elsewhere (a link swapped in, T-1)
     assert registry.list() == []
     with pytest.raises(RegistryError):
