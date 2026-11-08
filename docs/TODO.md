@@ -41,6 +41,8 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
+| TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -545,3 +547,26 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
+
+### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
+
+- **Priority:** P3 Low · **Status:** Open (watch) · **Refs:** TABRION QA-8, `docs/development/ci.md` (QA-8 evidence)
+- **What:** `npm audit` over the whole tree reports GHSA-g3hv-75wg-m249 (moderate, a denial of service through
+  glob patterns) in `minimatch` 7.0.0..11.0.0, used only by eslint, `@eslint/config-array` and typescript-eslint.
+  Nothing of it ships: `npm audit --omit=dev --audit-level=high` finds nothing, and the wheel contains only the
+  built frontend. The fix npm offers (`npm audit fix --force`) downgrades eslint to 9.x.
+- **Next step:** take the eslint/typescript-eslint update that moves to a fixed `minimatch` when Dependabot proposes
+  it; no forced downgrade.
+
+### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
+  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
+  `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
+  `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
+  The CI jobs still build with the unhashed `pyproject.toml` pin.
+- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
+  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
+  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
+  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.

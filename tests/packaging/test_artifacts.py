@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tarfile
 import zipfile
 
@@ -60,3 +63,26 @@ def test_sdist_can_build_the_wheel(dist: Path) -> None:
     assert "hatch_build.py" in names
     assert "frontend/package-lock.json" in names
     assert not any(n.startswith(("frontend/node_modules", "frontend/dist")) for n in names)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_two_builds_give_the_same_wheel_hash(dist: Path, tmp_path: Path) -> None:
+    """QA-8: the wheel is reproducible: two fresh builds from the same tree (with the built frontend) and the job's
+    own wheel have the same SHA-256."""
+    root = Path(__file__).resolve().parents[2]
+    digests = {_sha256(_one(dist, "tabrion_studio-*.whl"))}
+    # The hashed backend pins of build-constraints.txt: the hash holds for that hatchling version only.
+    env = {**os.environ, "PIP_CONSTRAINT": str(root / "build-constraints.txt"), "PIP_REQUIRE_HASHES": "1"}
+    for name in ("first", "second"):
+        out = tmp_path / name
+        subprocess.run(
+            [sys.executable, "-m", "build", "--wheel", "--outdir", str(out), str(root)],
+            check=True,
+            capture_output=True,
+            env=env,
+        )
+        digests.add(_sha256(_one(out, "tabrion_studio-*.whl")))
+    assert len(digests) == 1, digests
