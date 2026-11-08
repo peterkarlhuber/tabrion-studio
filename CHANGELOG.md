@@ -76,6 +76,10 @@ All notable changes to this project are documented here. The format follows
   network form before it `lstat`s it (a relative link that climbs to `/net` triggered the macOS automount); R-3, a
   leading `\??\` is refused as text.
 
+- Network log check (QA-9, SQ-08): `e2e/network.spec.ts` visits every view, dialog and notice of the e2e harness, and
+  `e2e/backend.spec.ts` the real server, and fails if the page requests any other host (no CDN font, telemetry,
+  external image or script).
+
 ### Security
 
 - Conditions of the reviews of PR #7 (`stu-004-review.md`) and PR #8 (`stu-006-review.md`):

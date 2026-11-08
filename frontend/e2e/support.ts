@@ -38,3 +38,27 @@ export async function seriousViolations(page: Page): Promise<string[]> {
     .filter((v) => v.impact === 'serious' || v.impact === 'critical')
     .map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`);
 }
+
+/** Every request and WebSocket the page opens whose origin is not the page's own (data: and blob: are local). */
+export function foreignRequests(page: Page, origin: () => string): string[] {
+  const foreign: string[] = [];
+  const check = (url: string) => {
+    if (/^(data|blob|about):/.test(url)) return;
+    let target: string;
+    try {
+      target = new URL(url).origin;
+    } catch {
+      foreign.push(url);
+      return;
+    }
+    // The development server's hot-reload socket is ws:// on the same host and port.
+    const own = new URL(origin());
+    const same =
+      target === own.origin ||
+      target === `${own.protocol === 'https:' ? 'wss' : 'ws'}://${own.host}`;
+    if (!same) foreign.push(url);
+  };
+  page.on('request', (request) => check(request.url()));
+  page.on('websocket', (socket) => check(socket.url()));
+  return foreign;
+}

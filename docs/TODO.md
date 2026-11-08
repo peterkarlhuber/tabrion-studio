@@ -295,7 +295,7 @@ merge after OA-004.
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
 | TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | Done (PR #7, OA-007 accepted; C-1 done in PR #9): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
-| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
+| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Acceptance met in the QA-9 PR: smoke and axe green, and the network log shows 0 foreign hosts (SQ-08; `e2e/network.spec.ts` over every harness view, dialog and notice, and the real server in `backend.spec.ts`). Open: the platforms e2e smoke (05 §3.5, `platforms.yml`), Firefox and WebKit; both change `.github/` and need a workflow-change review (TD-007) |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | In progress (STU-007 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests. Needs an independent review (credential surface, 07 §6), OA-009 |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
@@ -388,7 +388,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `SameSite=Strict` still block cross-site use, and Vite checks `Host`, but the development setup is not for shared
   machines (now said in the docs and in `vite.config.ts`). The launch flow (`file://` meta refresh to http, the CSP)
   was checked in Chrome only.
-- **Next step:** QA-9 adds Firefox and WebKit runs of the launch flow against the built wheel.
+- **Next step:** Firefox and WebKit runs of the launch flow against the built wheel, and the `platforms.yml` smoke on
+  macOS and Windows (05 §3.5). Both add CI jobs (a workflow-change review, OA-003) and browser installs; the network
+  check of QA-9 (0 foreign hosts) is done in Chromium.
 
 ### TD-008 · Add a windows-latest CI job for the T-2 checks (review C-2 of `stu-006-review.md`)
 
