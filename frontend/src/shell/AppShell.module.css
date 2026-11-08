@@ -49,6 +49,12 @@
   gap: var(--tb-space-2);
   min-width: 0;
 }
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-space-1);
+  margin-left: auto;
+}
 .body {
   display: grid;
   grid-template-columns: var(--tb-activitybar-width) minmax(0, 1fr);

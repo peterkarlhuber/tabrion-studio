@@ -1,0 +1,21 @@
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--tb-text-sm);
+}
+.table th {
+  padding: var(--tb-space-1) var(--tb-space-2);
+  border-bottom: 1px solid var(--tb-color-border);
+  color: var(--tb-color-text-muted);
+  font-weight: var(--tb-weight-medium);
+  text-align: left;
+}
+.table td {
+  padding: var(--tb-space-2);
+  border-bottom: 1px solid var(--tb-color-border);
+}
+.note {
+  margin: 0;
+  color: var(--tb-color-text-muted);
+  font-size: var(--tb-text-sm);
+}
