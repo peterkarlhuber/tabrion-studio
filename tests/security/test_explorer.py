@@ -17,12 +17,15 @@ import os
 from pathlib import Path
 import sqlite3
 import sys
+import threading
 import time
+from typing import Any
 
 import pytest
 import sqlalchemy
 
 from tabrion_studio.config.schema import Profile, SecretRef
+from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services.connections import ConnectionRegistry, RegistryError
 from tabrion_studio.services.explorer import Explorer, ExplorerError
 from tests.security.test_read_only import Source
@@ -236,3 +239,154 @@ def test_pg_table_detail_and_extensions(pg: tuple[Explorer, str]) -> None:
     assert plpgsql["schema"] == "pg_catalog" and plpgsql["update_available"] is False
     with pytest.raises(ExplorerError):
         explorer.sqlite_info(connection_id)
+
+
+# The fix round of stu-010-review.md (M-1, L-1..L-3, I-3, I-6).
+
+
+def _write(path: Path, *statements: str) -> None:
+    writer = sqlite3.connect(path)
+    for statement in statements:
+        writer.execute(statement)
+    writer.commit()
+    writer.close()
+
+
+def test_l1_a_table_dropped_after_the_catalog_is_not_found(lite: tuple[Explorer, str, Source], tmp_path: Path) -> None:
+    explorer, connection_id, _ = lite
+    explorer.catalog(connection_id)
+    _write(tmp_path / "parts.db", "DROP TABLE bulk_000")
+    with pytest.raises(ExplorerError) as raised:
+        explorer.table(connection_id, "main", "bulk_000")
+    assert raised.value.code == "studio.object_not_found"
+    doc = explorer.catalog(connection_id)
+    assert doc["cached"] is False  # the stale entry was dropped
+    assert not any(item["name"] == "bulk_000" for item in doc["objects"])
+
+
+def test_l3_unknown_names_rebuild_the_catalog_at_most_every_few_seconds(lite: tuple[Explorer, str, Source]) -> None:
+    explorer, connection_id, _ = lite
+    now = [1000.0]
+    explorer.clock = lambda: now[0]
+    builds: list[int] = []
+    real = explorer._catalog
+
+    def counting(*args: Any) -> dict[str, Any]:
+        builds.append(1)
+        return real(*args)
+
+    explorer._catalog = counting  # type: ignore[method-assign,assignment]
+    for index in range(10):
+        with pytest.raises(ExplorerError):
+            explorer.table(connection_id, "main", f"nope_{index}")
+    assert len(builds) == 1  # the first build; a catalog younger than 5 s is not rebuilt
+    now[0] += 6.0
+    with pytest.raises(ExplorerError):
+        explorer.table(connection_id, "main", "nope")
+    assert len(builds) == 2
+    with pytest.raises(ExplorerError):
+        explorer.table(connection_id, "main", "nope")
+    assert len(builds) == 2
+
+
+def test_l3_a_new_table_is_found_once_the_catalog_is_old_enough(
+    lite: tuple[Explorer, str, Source], tmp_path: Path
+) -> None:
+    explorer, connection_id, _ = lite
+    now = [1000.0]
+    explorer.clock = lambda: now[0]
+    explorer.catalog(connection_id)
+    _write(tmp_path / "parts.db", 'CREATE TABLE "x/y" (id INTEGER PRIMARY KEY)')
+    now[0] += 6.0
+    assert explorer.table(connection_id, "main", "x/y")["primary_key"]["columns"] == ["id"]
+
+
+def test_i3_closing_a_connection_drops_its_catalog(lite: tuple[Explorer, str, Source]) -> None:
+    explorer, connection_id, _ = lite
+    explorer.catalog(connection_id)
+    assert connection_id in explorer._cache
+    explorer.registry.close(connection_id)
+    assert connection_id not in explorer._cache
+
+
+def test_l2_i6_busy_pool_and_names_with_a_slash(
+    lite: tuple[Explorer, str, Source], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, _, source = lite
+    _write(tmp_path / "parts.db", 'CREATE TABLE "x/y" (id INTEGER PRIMARY KEY)')
+    monkeypatch.setattr(connections_module, "POOL_TIMEOUT_S", 0.3)
+    registry = ConnectionRegistry(source)
+    busy = Explorer(registry)
+    connection_id = registry.open("project:parts").id
+    studio = make_studio(tmp_path / "static", connections=registry, explorer=busy)
+    headers = {**studio.sign_in(), "Origin": ORIGIN}
+    try:
+        found = studio.client.get(
+            f"/api/connections/{connection_id}/table", params={"schema": "main", "name": "x/y"}, headers=headers
+        )
+        assert found.status_code == 200 and found.json()["name"] == "x/y"
+        connection = registry.get(connection_id)
+        release, holding = threading.Event(), threading.Barrier(3)
+
+        def hold() -> None:
+            with connection._read():  # one session of the pool, as a running query would
+                holding.wait()
+                release.wait(10)
+
+        holders = [threading.Thread(target=hold) for _ in range(2)]
+        for holder in holders:
+            holder.start()
+        holding.wait()
+        try:
+            answer = studio.client.get(f"/api/connections/{connection_id}/catalog?refresh=true", headers=headers)
+        finally:
+            release.set()
+            for holder in holders:
+                holder.join()
+        assert (answer.status_code, answer.json()["code"]) == (503, "studio.connection_busy")
+    finally:
+        registry.close_all()
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_m1_foreign_keys_into_search_path_schemas(pg: tuple[Explorer, str]) -> None:
+    """A key into ``public`` and one into the schema named like the role (``$user``) keep their schema."""
+    explorer, connection_id = pg
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    role = str(url.username)
+    admin = sqlalchemy.create_engine(url.set(drivername="postgresql+psycopg"))
+    setup = [
+        "CREATE TABLE public.studio_explorer_ref (id int PRIMARY KEY)",
+        f'CREATE SCHEMA "{role}"',
+        f'CREATE TABLE "{role}".studio_explorer_dup (id int PRIMARY KEY)',
+        "CREATE TABLE studio_explorer.studio_explorer_dup (id int PRIMARY KEY)",  # a decoy of the same name
+        "CREATE TABLE studio_explorer.child (id int PRIMARY KEY, "
+        "r int CONSTRAINT to_public REFERENCES public.studio_explorer_ref (id), "
+        f'd int CONSTRAINT to_user REFERENCES "{role}".studio_explorer_dup (id))',
+    ]
+    try:
+        with admin.begin() as connection:
+            for statement in setup:
+                connection.exec_driver_sql(statement)
+        child = explorer.table(connection_id, "studio_explorer", "child")
+        keys = {key["name"]: key for key in child["foreign_keys"]}
+        assert keys["to_public"]["referred_schema"] == "public" and keys["to_public"]["columns"] == ["r"]
+        assert keys["to_user"]["referred_schema"] == role and keys["to_user"]["referred_columns"] == ["id"]
+        ref = explorer.table(connection_id, "public", "studio_explorer_ref")
+        assert [(item["schema"], item["table"], item["columns"]) for item in ref["referenced_by"]] == [
+            ("studio_explorer", "child", ["r"])
+        ]
+        dup = explorer.table(connection_id, role, "studio_explorer_dup")
+        assert [item["name"] for item in dup["referenced_by"]] == ["to_user"]
+        decoy = explorer.table(connection_id, "studio_explorer", "studio_explorer_dup")
+        assert decoy["referenced_by"] == []
+        part = explorer.table(connection_id, "studio_explorer", "part")  # a key inside one schema still works
+        assert part["foreign_keys"][0]["referred_schema"] == "studio_explorer"
+    finally:
+        with admin.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS studio_explorer.child")
+            connection.exec_driver_sql("DROP TABLE IF EXISTS public.studio_explorer_ref")
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{role}" CASCADE')
+        admin.dispose()

@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
   `GET /api/connections/{id}/extensions` (PostgreSQL) and `GET /api/connections/{id}/sqlite-info` (pragmas, file
   size and mode, `STRICT`, `WITHOUT ROWID`). 500 tables in under a second.
+  - Review `stu-010-review.md`: PostgreSQL foreign keys come from `pg_constraint` (a key into a search-path schema
+    such as `public` kept the wrong schema); an object dropped after the catalog was built is
+    `studio.object_not_found`; a busy pool is `studio.connection_busy` (503); unknown names rebuild the catalog at
+    most every 5 seconds; a closed connection's catalog is dropped at once; `GET /api/connections/{id}/table?schema=&name=`
+    for names with `/`; SQLite facts without `PRAGMA table_list` before SQLite 3.37.
 - STU-011 (integration branch only, stacked on STU-009; on tabrion 0.1 behind `services/tabrion_compat.py` until
   tabrion 0.2):
   - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
@@ -31,6 +36,16 @@ All notable changes to this project are documented here. The format follows
   - Cancel within a second (PostgreSQL `cancel_safe()`, SQLite `interrupt()`); a canceled PostgreSQL connection
     leaves the pool.
   - No SQL text, parameter value or row in the log.
+  - Review `stu-011-review.md` (and H-1 of `tab-033-review.md`):
+    - M-1, M-2, I-2: `check_statement` allows a statement only by its first word (`SELECT`, `WITH`, `VALUES`,
+      `TABLE`, `EXPLAIN` of a query, `SHOW`, `PRAGMA`), so `DECLARE ... WITH HOLD`, `FETCH`, `MOVE`, `CLOSE`, `SET`
+      and every write are refused before the database. PostgreSQL connections get Studio's session settings as
+      startup options and run `RESET ALL` on check-in.
+    - M-3: a fetch loads about 2 MB at most (one row first, then as many as fit).
+    - L-1: `OpenConnection.stream` checks the driver text it executes.
+    - L-2, H-1: a connection that got a cancel is invalidated on both engines (closed if that fails), with tests of
+      both cancel guards.
+    - L-3: one cancel worker per query. I-3: the byte cap is the new `max_result_mb` setting (20 MB, up to 200 MB).
 - STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no

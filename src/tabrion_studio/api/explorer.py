@@ -6,6 +6,7 @@
 * ``GET /api/connections/{id}/tables/{schema}/{name}``: columns, primary key, foreign keys out (``foreign_keys``) and
   in (``referenced_by``), unique and check constraints, indexes and the row estimate (PostgreSQL). An object outside
   the catalog is ``studio.object_not_found``.
+* ``GET /api/connections/{id}/table?schema=&name=``: the same detail, for names with ``/`` (I-6).
 * ``GET /api/connections/{id}/extensions`` (PostgreSQL) and ``GET /api/connections/{id}/sqlite-info`` (SQLite); the
   other engine gets ``studio.explorer_engine``.
 
@@ -19,7 +20,7 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Query, Response
 from fastapi.responses import JSONResponse
 
 from tabrion_studio.api.connections import connection_problem
@@ -50,6 +51,15 @@ def add_explorer_routes(app: FastAPI, explorer: Explorer) -> None:
     async def get_table(connection_id: str, schema: str, name: str) -> Response:
         if len(schema) > MAX_NAME or len(name) > MAX_NAME:
             return problem_response("studio.object_not_found")
+        return await answer(explorer.table, connection_id, schema, name)
+
+    @app.get("/api/connections/{connection_id}/table")
+    async def get_table_by_query(
+        connection_id: str,
+        schema: str = Query(..., max_length=MAX_NAME),
+        name: str = Query(..., max_length=MAX_NAME),
+    ) -> Response:
+        # I-6 of stu-010-review.md: a name with "/" cannot be a path segment (%2F is a separator to the router).
         return await answer(explorer.table, connection_id, schema, name)
 
     @app.get("/api/connections/{connection_id}/extensions")

@@ -358,6 +358,8 @@ class Settings:
     log_sql: bool = False
     max_rows: int = 10_000
     statement_timeout_ms: int = 30_000
+    #: 03 section 5.3: bytes per result in the backend, 20 MB by default, configurable up to 200 MB.
+    max_result_mb: int = 20
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -365,7 +367,11 @@ class Settings:
             "theme": self.theme,
             "log_sql": self.log_sql,
             "telemetry": False,
-            "limits": {"max_rows": self.max_rows, "statement_timeout_ms": self.statement_timeout_ms},
+            "limits": {
+                "max_rows": self.max_rows,
+                "statement_timeout_ms": self.statement_timeout_ms,
+                "max_result_mb": self.max_result_mb,
+            },
         }
 
 
@@ -393,10 +399,13 @@ def validate_settings(doc: dict[str, Any]) -> tuple[Settings, list[Issue]]:
         timeout = _integer(limits, "statement_timeout_ms", "settings.limits", 1, 24 * 3600 * 1000, issues)
         if rows is not None:
             values["max_rows"] = rows
+        result_mb = _integer(limits, "max_result_mb", "settings.limits", 1, 200, issues)
         if timeout is not None:
             values["statement_timeout_ms"] = timeout
+        if result_mb is not None:
+            values["max_result_mb"] = result_mb
         for key in limits:
-            if key not in ("max_rows", "statement_timeout_ms"):
+            if key not in ("max_rows", "statement_timeout_ms", "max_result_mb"):
                 issues.append(Issue(f"settings.limits.{_key(str(key))}", "config.unknown_key", "warning"))
     else:
         issues.append(Issue("settings.limits", "config.type"))

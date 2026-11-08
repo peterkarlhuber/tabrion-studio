@@ -346,7 +346,7 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Draft PR on the integration branch (tabrion 546d254 pinned, RC-8; not before v0.1.0): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`. Open: the `backend integration (PostgreSQL 17)` job (OA-003), the page (TD-011, TD-012) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
-| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`). Open: the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
+| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7). Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
 | TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
@@ -504,7 +504,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
   so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
 - **T-4 (rest), done:** D-01 shows each connection's TLS mode and marks `weak_tls` (weaker than `verify-full` on a
-  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` stays with STU-010.
+  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` moves to STU-014 (diagnostics; I-5 of
+  `stu-010-review.md`).
 - **T-5, done:** D-01 shows one line per PostgreSQL connection with the secret's source, `host:port` and the TLS mode,
   and marks `remote_host`.
 - **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
@@ -592,13 +593,27 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `Transaction.cancel`, `Column` with `tabrion.Column`, `tabrion_compat.inspector` with `Database.inspector()`
   (STU-010); keep the STU-011 tests (STU-T-018..020) unchanged as the
   acceptance of the swap. Check that 0.2's `stream` takes the driver's text without `text()` (I-2), or keep Studio's
-  `sqltext.bind` in front of it, and that a canceled PostgreSQL connection leaves the pool.
+  `sqltext.bind` in front of it, and that a canceled connection leaves the pool on both engines (H-1 of
+  `tab-033-review.md`; Studio's `_discard` and its tests `test_l2_*`, `test_*h1_*` are the acceptance). Replace
+  `tabrion_compat.reset_session` (check-in `RESET ALL` with Studio's settings as startup options, M-2 of
+  `stu-011-review.md`) with tabrion's own session reset if 0.2 has one, and keep `test_pg_m2_*`.
+- **Fix round of `stu-011-review.md` (done in the STU-011 draft):** M-1/M-2/I-2 allowlist of first words in
+  `check_statement` and the check-in reset; M-3 fetches within a 2 MB budget (a single value still loads in full:
+  only the database's limit bounds it; the data viewer's "load in full" is the way to large values); L-1
+  `sqltext.is_bound` in `stream`; L-2 tests of both cancel guards; L-3 one cancel worker per query, which keeps
+  asking once a second after 3 s (closing a running connection from another thread is safe in neither driver, so a
+  statement that ignores the cancel still holds its slot until the driver returns); I-3 `max_result_mb` (1 to 200).
+  Open from the review: I-1 (bind a query to its session if Studio ever has several sessions) and I-4 (the SSE
+  generator polls every 50 ms; a condition would avoid it), both for STU-012, by 2026-12-15.
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
   its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell of a query
   result (10 MB, 03 §5.3; the data viewer has it since STU-013) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost
   warning for prod profiles come with STU-012.
+- **Explorer (STU-010) with tabrion 0.2:** replace `tabrion_compat.inspector` with `Database.inspector()`, the
+  extensions query with `tabrion.postgres.extension_status` and the SQLite facts with `tabrion.sqlite.diagnose`
+  (03 §6; I-4 of `stu-010-review.md`); keep `test_explorer.py` unchanged as the acceptance.
 - **STU-013 data viewer:** it uses the same `tabrion_compat.stream` and `Cancel` (one statement per page, with the
   profile's timeout), so the swap covers it; keep `test_viewer.py` (the `LIMIT` spy) unchanged as its acceptance.
   The viewer's statements are SQLAlchemy Core compiled for the psycopg and pysqlite (named) dialects; check that

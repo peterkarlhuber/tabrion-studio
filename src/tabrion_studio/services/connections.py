@@ -48,7 +48,7 @@ from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import register_secret
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer, strip_leading
-from tabrion_studio.services.sqltext import BoundStatement, bind
+from tabrion_studio.services.sqltext import BoundStatement, Dialect, bind, is_bound
 from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
 __all__ = [
@@ -75,6 +75,8 @@ def _cursor_query(statement: str) -> bool:
 
 
 MAX_OPEN = 8
+#: How long a statement waits for one of the connection's two sessions (then ``studio.connection_busy``).
+POOL_TIMEOUT_S = 10.0
 APPLICATION_NAME = "tabrion-studio"
 #: 03 section 5.3: statement timeout 30 s, 15 s for production profiles; lock timeout 5 s.
 PROD_STATEMENT_TIMEOUT_MS = 15_000
@@ -142,7 +144,43 @@ def connection_url(profile: Profile, password: str | None, database_file: Path |
 _NO_PASSFILE = str(Path(__file__) / "no-passfile")
 
 
-def driver_options(password: str | None) -> dict[str, Any]:
+#: The session settings tabrion sets on a new connection (``SessionSettings`` field -> setting), also given to the
+#: server as startup options, so that ``RESET ALL`` on check-in restores them (M-2 of ``stu-011-review.md``).
+_STARTUP_SETTINGS = {
+    "statement_timeout_ms": "statement_timeout",
+    "lock_timeout_ms": "lock_timeout",
+    "idle_in_transaction_timeout_ms": "idle_in_transaction_session_timeout",
+    "transaction_timeout_ms": "transaction_timeout",
+    "search_path": "search_path",
+    "timezone": "TimeZone",
+}
+_STARTUP_VALUE = re.compile(r"[A-Za-z0-9_/+-]{1,64}")
+
+
+def startup_options(session: SessionSettings) -> str:
+    """libpq ``options`` for ``session`` and ``default_transaction_read_only=on``: the values ``RESET ALL`` gives back.
+
+    Only plain values (numbers, names like ``UTC``): anything else would need libpq's escaping, so it is refused.
+    """
+    pairs = [("default_transaction_read_only", "on")]
+    for name, setting in _STARTUP_SETTINGS.items():
+        value = getattr(session, name)
+        if value is None:
+            continue
+        text = str(value)
+        if _STARTUP_VALUE.fullmatch(text) is None:
+            raise RegistryError("studio.connection_config")
+        pairs.append((setting, text))
+    return " ".join(f"-c {setting}={value}" for setting, value in pairs)
+
+
+def pool_busy(exc: BaseException) -> bool:
+    """Whether ``exc`` is tabrion's error for a pool without a free session within its timeout
+    (``studio.connection_busy``, L-2 of ``stu-010-review.md``): the database is fine, Studio's sessions are in use."""
+    return isinstance(exc, tabrion.TabrionError) and isinstance(exc.original, sqlalchemy.exc.TimeoutError)
+
+
+def driver_options(password: str | None, session: SessionSettings | None = None) -> dict[str, Any]:
     """psycopg connection options of every Studio PostgreSQL connection; constants, not connection targets.
 
     * ``prepare_threshold=0``: every statement goes through the extended query protocol (a prepared statement), so the
@@ -150,8 +188,13 @@ def driver_options(password: str | None) -> dict[str, Any]:
       ``stu-009-review.md``, ``standard_conforming_strings = off``).
     * ``passfile`` points to a path that cannot exist, and without a password ``password`` is the empty string, which
       keeps libpq from reading ``PGPASSWORD``, ``PGPASSFILE``, ``~/.pgpass`` or a service file's password (M-1).
+    * ``options`` and ``application_name``: Studio's session settings as startup values (:func:`startup_options`),
+      which the check-in reset (``tabrion_compat.reset_session``) restores.
     """
     options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
+    if session is not None:
+        options["options"] = startup_options(session)
+        options["application_name"] = APPLICATION_NAME
     if password is None:
         options["password"] = ""
     return options
@@ -170,6 +213,7 @@ def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
         application_name=APPLICATION_NAME,
         pool_size=2,
         max_overflow=0,
+        pool_timeout=POOL_TIMEOUT_S,
         tls=_TLS[profile.sslmode],
         max_rows=limits.max_rows,
         read_only=True,
@@ -221,7 +265,11 @@ class OpenConnection:
         SQLAlchemy ``text()``, which reads ``:name`` inside literals too (I-2 of ``stu-009-review.md``).
         """
         statement = check_statement(sql)
-        return bind(statement, params, "sqlite" if self.engine == "sqlite" else "postgresql")
+        return bind(statement, params, self._dialect)
+
+    @property
+    def _dialect(self) -> Dialect:
+        return "sqlite" if self.engine == "sqlite" else "postgresql"
 
     def stream(
         self,
@@ -235,7 +283,8 @@ class OpenConnection:
         One statement per transaction (03 section 5.1); the text is checked again here, so no caller can skip
         :meth:`prepare`'s check. ``cancel`` stops it from another thread (:mod:`.tabrion_compat`).
         """
-        if check_statement(statement.sql) != statement.sql:
+        # L-1 of stu-011-review.md: check what is executed, the driver text, not only the text it came from.
+        if not is_bound(statement, check_statement(statement.sql), self._dialect):
             raise StatementRefused("studio.statement_refused")
         hook = cancel if cancel is not None else Cancel()
         server_side = self.engine != "sqlite" and _cursor_query(statement.sql)
@@ -283,6 +332,16 @@ class ConnectionRegistry:
     clock: Callable[[], float] = time.time
     _open: dict[str, OpenConnection] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _closed_listeners: list[Callable[[str], None]] = field(default_factory=list)
+
+    def on_close(self, listener: Callable[[str], None]) -> None:
+        """Call ``listener(connection_id)`` after a connection closed (the explorer drops its cache entry)."""
+        self._closed_listeners.append(listener)
+
+    def _closed(self, connection_id: str) -> None:
+        for listener in self._closed_listeners:
+            with contextlib.suppress(Exception):
+                listener(connection_id)
 
     def _connect(self, profile_id: str) -> OpenConnection:
         entry = self.source.entry(profile_id)
@@ -307,9 +366,10 @@ class ConnectionRegistry:
             if password is not None:
                 register_secret(password)
         url = connection_url(profile, password, database_file)
-        options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password)}
+        settings = studio_profile(profile, limits)
+        options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password, settings.postgres)}
         try:
-            db = tabrion.Database.from_url(url, profile=studio_profile(profile, limits), engine_options=options)
+            db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
         except FileNotFoundError:
             raise RegistryError("studio.database_missing") from None
         except UnsafePath:
@@ -320,6 +380,10 @@ class ConnectionRegistry:
             ) from None
         if db.dialect == "sqlite":
             event.listen(db.engine, "connect", _install_authorizer)
+        else:
+            # M-2 of stu-011-review.md: no session setting outlives the statement that made it (after tabrion's own
+            # check-in listener, which gives psycopg's read_only back to the session default).
+            event.listen(db.engine, "checkin", tabrion_compat.reset_session)
         timeout = profile.statement_timeout_ms or (
             PROD_STATEMENT_TIMEOUT_MS if profile.environment == "prod" else limits.statement_timeout_ms
         )
@@ -410,6 +474,7 @@ class ConnectionRegistry:
         if connection is None:
             return False
         connection.close()
+        self._closed(connection.id)
         logger.info("connection closed", extra={"event": "studio.connection_closed"})
         return True
 
@@ -421,6 +486,7 @@ class ConnectionRegistry:
         for connection in connections:
             with contextlib.suppress(Exception):
                 connection.close()
+            self._closed(connection.id)
 
     def test(self, profile_id: str) -> dict[str, Any]:
         """The connection test (TD-011): open, check, close; never keeps the connection."""

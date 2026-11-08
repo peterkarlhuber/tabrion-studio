@@ -323,6 +323,13 @@ CATALOG: dict[str, Entry] = {
         "Studio keeps at most 8 connections open.",
         "Close a connection first.",
     ),
+    "studio.connection_busy": Entry(
+        503,
+        ProblemKind.DATABASE,
+        "Connection busy",
+        "The connection's two database sessions are in use, for example by two running queries.",
+        "Try again when a query finishes, or cancel one.",
+    ),
     "studio.connection_failed": Entry(
         502, ProblemKind.DATABASE, "Connection failed", "Studio could not reach the database."
     ),

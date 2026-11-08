@@ -8,11 +8,13 @@ what the SQL editor (STU-012) and the data viewer (STU-013) call.
 
 1. `POST /api/queries` with `{connection_id, sql, params?, mode?: "read", max_rows?}`.
    - The connection comes from `ConnectionRegistry.get`, which checks the handle against its profile again.
-   - `OpenConnection.prepare` checks the statement (`check_statement`: one statement, no transaction control) and
-     binds its parameters (`services/sqltext.py`). A refusal is the answer to this request.
+   - `OpenConnection.prepare` checks the statement (`check_statement`: one statement whose first word is `SELECT`,
+     `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a query, `SHOW` or SQLite's `PRAGMA`) and binds its parameters (`services/sqltext.py`). A refusal is the answer to this request.
    - The answer is 202 with the query's state; a worker thread runs the statement.
-2. The worker runs `OpenConnection.stream`: one `Database.read()` per statement, the statement checked once more,
-   and the rows read in batches of 500 until a limit is reached.
+2. The worker runs `OpenConnection.stream`: one `Database.read()` per statement, the statement checked once more
+   (also the driver text it executes: it must be what binding the checked text gives), and the rows read in
+   batches until a limit is reached. The first fetch is one row; the next ones as many rows as fit about 2 MB at
+   the size so far, at most 500.
 3. The page follows `GET /api/queries/{id}/events` (server-sent events) and reads `GET /api/queries/{id}/rows`
    in pages of up to 5 000 rows, also while the query runs.
 4. `POST /api/queries/{id}/cancel` stops it.
@@ -40,7 +42,8 @@ slice `a[1:n]` reads `:n` as a placeholder; write `a[1 : n]`.
 | Limit | Value | Where |
 |---|---|---|
 | Rows per result | 1 000 by default; `max_rows` up to the `max_rows` setting (10 000 by default, at most 1 000 000) | `truncated_by: "rows"` |
-| Bytes per result | 20 MB of JSON values | `truncated_by: "bytes"` |
+| Bytes per result | the `max_result_mb` setting: 20 MB of JSON values by default, at most 200 MB | `truncated_by: "bytes"` |
+| One fetch | about 2 MB (one value larger than that still loads in full: the database's own limit bounds a single value) | |
 | Cell | 64 KB of text, 32 KB of bytes (as base64) | `truncated_cells: [[row, column], ...]` |
 | Time | the profile's timeout (30 s, 15 s for `prod`) for the whole query; PostgreSQL also `statement_timeout` per statement and `lock_timeout` 5 s | `db.timeout` |
 | Parallel queries | 4 in Studio, 2 per connection | `studio.query_limit` (429) |
@@ -54,12 +57,33 @@ cursor. A SQLite cursor steps the statement as rows are fetched.
 
 `POST /api/queries/{id}/cancel` returns at once. A worker sends the database's own cancel (psycopg `cancel_safe()`,
 `sqlite3.Connection.interrupt()`) and repeats it every 100 ms until the statement stops: a cancel that arrives before
-the statement starts does nothing in either database. The target is under one second (STU-T-020). The timeout uses
-the same cancel and reports `db.timeout`.
+the statement starts does nothing in either database. The target is under one second (STU-T-020). After 3 s the
+worker keeps asking once a second until the statement stops; a query has one cancel worker at most, so repeated
+cancel requests start nothing new. The timeout uses the same cancel and reports `db.timeout`.
 
 A cancel is sent only while the statement holds the connection, never after (a lock in `tabrion_compat.Cancel`).
-A PostgreSQL connection that received a cancel is invalidated, so the pool opens a new one: the server may act on a
-cancel request after the statement ended.
+A connection that received a cancel is invalidated, on both engines, so it never goes back to the pool: PostgreSQL
+may act on a cancel packet after the statement ended and abort the next user's statement (H-1 of
+`tab-033-review.md`). If SQLAlchemy cannot invalidate it, the driver connection is closed.
+
+## Statements and session state
+
+`check_statement` allows a statement only by its first word (M-1, M-2, I-2 of `stu-011-review.md`): `SELECT`,
+`WITH`, `VALUES`, `TABLE`, `EXPLAIN` whose statement is one of the first four, `SHOW`, and `PRAGMA` (SQLite; the
+authorizer allows only reading pragmas). An allowlist instead of a denylist, because a denylist missed two session
+effects that outlive Studio's one-statement transaction:
+
+- `DECLARE ... CURSOR WITH HOLD` is materialized at `COMMIT`, after the cancel hook is detached, so neither the
+  timeout nor a cancel stops it. `DECLARE`, `FETCH`, `MOVE` and `CLOSE` are refused; the engine makes its own cursor.
+- `SET` (also `SET LOCAL`, which does nothing useful in a one-statement transaction) is refused: a plain `SET`
+  stays on the pooled connection (`SET statement_timeout = 0`).
+
+Writes (`INSERT`, `CREATE`, ...) are refused by the same rule; the read-only session stays the boundary for them,
+which the STU-T-010 tests prove by sending them below the check. As a second layer, every PostgreSQL connection
+gets Studio's session settings (`statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
+`TimeZone`, `default_transaction_read_only=on`, `application_name`) as startup options too, and runs `RESET ALL`
+when it goes back to the pool: whatever a statement changed (for example through a function of the database), the
+next statement gets the profile's values. A connection that cannot be reset leaves the pool.
 
 ## Events and states
 
