@@ -163,6 +163,8 @@ export interface WizardResult {
   name: string;
   /** Why an entered password was not stored, if it was not. */
   secretProblem: Problem | null;
+  /** The keyring kept the old saved password after a change of the target (L-3 of stu-008-review.md). */
+  secretKept?: boolean;
 }
 
 export function ConnectionWizard({
@@ -261,7 +263,7 @@ export function ConnectionWizard({
       if (!stored.ok) secretProblem = stored.problem;
     }
     setBusy(false);
-    onSaved({ name: form.name, secretProblem });
+    onSaved({ name: form.name, secretProblem, secretKept: result.value.secret_removed === false });
   };
 
   const actions: DialogAction[] = [{ id: 'cancel', label: t('dialog.cancel'), onSelect: onCancel }];

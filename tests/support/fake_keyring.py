@@ -16,6 +16,8 @@ class FakeKeyring(KeyringBackend):
         self.values: dict[tuple[str, str], str] = {}
         self.reads = 0
         self.fail = False
+        #: Only deleting fails (a locked keyring that still reads; L-3 of stu-008-review.md).
+        self.fail_delete = False
 
     def get_password(self, service: str, username: str) -> str | None:
         self.reads += 1
@@ -29,6 +31,8 @@ class FakeKeyring(KeyringBackend):
         self.values[(service, username)] = password
 
     def delete_password(self, service: str, username: str) -> None:
+        if self.fail or self.fail_delete:
+            raise RuntimeError("keyring locked: secret-in-message")
         if (service, username) not in self.values:
             raise PasswordDeleteError("none")
         del self.values[(service, username)]

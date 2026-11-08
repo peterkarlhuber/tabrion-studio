@@ -18,12 +18,20 @@ refusal is a problem code without the path's content, the variable's value or th
 ## No plain-text fallback
 
 **A stored secret belongs to the connection target** (C-1 of `stu-007-review.md`). `<target>` is 16 hex digits of
-the SHA-256 of the profile's engine, host, port (none counts as 5432), database, user and path. Keyring entries and
-session secrets use the same key. When a profile keeps its name but a commit changes where it connects (another host,
+the SHA-256 of the profile's engine, host, port (none counts as 5432), database, user, path and effective TLS mode
+(`sslmode` after the default; L-1 of `stu-008-review.md`: a downgrade from `verify-full` to `disable` is a new
+target). Keyring entries and session secrets use the same key. **Binding for STU-009:** every parameter Studio passes
+to the driver (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, and connections are
+built from `Profile` only, never from unknown keys. When a profile keeps its name but a commit changes where it connects (another host,
 for example), the stored password is not used: the profile has no secret (`studio.secret_missing`) and the page asks
 again. D-01 lists such a connection under "Saved password not used". The old entry stays in the keyring until the
 user removes it; going back to the old target finds it again. The fingerprint and the project key have a fixed
 length, so a name that contains `:` cannot make two keys equal.
+
+When the keyring refuses to delete an entry (other than "there is none"), Studio logs `studio.keyring_failed` without
+the backend's message. `DELETE /api/profiles/{id}/secret` answers 502 `studio.keyring_failed`; deleting or retargeting
+a profile still succeeds and answers `"secret_removed": false`, and the page says that the saved password stayed in
+the keyring (L-3 of `stu-008-review.md`).
 
 Every resolved or entered value of 4 characters or more is redacted from the logs (values of 4 to 7 characters in a
 set that is never evicted). Shorter values are not registered: redacting every "ab" in a log line would make the log
