@@ -90,6 +90,12 @@ All notable changes to this project are documented here. The format follows
   of 4 to 7 characters are redacted too; I-3, one leading BOM is removed from a `file:` secret; I-2, the FIFO test
   fails instead of hanging, a deterministic link-swap test, and test servers use the null keyring backend.
 
+- Review of PR #11 (`stu-008-review.md`): the effective TLS mode is part of the saved-password fingerprint (a TLS
+  downgrade asks for the password again); a lone surrogate in a field is a form issue and a file that would not read
+  back is a 422, not a 500; a keyring that refuses to delete a saved password is logged and reported; a save reads
+  the file again just before it replaces it; the e2e server uses the null keyring; an `env:` password reads "set in
+  the environment".
+
 ### Security
 
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the

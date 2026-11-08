@@ -22,18 +22,25 @@ in the configuration folder (and the trust records in the state folder); **it ne
 `.tabrion/studio.toml`** (a project profile gives `studio.profile_read_only`). Every save:
 
 1. **checks the folder** like the state folder (`ensure_private_dir`: created 0700, owned by the user, not a link or
-   junction, not writable by others; `studio.config_dir_unsafe` otherwise);
+   junction, not writable by others; `studio.config_dir_unsafe` otherwise). A folder that only others may read or
+   search (0755, for example) is changed to 0700 on the first save, as the state folder is (I-4 of
+   `stu-008-review.md`); a folder others may write to is refused;
 2. **is bound to the bytes the page read:** the request names the SHA-256 the page got from `GET /api/profiles`
    (`user_file.digest`) or `GET /api/settings` (`file.digest`), `null` for a missing file. A file changed by hand or
    by another tab meanwhile gives `studio.config_stale` (409), and the page reads it again;
-3. **never drops what the user wrote:** a file with any issue, an unknown key included, is not rewritten
+3. **is checked again just before the replace:** the file is read once more and must still have the digest the save
+   started from, so a hand edit meanwhile wins (`studio.config_stale`). Studio takes no lock, so an edit within the
+   replace itself can still be lost (I-3 of `stu-008-review.md`, TD-011);
+4. **never drops what the user wrote:** a file with any issue, an unknown key included, is not rewritten
    (`studio.config_invalid`). A file that is valid but not exactly what Studio would write (comments, another order:
    `hand_written: true`) is rewritten only after the user confirmed it (`"overwrite": true`, else
    `studio.config_hand_written`); the dialog says that comments and formatting are not kept;
-4. **serializes schema version 1** with a small strict writer (`writer.py`: basic strings with every control
+5. **serializes schema version 1** with a small strict writer (`writer.py`: basic strings with every control
    character, U+2028 and U+2029 escaped, so no value can start a key or a table), parses the result back and checks
-   that it gives exactly the profiles or settings it was meant to (otherwise it writes nothing);
-5. **writes atomically:** a temporary file in the same folder created with `O_CREAT | O_EXCL | O_NOFOLLOW` and mode
+   that it gives exactly the profiles or settings it was meant to (otherwise it writes nothing and answers 422
+   `studio.config_not_storable`). A value that is not UTF-8 (a lone surrogate, valid in JSON) is a form issue,
+   `config.encoding` (L-2 of `stu-008-review.md`);
+6. **writes atomically:** a temporary file in the same folder created with `O_CREAT | O_EXCL | O_NOFOLLOW` and mode
    0600, `fsync`, `os.replace` (which replaces a link at the target instead of following it), and an `fsync` of the
    folder on POSIX. A link planted at the temporary name is removed, never followed.
 

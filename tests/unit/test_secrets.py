@@ -406,6 +406,8 @@ def test_keyring_keys_are_unique_per_project_folder() -> None:
         {"port": 6432},
         {"database": "other"},
         {"user": "postgres"},
+        {"sslmode": "disable"},  # L-1 of stu-008-review.md: a TLS downgrade is a new target
+        {"sslmode": "prefer"},
     ],
 )
 def test_a_stored_secret_does_not_follow_a_retargeted_profile(tmp_path: Path, change: dict[str, Any]) -> None:

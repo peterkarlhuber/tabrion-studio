@@ -19,6 +19,9 @@ const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
 test.describe.configure({ mode: 'serial' });
 
+/** I-1 of stu-008-review.md: the real server never reaches the developer's keyring (null backend: "no keyring"). */
+const NO_KEYRING_ENV = { ...process.env, PYTHON_KEYRING_BACKEND: 'keyring.backends.null.Keyring' };
+
 let studio: ChildProcess | undefined;
 let base = '';
 let root = '';
@@ -38,7 +41,7 @@ test.beforeAll(async () => {
       '--state-dir',
       join(root, 'state'),
     ],
-    { stdio: ['ignore', 'pipe', 'inherit'] },
+    { stdio: ['ignore', 'pipe', 'inherit'], env: NO_KEYRING_ENV },
   );
   const first = await new Promise<string>((resolve, reject) => {
     let out = '';
@@ -73,7 +76,7 @@ function newLink(): string {
       '--state-dir',
       join(root, 'state'),
     ],
-    { encoding: 'utf-8' },
+    { encoding: 'utf-8', env: NO_KEYRING_ENV },
   );
   const match = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/.exec(out);
   if (!match?.[1]) throw new Error(`no sign-in link: ${out}`);

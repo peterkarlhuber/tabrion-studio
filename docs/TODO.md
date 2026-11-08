@@ -25,7 +25,7 @@
 | OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Accepted (`stu-follow-up-6-review.md`, PR #6 merged) |
 | OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Accepted (`stu-004-review.md`; C-1 done in PR #9, `stu-conditions-rereview.md`) |
 | OA-009 independent review of STU-007 (secret management, C-3) | P0 | Accepted with conditions (`stu-007-review.md`, PR #10 merged); C-1 (M-1) and I-1..I-3 done in the STU-008 PR, I-4, I-5 and L-1 are TD-010 |
-| OA-010 independent review of STU-008 (Studio writes its own profiles and settings) | P1 | Open (STU-008 PR) |
+| OA-010 independent review of STU-008 (Studio writes its own profiles and settings) | P1 | Accepted (`stu-008-review.md`, PR #11 merged); L-1..L-3 and I-1..I-4 done in the STU-008 follow-up PR |
 | OA-008 independent review of STU-006 (project trust, D-01, U-1) | P1 | Accepted (`stu-006-review.md`; C-1, C-2 done in PR #9, `stu-conditions-rereview.md`; C-3 done in the STU-007 PR) |
 | STU-007 binding requirement from the review (C-3: the reader of `file:` secrets) | P0 | Done (STU-007 PR; `read_secret_file`) |
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
@@ -60,6 +60,9 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   pre-release specifier on master, RC-8; enforced by `tests/security/test_dependencies.py`).
 - **Next step:** add `tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2` with the first WP that uses the Tabrion API
   (STU-009), after tabrion v0.1.0.
+- **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver (later
+  `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint, and a
+  connection is built from `Profile` only, never from unknown keys.
 - **Also with STU-009 (from STU-007):** show connection URLs only through `tabrion.safe_url()`, resolve passwords
   only through `Configuration.resolve_secret(id)` when connecting, and open project SQLite files only through
   `ProjectConfig.database_file` (review T-1).
@@ -316,7 +319,7 @@ merge after OA-004.
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
-| TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | In progress (STU-008 PR, OA-010): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
+| TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
@@ -331,13 +334,20 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### OA-010 · Independent review of STU-008 (TABRION STU-008)
 
-- **Priority:** P1 High · **Status:** Open (STU-008 PR) · **Refs:** 03 §4.3, §6, 08 §4.2, §4.10,
+- **Priority:** P1 High · **Status:** Accepted (`stu-008-review.md`, PR #11 merged as master `e8b1d05`) · **Refs:**
+  03 §4.3, §6, 08 §4.2, §4.10,
   `docs/architecture/configuration.md` ("Writing the user's files")
 - **What:** Studio now writes files. An independent review agent checks that it writes only its own `profiles.toml`
   and `settings.toml` (never the project's file), atomically with 0600 and `O_NOFOLLOW`, only into a private folder,
   only with the digest the page read and never over a file with issues; that a form never echoes a value (issues
   name fixed keys); that a typed password reaches only the secret route; and the connection manager's dialogs
   (focus, axe). No `.github/` file changes.
+- **Result:** no Medium or High finding. Done in the STU-008 follow-up PR: L-1 (`sslmode` in the secret
+  fingerprint; binding for STU-009 below), L-2 (a lone surrogate is `config.encoding`; a file that would not read
+  back is 422 `studio.config_not_storable`, never a 500), L-3 (a refused keyring delete is logged and reported,
+  `"secret_removed": false`; the test that kills W11), I-1 (the e2e server uses the null keyring), I-2 (`env:` says
+  "set in the environment"), I-3 (the file is read again just before the replace; no lock, TD-011) and I-4 (the 0755
+  to 0700 change is documented, as for the state folder).
 
 ## Cross-repository checks still to add
 
@@ -507,4 +517,5 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
 - **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
   accepts them, but the page does not send them yet.
-
+- **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
+  lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.

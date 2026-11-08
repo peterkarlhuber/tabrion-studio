@@ -106,7 +106,8 @@
       "none": "asked when connecting",
       "set": "saved for this session",
       "missing": "not set",
-      "unknown": "checked when connecting"
+      "unknown": "checked when connecting",
+      "envSet": "set in the environment"
     },
     "wizard": {
       "titleNew": "New connection",
@@ -175,7 +176,9 @@
     "deleted": "{{name}} deleted.",
     "secretSaved": "Password saved for {{name}}.",
     "secretRemoved": "Saved password removed for {{name}}.",
-    "secretNotSaved": "{{name}} saved, but the password was not: {{reason}}"
+    "secretNotSaved": "{{name}} saved, but the password was not: {{reason}}",
+    "deletedSecretKept": "{{name}} deleted, but the system keyring did not remove its saved password. Remove it in the keyring app.",
+    "savedSecretKept": "{{name}} saved, but the system keyring did not remove the old saved password. Remove it in the keyring app."
   },
   "settings": {
     "title": "Settings",
@@ -310,7 +313,8 @@
     "rename_unsupported": "The name cannot be changed.",
     "unknown_key": "Unknown field.",
     "too_many": "Too many profiles.",
-    "other": "Not valid ({{code}})."
+    "other": "Not valid ({{code}}).",
+    "encoding": "Contains a character that cannot be stored."
   },
   "problems": {
     "config_stale": "The file changed since the page read it. The page shows the current state; make the change again.",
@@ -329,6 +333,7 @@
     "secret_not_storable": "This profile takes its password from its own source.",
     "offline": "The local server does not answer.",
     "other": "The request failed ({{code}}).",
-    "config_too_large": "The file would be larger than Studio reads (256 KB). Remove profiles you no longer use."
+    "config_too_large": "The file would be larger than Studio reads (256 KB). Remove profiles you no longer use.",
+    "config_not_storable": "Studio could not store these values unchanged (for example an unusual character). Nothing was written."
   }
 }

@@ -106,8 +106,11 @@ class Profile:
         return doc
 
 
-#: The fields that say where a connection goes: a stored secret belongs to these (review M-1 of stu-007-review.md).
-TARGET_FIELDS = ("engine", "host", "port", "database", "user", "path")
+#: The fields that say where and how a connection goes: a stored secret belongs to these (M-1 of stu-007-review.md;
+#: ``sslmode``, the effective one after the default, from L-1 of stu-008-review.md: a downgrade from ``verify-full``
+#: to ``disable`` must not keep the saved password). Binding for STU-009: every parameter Studio passes to the driver
+#: must be in this list, and connections are built from :class:`Profile` only.
+TARGET_FIELDS = ("engine", "host", "port", "database", "user", "path", "sslmode")
 
 
 def target_fingerprint(doc: dict[str, Any]) -> str:
@@ -162,13 +165,26 @@ def is_loopback(host: str) -> bool:
         return False
 
 
+def _encodable(value: str) -> bool:
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 def parse_secret_ref(value: str) -> SecretRef | None:
     """``keyring:``, ``env:NAME`` or ``file:PATH``; None for anything else (a plain password is never accepted)."""
     if value == "keyring:":
         return SecretRef("keyring", "")
     if value.startswith("env:") and _ENV_NAME.fullmatch(value[4:]):
         return SecretRef("env", value[4:])
-    if value.startswith("file:") and 0 < len(value) - 5 <= MAX_TEXT and not _CONTROL.search(value):
+    if (
+        value.startswith("file:")
+        and 0 < len(value) - 5 <= MAX_TEXT
+        and not _CONTROL.search(value)
+        and _encodable(value)
+    ):
         return SecretRef("file", value[5:])
     return None
 
@@ -182,6 +198,10 @@ def _text(raw: dict[str, Any], key: str, where: str, issues: list[Issue], *, lim
         return None
     if not value or len(value) > limit:
         issues.append(Issue(f"{where}.{key}", "config.length"))
+        return None
+    if not _encodable(value):
+        # A lone surrogate is valid JSON but not UTF-8: Studio could not write it (L-2 of stu-008-review.md).
+        issues.append(Issue(f"{where}.{key}", "config.encoding"))
         return None
     return value
 
