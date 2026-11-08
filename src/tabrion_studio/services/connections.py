@@ -30,14 +30,15 @@ import contextlib
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
+import re
 import secrets
 import sqlite3
 import threading
 import time
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 
 import sqlalchemy
-from sqlalchemy import event, text
+from sqlalchemy import event
 import tabrion
 from tabrion.errors import ConfigurationError, UnsafePath
 from tabrion.postgres import SessionSettings
@@ -45,7 +46,10 @@ from tabrion.postgres import SessionSettings
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, target_fingerprint
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import register_secret
-from tabrion_studio.services.readonly import check_statement, sqlite_authorizer
+from tabrion_studio.services import tabrion_compat
+from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer, strip_leading
+from tabrion_studio.services.sqltext import BoundStatement, bind
+from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
 __all__ = [
     "MAX_OPEN",
@@ -58,6 +62,17 @@ __all__ = [
 ]
 
 logger = logging.getLogger("tabrion_studio.connections")
+_T = TypeVar("_T")
+#: Statements a PostgreSQL cursor (``DECLARE ... CURSOR FOR``) can hold; others (``EXPLAIN``, ``SHOW``, ...) use a
+#: plain cursor. Comments before the first word are skipped like in ``check_statement``.
+_CURSOR_WORDS = frozenset({"select", "with", "values", "table"})
+_FIRST_WORD = re.compile(r"[(\s]*([A-Za-z]+)")
+
+
+def _cursor_query(statement: str) -> bool:
+    match = _FIRST_WORD.match(strip_leading(statement))
+    return match is not None and match.group(1).lower() in _CURSOR_WORDS
+
 
 MAX_OPEN = 8
 APPLICATION_NAME = "tabrion-studio"
@@ -199,12 +214,50 @@ class OpenConnection:
         with self._db.read(timeout=self.timeout_s) as transaction:
             yield transaction
 
-    def fetch(self, sql: str, params: Mapping[str, Any] | None = None) -> list[tuple[Any, ...]]:
-        """The rows of one read-only statement; a refused one raises ``StatementRefused``."""
+    def prepare(self, sql: str, params: Mapping[str, object] | None = None) -> BoundStatement:
+        """The one checked statement of ``sql`` with its parameters in the driver's style.
+
+        Raises ``StatementRefused`` (``check_statement``) or ``ParameterError`` (``sqltext.bind``). Never through
+        SQLAlchemy ``text()``, which reads ``:name`` inside literals too (I-2 of ``stu-009-review.md``).
+        """
         statement = check_statement(sql)
-        with self._read() as transaction:
-            rows = transaction.fetch_all(text(statement), params)
-        return [tuple(row) for row in rows]
+        return bind(statement, params, "sqlite" if self.engine == "sqlite" else "postgresql")
+
+    def stream(
+        self,
+        statement: BoundStatement,
+        consume: Callable[[ResultCursor], _T],
+        *,
+        cancel: Cancel | None = None,
+    ) -> _T:
+        """Run ``statement`` in its own ``Database.read()`` and return ``consume(cursor)`` (STU-011).
+
+        One statement per transaction (03 section 5.1); the text is checked again here, so no caller can skip
+        :meth:`prepare`'s check. ``cancel`` stops it from another thread (:mod:`.tabrion_compat`).
+        """
+        if check_statement(statement.sql) != statement.sql:
+            raise StatementRefused("studio.statement_refused")
+        hook = cancel if cancel is not None else Cancel()
+        server_side = self.engine != "sqlite" and _cursor_query(statement.sql)
+        with (
+            self._read() as transaction,
+            tabrion_compat.stream(
+                transaction, statement.driver_sql, statement.values, cancel=hook, server_side=server_side
+            ) as cursor,
+        ):
+            return consume(cursor)
+
+    def fetch(self, sql: str, params: Mapping[str, object] | None = None) -> list[tuple[Any, ...]]:
+        """All rows of one read-only statement, for Studio's own small queries; a refused one raises
+        ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps)."""
+
+        def every_row(cursor: ResultCursor) -> list[tuple[Any, ...]]:
+            rows: list[tuple[Any, ...]] = []
+            while batch := cursor.fetch(500):
+                rows += batch
+            return rows
+
+        return self.stream(self.prepare(sql, params), every_row)
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))

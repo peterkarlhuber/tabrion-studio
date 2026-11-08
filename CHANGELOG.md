@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-011 (integration branch only, stacked on STU-009; on tabrion 0.1 behind `services/tabrion_compat.py` until
+  tabrion 0.2):
+  - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
+    (server-sent events), `GET /api/queries/{id}/rows` and `POST /api/queries/{id}/cancel`.
+  - One checked statement per `Database.read()`, through `ConnectionRegistry.get`; `:name` parameters are bound by
+    the driver (psycopg `%(name)s`, sqlite3 `:name`), never through SQLAlchemy `text()`, so a colon inside a literal
+    stays text.
+  - Limits of 03 section 5.3: 1 000 rows by default up to the `max_rows` setting, 20 MB per result, 64 KB per cell,
+    the profile's timeout for the whole query, 4 queries at a time (2 per connection), the last 16 results kept.
+    PostgreSQL queries are read through a server-side cursor.
+  - Cancel within a second (PostgreSQL `cancel_safe()`, SQLite `interrupt()`); a canceled PostgreSQL connection
+    leaves the pool.
+  - No SQL text, parameter value or row in the log.
 - STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no

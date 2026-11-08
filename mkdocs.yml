@@ -60,6 +60,7 @@ nav:
       - Configuration and project trust: architecture/configuration.md
       - Secret management: architecture/secrets.md
       - Connections and read-only enforcement: architecture/connections.md
+      - Query engine: architecture/queries.md
       - App shell and design system: architecture/frontend.md
   - Development:
       - Building and testing: development/building.md

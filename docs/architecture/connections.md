@@ -110,9 +110,10 @@ the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studi
 a best-effort check, not the boundary: a database function that calls `set_config` is invisible in the text. SQLite's
 `execute` runs one statement only.
 
-**Binding for STU-011:** user SQL goes through `check_statement` and `OpenConnection.fetch`, with one `read()` per
-statement, and always through `ConnectionRegistry.get`: `fetch` does not check the handle again by itself. Send user
-SQL so that `:name` is not read as a bind parameter (`exec_driver_sql`, or escaped colons; review I-2).
+**Binding for STU-011 (kept by the [query engine](queries.md)):** user SQL goes through `check_statement`
+(`OpenConnection.prepare`, and again in `OpenConnection.stream`), with one `read()` per statement, and always through
+`ConnectionRegistry.get`: a handle does not check itself again. User SQL never goes through SQLAlchemy `text()`, so
+`:name` inside a literal stays text (review I-2): `OpenConnection.fetch` uses the same path.
 
 **Known limits** (documented in 03 section 5.1 and ADR R-S3):
 - `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function).

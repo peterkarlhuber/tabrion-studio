@@ -40,7 +40,7 @@ import sqlite3
 
 from tabrion.sql import split_statements
 
-__all__ = ["StatementRefused", "check_statement", "sqlite_authorizer"]
+__all__ = ["StatementRefused", "check_statement", "sqlite_authorizer", "strip_leading"]
 
 _ALLOWED_ACTIONS = frozenset(
     {
@@ -251,7 +251,7 @@ def _calls_refused_function(sql: str) -> bool:
 _OTHER_EFFECTS = frozenset({"copy", "load", "notify", "listen", "unlisten", "lock", "vacuum", "checkpoint", "cluster"})
 
 
-def _strip_leading(sql: str) -> str:
+def strip_leading(sql: str) -> str:
     """``sql`` without leading white space, line comments and (nested) block comments."""
     text = sql
     while True:
@@ -282,7 +282,7 @@ def check_statement(sql: str) -> str:
         raise StatementRefused("studio.statement_empty")
     if len(statements) > 1:
         raise StatementRefused("studio.statement_multiple")
-    words = [word.lower() for word in _WORDS.findall(_strip_leading(statements[0])[:200])[:4]]
+    words = [word.lower() for word in _WORDS.findall(strip_leading(statements[0])[:200])[:4]]
     if not words:
         raise StatementRefused("studio.statement_empty")
     first = words[0]
