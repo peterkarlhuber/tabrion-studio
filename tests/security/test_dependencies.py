@@ -76,7 +76,8 @@ _NAMED = re.compile(
     r"[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?"
     r"(?:\[[A-Za-z0-9._-]+(?:\s*,\s*[A-Za-z0-9._-]+)*\])?"
     rf"(?:\s*{_VERSION}(?:\s*,\s*{_VERSION})*)?"
-    r"(?:\s*;\s*[A-Za-z0-9_.<>=!~\'\" ()-]+)?"
+    # A marker; a "-" after white space would start a pip option (R2-I1 of re-review 2: --config-settings, -e, ...).
+    r"(?:\s*;\s*(?:[A-Za-z0-9_.<>=!~\'\" ()]|(?<!\s)-)+)?"
     r"(?:\s+--hash=sha256:[0-9a-f]{64})*"
 )
 #: pip reads ``#`` as a comment only at the start of a line or after white space (R-L2: ``...@<sha>#subdirectory=x``).
@@ -177,6 +178,11 @@ SHA = "a" * 40
         "tabrion==0.1 \\",
         "tabrion==0.1 --config-settings=x=y",
         "tabrion; python_version < '3.14' and os_name == 'posix' or extra == '../x'",
+        # R2-I1 of re-review 2: pip options after a marker.
+        'foo==1 ; python_version > "3" --config-settings x=y',
+        "foo==1; python_version > '3' --global-option=x",
+        "foo==1; python_version > '3' -e x",
+        "foo==1; python_version > '3' --install-option x",
     ],
 )
 def test_pin_probes_are_caught(line: str) -> None:
@@ -192,6 +198,7 @@ def test_pin_probes_are_caught(line: str) -> None:
         "zope.interface==7.2\n",
         "sqlalchemy==2.0.43 --hash=sha256:" + "0" * 64 + "\n",
         "tomli>=2; python_version < '3.11'\n",
+        "pywin32>=306; sys_platform == 'win32' and platform_machine != 'arm-64'\n",
         "\n   \n# only comments\n",
     ],
 )
