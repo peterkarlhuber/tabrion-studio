@@ -41,6 +41,7 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
+| TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -324,7 +325,8 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
-| TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
+| TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-4 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
+| TABRION STU-050, STU-052 | UX acceptance, keyboard | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
 
@@ -545,3 +547,21 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
+
+### TD-022 · STU-053 parts that wait for later packages or a person
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 section 9, 09 STU-053 (depends on STU-050),
+  `docs/architecture/accessibility.md`
+- **Done in the STU-053 PR:** the WCAG 2.2 AA checklist for the current shell (no open violation), the fixes F-1
+  (reflow at 320 px of the PROD header and the tabs), F-2 (24 px targets in D-01), F-3 (the connection switcher at
+  320 px) and F-4 (tooltips hoverable and dismissible with Escape), and `frontend/e2e/a11y-audit.spec.ts` (target size, reflow in en and de, text spacing, focus visible and not
+  obscured, reduced motion, landmarks).
+- **Screen-reader sample** (VoiceOver on macOS, NVDA on Windows): needs a person on those desktops (owner or QA-S1).
+- **With STU-010..STU-013:** the explorer tree (WAI-ARIA tree), the result grid (`role="grid"`, `aria-rowcount`,
+  `aria-rowindex`), the live region for the query status, the SQL editor (CodeMirror, leaving it with Escape); with
+  STU-023 the ER diagram's table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
+- **Required e2e suite:** `a11y-audit.spec.ts` runs in the CI job `e2e`, but is not in the list of suites that must
+  pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
+- **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
+  every MVP flow.

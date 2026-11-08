@@ -26,8 +26,11 @@
 .iconButton:focus-visible::after {
   content: attr(data-tooltip);
   position: absolute;
-  top: calc(100% + 6px);
+  /* No gap to the button: the pointer can move onto the tooltip (WCAG 1.4.13). */
+  top: 100%;
   right: 0;
+  border-top: 6px solid transparent;
+  background-clip: padding-box;
   z-index: var(--tb-z-tooltip);
   padding: var(--tb-space-1) var(--tb-space-2);
   border-radius: var(--tb-radius-sm);
@@ -36,5 +39,7 @@
   font-size: var(--tb-text-xs);
   font-weight: var(--tb-weight-medium);
   white-space: nowrap;
-  pointer-events: none;
+}
+:global(:root[data-tooltips-hidden]) .iconButton::after {
+  display: none;
 }

@@ -36,6 +36,11 @@ All notable changes to this project are documented here. The format follows
 - Brand assets (`assets/branding/`): the Tabrion Studio lockup, marks and favicons derived from Peter Karlhuber's logo
   master with the shared brand kit (no redraw, no CSS filters), the social preview, and `TRADEMARKS.md` (the names and
   logos are not MIT). The committed masters carry no C2PA or eXIf metadata; a test proves the pixels unchanged.
+- Accessibility audit of the shell (STU-053, first part; `docs/architecture/accessibility.md`): WCAG 2.2 AA
+  checklist, and `e2e/a11y-audit.spec.ts` checks target size, reflow at 320 px, text spacing, focus visible and not
+  obscured, reduced motion and the landmarks. Fixed on the way: a PROD workspace no longer scrolls sideways at 320 px
+  (the header wraps; the tabs' screen-reader texts stay inside the tab list), the D-01 "Show full value" and "and N
+  more" buttons are 24 px high, and the tooltips can be hovered and hidden with Escape (WCAG 1.4.10, 2.5.8, 1.4.13).
 - The command prints a hint when the default browser on Linux is a snap or a Flatpak, which cannot open the sign-in
   file in a hidden state directory (TD-002, review S-4 of `stu-003-review.md`).
 - CI job `e2e` (mandatory check): the Playwright suites in Chromium on every pull request, namely axe with color

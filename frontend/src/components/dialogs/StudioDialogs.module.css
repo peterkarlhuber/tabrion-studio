@@ -40,6 +40,10 @@
   color: var(--tb-color-text-muted);
 }
 .more {
+  /* 24 px high: the minimum target size of WCAG 2.5.8 (STU-053). */
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
   align-self: flex-start;
   margin-left: var(--tb-space-1);
   padding: 0;

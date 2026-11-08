@@ -98,6 +98,7 @@ D-03..D-05 belong to the Data Editor and are not built. Every dialog follows the
 | Focus rules of D-01, D-02, D-06, D-08 | `src/components/dialogs/StudioDialogs.test.tsx`, `e2e/dialogs.spec.ts` (modality, inert page, focus trap in a real browser); `src/components/ui/Dialog.test.tsx` (initial focus with any action ID, U-2) | CI (`frontend unit`, `e2e`) |
 | Session ended (S-1), heartbeat stops | `src/App.test.tsx`, `e2e/status.spec.ts` | CI (`frontend unit`, `e2e`) |
 | Languages complete | `src/i18n/i18n.test.ts` | CI |
+| Accessibility audit (STU-053): target size, reflow at 320 px, text spacing, focus visible, reduced motion, landmarks | `e2e/a11y-audit.spec.ts`; report in `docs/architecture/accessibility.md` | Playwright, Chromium (CI `e2e`) |
 | The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
 | No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 

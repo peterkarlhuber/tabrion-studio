@@ -54,7 +54,7 @@
   align-items: center;
   gap: var(--tb-space-2);
   min-height: 32px;
-  max-width: 22rem;
+  max-width: min(22rem, 100%);
   padding: 0 var(--tb-space-3);
   border: 1px solid var(--tb-color-border-strong);
   border-radius: var(--tb-radius-md);
@@ -62,6 +62,9 @@
   color: var(--tb-color-text);
   font-size: var(--tb-text-sm);
   cursor: pointer;
+}
+.switcher > * {
+  min-width: 0;
 }
 .switcher:hover {
   background: var(--tb-color-surface-hover);
