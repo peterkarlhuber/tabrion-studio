@@ -9,7 +9,7 @@ import type { TFunction } from 'i18next';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import type { TrustDiff, TrustFile, TrustReview } from '../../api/project';
+import type { TrustConnection, TrustDiff, TrustFile, TrustReview } from '../../api/project';
 import { MAX_ENTRIES, capped, visible } from '../../lib/visible';
 import { Dialog } from '../ui/Dialog';
 import styles from './StudioDialogs.module.css';
@@ -84,6 +84,22 @@ function fileNote(t: TFunction, file: TrustFile): string {
       : 'dialogs.trustProject.databaseFile',
   );
   return file.outside ? `(${kind}, ${t('dialogs.trustProject.outside')})` : `(${kind})`;
+}
+
+/**
+ * One line per PostgreSQL connection: which password goes to which host, with which TLS mode (T-5), and what is
+ * risky about it (T-4, L-1). The value is assembled here, never through i18n interpolation, so it is shown as text.
+ */
+function flowItems(t: TFunction, connections: TrustConnection[]) {
+  return connections.flatMap((c) => {
+    if (c.flow === undefined) return [];
+    const secret = c.flow.secret ?? t('dialogs.trustProject.flowNone');
+    const notes = [
+      t('dialogs.trustProject.flowTls', { mode: c.flow.tls ?? '-' }),
+      ...c.flow.warnings.map((w) => t(`dialogs.trustProject.flowWarning.${w}`)),
+    ];
+    return [{ value: `${c.name}: ${secret} → ${c.flow.to}`, note: `(${notes.join('; ')})` }];
+  });
 }
 
 /** The difference to the trusted version of the file (T-08, U-1d): only the groups that changed. */
@@ -231,6 +247,13 @@ export function TrustProjectDialog({
           note: `(${c.environment.toUpperCase()})`,
         }))}
       />
+      {review.connections.some((c) => c.flow !== undefined) ? (
+        <EntryList
+          testId="trust-flows"
+          label={t('dialogs.trustProject.flows')}
+          items={flowItems(t, review.connections)}
+        />
+      ) : null}
       <EntryList
         testId="trust-hosts"
         label={t('dialogs.trustProject.hosts')}
