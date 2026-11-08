@@ -102,6 +102,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
+  secret's source, `host:port` and the TLS mode, marked for a host outside loopback, TLS weaker than `verify-full`, a
+  variable that looks like another service's credential and a password file outside the project. Projects trusted
+  before this change show as changed once and must be confirmed again.
 - Conditions of the reviews of PR #7 (`stu-004-review.md`) and PR #8 (`stu-006-review.md`):
   - L-1 (C-1): exception text that reaches a log record as its *message* is removed too. Records of the `asyncio`
     logger keep only a known fixed first line (no `repr` of a task, future or callback with its exception or

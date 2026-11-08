@@ -271,7 +271,16 @@
       "envRemoved": "Entfernte Umgebungsvariablen",
       "keysAdded": "Neue unbekannte Schlüssel",
       "keysRemoved": "Entfernte unbekannte Schlüssel",
-      "stale": "Die Datei hat sich geändert, nachdem sie angezeigt wurde. Das ist der neue Inhalt: Prüfe ihn erneut, bevor du ihm vertraust."
+      "stale": "Die Datei hat sich geändert, nachdem sie angezeigt wurde. Das ist der neue Inhalt: Prüfe ihn erneut, bevor du ihm vertraust.",
+      "flows": "Wohin Passwörter gehen",
+      "flowNone": "Passwort wird beim Verbinden abgefragt",
+      "flowTls": "TLS {{mode}}",
+      "flowWarning": {
+        "remote_host": "geht an einen Host außerhalb dieses Computers",
+        "weak_tls": "TLS schwächer als verify-full",
+        "sensitive_variable": "diese Variable enthält meist die Zugangsdaten eines anderen Dienstes",
+        "secret_outside": "Passwortdatei außerhalb des Projektordners"
+      }
     },
     "prodConnect": {
       "title": "Produktionsdatenbank",

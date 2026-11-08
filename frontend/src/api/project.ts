@@ -7,11 +7,38 @@
 import { apiHeaders } from '../session';
 import { readProblem, type Problem } from './problem';
 
+export type FlowWarning = 'remote_host' | 'weak_tls' | 'sensitive_variable' | 'secret_outside';
+
+/** Where a PostgreSQL connection's password goes (T-5, T-4 of stu-006-review.md; L-1 of stu-007-review.md). */
+export interface TrustFlow {
+  /** `env:NAME`, `file:PATH`, `keyring:`, or null (asked when connecting). */
+  secret: string | null;
+  /** `host:port` */
+  to: string;
+  tls: string | null;
+  warnings: FlowWarning[];
+}
+
 export interface TrustConnection {
   name: string;
   engine: string;
   environment: string;
   location: string;
+  flow?: TrustFlow;
+}
+
+const WARNINGS: FlowWarning[] = ['remote_host', 'weak_tls', 'sensitive_variable', 'secret_outside'];
+
+function flow(connection: Record<string, unknown>): TrustFlow | undefined {
+  const raw = connection.flow as Record<string, unknown> | null | undefined;
+  if (raw === null || typeof raw !== 'object' || typeof raw.to !== 'string') return undefined;
+  const warnings = Array.isArray(connection.warnings) ? connection.warnings : [];
+  return {
+    secret: typeof raw.secret === 'string' ? raw.secret : null,
+    to: raw.to,
+    tls: typeof raw.tls === 'string' ? raw.tls : null,
+    warnings: WARNINGS.filter((w) => warnings.includes(w)),
+  };
 }
 
 export interface TrustFile {
@@ -103,6 +130,7 @@ export function parseProject(body: unknown): ProjectInfo | null {
                         engine: String(c.engine ?? ''),
                         environment: String(c.environment ?? ''),
                         location: String(c.location ?? ''),
+                        flow: flow(c as Record<string, unknown>),
                       },
                     ]
                   : [];

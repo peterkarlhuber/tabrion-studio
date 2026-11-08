@@ -8,12 +8,29 @@ import type { TrustDiff, TrustReview } from '../api/project';
 export const REVIEW: TrustReview = {
   connections: [
     { name: 'parts-dev', engine: 'sqlite', environment: 'dev', location: 'data/parts.db' },
-    { name: 'parts-pg', engine: 'postgresql', environment: 'test', location: 'db.internal:5432' },
+    {
+      name: 'parts-pg',
+      engine: 'postgresql',
+      environment: 'test',
+      location: 'db.internal:5432',
+      flow: {
+        secret: 'env:PGPASSWORD',
+        to: 'db.internal:5432',
+        tls: 'verify-full',
+        warnings: ['remote_host'],
+      },
+    },
     {
       name: 'measure-central',
       engine: 'postgresql',
       environment: 'prod',
       location: 'db.internal:5432',
+      flow: {
+        secret: 'keyring:',
+        to: 'db.internal:5432',
+        tls: 'verify-full',
+        warnings: ['remote_host'],
+      },
     },
   ],
   hosts: ['db.internal:5432'],
@@ -36,11 +53,21 @@ export const HOSTILE_NAMES = [
 ];
 
 export const HOSTILE_REVIEW: TrustReview = {
-  connections: HOSTILE_NAMES.map((name) => ({
+  connections: HOSTILE_NAMES.map((name, index) => ({
     name,
     engine: 'postgresql',
     environment: 'dev',
     location: 'h:5432',
+    // T-5 and L-1: the first one sends a cloud credential to a remote host without verified TLS.
+    flow:
+      index === 0
+        ? {
+            secret: 'env:AWS_SECRET_ACCESS_KEY',
+            to: `attacker${RLO}lacol:5432`,
+            tls: 'disable',
+            warnings: ['remote_host', 'weak_tls', 'sensitive_variable'],
+          }
+        : { secret: null, to: 'h:5432', tls: 'verify-full', warnings: ['remote_host'] },
   })),
   hosts: ['db.internal:5432, localhost:5432', `attacker${RLO}lacol:5432`],
   files: [
