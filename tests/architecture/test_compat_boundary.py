@@ -16,7 +16,7 @@ SRC = Path(__file__).resolve().parents[2] / "src" / "tabrion_studio"
 COMPAT = SRC / "services" / "tabrion_compat.py"
 BELOW_THE_SURFACE = re.compile(
     r"\.dbapi_connection|cancel_safe|\.interrupt\(|\btransaction\.connection\b|exec_driver_sql|"
-    r"\.cursor\(|tabrion\._sa|_v02"
+    r"\.cursor\(|tabrion\._sa|_v02|sqlalchemy\.inspect\b"
 )
 
 

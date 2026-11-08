@@ -39,6 +39,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from tabrion_studio._version import __version__
 from tabrion_studio.api.config import Configuration, add_config_routes
 from tabrion_studio.api.connections import add_connection_routes
+from tabrion_studio.api.explorer import add_explorer_routes
 from tabrion_studio.api.queries import add_query_routes
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
@@ -49,6 +50,7 @@ from tabrion_studio.security.access import AccessMiddleware
 from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.queries import QueryEngine
 
 _logger = logging.getLogger("tabrion_studio.app")
@@ -86,6 +88,8 @@ class Runtime:
     connections: ConnectionRegistry | None = None
     #: The query engine on those connections (STU-011); None serves no query routes.
     queries: QueryEngine | None = None
+    #: Catalog and table detail on those connections (STU-010); None serves no explorer routes.
+    explorer: Explorer | None = None
 
 
 def _problem(code: str) -> Response:
@@ -224,6 +228,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_connection_routes(app, runtime.connections)
     if runtime.queries is not None:
         add_query_routes(app, runtime.queries)
+    if runtime.explorer is not None:
+        add_explorer_routes(app, runtime.explorer)
 
     index = static_dir / "index.html"
     if index.is_file():

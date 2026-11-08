@@ -372,6 +372,17 @@ CATALOG: dict[str, Entry] = {
         "Statement not allowed",
         "Studio does not run this kind of statement in read-only mode.",
     ),
+    # Explorer (STU-010).
+    "studio.object_not_found": Entry(
+        404,
+        ProblemKind.NOT_FOUND,
+        "Object not found",
+        "The connection's catalog has no table, view or sequence with this schema and name.",
+        "Refresh the catalog.",
+    ),
+    "studio.explorer_engine": Entry(
+        409, ProblemKind.REQUEST, "Not for this database", "This information exists only for the other engine."
+    ),
     # Queries (STU-011).
     "studio.query_not_found": Entry(
         404,

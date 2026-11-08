@@ -247,6 +247,14 @@ class OpenConnection:
         ):
             return consume(cursor)
 
+    def inspect(self, consume: Callable[[sqlalchemy.Inspector], _T]) -> _T:
+        """``consume(inspector)`` with a SQLAlchemy inspector inside one ``Database.read()`` (STU-010).
+
+        Reflection runs SQLAlchemy's own catalog queries, never user SQL; read-only like everything else.
+        """
+        with self._read() as transaction, tabrion_compat.inspector(transaction) as found:
+            return consume(found)
+
     def fetch(self, sql: str, params: Mapping[str, object] | None = None) -> list[tuple[Any, ...]]:
         """All rows of one read-only statement, for Studio's own small queries; a refused one raises
         ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps)."""

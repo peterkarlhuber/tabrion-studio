@@ -19,6 +19,8 @@ What each part replaces:
   cancel cannot reach the next user of the pooled connection. A PostgreSQL connection that got a cancel is
   invalidated (the pool opens a new one), since the server may act on the request after the statement ended.
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
+* :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
+  ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
 
 Every statement still runs inside ``Database.read()``: PostgreSQL ``BEGIN READ ONLY`` on a read-only session,
 SQLite ``query_only`` and Studio's authorizer, and every PostgreSQL statement is a prepared statement
@@ -35,9 +37,10 @@ import sqlite3
 import threading
 from typing import Any
 
+import sqlalchemy
 import tabrion
 
-__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "stream"]
+__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "inspector", "stream"]
 
 
 @dataclass(frozen=True)
@@ -164,3 +167,9 @@ def stream(
                 connection.invalidate()
     if sent:
         raise Cancelled
+
+
+@contextlib.contextmanager
+def inspector(transaction: tabrion.Transaction) -> Iterator[sqlalchemy.Inspector]:
+    """A SQLAlchemy inspector on ``transaction`` (one ``Database.read()``; tabrion 0.2: ``Database.inspector``)."""
+    yield sqlalchemy.inspect(transaction.connection)
