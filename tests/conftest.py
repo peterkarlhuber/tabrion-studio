@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import importlib
+import importlib.util
 from pathlib import Path
 
 import pytest
 
-import tabrion_studio.config.secrets as studio_secrets
+# The packaging tests run where tabrion_studio is not importable (they only inspect the built wheel and sdist).
+_STUDIO_IMPORTABLE = importlib.util.find_spec("tabrion_studio") is not None
 
 
 @pytest.fixture(autouse=True)
 def no_real_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
     """Tests never read or write the developer's or the CI runner's OS keyring (STU-007)."""
+    if not _STUDIO_IMPORTABLE:
+        return
+    studio_secrets = importlib.import_module("tabrion_studio.config.secrets")
     monkeypatch.setattr(studio_secrets, "select_backend", lambda: None)
 
 
