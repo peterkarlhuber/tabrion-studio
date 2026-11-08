@@ -10,6 +10,7 @@ const PROBLEMS = new Set([
   'config_dir_unsafe',
   'config_unwritable',
   'config_too_large',
+  'config_not_storable',
   'profile_invalid',
   'settings_invalid',
   'profile_exists',
@@ -35,6 +36,7 @@ const ISSUES = new Set([
   'rename_unsupported',
   'unknown_key',
   'too_many',
+  'encoding',
 ]);
 
 export function problemText(t: TFunction, problem: Problem): string {

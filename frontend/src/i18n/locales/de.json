@@ -106,7 +106,8 @@
       "none": "wird beim Verbinden abgefragt",
       "set": "für diese Sitzung gespeichert",
       "missing": "nicht gesetzt",
-      "unknown": "wird beim Verbinden geprüft"
+      "unknown": "wird beim Verbinden geprüft",
+      "envSet": "in der Umgebung gesetzt"
     },
     "wizard": {
       "titleNew": "Neue Verbindung",
@@ -175,7 +176,9 @@
     "deleted": "{{name}} gelöscht.",
     "secretSaved": "Passwort für {{name}} gespeichert.",
     "secretRemoved": "Gespeichertes Passwort für {{name}} entfernt.",
-    "secretNotSaved": "{{name}} gespeichert, das Passwort aber nicht: {{reason}}"
+    "secretNotSaved": "{{name}} gespeichert, das Passwort aber nicht: {{reason}}",
+    "deletedSecretKept": "{{name}} gelöscht, aber der Schlüsselbund hat das gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App.",
+    "savedSecretKept": "{{name}} gespeichert, aber der Schlüsselbund hat das alte gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App."
   },
   "settings": {
     "title": "Einstellungen",
@@ -301,7 +304,8 @@
     "rename_unsupported": "Der Name kann nicht geändert werden.",
     "unknown_key": "Unbekanntes Feld.",
     "too_many": "Zu viele Profile.",
-    "other": "Nicht gültig ({{code}})."
+    "other": "Nicht gültig ({{code}}).",
+    "encoding": "Enthält ein Zeichen, das sich nicht speichern lässt."
   },
   "problems": {
     "config_stale": "Die Datei hat sich geändert, seit die Seite sie gelesen hat. Die Seite zeigt den aktuellen Stand; nimm die Änderung erneut vor.",
@@ -320,6 +324,7 @@
     "secret_not_storable": "Dieses Profil holt sein Passwort aus seiner eigenen Quelle.",
     "offline": "Der lokale Server antwortet nicht.",
     "other": "Die Anfrage ist fehlgeschlagen ({{code}}).",
-    "config_too_large": "Die Datei würde größer, als Studio liest (256 KB). Entferne Profile, die du nicht mehr brauchst."
+    "config_too_large": "Die Datei würde größer, als Studio liest (256 KB). Entferne Profile, die du nicht mehr brauchst.",
+    "config_not_storable": "Studio konnte diese Werte nicht unverändert speichern (zum Beispiel wegen eines ungewöhnlichen Zeichens). Es wurde nichts geschrieben."
   }
 }

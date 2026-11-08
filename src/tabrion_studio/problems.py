@@ -297,6 +297,13 @@ CATALOG: dict[str, Entry] = {
     "studio.config_unwritable": Entry(
         500, ProblemKind.CONFIG, "File not saved", "Studio could not write the configuration file."
     ),
+    "studio.config_not_storable": Entry(
+        422,
+        ProblemKind.CONFIG,
+        "Value not storable",
+        "Studio could not store these values so that it reads them back unchanged. Nothing was written.",
+        "Check the fields for unusual characters.",
+    ),
     "studio.config_too_large": Entry(
         422,
         ProblemKind.CONFIG,

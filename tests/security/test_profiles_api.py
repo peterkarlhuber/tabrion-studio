@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import io
+import json
 import logging
 from pathlib import Path
 import stat
@@ -21,6 +22,7 @@ from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.secrets import KeyringStore, Secrets, SessionSecrets
 from tabrion_studio.config.user import PROFILES_FILE, SETTINGS_FILE, UserConfig
+from tabrion_studio.config.writer import SaveError
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tests.support.access import ORIGIN, make_studio
 from tests.support.fake_keyring import FakeKeyring
@@ -240,3 +242,70 @@ def test_writes_need_the_session_csrf_origin_and_json(env: Env, method: str) -> 
     assert response.status_code == 415  # the JSON rule, also for DELETE (the page sends the Content-Type)
     assert env.send(method, path, {"profile": PG}).status_code in (400, 403)  # no digest: refused
     assert not (env.config_dir / PROFILES_FILE).exists()
+
+
+def test_deleting_a_profile_removes_its_keyring_entry(env: Env) -> None:
+    """L-3 of stu-008-review.md (mutant W11): the saved password goes with the profile."""
+    assert env.create(PG).status_code == 201
+    put = env.send("PUT", "/api/profiles/user:measure/secret", {"secret": CANARY, "store": "keyring"})
+    assert put.status_code == 204 and len(env.fake.values) == 1
+    response = env.send("DELETE", "/api/profiles", {"id": "user:measure", "digest": env.digest()})
+    assert response.status_code == 200 and response.json()["secret_removed"] is True
+    assert env.fake.values == {}
+
+
+def test_a_keyring_that_refuses_the_delete_is_reported(env: Env, logs: LogSetup) -> None:
+    """L-3: the profile is gone, the page learns that the password stayed, and the log says so (no message)."""
+    assert env.create(PG).status_code == 201
+    env.send("PUT", "/api/profiles/user:measure/secret", {"secret": CANARY, "store": "keyring"})
+    env.fake.fail_delete = True
+    response = env.send("DELETE", "/api/profiles/user:measure/secret", {})
+    assert response.status_code == 502 and response.json()["code"] == "studio.keyring_failed"
+    response = env.send("DELETE", "/api/profiles", {"id": "user:measure", "digest": env.digest()})
+    assert response.status_code == 200 and response.json()["secret_removed"] is False
+    assert env.listing()["profiles"] == []
+    assert len(env.fake.values) == 1
+    assert logs.file is not None
+    text = logs.file.read_text(encoding="utf-8")
+    assert "studio.keyring_failed" in text and "secret-in-message" not in text
+
+
+@pytest.mark.parametrize("key", ["name", "database", "user", "host"])
+def test_a_lone_surrogate_is_a_form_issue_not_a_500(env: Env, key: str) -> None:
+    """L-2 of stu-008-review.md: valid JSON, not UTF-8; refused with a fixed key, nothing written."""
+    # json.dumps escapes the lone surrogate as \\ud800 (valid JSON), as a browser's JSON.stringify does.
+    body = json.dumps({"profile": {**PG, key: "a\ud800b"}, "digest": None}).encode("ascii")
+    headers = {**env.headers, "Content-Type": "application/json"}
+    response = env.studio.client.post("/api/profiles", content=body, headers=headers)
+    assert response.status_code == 422
+    assert response.json()["issues"] == [{"pointer": f"profile.{key}", "code": "config.encoding"}]
+    assert not (env.config_dir / PROFILES_FILE).exists()
+
+
+def test_a_file_that_would_not_read_back_is_a_4xx(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """L-2: the read-back check refuses to write; the answer is a fixed 422, not a 500 with a traceback."""
+    from tabrion_studio.config import user as user_module
+
+    def broken(profiles: object) -> bytes:
+        raise ValueError("the written profiles do not read back")
+
+    monkeypatch.setattr(user_module, "checked_profiles", broken)
+    response = env.create(PG)
+    assert response.status_code == 422 and response.json()["code"] == "studio.config_not_storable"
+    assert not (env.config_dir / PROFILES_FILE).exists()
+
+
+def test_a_hand_edit_just_before_the_replace_wins(env: Env) -> None:
+    """I-3 of stu-008-review.md: the file is read once more right before it is replaced."""
+    assert env.create(PG).status_code == 201
+    expected = env.digest()
+    file = env.config_dir / PROFILES_FILE
+
+    def edit_meanwhile(profiles: list[Any]) -> list[Any]:
+        file.write_text(file.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+        return profiles
+
+    with pytest.raises(SaveError) as caught:
+        env.config.user.save_profiles(edit_meanwhile, expected)
+    assert caught.value.code == "studio.config_stale"
+    assert file.read_text(encoding="utf-8").endswith("\n\n")
