@@ -106,7 +106,7 @@ def test_control_needs_the_token(static_dir: Path, headers: dict[str, str]) -> N
     for action in ("launch", "shutdown", "other"):
         response = studio.client.post(f"/api/control/{action}", headers=headers, json={})
         assert response.status_code == 401
-        assert response.json() == {"code": "access.control_denied"}
+        assert response.json()["code"] == "access.control_denied"
         assert response.headers["cache-control"] == "no-store"
     assert studio.shutdowns == []
     assert studio.runtime.launches.pending == 0

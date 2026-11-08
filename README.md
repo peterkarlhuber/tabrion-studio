@@ -13,9 +13,9 @@ in your browser. It focuses on understanding schemas, running queries safely (re
 migration states and Tabrion profiles.
 
 > **Status: pre-alpha skeleton.** This repository currently contains the project skeleton, the command-line
-> process model, CI, the access protection and the empty app shell with the design system, German and English, and the
-> status displays and dialogs (work packages STU-001, STU-002, STU-003, STU-005, STU-018, STU-031, STU-051). Studio
-> does not connect to databases yet.
+> process model, CI, the access protection, Problem JSON errors and redacted, rotating logs, and the empty app shell
+> with the design system, German and English, and the status displays and dialogs (work packages STU-001, STU-002,
+> STU-003, STU-004, STU-005, STU-018, STU-031, STU-051). Studio does not connect to databases yet.
 > There is no release; nothing is published to PyPI. See [docs/TODO.md](docs/TODO.md) for what comes next.
 
 **Non-goals:** no hosted service, no shared server, no multi-user login, no replacement for administration tools
@@ -35,7 +35,7 @@ python -m pip install .                 # the wheel contains the built frontend
 ## Usage
 
 ```bash
-tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]
+tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES] [--log-dir DIR]
 tabrion-studio --stop [PROJECT]
 tabrion-studio --version
 ```
@@ -46,6 +46,8 @@ tabrion-studio --version
   process list). `--print-url` prints such a link instead, for a browser you start yourself; it works once.
 - One instance per project folder: starting `tabrion-studio` again for the same folder opens the running instance
   instead of starting a second server.
+- Studio logs to a rotating JSON file per project folder in the per-user log directory (`--log-dir` to change it);
+  the command prints its path. Logs never contain passwords, tokens, parameter values or exception messages.
 - Studio stops on Ctrl+C, with `tabrion-studio --stop`, or after 30 minutes without an open tab
   (`--idle-timeout 0` turns that off).
 

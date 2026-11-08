@@ -114,7 +114,7 @@ running instance does not load it. The process tests measure from spawning the p
 
 ## Room for later work
 
-The app factory (`tabrion_studio.app.create_app`) is where the security middleware of STU-003 (in place), the
-problem-JSON handlers of STU-004 and the API routers (`tabrion_studio.api` → `services` → `profiles`/`security`, 05 section 3.2)
+The app factory (`tabrion_studio.app.create_app`) is where the security middleware of STU-003, the problem-JSON
+handlers and the request log of STU-004 (both in place, `errors-and-logging.md`) and the API routers (`tabrion_studio.api` → `services` → `profiles`/`security`, 05 section 3.2)
 plug in. Write paths, including the later Studio 1.1 Schema Designer (change request 14 section 3.5), sit behind a
 server-side flag (STU-ADR-0003); nothing in the process model assumes a read-only server.

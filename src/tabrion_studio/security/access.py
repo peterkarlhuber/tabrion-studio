@@ -24,9 +24,11 @@ Threats (03 section 7.3) and review findings, in the order of the checks:
    401) **and** the session's CSRF value in ``X-Tabrion-CSRF`` (``access.csrf_invalid``, 403). A valid session
    counts as activity for the idle timeout (F-06).
 
-Every answer, including refusals and errors of the routes, gets the security headers: a strict
-``Content-Security-Policy`` (T-07, SQ-08), ``Cache-Control: no-store`` (T-15), ``X-Content-Type-Options: nosniff``,
-``Referrer-Policy: no-referrer``, ``X-Frame-Options: DENY`` and same-origin opener and resource policies.
+A refusal is a problem document (``application/problem+json``, :mod:`tabrion_studio.problems`, STU-004) with the
+code named above and fixed texts. Every answer, including refusals and errors of the routes, gets the security
+headers: a strict ``Content-Security-Policy`` (T-07, SQ-08), ``Cache-Control: no-store`` (T-15),
+``X-Content-Type-Options: nosniff``, ``Referrer-Policy: no-referrer``, ``X-Frame-Options: DENY`` and same-origin
+opener and resource policies.
 
 This middleware is not a user login: it keeps other web pages, other local users and DNS rebinding away from a
 single-user tool on loopback (STU-ADR-0002).
@@ -35,10 +37,10 @@ single-user tool on loopback (STU-ADR-0002).
 from __future__ import annotations
 
 from collections.abc import Callable
-import json
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from tabrion_studio.problems import problem, send_problem
 from tabrion_studio.security.sessions import CSRF_HEADER, Sessions, cookie_name
 
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -104,57 +106,58 @@ class AccessMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        send = _with_security_headers(send)
+        send = with_security_headers(send)
         refusal = self._refusal(scope)
         if refusal is not None:
-            status, code, detail = refusal
-            await _refuse(send, status, code, detail)
+            # A problem document with fixed texts (STU-004); the status comes from the catalog.
+            await send_problem(send, problem(refusal))
             return
         await self.app(scope, receive, send)
 
-    def _refusal(self, scope: Scope) -> tuple[int, str, str] | None:
+    def _refusal(self, scope: Scope) -> str | None:
         headers = [(key.decode("latin-1").lower(), value.decode("latin-1")) for key, value in scope["headers"]]
         path: str = scope.get("path", "")
         method: str = scope.get("method", "GET")
         hosts = [value.strip().lower() for key, value in headers if key == "host"]
         if hosts != [self.host]:
-            return 403, "access.host_not_allowed", f"only requests for {self.host} are answered"
-        forwarded = sorted({key for key, _ in headers if key in FORWARDING_HEADERS})
-        if forwarded:
-            return 403, "access.forwarded_not_allowed", f"forwarded requests are not answered ({', '.join(forwarded)})"
+            return "access.host_not_allowed"
+        if any(key in FORWARDING_HEADERS for key, _ in headers):
+            return "access.forwarded_not_allowed"
         origins = [value.strip().lower() for key, value in headers if key == "origin"]
         if any(origin != self.origin for origin in origins):
-            return 403, "access.origin_not_allowed", "requests from other web pages are not answered"
+            return "access.origin_not_allowed"
         api = path == "/api" or path.startswith("/api/")
         control = path.startswith(CONTROL_PREFIX)
         unsafe = method not in SAFE_METHODS
         if control:
             if origins or any(key.startswith("sec-fetch-") for key, _ in headers):
-                return 403, "access.browser_not_allowed", "the control endpoint is for the tabrion-studio command only"
+                return "access.browser_not_allowed"
         else:
             if api:
                 sites = {value.strip().lower() for key, value in headers if key == "sec-fetch-site"}
                 if sites - {"same-origin", "none"}:
-                    return 403, "access.cross_site", "requests from other sites are not answered"
+                    return "access.cross_site"
             if unsafe and not origins:
-                return 403, "access.origin_required", "changes need the Origin header of a Studio page"
+                return "access.origin_required"
         if api and unsafe:
             content_types = [value.split(";", 1)[0].strip().lower() for key, value in headers if key == "content-type"]
             if content_types != ["application/json"]:
-                return 415, "access.json_only", "the API accepts JSON bodies only (Content-Type: application/json)"
+                return "access.json_only"
         if api and not control and path not in OPEN_API_PATHS:
             candidates = session_cookie(headers, self.cookie)
             known = [value for value in candidates if self.sessions.known(value)]
             if not known:
-                return 401, "access.session_required", "open Studio with the tabrion-studio command"
+                return "access.session_required"
             csrf = [value for key, value in headers if key == _CSRF]
             if len(csrf) != 1 or not any(self.sessions.check(value, csrf[0]) for value in known):
-                return 403, "access.csrf_invalid", f"the request lacks the session's {CSRF_HEADER} header"
+                return "access.csrf_invalid"
             self.on_activity()
         return None
 
 
-def _with_security_headers(send: Send) -> Send:
+def with_security_headers(send: Send) -> Send:
+    """``send`` that replaces the security headers of every answer with :data:`SECURITY_HEADERS`."""
+
     async def wrapped(message: Message) -> None:
         if message["type"] == "http.response.start":
             kept = [(key, value) for key, value in message.get("headers", []) if key.lower() not in _REPLACED]
@@ -163,15 +166,3 @@ def _with_security_headers(send: Send) -> Send:
         await send(message)
 
     return wrapped
-
-
-async def _refuse(send: Send, status: int, code: str, detail: str) -> None:
-    body = json.dumps({"code": code, "detail": detail}).encode()
-    await send(
-        {
-            "type": "http.response.start",
-            "status": status,
-            "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode())],
-        }
-    )
-    await send({"type": "http.response.body", "body": body})

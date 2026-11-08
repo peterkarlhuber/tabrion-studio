@@ -21,6 +21,8 @@ import hmac
 import secrets
 import threading
 
+from tabrion_studio.logs import register_secret
+
 CSRF_HEADER = "X-Tabrion-CSRF"
 COOKIE_PREFIX = "tabrion_studio_session_"
 MAX_SESSIONS = 32
@@ -51,6 +53,8 @@ class Sessions:
     def create(self) -> tuple[str, str]:
         """Open a session; returns (session ID for the cookie, CSRF value for the page)."""
         session_id, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        register_secret(session_id)  # never in a log record (STU-004)
+        register_secret(csrf)
         with self._lock:
             self._csrf[_digest(session_id)] = csrf.encode("ascii")
             while len(self._csrf) > self._max:

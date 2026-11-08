@@ -56,6 +56,7 @@ nav:
   - Architecture:
       - Process model: architecture/process-model.md
       - Access protection: architecture/access-protection.md
+      - Errors and logging: architecture/errors-and-logging.md
       - App shell and design system: architecture/frontend.md
   - Development:
       - Building and testing: development/building.md

@@ -29,6 +29,7 @@ T = TypeVar("T")
 
 APP_NAME = "tabrion-studio"
 STATE_DIR_ENV = "TABRION_STUDIO_STATE_DIR"
+LOG_DIR_ENV = "TABRION_STUDIO_LOG_DIR"
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _BINARY = getattr(os, "O_BINARY", 0)
@@ -60,6 +61,17 @@ def default_state_dir() -> Path:
     if override:
         return Path(override)
     return Path(platformdirs.user_state_dir(APP_NAME, appauthor=False))
+
+
+def default_log_dir(state_dir: Path | None = None) -> Path:
+    """``$TABRION_STUDIO_LOG_DIR`` if set; else ``<state_dir>/logs`` for a state directory given by option or
+    environment; else the platform's per-user log directory (03 section 4.3)."""
+    override = os.environ.get(LOG_DIR_ENV)
+    if override:
+        return Path(override)
+    if state_dir is not None:
+        return state_dir / "logs"
+    return Path(platformdirs.user_log_dir(APP_NAME, appauthor=False))
 
 
 def ensure_private_dir(path: Path) -> Path:

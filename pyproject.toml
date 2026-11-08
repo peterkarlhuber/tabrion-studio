@@ -172,6 +172,20 @@ source_modules = ["tabrion_studio.app", "tabrion_studio.instance", "tabrion_stud
 forbidden_modules = ["tabrion_studio.cli"]
 
 [[tool.importlinter.contracts]]
+id = "problems-and-logs-below-everything"
+name = "Problem documents and logging (STU-004) import no other Studio layer"
+type = "forbidden"
+source_modules = ["tabrion_studio.problems", "tabrion_studio.logs"]
+forbidden_modules = [
+    "tabrion_studio.app",
+    "tabrion_studio.server",
+    "tabrion_studio.instance",
+    "tabrion_studio.cli",
+    "tabrion_studio.security",
+    "tabrion_studio.request_log",
+]
+
+[[tool.importlinter.contracts]]
 id = "security-below-app"
 name = "The security package never imports the app, the server, the process model or the CLI"
 type = "forbidden"
