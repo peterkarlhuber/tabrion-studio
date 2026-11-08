@@ -217,7 +217,11 @@ def test_settings_are_saved(env: Env) -> None:
     body = {"settings": {"log_sql": True, "limits": {"max_rows": 500}}, "digest": None}
     response = env.send("PUT", "/api/settings", body)
     assert response.status_code == 200
-    assert response.json()["settings"]["limits"] == {"max_rows": 500, "statement_timeout_ms": 30000}
+    assert response.json()["settings"]["limits"] == {
+        "max_rows": 500,
+        "statement_timeout_ms": 30000,
+        "max_result_mb": 20,
+    }
     assert (env.config_dir / SETTINGS_FILE).read_text(encoding="utf-8").endswith("[limits]\nmax_rows = 500\n")
     bad = env.send(
         "PUT", "/api/settings", {"settings": {"limits": {"max_rows": 0}}, "digest": response.json()["digest"]}

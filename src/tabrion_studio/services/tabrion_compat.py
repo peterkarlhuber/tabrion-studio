@@ -16,8 +16,11 @@ What each part replaces:
   through SQLAlchemy ``text()`` (:mod:`tabrion_studio.services.sqltext`).
 * :class:`Cancel` -> ``Transaction.cancel()``: psycopg's ``cancel_safe()`` and ``sqlite3.Connection.interrupt()``.
   A cancel is sent only while the statement's connection is attached, never after: the lock makes sure that a late
-  cancel cannot reach the next user of the pooled connection. A PostgreSQL connection that got a cancel is
-  invalidated (the pool opens a new one), since the server may act on the request after the statement ended.
+  cancel cannot reach the next user of the pooled connection. A connection that got a cancel is invalidated (the
+  pool opens a new one), since PostgreSQL may act on a cancel packet after the statement ended (H-1 of
+  ``tab-033-review.md``); a SQLite connection too, for the same guarantee.
+* :func:`reset_session`: ``RESET ALL`` when a PostgreSQL connection goes back to the pool (M-2 of
+  ``stu-011-review.md``).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
 * :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
   ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
@@ -40,7 +43,7 @@ from typing import Any
 import sqlalchemy
 import tabrion
 
-__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "inspector", "stream"]
+__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "inspector", "reset_session", "stream"]
 
 
 @dataclass(frozen=True)
@@ -132,6 +135,35 @@ def _columns(cursor: Any, dbapi: Any, postgres: bool) -> tuple[Column, ...]:
     return tuple(Column(str(item[0]), None) for item in description)
 
 
+def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
+    """A connection that got a cancel never goes back to the pool (H-1 of ``tab-033-review.md``, L-2 of
+    ``stu-011-review.md``): PostgreSQL may act on a cancel packet after the statement ended and abort the next user's
+    statement; SQLite's interrupt flag is cleared only when no statement runs. If SQLAlchemy cannot invalidate it,
+    the driver connection is closed, so the pool can only throw it away."""
+    try:
+        connection.invalidate()
+    except Exception:
+        with contextlib.suppress(Exception):
+            dbapi.close()
+
+
+def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
+    """Pool ``checkin`` listener (PostgreSQL): ``RESET ALL``, back to the startup values (M-2 of ``stu-011-review.md``).
+
+    Studio gives its session settings as startup options too (``connections.startup_options``), so this restores
+    the profile's timeouts and ``default_transaction_read_only`` and drops any other setting a statement changed.
+    A connection that cannot be reset leaves the pool. tabrion 0.2: a session reset of tabrion's own (TD-013).
+    """
+    if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute("RESET ALL")
+        dbapi_connection.commit()
+    except Exception as exc:
+        connection_record.invalidate(exc)
+
+
 @contextlib.contextmanager
 def stream(
     transaction: tabrion.Transaction,
@@ -162,9 +194,8 @@ def stream(
                 cursor.close()
     finally:
         sent = cancel.detach()
-        if sent and postgres:
-            with contextlib.suppress(Exception):
-                connection.invalidate()
+        if sent:
+            _discard(connection, dbapi)
     if sent:
         raise Cancelled
 

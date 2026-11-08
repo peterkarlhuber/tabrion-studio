@@ -30,8 +30,11 @@ __all__ = [
     "MAX_PARAMETERS",
     "MAX_VALUE_CHARS",
     "BoundStatement",
+    "Dialect",
     "ParameterError",
     "bind",
+    "driver_text",
+    "is_bound",
     "placeholders",
 ]
 
@@ -160,6 +163,22 @@ def _value(value: object) -> Any:
     raise ParameterError("studio.query_params_invalid")
 
 
+def driver_text(sql: str, dialect: Dialect) -> tuple[str, list[str]]:
+    """The driver's text of ``sql`` and its distinct placeholder names (no values involved)."""
+    spans = _scan(sql, dialect)
+    names = list(dict.fromkeys(name for _, _, name in spans))
+    if dialect == "sqlite":
+        return sql, names
+    parts: list[str] = []
+    position = 0
+    for start, end, name in spans:
+        parts.append(sql[position:start].replace("%", "%%"))
+        parts.append(f"%({name})s")
+        position = end
+    parts.append(sql[position:].replace("%", "%%"))
+    return "".join(parts), names
+
+
 def bind(sql: str, params: Mapping[str, object] | None, dialect: Dialect) -> BoundStatement:
     """The driver's text and values for ``sql`` (one checked statement) with ``params``.
 
@@ -169,20 +188,19 @@ def bind(sql: str, params: Mapping[str, object] | None, dialect: Dialect) -> Bou
     params = {} if params is None else params
     if len(params) > MAX_PARAMETERS or not all(isinstance(key, str) for key in params):
         raise ParameterError("studio.query_params_invalid")
-    spans = _scan(sql, dialect)
-    names = list(dict.fromkeys(name for _, _, name in spans))
+    text, names = driver_text(sql, dialect)
     if len(names) > MAX_PARAMETERS:
         raise ParameterError("studio.query_params_invalid")
     if any(name not in params for name in names):
         raise ParameterError("studio.query_param_missing")
-    values = {name: _value(params[name]) for name in names}
-    if dialect == "sqlite":
-        return BoundStatement(sql, sql, values)
-    parts: list[str] = []
-    position = 0
-    for start, end, name in spans:
-        parts.append(sql[position:start].replace("%", "%%"))
-        parts.append(f"%({name})s")
-        position = end
-    parts.append(sql[position:].replace("%", "%%"))
-    return BoundStatement(sql, "".join(parts), values)
+    return BoundStatement(sql, text, {name: _value(params[name]) for name in names})
+
+
+def is_bound(statement: BoundStatement, checked: str, dialect: Dialect) -> bool:
+    """Whether ``statement`` is what binding ``checked`` gives: its text, its driver text and one value per name.
+
+    ``OpenConnection.stream`` uses it on the text it is about to execute (L-1 of ``stu-011-review.md``), so a
+    ``BoundStatement`` built anywhere else cannot carry a driver text that was never checked.
+    """
+    text, names = driver_text(checked, dialect)
+    return statement.sql == checked and statement.driver_sql == text and list(statement.values) == names

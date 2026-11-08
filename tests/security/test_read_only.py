@@ -25,6 +25,7 @@ from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Sett
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import scrub
 from tabrion_studio.services import connections as connections_module
+from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.connections import (
     ConnectionRegistry,
     HealthError,
@@ -80,6 +81,16 @@ class Source:
 
     def limits(self) -> Settings:
         return self.settings
+
+
+def below_the_check(connection: OpenConnection, sql: str) -> None:
+    """``sql`` in one ``Database.read()`` of ``connection``, past Studio's text check: STU-T-010 shows that the
+    database, not the check, is the boundary."""
+    with (
+        connection._read() as transaction,
+        tabrion_compat.stream(transaction, sql, {}, cancel=tabrion_compat.Cancel(), server_side=False) as cursor,
+    ):
+        cursor.fetch(1)
 
 
 def _sha(path: Path) -> str:
@@ -144,12 +155,14 @@ WRITES = [
 def test_stu_t_010_a_sqlite_write_fails_in_the_database(
     sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source], sqlite_file: Path, sql: str
 ) -> None:
-    """The statement passes Studio's text check and is refused by SQLite itself (not by a text filter)."""
+    """SQLite itself refuses the statement, sent below Studio's text check (which refuses all but the pragmas too)."""
     connection, _, _ = sqlite_connection
     before = _sha(sqlite_file)
-    assert check_statement(sql)
+    if not sql.startswith("PRAGMA"):
+        with pytest.raises(StatementRefused):
+            check_statement(sql)
     with pytest.raises(TabrionError) as raised:
-        connection.fetch(sql)
+        below_the_check(connection, sql)
     assert raised.value.classification is not None
     assert raised.value.classification.kind.value in ("read_only", "permission")
     assert _sha(sqlite_file) == before
@@ -277,6 +290,24 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("SELECT pg_notify('channel', 'x')", "studio.statement_refused"),
         ("SELECT pg_advisory_lock(1)", "studio.statement_refused"),
         ("SELECT pg_try_advisory_lock_shared(1, 2)", "studio.statement_refused"),
+        # M-1, M-2 and I-2 of stu-011-review.md: first words outside the allowlist.
+        ("DECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(5)", "studio.statement_refused"),
+        ("declare c binary no scroll cursor for select 1", "studio.statement_refused"),
+        ("FETCH ALL FROM c", "studio.statement_refused"),
+        ("MOVE FORWARD 1 IN c", "studio.statement_refused"),
+        ("CLOSE ALL", "studio.statement_refused"),
+        ("SET statement_timeout = 0", "studio.statement_refused"),
+        ("SET LOCAL lock_timeout = 0", "studio.statement_refused"),
+        ("set search_path to public, pg_catalog", "studio.statement_refused"),
+        ("DEALLOCATE ALL", "studio.statement_refused"),
+        ("INSERT INTO part VALUES (1)", "studio.statement_refused"),
+        ("CREATE TEMP TABLE t (x int)", "studio.statement_refused"),
+        ("CALL p()", "studio.statement_refused"),
+        ("GRANT SELECT ON part TO public", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE DELETE FROM part", "studio.statement_refused"),
+        ("EXPLAIN (ANALYZE, BUFFERS) INSERT INTO part VALUES (1)", "studio.statement_refused"),
+        ("EXPLAIN DECLARE c CURSOR FOR SELECT 1", "studio.statement_refused"),
+        ("EXPLAIN", "studio.statement_refused"),
     ],
 )
 def test_statements_studio_refuses(sql: str, code: str) -> None:
@@ -291,8 +322,15 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
         "SELECT 1",
         "select ';' as semicolon;",
         "WITH x AS (SELECT 1) SELECT * FROM x",
-        "SET search_path TO app",
         "EXPLAIN SELECT 1",
+        "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1",
+        "EXPLAIN QUERY PLAN SELECT 1",
+        "explain analyze verbose with x as (select 1) select * from x",
+        "(SELECT 1) UNION (SELECT 2)",
+        "TABLE part",
+        "VALUES (1), (2)",
+        "SHOW statement_timeout",
+        "PRAGMA table_list",
         "/* BEGIN */ SELECT 'COMMIT'",
         # Not a call: a literal, a comment, a column and the transaction-level advisory lock.
         "SELECT 'set_config(' AS text",
@@ -548,9 +586,10 @@ def test_stu_t_010_a_postgres_write_fails_in_the_database(
     pg: tuple[OpenConnection, sqlalchemy.Engine], sql: str
 ) -> None:
     connection, admin = pg
-    assert check_statement(sql)
+    with pytest.raises(StatementRefused):
+        check_statement(sql)
     with pytest.raises(TabrionError):
-        connection.fetch(sql)
+        below_the_check(connection, sql)
     assert _rows(admin) == 1
 
 

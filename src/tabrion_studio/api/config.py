@@ -49,7 +49,7 @@ logger = logging.getLogger("tabrion_studio.config")
 _MAX_BODY = 4096
 _MAX_FORM_BODY = 16 * 1024
 _SETTINGS_KEYS = frozenset({"language", "theme", "log_sql", "limits"})
-_LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms"})
+_LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms", "max_result_mb"})
 
 
 class FormError(Exception):
@@ -205,6 +205,7 @@ def form_settings(raw: object, current: Settings) -> Settings:
         "limits": {
             "max_rows": limits.get("max_rows", current.max_rows),
             "statement_timeout_ms": limits.get("statement_timeout_ms", current.statement_timeout_ms),
+            "max_result_mb": limits.get("max_result_mb", current.max_result_mb),
         },
     }
     settings, issues = validate_settings(doc)

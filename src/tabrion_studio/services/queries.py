@@ -12,7 +12,10 @@ through ``OpenConnection.stream``: one ``Database.read()`` per statement.
 
 * rows: ``max_rows`` of the request, 1 000 by default, at most the ``max_rows`` setting (10 000 by default, at most
   1 000 000); the engine fetches one row more to tell whether the result was cut;
-* bytes: 20 MB per result (the size of the JSON values, measured as rows arrive); the rest is cut;
+* bytes: the ``max_result_mb`` setting, 20 MB per result by default, at most 200 MB (the size of the JSON values,
+  measured as rows arrive); the rest is cut. A fetch loads at most about 2 MB (one row first, then as many rows as
+  fit at the size so far), so memory stays near the caps; one value larger than that still loads in full (M-3 of
+  ``stu-011-review.md``);
 * cells: 64 KB of text (or 32 KB of bytes) per cell to the page; a longer value is cut and listed in
   ``truncated_cells`` ("load in full" comes with STU-012/013);
 * time: the profile's statement timeout (30 s, 15 s for ``prod``, or the profile's own) for the whole query, fetching
@@ -22,8 +25,9 @@ through ``OpenConnection.stream``: one ``Database.read()`` per statement.
   200 MB.
 
 **Cancel:** :meth:`QueryEngine.cancel` returns at once; a worker sends the database's own cancel
-(:class:`.tabrion_compat.Cancel`) and repeats it until the statement stops (target < 1 s). The timeout uses the same
-cancel.
+(:class:`.tabrion_compat.Cancel`) and repeats it until the statement stops (target < 1 s): every 100 ms for 3 s, then
+every second. A query has one cancel worker at most; more cancel requests change nothing (L-3). The timeout uses the
+same cancel.
 
 **What is logged:** one ``studio.query_finished`` record per query with its state, row count, duration, engine and
 problem code. Never the SQL text, a parameter value or a row (03 section 4.5, T-05).
@@ -77,12 +81,24 @@ PER_CONNECTION = 2
 KEPT_QUERIES = 16
 KEPT_BYTES = 200 * 1024 * 1024
 BATCH_ROWS = 500
+#: M-3 of stu-011-review.md: what one fetch may load before the caps apply. The first fetch is one row; the next ones
+#: as many rows as fit this budget at the size of the rows so far (at most BATCH_ROWS). One value larger than the
+#: budget still loads in full: the database's own limit (1 GB in PostgreSQL) is the only bound for a single value.
+FETCH_BUDGET_BYTES = 2 * 1024 * 1024
 PAGE_ROWS = 1_000
 MAX_PAGE_ROWS = 5_000
 #: How often and how long a cancel is repeated until the statement stops.
 CANCEL_INTERVAL_S = 0.1
 CANCEL_ATTEMPTS = 30
+#: After the fast attempts, the one cancel worker of a query keeps asking at this pace until the statement stops
+#: (L-3 of stu-011-review.md): neither driver can close a connection safely from another thread while it runs.
+CANCEL_SLOW_INTERVAL_S = 1.0
 _JS_SAFE_INTEGER = 2**53 - 1
+
+
+def _raw_size(row: tuple[Any, ...]) -> int:
+    """About what the driver loaded for ``row``: the length of text and binary values, 16 bytes for the others."""
+    return sum(len(value) if isinstance(value, str | bytes | bytearray | memoryview) else 16 for value in row)
 
 
 class QueryError(Exception):
@@ -166,6 +182,7 @@ class Query:
     timed_out: bool = False
     hook: Cancel = field(default_factory=Cancel)
     done: threading.Event = field(default_factory=threading.Event)
+    cancelling: bool = False  # a cancel worker runs (one per query, L-3)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -219,7 +236,8 @@ class QueryEngine:
     clock: Callable[[], float] = time.monotonic
     max_parallel: int = MAX_PARALLEL
     per_connection: int = PER_CONNECTION
-    max_bytes: int = MAX_BYTES
+    #: The byte cap of a result; ``None``: the ``max_result_mb`` setting (20 MB by default, at most 200 MB).
+    max_bytes: int | None = None
     _queries: dict[str, Query] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _closed: bool = False
@@ -243,7 +261,7 @@ class QueryEngine:
             connection_id=connection.id,
             engine=connection.engine,
             max_rows=rows,
-            max_bytes=self.max_bytes,
+            max_bytes=self.limits().max_result_mb * 1024 * 1024 if self.max_bytes is None else self.max_bytes,
             started=self.clock(),
         )
         with self._lock:
@@ -338,11 +356,14 @@ class QueryEngine:
         with query._lock:
             query.columns = cursor.columns
             query._changed()
+        batch_rows = 1
         while not query.hook.requested:
-            wanted = min(BATCH_ROWS, query.max_rows + 1 - len(query.rows))
+            wanted = min(batch_rows, query.max_rows + 1 - len(query.rows))
             batch = cursor.fetch(wanted)
             if not batch:
                 return
+            loaded = sum(_raw_size(row) for row in batch)
+            batch_rows = max(1, min(BATCH_ROWS, FETCH_BUDGET_BYTES * len(batch) // max(1, loaded)))
             with query._lock:
                 for row in batch:
                     if len(query.rows) >= query.max_rows:
@@ -375,7 +396,7 @@ class QueryEngine:
 
     def _expire(self, query: Query) -> None:
         query.timed_out = True
-        self._send_cancel(query)
+        self._start_cancel(query)
 
     # Reading, canceling, closing
 
@@ -394,15 +415,25 @@ class QueryEngine:
     def cancel(self, query_id: object) -> Query:
         """Ask the database to stop the query; returns at once (a worker repeats the cancel until it stops)."""
         query = self.get(query_id)
-        if not query.finished:
-            threading.Thread(target=self._send_cancel, args=(query,), name="studio-cancel", daemon=True).start()
+        self._start_cancel(query)
         return query
+
+    @classmethod
+    def _start_cancel(cls, query: Query) -> None:
+        """Start the query's cancel worker, unless it is finished or one runs already (L-3 of the review)."""
+        with query._lock:
+            if query.finished or query.cancelling:
+                return
+            query.cancelling = True
+        threading.Thread(target=cls._send_cancel, args=(query,), name="studio-cancel", daemon=True).start()
 
     @staticmethod
     def _send_cancel(query: Query) -> None:
-        for _ in range(CANCEL_ATTEMPTS):
+        attempt = 0
+        while not query.done.is_set():
             query.hook.cancel()
-            if query.done.wait(CANCEL_INTERVAL_S):
+            attempt += 1
+            if query.done.wait(CANCEL_INTERVAL_S if attempt < CANCEL_ATTEMPTS else CANCEL_SLOW_INTERVAL_S):
                 return
 
     def close_all(self, wait_s: float = 2.0) -> None:
@@ -411,7 +442,7 @@ class QueryEngine:
             self._closed = True
             running = [q for q in self._queries.values() if not q.finished]
         for query in running:
-            threading.Thread(target=self._send_cancel, args=(query,), daemon=True).start()
+            self._start_cancel(query)
         deadline = time.monotonic() + wait_s
         for query in running:
             query.done.wait(max(0.0, deadline - time.monotonic()))

@@ -591,7 +591,18 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `Transaction.cancel`, `Column` with `tabrion.Column`, `tabrion_compat.inspector` with `Database.inspector()`
   (STU-010); keep the STU-011 tests (STU-T-018..020) unchanged as the
   acceptance of the swap. Check that 0.2's `stream` takes the driver's text without `text()` (I-2), or keep Studio's
-  `sqltext.bind` in front of it, and that a canceled PostgreSQL connection leaves the pool.
+  `sqltext.bind` in front of it, and that a canceled connection leaves the pool on both engines (H-1 of
+  `tab-033-review.md`; Studio's `_discard` and its tests `test_l2_*`, `test_*h1_*` are the acceptance). Replace
+  `tabrion_compat.reset_session` (check-in `RESET ALL` with Studio's settings as startup options, M-2 of
+  `stu-011-review.md`) with tabrion's own session reset if 0.2 has one, and keep `test_pg_m2_*`.
+- **Fix round of `stu-011-review.md` (done in the STU-011 draft):** M-1/M-2/I-2 allowlist of first words in
+  `check_statement` and the check-in reset; M-3 fetches within a 2 MB budget (a single value still loads in full:
+  only the database's limit bounds it; the data viewer's "load in full" is the way to large values); L-1
+  `sqltext.is_bound` in `stream`; L-2 tests of both cancel guards; L-3 one cancel worker per query, which keeps
+  asking once a second after 3 s (closing a running connection from another thread is safe in neither driver, so a
+  statement that ignores the cancel still holds its slot until the driver returns); I-3 `max_result_mb` (1 to 200).
+  Open from the review: I-1 (bind a query to its session if Studio ever has several sessions) and I-4 (the SSE
+  generator polls every 50 ms; a condition would avoid it), both for STU-012, by 2026-12-15.
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within

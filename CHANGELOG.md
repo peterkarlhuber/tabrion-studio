@@ -25,6 +25,16 @@ All notable changes to this project are documented here. The format follows
   - Cancel within a second (PostgreSQL `cancel_safe()`, SQLite `interrupt()`); a canceled PostgreSQL connection
     leaves the pool.
   - No SQL text, parameter value or row in the log.
+  - Review `stu-011-review.md` (and H-1 of `tab-033-review.md`):
+    - M-1, M-2, I-2: `check_statement` allows a statement only by its first word (`SELECT`, `WITH`, `VALUES`,
+      `TABLE`, `EXPLAIN` of a query, `SHOW`, `PRAGMA`), so `DECLARE ... WITH HOLD`, `FETCH`, `MOVE`, `CLOSE`, `SET`
+      and every write are refused before the database. PostgreSQL connections get Studio's session settings as
+      startup options and run `RESET ALL` on check-in.
+    - M-3: a fetch loads about 2 MB at most (one row first, then as many as fit).
+    - L-1: `OpenConnection.stream` checks the driver text it executes.
+    - L-2, H-1: a connection that got a cancel is invalidated on both engines (closed if that fails), with tests of
+      both cancel guards.
+    - L-3: one cancel worker per query. I-3: the byte cap is the new `max_result_mb` setting (20 MB, up to 200 MB).
 - STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no
