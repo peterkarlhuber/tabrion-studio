@@ -260,6 +260,19 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("SELECT 'a\\', set_config('role','postgres',false) --'", "studio.statement_refused"),
         ("SELECT E'a\\'', set_config('role','postgres',false) --'", "studio.statement_refused"),
         ("SELECT $$x$$, set_config('role','postgres',false)", "studio.statement_refused"),
+        # R2-L1 of re-review 2: code the check cannot see into.
+        ("DO $$BEGIN PERFORM set_config('role','postgres',false); END$$", "studio.statement_refused"),
+        ("do $x$ BEGIN PERFORM pg_notify('c', 'x'); END $x$", "studio.statement_refused"),
+        ("/* c */ DO LANGUAGE plpgsql $$BEGIN EXECUTE 'SELECT pg_advisory_lock(1)'; END$$", "studio.statement_refused"),
+        (
+            "SELECT query_to_xml('SELECT set_config(''standard_conforming_strings'',''off'',false)', true, true, '')",
+            "studio.statement_refused",
+        ),
+        ("SELECT pg_catalog.query_to_xml_and_xmlschema('SELECT 1', true, true, '')", "studio.statement_refused"),
+        ("SELECT cursor_to_xml('c', 1, true, true, '')", "studio.statement_refused"),
+        ("SELECT * FROM ts_stat('SELECT pg_advisory_lock(1)::text::tsvector')", "studio.statement_refused"),
+        ("SELECT * FROM crosstab('SELECT 1, 2, 3') AS t(a int, b int)", "studio.statement_refused"),
+        ("SELECT * FROM dblink('dbname=x', 'SELECT 1') AS t(a int)", "studio.statement_refused"),
         # I-R1 of the re-review: calls that reach other sessions or outlive Studio's transaction.
         ("SELECT pg_notify('channel', 'x')", "studio.statement_refused"),
         ("SELECT pg_advisory_lock(1)", "studio.statement_refused"),
@@ -293,6 +306,23 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
 )
 def test_statements_studio_passes_on(sql: str) -> None:
     assert check_statement(sql)
+
+
+#: R2-I2 of re-review 2: each text hides the call under one way of lexing '...' and shows it under the other.
+#: With standard_conforming_strings on, 'x\'' is the string x\ and then an open quote; with it off, the string x'.
+HIDDEN_UNLESS_BACKSLASH = "SELECT 'x\\'' , set_config('role','postgres',false) -- '"
+#: E'\'' is always the string ' (backslash escapes in E'...'); 'a\' is a\ with standard_conforming_strings on, so
+#: the call is plain to the server there, while a reader that treats E'...' like '...' (or '...' like E'...') sees a
+#: literal.
+HIDDEN_UNLESS_E_ESCAPES = "SELECT E'\\'', 'a\\', set_config('role','postgres',false) -- '"
+
+
+@pytest.mark.parametrize("sql", [HIDDEN_UNLESS_BACKSLASH, HIDDEN_UNLESS_E_ESCAPES])
+def test_r2_i2_a_literal_cannot_hide_a_call_from_either_lexing(sql: str) -> None:
+    """Kills mutants T1 (one reading only) and T6 (E'...' without escapes) of re-review 2."""
+    with pytest.raises(StatementRefused) as raised:
+        check_statement(sql)
+    assert raised.value.code == "studio.statement_refused"
 
 
 def test_stu_t_011_every_environment_gets_a_read_only_profile() -> None:

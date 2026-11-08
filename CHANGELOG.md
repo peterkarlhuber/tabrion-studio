@@ -44,6 +44,12 @@ All notable changes to this project are documented here. The format follows
       pin: pip options (`-e`, `-r`, `-c`, `-f`, index and host options), paths, wheel files, other URLs and
       fragments are refused.
     - I-R2: a test that fails when the secret comes from a second read of the profile.
+  - Re-review 2 of `stu-009-review.md`:
+    - R2-L1: `DO` and the functions that run a query given as text (`query_to_xml`, `cursor_to_xml` and their schema
+      forms, `ts_stat`, `ts_rewrite`, `crosstab`, `dblink`) are refused.
+    - R2-I2: tests for both ways of lexing `'...'` and for `E'...'` escapes.
+    - R2-I1: a requirement's marker cannot carry a pip option (`--config-settings`, `--global-option`, `-e`).
+    - CI: the PostgreSQL service port is published on `127.0.0.1` only.
   - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
     constraints file, and `pyproject.toml` keeps the final range with no direct reference.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
