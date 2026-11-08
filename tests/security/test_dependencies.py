@@ -221,4 +221,4 @@ def test_the_integration_branch_pins_one_full_commit() -> None:
     lines = [line for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
     assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@546d254a27df9f6b539d57c307ad3022d0ee3a4a"]
     deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
-    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2"]
+    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[migrations,postgres,sqlalchemy]>=0.1.0a1,<0.2"]
