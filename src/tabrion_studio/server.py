@@ -3,8 +3,11 @@
 :func:`serve` takes the per-project lock, binds ``127.0.0.1`` (the port given or a free one chosen by the OS; there
 is no option for another address, STU-T-025), runs Uvicorn with one worker in this process and publishes the
 instance info file once the server accepts connections. It returns when the server stops: Ctrl+C (SIGINT), SIGTERM,
-CTRL_BREAK on Windows, ``tabrion-studio --stop`` or the idle timeout. On the way out it removes its info file and
-releases the lock.
+SIGHUP (the terminal closed) on POSIX, CTRL_BREAK and CTRL_CLOSE on Windows, ``tabrion-studio --stop`` or the idle
+timeout. The info file is removed as soon as the shutdown starts and again on every way out (review F-04).
+
+It also binds, without listening, ``[::1]`` on the same port (review F-08): no other program can then serve
+``http://localhost:<port>/`` over IPv6 while Studio runs. Studio itself never prints or opens a ``localhost`` URL.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 import contextlib
 from dataclasses import dataclass, field
+import errno
 import os
 from pathlib import Path
 import secrets
@@ -54,21 +58,33 @@ class ServeOptions:
 
 STOP_SIGNALS: tuple[signal.Signals, ...] = (signal.SIGINT, signal.SIGTERM)
 if sys.platform == "win32":
+    # The C runtime delivers CTRL_BREAK and CTRL_CLOSE (console window closed) as SIGBREAK.
     STOP_SIGNALS += (signal.SIGBREAK,)
+else:
+    STOP_SIGNALS += (signal.SIGHUP,)
+
+LOOPBACK_V6 = "::1"
+_PORT_ATTEMPTS = 20
 
 
 class _StudioServer(uvicorn.Server):
     """Uvicorn's server with a callback once it accepts connections and a clean exit on a stop signal."""
 
-    def __init__(self, config: uvicorn.Config, on_ready: Callable[[], None]) -> None:
+    def __init__(self, config: uvicorn.Config, on_ready: Callable[[], None], on_stopping: Callable[[], None]) -> None:
         super().__init__(config)
         self._on_ready = on_ready
+        self._on_stopping = on_stopping
         self.stop_reason = "stopped"
 
     async def startup(self, sockets: list[socket.socket] | None = None) -> None:
         await super().startup(sockets=sockets)
         if self.started:
             self._on_ready()
+
+    async def shutdown(self, sockets: list[socket.socket] | None = None) -> None:
+        # First withdraw the info file, so that no client reads a port that is about to be free (review F-01).
+        self._on_stopping()
+        await super().shutdown(sockets=sockets)
 
     @contextlib.contextmanager
     def capture_signals(self) -> Iterator[None]:
@@ -90,21 +106,100 @@ class _StudioServer(uvicorn.Server):
         self.handle_exit(sig, frame)
 
 
-def bind_loopback(port: int) -> socket.socket:
-    """A listening TCP socket on 127.0.0.1 (``port`` 0 = a free port chosen by the OS)."""
-    try:
-        sock = socket.create_server((LOOPBACK, port), family=socket.AF_INET, backlog=128)
-    except OSError as exc:
-        raise PortUnavailableError(f"cannot listen on {LOOPBACK}:{port}: {exc.strerror or exc}") from exc
+@dataclass
+class LoopbackSockets:
+    """The listening IPv4 socket and, if IPv6 is available, the bound but not listening ``[::1]`` socket."""
+
+    listener: socket.socket
+    v6_guard: socket.socket | None
+
+    @property
+    def port(self) -> int:
+        return int(self.listener.getsockname()[1])
+
+    def close(self) -> None:
+        for sock in (self.listener, self.v6_guard):
+            if sock is not None:
+                with contextlib.suppress(OSError):
+                    sock.close()
+
+
+def _exclusive_socket(family: socket.AddressFamily) -> socket.socket:
+    sock = socket.socket(family, socket.SOCK_STREAM)
     sock.set_inheritable(False)
+    if sys.platform == "win32":
+        # Without it, another program could bind the same address with SO_REUSEADDR and take over connections.
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
     return sock
+
+
+def _bind_v4(port: int) -> socket.socket:
+    sock = _exclusive_socket(socket.AF_INET)
+    try:
+        if sys.platform != "win32":
+            # POSIX only: lets a restart reuse a port in TIME_WAIT; never lets two listeners share it.
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((LOOPBACK, port))
+        sock.listen(128)
+    except BaseException:
+        sock.close()
+        raise
+    return sock
+
+
+_NO_IPV6 = {errno.EAFNOSUPPORT, errno.EADDRNOTAVAIL, getattr(errno, "EPROTONOSUPPORT", errno.EAFNOSUPPORT)}
+
+
+def _guard_v6(port: int) -> socket.socket | None:
+    """Bind ``[::1]:port`` without listening; None if this host has no IPv6 loopback. Raises if the port is taken."""
+    if not socket.has_ipv6:
+        return None
+    try:
+        sock = _exclusive_socket(socket.AF_INET6)
+    except OSError as exc:
+        if exc.errno in _NO_IPV6 or getattr(exc, "winerror", None) == 10047:  # WSAEAFNOSUPPORT
+            return None
+        raise
+    try:
+        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        sock.bind((LOOPBACK_V6, port))
+    except OSError as exc:
+        sock.close()
+        if exc.errno in _NO_IPV6 or getattr(exc, "winerror", None) in (10047, 10049):  # WSAEADDRNOTAVAIL
+            return None
+        raise
+    return sock
+
+
+def bind_loopback(port: int) -> LoopbackSockets:
+    """Listen on ``127.0.0.1:port`` and hold ``[::1]:port`` (``port`` 0 = a free port that is free on both)."""
+    attempts = 1 if port else _PORT_ATTEMPTS
+    last: OSError | None = None
+    for _ in range(attempts):
+        try:
+            listener = _bind_v4(port)
+        except OSError as exc:
+            raise PortUnavailableError(f"cannot listen on {LOOPBACK}:{port}: {exc.strerror or exc}") from exc
+        chosen = int(listener.getsockname()[1])
+        try:
+            guard = _guard_v6(chosen)
+        except OSError as exc:
+            listener.close()
+            last = exc
+            continue  # [::1] has this port in use by another program: with port 0, try another free port
+        return LoopbackSockets(listener, guard)
+    detail = last.strerror if last is not None and last.strerror else last
+    raise PortUnavailableError(
+        f"port {port or 'any'}: [{LOOPBACK_V6}] is used by another program ({detail}); "
+        "Studio holds both loopback addresses so that no other program can answer for localhost"
+    )
 
 
 def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     """Run the server for ``options.project`` while holding ``lock``; returns the exit code."""
     paths = InstancePaths.for_project(options.state_dir, options.project)
-    sock = bind_loopback(options.port)
-    port = int(sock.getsockname()[1])
+    sockets = bind_loopback(options.port)
+    port = sockets.port
     info = InstanceInfo(
         pid=os.getpid(),
         port=port,
@@ -154,13 +249,12 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         workers=1,
         timeout_graceful_shutdown=5,
     )
-    server = _StudioServer(config, on_ready)
+    server = _StudioServer(config, on_ready, lambda: remove_info_if_ours(paths, info.instance_id))
     try:
-        server.run(sockets=[sock])
+        server.run(sockets=[sockets.listener])
     finally:
         remove_info_if_ours(paths, info.instance_id)
-        with contextlib.suppress(OSError):
-            sock.close()
+        sockets.close()
         lock.release()
     if not server.started:
         print("Tabrion Studio could not start.", file=out, flush=True)

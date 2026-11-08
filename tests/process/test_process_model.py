@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from pathlib import Path
 import socket
 import sys
@@ -10,11 +11,14 @@ import time
 import pytest
 
 from tabrion_studio.instance import InstanceInfo, InstanceLock, InstancePaths
-from tests.support.studio import get, get_json, run_cli, start_studio
+from tests.support.studio import get, get_json, heartbeat, run_cli, start_studio
 
 pytestmark = pytest.mark.process
 
 START_BUDGET_SECONDS = 2.0
+# Every stop signal of the platform (review F-04): Ctrl+C, kill and a closed terminal on POSIX; CTRL_BREAK (and
+# CTRL_CLOSE, which the C runtime also delivers as SIGBREAK) on Windows.
+STOP_SIGNALS = ["SIGBREAK"] if sys.platform == "win32" else ["SIGINT", "SIGTERM", "SIGHUP"]
 
 
 def _stop(project: Path, state_dir: Path) -> None:
@@ -109,15 +113,17 @@ def test_stop_without_a_running_instance(project: Path, state_dir: Path) -> None
     assert "No Tabrion Studio is running" in result.stdout
 
 
-def test_stop_signal_shuts_down_cleanly(project: Path, state_dir: Path) -> None:
-    # Ctrl+C in the terminal: SIGINT on POSIX, CTRL_BREAK on Windows.
+@pytest.mark.parametrize("name", STOP_SIGNALS)
+def test_stop_signal_shuts_down_cleanly(project: Path, state_dir: Path, name: str) -> None:
     with start_studio(project, state_dir) as studio:
         studio.wait_ready()
-        studio.interrupt()
+        studio.send_stop_signal(name)
         assert studio.wait_exit() == 0
-        expected = "SIGBREAK" if sys.platform == "win32" else "SIGINT"
-        assert f"stopped ({expected})" in studio.output()
+        assert f"stopped ({name})" in studio.output()
         assert not studio.paths.info.exists()
+        lock = InstanceLock(studio.paths.lock)
+        assert lock.acquire()
+        lock.release()
 
 
 def test_idle_exit(project: Path, state_dir: Path) -> None:
@@ -136,10 +142,45 @@ def test_activity_postpones_the_idle_exit(project: Path, state_dir: Path) -> Non
         info, _ = studio.wait_ready()
         until = time.monotonic() + 5
         while time.monotonic() < until:  # a heartbeat every second, as an open tab does every minute
-            get_json(f"{info.url}api/health")
+            assert heartbeat(info.url) == 204
             assert studio.process.poll() is None
             time.sleep(1)
         assert studio.wait_exit(timeout=30) == 0
+
+
+def test_health_checks_do_not_postpone_the_idle_exit(project: Path, state_dir: Path) -> None:
+    # Review F-06: only heartbeats of a page of this origin and authenticated control requests count as activity.
+    with start_studio(project, state_dir, "--idle-timeout", "0.05") as studio:
+        info, _ = studio.wait_ready()
+        started = time.monotonic()
+        while studio.process.poll() is None and time.monotonic() - started < 30:
+            with contextlib.suppress(OSError):
+                get_json(f"{info.url}api/health", timeout=0.5)
+            time.sleep(0.25)
+        assert studio.wait_exit(timeout=5) == 0
+        assert time.monotonic() - started < 15
+        assert "stopped (no activity" in studio.output()
+
+
+def _ipv6_loopback_available() -> bool:
+    try:
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            probe.bind(("::1", 0))
+    except OSError:
+        return False
+    return True
+
+
+def test_ipv6_loopback_port_is_held(project: Path, state_dir: Path) -> None:
+    # Review F-08: while Studio runs, no other program can serve http://localhost:<port>/ over [::1].
+    with start_studio(project, state_dir) as studio:
+        info, _ = studio.wait_ready()
+        if _ipv6_loopback_available():
+            with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as rival, pytest.raises(OSError):
+                rival.bind(("::1", info.port))
+        assert "localhost" not in studio.output()
+        _stop(project, state_dir)
+        assert studio.wait_exit() == 0
 
 
 def test_stale_info_file_after_a_crash_does_not_block_a_start(project: Path, state_dir: Path) -> None:

@@ -10,6 +10,11 @@ Each project folder has two files in the state directory, named after a hash of 
   of starting a second server. A web page cannot read the file, and it cannot send the header cross-origin without a
   CORS preflight, which the server never grants.
 
+Before the client sends the token, the server proves that it knows it: the client sends a random nonce to
+``GET /api/control/proof`` and checks ``HMAC-SHA256(token, "tabrion-studio-proof:" + nonce)``. Another program that
+took over a port named in an info file (review F-01) therefore never receives the token, and the client accepts a
+launch URL only if it points to ``http://127.0.0.1:<port>/`` of that instance.
+
 The control client never uses a proxy: requests go straight to the loopback address.
 """
 
@@ -18,19 +23,36 @@ from __future__ import annotations
 import contextlib
 from dataclasses import asdict, dataclass
 import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
+import re
+import secrets
+import stat
 import sys
 import time
 from typing import IO, Any
 import urllib.error
 import urllib.request
 
-from tabrion_studio.paths import ensure_private_dir, read_private_file, remove_file, write_private_file
+from tabrion_studio.paths import (
+    UnsafePathError,
+    ensure_private_dir,
+    read_private_file,
+    remove_file,
+    write_private_file,
+)
 
 LOOPBACK = "127.0.0.1"
 INFO_VERSION = 1
+PROOF_CONTEXT = b"tabrion-studio-proof:"
+NONCE_PATTERN = re.compile(r"[0-9a-f]{32,128}")
+
+
+def control_proof(token: str, nonce: str) -> str:
+    """The server's answer to a proof request: HMAC-SHA256 over the client nonce, keyed with the control token."""
+    return hmac.new(token.encode("utf-8"), PROOF_CONTEXT + nonce.encode("ascii"), hashlib.sha256).hexdigest()
 
 
 def project_key(project: Path) -> str:
@@ -139,6 +161,7 @@ class InstanceLock:
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
         fh = os.fdopen(os.open(self.path, flags, 0o600), "r+b")
         try:
+            _check_lock_file(fh, self.path)
             if not _try_lock(fh):
                 fh.close()
                 return False
@@ -153,6 +176,15 @@ class InstanceLock:
         if fh is not None:
             _unlock(fh)
             fh.close()
+
+
+def _check_lock_file(fh: IO[bytes], path: Path) -> None:
+    """Refuse a lock file that is not a regular file or that another user owns (review F-10)."""
+    info = os.fstat(fh.fileno())
+    if not stat.S_ISREG(info.st_mode):
+        raise UnsafePathError(f"the lock file is not a regular file: {path}")
+    if sys.platform != "win32" and info.st_uid != os.getuid():
+        raise UnsafePathError(f"the lock file belongs to another user: {path}")
 
 
 if sys.platform == "win32":
@@ -202,6 +234,10 @@ class ControlError(RuntimeError):
     """The running instance did not answer as expected."""
 
 
+class ImpostorError(ControlError):
+    """The program on the instance's port could not prove that it knows the control token."""
+
+
 def _request(url: str, *, method: str = "GET", token: str | None = None, timeout: float = 5.0) -> Any:
     if not url.startswith(f"http://{LOOPBACK}:"):
         raise ControlError("control requests go to the loopback address only")
@@ -229,14 +265,39 @@ def health(port: int, timeout: float = 2.0) -> dict[str, Any] | None:
     return doc if isinstance(doc, dict) else None
 
 
+def verify_server(info: InstanceInfo, timeout: float = 5.0) -> None:
+    """Make the server on ``info.port`` prove that it knows the control token, without sending the token."""
+    nonce = secrets.token_hex(16)
+    url = f"http://{LOOPBACK}:{info.port}/api/control/proof?nonce={nonce}"
+    try:
+        doc = _request(url, timeout=timeout)
+    except ControlError as exc:
+        raise ImpostorError(f"the program on port {info.port} gave no proof: {exc}") from exc
+    proof = doc.get("proof") if isinstance(doc, dict) else None
+    expected = control_proof(info.control_token, nonce)
+    if not isinstance(proof, str) or not hmac.compare_digest(proof.encode("utf-8"), expected.encode("utf-8")):
+        raise ImpostorError(
+            f"the program on port {info.port} is not the Tabrion Studio of this folder (wrong proof); "
+            "the control token was not sent"
+        )
+
+
 def control(info: InstanceInfo, action: str, timeout: float = 5.0) -> dict[str, Any]:
-    """Call ``POST /api/control/<action>`` on the running instance."""
+    """Call ``POST /api/control/<action>`` on the running instance, after it has proved that it holds the token."""
+    verify_server(info, timeout=timeout)
     doc = _request(
         f"http://{LOOPBACK}:{info.port}/api/control/{action}", method="POST", token=info.control_token, timeout=timeout
     )
     if not isinstance(doc, dict):
         raise ControlError(f"unexpected answer to {action}")
     return doc
+
+
+def validate_launch_url(info: InstanceInfo, url: object) -> str:
+    """The launch URL returned by the instance, if it points to that instance; else :class:`ControlError`."""
+    if not isinstance(url, str) or not url.startswith(info.url) or any(c in url for c in "\r\n\t\\ "):
+        raise ControlError(f"refusing a launch URL that does not point to {info.url}")
+    return url
 
 
 def find_running(paths: InstancePaths, wait: float = 5.0) -> InstanceInfo | None:

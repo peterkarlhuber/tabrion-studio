@@ -27,10 +27,28 @@ export async function fetchHealth(fetcher: typeof fetch = fetch): Promise<Health
   }
 }
 
-/** Send a heartbeat every HEARTBEAT_MS; returns a function that stops it. */
+/**
+ * Tell the local server that this tab is open. Only this request (sent by the browser with
+ * `Sec-Fetch-Site: same-origin`) and authenticated control requests postpone the idle exit;
+ * health checks do not (review F-06).
+ */
+export async function sendHeartbeat(fetcher: typeof fetch = fetch): Promise<boolean> {
+  try {
+    const response = await fetcher('/api/heartbeat', {
+      cache: 'no-store',
+      credentials: 'same-origin',
+    });
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Send a heartbeat now and every HEARTBEAT_MS; returns a function that stops it. */
 export function startHeartbeat(fetcher: typeof fetch = fetch): () => void {
+  void sendHeartbeat(fetcher);
   const timer = window.setInterval(() => {
-    void fetchHealth(fetcher);
+    void sendHeartbeat(fetcher);
   }, HEARTBEAT_MS);
   return () => window.clearInterval(timer);
 }

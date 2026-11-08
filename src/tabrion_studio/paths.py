@@ -1,13 +1,20 @@
 """Private files in the per-user state directory (03 section 4.3, threat T-04).
 
 Directories are created with mode 0700 and files with mode 0600; symlinks are refused on every platform that
-supports ``O_NOFOLLOW``. On Windows the modes are not enforced by the OS: the state directory lives in the user's
-profile (``%LOCALAPPDATA%``), whose ACL already limits access to that user.
+supports ``O_NOFOLLOW``.
+
+An existing state directory is checked, never repaired behind the user's back (review F-10): one that another user
+owns, or that the group or others may write to, is refused, because another user may already have placed files in
+it. Read and search bits for group and others are removed, since nothing secret has been written yet.
+
+On Windows the modes are not enforced by the OS. There the state directory and each of its parents up to the user's
+profile must not be a symlink, junction or other reparse point, and a directory outside the profile is accepted only
+if its access control list is private to the user (review F-07, :mod:`tabrion_studio._winsec`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 import contextlib
 import os
 from pathlib import Path
@@ -40,6 +47,9 @@ def _retry_on_sharing_violation(action: Callable[[], T]) -> T:
     return action()
 
 
+_FILE_ATTRIBUTE_REPARSE_POINT = 0x400
+
+
 class UnsafePathError(RuntimeError):
     """A state path is a symlink, belongs to another user or is readable by others."""
 
@@ -53,17 +63,78 @@ def default_state_dir() -> Path:
 
 
 def ensure_private_dir(path: Path) -> Path:
-    """Create ``path`` (and parents) with mode 0700 and check that it is a real directory owned by this user."""
+    """Create ``path`` (and parents) with mode 0700 and check that only this user can use it.
+
+    Raises :class:`UnsafePathError` for a symlink or junction, a directory owned by another user or one that the group
+    or others may write to (POSIX), and on Windows for a directory outside the user's profile without a private ACL.
+    """
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
     info = os.lstat(path)
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or _is_reparse_point(info):
         raise UnsafePathError(f"the state directory is not a plain directory: {path}")
     if _POSIX:
         if info.st_uid != os.getuid():
             raise UnsafePathError(f"the state directory belongs to another user: {path}")
-        if stat.S_IMODE(info.st_mode) != 0o700:
-            os.chmod(path, 0o700)
+        mode = stat.S_IMODE(info.st_mode)
+        if mode & 0o022:
+            raise UnsafePathError(
+                f"the state directory can be written by other users (mode {mode:o}): {path}; "
+                "remove it or run chmod 700 on it after checking its content"
+            )
+        if mode != 0o700:
+            os.chmod(path, 0o700)  # only read or search bits for others were set
+    else:
+        _check_windows_dir(path)
     return path
+
+
+def _is_reparse_point(info: os.stat_result) -> bool:
+    """A Windows junction, mount point or other reparse point (``os.lstat`` does not report junctions as links)."""
+    return bool(getattr(info, "st_file_attributes", 0) & _FILE_ATTRIBUTE_REPARSE_POINT)
+
+
+def is_within(path: Path, roots: Iterable[Path]) -> bool:
+    """Whether ``path`` is one of ``roots`` or inside one (compared case-normalized, as Windows does)."""
+    target = os.path.normcase(str(path))
+    for root in roots:
+        base = os.path.normcase(str(root)).rstrip("\\/")
+        if base and (target == base or target.startswith(base + os.sep)):
+            return True
+    return False
+
+
+def profile_roots() -> list[Path]:
+    """The user's profile folders (Windows): ``%USERPROFILE%`` and ``%LOCALAPPDATA%``, as given and resolved."""
+    roots: list[Path] = []
+    for name in ("USERPROFILE", "LOCALAPPDATA"):
+        value = os.environ.get(name)
+        if value:
+            roots += [Path(os.path.abspath(value)), Path(value).resolve()]
+    return roots
+
+
+def _check_windows_dir(path: Path) -> None:
+    roots = profile_roots()
+    root_keys = {os.path.normcase(str(root)) for root in roots}
+    absolute = Path(os.path.abspath(path))
+    # The directory itself and every folder between it and the profile root must be plain directories: a junction
+    # there could redirect the state into a folder that other users can read.
+    for folder in (absolute, *absolute.parents):
+        if folder != absolute and (os.path.normcase(str(folder)) in root_keys or not is_within(folder, roots)):
+            break
+        if _is_reparse_point(os.lstat(folder)):
+            raise UnsafePathError(f"the state directory path contains a junction or link: {folder}")
+    if is_within(path.resolve(), roots):
+        return
+    if sys.platform == "win32":
+        from tabrion_studio._winsec import dacl_problem
+
+        problem = dacl_problem(path)
+        if problem is not None:
+            raise UnsafePathError(
+                f"the state directory is outside your user profile and not private: {path} ({problem}); "
+                "use a folder in your profile or restrict its access to your account"
+            )
 
 
 def write_private_file(path: Path, data: bytes) -> None:

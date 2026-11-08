@@ -31,6 +31,13 @@ def get(url: str, timeout: float = 2.0) -> tuple[int, bytes, dict[str, str]]:
         return int(response.status), response.read(), dict(response.headers)
 
 
+def heartbeat(base_url: str, timeout: float = 2.0) -> int:
+    """What an open tab sends: ``GET /api/heartbeat`` with the header a browser adds to a same-origin request."""
+    request = urllib.request.Request(f"{base_url}api/heartbeat", headers={"Sec-Fetch-Site": "same-origin"})
+    with _OPENER.open(request, timeout=timeout) as response:
+        return int(response.status)
+
+
 def get_json(url: str, timeout: float = 2.0) -> dict[str, object]:
     status, body, _ = get(url, timeout)
     assert status == 200
@@ -89,10 +96,15 @@ class Studio:
 
     def interrupt(self) -> None:
         """Send the console stop signal: SIGINT on POSIX, CTRL_BREAK on Windows (own process group)."""
+        self.send_stop_signal("SIGBREAK" if sys.platform == "win32" else "SIGINT")
+
+    def send_stop_signal(self, name: str) -> None:
+        """Send a stop signal by name; on Windows only SIGBREAK (CTRL_BREAK to the process group) exists."""
         if sys.platform == "win32":
+            assert name == "SIGBREAK", name
             self.process.send_signal(signal.CTRL_BREAK_EVENT)
         else:
-            self.process.send_signal(signal.SIGINT)
+            self.process.send_signal(getattr(signal, name))
 
     def kill(self) -> None:
         if self.process.poll() is None:

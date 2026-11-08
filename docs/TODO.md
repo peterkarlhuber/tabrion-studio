@@ -14,7 +14,9 @@
 |---|---|---|
 | TS-001 add the tabrion dependency with STU-009 | P1 | Blocked (tabrion v0.1.0) |
 | OA-001 make `ci-ok` a required check | P0 | Open (owner) |
-| OA-002 independent review of the process model | P1 | Open |
+| OA-002 independent review of the process model | P1 | Accepted with conditions (fixed in PR #1) |
+| OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
+| STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Open (with TABRION STU-003) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -49,17 +51,56 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-002 · Independent review of the process model (TABRION STU-002, 07 §6)
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** 07 §6 review model, STU-ADR-0002
-- **What:** STU-002 opens a loopback HTTP server with a token-protected control endpoint
-  (`POST /api/control/{launch,shutdown}`). Studio packages with a network or credential surface need an independent
-  review agent. The full access protection (STU-003) and the G-S1 security review follow; this review should cover
-  the lock and info files, the control token and the loopback bind.
+- **Priority:** P1 High · **Status:** Accepted with conditions · **Refs:** 07 §6 review model, STU-ADR-0002,
+  `tabrion-planung/reviews/stu-002-018-review.md`
+- **What:** the independent review of PR #1 (at 4925486) covered the lock and info files, the control token, the
+  loopback bind and the ci-ok gate. It came back ACCEPTED WITH CONDITIONS.
+- **Done in PR #1:** F-01 (server proof before the token is sent, launch URL check, stale info file removed when the
+  lock is taken and at the start of a shutdown, regression tests with a fake server), F-04 (SIGHUP, CTRL_CLOSE, info
+  file removed on every exit path), F-06 (only authenticated control requests and same-origin heartbeats reset the
+  idle timer), F-07 (Windows: private ACL outside the profile, junctions refused), F-08 (`[::1]` held on the same
+  port), F-10 (unsafe state directory and lock file refused), F-11 (status post retried, job fails loudly) and F-03
+  (workflow-change gate with the label `workflow-change-reviewed`, CODEOWNERS as a recommendation).
+- **Moved to STU-003:** F-02, F-05, F-08 (Host allowlist part) and F-09; see *STU-003 binding requirements*.
+- **Next step:** the reviewer checks the fixes before the merge.
+
+### OA-003 · Create the label `workflow-change-reviewed` (TABRION STU-018, review F-03)
+
+- **Priority:** P1 High · **Status:** Open (owner) · **Refs:** `docs/development/ci.md` (workflow-change gate)
+- **What:** after the merge, ci-ok reports NOT OK for every pull request that changes `.github/workflows/**` or
+  `.github/scripts/**` without this label. Only writers can set labels.
+- **Next step (owner):** create the label once (Issues, Labels). Set it only after the owner or an independent
+  review has read the workflow change, then re-run ci-ok. Optional: turn on "require review from code owners" for
+  `.github/CODEOWNERS` once a second maintainer exists (it would block every agent pull request today).
+
+## STU-003 binding requirements (review of PR #1)
+
+TABRION STU-003 is accepted only if it meets these requirements of `stu-002-018-review.md` (condition C-3). Each needs
+a test in the STU-003 pull request.
+
+- **F-02, launch token not in a process argv.** The browser is opened with a 0600 redirect file in the state directory
+  (`<meta http-equiv="refresh" content="0;url=http://127.0.0.1:P/launch#TOKEN">`) through its `file://` path, never
+  with a URL that carries the token, because the argv of `xdg-open`, `open` or the browser is readable by every local
+  user. Delete the file after the token has been redeemed or after a short timeout. `--print-url` stays the explicit
+  opt-in. Test (STU-T-005/-006): the argv of the started browser contains no token.
+- **F-05, Host and Origin checks on every route.** Apply the Host allowlist (T-01) to every route, including
+  `/api/control/*`, `/api/control/proof`, `/api/heartbeat` and `/api/health`. The control endpoints reject any request
+  that carries `Origin`, `Sec-Fetch-Site` or `Sec-Fetch-Mode` (the CLI never sends them), so a browser can never
+  drive them even if the token reaches a page.
+- **F-08, `localhost` and `::1`.** Studio prints and opens only `http://127.0.0.1:<port>/` URLs, and it now holds
+  `[::1]:<port>` (PR #1). The STU-003 Host allowlist either drops `localhost:<port>` or accepts it only while the
+  `[::1]` guard is held; a failed IPv6 bind stays non-fatal. Test: no `localhost` URL is printed or opened.
+- **F-09, cookies are not port-scoped.** Require the SQ-03 CSRF header on every request with a session. Its value
+  comes from origin-scoped storage (JS memory or `sessionStorage`), never from a cookie, so a cookie stolen by a
+  server on another local port is useless alone. Optionally bind the session to the `Host` value including the port.
+- **F-06, follow-up.** Requests with a valid session count as activity for the idle timeout, as authenticated control
+  requests and same-origin heartbeats do now.
 
 ## Open work packages (M6, Studio MVP 0.1)
 
 | WP | Title | Priority | Depends on | Note |
 |---|---|---|---|---|
-| TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | adds the one-time launch token to the URL returned by `/api/control/launch`; security middleware in `create_app` |
+| TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | adds the one-time launch token to the URL returned by `/api/control/launch`; security middleware in `create_app`; must meet the *STU-003 binding requirements* above (F-02, F-05, F-08, F-09) |
 | TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | request log without query strings (Uvicorn's access log is off) |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | replaces the placeholder page |
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | adds the `e2e` job and the platforms e2e smoke (05 §3.5) |

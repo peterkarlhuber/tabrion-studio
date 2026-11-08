@@ -17,8 +17,16 @@ import webbrowser
 
 from tabrion_studio._version import __version__
 from tabrion_studio.idle import DEFAULT_IDLE_MINUTES
-from tabrion_studio.instance import ControlError, InstanceLock, InstancePaths, control, find_running
-from tabrion_studio.paths import UnsafePathError, default_state_dir
+from tabrion_studio.instance import (
+    ControlError,
+    ImpostorError,
+    InstanceLock,
+    InstancePaths,
+    control,
+    find_running,
+    validate_launch_url,
+)
+from tabrion_studio.paths import UnsafePathError, default_state_dir, remove_file
 
 # Taken when the module loads; the server stack (FastAPI, Uvicorn) is imported only when this process serves, so
 # "ready in" includes those imports, and a second start that reuses the running instance never loads them.
@@ -86,7 +94,12 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     lock = InstanceLock(paths.lock)
     try:
         acquired = lock.acquire()
+        if acquired:
+            # Whoever holds the lock owns the info file. One left behind by a crashed instance names a port that
+            # another program may now use; remove it at once so nobody reads it (review F-01).
+            remove_file(paths.info)
     except (OSError, UnsafePathError) as exc:
+        lock.release()
         print(f"tabrion-studio: cannot use the state directory {state_dir}: {exc}", file=err)
         return EXIT_ERROR
 
@@ -120,8 +133,11 @@ def _reuse(paths: InstancePaths, project: Path, *, open_browser: bool, out: Text
         print(f"tabrion-studio: another Tabrion Studio holds the lock for {project} but does not answer", file=err)
         return EXIT_ERROR
     try:
-        url = str(control(info, "launch")["url"])
-    except (ControlError, KeyError) as exc:
+        url = validate_launch_url(info, control(info, "launch").get("url"))
+    except ImpostorError as exc:
+        print(f"tabrion-studio: {exc}", file=err)
+        return EXIT_ERROR
+    except ControlError as exc:
         print(f"tabrion-studio: the running Tabrion Studio did not answer: {exc}", file=err)
         return EXIT_ERROR
     print(f"Tabrion Studio is already running for {project}: {url}", file=out, flush=True)
@@ -141,7 +157,7 @@ def _stop(lock: InstanceLock, acquired: bool, paths: InstancePaths, project: Pat
         return EXIT_ERROR
     try:
         control(info, "shutdown")
-    except ControlError as exc:
+    except ControlError as exc:  # includes ImpostorError: the token was not sent
         print(f"tabrion-studio: the stop request failed: {exc}", file=err)
         return EXIT_ERROR
     deadline = time.monotonic() + 15

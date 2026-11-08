@@ -1,14 +1,19 @@
 """The FastAPI application factory (05 section 3.1).
 
-Skeleton scope (STU-001, STU-002): ``GET /api/health``, the control endpoint for the process model and the built
-frontend from ``static/``. Session, Host/Origin checks, CSP and ``no-store`` headers arrive with STU-003; problem JSON
-and logging with STU-004.
+Skeleton scope (STU-001, STU-002): ``GET /api/health``, ``GET /api/heartbeat``, the control endpoints for the process
+model and the built frontend from ``static/``.
+
+Only two things count as activity for the idle timeout (review F-06): a control request with a valid token and a
+heartbeat from a page of this origin (``Sec-Fetch-Site: same-origin``). Health checks, static files, failed control
+requests and requests from other sites never postpone the idle exit.
+
+Session, Host/Origin checks, CSP and ``no-store`` headers arrive with STU-003; problem JSON and logging with STU-004.
 """
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable
+from collections.abc import AsyncIterator, Callable
 import contextlib
 from dataclasses import dataclass
 import hmac
@@ -20,6 +25,7 @@ from fastapi.staticfiles import StaticFiles
 
 from tabrion_studio._version import __version__
 from tabrion_studio.idle import IdleMonitor
+from tabrion_studio.instance import NONCE_PATTERN, control_proof
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -69,14 +75,25 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         lifespan=lifespan,
     )
 
-    @app.middleware("http")
-    async def count_activity(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        runtime.idle.touch()
-        return await call_next(request)
-
     @app.get("/api/health")
     async def get_health() -> Response:
         return _no_store(JSONResponse({"status": "ok", "version": __version__, "instance": runtime.instance_id}))
+
+    @app.get("/api/heartbeat", include_in_schema=False)
+    async def get_heartbeat(request: Request) -> Response:
+        # A browser sets Sec-Fetch-Site itself and a page cannot forge it, so a page of another site cannot keep
+        # Studio alive. Tools without the header do not count either.
+        if request.headers.get("sec-fetch-site") == "same-origin":
+            runtime.idle.touch()
+        return _no_store(Response(status_code=204))
+
+    @app.get("/api/control/proof", include_in_schema=False)
+    async def get_control_proof(nonce: str = "") -> Response:
+        # Proves to a second `tabrion-studio` start that this server knows the control token, before that client
+        # sends the token (review F-01). The answer depends on the client's random nonce, so it cannot be replayed.
+        if NONCE_PATTERN.fullmatch(nonce) is None:
+            return _no_store(JSONResponse({"code": "studio.bad_nonce"}, status_code=400))
+        return _no_store(JSONResponse({"proof": control_proof(runtime.control_token, nonce)}))
 
     @app.post("/api/control/{action}", include_in_schema=False)
     async def post_control(action: str, request: Request) -> Response:
@@ -86,6 +103,7 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         )
         if not authorized:
             return _no_store(JSONResponse({"code": "access.control_denied"}, status_code=401))
+        runtime.idle.touch()
         if action == "launch":
             return _no_store(JSONResponse({"url": runtime.launch_url()}))
         if action == "shutdown":

@@ -1,0 +1,3 @@
+# Code owners (review F-03). A recommendation: "require review from code owners" is not turned on, because it
+# would block every agent pull request in this solo-owner repository. See docs/development/ci.md.
+/.github/ @peterkarlhuber
