@@ -24,7 +24,7 @@ def _env(tmp_path: Path, *dirs: Path) -> dict[str, str]:
     return {
         "HOME": str(tmp_path),
         "XDG_DATA_HOME": str(tmp_path / "home-share"),
-        "XDG_DATA_DIRS": ":".join(map(str, dirs)),
+        "XDG_DATA_DIRS": os.pathsep.join(map(str, dirs)),
     }
 
 

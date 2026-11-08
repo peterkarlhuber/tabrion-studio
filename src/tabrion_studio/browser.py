@@ -47,9 +47,10 @@ def _xdg_default_browser() -> str | None:
 
 
 def _data_dirs(env: Mapping[str, str]) -> list[Path]:
+    # XDG separates the folders with ":" (os.pathsep on Linux, the only platform this runs on; tests run everywhere).
     home = env.get("XDG_DATA_HOME") or str(Path(env.get("HOME", "~")).expanduser() / ".local" / "share")
     dirs = env.get("XDG_DATA_DIRS") or "/usr/local/share:/usr/share"
-    return [Path(home), *(Path(d) for d in dirs.split(":") if d)]
+    return [Path(home), *(Path(d) for d in dirs.split(os.pathsep) if d)]
 
 
 def _classify(desktop: Path) -> Sandbox | None:
