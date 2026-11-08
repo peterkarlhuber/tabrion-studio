@@ -4,6 +4,14 @@ from pathlib import Path
 
 import pytest
 
+import tabrion_studio.config.secrets as studio_secrets
+
+
+@pytest.fixture(autouse=True)
+def no_real_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never read or write the developer's or the CI runner's OS keyring (STU-007)."""
+    monkeypatch.setattr(studio_secrets, "select_backend", lambda: None)
+
 
 @pytest.fixture
 def project(tmp_path: Path) -> Path:

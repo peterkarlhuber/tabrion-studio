@@ -64,6 +64,18 @@ All notable changes to this project are documented here. The format follows
   bidi characters escaped, long values and lists capped, and the real totals (binding requirement U-1 of
   `stu-005-051-review.md`). The German D-01 text says "definiert" (review wording nit).
 
+- Secret management (STU-007, `docs/architecture/secrets.md`): `keyring:` references use the OS keyring (service
+  `tabrion-studio`, one entry per profile and project folder) with no plain-text fallback (the `fail`, `null` and
+  `keyrings.alt` backends are refused); `env:NAME` reads the process environment; `file:PATH` is read with the checks
+  of review C-3 at read time (no `~` expansion, containment, no link on the path, owner, 0600, one link, no FIFO,
+  4 KB); a password can be entered for the current session only. `PUT` and `DELETE /api/profiles/{id}/secret` store
+  and remove an entered password (204, never echoed), `GET /api/secrets` says whether a keyring is available, and
+  `GET /api/profiles` shows only `secret: {source, has_secret}`. Every resolved or entered secret is redacted from the
+  logs. `file:` values are never URL-decoded or Unicode-normalized.
+- Re-review of PR #9 (`stu-conditions-rereview.md`): R-1, the link walk refuses a step to `/net/<host>` or another
+  network form before it `lstat`s it (a relative link that climbs to `/net` triggered the macOS automount); R-3, a
+  leading `\??\` is refused as text.
+
 ### Security
 
 - Conditions of the reviews of PR #7 (`stu-004-review.md`) and PR #8 (`stu-006-review.md`):

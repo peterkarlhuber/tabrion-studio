@@ -6,7 +6,7 @@ SMB connection to that host and sends the user's NTLM challenge-response; ``\\\\
 WebDAV. On macOS, ``/net/<host>/...`` (the autofs ``-hosts`` map, on by default) beacons in the same way. So:
 
 1. :func:`network_or_device` refuses, as text, UNC paths (``\\\\host``, ``//host``, also mixed separators), device
-   paths (``\\\\?\\``, ``\\\\.\\``), drive-relative paths (``C:foo``, ``C:``), ``file:`` URLs with a host
+   paths (``\\\\?\\``, ``\\\\.\\``, ``\\??\\``), drive-relative paths (``C:foo``, ``C:``), ``file:`` URLs with a host
    (``file://host/x``) and the automount folders ``/net/<host>`` and ``/Network/`` on every platform: the same
    project file can be opened on any of them. The schema reports these as ``config.network_path``.
 2. :func:`lexical_target` and :func:`lexically_within` decide containment as pure path logic (``ntpath`` or
@@ -40,6 +40,8 @@ def network_or_device(text: str) -> bool:
         value = value[5:]
     if len(value) >= 2 and value[0] in _SEPARATORS and value[1] in _SEPARATORS:
         return True  # \\host\share, //host/share, \\?\..., \\.\..., file://host/...
+    if len(value) >= 4 and value[0] in _SEPARATORS and value[1:3] == "??" and value[3] in _SEPARATORS:
+        return True  # \??\..., the NT namespace prefix that Win32 passes through unchanged (re-review R-3)
     drive = len(value) >= 2 and value[1] == ":" and value[0].isascii() and value[0].isalpha()
     if drive and (len(value) == 2 or value[2] not in _SEPARATORS):
         return True  # C:foo is relative to the current folder of drive C (not this project)
@@ -103,6 +105,10 @@ def safe_realpath(path: Path) -> Path | None:
     current = Path(path.anchor)
     pending = list(path.parts[1:])
     links = 0
+    # The folder the walk starts in is the user's (it may be on a share); a step that *becomes* a network or
+    # automount path, for example a relative link that climbs to /net/<host>, is refused before lstat touches it
+    # (re-review R-1: on macOS, lstat("/net/<host>") triggers the automount).
+    started_remote = network_or_device(str(path))
     while pending:
         name = pending.pop(0)
         if name in ("", "."):
@@ -111,6 +117,8 @@ def safe_realpath(path: Path) -> Path | None:
             current = current.parent
             continue
         candidate = current / name
+        if not started_remote and network_or_device(str(candidate)):
+            return None
         try:
             info = os.lstat(candidate)
         except (FileNotFoundError, NotADirectoryError):
