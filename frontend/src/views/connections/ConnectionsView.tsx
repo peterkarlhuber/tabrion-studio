@@ -49,7 +49,7 @@ function SecretLine({ item }: { item: ProfileItem }) {
   else source = t('connections.secret.file', { path: visible(ref.target), ...NO_ESCAPE });
   const state =
     item.secret.hasSecret === true
-      ? t('connections.secret.set')
+      ? t(ref?.source === 'env' ? 'connections.secret.envSet' : 'connections.secret.set')
       : item.secret.hasSecret === false
         ? t('connections.secret.missing')
         : t('connections.secret.unknown');
@@ -206,16 +206,18 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     close();
     const name = visible(result.name);
     setStatus(
-      result.secretProblem === null
-        ? { text: t('connections.saved', { name, ...NO_ESCAPE }), problem: false }
-        : {
-            text: t('connections.secretNotSaved', {
-              name,
-              reason: problemText(t, result.secretProblem),
-              ...NO_ESCAPE,
-            }),
-            problem: true,
-          },
+      result.secretKept
+        ? { text: t('connections.savedSecretKept', { name, ...NO_ESCAPE }), problem: true }
+        : result.secretProblem === null
+          ? { text: t('connections.saved', { name, ...NO_ESCAPE }), problem: false }
+          : {
+              text: t('connections.secretNotSaved', {
+                name,
+                reason: problemText(t, result.secretProblem),
+                ...NO_ESCAPE,
+              }),
+              problem: true,
+            },
     );
     setSelected(`user:${result.name}`);
     void load();
@@ -230,9 +232,13 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     }
     close();
     setSelected(null);
+    const kept = result.value.secret_removed === false;
     setStatus({
-      text: t('connections.deleted', { name: visible(item.name), ...NO_ESCAPE }),
-      problem: false,
+      text: t(kept ? 'connections.deletedSecretKept' : 'connections.deleted', {
+        name: visible(item.name),
+        ...NO_ESCAPE,
+      }),
+      problem: kept,
     });
     void load();
   };

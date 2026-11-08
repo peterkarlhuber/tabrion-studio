@@ -288,10 +288,16 @@ class KeyringStore:
         backend = self.backend()
         if backend is None:
             return
+        from keyring.errors import PasswordDeleteError
+
         try:
             backend.delete_password(SERVICE, key)
-        except Exception:  # PasswordDeleteError when there is none: nothing to delete
-            return
+        except PasswordDeleteError:
+            return  # there is none: nothing to delete
+        except Exception:
+            # L-3 of stu-008-review.md: the entry stays, so say so (without the backend's message).
+            logger.warning("the keyring could not remove a secret", extra={"event": "studio.keyring_failed"})
+            raise SecretError("studio.keyring_failed") from None
 
 
 class SessionSecrets:

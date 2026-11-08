@@ -103,6 +103,7 @@ class UserConfig:
         current = self.profiles()
         self._check(current.digest, current.issues, current.canonical, expected, overwrite)
         data = checked_profiles(change(list(current.profiles)))
+        self._recheck(PROFILES_FILE, current.digest, private=True)
         self._write(PROFILES_FILE, data)
         return digest(data) or ""
 
@@ -112,8 +113,22 @@ class UserConfig:
         _, issues, current, canonical = self.settings_file()
         self._check(current, issues, canonical, expected, overwrite)
         data = checked_settings(settings)
+        self._recheck(SETTINGS_FILE, current, private=False)
         self._write(SETTINGS_FILE, data)
         return digest(data) or ""
+
+    def _recheck(self, name: str, expected: str | None, *, private: bool) -> None:
+        """Read the file once more just before the replace (I-3 of stu-008-review.md): a hand edit meanwhile wins.
+
+        This narrows the window to the replace itself; Studio takes no lock, so an edit in that last moment is lost
+        (TD-011).
+        """
+        try:
+            now = digest(read_plain_file(self.config_dir / name, private=private))
+        except ConfigFileError:
+            now = "unreadable"
+        if now != expected:
+            raise SaveError("studio.config_stale")
 
     def _write(self, name: str, data: bytes) -> None:
         try:

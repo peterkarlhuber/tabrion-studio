@@ -264,7 +264,19 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
         except (SaveError, SecretError) as exc:
             logger.info("configuration not saved", extra={"event": "studio.config_refused", "code": exc.code})
             return problem_response(exc.code)
+        except ValueError:
+            # The file would not read back (or not encode): nothing was written (L-2 of stu-008-review.md).
+            logger.warning("configuration not written", extra={"event": "studio.config_not_storable"})
+            return problem_response("studio.config_not_storable")
         return result
+
+    def forget_after_save(target: SecretTarget) -> bool:
+        """Remove a saved password after the file was written; False if the keyring kept it (L-3)."""
+        try:
+            config.secrets.forget(target)
+        except SecretError:
+            return False
+        return True
 
     def create(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         profile = form_profile(doc.get("profile"))
@@ -297,9 +309,11 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
         before = _user_target(config, old[0])
         if before.ref != profile.password or before.key != _user_target(config, profile).key:
             # The stored secret belonged to the old reference or target (C-1): it never serves the new one.
-            config.secrets.forget(before)
+            removed = forget_after_save(before)
+        else:
+            removed = True
         logger.info("profile changed", extra={"event": "studio.profile_changed"})
-        return JSONResponse({"id": f"user:{name}", "digest": new_digest})
+        return JSONResponse({"id": f"user:{name}", "digest": new_digest, "secret_removed": removed})
 
     def remove(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         name = _user_name(config, doc.get("id"))
@@ -312,9 +326,9 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
             return [p for p in profiles if p.name != name]
 
         new_digest = config.user.save_profiles(change, expected, overwrite=overwrite)
-        config.secrets.forget(_user_target(config, old[0]))
+        removed = forget_after_save(_user_target(config, old[0]))
         logger.info("profile removed", extra={"event": "studio.profile_removed"})
-        return JSONResponse({"digest": new_digest})
+        return JSONResponse({"digest": new_digest, "secret_removed": removed})
 
     def put_settings_action(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         current, _ = config.user.settings()

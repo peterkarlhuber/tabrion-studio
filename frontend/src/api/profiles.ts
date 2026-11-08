@@ -200,6 +200,8 @@ async function send<T>(
 export interface Saved {
   id?: string;
   digest: string;
+  /** False when the keyring kept the old saved password (L-3 of stu-008-review.md). */
+  secret_removed?: boolean;
 }
 
 export function createProfile(
