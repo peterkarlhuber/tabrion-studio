@@ -1,0 +1,16 @@
+[
+  {
+    "name": "tabrion-studio",
+    "version": "0.1.0.dev0",
+    "license_expression": "MIT",
+    "classifiers": [],
+    "license": ""
+  },
+  {
+    "name": "copyleft-probe",
+    "version": "1.0.0",
+    "license_expression": "",
+    "classifiers": ["License :: OSI Approved :: GNU General Public License v3 (GPLv3)"],
+    "license": ""
+  }
+]

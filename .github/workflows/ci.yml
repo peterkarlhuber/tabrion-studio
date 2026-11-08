@@ -1,0 +1,283 @@
+name: CI
+
+# STU-018 (05 section 3.5, 07 section 4.1): every job name below is a mandatory check in .github/ci-manifest.json;
+# ci-ok.yml aggregates them and posts the commit status "ci-ok" on the pull request head. Actions are pinned by full
+# commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
+# them: "backend integration (PostgreSQL 17)" (STU-009), "openapi in sync" (STU-003/STU-008) and "e2e" (QA-9).
+# Nothing here releases or publishes anything (G-R).
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  # The nightly (nightly.yml) runs this workflow once a night on master.
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  # A new push to a pull request cancels the older run of that pull request; every other run gets its own group.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONUTF8: "1"
+
+jobs:
+  backend-lint:
+    name: backend lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy --strict src tests scripts hatch_build.py
+      # AC-1 (QA-16): import contracts in pyproject.toml (edge list K-33).
+      - run: lint-imports
+      # AC-7: only public Tabrion names.
+      - run: python scripts/check_tabrion_api.py
+      # CI-FAST: the manifest, the workflow files and ci-ok.yml agree; the ci-ok scripts are tested.
+      - run: python3 -I .github/scripts/ci_ok.py --self-check --root .
+      - run: python3 -m unittest discover -s .github/scripts -p "test_ci_ok*.py"
+
+  backend-test:
+    name: backend test (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: Python 3.11, os: ubuntu-latest, python: "3.11" }
+          - { label: Python 3.12, os: ubuntu-latest, python: "3.12" }
+          - { label: Python 3.13, os: ubuntu-latest, python: "3.13" }
+          - { label: Python 3.14, os: ubuntu-latest, python: "3.14" }
+          - { label: macos-latest, os: macos-latest, python: "3.13" }
+          - { label: windows-latest, os: windows-latest, python: "3.13" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      # STU-001: the editable install on every OS (without the built frontend).
+      - run: pip install -e ".[dev]"
+      - run: pip list
+      # Unit, process-model (STU-002: start < 2 s, reuse, idle exit, shutdown), security and supply-chain tests.
+      - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing
+
+  security:
+    name: security tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # Workflow pins, read-only tokens, no publishing, license policy; STU-003 adds the STU-T access tests.
+      - run: pytest -m security -v -p no:cacheprovider
+      # ruff's flake8-bandit rules (S) over the package and the scripts.
+      - run: ruff check --select S src scripts hatch_build.py
+
+  frontend-lint:
+    name: frontend lint and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+
+  frontend-unit:
+    name: frontend unit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm test
+
+  packaging:
+    name: build and install (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # STU-001: npm ci + npm run build on every OS; the result goes to src/tabrion_studio/static.
+      - run: python scripts/build_frontend.py
+      - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
+      # STU-018: the hatch hook refuses a wheel without static/index.html.
+      - run: python -m build --outdir dist
+      - run: twine check --strict dist/*
+      - run: pytest -m packaging tests/packaging -v -p no:cacheprovider
+        env:
+          TABRION_STUDIO_DIST: dist
+      # Fresh venv from the wheel, then run with every Node folder removed from PATH.
+      - run: python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
+      - if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+
+  supply-chain:
+    name: license and supply chain
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: python scripts/build_frontend.py
+      - run: pip install "build==1.6.1"
+      - run: python -m build --wheel --outdir dist
+      # STU-031: what users install = the wheel and its runtime dependencies, in a fresh environment.
+      - name: Install the wheel into a fresh environment
+        run: |
+          python -m venv "$RUNNER_TEMP/runtime"
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl
+          "$RUNNER_TEMP/runtime/bin/python" -m pip check
+      - run: mkdir -p sbom && "$RUNNER_TEMP/runtime/bin/python" -I scripts/collect_licenses.py > sbom/licenses-python.json
+      - name: License policy (Python runtime closure and npm lockfile)
+        run: python -I scripts/check_licenses.py --python sbom/licenses-python.json --npm frontend/package-lock.json
+      - name: Negative probes (a disallowed license must fail the check)
+        run: |
+          set -u
+          for probe in "--python tests/supply_chain/probes/python-gpl.json" "--npm tests/supply_chain/probes/npm-gpl-lock.json"; do
+            if python -I scripts/check_licenses.py $probe; then
+              echo "::error::the license check accepted the GPL probe ($probe)"
+              exit 1
+            fi
+          done
+          echo "both probes were rejected as expected"
+      - name: SBOMs (CycloneDX)
+        run: |
+          python -m venv "$RUNNER_TEMP/sbom-tools"
+          "$RUNNER_TEMP/sbom-tools/bin/python" -m pip install --quiet "cyclonedx-bom==8.0.1"
+          "$RUNNER_TEMP/sbom-tools/bin/cyclonedx-py" environment --pyproject pyproject.toml --of JSON \
+            --output-reproducible -o sbom/tabrion-studio-python.cdx.json "$RUNNER_TEMP/runtime/bin/python"
+          (cd frontend && npm sbom --sbom-format cyclonedx --package-lock-only) > sbom/tabrion-studio-frontend.cdx.json
+      - name: The SBOMs list the expected components
+        run: |
+          python -I - <<'PY'
+          import json
+          py = json.load(open("sbom/tabrion-studio-python.cdx.json"))
+          names = {c["name"].lower() for c in py["components"]}
+          missing = {"fastapi", "uvicorn", "psycopg", "keyring"} - names
+          assert py["bomFormat"] == "CycloneDX" and not missing, f"python SBOM lacks {missing}"
+          assert py["metadata"]["component"]["name"] == "tabrion-studio", py["metadata"]["component"]
+          npm = json.load(open("sbom/tabrion-studio-frontend.cdx.json"))
+          shipped = sorted(c["name"] for c in npm["components"] if c.get("scope") == "required")
+          assert {"react", "react-dom"} <= set(shipped), shipped
+          print(f"python SBOM: {len(names)} components; frontend SBOM: {len(npm['components'])} ({shipped} shipped)")
+          PY
+          { echo "### SBOM"; echo; ls -l sbom | sed 's/^/    /'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom
+          path: sbom/
+
+  audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: python -m pip install --upgrade pip
+      # The runtime dependencies and the development toolchain.
+      - run: pip install "pip-audit==2.10.1" -e ".[dev]"
+      - run: pip-audit --skip-editable --progress-spinner off
+      - run: npm ci --no-audit --no-fund
+        working-directory: frontend
+      - run: npm audit --omit=dev --audit-level=high
+        working-directory: frontend
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: mkdocs build --strict

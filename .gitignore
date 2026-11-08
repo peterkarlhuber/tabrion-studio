@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Tools
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.import_linter_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+# The built frontend; the wheel build includes it (pyproject.toml, artifacts).
+src/tabrion_studio/static/
+
+# Supply-chain reports (CI artifacts)
+sbom/
+licenses.json
+
+# Docs
+site/
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store

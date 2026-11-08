@@ -1,0 +1,170 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tabrion-studio"
+dynamic = ["version"]
+description = "Local developer tool for SQLite and PostgreSQL databases built on Tabrion"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Peter Karlhuber" }]
+keywords = ["database", "sqlite", "postgresql", "developer-tools", "tabrion"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Database :: Front-Ends",
+    "Typing :: Typed",
+]
+dependencies = [
+    # tabrion is not a dependency yet: nothing uses its API so far. The first work package that does (STU-009) adds
+    # "tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2" after tabrion v0.1.0 (RC-8: no git pin and no
+    # pre-release specifier on master; docs/TODO.md TS-001, tests/security/test_dependencies.py).
+    "psycopg[binary]>=3.2,<4",
+    "fastapi>=0.115,<1",
+    # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).
+    "uvicorn>=0.30,<1",
+    "pydantic>=2.9,<3",
+    "keyring>=25,<26",
+    "platformdirs>=4.2,<5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9",
+    "pytest-cov>=5",
+    # The FastAPI test client; Starlette 1.x prefers httpx2 over httpx (05 section 3.2 names httpx).
+    "httpx2>=2.16",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "import-linter>=2.1",
+    "mkdocs-material>=9.5",
+    "build>=1.2",
+    # hatch_build.py (the wheel build hook) is unit-tested.
+    "hatchling>=1.26",
+    "twine>=6",
+]
+
+[project.scripts]
+tabrion-studio = "tabrion_studio.cli:main"
+
+[project.urls]
+Repository = "https://github.com/peterkarlhuber/tabrion-studio"
+Issues = "https://github.com/peterkarlhuber/tabrion-studio/issues"
+Security = "https://github.com/peterkarlhuber/tabrion-studio/blob/master/SECURITY.md"
+
+[tool.hatch.version]
+path = "src/tabrion_studio/_version.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tabrion_studio"]
+# The built frontend is not in git (.gitignore); `artifacts` puts it into the wheel anyway.
+artifacts = ["src/tabrion_studio/static/**"]
+
+[tool.hatch.build.targets.wheel.hooks.custom]
+# hatch_build.py: a wheel (not an editable install) must contain static/index.html (STU-018).
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "src/tabrion_studio",
+    "frontend",
+    "scripts",
+    "tests",
+    "docs",
+    "hatch_build.py",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+    "mkdocs.yml",
+    "pyproject.toml",
+]
+exclude = ["frontend/node_modules", "frontend/dist"]
+artifacts = ["src/tabrion_studio/static/**"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "process: starts real tabrion-studio processes (STU-002)",
+    "security: workflow pins, supply chain and other security regressions",
+    "packaging: needs a built wheel (TABRION_STUDIO_DIST)",
+]
+filterwarnings = ["error"]
+
+[tool.coverage.run]
+source = ["tabrion_studio"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true
+known-first-party = ["tabrion_studio"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests assert, start subprocesses with fixed arguments and use throwaway tokens.
+"tests/**" = ["S101", "S103", "S104", "S105", "S106", "S603", "S607", "S310"]
+# Build and CI helper scripts run fixed tool commands.
+"scripts/**" = ["S603", "S607", "S310"]
+"hatch_build.py" = ["S603", "S607"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["tabrion_studio"]
+mypy_path = "src"
+warn_unused_ignores = true
+
+# Import contracts (AC-1 = QA-16, 05 section 4.2, edge list K-33): tabrion-studio may use tabrion (public names only,
+# scripts/check_tabrion_api.py, AC-7) and no Levuvo platform. The layer contract api -> services -> profiles/security
+# (05 section 3.2) is added with those packages (STU-003, STU-006).
+[tool.importlinter]
+root_packages = ["tabrion_studio"]
+include_external_packages = true
+exclude_type_checking_imports = true
+
+[[tool.importlinter.contracts]]
+id = "no-levuvo-platform"
+name = "Tabrion Studio depends on no Levuvo platform (K-33)"
+type = "forbidden"
+source_modules = ["tabrion_studio"]
+forbidden_modules = [
+    "orkexa",
+    "axentra",
+    "axentra_studio",
+    "nodestro",
+    "nodestro_runtime",
+    "nodestro_api",
+    "nodestro_studio",
+    "nodestro_examples",
+    "nodestro_integrations",
+    "nodestro_sdk",
+    "nodestro_client",
+    "levuvo_nextcloud_mcp",
+]
+
+[[tool.importlinter.contracts]]
+id = "process-model-below-cli"
+name = "The process model and the app never import the CLI"
+type = "forbidden"
+source_modules = ["tabrion_studio.app", "tabrion_studio.instance", "tabrion_studio.server", "tabrion_studio.idle"]
+forbidden_modules = ["tabrion_studio.cli"]
