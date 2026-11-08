@@ -348,7 +348,8 @@ merge after OA-004.
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7). Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
-| TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..005` (prod TLS, T-10 / STU-T-021, read-only role that can write, no role timeout, SQLite rows written with foreign keys off); the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
+| TABRION STU-012, STU-015 | SQL editor, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
@@ -504,8 +505,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
   so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
 - **T-4 (rest), done:** D-01 shows each connection's TLS mode and marks `weak_tls` (weaker than `verify-full` on a
-  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` moves to STU-014 (diagnostics; I-5 of
-  `stu-010-review.md`).
+  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` is `STU-DX-002` of STU-014 (I-5 of
+  `stu-010-review.md`; STU-T-021 in `test_diagnostics.py`).
 - **T-5, done:** D-01 shows one line per PostgreSQL connection with the secret's source, `host:port` and the TLS mode,
   and marks `remote_host`.
 - **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
@@ -614,6 +615,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Explorer (STU-010) with tabrion 0.2:** replace `tabrion_compat.inspector` with `Database.inspector()`, the
   extensions query with `tabrion.postgres.extension_status` and the SQLite facts with `tabrion.sqlite.diagnose`
   (03 §6; I-4 of `stu-010-review.md`); keep `test_explorer.py` unchanged as the acceptance.
+- **STU-014 diagnostics:** replace `tabrion_compat.check` (the 0.1 collectors on the driver connection) with
+  `tabrion.check(db)`; keep `test_diagnostics.py` and the list of session findings Studio leaves out.
 - **STU-013 data viewer:** it uses the same `tabrion_compat.stream` and `Cancel` (one statement per page, with the
   profile's timeout), so the swap covers it; keep `test_viewer.py` (the `LIMIT` spy) unchanged as its acceptance.
   The viewer's statements are SQLAlchemy Core compiled for the psycopg and pysqlite (named) dialects; check that

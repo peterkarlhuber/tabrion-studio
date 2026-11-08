@@ -40,6 +40,7 @@ from typing import Any, Protocol, TypeVar
 import sqlalchemy
 from sqlalchemy import event
 import tabrion
+from tabrion.check import Finding
 from tabrion.errors import ConfigurationError, UnsafePath
 from tabrion.postgres import SessionSettings
 
@@ -303,6 +304,11 @@ class OpenConnection:
         """
         with self._read() as transaction, tabrion_compat.inspector(transaction) as found:
             return consume(found)
+
+    def tabrion_findings(self) -> list[Finding]:
+        """``tabrion.check`` on this connection, inside one ``Database.read()`` (STU-014; it only reads)."""
+        with self._read() as transaction:
+            return tabrion_compat.check(transaction)
 
     def fetch(self, sql: str, params: Mapping[str, object] | None = None) -> list[tuple[Any, ...]]:
         """All rows of one read-only statement, for Studio's own small queries; a refused one raises

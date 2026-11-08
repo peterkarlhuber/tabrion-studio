@@ -22,6 +22,7 @@ What each part replaces:
 * :func:`reset_session`: ``RESET ALL`` when a PostgreSQL connection goes back to the pool (M-2 of
   ``stu-011-review.md``).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
+* :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
 * :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
   ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
 
@@ -42,8 +43,9 @@ from typing import Any
 
 import sqlalchemy
 import tabrion
+from tabrion import check as tabrion_check
 
-__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "inspector", "reset_session", "stream"]
+__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "check", "inspector", "reset_session", "stream"]
 
 
 @dataclass(frozen=True)
@@ -198,6 +200,17 @@ def stream(
             _discard(connection, dbapi)
     if sent:
         raise Cancelled
+
+
+def check(transaction: tabrion.Transaction) -> list[tabrion_check.Finding]:
+    """``tabrion.check`` on the driver connection of ``transaction`` (STU-014).
+
+    tabrion 0.1's ``check(Database)`` is not there yet (layer B); its SQLite and psycopg collectors are, and they
+    read only (pragmas and catalog queries), so they run inside Studio's ``Database.read()``. tabrion 0.2:
+    ``tabrion.check(db)`` (TD-013).
+    """
+    dbapi: Any = transaction.connection.connection.dbapi_connection
+    return tabrion_check.check(dbapi)
 
 
 @contextlib.contextmanager
