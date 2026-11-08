@@ -31,7 +31,9 @@ change request 14) exists; it is meant to stay compatible with it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import ipaddress
+import json
 import re
 from typing import Any, Literal
 
@@ -102,6 +104,23 @@ class Profile:
                 doc[key] = value
         doc["password"] = None if self.password is None else self.password.to_dict()
         return doc
+
+
+#: The fields that say where a connection goes: a stored secret belongs to these (review M-1 of stu-007-review.md).
+TARGET_FIELDS = ("engine", "host", "port", "database", "user", "path")
+
+
+def target_fingerprint(doc: dict[str, Any]) -> str:
+    """16 hex digits of the SHA-256 of a profile's target (``Profile.to_dict()`` form; port None means 5432).
+
+    A secret stored for a profile is bound to this: when a project commit keeps the name ``prod`` but changes the host,
+    the fingerprint changes and the stored password is not sent to the new host (C-1 of stu-007-review.md).
+    """
+    target: list[Any] = [doc.get(key) for key in TARGET_FIELDS]
+    if doc.get("engine") == "postgresql" and target[2] is None:
+        target[2] = 5432
+    text = json.dumps(target, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(text.encode("ascii")).hexdigest()[:16]
 
 
 @dataclass

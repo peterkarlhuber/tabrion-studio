@@ -80,6 +80,11 @@ _EDGE_FRAMES = 20
 MAX_TRACEBACK = 32 * 1024
 _MIN_SECRET = 8
 _MAX_SECRETS = 512
+#: Shorter secrets (I-1 of stu-007-review.md) are kept in a set that is never evicted. Below 4 characters a value is
+#: not registered: replacing every "ab" or "1" in a log record would make the log useless, and such a password is no
+#: protection anyway.
+_MIN_SHORT_SECRET = 4
+_MAX_SHORT_SECRETS = 256
 
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _BINARY = getattr(os, "O_BINARY", 0)
@@ -114,10 +119,16 @@ class _Secrets:
 
     def __init__(self) -> None:
         self._values: OrderedDict[str, None] = OrderedDict()
+        self._short: set[str] = set()
         self._lock = threading.Lock()
 
     def add(self, value: str) -> None:
-        if not isinstance(value, str) or len(value) < _MIN_SECRET:
+        if not isinstance(value, str) or len(value) < _MIN_SHORT_SECRET:
+            return
+        if len(value) < _MIN_SECRET:
+            with self._lock:
+                if len(self._short) < _MAX_SHORT_SECRETS:
+                    self._short.add(value)
             return
         with self._lock:
             self._values[value] = None
@@ -128,18 +139,19 @@ class _Secrets:
     def snapshot(self) -> list[str]:
         with self._lock:
             # Longest first, so that a secret that contains another one is replaced as a whole.
-            return sorted(self._values, key=len, reverse=True)
+            return sorted([*self._values, *self._short], key=len, reverse=True)
 
     def clear(self) -> None:
         with self._lock:
             self._values.clear()
+            self._short.clear()
 
 
 _SECRETS = _Secrets()
 
 
 def register_secret(value: str) -> None:
-    """Redact ``value`` from every log record of this process from now on (values shorter than 8 are ignored)."""
+    """Redact ``value`` from every log record of this process from now on (values shorter than 4 are ignored)."""
     _SECRETS.add(value)
 
 

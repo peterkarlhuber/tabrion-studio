@@ -19,7 +19,7 @@ import uuid
 import pytest
 
 from tests.support.session import redeem, request, sign_in
-from tests.support.studio import start_studio, studio_command
+from tests.support.studio import NO_KEYRING, start_studio, studio_command
 
 pytestmark = pytest.mark.security
 
@@ -113,9 +113,8 @@ def test_a_failing_startup_in_a_real_process_leaks_no_exception_text(
     log_dir = tmp_path / "logs"
     args = studio_command(str(project), "--no-browser", "--state-dir", str(state_dir), "--log-dir", str(log_dir))
     command = [sys.executable, str(script), CANARY, *args[3:]]  # the script instead of ``-m tabrion_studio``
-    result = subprocess.run(
-        command, capture_output=True, text=True, timeout=60, check=False, env={**os.environ, "PYTHONUNBUFFERED": "1"}
-    )
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", **NO_KEYRING}
+    result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False, env=env)
     output = result.stdout + result.stderr
     assert result.returncode != 0, output  # Uvicorn exits with its startup-failure code
     logs = list(log_dir.glob("studio-*.log"))

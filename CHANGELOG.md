@@ -75,6 +75,20 @@ All notable changes to this project are documented here. The format follows
 - Re-review of PR #9 (`stu-conditions-rereview.md`): R-1, the link walk refuses a step to `/net/<host>` or another
   network form before it `lstat`s it (a relative link that climbs to `/net` triggered the macOS automount); R-3, a
   leading `\??\` is refused as text.
+- Connection manager and server settings (STU-008, `docs/architecture/configuration.md`): the Connections view lists
+  the project's and the user's profiles with a filter and a detail panel; the three-step "New connection" assistant
+  (database, password source, name and the required environment) creates and edits the user's profiles; a profile
+  can be deleted (Cancel is the default) and a password entered for the keyring or the session. The Settings view
+  saves the query limits and the SQL logging opt-in. `POST`, `PUT` and `DELETE /api/profiles` and `PUT /api/settings`
+  write only Studio's own `profiles.toml` and `settings.toml`: into a private folder, atomically with 0600 and
+  `O_NOFOLLOW`, bound to the digest the page read (`studio.config_stale`), never over a file with issues, and over a
+  hand-written file only after a confirmation. Refused forms name fixed keys and codes, never values. The project's
+  file is never written. Testing and connecting wait for STU-009.
+- Review of PR #10 (`stu-007-review.md`): C-1, a stored keyring or session secret is bound to a fingerprint of the
+  connection target (engine, host, port, database, user, path), so a project profile that keeps its name but points
+  to another host no longer gets the saved password, and D-01 lists it under "Saved password not used"; I-1, secrets
+  of 4 to 7 characters are redacted too; I-3, one leading BOM is removed from a `file:` secret; I-2, the FIFO test
+  fails instead of hanging, a deterministic link-swap test, and test servers use the null keyring backend.
 
 ### Security
 

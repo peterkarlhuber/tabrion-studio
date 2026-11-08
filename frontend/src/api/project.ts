@@ -34,7 +34,7 @@ export interface ListDiff<T> {
 }
 
 export interface TrustDiff {
-  connections: { added: string[]; removed: string[]; changed: string[] };
+  connections: { added: string[]; removed: string[]; changed: string[]; retargeted: string[] };
   hosts: ListDiff<string>;
   files: ListDiff<TrustFile>;
   env: ListDiff<string>;
@@ -121,6 +121,8 @@ export function parseProject(body: unknown): ProjectInfo | null {
           connections: {
             ...listDiff(d.connections, strings),
             changed: strings((d.connections as Record<string, unknown> | undefined)?.changed),
+            // C-1 of stu-007-review.md: a saved password is not used for these (their target changed).
+            retargeted: strings((d.connections as Record<string, unknown> | undefined)?.retargeted),
           },
           hosts: listDiff(d.hosts, strings),
           files: listDiff(d.files, files),

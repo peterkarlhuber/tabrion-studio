@@ -26,6 +26,16 @@ function markers(text: string): string[] {
 
 // Strings that are the same in both languages on purpose: names, environment labels and loan words.
 const SAME_IN_BOTH = new Set([
+  // Product names and technical terms that German uses as they are (STU-008).
+  'connections.engine.sqlite',
+  'connections.engine.postgresql',
+  'connections.detail.engine',
+  'connections.detail.server',
+  'connections.detail.tls',
+  'connections.wizard.postgresql',
+  'connections.wizard.host',
+  'connections.wizard.port',
+  'connections.wizard.name',
   'dialogs.trustProject.heading',
   'app.name',
   'app.title',

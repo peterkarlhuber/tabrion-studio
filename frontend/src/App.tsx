@@ -7,7 +7,8 @@ import type { SessionState } from './session';
 import { AppShell, type ServerState } from './shell/AppShell';
 import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
-import { ConnectionsView, NotFoundView, SettingsView, StartView } from './views/Views';
+import { ConnectionsView } from './views/connections/ConnectionsView';
+import { NotFoundView, SettingsView, StartView } from './views/Views';
 import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
 
 export type AppSession = SessionState | 'ended';
@@ -27,14 +28,14 @@ function useServer(fetcher: typeof fetch): [ServerState, () => void] {
   return [server, () => setAttempt((n) => n + 1)];
 }
 
-function View({ path }: { path: string }) {
+function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
   switch (path) {
     case '/':
       return <StartView />;
     case '/connections':
-      return <ConnectionsView />;
+      return <ConnectionsView fetcher={fetcher} />;
     case '/settings':
-      return <SettingsView />;
+      return <SettingsView fetcher={fetcher} />;
     default:
       return <NotFoundView />;
   }
@@ -90,7 +91,7 @@ export function App({
   return (
     <WorkspaceContext.Provider value={workspace}>
       <AppShell path={path} pageTitle={pageTitle} server={offline ? { kind: 'offline' } : server}>
-        <View path={path} />
+        <View path={path} fetcher={fetcher} />
       </AppShell>
       <ProjectTrust fetcher={fetcher} />
     </WorkspaceContext.Provider>

@@ -24,7 +24,8 @@
 | OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Accepted (`stu-005-051-review.md`, PR #5 merged) |
 | OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Accepted (`stu-follow-up-6-review.md`, PR #6 merged) |
 | OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Accepted (`stu-004-review.md`; C-1 done in PR #9, `stu-conditions-rereview.md`) |
-| OA-009 independent review of STU-007 (secret management, C-3) | P0 | Open (STU-007 PR) |
+| OA-009 independent review of STU-007 (secret management, C-3) | P0 | Accepted with conditions (`stu-007-review.md`, PR #10 merged); C-1 (M-1) and I-1..I-3 done in the STU-008 PR, I-4, I-5 and L-1 are TD-010 |
+| OA-010 independent review of STU-008 (Studio writes its own profiles and settings) | P1 | Open (STU-008 PR) |
 | OA-008 independent review of STU-006 (project trust, D-01, U-1) | P1 | Accepted (`stu-006-review.md`; C-1, C-2 done in PR #9, `stu-conditions-rereview.md`; C-3 done in the STU-007 PR) |
 | STU-007 binding requirement from the review (C-3: the reader of `file:` secrets) | P0 | Done (STU-007 PR; `read_secret_file`) |
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
@@ -38,7 +39,8 @@
 | TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; QA-9) |
 | TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
-| TD-010 STU-006 review: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5; R-1 done) | P2 | Open |
+| TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5; STU-007 L-1, I-4, I-5; R-1 done) | P2 | Open |
+| TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -202,12 +204,28 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-009 · Independent review of STU-007 (TABRION STU-007, 07 §6)
 
-- **Priority:** P0 Critical · **Status:** Open (STU-007 PR) · **Refs:** 07 §6 (credential surface), T-05, SQ-04,
+- **Priority:** P0 Critical · **Status:** Accepted with conditions (`stu-007-review.md`; PR #10 merged as master
+  `0af1831`) · **Refs:** 07 §6 (credential surface), T-05, SQ-04,
   03 §4.4, `docs/architecture/secrets.md`, C-3 below
 - **What:** an independent review agent checks that no secret reaches an answer, a log or an error, that there is no
   plain-text fallback without a keyring, that the `file:` reader meets C-3 at read time (no `expanduser`,
   containment, `O_NOFOLLOW` per component, owner, 0600, one link, no FIFO block), and the new routes behind the
   access middleware. No `.github/` file changes.
+- **Result:** no High finding. Done in the STU-008 pull request, as its first commit:
+  - **C-1 (M-1):** a stored secret (keyring or session) is bound to the connection target. The key is
+    `user:<name>:<fingerprint>` or `project:<project key>:<name>:<fingerprint>`, where the fingerprint is 16 hex
+    digits of the SHA-256 of engine, host, port (none = 5432), database, user and path
+    (`schema.target_fingerprint`). A profile that keeps its name but points elsewhere has no stored secret
+    (`studio.secret_missing`, the page asks again), and D-01 lists it under "Saved password not used"
+    (`diff.connections.retargeted`). Test: `test_a_stored_password_does_not_follow_a_retargeted_project_profile`
+    (the reproduced attack: `prod`, host changed, one re-trust).
+  - **I-1:** secrets of 4 to 7 characters are registered too, in a set that is never evicted; shorter ones are not
+    (redacting every "ab" would make the log unreadable). **I-3:** one leading BOM is removed from a `file:` secret.
+  - **I-2:** the FIFO test fails after 5 s instead of hanging (`SIGALRM`); a deterministic link swap between the
+    checks and the open (file and folder; kills K5 and K6); `env:`, session and short values are redacted; an API
+    test resolves a project `file:` secret with the project and configuration folders as roots (K16); every Studio
+    process a test starts uses the null keyring backend (`tests/support/studio.NO_KEYRING`).
+  - **I-4, I-5 and L-1** are TD-010.
 
 ## STU-007 binding requirement (review C-3 of `stu-006-review.md`)
 
@@ -297,10 +315,11 @@ merge after OA-004.
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
-| TABRION STU-007 | Secret management | P0 | STU-006 | In progress (STU-007 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests. Needs an independent review (credential surface, 07 §6), OA-009 |
+| TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
+| TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | In progress (STU-008 PR, OA-010): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
-| TABRION STU-008, STU-010..STU-015 | Connection manager UI, explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | STU-008 adds the "openapi in sync" CI job (the first API types for the frontend); STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
+| TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
@@ -309,6 +328,16 @@ Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-0
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
 later extension. The Studio 1.1 Schema Designer (change request 14 §3.5) is not planned here; the process model
 and the server-side write flag (STU-ADR-0003) leave room for it.
+
+### OA-010 · Independent review of STU-008 (TABRION STU-008)
+
+- **Priority:** P1 High · **Status:** Open (STU-008 PR) · **Refs:** 03 §4.3, §6, 08 §4.2, §4.10,
+  `docs/architecture/configuration.md` ("Writing the user's files")
+- **What:** Studio now writes files. An independent review agent checks that it writes only its own `profiles.toml`
+  and `settings.toml` (never the project's file), atomically with 0600 and `O_NOFOLLOW`, only into a private folder,
+  only with the digest the page read and never over a file with issues; that a form never echoes a value (issues
+  name fixed keys); that a typed password reaches only the secret route; and the connection manager's dialogs
+  (focus, axe). No `.github/` file changes.
 
 ## Cross-repository checks still to add
 
@@ -428,8 +457,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-010 · STU-006 review: remaining Low and Info items
 
-- **Priority:** P2 Medium (T-5 before STU-009) · **Status:** Open · **Refs:** `stu-006-review.md` T-1, T-4, T-5,
-  I-1, I-3..I-5
+- **Priority:** P2 Medium (T-5 and STU-007 L-1 before STU-009) · **Status:** Open · **Refs:** `stu-006-review.md`
+  T-1, T-4, T-5, I-1, I-3..I-5; `stu-007-review.md` L-1, I-4, I-5
 - **T-1 (rest):** the trust POST binds to the bytes only. If only the file system changes between the dialog and the
   click, the new review is stored without having been shown (the next GET compares against it). Bind the POST to a
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
@@ -444,8 +473,39 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **I-4:** check the configuration folder like the state folder (owner, 0700, no link): `--config-dir /tmp/x` would
   accept another user's `settings.toml`.
 - **I-5:** name STU-T-021 (T-10) in the `verify-full` test or note that it belongs to STU-010.
+- **STU-007 L-1 (`stu-007-review.md`, with T-5, before STU-009):** a trusted project can name any variable
+  (`env:AWS_SECRET_ACCESS_KEY`) and any file in the user's configuration folder and send it to a host of its choice.
+  Show one line per connection, "password from `env:X` / `file:Y` is sent to `host:port`"; consider limiting project
+  `file:` references to a subfolder such as `<config>/project-secrets/` and warning on well-known variables
+  (`AWS_*`, `GITHUB_TOKEN`, `*_SECRET*`).
+- **STU-007 I-4:** `select_backend` refuses a denylist of backends; a third-party plain-text backend configured
+  through `PYTHON_KEYRING_BACKEND` or `keyringrc.cfg` would be accepted (user configuration only). Consider an
+  allowlist: `keyring.backends.macOS`, `Windows`, `SecretService`, `libsecret`, `kwallet`.
+- **STU-007 I-5:** on Windows the `file:` reader checks the components with `lstat` and then opens by path, so a swap
+  in between is followed; owner and mode are not checked (the folder ACL decides, TD-003). After the open, compare
+  `GetFinalPathNameByHandle` with the expected path and check that the handle is not a reparse point.
 - **R-1 of `stu-conditions-rereview.md` (done in the STU-007 PR):** a *relative* link target that climbs to `/net`
   was checked only as text, so the walk `lstat`ed `/net/<host>` (on macOS an automount, a beacon). `safe_realpath` now
   checks every component against the network and automount forms before `lstat`
   (`test_a_relative_link_that_climbs_to_net_is_refused_before_lstat`). R-3 (refuse a leading `\??\` as text) is done
   as well.
+
+### TD-011 · STU-008 parts that wait for STU-009 or a later package
+
+- **Priority:** P1 High · **Status:** Open · **Refs:** 08 §4.2, 03 §2 A, §6
+- **Connection test and "Connect"** (`POST /api/profiles/{id}/test`, the test result in step 3 and in the details,
+  D-02 before a PROD connection): they need the connection registry, `Database.health()` and
+  `tabrion.postgres.role_info` (STU-009, TAB-040, RC-8). The buttons are shown disabled with a note until then.
+- **"Save in: Project"** of the assistant is not offered: Studio 1.0 writes only its own files. A project profile is
+  edited in `.tabrion/studio.toml`; the manager says so.
+- **Pasting a `postgresql://` URL** (its password moved to the keyring) and showing URLs need `tabrion.safe_url()`
+  (STU-009).
+- **"Browse…" for a SQLite file** needs a file dialog in the backend; the path is typed until then.
+- **Renaming a profile** (it would move its keyring entry) is refused (`config.rename_unsupported`); delete and
+  create instead.
+- **Favorites and recently opened** are a 1.0 feature (03 §2 A).
+- **The `openapi in sync` CI job** (the first API types for the frontend) changes `.github/` and needs a
+  workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
+- **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
+  accepts them, but the page does not send them yet.
+
