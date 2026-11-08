@@ -96,6 +96,10 @@ All notable changes to this project are documented here. The format follows
   the file again just before it replaces it; the e2e server uses the null keyring; an `env:` password reads "set in
   the environment".
 
+- Network log check (QA-9, SQ-08): `e2e/network.spec.ts` visits every view, dialog and notice of the e2e harness, and
+  `e2e/backend.spec.ts` the real server, and fails if the page requests any other host (no CDN font, telemetry,
+  external image or script). It listens on the browser context, so popups, new pages and workers count too.
+
 ### Security
 
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
