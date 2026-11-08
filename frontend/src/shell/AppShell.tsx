@@ -3,13 +3,20 @@
  * tabs, status bar. With a PROD connection the shell gets a 3 px red frame at the top, every tab and the header show
  * the PROD badge and the window title starts with "[PROD]" (STU-051).
  */
-import { Database, House, Settings } from 'lucide-react';
-import { useEffect, type MouseEvent, type ReactNode } from 'react';
+import { CircleHelp, Command as CommandIcon, Database, House, Settings } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { IconButton } from '../components/ui/IconButton';
 import { AccessModeChip, ConnectionSwitcher, EnvBadge, TxChip } from '../components/status/Status';
 import type { Health } from '../heartbeat';
 import { currentLocale } from '../i18n';
+import { buildCommands } from '../keyboard/commands';
+import { CommandPalette } from '../keyboard/CommandPalette';
+import { useKeyboardPlatform, useKeyNames } from '../keyboard/platform';
+import { ShortcutHelp } from '../keyboard/ShortcutHelp';
+import { ariaShortcut, SHORTCUTS, shortcutText } from '../keyboard/shortcuts';
+import { useShortcuts } from '../keyboard/useShortcuts';
 import clsx from '../lib/clsx';
 import { navigate, type Route } from '../router';
 import { useTheme } from '../theme';
@@ -85,7 +92,19 @@ export function AppShell({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
-  const { theme } = useTheme();
+  const { theme, preference, density } = useTheme();
+  const platform = useKeyboardPlatform();
+  const keyNames = useKeyNames();
+  const [palette, setPalette] = useState(false);
+  const [help, setHelp] = useState(false);
+  const openPalette = useCallback(() => setPalette(true), []);
+  const openHelp = useCallback(() => setHelp(true), []);
+  const shortcutHandlers = useMemo(() => ({ openPalette, openHelp }), [openPalette, openHelp]);
+  useShortcuts(shortcutHandlers);
+  const commands = useMemo(
+    () => (palette ? buildCommands({ t, path, theme: preference, density, openHelp }) : []),
+    [palette, t, path, preference, density, openHelp],
+  );
   const workspace = useWorkspace();
   const connection = workspace.connection;
   const environment = connection?.environment;
@@ -108,7 +127,7 @@ export function AppShell({
       <a className="tb-skip-link" href="#main">
         {t('app.skipToContent')}
       </a>
-      <header className={styles.header}>
+      <header className={styles.header} data-region="header">
         <a
           href="/"
           className={styles.brand}
@@ -130,9 +149,31 @@ export function AppShell({
             </>
           ) : null}
         </div>
+        <div className={styles.tools}>
+          <IconButton
+            label={t('keyboard.palette.open', {
+              keys: shortcutText(SHORTCUTS.palette, platform, keyNames),
+            })}
+            icon={<CommandIcon />}
+            aria-keyshortcuts={ariaShortcut(SHORTCUTS.palette, platform)}
+            aria-haspopup="dialog"
+            onClick={openPalette}
+            data-testid="open-palette"
+          />
+          <IconButton
+            label={t('keyboard.help.open', {
+              keys: shortcutText(SHORTCUTS.help, platform, keyNames),
+            })}
+            icon={<CircleHelp />}
+            aria-keyshortcuts={ariaShortcut(SHORTCUTS.help, platform)}
+            aria-haspopup="dialog"
+            onClick={openHelp}
+            data-testid="open-help"
+          />
+        </div>
       </header>
       <div className={styles.body}>
-        <nav className={styles.activity} aria-label={t('nav.label')}>
+        <nav className={styles.activity} aria-label={t('nav.label')} data-region="nav">
           <ul className={styles.navList}>
             {NAV.map((item) => (
               <li key={item.path}>
@@ -153,7 +194,12 @@ export function AppShell({
         </nav>
         <div className={styles.workarea}>
           {workspace.tabs.length > 0 ? (
-            <div className={styles.tabs} role="tablist" aria-label={t('tabs.label')}>
+            <div
+              className={styles.tabs}
+              role="tablist"
+              aria-label={t('tabs.label')}
+              data-region="tabs"
+            >
               {workspace.tabs.map((tab) => (
                 <button
                   key={tab.id}
@@ -177,6 +223,7 @@ export function AppShell({
             id="main"
             className={styles.main}
             tabIndex={-1}
+            data-region="main"
             role={activeTab ? 'tabpanel' : undefined}
             aria-labelledby={activeTab ? `tab-${activeTab.id}` : undefined}
           >
@@ -184,7 +231,12 @@ export function AppShell({
           </main>
         </div>
       </div>
-      <footer className={styles.statusbar} aria-label={t('statusbar.label')}>
+      <footer
+        className={styles.statusbar}
+        aria-label={t('statusbar.label')}
+        tabIndex={-1}
+        data-region="statusbar"
+      >
         <span role="status" data-testid="backend-status" className={styles.server}>
           <span
             className={clsx(
@@ -200,6 +252,8 @@ export function AppShell({
         </span>
         <span>{t('statusbar.language', { language: t(`languages.${currentLocale()}`) })}</span>
       </footer>
+      <CommandPalette open={palette} commands={commands} onClose={() => setPalette(false)} />
+      <ShortcutHelp open={help} onClose={() => setHelp(false)} />
     </div>
   );
 }

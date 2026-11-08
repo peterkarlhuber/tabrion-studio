@@ -340,5 +340,45 @@
     "other": "The request failed ({{code}}).",
     "config_too_large": "The file would be larger than Studio reads (256 KB). Remove profiles you no longer use.",
     "config_not_storable": "Studio could not store these values unchanged (for example an unusual character). Nothing was written."
+  },
+  "keyboard": {
+    "palette": {
+      "open": "Command palette ({{keys}})",
+      "title": "Command palette",
+      "search": "Search commands",
+      "placeholder": "Type a command…",
+      "list": "Commands",
+      "current": "current",
+      "noMatch": "No command matches.",
+      "count_one": "{{count}} command",
+      "count_other": "{{count}} commands",
+      "hint": "↑ ↓ to choose, Enter to run, Esc to close"
+    },
+    "help": {
+      "open": "Keyboard shortcuts ({{keys}})",
+      "title": "Keyboard shortcuts",
+      "lead": "These shortcuts work everywhere in Studio. The command palette lists every command.",
+      "caption": "Keyboard shortcuts",
+      "action": "Action",
+      "keys": "Keys",
+      "close": "Close",
+      "later": "Shortcuts for running and cancelling queries and for editor tabs arrive with the SQL editor."
+    },
+    "shortcuts": {
+      "palette": "Open the command palette",
+      "help": "Show the keyboard shortcuts",
+      "nextRegion": "Go to the next area (header, navigation, tabs, main area, status bar)",
+      "previousRegion": "Go to the previous area"
+    },
+    "commands": {
+      "goTo": "Go to {{page}}",
+      "theme": "Theme: {{theme}}",
+      "density": "Density: {{density}}",
+      "language": "Language: {{language}}",
+      "shortcuts": "Show keyboard shortcuts"
+    },
+    "keys": {
+      "ctrl": "Ctrl"
+    }
   }
 }
