@@ -37,7 +37,14 @@ from typing import Any, Literal
 
 from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_file
 from tabrion_studio.config.locations import contained, lexical_target, safe_realpath
-from tabrion_studio.config.schema import Issue, Profile, ProfileFile, is_loopback, validate_profiles
+from tabrion_studio.config.schema import (
+    Issue,
+    Profile,
+    ProfileFile,
+    is_loopback,
+    target_fingerprint,
+    validate_profiles,
+)
 from tabrion_studio.paths import UnsafePathError, read_private_file, write_private_file
 
 PROJECT_DIR = ".tabrion"
@@ -184,6 +191,9 @@ def diff_reviews(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
             "added": [name for name in after if name not in before],
             "removed": [name for name in before if name not in after],
             "changed": [name for name in after if name in before and before[name] != after[name]],
+            # C-1 of stu-007-review.md: a saved password (keyring or session) is bound to the old target, so it is
+            # not used for these; the page asks for it again.
+            "retargeted": [name for name in after if name in before and _retargeted(before[name], after[name])],
         }
     }
     for key in ("hosts", "files", "env", "unknown_keys"):
@@ -191,6 +201,15 @@ def diff_reviews(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
         now = new.get(key, [])
         result[key] = {"added": [i for i in now if i not in was], "removed": [i for i in was if i not in now]}
     return result
+
+
+def _retargeted(old: dict[str, Any], new: dict[str, Any]) -> bool:
+    before, after = old.get("profile"), new.get("profile")
+    if not isinstance(before, dict) or not isinstance(after, dict):
+        return False
+    password = after.get("password")
+    storable = password is None or (isinstance(password, dict) and password.get("source") == "keyring")
+    return storable and target_fingerprint(before) != target_fingerprint(after)
 
 
 def _as_json(value: dict[str, Any]) -> dict[str, Any]:

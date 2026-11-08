@@ -15,9 +15,12 @@ import {
   TrustProjectDialog,
   UnsavedScriptDialog,
 } from './components/dialogs/StudioDialogs';
+import { PROFILES, SETTINGS } from './harness/profiles';
 import { DIFF, HOSTILE_REVIEW, REVIEW } from './harness/trust';
 import i18n from './i18n';
 import type { SessionState } from './session';
+import { DeleteProfileDialog, PasswordDialog } from './views/connections/ConnectionDialogs';
+import { ConnectionWizard } from './views/connections/ConnectionWizard';
 import type { Workspace } from './workspace';
 
 const health: typeof fetch = async () =>
@@ -33,6 +36,17 @@ const PROD: Workspace = {
 };
 
 const noop = () => undefined;
+
+/** STU-008: the connection manager with profiles of both groups, and the server settings. */
+const profiles: typeof fetch = async (input) => {
+  const url = String(input);
+  if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+  if (url === '/api/settings') return new Response(JSON.stringify(SETTINGS), { status: 200 });
+  if (url === '/api/secrets') {
+    return new Response(JSON.stringify({ keyring: { available: false } }), { status: 200 });
+  }
+  return health(input);
+};
 
 const PAGES: [string, string, () => ReactElement][] = [
   ['start page', '/', () => <App fetcher={health} heartbeat={false} />],
@@ -95,6 +109,55 @@ const PAGES: [string, string, () => ReactElement][] = [
     ),
   ],
   ['D-08', '/', () => <QuitDialog open running={2} onQuit={noop} onCancel={noop} />],
+  [
+    'connections with profiles (STU-008)',
+    '/connections',
+    () => <App fetcher={profiles} heartbeat={false} />,
+  ],
+  ['server settings (STU-008)', '/settings', () => <App fetcher={profiles} heartbeat={false} />],
+  [
+    'new connection assistant (STU-008)',
+    '/',
+    () => (
+      <ConnectionWizard
+        fetcher={profiles}
+        item={null}
+        digest={null}
+        handWritten
+        keyringAvailable={false}
+        onSaved={noop}
+        onStale={noop}
+        onCancel={noop}
+      />
+    ),
+  ],
+  [
+    'delete profile (STU-008)',
+    '/',
+    () => (
+      <DeleteProfileDialog
+        name="measure"
+        problem={null}
+        handWritten={false}
+        onDelete={noop}
+        onCancel={noop}
+      />
+    ),
+  ],
+  [
+    'password (STU-008)',
+    '/',
+    () => (
+      <PasswordDialog
+        name="measure"
+        keyringAvailable={false}
+        keyringAllowed
+        problem={null}
+        onSave={noop}
+        onCancel={noop}
+      />
+    ),
+  ],
 ];
 
 // jsdom has no canvas; axe probes it for colour checks, which are off here anyway.
@@ -131,7 +194,9 @@ describe.each(['en', 'de'])('axe in %s', (language) => {
     window.history.replaceState(null, '', path);
     render(page());
     await act(async () => {
-      await Promise.resolve();
+      // Two turns: the views fetch their data before they render it.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
     });
     expect(await seriousViolations()).toEqual([]);
   });

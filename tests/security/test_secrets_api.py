@@ -130,7 +130,8 @@ def test_profiles_show_where_a_secret_comes_from_never_the_value(env: Env) -> No
 def test_an_entered_password_goes_to_the_keyring_and_never_comes_back(env: Env) -> None:
     response = env.put("user:mine", {"secret": CANARY, "store": "keyring"})
     assert response.status_code == 204 and response.content == b""
-    assert env.fake.values == {(SERVICE, "user:mine"): CANARY}
+    [(service, key)] = env.fake.values
+    assert service == SERVICE and key.startswith("user:mine:") and env.fake.values[(service, key)] == CANARY
     assert env.config.resolve_secret("user:mine") == CANARY
     for path in ("/api/profiles", "/api/project", "/api/settings", "/api/secrets"):
         response = env.studio.client.get(path, headers=env.headers)
@@ -219,6 +220,28 @@ def test_a_trusted_project_profile_reads_its_file_secret_with_the_c3_checks(env:
     assert response.status_code == 409 and response.json()["code"] == "studio.secret_not_storable"
 
 
+@pytest.mark.skipif(not POSIX, reason="folder symlinks")
+def test_a_project_file_secret_moved_outside_after_the_trust_is_refused_when_resolving(
+    env: Env, tmp_path: Path
+) -> None:
+    """I-2 (mutant K16): the API resolves a project file: secret with the project and configuration folders as roots."""
+    secret = env.project / "secrets" / "db"
+    secret.write_text("inside\n", encoding="utf-8")
+    secret.chmod(0o600)
+    env.trust_project()
+    assert env.config.entry("project:proj").secret.roots == [env.project, env.config_dir]
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "db").write_text(CANARY + "\n", encoding="utf-8")
+    (outside / "db").chmod(0o600)
+    secret.unlink()
+    (env.project / "secrets").rmdir()
+    (env.project / "secrets").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(SecretError) as caught:
+        env.config.resolve_secret("project:proj")
+    assert caught.value.code in ("studio.secret_file_outside", "studio.profile_not_found")
+
+
 def test_the_keyring_entry_of_a_project_profile_is_bound_to_the_folder(env: Env) -> None:
     file = env.project / ".tabrion" / "studio.toml"
     env.trust_project()
@@ -226,7 +249,38 @@ def test_the_keyring_entry_of_a_project_profile_is_bound_to_the_folder(env: Env)
     digest = env.studio.client.get("/api/project", headers=env.headers).json()["digest"]
     assert env.studio.client.post("/api/project/trust", json={"digest": digest}, headers=env.headers).status_code == 204
     assert env.put("project:proj", {"secret": CANARY, "store": "keyring"}).status_code == 204
-    assert list(env.fake.values) == [(SERVICE, "project:k1:proj")]
+    [(service, key)] = env.fake.values
+    assert service == SERVICE and key.startswith("project:k1:proj:")
+
+
+def _retrust(env: Env, text: str) -> dict[str, Any]:
+    (env.project / ".tabrion" / "studio.toml").write_text(text, encoding="utf-8")
+    project = env.studio.client.get("/api/project", headers=env.headers).json()
+    trusted = env.studio.client.post("/api/project/trust", json={"digest": project["digest"]}, headers=env.headers)
+    assert trusted.status_code == 204
+    result: dict[str, Any] = project
+    return result
+
+
+@pytest.mark.parametrize("store", ["keyring", "session"])
+def test_a_stored_password_does_not_follow_a_retargeted_project_profile(env: Env, store: str) -> None:
+    """C-1 (M-1 of stu-007-review.md), the reproduced attack: same name, host changed by a commit, one re-trust."""
+    env.trust_project()
+    keyring_profile = PROJECT.replace('"file:secrets/db"', '"keyring:"').replace('name = "proj"', 'name = "prod"')
+    _retrust(env, keyring_profile)
+    assert env.put("project:prod", {"secret": CANARY, "store": store}).status_code == 204
+    assert env.config.resolve_secret("project:prod") == CANARY
+    project = _retrust(env, keyring_profile.replace('"db.internal"', '"evil.example"'))
+    # D-01 said so before the trust: the saved password does not go with the profile.
+    assert project["state"] == "changed"
+    assert project["diff"]["connections"]["retargeted"] == ["prod"]
+    with pytest.raises(SecretError) as caught:
+        env.config.resolve_secret("project:prod")
+    assert caught.value.code == "studio.secret_missing"
+    assert env.profiles()["project:prod"]["secret"]["has_secret"] is None
+    # Back to the old target: the secret entered for it is used again.
+    _retrust(env, keyring_profile)
+    assert env.config.resolve_secret("project:prod") == CANARY
 
 
 def test_a_keyring_error_is_a_problem_without_its_message(env: Env) -> None:

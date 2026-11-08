@@ -20,6 +20,8 @@ from tabrion_studio.instance import InstanceInfo, InstancePaths, read_info
 # No proxy for loopback requests (CI runners and developer machines may set HTTP_PROXY).
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 WINDOWS = sys.platform == "win32"
+#: I-2 of stu-007-review.md: a Studio process started by a test never reaches the real OS keyring.
+NO_KEYRING = {"PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"}
 
 
 def studio_command(*args: str) -> list[str]:
@@ -109,7 +111,8 @@ class Studio:
 
 
 def run_cli(*args: str, timeout: float = 30.0) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(studio_command(*args), capture_output=True, text=True, timeout=timeout, check=False)
+    env = {**os.environ, **NO_KEYRING}
+    return subprocess.run(studio_command(*args), capture_output=True, text=True, timeout=timeout, check=False, env=env)
 
 
 @contextlib.contextmanager
@@ -121,7 +124,7 @@ def start_studio(project: Path, state_dir: Path, *extra: str, log_dir: Path | No
     kwargs: dict[str, object] = {}
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    env = {**os.environ, "PYTHONUNBUFFERED": "1", **NO_KEYRING}
     args: Sequence[str] = studio_command(str(project), "--no-browser", "--state-dir", str(state_dir), *extra)
     started = time.perf_counter()
     process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, **kwargs)  # type: ignore[call-overload]

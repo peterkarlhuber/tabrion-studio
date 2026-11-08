@@ -79,7 +79,12 @@ export const HOSTILE_REVIEW: TrustReview = {
 };
 
 export const DIFF: TrustDiff = {
-  connections: { added: ['parts-dev2'], removed: ['parts-dev'], changed: ['measure-central'] },
+  connections: {
+    added: ['parts-dev2'],
+    removed: ['parts-dev'],
+    changed: ['measure-central'],
+    retargeted: ['measure-central'],
+  },
   hosts: { added: ['attacker.example:5432'], removed: ['db.internal:5432'] },
   files: { added: [], removed: [] },
   env: { added: ['AWS_SECRET_ACCESS_KEY'], removed: [] },

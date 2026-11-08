@@ -145,6 +145,7 @@ def test_a_changed_file_needs_a_new_confirmation_and_shows_the_diff(env: Env) ->
         "added": ["parts-dev2", "x"],
         "removed": ["parts-dev"],
         "changed": ["measure-central"],
+        "retargeted": [],  # its password comes from env:, nothing saved follows it
     }
     assert diff["hosts"] == {"added": ["attacker.example:5432", "h:5432"], "removed": ["db.internal:5432"]}
     assert diff["env"] == {"added": ["AWS_SECRET_ACCESS_KEY"], "removed": []}

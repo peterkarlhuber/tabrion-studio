@@ -10,6 +10,14 @@
 * ``GET /api/settings``: the effective settings and the issues of ``settings.toml``.
 * ``GET /api/secrets``: whether a usable OS keyring exists (without one, ``keyring:`` profiles need a secret entered
   for this session; there is no plain-text fallback, STU-007).
+* ``POST /api/profiles`` with ``{"profile": {...}, "digest": "<user file digest or null>"}``: 201 ``{"id", "digest"}``;
+  adds a profile to the user's ``profiles.toml`` (STU-008). ``PUT /api/profiles`` with ``{"id", "profile", "digest"}``
+  changes one (the name stays), ``DELETE /api/profiles`` with ``{"id", "digest"}`` removes one and its stored secret.
+  The id is in the body, not the path: a profile name may contain ``/`` and must never be read as ``.../secret``.
+  The profile has the keys of the file (``password`` is a reference such as ``"keyring:"``); a refused one gives
+  ``studio.profile_invalid`` with ``issues`` (``profile.<key>`` and a ``config.*`` code). Project profiles are never
+  changed (``studio.profile_read_only``). ``"overwrite": true`` confirms rewriting a file written by hand.
+* ``PUT /api/settings`` with ``{"settings": {...}, "digest"}``: 200 ``{"digest"}``; writes ``settings.toml``.
 * ``PUT /api/profiles/{id}/secret`` with ``{"secret": "...", "store": "keyring" | "session"}``: 204; stores an
   entered secret in the keyring or for this session only. ``DELETE`` removes it. No answer ever contains a secret;
   ``GET /api/profiles`` shows only ``secret: {source, has_secret}`` per profile.
@@ -28,13 +36,26 @@ from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from tabrion_studio.config.project import ProjectConfig, ProjectState, TrustError
-from tabrion_studio.config.schema import Issue, Profile
+from tabrion_studio.config.schema import SCHEMA_VERSION, Issue, Profile, Settings, validate_profiles, validate_settings
 from tabrion_studio.config.secrets import SecretError, Secrets, SecretTarget, keyring_key
 from tabrion_studio.config.user import UserConfig
+from tabrion_studio.config.writer import PROFILE_KEYS, SaveError
 from tabrion_studio.problems import problem_response
 
 logger = logging.getLogger("tabrion_studio.config")
 _MAX_BODY = 4096
+_MAX_FORM_BODY = 16 * 1024
+_SETTINGS_KEYS = frozenset({"language", "theme", "log_sql", "limits"})
+_LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms"})
+
+
+class FormError(Exception):
+    """A profile or settings form that is not valid: the problem code and its issues (fixed key names)."""
+
+    def __init__(self, code: str, issues: list[tuple[str, str]]) -> None:
+        super().__init__(code)
+        self.code = code
+        self.issues = issues
 
 
 @dataclass
@@ -71,7 +92,7 @@ class Configuration:
                 "user",
                 p,
                 # The user's own profiles.toml: a relative file: path starts in the configuration folder.
-                SecretTarget(p.password, "user", keyring_key("user", p.name, ""), config_dir, None),
+                _user_target(self, p),
             )
             for p in self.user.profiles().profiles
         ]
@@ -86,7 +107,7 @@ class Configuration:
                     SecretTarget(
                         p.password,
                         "project",
-                        keyring_key("project", p.name, self.project.key),
+                        keyring_key("project", p, self.project.key),
                         folder,
                         [folder, config_dir],
                     ),
@@ -106,12 +127,70 @@ class Configuration:
         return self.secrets.resolve(self.entry(profile_id).secret)
 
 
-def _json_body(raw: bytes) -> dict[str, Any] | None:
+def _json_body(raw: bytes, limit: int = _MAX_BODY) -> dict[str, Any] | None:
     try:
-        doc = json.loads(raw) if len(raw) <= _MAX_BODY else None
+        doc = json.loads(raw) if len(raw) <= limit else None
     except (ValueError, RecursionError):
         doc = None
     return doc if isinstance(doc, dict) else None
+
+
+def _user_target(config: Configuration, profile: Profile) -> SecretTarget:
+    return SecretTarget(profile.password, "user", keyring_key("user", profile, ""), config.user.config_dir, None)
+
+
+def form_profile(raw: object) -> Profile:
+    """The profile of a form (the keys of the file); :class:`FormError` with the issues if it is not valid."""
+    if not isinstance(raw, dict):
+        raise FormError("studio.profile_invalid", [("profile", "config.type")])
+    if any(key not in PROFILE_KEYS for key in raw):
+        # Never the key itself: the pointer names only fixed keys.
+        raise FormError("studio.profile_invalid", [("profile", "config.unknown_key")])
+    parsed = validate_profiles(
+        {"version": SCHEMA_VERSION, "profile": [{k: v for k, v in raw.items() if v is not None}]}
+    )
+    issues = [(_form_pointer(issue.pointer), issue.code) for issue in parsed.issues][:32]
+    if issues or len(parsed.profiles) != 1:
+        raise FormError("studio.profile_invalid", issues or [("profile", "config.type")])
+    return parsed.profiles[0]
+
+
+def _form_pointer(pointer: str) -> str:
+    """``profile[0].host`` -> ``profile.host`` (the form has one profile; every key is one of PROFILE_KEYS)."""
+    head, _, key = pointer.partition(".")
+    return "profile" if not key or key not in PROFILE_KEYS or not head.startswith("profile") else f"profile.{key}"
+
+
+def form_settings(raw: object, current: Settings) -> Settings:
+    """``current`` with the values of the form; :class:`FormError` if one is not valid."""
+    if not isinstance(raw, dict) or not isinstance(raw.get("limits", {}), dict):
+        raise FormError("studio.settings_invalid", [("settings", "config.type")])
+    limits = raw.get("limits", {})
+    if any(key not in _SETTINGS_KEYS for key in raw) or any(key not in _LIMIT_KEYS for key in limits):
+        raise FormError("studio.settings_invalid", [("settings", "config.unknown_key")])
+    doc: dict[str, Any] = {
+        "version": SCHEMA_VERSION,
+        "language": raw.get("language", current.language),
+        "theme": raw.get("theme", current.theme),
+        "log_sql": raw.get("log_sql", current.log_sql),
+        "limits": {
+            "max_rows": limits.get("max_rows", current.max_rows),
+            "statement_timeout_ms": limits.get("statement_timeout_ms", current.statement_timeout_ms),
+        },
+    }
+    settings, issues = validate_settings(doc)
+    if issues:
+        raise FormError("studio.settings_invalid", [(issue.pointer, issue.code) for issue in issues][:32])
+    return settings
+
+
+def _user_name(config: Configuration, profile_id: object) -> str:
+    """The name in a user profile id; project profiles are read-only."""
+    if isinstance(profile_id, str) and profile_id.startswith("user:"):
+        return profile_id[5:]
+    if isinstance(profile_id, str) and profile_id.startswith("project:"):
+        raise SaveError("studio.profile_read_only")
+    raise SaveError("studio.profile_not_found")
 
 
 def add_config_routes(app: FastAPI, config: Configuration) -> None:
@@ -157,13 +236,108 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
                 "profiles": profiles,
                 "project_state": project.state,
                 "issues": {"user": [issue.to_dict() for issue in user.issues]},
+                # A save names the digest it read (studio.config_stale otherwise, STU-008).
+                "user_file": {"digest": user.digest, "hand_written": not user.canonical},
             }
         )
 
     @app.get("/api/settings")
     async def get_settings() -> Response:
-        settings, issues = config.user.settings()
-        return JSONResponse({"settings": settings.to_dict(), "issues": [issue.to_dict() for issue in issues]})
+        settings, issues, file_digest, canonical = config.user.settings_file()
+        return JSONResponse(
+            {
+                "settings": settings.to_dict(),
+                "issues": [issue.to_dict() for issue in issues],
+                "file": {"digest": file_digest, "hand_written": not canonical},
+            }
+        )
+
+    async def save(request: Request, action: Any) -> Response:
+        """Run one save of the user's files; every refusal is a problem with a fixed text."""
+        doc = _json_body(await request.body(), _MAX_FORM_BODY)
+        if doc is None or "digest" not in doc:
+            return problem_response("access.bad_request")
+        try:
+            result: Response = action(doc, doc.get("digest"), doc.get("overwrite") is True)
+        except FormError as exc:
+            return problem_response(exc.code, issues=exc.issues)
+        except (SaveError, SecretError) as exc:
+            logger.info("configuration not saved", extra={"event": "studio.config_refused", "code": exc.code})
+            return problem_response(exc.code)
+        return result
+
+    def create(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
+        profile = form_profile(doc.get("profile"))
+
+        def change(profiles: list[Profile]) -> list[Profile]:
+            if any(p.name == profile.name for p in profiles):
+                raise SaveError("studio.profile_exists")
+            if len(profiles) >= 200:
+                raise FormError("studio.profile_invalid", [("profile", "config.too_many")])
+            return [*profiles, profile]
+
+        new_digest = config.user.save_profiles(change, expected, overwrite=overwrite)
+        logger.info("profile created", extra={"event": "studio.profile_created"})
+        return JSONResponse({"id": f"user:{profile.name}", "digest": new_digest}, status_code=201)
+
+    def update(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
+        name = _user_name(config, doc.get("id"))
+        profile = form_profile(doc.get("profile"))
+        if profile.name != name:
+            raise FormError("studio.profile_invalid", [("profile.name", "config.rename_unsupported")])
+        old: list[Profile] = []
+
+        def change(profiles: list[Profile]) -> list[Profile]:
+            old.extend(p for p in profiles if p.name == name)
+            if not old:
+                raise SaveError("studio.profile_not_found")
+            return [profile if p.name == name else p for p in profiles]
+
+        new_digest = config.user.save_profiles(change, expected, overwrite=overwrite)
+        before = _user_target(config, old[0])
+        if before.ref != profile.password or before.key != _user_target(config, profile).key:
+            # The stored secret belonged to the old reference or target (C-1): it never serves the new one.
+            config.secrets.forget(before)
+        logger.info("profile changed", extra={"event": "studio.profile_changed"})
+        return JSONResponse({"id": f"user:{name}", "digest": new_digest})
+
+    def remove(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
+        name = _user_name(config, doc.get("id"))
+        old: list[Profile] = []
+
+        def change(profiles: list[Profile]) -> list[Profile]:
+            old.extend(p for p in profiles if p.name == name)
+            if not old:
+                raise SaveError("studio.profile_not_found")
+            return [p for p in profiles if p.name != name]
+
+        new_digest = config.user.save_profiles(change, expected, overwrite=overwrite)
+        config.secrets.forget(_user_target(config, old[0]))
+        logger.info("profile removed", extra={"event": "studio.profile_removed"})
+        return JSONResponse({"digest": new_digest})
+
+    def put_settings_action(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
+        current, _ = config.user.settings()
+        settings = form_settings(doc.get("settings"), current)
+        new_digest = config.user.save_settings(settings, expected, overwrite=overwrite)
+        logger.info("settings saved", extra={"event": "studio.settings_saved"})
+        return JSONResponse({"digest": new_digest, "settings": settings.to_dict()})
+
+    @app.post("/api/profiles", status_code=201)
+    async def post_profile(request: Request) -> Response:
+        return await save(request, create)
+
+    @app.put("/api/profiles")
+    async def put_profile(request: Request) -> Response:
+        return await save(request, update)
+
+    @app.delete("/api/profiles")
+    async def delete_profile(request: Request) -> Response:
+        return await save(request, remove)
+
+    @app.put("/api/settings")
+    async def put_settings(request: Request) -> Response:
+        return await save(request, put_settings_action)
 
     @app.get("/api/secrets")
     async def get_secrets() -> Response:

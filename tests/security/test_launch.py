@@ -41,7 +41,7 @@ from tabrion_studio.paths import ensure_private_dir, write_private_file
 from tabrion_studio.security.launch import LAUNCH_TTL_SECONDS, LaunchTokens, redirect_page
 from tests.support.fake_server import fake_studio
 from tests.support.session import heartbeat, redeem, session_from, sign_in
-from tests.support.studio import studio_command
+from tests.support.studio import NO_KEYRING, studio_command
 
 pytestmark = pytest.mark.security
 
@@ -192,7 +192,7 @@ def test_browser_argv_contains_no_token(project: Path, state_dir: Path, tmp_path
         encoding="utf-8",
     )
     browser.chmod(0o700)
-    env = {**os.environ, "BROWSER": str(browser), "PYTHONUNBUFFERED": "1"}
+    env = {**os.environ, "BROWSER": str(browser), "PYTHONUNBUFFERED": "1", **NO_KEYRING}
     log = tmp_path / "studio.log"
     with log.open("wb") as fh:
         process = subprocess.Popen(

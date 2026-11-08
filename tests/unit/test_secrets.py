@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 import os
 from pathlib import Path
+import signal
 import sys
 from typing import Any
 import uuid
@@ -13,7 +15,9 @@ import keyring
 from keyring.backends import chainer, fail, null
 import pytest
 
-from tabrion_studio.config.schema import SecretRef
+from tabrion_studio.config import secrets as studio_secrets
+from tabrion_studio.config.locations import safe_realpath
+from tabrion_studio.config.schema import Profile, SecretRef
 from tabrion_studio.config.secrets import (
     MAX_SECRET_BYTES,
     SERVICE,
@@ -71,7 +75,17 @@ def test_a_private_file_inside_the_project_is_read_and_registered(project: Path)
 
 @pytest.mark.parametrize(
     ("content", "expected"),
-    [(b"a b\r\n", "a b"), (b"a b\n", "a b"), (b"x\n\n", "x\n"), (b"x\r\n\r\n", "x\r\n"), (b"x\r", "x\r"), (b"x", "x")],
+    [
+        (b"a b\r\n", "a b"),
+        (b"a b\n", "a b"),
+        (b"x\n\n", "x\n"),
+        (b"x\r\n\r\n", "x\r\n"),
+        (b"x\r", "x\r"),
+        (b"x", "x"),
+        # I-3 of stu-007-review.md: one leading BOM (Notepad) is removed, a second one is part of the secret.
+        (b"\xef\xbb\xbfpw\r\n", "pw"),
+        (b"\xef\xbb\xbf\xef\xbb\xbfpw", "\ufeffpw"),
+    ],
 )
 def test_exactly_one_trailing_line_end_is_stripped(project: Path, content: bytes, expected: str) -> None:
     """The contract: one trailing "\\r\\n" or "\\n" is removed, nothing else (the file is written in binary)."""
@@ -138,8 +152,60 @@ def test_a_hard_link_is_refused(project: Path) -> None:
 
 @posix_only
 def test_a_fifo_is_refused_without_blocking(project: Path) -> None:
+    """I-2: without O_NONBLOCK the open would block; the alarm makes that a failure instead of a hanging run."""
     os.mkfifo(project / "secrets" / "db", 0o600)
+
+    def blocked(signum: int, frame: object) -> None:
+        raise AssertionError("opening the FIFO blocked")
+
+    previous = signal.signal(signal.SIGALRM, blocked)
+    signal.alarm(5)
+    try:
+        assert _code(lambda: read_secret_file("secrets/db", project, [project])) == "studio.secret_file_unsafe"
+    finally:
+        signal.alarm(0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+@posix_only
+@pytest.mark.parametrize("swap", ["file", "folder"])
+def test_a_link_swapped_in_after_the_checks_is_not_followed(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, swap: str
+) -> None:
+    """I-2: the swap happens deterministically between the checks and the open; O_NOFOLLOW refuses it."""
+    _secret(project / "secrets" / "db", "decoy")
+    outside = tmp_path / "outside"
+    _secret(outside / "db", CANARY)
+    real_safe_realpath = safe_realpath
+
+    def swapping(path: Path) -> Path | None:
+        result = real_safe_realpath(path)
+        if swap == "file":
+            (project / "secrets" / "db").unlink()
+            (project / "secrets" / "db").symlink_to(outside / "db")
+        else:
+            (project / "secrets" / "db").unlink()
+            (project / "secrets").rmdir()
+            (project / "secrets").symlink_to(outside, target_is_directory=True)
+        return result
+
+    monkeypatch.setattr(studio_secrets, "safe_realpath", swapping)
     assert _code(lambda: read_secret_file("secrets/db", project, [project])) == "studio.secret_file_unsafe"
+
+
+def test_env_session_and_short_values_are_redacted(tmp_path: Path) -> None:
+    """I-1 and I-2: every resolved or entered value is registered, a short one too (4 characters and more)."""
+    secrets, _ = _secrets({"PGPASSWORD": "env-" + CANARY})
+    env = SecretTarget(SecretRef("env", "PGPASSWORD"), "user", "user:e", tmp_path, None)
+    assert secrets.resolve(env) == "env-" + CANARY
+    session = SecretTarget(None, "user", "user:s", tmp_path, None)
+    secrets.store(session, "ses-" + CANARY, "session")
+    short = SecretTarget(None, "user", "user:t", tmp_path, None)
+    secrets.store(short, "Zq7#", "session")
+    line = scrub(f"env-{CANARY} ses-{CANARY} pw=Zq7# x")
+    assert CANARY not in line and "Zq7#" not in line
+    secrets.store(SecretTarget(None, "user", "user:u", tmp_path, None), "abc", "session")
+    assert scrub("abc") == "abc"  # below 4 characters nothing is registered: the log stays readable
 
 
 @posix_only
@@ -269,7 +335,7 @@ def _secrets(environ: dict[str, str] | None = None) -> tuple[Secrets, FakeKeyrin
 
 def test_keyring_then_session(tmp_path: Path) -> None:
     secrets, fake = _secrets()
-    target = SecretTarget(SecretRef("keyring", ""), "user", keyring_key("user", "p", ""), tmp_path, None)
+    target = SecretTarget(SecretRef("keyring", ""), "user", keyring_key("user", _pg("p"), ""), tmp_path, None)
     assert _code(lambda: secrets.resolve(target)) == "studio.secret_missing"
     secrets.store(target, "typed", "session")
     assert secrets.resolve(target) == "typed" and secrets.has_secret(target) is True
@@ -320,9 +386,47 @@ def test_a_profile_without_a_reference_can_only_use_a_session_secret(tmp_path: P
     assert secrets.resolve(target) == "typed" and fake.reads == 0
 
 
+def _pg(name: str, **changes: object) -> Profile:
+    fields: dict[str, Any] = {"host": "db.internal", "database": "d", "user": "u", "port": None, **changes}
+    return Profile(name=name, engine="postgresql", environment="prod", password=SecretRef("keyring", ""), **fields)
+
+
 def test_keyring_keys_are_unique_per_project_folder() -> None:
-    assert keyring_key("user", "p", "k1") == "user:p"
-    assert keyring_key("project", "p", "k1") != keyring_key("project", "p", "k2")
+    profile = _pg("p")
+    assert keyring_key("user", profile, "k1").startswith("user:p:")
+    assert keyring_key("project", profile, "k1") != keyring_key("project", profile, "k2")
+    # The fingerprint has a fixed length at the end: a ":" in the name cannot make two keys equal.
+    assert keyring_key("user", _pg("a:b"), "") != keyring_key("user", _pg("a"), "")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"host": "evil.example"},
+        {"port": 6432},
+        {"database": "other"},
+        {"user": "postgres"},
+    ],
+)
+def test_a_stored_secret_does_not_follow_a_retargeted_profile(tmp_path: Path, change: dict[str, Any]) -> None:
+    """C-1 (M-1 of stu-007-review.md): same name, another target: the stored secret is not used."""
+    secrets, _ = _secrets()
+
+    def target(profile: Profile) -> SecretTarget:
+        return SecretTarget(profile.password, "project", keyring_key("project", profile, "k1"), tmp_path, [tmp_path])
+
+    before, after = _pg("prod"), _pg("prod", **change)
+    secrets.store(target(before), CANARY, "keyring")
+    secrets.store(target(before), CANARY, "session")
+    assert secrets.resolve(target(before)) == CANARY
+    assert _code(lambda: secrets.resolve(target(after))) == "studio.secret_missing"
+    assert secrets.has_secret(target(after)) is None
+
+
+def test_the_default_port_is_the_same_target() -> None:
+    assert keyring_key("user", _pg("p"), "") == keyring_key("user", _pg("p", port=5432), "")
+    sqlite = Profile(name="p", engine="sqlite", environment="dev", path="a.db")
+    assert keyring_key("user", sqlite, "") != keyring_key("user", replace(sqlite, path="b.db"), "")
 
 
 @pytest.mark.parametrize("text", ["%5C%5Cattacker.example%5Cs", "\u2215\u2215attacker.example", "\uff3c\uff3cattacker"])

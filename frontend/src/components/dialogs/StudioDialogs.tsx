@@ -122,6 +122,12 @@ function DiffSection({ diff }: { diff: TrustDiff }) {
       items: diff.connections.changed.map((value) => ({ value })),
     },
     {
+      // C-1 of stu-007-review.md: the saved password stays with the old host; Studio asks for it again.
+      id: 'connections-retargeted',
+      label: t('dialogs.trustProject.connectionsRetargeted'),
+      items: diff.connections.retargeted.map((value) => ({ value })),
+    },
+    {
       id: 'hosts-added',
       label: t('dialogs.trustProject.hostsAdded'),
       items: diff.hosts.added.map((value) => ({ value })),

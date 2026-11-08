@@ -300,6 +300,9 @@ describe('D-01 with an untrusted project file (binding requirement U-1)', () => 
     expect(codes(within(diff).getByTestId('trust-diff-connections-changed'))).toEqual([
       'measure-central',
     ]);
+    expect(codes(within(diff).getByTestId('trust-diff-connections-retargeted'))).toEqual([
+      'measure-central',
+    ]);
     expect(codes(within(diff).getByTestId('trust-diff-hosts-added'))).toEqual([
       'attacker.example:5432',
     ]);
@@ -314,7 +317,7 @@ describe('D-01 with an untrusted project file (binding requirement U-1)', () => 
 
   it('U-1d: a change outside the listed items is still announced', () => {
     const empty: TrustDiff = {
-      connections: { added: [], removed: [], changed: [] },
+      connections: { added: [], removed: [], changed: [], retargeted: [] },
       hosts: { added: [], removed: [] },
       files: { added: [], removed: [] },
       env: { added: [], removed: [] },

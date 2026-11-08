@@ -7,7 +7,7 @@
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel).
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -161,5 +161,33 @@ test('STU-006: D-01 asks before the project profiles are used, and trusting stic
   await page.reload();
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(violations).toEqual([]);
+});
+
+test('STU-008: a profile created in the page is written to profiles.toml and deleted again', async ({
+  page,
+}) => {
+  links.push(newLink());
+  const violations = await signIn(page);
+  // The trusted project of the previous test may still ask; this test is about the user's own profiles.
+  await page.getByRole('link', { name: 'Connections' }).click();
+  await page.getByRole('button', { name: 'New connection' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New connection' });
+  await dialog.getByRole('textbox', { name: 'File' }).fill(join(root, 'parts.db'));
+  await dialog.getByRole('button', { name: 'Next' }).click();
+  await dialog.getByRole('button', { name: 'Next' }).click();
+  await dialog.getByLabel('Name').fill('e2e-parts');
+  await dialog.getByRole('radio', { name: 'DEV' }).check();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('connections-status')).toHaveText('e2e-parts saved.');
+  const file = join(root, 'state', 'config', 'profiles.toml');
+  expect(readFileSync(file, 'utf-8')).toContain('name = "e2e-parts"');
+  if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
+  expect(await seriousViolations(page)).toEqual([]);
+  await page.getByTestId('connection-item').filter({ hasText: 'e2e-parts' }).click();
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
+  await expect(page.getByTestId('connections-status')).toHaveText('e2e-parts deleted.');
+  expect(readFileSync(file, 'utf-8')).not.toContain('e2e-parts');
   expect(violations).toEqual([]);
 });
