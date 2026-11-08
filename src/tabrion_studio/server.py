@@ -230,7 +230,9 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         started_at=time.time(),
     )
     server: _StudioServer | None = None
-    launches = LaunchTokens(loopback_origin(port), redirect_dir=paths.info.parent, prefix=paths.info.stem)
+    # An absolute folder: the CLI of a second start accepts only absolute redirect file paths.
+    redirect_dir = Path(os.path.abspath(paths.info.parent))
+    launches = LaunchTokens(loopback_origin(port), redirect_dir=redirect_dir, prefix=paths.info.stem)
 
     def request_shutdown(reason: str) -> None:
         if server is not None:

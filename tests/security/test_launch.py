@@ -396,3 +396,14 @@ def test_sign_in_helper_matches_the_real_server(
     with serving(project, state_dir, monkeypatch, "--no-browser") as (info, _out, _opened):
         session = sign_in(info)
         assert heartbeat(session) == 204
+
+
+def test_relative_state_dir_still_opens_the_browser(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The server names its redirect files by absolute path, so a second start with a relative --state-dir works.
+    monkeypatch.chdir(tmp_path)
+    with serving(project, Path("relative-state"), monkeypatch) as (_info, _out, opened):
+        assert cli.main([str(project), "--state-dir", "relative-state"]) == cli.EXIT_OK
+        assert len(opened) == 2
+        assert _file_path(opened[1]).parent.resolve() == (tmp_path / "relative-state").resolve()

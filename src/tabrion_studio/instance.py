@@ -345,6 +345,7 @@ def validate_redirect_file(paths: InstancePaths, url: str, value: object) -> Pat
     folder = paths.info.parent
     if (
         not path.is_absolute()
+        or os.path.normpath(value) != value  # no "..", "." or doubled separators
         or redirect_file_pattern(paths.info.stem).fullmatch(path.name) is None
         or os.path.normcase(os.path.abspath(path.parent)) != os.path.normcase(os.path.abspath(folder))
     ):
