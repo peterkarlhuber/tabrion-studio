@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from tabrion_studio.api.config import Configuration
 from tabrion_studio.app import Runtime, create_app
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.security.access import loopback_origin
@@ -49,7 +50,9 @@ class Studio:
         assert self.runtime.idle.idle_for() >= 50
 
 
-def make_studio(static_dir: Path, redirect_dir: Path | None = None, idle_seconds: float = 0) -> Studio:
+def make_studio(
+    static_dir: Path, redirect_dir: Path | None = None, idle_seconds: float = 0, config: Configuration | None = None
+) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
     runtime = Runtime(
@@ -59,6 +62,7 @@ def make_studio(static_dir: Path, redirect_dir: Path | None = None, idle_seconds
         port=PORT,
         launches=LaunchTokens(ORIGIN, redirect_dir=redirect_dir, prefix="studio-test", clock=clock),
         request_shutdown=shutdowns.append,
+        config=config,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

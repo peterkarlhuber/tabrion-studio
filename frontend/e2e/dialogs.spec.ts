@@ -10,6 +10,7 @@ import { openHarness } from './support';
 const DIALOGS: [string, string, string, string | null][] = [
   // scenario, title, safe option, destructive option
   ['dialog-d01', 'Trust the project profiles?', "Don't load", null],
+  ['dialog-d01-hostile', 'The project profiles have changed. Trust them?', "Don't load", null],
   ['dialog-d02', 'Production database', 'Cancel', null],
   ['dialog-d06', 'Script not saved', 'Cancel', 'Discard'],
   ['dialog-d08', '2 queries are running', 'Cancel', 'Quit'],
@@ -73,3 +74,29 @@ for (const [scenario, title, safe, destructive] of DIALOGS) {
     });
   });
 }
+
+test('D-01 with a hostile project file shows every entry escaped, in its own item (review U-1)', async ({
+  page,
+}) => {
+  await openHarness(page, { scenario: 'dialog-d01-hostile' });
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  const names = dialog.getByTestId('trust-connections').locator('li code');
+  await expect(names).toHaveCount(8);
+  await expect(names.nth(0)).toHaveText('parts-dev, safe (checked)');
+  await expect(names.nth(1)).toHaveText('evil\\u202Etxt.exe');
+  await expect(names.nth(2)).toHaveText('line\\u000Abreak');
+  await expect(dialog.getByTestId('trust-connections').getByRole('heading')).toHaveText(
+    'Connections (20)',
+  );
+  await expect(dialog.getByRole('button', { name: 'and 12 more' })).toBeVisible();
+  const text = (await dialog.textContent()) ?? '';
+  expect(text).not.toContain(String.fromCodePoint(0x202e));
+  await expect(dialog.getByTestId('trust-diff-hosts-added').locator('li code')).toHaveText([
+    'attacker.example:5432',
+  ]);
+  // The overlong name is cut and can be shown in full.
+  const long = dialog.getByTestId('trust-connections').locator('li').nth(3);
+  await long.getByRole('button', { name: 'Show full value' }).click();
+  await expect(long.locator('code')).toHaveText(/^measure-x{300}$/);
+});

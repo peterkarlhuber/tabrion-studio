@@ -22,6 +22,7 @@ import '../styles/global.css';
 import { initTheme, setThemePreference } from '../theme';
 import { EMPTY_WORKSPACE, type Workspace } from '../workspace';
 import styles from './harness.module.css';
+import { DIFF, HOSTILE_REVIEW, REVIEW } from './trust';
 
 const params = new URLSearchParams(window.location.search);
 const scenario = params.get('scenario') ?? 'start';
@@ -81,9 +82,17 @@ function HarnessDialog({ id }: { id: string }) {
       <TrustProjectDialog
         open={open}
         file=".tabrion/studio.toml"
-        connections={['parts-dev', 'parts-pg', 'measure-central']}
-        hosts={['db.internal']}
-        files={['./secrets/db']}
+        review={REVIEW}
+        onTrust={done('trust')}
+        onReject={done('cancel')}
+      />
+    ),
+    'dialog-d01-hostile': (
+      <TrustProjectDialog
+        open={open}
+        file=".tabrion/studio.toml"
+        review={HOSTILE_REVIEW}
+        diff={DIFF}
         onTrust={done('trust')}
         onReject={done('cancel')}
       />

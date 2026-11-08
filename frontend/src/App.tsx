@@ -5,6 +5,7 @@ import { fetchHealth, startHeartbeat } from './heartbeat';
 import { usePath } from './router';
 import type { SessionState } from './session';
 import { AppShell, type ServerState } from './shell/AppShell';
+import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView, NotFoundView, SettingsView, StartView } from './views/Views';
 import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
@@ -91,6 +92,7 @@ export function App({
       <AppShell path={path} pageTitle={pageTitle} server={offline ? { kind: 'offline' } : server}>
         <View path={path} />
       </AppShell>
+      <ProjectTrust fetcher={fetcher} />
     </WorkspaceContext.Provider>
   );
 }

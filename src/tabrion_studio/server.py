@@ -37,18 +37,22 @@ from typing import TextIO
 import uvicorn
 
 from tabrion_studio._version import __version__
+from tabrion_studio.api.config import Configuration
 from tabrion_studio.app import Runtime, create_app
+from tabrion_studio.config.project import ProjectConfig
+from tabrion_studio.config.user import UserConfig
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import (
     LOOPBACK,
     InstanceInfo,
     InstanceLock,
     InstancePaths,
+    project_key,
     remove_info_if_ours,
     write_info,
 )
 from tabrion_studio.logs import configure_logging
-from tabrion_studio.paths import UnsafePathError, remove_file
+from tabrion_studio.paths import UnsafePathError, default_config_dir, remove_file
 from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 
@@ -67,6 +71,8 @@ class ServeOptions:
     print_url: bool = False
     #: Where the rotating log file goes (03 section 4.5); None logs to the console only.
     log_dir: Path | None = None
+    #: The user's configuration folder (settings.toml, profiles.toml); None uses the default (STU-006).
+    config_dir: Path | None = None
     started: float = field(default_factory=time.perf_counter)
 
 
@@ -245,7 +251,13 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
             server.stop_reason = reason
             server.should_exit = True
 
+    config_dir = options.config_dir if options.config_dir is not None else default_config_dir()
+    configuration = Configuration(
+        project=ProjectConfig(options.project, options.state_dir, project_key(options.project), config_dir),
+        user=UserConfig(config_dir),
+    )
     runtime = Runtime(
+        config=configuration,
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),

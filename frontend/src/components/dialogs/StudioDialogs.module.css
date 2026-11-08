@@ -12,3 +12,49 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+/* D-01 (STU-006, review U-1): one list item and one <code> per untrusted entry. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-1);
+  font-size: var(--tb-text-sm);
+}
+.heading {
+  margin: 0;
+  font-size: var(--tb-text-sm);
+  font-weight: 600;
+  color: var(--tb-color-text-muted);
+}
+.list {
+  margin: 0;
+  padding-left: var(--tb-space-5);
+}
+.entry {
+  overflow-wrap: anywhere;
+}
+.note {
+  color: var(--tb-color-text-muted);
+}
+.none {
+  margin: 0;
+  color: var(--tb-color-text-muted);
+}
+.more {
+  align-self: flex-start;
+  margin-left: var(--tb-space-1);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tb-color-link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.diff {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  padding: var(--tb-space-2) var(--tb-space-3);
+  border: 1px solid var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-md);
+}

@@ -5,8 +5,9 @@
 > (planning documents 03, 05, 07, 08 and 09; program status in `tabrion/docs/program/STATUS.md`, K-12). "TABRION
 > <WP-ID>" names a work package of that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3-stu004` (TABRION STU-004: Problem
-> JSON and logging); before that against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3-stu006` (TABRION STU-006:
+> configuration, profiles and project trust, U-1) and `claude/project-thread-rdo6g3-stu004` (TABRION STU-004: Problem
+> JSON and logging, PR #7); before that against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
 > of `stu-005-051-review.md`; PR #5: STU-005 and STU-051 with S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and
 > R-1..R-7 of `stu-002-018-review.md`; PR #1: STU-001, STU-002, STU-018, STU-031).
 
@@ -21,8 +22,9 @@
 | OA-004 independent review of STU-003 (access protection) | P0 | Accepted (`stu-003-review.md`, PR #4 merged) |
 | OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Accepted (`stu-005-051-review.md`, PR #5 merged) |
 | OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Accepted (`stu-follow-up-6-review.md`, PR #6 merged) |
-| OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Open (STU-004 PR) |
-| STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Open (STU-006) |
+| OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Open (PR #7) |
+| OA-008 independent review of STU-006 (project trust, D-01, U-1) | P1 | Open (STU-006 PR) |
+| STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open) |
@@ -144,7 +146,7 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-007 · Independent review of STU-004 (TABRION STU-004, 07 §6)
 
-- **Priority:** P1 High · **Status:** Open (STU-004 PR) · **Refs:** 07 §6 (Studio packages with a credential
+- **Priority:** P1 High · **Status:** Open (PR #7) · **Refs:** 07 §6 (Studio packages with a credential
   surface), T-05, SQ-04, `docs/architecture/errors-and-logging.md`
 - **What:** the pull request turns every error answer into Problem JSON and adds the redacting, rotating logs and the
   request log. An independent review agent checks that no answer can carry an exception message, a path, a stack
@@ -152,7 +154,20 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   the file handling of the log folder (0700, 0600, symlinks). No `.github/` file changes, so the workflow-change label
   is not needed.
 
+### OA-008 · Independent review of STU-006 (TABRION STU-006, 07 §6)
+
+- **Priority:** P1 High · **Status:** Open (STU-006 PR) · **Refs:** 07 §6 (credential surface: `env:`/`file:`
+  references), T-08, `docs/architecture/configuration.md`, U-1 below
+- **What:** project trust fails closed (links, `file:` outside, digest bound to the bytes on disk, damaged records),
+  no value is echoed from a profile file, and D-01 meets U-1a..U-1d. No `.github/` file changes.
+
 ## STU-006 binding requirement (review U-1 of PR #5)
+
+**Status: done in the STU-006 pull request** (`docs/architecture/configuration.md`, section *The trust dialog D-01*):
+U-1a list items with one `<code>` each, U-1b escapes `\uXXXX` (`frontend/src/lib/visible.ts`), U-1c 64 characters and
+8 entries with "Show full value" and "and N more", U-1d the diff from the trust record. Tests: `StudioDialogs.test.tsx`
+(one per point, hostile names), `e2e/dialogs.spec.ts` and `e2e/a11y.spec.ts` (`dialog-d01-hostile`),
+`e2e/backend.spec.ts` (real server). It closes with the review OA-008.
 
 TABRION STU-006 wires the trust dialog D-01 (`TrustProjectDialog`, `frontend/src/components/dialogs/StudioDialogs.tsx`)
 to the project file. Today it joins the connection names, hosts and file references with `", "` into one sentence or
@@ -205,10 +220,10 @@ merge after OA-004.
 | WP | Title | Priority | Depends on | Note |
 |---|---|---|---|---|
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
-| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | In progress (STU-004 PR, OA-007): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
+| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | In progress (PR #7, OA-007): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
-| TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | must meet the binding requirement U-1 (trust dialog D-01) |
+| TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | In progress (STU-006 PR, OA-008): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
@@ -235,8 +250,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 ### TD-001 · Layer contract for `api` → `services` → `profiles`/`security`
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** 05 §3.2, AC-1
-- **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages, which arrive with
-  STU-006 and later. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
+- **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages. STU-006 adds `api`
+  and `config` (the profiles layer; `config` never imports `api`, the app, the server, the CLI or `security`); the
+  `services` layer arrives with STU-009. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
 

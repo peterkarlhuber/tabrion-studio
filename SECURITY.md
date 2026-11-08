@@ -49,6 +49,12 @@ Studio is a local, single-user tool (STU-ADR-0002, `docs/adr/0002-local-security
   tokens, URL passwords, credential key values, bearer tokens and cookies removed; exceptions logged with frames
   only, without messages), the request log names route templates without query strings, and log files are 0600 in a
   0700 folder, rotated at 5 x 5 MB;
+- project trust (STU-006, `docs/architecture/configuration.md`): a project's `.tabrion/studio.toml` is untrusted;
+  its profiles are used only after the user confirmed the exact file (SHA-256, checked again when the confirmation
+  arrives) in a dialog that lists every connection, host, file reference, password variable and unknown key with
+  control and bidi characters escaped, and again with a diff after every change. Links are not followed, `file:`
+  references outside the project and the user configuration are refused, plain passwords are refused without being
+  repeated, a damaged trust record means untrusted, and nothing from a project file is executed;
 - planned before the first release: secrets only in the OS keyring (or `env:`/`file:` references), read-only
   enforced by the database, production profiles without writes.
 

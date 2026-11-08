@@ -26,6 +26,7 @@ function markers(text: string): string[] {
 
 // Strings that are the same in both languages on purpose: names, environment labels and loan words.
 const SAME_IN_BOTH = new Set([
+  'dialogs.trustProject.heading',
   'app.name',
   'app.title',
   'app.connectionTitle',

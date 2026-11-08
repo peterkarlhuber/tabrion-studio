@@ -36,6 +36,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tabrion_studio._version import __version__
+from tabrion_studio.api.config import Configuration, add_config_routes
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
 from tabrion_studio.logs import register_secret
@@ -72,6 +73,8 @@ class Runtime:
     launches: LaunchTokens
     request_shutdown: Callable[[str], None]
     sessions: Sessions = field(default_factory=Sessions)
+    #: Profiles, settings and project trust (STU-006); None serves no configuration routes.
+    config: Configuration | None = None
 
 
 def _problem(code: str) -> Response:
@@ -187,6 +190,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
             runtime.request_shutdown("stop requested")
             return JSONResponse({"status": "stopping"}, status_code=202)
         return _problem("studio.not_found")
+
+    if runtime.config is not None:
+        add_config_routes(app, runtime.config)
 
     index = static_dir / "index.html"
     if index.is_file():
