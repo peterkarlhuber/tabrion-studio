@@ -5,9 +5,9 @@
 > (planning documents 03, 05, 07, 08 and 09; program status in `tabrion/docs/program/STATUS.md`, K-12). "TABRION
 > <WP-ID>" names a work package of that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (STU-005 and STU-051 with the review
-> recommendations S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and R-1..R-7 of `stu-002-018-review.md`; PR #1:
-> STU-001, STU-002, STU-018, STU-031).
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
+> of `stu-005-051-review.md`; PR #5: STU-005 and STU-051 with S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and
+> R-1..R-7 of `stu-002-018-review.md`; PR #1: STU-001, STU-002, STU-018, STU-031).
 
 ## Summary
 
@@ -18,7 +18,9 @@
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
 | OA-004 independent review of STU-003 (access protection) | P0 | Accepted (`stu-003-review.md`, PR #4 merged) |
-| OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Open (this PR) |
+| OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Accepted (`stu-005-051-review.md`, PR #5 merged) |
+| OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Open (this PR) |
+| STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Open (STU-006) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open) |
@@ -108,14 +110,51 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-005 · Independent review of STU-005 and STU-051 (07 §6)
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** `docs/architecture/frontend.md`, review S-1 and S-4
+- **Priority:** P1 High · **Status:** Accepted · **Refs:** `docs/architecture/frontend.md`, review S-1 and S-4,
+  `tabrion-planung/reviews/stu-005-051-review.md`
 - **What:** the pull request adds the app shell, the design system, de/en, the status displays and the dialogs, and
   touches the access surface in three small places: the backend serves `index.html` for the view paths
   `/connections` and `/settings` (`CLIENT_ROUTES`, same middleware and headers), the page reacts to a lost session
   (S-1), and the command runs `xdg-settings` to detect a sandboxed browser (S-4, fixed arguments, 2 s timeout, no
   shell). No `.github/` file changes, so the workflow-change label is not needed.
-- **Next step:** an independent review agent checks these three points, the CSP compatibility of the frontend (no
-  inline styles; native `<dialog>` instead of Radix Dialog) and the e2e evidence (`e2e/`, run locally until QA-9).
+- **Result:** `stu-005-051-review.md`: ACCEPTED (no security regression, 0 CSP violations in a real browser,
+  untrusted strings render as text). Recommendations: U-1 is the STU-006 binding requirement below; U-2 (escape the
+  action ID in the dialog's initial-focus selector), U-3 (the `e2e` CI job), U-4 (HEAD on the view paths) and U-5
+  (the Chromium build mismatch, `docs/development/building.md`) are done in the follow-up pull request (OA-006).
+
+### OA-006 · Independent workflow-change review of the `e2e` job (review U-3)
+
+- **Priority:** P1 High · **Status:** Open (this PR) · **Refs:** `docs/development/ci.md` (workflow-change gate),
+  `stu-005-051-review.md` U-3
+- **What:** the follow-up pull request adds the job `e2e` to `.github/workflows/ci.yml` and to the mandatory checks in
+  `.github/ci-manifest.json`. It builds the wheel, installs it into a fresh environment, installs the Chromium build of
+  the locked Playwright (`npm run e2e:install`) and runs every Playwright suite except the screenshots; a final step
+  fails the job if a required suite (`a11y`, `backend`, `contrast`, `dialogs`, `status`) did not pass or was skipped.
+  Actions are pinned by SHA; `ci_ok.py` is unchanged. Because the pull request changes `.github/`, ci-ok reports
+  NOT OK until the label is set.
+- **Next step:** an independent review agent (or the owner) reads the `.github/` diff, sets the label
+  `workflow-change-reviewed` after the latest push and re-runs ci-ok.
+
+## STU-006 binding requirement (review U-1 of PR #5)
+
+TABRION STU-006 wires the trust dialog D-01 (`TrustProjectDialog`, `frontend/src/components/dialogs/StudioDialogs.tsx`)
+to the project file. Today it joins the connection names, hosts and file references with `", "` into one sentence or
+one `<code>`. All of them come from an untrusted project file (AT4, T-08), so a name such as `parts-dev, safe
+(checked)`, or one with a newline or bidi control characters, can make the list look different from what it is. No
+script runs (review P-2); the risk is UI spoofing of the trust decision. STU-006 is accepted only if:
+
+- **U-1a, one item per entry.** Names, hosts and files are rendered as lists, each entry its own list item with its
+  own `<code>`; nothing is joined into one string.
+- **U-1b, control and bidi characters are visible.** C0 and C1 control characters (newlines and tabs included) and the
+  bidi controls U+202A..U+202E, U+2066..U+2069 (plus U+200E, U+200F, U+061C) are shown as visible escapes (for
+  example `\u202E`), never interpreted; the escaped form is also what the tests assert.
+- **U-1c, length cap.** Each entry is cut to a fixed maximum length with a visible marker (and the full value
+  available on request), and the number of entries shown is capped with "and N more"; the dialog's counts always
+  report the real totals.
+- **U-1d, the T-08 diff.** When the project file changed since it was trusted (`titleChanged`), the dialog shows the
+  diff that T-08 requires (added, removed and changed connections, hosts and files) instead of only the new list.
+- **Tests:** a Vitest test per point with hostile names (commas, newlines, U+202E, overlong values, many entries) and
+  an e2e or axe check of the dialog with them.
 
 ## STU-003 binding requirements (review of PR #1)
 
@@ -150,12 +189,12 @@ merge after OA-004.
 |---|---|---|---|---|
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
 | TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | request log without query strings (Uvicorn's access log is off) |
-| TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | In progress (this PR, OA-005): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in CI, Chromium with contrast locally) and the token contrast test light/dark |
-| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); QA-9 adds the `e2e` CI job against the built wheel, the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
-| TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | |
+| TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
+| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, this PR); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
+| TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | must meet the binding requirement U-1 (trust dialog D-01) |
 | TABRION STU-007 | Secret management | P0 | STU-006 | |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown |
-| TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | In progress (this PR): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
+| TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-008, STU-010..STU-015 | Connection manager UI, explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | STU-008 adds the "openapi in sync" CI job (the first API types for the frontend); STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |

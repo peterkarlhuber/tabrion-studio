@@ -38,6 +38,11 @@ All notable changes to this project are documented here. The format follows
   logos are not MIT). The committed masters carry no C2PA or eXIf metadata; a test proves the pixels unchanged.
 - The command prints a hint when the default browser on Linux is a snap or a Flatpak, which cannot open the sign-in
   file in a hidden state directory (TD-002, review S-4 of `stu-003-review.md`).
+- CI job `e2e` (mandatory check): the Playwright suites in Chromium on every pull request, namely axe with color
+  contrast in light and dark and in English and German, rendered contrast, dialog focus rules, status displays, and
+  `e2e/backend.spec.ts` against the built wheel in a real `tabrion-studio` under the CSP. It installs the Chromium build
+  of the locked Playwright (`npm run e2e:install`) and fails if a required suite was skipped (review U-3 of
+  `stu-005-051-review.md`). `npm run e2e` runs the suites locally.
 
 ### Security
 
@@ -66,6 +71,13 @@ All notable changes to this project are documented here. The format follows
   the ci-ok run link before every merge (R-1).
 
 ### Changed
+
+- The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
+  (review U-4).
+- The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a
+  backslash focuses its button instead of throwing (review U-2).
+- `docs/development/building.md` explains the Chromium build that the locked Playwright expects and how to use a
+  preinstalled browser through `PLAYWRIGHT_CHROMIUM_EXECUTABLE` (review U-5).
 
 - `/api/heartbeat` and `/api/openapi.json` need a session. The control endpoint `POST /api/control/launch` takes
   `{"redirect": true|false}` and answers the launch URL and the redirect file. The Vite development proxy presents the

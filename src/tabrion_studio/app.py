@@ -174,8 +174,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         async def client_route() -> Response:
             return FileResponse(index, media_type="text/html")
 
+        # GET and HEAD, like the static files (review U-4: link checkers use HEAD).
         for route in CLIENT_ROUTES:
-            app.add_api_route(route, client_route, methods=["GET"], include_in_schema=False)
+            app.add_api_route(route, client_route, methods=["GET", "HEAD"], include_in_schema=False)
 
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
     else:
