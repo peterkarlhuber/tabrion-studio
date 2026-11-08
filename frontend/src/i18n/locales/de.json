@@ -131,6 +131,7 @@
       "connectionsAdded": "Neue Verbindungen",
       "connectionsRemoved": "Entfernte Verbindungen",
       "connectionsChanged": "Geänderte Verbindungen",
+      "connectionsRetargeted": "Gespeichertes Passwort wird nicht verwendet (die Verbindung führt jetzt woandershin; Studio fragt erneut)",
       "hostsAdded": "Neue Hosts",
       "hostsRemoved": "Entfernte Hosts",
       "filesAdded": "Neue Datei-Referenzen",

@@ -75,6 +75,11 @@ All notable changes to this project are documented here. The format follows
 - Re-review of PR #9 (`stu-conditions-rereview.md`): R-1, the link walk refuses a step to `/net/<host>` or another
   network form before it `lstat`s it (a relative link that climbs to `/net` triggered the macOS automount); R-3, a
   leading `\??\` is refused as text.
+- Review of PR #10 (`stu-007-review.md`): C-1, a stored keyring or session secret is bound to a fingerprint of the
+  connection target (engine, host, port, database, user, path), so a project profile that keeps its name but points
+  to another host no longer gets the saved password, and D-01 lists it under "Saved password not used"; I-1, secrets
+  of 4 to 7 characters are redacted too; I-3, one leading BOM is removed from a `file:` secret; I-2, the FIFO test
+  fails instead of hanging, a deterministic link-swap test, and test servers use the null keyring backend.
 
 ### Security
 

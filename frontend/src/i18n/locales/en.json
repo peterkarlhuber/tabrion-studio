@@ -131,6 +131,7 @@
       "connectionsAdded": "Connections added",
       "connectionsRemoved": "Connections removed",
       "connectionsChanged": "Connections changed",
+      "connectionsRetargeted": "Saved password not used (the connection now goes elsewhere; Studio asks for it again)",
       "hostsAdded": "Hosts added",
       "hostsRemoved": "Hosts removed",
       "filesAdded": "File references added",

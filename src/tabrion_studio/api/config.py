@@ -71,7 +71,7 @@ class Configuration:
                 "user",
                 p,
                 # The user's own profiles.toml: a relative file: path starts in the configuration folder.
-                SecretTarget(p.password, "user", keyring_key("user", p.name, ""), config_dir, None),
+                SecretTarget(p.password, "user", keyring_key("user", p, ""), config_dir, None),
             )
             for p in self.user.profiles().profiles
         ]
@@ -86,7 +86,7 @@ class Configuration:
                     SecretTarget(
                         p.password,
                         "project",
-                        keyring_key("project", p.name, self.project.key),
+                        keyring_key("project", p, self.project.key),
                         folder,
                         [folder, config_dir],
                     ),
