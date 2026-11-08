@@ -75,6 +75,8 @@ def _cursor_query(statement: str) -> bool:
 
 
 MAX_OPEN = 8
+#: How long a statement waits for one of the connection's two sessions (then ``studio.connection_busy``).
+POOL_TIMEOUT_S = 10.0
 APPLICATION_NAME = "tabrion-studio"
 #: 03 section 5.3: statement timeout 30 s, 15 s for production profiles; lock timeout 5 s.
 PROD_STATEMENT_TIMEOUT_MS = 15_000
@@ -205,6 +207,7 @@ def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
         application_name=APPLICATION_NAME,
         pool_size=2,
         max_overflow=0,
+        pool_timeout=POOL_TIMEOUT_S,
         tls=_TLS[profile.sslmode],
         max_rows=limits.max_rows,
         read_only=True,
@@ -323,6 +326,16 @@ class ConnectionRegistry:
     clock: Callable[[], float] = time.time
     _open: dict[str, OpenConnection] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _closed_listeners: list[Callable[[str], None]] = field(default_factory=list)
+
+    def on_close(self, listener: Callable[[str], None]) -> None:
+        """Call ``listener(connection_id)`` after a connection closed (the explorer drops its cache entry)."""
+        self._closed_listeners.append(listener)
+
+    def _closed(self, connection_id: str) -> None:
+        for listener in self._closed_listeners:
+            with contextlib.suppress(Exception):
+                listener(connection_id)
 
     def _connect(self, profile_id: str) -> OpenConnection:
         entry = self.source.entry(profile_id)
@@ -455,6 +468,7 @@ class ConnectionRegistry:
         if connection is None:
             return False
         connection.close()
+        self._closed(connection.id)
         logger.info("connection closed", extra={"event": "studio.connection_closed"})
         return True
 
@@ -466,6 +480,7 @@ class ConnectionRegistry:
         for connection in connections:
             with contextlib.suppress(Exception):
                 connection.close()
+            self._closed(connection.id)
 
     def test(self, profile_id: str) -> dict[str, Any]:
         """The connection test (TD-011): open, check, close; never keeps the connection."""

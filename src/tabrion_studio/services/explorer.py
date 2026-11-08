@@ -24,6 +24,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import os
+import sqlite3
 import stat
 import threading
 import time
@@ -38,8 +39,29 @@ __all__ = ["KINDS", "Explorer", "ExplorerError"]
 _T = TypeVar("_T")
 
 KINDS = ("table", "view", "materialized_view", "sequence", "foreign_table")
-#: Schemas of the server itself (the catalog leaves them out; a table detail of them stays possible by name).
+#: Schemas of the server itself, with ``pg_*``: the catalog leaves them out, and so a table detail of them is refused
+#: too (``_known`` answers only objects of the catalog; I-1 of ``stu-010-review.md``).
 _SYSTEM_SCHEMAS = frozenset({"information_schema"})
+#: L-3 of stu-010-review.md: a name missing from a catalog at least this old rebuilds it once; a younger one does not.
+REBUILD_AFTER_S = 5.0
+#: M-1 of stu-010-review.md: PostgreSQL foreign keys out of and into one table, from the catalog itself. SQLAlchemy's
+#: reflection reads the referenced schema from ``pg_get_constraintdef()``, which leaves it out for a table on the
+#: search path, so a key into ``public`` looked like one into the referencing table's own schema.
+_PG_FOREIGN_KEYS_SQL = (
+    "SELECT con.conname, sn.nspname, sc.relname, tn.nspname, tc.relname, "
+    "ARRAY(SELECT a.attname::text FROM unnest(con.conkey) WITH ORDINALITY k(n, i) "
+    "JOIN pg_catalog.pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.n ORDER BY k.i), "
+    "ARRAY(SELECT a.attname::text FROM unnest(con.confkey) WITH ORDINALITY k(n, i) "
+    "JOIN pg_catalog.pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.n ORDER BY k.i) "
+    "FROM pg_catalog.pg_constraint con "
+    "JOIN pg_catalog.pg_class sc ON sc.oid = con.conrelid "
+    "JOIN pg_catalog.pg_namespace sn ON sn.oid = sc.relnamespace "
+    "JOIN pg_catalog.pg_class tc ON tc.oid = con.confrelid "
+    "JOIN pg_catalog.pg_namespace tn ON tn.oid = tc.relnamespace "
+    "WHERE con.contype = 'f' AND ((sn.nspname = :schema AND sc.relname = :name) "
+    "OR (tn.nspname = :schema AND tc.relname = :name)) "
+    "ORDER BY sn.nspname, sc.relname, con.conname"
+)
 _ESTIMATE_SQL = (
     "SELECT c.reltuples::bigint FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE n.nspname = :schema AND c.relname = :name"
@@ -111,6 +133,27 @@ class Explorer:
     _cache: dict[str, _Cached] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
+    def __post_init__(self) -> None:
+        self.registry.on_close(self.forget)
+
+    def forget(self, connection_id: str) -> None:
+        """Drop the cached catalog of ``connection_id`` (its connection closed, or an object of it is gone)."""
+        with self._lock:
+            self._cache.pop(connection_id, None)
+
+    def _reflect(self, connection: OpenConnection, consume: Callable[[sqlalchemy.Inspector], _T]) -> _T:
+        """``connection.inspect(consume)``; an object dropped since the catalog was built is ``object_not_found``
+        and drops the cached catalog (L-1 of ``stu-010-review.md``)."""
+        try:
+            return connection.inspect(consume)
+        except Exception as exc:
+            if isinstance(exc, sqlalchemy.exc.NoSuchTableError) or isinstance(
+                getattr(exc, "original", None), sqlalchemy.exc.NoSuchTableError
+            ):
+                self.forget(connection.id)
+                raise ExplorerError("studio.object_not_found") from None
+            raise
+
     # Catalog
 
     def catalog(self, connection_id: object, *, refresh: bool = False) -> dict[str, Any]:
@@ -153,15 +196,22 @@ class Explorer:
 
     def _known(self, connection_id: object, schema: str, name: str) -> tuple[OpenConnection, str]:
         doc = self.catalog(connection_id)
+        kind = self._kind(doc, schema, name)
+        if kind is None and doc["cached"] and self.clock() - doc["built_at"] >= REBUILD_AFTER_S:
+            # Created since the catalog was built? One fresh look before refusing, at most every few seconds per
+            # connection, so that unknown names cannot keep the pool busy with rebuilds (L-3).
+            doc = self.catalog(connection_id, refresh=True)
+            kind = self._kind(doc, schema, name)
+        if kind is None:
+            raise ExplorerError("studio.object_not_found")
+        return self.registry.get(connection_id), kind
+
+    @staticmethod
+    def _kind(doc: dict[str, Any], schema: str, name: str) -> str | None:
         for item in doc["objects"]:
             if item["schema"] == schema and item["name"] == name:
-                return self.registry.get(connection_id), str(item["kind"])
-        # Created since the catalog was built? One fresh look before refusing.
-        doc = self.catalog(connection_id, refresh=True)
-        for item in doc["objects"]:
-            if item["schema"] == schema and item["name"] == name:
-                return self.registry.get(connection_id), str(item["kind"])
-        raise ExplorerError("studio.object_not_found")
+                return str(item["kind"])
+        return None
 
     # Table detail
 
@@ -170,7 +220,9 @@ class Explorer:
         if kind == "sequence":
             return {"connection_id": connection.id, "schema": schema, "name": name, "kind": kind}
         key = None if connection.engine == "sqlite" else schema
-        detail = connection.inspect(lambda found: self._table(connection, found, key, schema, name))
+        detail = self._reflect(connection, lambda found: self._table(connection, found, key, schema, name))
+        if connection.engine == "postgresql":
+            detail["foreign_keys"], detail["referenced_by"] = self._pg_foreign_keys(connection, schema, name)
         estimate = None
         if connection.engine == "postgresql" and kind in ("table", "materialized_view"):
             rows = connection.fetch(_ESTIMATE_SQL, {"schema": schema, "name": name})
@@ -199,6 +251,8 @@ class Explorer:
             for column in found.get_columns(name, schema=key)
         ]
         primary = found.get_pk_constraint(name, schema=key)
+        # PostgreSQL's keys come from _pg_foreign_keys (M-1); SQLite has one schema, so its reflection is exact.
+        sqlite = connection.engine == "sqlite"
         outgoing = [
             {
                 "name": fk.get("name"),
@@ -207,13 +261,13 @@ class Explorer:
                 "referred_table": fk["referred_table"],
                 "referred_columns": list(fk["referred_columns"]),
             }
-            for fk in found.get_foreign_keys(name, schema=key)
+            for fk in (found.get_foreign_keys(name, schema=key) if sqlite else [])
         ]
         return {
             "columns": columns,
             "primary_key": {"name": primary.get("name"), "columns": list(primary.get("constrained_columns") or [])},
             "foreign_keys": outgoing,
-            "referenced_by": self._incoming(connection, found, schema, name),
+            "referenced_by": self._incoming(connection, found, schema, name) if sqlite else [],
             "unique_constraints": [
                 {"name": u.get("name"), "columns": list(u["column_names"])}
                 for u in _optional(lambda: found.get_unique_constraints(name, schema=key))
@@ -252,6 +306,36 @@ class Explorer:
                         )
         return sorted(incoming, key=lambda item: (item["schema"], item["table"], str(item["name"])))
 
+    @staticmethod
+    def _pg_foreign_keys(
+        connection: OpenConnection, schema: str, name: str
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        outgoing: list[dict[str, Any]] = []
+        incoming: list[dict[str, Any]] = []
+        rows = connection.fetch(_PG_FOREIGN_KEYS_SQL, {"schema": schema, "name": name})
+        for key_name, from_schema, from_table, to_schema, to_table, columns, referred in rows:
+            if (from_schema, from_table) == (schema, name):
+                outgoing.append(
+                    {
+                        "name": key_name,
+                        "columns": list(columns),
+                        "referred_schema": to_schema,
+                        "referred_table": to_table,
+                        "referred_columns": list(referred),
+                    }
+                )
+            if (to_schema, to_table) == (schema, name):
+                incoming.append(
+                    {
+                        "name": key_name,
+                        "schema": from_schema,
+                        "table": from_table,
+                        "columns": list(columns),
+                        "referred_columns": list(referred),
+                    }
+                )
+        return outgoing, incoming
+
     # Engine specifics
 
     def extensions(self, connection_id: object) -> dict[str, Any]:
@@ -278,11 +362,20 @@ class Explorer:
         if connection.engine != "sqlite" or connection.database_file is None:
             raise ExplorerError("studio.explorer_engine")
         pragmas = {name: connection.fetch(f"PRAGMA {name}")[0][0] for name in _SQLITE_PRAGMAS}
-        tables = [
-            {"name": row[1], "type": row[2], "strict": bool(row[5]), "without_rowid": bool(row[4])}
-            for row in connection.fetch("PRAGMA table_list")
-            if row[0] == "main" and not str(row[1]).startswith("sqlite_")
-        ]
+        if sqlite3.sqlite_version_info >= (3, 37):
+            tables = [
+                {"name": row[1], "type": row[2], "strict": bool(row[5]), "without_rowid": bool(row[4])}
+                for row in connection.fetch("PRAGMA table_list")
+                if row[0] == "main" and not str(row[1]).startswith("sqlite_")
+            ]
+        else:  # pragma: no cover - PRAGMA table_list needs SQLite 3.37 (I-7); older ones do not know STRICT
+            tables = [
+                {"name": row[0], "type": row[1], "strict": False, "without_rowid": None}
+                for row in connection.fetch(
+                    "SELECT name, type FROM sqlite_master "
+                    "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite!_%' ESCAPE '!'"
+                )
+            ]
         info = os.stat(connection.database_file)
         return {
             "connection_id": connection.id,
