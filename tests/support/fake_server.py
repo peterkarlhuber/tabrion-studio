@@ -16,6 +16,9 @@ class Seen:
     method: str
     path: str
     headers: dict[str, str]
+    #: The client's (address, port): equal for requests on one connection (review R-4).
+    connection: tuple[str, int] = ("", 0)
+    body: object = None
 
 
 @dataclass
@@ -25,6 +28,9 @@ class FakeStudio:
     instance_id: str
     prove: Callable[[str], str | None]
     launch_url: str = ""
+    redirect: str | None = None
+    #: False: answer like an HTTP/1.0 server that closes the connection after every answer.
+    keep_alive: bool = True
     seen: list[Seen] = field(default_factory=list)
     port: int = 0
 
@@ -38,10 +44,14 @@ class FakeStudio:
 
 
 @contextlib.contextmanager
-def fake_studio(instance_id: str, prove: Callable[[str], str | None], launch_url: str = "") -> Iterator[FakeStudio]:
-    fake = FakeStudio(instance_id, prove, launch_url)
+def fake_studio(
+    instance_id: str, prove: Callable[[str], str | None], launch_url: str = "", keep_alive: bool = True
+) -> Iterator[FakeStudio]:
+    fake = FakeStudio(instance_id, prove, launch_url, keep_alive=keep_alive)
 
     class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1" if fake.keep_alive else "HTTP/1.0"
+
         def log_message(self, format: str, *args: object) -> None:
             pass
 
@@ -53,8 +63,9 @@ def fake_studio(instance_id: str, prove: Callable[[str], str | None], launch_url
             self.end_headers()
             self.wfile.write(body)
 
-        def _record(self) -> str:
-            fake.seen.append(Seen(self.command, self.path, dict(self.headers.items())))
+        def _record(self, body: object = None) -> str:
+            address = (str(self.client_address[0]), int(self.client_address[1]))
+            fake.seen.append(Seen(self.command, self.path, dict(self.headers.items()), address, body))
             return urlsplit(self.path).path
 
         def do_GET(self) -> None:
@@ -72,11 +83,15 @@ def fake_studio(instance_id: str, prove: Callable[[str], str | None], launch_url
                 self._answer(404, {"detail": "Not Found"})
 
         def do_POST(self) -> None:
-            path = self._record()
             length = int(self.headers.get("Content-Length") or 0)
-            self.rfile.read(length)
+            raw = self.rfile.read(length)
+            try:
+                body = json.loads(raw) if raw else None
+            except ValueError:
+                body = raw
+            path = self._record(body)
             if path == "/api/control/launch":
-                self._answer(200, {"url": fake.launch_url})
+                self._answer(200, {"url": fake.launch_url, "redirect": fake.redirect})
             elif path == "/api/control/shutdown":
                 self._answer(202, {"status": "stopping"})
             else:

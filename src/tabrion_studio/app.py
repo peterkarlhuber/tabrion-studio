@@ -1,13 +1,18 @@
 """The FastAPI application factory (05 section 3.1).
 
-Skeleton scope (STU-001, STU-002): ``GET /api/health``, ``GET /api/heartbeat``, the control endpoints for the process
-model and the built frontend from ``static/``.
+Routes: ``GET /api/health``, ``POST /api/session`` (launch token -> session cookie), ``GET /api/heartbeat``, the
+control endpoints of the process model, ``GET /launch`` and the built frontend from ``static/``.
 
-Only two things count as activity for the idle timeout (review F-06): a control request with a valid token and a
-heartbeat from a page of this origin (``Sec-Fetch-Site: same-origin``). Health checks, static files, failed control
-requests and requests from other sites never postpone the idle exit.
+Every request first passes :class:`tabrion_studio.security.access.AccessMiddleware` (STU-003): the Host allowlist,
+the Origin and fetch-metadata rules, JSON-only bodies, the session cookie plus CSRF header on every API route except
+the health check, the launch exchange and the control endpoints, and the security headers (CSP, ``no-store``) on
+every answer.
 
-Session, Host/Origin checks, CSP and ``no-store`` headers arrive with STU-003; problem JSON and logging with STU-004.
+Only two things count as activity for the idle timeout (review F-06): a control request with a valid token and any
+request with a valid session (the open tab's heartbeat among them). Health checks, static files, failed requests and
+requests from other sites never postpone the idle exit.
+
+Problem JSON and logging arrive with STU-004.
 """
 
 from __future__ import annotations
@@ -15,19 +20,26 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Callable
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hmac
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from tabrion_studio._version import __version__
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
+from tabrion_studio.security.access import AccessMiddleware
+from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
+from tabrion_studio.security.sessions import Sessions, cookie_name
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+#: How often expired launch tokens and their redirect files are removed.
+SWEEP_SECONDS = 5.0
+_MAX_BODY = 4096
 
 _NOT_BUILT = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Tabrion Studio</title></head>
@@ -44,26 +56,42 @@ class Runtime:
     instance_id: str
     control_token: str
     idle: IdleMonitor
-    launch_url: Callable[[], str]
+    port: int
+    launches: LaunchTokens
     request_shutdown: Callable[[str], None]
+    sessions: Sessions = field(default_factory=Sessions)
 
 
-def _no_store(response: Response) -> Response:
-    response.headers["Cache-Control"] = "no-store"
-    return response
+def _problem(status: int, code: str) -> Response:
+    return JSONResponse({"code": code}, status_code=status)
+
+
+async def _json_body(request: Request) -> dict[str, object] | None:
+    raw = await request.body()
+    if len(raw) > _MAX_BODY:
+        return None
+    if not raw:
+        return {}
+    try:
+        doc = json.loads(raw)
+    except ValueError:
+        return None
+    return doc if isinstance(doc, dict) else None
 
 
 def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        watcher = asyncio.create_task(_watch_idle(runtime)) if runtime.idle.enabled else None
+        tasks = [asyncio.create_task(_sweep_launches(runtime))]
+        if runtime.idle.enabled:
+            tasks.append(asyncio.create_task(_watch_idle(runtime)))
         try:
             yield
         finally:
-            if watcher is not None:
-                watcher.cancel()
+            for task in tasks:
+                task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
-                    await watcher
+                    await task
 
     app = FastAPI(
         title="Tabrion Studio",
@@ -74,26 +102,41 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
     )
+    app.add_middleware(AccessMiddleware, port=runtime.port, sessions=runtime.sessions, on_activity=runtime.idle.touch)
 
     @app.get("/api/health")
     async def get_health() -> Response:
-        return _no_store(JSONResponse({"status": "ok", "version": __version__, "instance": runtime.instance_id}))
+        return JSONResponse({"status": "ok", "version": __version__, "instance": runtime.instance_id})
+
+    @app.post("/api/session", include_in_schema=False)
+    async def post_session(request: Request) -> Response:
+        # The launch page sends the one-time token from its URL fragment (03 section 4.1, T-03).
+        doc = await _json_body(request)
+        if doc is None:
+            return _problem(400, "access.bad_request")
+        result = runtime.launches.redeem(doc.get("token"))
+        if result != "ok":
+            return _problem(401, f"access.launch_{result}")
+        session_id, csrf = runtime.sessions.create()
+        runtime.idle.touch()
+        response = JSONResponse({"csrf": csrf})
+        response.set_cookie(
+            cookie_name(runtime.port), session_id, path="/", httponly=True, samesite="strict", secure=False
+        )
+        return response
 
     @app.get("/api/heartbeat", include_in_schema=False)
-    async def get_heartbeat(request: Request) -> Response:
-        # A browser sets Sec-Fetch-Site itself and a page cannot forge it, so a page of another site cannot keep
-        # Studio alive. Tools without the header do not count either.
-        if request.headers.get("sec-fetch-site") == "same-origin":
-            runtime.idle.touch()
-        return _no_store(Response(status_code=204))
+    async def get_heartbeat() -> Response:
+        # Reached only with a valid session and CSRF header; the middleware counts it as activity (F-06, R-5).
+        return Response(status_code=204)
 
     @app.get("/api/control/proof", include_in_schema=False)
     async def get_control_proof(nonce: str = "") -> Response:
         # Proves to a second `tabrion-studio` start that this server knows the control token, before that client
         # sends the token (review F-01). The answer depends on the client's random nonce, so it cannot be replayed.
         if NONCE_PATTERN.fullmatch(nonce) is None:
-            return _no_store(JSONResponse({"code": "studio.bad_nonce"}, status_code=400))
-        return _no_store(JSONResponse({"proof": control_proof(runtime.control_token, nonce)}))
+            return _problem(400, "studio.bad_nonce")
+        return JSONResponse({"proof": control_proof(runtime.control_token, nonce)})
 
     @app.post("/api/control/{action}", include_in_schema=False)
     async def post_control(action: str, request: Request) -> Response:
@@ -102,24 +145,43 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
             token.encode("utf-8"), runtime.control_token.encode("utf-8")
         )
         if not authorized:
-            return _no_store(JSONResponse({"code": "access.control_denied"}, status_code=401))
+            return _problem(401, "access.control_denied")
         runtime.idle.touch()
         if action == "launch":
-            return _no_store(JSONResponse({"url": runtime.launch_url()}))
+            doc = await _json_body(request)
+            if doc is None:
+                return _problem(400, "access.bad_request")
+            launch = runtime.launches.issue(redirect=doc.get("redirect") is True)
+            redirect = None if launch.redirect is None else str(launch.redirect)
+            return JSONResponse({"url": launch.url, "redirect": redirect})
         if action == "shutdown":
             runtime.request_shutdown("stop requested")
-            return _no_store(JSONResponse({"status": "stopping"}, status_code=202))
-        return _no_store(JSONResponse({"code": "studio.not_found"}, status_code=404))
+            return JSONResponse({"status": "stopping"}, status_code=202)
+        return _problem(404, "studio.not_found")
 
-    if (static_dir / "index.html").is_file():
+    index = static_dir / "index.html"
+    if index.is_file():
+
+        @app.get(LAUNCH_PATH, include_in_schema=False)
+        async def launch_page() -> Response:
+            # The single-page app reads the token from the fragment and exchanges it (frontend/src/session.ts).
+            return FileResponse(index, media_type="text/html")
+
         app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
     else:
 
         @app.get("/", include_in_schema=False)
+        @app.get(LAUNCH_PATH, include_in_schema=False)
         async def not_built() -> Response:
             return HTMLResponse(_NOT_BUILT)
 
     return app
+
+
+async def _sweep_launches(runtime: Runtime) -> None:
+    while True:
+        await asyncio.sleep(SWEEP_SECONDS)
+        runtime.launches.sweep()
 
 
 async def _watch_idle(runtime: Runtime) -> None:

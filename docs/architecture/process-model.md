@@ -1,7 +1,7 @@
 # Process model (STU-002)
 
 ```
-tabrion-studio [PROJECT] [--port N] [--no-browser] [--idle-timeout MINUTES]
+tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]
 tabrion-studio --stop [PROJECT]
 ```
 
@@ -16,13 +16,15 @@ tabrion-studio --stop [PROJECT]
    that file may name a port that another program now uses. It then listens on `127.0.0.1` (a free port chosen by
    the OS, or `--port N`) and binds, without listening, `[::1]` on the same port (see *Loopback addresses*). It runs
    Uvicorn with one worker, and once it accepts connections writes `<state_dir>/studio-<key>.json` (mode 0600,
-   written atomically) with PID, port, instance ID and a random control token. Then it prints the URL and opens the
-   system browser (unless `--no-browser`).
+   written atomically) with PID, port, instance ID and a random control token. Then it prints the URL
+   `http://127.0.0.1:<port>/` (without a token) and opens the system browser through a private redirect file that
+   carries a one-time launch token (unless `--no-browser`; see [Access protection](access-protection.md)).
+   `--print-url` prints a one-time sign-in link instead.
 4. **Lock held by another process:** a server for this folder runs already. The command reads the info file, checks
    that `GET /api/health` on that port answers with the same instance ID, and makes the server prove that it knows
-   the control token (see *Control endpoint*). Only then does it ask for a launch URL over
-   `POST /api/control/launch`. It opens that URL only if it starts with `http://127.0.0.1:<port>/` of that instance.
-   It never starts a second server.
+   the control token (see *Control endpoint*). Only then does it ask for a launch over `POST /api/control/launch`.
+   It accepts the launch URL only if it is `http://127.0.0.1:<port>/launch#<token>` of that instance, and opens the
+   redirect file only if it is this instance's private file in the state directory. It never starts a second server.
 
 The state directory is `platformdirs.user_state_dir("tabrion-studio")` (override: `--state-dir` or
 `TABRION_STUDIO_STATE_DIR`). It is created with mode 0700 and files with mode 0600, and symlinks are refused. Studio
@@ -40,8 +42,12 @@ refuses an existing directory, and never silently repairs it, in these cases:
 
 `POST /api/control/{launch,shutdown}` needs `Authorization: Bearer <control token>`. The token is only in the 0600
 info file. A web page in the browser cannot read that file and cannot send the header cross-origin without a CORS
-preflight, which the server never grants. The CLI's control client never uses an HTTP proxy. With STU-003 the launch
-URL carries the one-time launch token in its fragment (STU-ADR-0002); the control channel stays as it is.
+preflight, which the server never grants, and the control endpoints refuse every request that carries `Origin` or a
+`Sec-Fetch-*` header (review F-05), so a browser cannot drive them even with the token. The Host allowlist applies to
+them as to every route. The CLI's control client never uses an HTTP proxy.
+
+`POST /api/control/launch` with `{"redirect": true}` issues a one-time launch token and writes its redirect file;
+the answer names the launch URL and the file. With `{"redirect": false}` (for `--print-url`) no file is written.
 
 **Server proof (review F-01).** Between a crash and the next start, or in the moment of a shutdown, an info file can
 name a port that another local program has taken. That program can copy the instance ID into its health answer. So
@@ -53,8 +59,11 @@ both sides as well:
 
 - the info file is removed as soon as the lock is taken;
 - the server removes it at the start of its shutdown, before Uvicorn closes the socket, and again on every way out;
-- the client opens a launch URL only if it starts with `http://127.0.0.1:<port>/` of that instance and contains no
-  whitespace or backslash.
+- the client accepts a launch URL only if it is `http://127.0.0.1:<port>/launch#<token>` of that instance, and opens
+  only this instance's private redirect file with exactly that URL in it;
+- the proof and the request with the token use **one** keep-alive connection (review R-4). An established TCP
+  connection cannot be taken over, so even if the server stops between the two requests and another program binds
+  the port, the token is not sent: the client never reconnects in between.
 
 ## Loopback addresses (review F-08)
 
@@ -63,8 +72,9 @@ listening): no other program can then listen there while Studio runs, and a conn
 browser that tries `localhost` falls back to `127.0.0.1`. With a free port, Studio picks another one if `[::1]` has
 that port in use; with `--port N`, it refuses to start. On a host without IPv6 loopback, nothing can listen on
 `[::1]` anyway, and the IPv4 listener is used alone. On Windows both sockets use `SO_EXCLUSIVEADDRUSE`. Studio itself
-prints and opens only `http://127.0.0.1:<port>/` URLs, never `localhost` ones; the Host allowlist of STU-003 decides
-whether `localhost` is accepted at all (see docs/TODO.md).
+prints and opens only `http://127.0.0.1:<port>/` URLs, never `localhost` ones, and the Host allowlist of STU-003
+answers `127.0.0.1:<port>` only: `localhost:<port>` and `[::1]:<port>` are refused, whether or not the `[::1]` guard
+could be bound.
 
 ## Stopping
 
@@ -72,11 +82,11 @@ whether `localhost` is accepted at all (see docs/TODO.md).
 |---|---|
 | Ctrl+C (SIGINT), SIGTERM, SIGHUP (terminal closed) on POSIX | graceful Uvicorn shutdown, exit code 0 |
 | Ctrl+Break, and closing the console window (CTRL_CLOSE), on Windows | both arrive as SIGBREAK: graceful shutdown, exit code 0 |
-| `tabrion-studio --stop [PROJECT]` | `POST /api/control/shutdown` (after the server proof), then waits until the lock is free |
+| `tabrion-studio --stop [PROJECT]` | `POST /api/control/shutdown` (after the server proof, on the same connection), then waits until the lock is free |
 | idle timeout (default 30 min, `--idle-timeout 0` = off) | see *Idle timeout* |
 
-The server removes its info file (only if it is still its own) as soon as the shutdown starts and again on every way
-out, then releases the lock (review F-04). Closing database engines and rolling back open transactions join this path
+The server removes its info file (only if it is still its own) and invalidates its launch tokens, deleting their
+redirect files, as soon as the shutdown starts and again on every way out, then releases the lock (review F-04). Closing database engines and rolling back open transactions join this path
 with STU-009.
 
 **Residual risk:** SIGKILL, a crash, a power cut or Windows ending a console process that does not finish within
@@ -84,18 +94,17 @@ its CTRL_CLOSE grace period (about 5 s) leave the info file behind. Its token is
 file as soon as it takes the lock; until then, the server proof keeps any program on that port from receiving a
 token.
 
-## Idle timeout (review F-06)
+## Idle timeout (review F-06, R-5)
 
 Only two kinds of request count as activity:
 
 - an authenticated control request (valid Bearer token);
-- `GET /api/heartbeat` with `Sec-Fetch-Site: same-origin`. A browser sets that header itself, and a page cannot
-  forge it, so only a page of Studio's own origin keeps Studio alive. The open tab sends a heartbeat at once and then
-  every 60 s; the SSE heartbeat of STU-011 replaces it.
+- any request with a valid session: cookie and CSRF header (STU-003). The open tab sends `GET /api/heartbeat` at
+  once and then every 60 s; the SSE heartbeat of STU-011 replaces it.
 
-Health checks, static files, failed control requests, heartbeats from other sites (`cross-site`, `same-site`) and
-requests without the header (other local programs) never postpone the idle exit. Once STU-003 exists, requests with
-a valid session count as well.
+Health checks, static files, refused requests (no session, a foreign Host or Origin, a cross-site request) and
+requests of other local programs never postpone the idle exit. A forged `Sec-Fetch-Site` header no longer helps (R-5):
+the heartbeat needs the session, and the Host allowlist keeps DNS-rebinding pages out.
 
 ## Start time
 
@@ -105,7 +114,7 @@ running instance does not load it. The process tests measure from spawning the p
 
 ## Room for later work
 
-The app factory (`tabrion_studio.app.create_app`) is where the security middleware of STU-003, the problem-JSON
-handlers of STU-004 and the API routers (`tabrion_studio.api` → `services` → `profiles`/`security`, 05 section 3.2)
+The app factory (`tabrion_studio.app.create_app`) is where the security middleware of STU-003 (in place), the
+problem-JSON handlers of STU-004 and the API routers (`tabrion_studio.api` → `services` → `profiles`/`security`, 05 section 3.2)
 plug in. Write paths, including the later Studio 1.1 Schema Designer (change request 14 section 3.5), sit behind a
 server-side flag (STU-ADR-0003); nothing in the process model assumes a read-only server.

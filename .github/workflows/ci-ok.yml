@@ -10,9 +10,10 @@ name: ci-ok
 # (.github/scripts/ci_ok_status.py, same pattern as tabrion): success for OK, pending for PENDING, failure for NOT OK,
 # error for no verdict. Branch protection can require that status.
 #
-# Review F-03: the same step reports NOT OK when the pull request changes .github/workflows/** or .github/scripts/**
-# and does not carry the label "workflow-change-reviewed" (only writers can set labels; the owner or an independent
-# review sets it, then re-runs this workflow). Posting is retried with backoff and fails this job loudly (F-11).
+# Review F-03, R-2, R-3: the same step reports NOT OK when the pull request changes anything under .github/ (except
+# the issue and pull request templates) and does not carry the label "workflow-change-reviewed" set after its latest
+# push (only writers can set labels; the owner or an independent review sets it, then re-runs this workflow). The
+# status description names this run's ID (R-1). Posting is retried with backoff and fails this job loudly (F-11).
 #
 # Why workflow_run and not pull_request: GitHub always runs a workflow_run workflow from the DEFAULT branch, so a pull
 # request cannot change this file, the scripts or the manifest that judge it (review F1, F2). Each completion of a
@@ -54,6 +55,8 @@ jobs:
       statuses: write
       # Reading the pull request's changed files and labels for the workflow-change gate (F-03).
       pull-requests: read
+      # Reading when the label was set (issue events), to compare it with the latest push (R-2).
+      issues: read
     steps:
       # The default branch's commit that this workflow_run event runs on (github.sha); never the pull request's code.
       - name: Check out the default branch's .github

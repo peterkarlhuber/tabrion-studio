@@ -7,7 +7,13 @@ SIGHUP (the terminal closed) on POSIX, CTRL_BREAK and CTRL_CLOSE on Windows, ``t
 timeout. The info file is removed as soon as the shutdown starts and again on every way out (review F-04).
 
 It also binds, without listening, ``[::1]`` on the same port (review F-08): no other program can then serve
-``http://localhost:<port>/`` over IPv6 while Studio runs. Studio itself never prints or opens a ``localhost`` URL.
+``http://localhost:<port>/`` over IPv6 while Studio runs. Studio itself never prints or opens a ``localhost`` URL,
+and the Host allowlist (:mod:`tabrion_studio.security.access`) answers ``127.0.0.1:<port>`` only.
+
+The browser is opened with the ``file://`` path of a 0600 redirect file that holds the one-time launch URL, never
+with the URL itself, so no process list shows the token (review F-02, :mod:`tabrion_studio.security.launch`).
+``--print-url`` prints a launch URL instead. Redirect files are deleted when their token is used or expires, when
+the server stops and, left behind by a crash, when the next server for the folder starts.
 """
 
 from __future__ import annotations
@@ -40,6 +46,9 @@ from tabrion_studio.instance import (
     remove_info_if_ours,
     write_info,
 )
+from tabrion_studio.paths import UnsafePathError, remove_file
+from tabrion_studio.security.access import loopback_origin
+from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 
 
 class PortUnavailableError(RuntimeError):
@@ -53,6 +62,7 @@ class ServeOptions:
     port: int = 0
     idle_timeout_seconds: float = 30 * 60
     open_browser: Callable[[str], None] | None = None
+    print_url: bool = False
     started: float = field(default_factory=time.perf_counter)
 
 
@@ -195,9 +205,19 @@ def bind_loopback(port: int) -> LoopbackSockets:
     )
 
 
+def remove_redirect_files(paths: InstancePaths) -> None:
+    """Delete the redirect files of this project's instance (left behind by a crash; the lock is held)."""
+    pattern = redirect_file_pattern(paths.info.stem)
+    with contextlib.suppress(OSError):
+        for leftover in paths.info.parent.iterdir():
+            if pattern.fullmatch(leftover.name):
+                remove_file(leftover)
+
+
 def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     """Run the server for ``options.project`` while holding ``lock``; returns the exit code."""
     paths = InstancePaths.for_project(options.state_dir, options.project)
+    remove_redirect_files(paths)
     sockets = bind_loopback(options.port)
     port = sockets.port
     info = InstanceInfo(
@@ -210,6 +230,9 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         started_at=time.time(),
     )
     server: _StudioServer | None = None
+    # An absolute folder: the CLI of a second start accepts only absolute redirect file paths.
+    redirect_dir = Path(os.path.abspath(paths.info.parent))
+    launches = LaunchTokens(loopback_origin(port), redirect_dir=redirect_dir, prefix=paths.info.stem)
 
     def request_shutdown(reason: str) -> None:
         if server is not None:
@@ -220,8 +243,8 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),
-        # STU-003 adds the one-time launch token in the URL fragment.
-        launch_url=lambda: info.url,
+        port=port,
+        launches=launches,
         request_shutdown=request_shutdown,
     )
 
@@ -230,16 +253,32 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         elapsed = time.perf_counter() - options.started
         print(f"Tabrion Studio {__version__} is running at {info.url} (ready in {elapsed:.2f} s)", file=out)
         print(f"Project: {options.project}", file=out)
+        if options.print_url:
+            # Explicit opt-in (--print-url): the one-time link is now in the terminal and its scrollback.
+            link = launches.issue(redirect=False).url
+            print(f"One-time sign-in link (valid for {launches.ttl:g} s, do not share): {link}", file=out)
         print("Press Ctrl+C to stop.", file=out, flush=True)
         if options.open_browser is not None:
-            threading.Thread(target=options.open_browser, args=(info.url,), daemon=True).start()
+            try:
+                redirect = launches.issue(redirect=True).redirect
+            except (OSError, UnsafePathError) as exc:
+                print(f"Cannot open the browser ({exc}); run tabrion-studio again or use --print-url.", file=out)
+                return
+            if redirect is not None:
+                uri = redirect.resolve().as_uri()
+                threading.Thread(target=options.open_browser, args=(uri,), daemon=True).start()
+
+    def on_stopping() -> None:
+        # First withdraw the info file and the launch tokens, then Uvicorn closes the sockets (review F-01).
+        remove_info_if_ours(paths, info.instance_id)
+        launches.close()
 
     config = uvicorn.Config(
         create_app(runtime),
         log_level="warning",
         # 03 section 4.5: no access log (paths carry IDs); a request log without query strings comes with STU-004.
         access_log=False,
-        # Forwarded headers are never trusted (T-01).
+        # Forwarded headers are never trusted (T-01); the access middleware refuses requests that carry them.
         proxy_headers=False,
         server_header=False,
         lifespan="on",
@@ -249,10 +288,11 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         workers=1,
         timeout_graceful_shutdown=5,
     )
-    server = _StudioServer(config, on_ready, lambda: remove_info_if_ours(paths, info.instance_id))
+    server = _StudioServer(config, on_ready, on_stopping)
     try:
         server.run(sockets=[sockets.listener])
     finally:
+        launches.close()
         remove_info_if_ours(paths, info.instance_id)
         sockets.close()
         lock.release()

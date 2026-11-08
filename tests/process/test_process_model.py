@@ -11,7 +11,8 @@ import time
 import pytest
 
 from tabrion_studio.instance import InstanceInfo, InstanceLock, InstancePaths
-from tests.support.studio import get, get_json, heartbeat, run_cli, start_studio
+from tests.support.session import heartbeat, sign_in
+from tests.support.studio import get, get_json, run_cli, start_studio
 
 pytestmark = pytest.mark.process
 
@@ -140,16 +141,17 @@ def test_idle_exit(project: Path, state_dir: Path) -> None:
 def test_activity_postpones_the_idle_exit(project: Path, state_dir: Path) -> None:
     with start_studio(project, state_dir, "--idle-timeout", "0.05") as studio:
         info, _ = studio.wait_ready()
+        session = sign_in(info)
         until = time.monotonic() + 5
         while time.monotonic() < until:  # a heartbeat every second, as an open tab does every minute
-            assert heartbeat(info.url) == 204
+            assert heartbeat(session) == 204
             assert studio.process.poll() is None
             time.sleep(1)
         assert studio.wait_exit(timeout=30) == 0
 
 
 def test_health_checks_do_not_postpone_the_idle_exit(project: Path, state_dir: Path) -> None:
-    # Review F-06: only heartbeats of a page of this origin and authenticated control requests count as activity.
+    # Review F-06: only requests with a valid session and authenticated control requests count as activity.
     with start_studio(project, state_dir, "--idle-timeout", "0.05") as studio:
         info, _ = studio.wait_ready()
         started = time.monotonic()

@@ -49,15 +49,34 @@ class CombinedState(unittest.TestCase):
         self.assertLessEqual(len(cs.combined_state(report)[1]), cs.DESCRIPTION_MAX)
 
 
-class FakeHttp:
-    """A fake GitHub API: GET answers from ``pages``, POST records the body and answers from ``post_codes``."""
+PUSHED = "2026-01-01T00:00:00Z"
+LABELED = "2026-01-02T00:00:00Z"
 
-    def __init__(self, files=None, labels=(), commit_pulls=None, post_codes=None, fail_get=False) -> None:
+
+def labeled(at: str = LABELED, name: str = cs.REVIEWED_LABEL, login: str = "owner") -> dict:
+    return {"event": "labeled", "label": {"name": name}, "created_at": at, "actor": {"login": login}}
+
+
+class FakeHttp:
+    """A fake GitHub API: GET answers from the fields below, POST records the body and answers from ``post_codes``."""
+
+    def __init__(
+        self,
+        files=None,
+        labels=(),
+        commit_pulls=None,
+        post_codes=None,
+        fail_get=False,
+        events=None,
+        runs=None,
+    ) -> None:
         self.files = files if files is not None else [{"filename": "src/app.py"}]
         self.labels = list(labels)
         self.commit_pulls = commit_pulls
         self.post_codes = list(post_codes or [201])
         self.fail_get = fail_get
+        self.events = events if events is not None else [labeled()]
+        self.runs = runs if runs is not None else [{"created_at": PUSHED}]
         self.gets: list[str] = []
         self.posts: list[tuple[str, dict]] = []
 
@@ -67,9 +86,13 @@ class FakeHttp:
             raise cs.ApiError("boom")
         if "/commits/" in path:
             return self.commit_pulls or []
+        if "/actions/runs?" in path:
+            return {"total_count": len(self.runs), "workflow_runs": self.runs}
+        page = int(path.rsplit("page=", 1)[1]) if "page=" in path else 1
         if "/files?" in path:
-            page = int(path.rsplit("page=", 1)[1])
             return self.files[(page - 1) * 100 : page * 100]
+        if "/events?" in path:
+            return self.events[(page - 1) * 100 : page * 100]
         return {"number": 7, "labels": [{"name": n} for n in self.labels]}
 
     def post(self, path: str, body: dict) -> int:
@@ -120,6 +143,14 @@ class Main(unittest.TestCase):
         self.assertEqual(path, f"/repos/owner/repo/statuses/{SHA}")
         self.assertEqual((body["state"], body["context"]), ("success", "ci-ok"))
         self.assertTrue(body["target_url"].endswith("/owner/repo/actions/runs/42"))
+        # Review R-1: the description names the ci-ok run too, so the merging party can check it.
+        self.assertTrue(body["description"].endswith(" [ci-ok run 42]"))
+
+    def test_run_id_survives_a_long_description(self) -> None:
+        text = cs.with_run_id("x" * 300, "123456789012")
+        self.assertEqual(len(text), cs.DESCRIPTION_MAX)
+        self.assertTrue(text.endswith(" [ci-ok run 123456789012]"))
+        self.assertEqual(cs.with_run_id("abc", ""), "abc")
 
     def test_missing_report_is_an_error_status(self) -> None:
         _, http, _ = self.run_main("pull_request", None)
@@ -136,13 +167,21 @@ class Main(unittest.TestCase):
 
 
 class WorkflowGate(unittest.TestCase):
-    """Review F-03: a change to .github/workflows or .github/scripts needs the label workflow-change-reviewed."""
+    """Review F-03, R-3: a change anywhere under .github/ (but the templates) needs the label."""
 
     run_main = Main.run_main
     last_body = Main.last_body
 
-    def test_workflow_change_without_label_is_not_ok(self) -> None:
-        for name in (".github/workflows/ci.yml", ".github/scripts/ci_ok.py"):
+    def test_change_under_github_without_label_is_not_ok(self) -> None:
+        for name in (
+            ".github/workflows/ci.yml",
+            ".github/scripts/ci_ok.py",
+            ".github/actions/setup/action.yml",  # R-3: local composite actions that ci.yml would run
+            ".github/ci-manifest.json",
+            ".github/CODEOWNERS",
+            ".github/dependabot.yml",
+            ".github/new-file.sh",
+        ):
             http = FakeHttp(files=[{"filename": "README.md"}, {"filename": name}])
             code, http, _ = self.run_main("pull_request", ["OK"], http)
             body = self.last_body(http)
@@ -151,6 +190,24 @@ class WorkflowGate(unittest.TestCase):
             self.assertIn("NOT OK", body["description"])
             self.assertIn(cs.REVIEWED_LABEL, body["description"])
             self.assertLessEqual(len(body["description"]), cs.DESCRIPTION_MAX)
+
+    def test_templates_need_no_label(self) -> None:
+        files = [
+            {"filename": ".github/ISSUE_TEMPLATE/bug_report.yml"},
+            {"filename": ".github/pull_request_template.md"},
+            {"filename": ".github/PULL_REQUEST_TEMPLATE/other.md"},
+            {"filename": "src/x.py"},
+            {"filename": "github/workflows/not-dot-github.yml"},
+        ]
+        _, http, _ = self.run_main("pull_request", ["OK"], FakeHttp(files=files))
+        self.assertEqual(self.last_body(http)["state"], "success")
+        self.assertFalse(any(g.endswith("/pulls/7") for g in http.gets))  # labels only read when needed
+
+    def test_is_guarded(self) -> None:
+        self.assertTrue(cs.is_guarded(".github/ISSUE_TEMPLATE.md"))  # not the folder
+        self.assertTrue(cs.is_guarded(".github/pull_request_template.md.sh"))
+        self.assertFalse(cs.is_guarded(".githubx/workflows/a.yml"))
+        self.assertFalse(cs.is_guarded("docs/.github/workflows/a.yml"))
 
     def test_renamed_away_from_a_guarded_folder_counts(self) -> None:
         files = [{"filename": "docs/old.yml", "previous_filename": ".github/workflows/ci-ok.yml"}]
@@ -173,12 +230,6 @@ class WorkflowGate(unittest.TestCase):
         _, http, _ = self.run_main("pull_request", ["NOT OK"], http)
         self.assertEqual(self.last_body(http)["state"], "failure")
 
-    def test_other_files_need_no_label(self) -> None:
-        http = FakeHttp(files=[{"filename": ".github/dependabot.yml"}, {"filename": "src/x.py"}])
-        _, http, _ = self.run_main("pull_request", ["OK"], http)
-        self.assertEqual(self.last_body(http)["state"], "success")
-        self.assertFalse(any(g.endswith("/pulls/7") for g in http.gets))  # labels only read when needed
-
     def test_fork_pull_requests_are_found_via_the_commit(self) -> None:
         pulls = [
             {"number": 9, "state": "open", "head": {"sha": SHA}},
@@ -196,6 +247,73 @@ class WorkflowGate(unittest.TestCase):
     def test_api_error_fails_closed(self) -> None:
         _, http, _ = self.run_main("pull_request", ["OK"], FakeHttp(fail_get=True))
         self.assertEqual(self.last_body(http)["state"], "error")
+
+
+class LabelAfterPush(unittest.TestCase):
+    """Review R-2: the label counts only if it was set after the latest push to the pull request."""
+
+    run_main = Main.run_main
+    last_body = Main.last_body
+
+    def state(self, **kwargs: object) -> tuple[str, str]:
+        http = FakeHttp(files=[{"filename": ".github/workflows/ci.yml"}], labels=[cs.REVIEWED_LABEL], **kwargs)
+        _, http, _ = self.run_main("pull_request", ["OK"], http)
+        body = self.last_body(http)
+        return body["state"], body["description"]
+
+    def test_label_after_the_push_counts(self) -> None:
+        self.assertEqual(self.state()[0], "success")
+
+    def test_label_before_the_latest_push_is_not_ok(self) -> None:
+        # The author pushed another workflow change after the review: a new CI run was created after the label.
+        state, description = self.state(runs=[{"created_at": PUSHED}, {"created_at": "2026-01-03T00:00:00Z"}])
+        self.assertEqual(state, "failure")
+        self.assertIn("predates the latest push", description)
+
+    def test_label_at_the_push_time_is_not_ok(self) -> None:
+        self.assertEqual(self.state(runs=[{"created_at": LABELED}])[0], "failure")
+
+    def test_force_push_after_the_label_is_not_ok(self) -> None:
+        events = [labeled(), {"event": "head_ref_force_pushed", "created_at": "2026-01-03T00:00:00Z"}]
+        self.assertEqual(self.state(events=events)[0], "failure")
+
+    def test_workflow_run_of_the_event_counts_as_a_push(self) -> None:
+        http = FakeHttp(files=[{"filename": ".github/workflows/ci.yml"}], labels=[cs.REVIEWED_LABEL])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "event.json")
+            run = {"event": "pull_request", "head_sha": SHA, "pull_requests": PR7, "created_at": "2026-02-01T00:00:00Z"}
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump({"workflow_run": run}, fh)
+            env = {"GITHUB_REPOSITORY": "owner/repo", "GITHUB_RUN_ID": "1", "GITHUB_EVENT_PATH": path}
+            cs.main(["--report", _report(tmp, ["OK"])], env=env, http=http, sleep=lambda s: None)
+        self.assertEqual(http.posts[-1][1]["state"], "failure")
+
+    def test_relabeling_after_the_push_counts(self) -> None:
+        events = [labeled("2026-01-02T00:00:00Z"), {"event": "unlabeled"}, labeled("2026-01-04T00:00:00Z")]
+        self.assertEqual(self.state(events=events, runs=[{"created_at": "2026-01-03T00:00:00Z"}])[0], "success")
+
+    def test_other_labels_do_not_count(self) -> None:
+        events = [labeled(name="something-else"), labeled("2025-12-01T00:00:00Z")]
+        self.assertEqual(self.state(events=events)[0], "failure")
+
+    def test_label_without_an_event_is_not_ok(self) -> None:
+        self.assertEqual(self.state(events=[])[0], "failure")
+
+    def test_label_events_on_a_later_page_are_seen(self) -> None:
+        events = [{"event": "commented", "created_at": PUSHED}] * 150 + [labeled()]
+        self.assertEqual(self.state(events=events)[0], "success")
+
+    def test_unknown_push_time_fails_closed(self) -> None:
+        self.assertEqual(self.state(runs=[])[0], "error")
+
+    def test_malformed_times_fail_closed(self) -> None:
+        for bad in ("", "yesterday", "2026-01-02T00:00:00", None, 5):
+            self.assertEqual(self.state(events=[labeled(at=bad)])[0], "error", bad)  # type: ignore[arg-type]
+            self.assertEqual(self.state(runs=[{"created_at": bad}])[0], "error", bad)
+
+    def test_parse_time(self) -> None:
+        self.assertLess(cs.parse_time("2026-01-01T00:00:00Z"), cs.parse_time("2026-01-01T00:00:01+00:00"))
+        self.assertEqual(cs.parse_time("2026-01-01T01:00:00+01:00"), cs.parse_time("2026-01-01T00:00:00Z"))
 
 
 class Posting(unittest.TestCase):

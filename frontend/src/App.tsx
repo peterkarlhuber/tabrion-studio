@@ -1,11 +1,26 @@
 import { useEffect, useState } from 'react';
 
 import { fetchHealth, type Health } from './heartbeat';
+import type { SessionState } from './session';
 
 type State = { kind: 'loading' } | { kind: 'ok'; health: Health } | { kind: 'offline' };
 
+const SESSION_TEXT: Record<Exclude<SessionState, 'ok'>, string> = {
+  used: 'This sign-in link was already used. Run tabrion-studio again to open Studio.',
+  expired: 'This sign-in link has expired. Run tabrion-studio again to open Studio.',
+  invalid: 'This sign-in link is not valid. Run tabrion-studio again to open Studio.',
+  none: 'Not signed in. Run tabrion-studio in your project folder to open Studio.',
+  offline: 'The local server does not answer.',
+};
+
 /** Placeholder page of the skeleton (STU-001). The app shell, design system and i18n arrive with STU-005. */
-export function App({ fetcher = fetch }: { fetcher?: typeof fetch }) {
+export function App({
+  fetcher = fetch,
+  session = 'ok',
+}: {
+  fetcher?: typeof fetch;
+  session?: SessionState;
+}) {
   const [state, setState] = useState<State>({ kind: 'loading' });
 
   useEffect(() => {
@@ -32,6 +47,11 @@ export function App({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         {state.kind === 'ok' && `Local server ${state.health.version}: ${state.health.status}`}
         {state.kind === 'offline' && 'The local server does not answer.'}
       </p>
+      {session !== 'ok' && session !== 'offline' && (
+        <p role="alert" data-testid="session-status">
+          {SESSION_TEXT[session]}
+        </p>
+      )}
     </main>
   );
 }

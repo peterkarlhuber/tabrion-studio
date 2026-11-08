@@ -94,9 +94,20 @@ def test_health_of_a_closed_port_is_none() -> None:
     assert instance.health(port, timeout=0.5) is None
 
 
-def test_control_requests_never_leave_loopback() -> None:
-    with pytest.raises(instance.ControlError, match="loopback"):
-        instance._request("http://example.com:80/api/health")
+def test_control_requests_never_use_a_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The control client connects straight to 127.0.0.1; proxy settings in the environment are ignored.
+    from tests.support.fake_server import fake_studio
+
+    for name in ("HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"):
+        monkeypatch.setenv(name, "http://127.0.0.1:9")
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    monkeypatch.delenv("no_proxy", raising=False)
+    token = "t0ken"
+    with fake_studio("abc", lambda nonce: instance.control_proof(token, nonce)) as fake:
+        info = instance.InstanceInfo(1, fake.port, "/p", "abc", token, "0", 1.0)
+        assert instance.health(fake.port) == {"status": "ok", "version": "0.1.0.dev0", "instance": "abc"}
+        assert instance.control(info, "shutdown") == {"status": "stopping"}
+        assert {r.headers.get("Host") for r in fake.seen} == {f"127.0.0.1:{fake.port}"}
 
 
 def test_control_against_nothing_raises() -> None:

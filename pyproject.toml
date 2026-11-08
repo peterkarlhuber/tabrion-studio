@@ -135,8 +135,9 @@ mypy_path = "src"
 warn_unused_ignores = true
 
 # Import contracts (AC-1 = QA-16, 05 section 4.2, edge list K-33): tabrion-studio may use tabrion (public names only,
-# scripts/check_tabrion_api.py, AC-7) and no Levuvo platform. The layer contract api -> services -> profiles/security
-# (05 section 3.2) is added with those packages (STU-003, STU-006).
+# scripts/check_tabrion_api.py, AC-7) and no Levuvo platform. The security package (STU-003) sits below the app, the
+# server and the CLI; the full layer contract api -> services -> profiles/security (05 section 3.2) follows with
+# those packages (STU-006, docs/TODO.md TD-001).
 [tool.importlinter]
 root_packages = ["tabrion_studio"]
 include_external_packages = true
@@ -168,3 +169,10 @@ name = "The process model and the app never import the CLI"
 type = "forbidden"
 source_modules = ["tabrion_studio.app", "tabrion_studio.instance", "tabrion_studio.server", "tabrion_studio.idle"]
 forbidden_modules = ["tabrion_studio.cli"]
+
+[[tool.importlinter.contracts]]
+id = "security-below-app"
+name = "The security package never imports the app, the server, the process model or the CLI"
+type = "forbidden"
+source_modules = ["tabrion_studio.security"]
+forbidden_modules = ["tabrion_studio.app", "tabrion_studio.server", "tabrion_studio.instance", "tabrion_studio.cli"]

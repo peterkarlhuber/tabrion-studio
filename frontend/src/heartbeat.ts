@@ -1,3 +1,5 @@
+import { apiHeaders } from './session';
+
 /** Interval of the heartbeat that keeps the local server from its idle exit (src/tabrion_studio/idle.py). */
 export const HEARTBEAT_MS = 60_000;
 
@@ -28,15 +30,19 @@ export async function fetchHealth(fetcher: typeof fetch = fetch): Promise<Health
 }
 
 /**
- * Tell the local server that this tab is open. Only this request (sent by the browser with
- * `Sec-Fetch-Site: same-origin`) and authenticated control requests postpone the idle exit;
- * health checks do not (review F-06).
+ * Tell the local server that this tab is open. It needs the session (cookie plus the CSRF header); only requests
+ * with a valid session and authenticated control requests postpone the idle exit, health checks do not (review
+ * F-06, R-5).
  */
-export async function sendHeartbeat(fetcher: typeof fetch = fetch): Promise<boolean> {
+export async function sendHeartbeat(
+  fetcher: typeof fetch = fetch,
+  storage: Pick<Storage, 'getItem'> = sessionStorage,
+): Promise<boolean> {
   try {
     const response = await fetcher('/api/heartbeat', {
       cache: 'no-store',
       credentials: 'same-origin',
+      headers: apiHeaders(storage),
     });
     return response.ok;
   } catch {

@@ -3,7 +3,7 @@ name: CI
 # STU-018 (05 section 3.5, 07 section 4.1): every job name below is a mandatory check in .github/ci-manifest.json;
 # ci-ok.yml aggregates them and posts the commit status "ci-ok" on the pull request head. Actions are pinned by full
 # commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
-# them: "backend integration (PostgreSQL 17)" (STU-009), "openapi in sync" (STU-003/STU-008) and "e2e" (QA-9).
+# them: "backend integration (PostgreSQL 17)" (STU-009), "openapi in sync" (STU-008) and "e2e" (QA-9).
 # Nothing here releases or publishes anything (G-R).
 on:
   push:
@@ -91,7 +91,7 @@ jobs:
           python-version: "3.13"
           cache: pip
       - run: pip install -e ".[dev]"
-      # Workflow pins, read-only tokens, no publishing, license policy; STU-003 adds the STU-T access tests.
+      # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
       - run: pytest -m security -v -p no:cacheprovider
       # ruff's flake8-bandit rules (S) over the package and the scripts.
       - run: ruff check --select S src scripts hatch_build.py

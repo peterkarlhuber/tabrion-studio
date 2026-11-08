@@ -11,11 +11,15 @@ which branch protection can require (same pattern as tabrion's ci-ok, G-T1 condi
   NOT OK   -> failure     a mandatory check failed, was cancelled, is missing or an impostor
   no report or an evaluation error -> error
 
-Workflow-change gate (review F-03): a pull request that adds, changes, renames or removes a file under
-`.github/workflows/` or `.github/scripts/` gets `failure` ("NOT OK: workflow change not reviewed") unless it carries
-the label `workflow-change-reviewed`. Only users with write access can set labels; the owner or an independent
-review sets it after reading the change. Labels are read fresh from the API, so re-running ci-ok after labeling
-re-evaluates. If no pull request is found for the head SHA, or the API cannot be read, the gate fails closed.
+Workflow-change gate (review F-03, R-2, R-3): a pull request that adds, changes, renames or removes any file under
+`.github/` (except the short allowlist of UNGUARDED_DIRS and UNGUARDED_FILES: the issue and pull request templates)
+gets `failure` ("NOT OK: ... needs label workflow-change-reviewed") unless it carries the label
+`workflow-change-reviewed`, set **after the latest push**: the label's newest `labeled` event (issue events API)
+must be newer than the newest pull_request workflow run for the head SHA, this workflow_run and any force push, so a
+push after the review needs a new label. Only users with write access (and triage) can set labels; the owner or an
+independent review sets it after reading the change. Labels are read fresh from the API, so re-running ci-ok after
+labeling re-evaluates. If no pull request is found for the head SHA, a time is missing or the API cannot be read,
+the gate fails closed.
 
 It fails closed: several targets on one head SHA (several pull requests) give success only when all are OK, and the
 worst state wins. Posting is retried with backoff (review F-11); if it still fails, the script tries to post `error`
@@ -24,8 +28,9 @@ ci-ok.yml):
 
   python3 -I default/.github/scripts/ci_ok_status.py --report report.json
 
-Environment: GH_TOKEN (needs `statuses: write` and `pull-requests: read`), GITHUB_REPOSITORY, GITHUB_EVENT_PATH,
-GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_API_URL (optional), GITHUB_STEP_SUMMARY (optional).
+Environment: GH_TOKEN (needs `statuses: write`, `pull-requests: read`, `issues: read` and `actions: read`),
+GITHUB_REPOSITORY, GITHUB_EVENT_PATH, GITHUB_SERVER_URL, GITHUB_RUN_ID, GITHUB_API_URL (optional),
+GITHUB_STEP_SUMMARY (optional).
 """
 
 from __future__ import annotations
@@ -37,16 +42,22 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 
 CONTEXT = "ci-ok"
 STATES = {"OK": "success", "PENDING": "pending", "NOT OK": "failure"}
 SEVERITY = ("error", "failure", "pending", "success")  # worst first
 DESCRIPTION_MAX = 140  # GitHub rejects longer descriptions
 REVIEWED_LABEL = "workflow-change-reviewed"
-GUARDED_PREFIXES = (".github/workflows/", ".github/scripts/")
+# Review R-3: everything under .github/ is guarded (workflows, scripts, local actions, the manifest, CODEOWNERS,
+# dependabot.yml, ...), except these files that no workflow runs or reads.
+GUARDED_ROOT = ".github/"
+UNGUARDED_DIRS = (".github/ISSUE_TEMPLATE/", ".github/PULL_REQUEST_TEMPLATE/")
+UNGUARDED_FILES = frozenset({".github/pull_request_template.md"})
 POST_ATTEMPTS = 4
 BACKOFF_SECONDS = (2, 4, 8)
 MAX_FILE_PAGES = 30  # GitHub lists at most 3000 files of a pull request (100 per page)
+MAX_EVENT_PAGES = 30
 
 
 class ApiError(RuntimeError):
@@ -138,15 +149,33 @@ class Http:
         return self._open(path, body)[0]
 
 
+def is_guarded(name: str) -> bool:
+    """Whether a changed file needs the label: anything under .github/ that is not on the short allowlist."""
+    return name.startswith(GUARDED_ROOT) and not name.startswith(UNGUARDED_DIRS) and name not in UNGUARDED_FILES
+
+
 def guarded(files: list[dict]) -> list[str]:
-    """The files of a pull request under .github/workflows/ or .github/scripts/ (also the old name of a rename)."""
+    """The guarded files of a pull request (also the old name of a rename)."""
     hits = []
     for entry in files:
         for key in ("filename", "previous_filename"):
             name = entry.get(key)
-            if isinstance(name, str) and name.startswith(GUARDED_PREFIXES) and name not in hits:
+            if isinstance(name, str) and is_guarded(name) and name not in hits:
                 hits.append(name)
     return hits
+
+
+def parse_time(value: object) -> datetime:
+    """A GitHub timestamp (ISO 8601, `Z` or offset); ApiError for anything else (the gate fails closed)."""
+    if not isinstance(value, str) or not value:
+        raise ApiError(f"missing or malformed timestamp: {value!r}")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise ApiError(f"missing or malformed timestamp: {value!r}") from None
+    if parsed.tzinfo is None:
+        raise ApiError(f"timestamp without a time zone: {value!r}")
+    return parsed
 
 
 def pull_numbers(http: Http, repo: str, sha: str, run: dict) -> list[int]:
@@ -193,6 +222,66 @@ def pull_labels(http: Http, repo: str, number: int) -> set[str]:
     return {label.get("name") for label in pr.get("labels") or [] if isinstance(label, dict)}
 
 
+def issue_events(http: Http, repo: str, number: int) -> list[dict]:
+    events: list[dict] = []
+    for page in range(1, MAX_EVENT_PAGES + 1):
+        batch = http.get(f"/repos/{repo}/issues/{number}/events?per_page=100&page={page}")
+        if not isinstance(batch, list):
+            raise ApiError(f"unexpected answer when listing the events of PR #{number}")
+        events += [entry for entry in batch if isinstance(entry, dict)]
+        if len(batch) < 100:
+            return events
+    raise ApiError(f"PR #{number} has more events than the API lists; the label cannot be checked")
+
+
+def last_labeled(events: list[dict]) -> tuple[datetime, str] | None:
+    """(time, actor) of the newest `labeled` event for REVIEWED_LABEL, or None."""
+    found: tuple[datetime, str] | None = None
+    for event in events:
+        if event.get("event") != "labeled" or (event.get("label") or {}).get("name") != REVIEWED_LABEL:
+            continue
+        when = parse_time(event.get("created_at"))
+        if found is None or when > found[0]:
+            found = (when, str((event.get("actor") or {}).get("login") or "?"))
+    return found
+
+
+def last_push(http: Http, repo: str, sha: str, run: dict, events: list[dict]) -> datetime:
+    """When the head SHA was pushed last, as GitHub recorded it (never the commit's own, forgeable dates).
+
+    The newest of: the created_at of every pull_request workflow run for the head SHA (a run is created by each push,
+    reopen or synchronize; a re-run keeps its created_at), the created_at of this workflow_run, and any force push of
+    the pull request's branch. ApiError if no time is known.
+    """
+    times = []
+    if run.get("created_at"):
+        times.append(parse_time(run.get("created_at")))
+    listed = http.get(f"/repos/{repo}/actions/runs?head_sha={sha}&event=pull_request&per_page=100")
+    runs = listed.get("workflow_runs") if isinstance(listed, dict) else None
+    if not isinstance(runs, list):
+        raise ApiError("unexpected answer when listing the workflow runs of the head SHA")
+    times += [parse_time(entry.get("created_at")) for entry in runs if isinstance(entry, dict)]
+    times += [parse_time(e.get("created_at")) for e in events if e.get("event") == "head_ref_force_pushed"]
+    if not times:
+        raise ApiError("no push time is known for the head SHA")
+    return max(times)
+
+
+def label_after_push(http: Http, repo: str, sha: str, run: dict, number: int) -> tuple[bool, str]:
+    """Review R-2: (whether the label was set after the latest push, explanation)."""
+    events = issue_events(http, repo, number)
+    labeled = last_labeled(events)
+    if labeled is None:
+        return False, f"label `{REVIEWED_LABEL}` is set, but no event says when; set it again"
+    pushed = last_push(http, repo, sha, run, events)
+    if labeled[0] <= pushed:
+        return False, (
+            f"label `{REVIEWED_LABEL}` was set at {labeled[0].isoformat()} by {labeled[1]}, before the latest push "
+            f"({pushed.isoformat()}); review the new changes, remove the label, set it again and re-run ci-ok"
+        )
+    return True, f"label `{REVIEWED_LABEL}` set at {labeled[0].isoformat()} by {labeled[1]}, after the latest push"
+
+
 def workflow_gate(http: Http, repo: str, sha: str, run: dict) -> tuple[str, str, list[str]]:
     """(state, description, summary lines) of the workflow-change gate. Fails closed."""
     try:
@@ -204,18 +293,21 @@ def workflow_gate(http: Http, repo: str, sha: str, run: dict) -> tuple[str, str,
             hits = guarded(pull_files(http, repo, number))
             if not hits:
                 continue
+            listed = f"{', '.join(f'`{h}`' for h in hits[:10])}{' and more' if len(hits) > 10 else ''}"
             if REVIEWED_LABEL in pull_labels(http, repo, number):
-                lines.append(f"PR #{number} changes {len(hits)} workflow file(s); label `{REVIEWED_LABEL}` is set.")
+                fresh, why = label_after_push(http, repo, sha, run, number)
+                if fresh:
+                    lines.append(f"PR #{number} changes {len(hits)} guarded file(s) under .github/; {why}.")
+                    continue
+                state = "failure"
+                description = description or f"NOT OK: PR #{number}: label {REVIEWED_LABEL} predates the latest push"
+                lines.append(f"PR #{number} changes {listed}; {why}.")
                 continue
             state = "failure"
-            description = (
-                description
-                or f"NOT OK: PR #{number} changes .github/workflows or scripts; needs label {REVIEWED_LABEL}"
-            )
+            description = description or f"NOT OK: PR #{number} changes .github/; needs label {REVIEWED_LABEL}"
             lines.append(
-                f"PR #{number} changes {', '.join(f'`{h}`' for h in hits[:10])}"
-                f"{' and more' if len(hits) > 10 else ''}. A workflow change needs a review: the owner or an"
-                f" independent reviewer sets the label `{REVIEWED_LABEL}` and re-runs ci-ok."
+                f"PR #{number} changes {listed}. A change under .github/ needs a review: the owner or an"
+                f" independent reviewer sets the label `{REVIEWED_LABEL}` after the latest push and re-runs ci-ok."
             )
         return state, description, lines
     except ApiError as exc:
@@ -239,6 +331,13 @@ def post_status(http: Http, repo: str, sha: str, body: dict, sleep=time.sleep) -
         last = ApiError(f"HTTP {status}")
         print(f"::warning title=ci-ok status::attempt {attempt + 1} answered HTTP {status}")
     raise ApiError(f"posting the status failed {POST_ATTEMPTS} times: {last}")
+
+
+def with_run_id(description: str, run_id: str) -> str:
+    """The description with the ci-ok run ID at its end, within GitHub's limit (review R-1: the merging party checks
+    that the status's target_url and this ID name a run of the ci-ok workflow)."""
+    suffix = f" [ci-ok run {run_id}]" if run_id else ""
+    return description[: DESCRIPTION_MAX - len(suffix)] + suffix
 
 
 def _summary(env: dict, lines: list[str]) -> None:
@@ -270,11 +369,12 @@ def main(argv: list[str] | None = None, env: dict | None = None, http: Http | No
     _summary(env, lines)
     if worst(state, gate_state) != state:
         state, description = gate_state, gate_description
+    run_id = env.get("GITHUB_RUN_ID", "")
     body = {
         "state": state,
         "context": CONTEXT,
-        "description": description[:DESCRIPTION_MAX],
-        "target_url": f"{server}/{repo}/actions/runs/{env.get('GITHUB_RUN_ID', '')}",
+        "description": with_run_id(description, run_id),
+        "target_url": f"{server}/{repo}/actions/runs/{run_id}",
     }
     try:
         status = post_status(http, repo, sha, body, sleep)
@@ -282,7 +382,11 @@ def main(argv: list[str] | None = None, env: dict | None = None, http: Http | No
         print(f"::error title=ci-ok status::could not post {state!r} on {sha[:12]}: {exc}")
         if state != "error":
             # Leave no stale success behind: try once more to mark the SHA as errored.
-            fallback = {**body, "state": "error", "description": "ci-ok could not post its verdict; re-run ci-ok"}
+            fallback = {
+                **body,
+                "state": "error",
+                "description": with_run_id("ci-ok could not post its verdict; re-run ci-ok", run_id),
+            }
             try:
                 post_status(http, repo, sha, fallback, sleep)
             except ApiError as again:

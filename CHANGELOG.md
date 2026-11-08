@@ -15,6 +15,14 @@ All notable changes to this project are documented here. The format follows
 - CI (`ci.yml`, `ci-ok.yml` with the commit status `ci-ok`, `nightly.yml`) on Linux, macOS and Windows; the wheel
   build hook that requires the built frontend; a wheel smoke test without Node (STU-018).
 - License policy check with negative probes and CycloneDX SBOMs for the Python runtime and the frontend (STU-031).
+- Access protection (STU-003, `docs/architecture/access-protection.md`): one-time launch token in the URL fragment
+  (`/launch#<token>`, 120 s, once), exchanged by the page through `POST /api/session` for an `HttpOnly;
+  SameSite=Strict` session cookie (`tabrion_studio_session_<port>`) and a CSRF value kept in `sessionStorage` and sent
+  as `X-Tabrion-CSRF`; `tabrion-studio --print-url` prints a one-time sign-in link. Every request passes the access
+  middleware: Host allowlist `127.0.0.1:<port>` on every route, no forwarded headers, Origin and fetch-metadata
+  checks, JSON-only API requests, session plus CSRF header on every API route except health and the launch exchange.
+  Every answer carries a strict Content-Security-Policy, `Cache-Control: no-store`, `nosniff`, `no-referrer`,
+  `X-Frame-Options: DENY` and same-origin opener and resource policies (STU-T-001..006, -014, -025, -026).
 
 ### Security
 
@@ -26,3 +34,20 @@ All notable changes to this project are documented here. The format follows
   the profile without a private ACL or behind a junction on Windows (F-07). `[::1]` on the same port is held (F-08).
   ci-ok reports NOT OK for unreviewed changes to `.github/workflows/**` or `.github/scripts/**` (label
   `workflow-change-reviewed`, F-03) and retries the status post, failing loudly (F-11).
+- STU-003 binding requirements of the review (`stu-002-018-review.md`, condition C-3): the browser is opened with the
+  `file://` path of a 0600 redirect file and never with the token URL, so no process argv shows the token; the file
+  is deleted when the token is used or expires, at shutdown and at the next start (F-02). The Host allowlist covers
+  every route, and the control endpoints refuse requests with `Origin` or `Sec-Fetch-*` (F-05). `localhost` and
+  `[::1]` are not answered (F-08). A session cookie alone opens nothing without its CSRF value (F-09). Requests with
+  a valid session count as activity; the heartbeat needs the session (F-06, R-5).
+- Re-review recommendations: the control client sends the proof request and the request with the token over one
+  keep-alive connection and never reconnects in between (R-4). The workflow-change gate guards every file under
+  `.github/` except the issue and pull request templates (R-3), accepts the label `workflow-change-reviewed` only if
+  it was set after the latest push (R-2), and the `ci-ok` status description names its run; the merging party checks
+  the ci-ok run link before every merge (R-1).
+
+### Changed
+
+- `/api/heartbeat` and `/api/openapi.json` need a session. The control endpoint `POST /api/control/launch` takes
+  `{"redirect": true|false}` and answers the launch URL and the redirect file. The Vite development proxy presents the
+  backend's own Host and Origin.
