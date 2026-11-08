@@ -178,7 +178,8 @@ def read_secret_file(text: str, base: Path, roots: list[Path] | None) -> str:
         value = data.decode("utf-8")
     except UnicodeDecodeError:
         raise SecretError("studio.secret_file_unreadable") from None
-    value = value.removesuffix("\n").removesuffix("\r")
+    # Exactly one trailing line end is removed: "\r\n" (a file written on Windows) or "\n"; nothing else.
+    value = value[:-2] if value.endswith("\r\n") else value.removesuffix("\n")
     if not value or "\x00" in value:
         raise SecretError("studio.secret_file_unreadable")
     register_secret(value)

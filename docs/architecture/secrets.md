@@ -41,7 +41,8 @@ C-3 of `stu-006-review.md` requires these checks at read time (`read_secret_file
    so a FIFO cannot block the server. On Windows, every component must be free of reparse points.
 4. **The opened file:** a regular file with exactly one link (no hard link), owned by the user, and with no group or
    other permission bit (0600 or 0400; POSIX). On Windows the folder ACL decides (TD-003).
-5. **The content:** at most 4 KB of UTF-8, not empty, no NUL. One trailing newline (`\n` or `\r\n`) is removed.
+5. **The content:** at most 4 KB of UTF-8, not empty, no NUL. Exactly one trailing line end is removed: `\r\n` or `\n`, nothing else (a lone `\r`
+   stays).
 
 Codes: `studio.secret_file_outside`, `studio.secret_file_unsafe`, `studio.secret_file_not_private`,
 `studio.secret_file_unreadable`.

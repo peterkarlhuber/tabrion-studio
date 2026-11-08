@@ -15,7 +15,7 @@ import time
 from typing import IO
 import urllib.request
 
-from tabrion_studio.instance import InstanceInfo, InstancePaths
+from tabrion_studio.instance import InstanceInfo, InstancePaths, read_info
 
 # No proxy for loopback requests (CI runners and developer machines may set HTTP_PROXY).
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -55,10 +55,13 @@ class Studio:
         return InstancePaths.for_project(self.state_dir, self.project)
 
     def info(self) -> InstanceInfo | None:
+        # The product's reader: on Windows, opening the info file while the server replaces it (os.replace of the
+        # temporary file) fails with a sharing violation or "access denied" for a moment; read_info retries that, a
+        # plain read_bytes did not (a race of this helper, seen on windows-latest).
         try:
-            return InstanceInfo.from_bytes(self.paths.info.read_bytes())
-        except FileNotFoundError:
-            return None
+            return read_info(self.paths)
+        except PermissionError:
+            return None  # still being replaced after the retries: poll again
 
     def output(self) -> str:
         self.log.flush()

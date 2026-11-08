@@ -49,7 +49,7 @@ def project(tmp_path: Path) -> Path:
 
 def _secret(path: Path, content: str = CANARY + "\n", mode: int = 0o600) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    path.write_bytes(content.encode("utf-8"))  # binary: no newline translation on Windows
     path.chmod(mode)
     return path
 
@@ -69,11 +69,16 @@ def test_a_private_file_inside_the_project_is_read_and_registered(project: Path)
     assert CANARY not in scrub(f"value {CANARY}")  # registered for log redaction
 
 
-def test_only_one_trailing_newline_is_stripped(project: Path) -> None:
-    _secret(project / "secrets" / "db", "a b\r\n")
-    assert read_secret_file("secrets/db", project, [project]) == "a b"
-    _secret(project / "secrets" / "db", "x\n\n")
-    assert read_secret_file("secrets/db", project, [project]) == "x\n"
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    [(b"a b\r\n", "a b"), (b"a b\n", "a b"), (b"x\n\n", "x\n"), (b"x\r\n\r\n", "x\r\n"), (b"x\r", "x\r"), (b"x", "x")],
+)
+def test_exactly_one_trailing_line_end_is_stripped(project: Path, content: bytes, expected: str) -> None:
+    """The contract: one trailing "\\r\\n" or "\\n" is removed, nothing else (the file is written in binary)."""
+    path = project / "secrets" / "db"
+    path.write_bytes(content)
+    path.chmod(0o600)
+    assert read_secret_file("secrets/db", project, [project]) == expected
 
 
 def test_tilde_is_never_expanded(project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
