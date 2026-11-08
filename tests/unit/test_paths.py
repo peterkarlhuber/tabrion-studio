@@ -133,10 +133,14 @@ def test_windows_state_dir_outside_the_profile_needs_a_private_acl(tmp_path: Pat
     drive = Path(os.environ.get("SYSTEMDRIVE", "C:") + "\\")
     outside = drive / f"tabrion-studio-test-{secrets.token_hex(4)}"
     try:
-        # Created in the drive root, it inherits that ACL: Authenticated Users may create files and folders.
+        # The drive root's ACL differs between machines, so grant BUILTIN Users read access explicitly: every local
+        # user could then read the control token.
+        outside.mkdir()
+        _run("icacls", str(outside), "/grant", "*S-1-5-32-545:(OI)(CI)RX")
         with pytest.raises(paths.UnsafePathError, match="outside your user profile and not private"):
             paths.ensure_private_dir(outside)
-        # Owner-only: no inheritance, full control for the current user only.
+        # Owner-only: no inheritance, no Users entry, full control for the current user.
+        _run("icacls", str(outside), "/remove:g", "*S-1-5-32-545")
         _run("icacls", str(outside), "/inheritance:r", "/grant:r", f"{os.environ['USERNAME']}:(OI)(CI)F")
         assert paths.ensure_private_dir(outside) == outside
         _run("icacls", str(outside), "/grant", "*S-1-5-11:(OI)(CI)M")  # Authenticated Users: modify
