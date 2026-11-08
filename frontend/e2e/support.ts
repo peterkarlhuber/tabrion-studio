@@ -58,7 +58,12 @@ export function foreignRequests(page: Page, origin: () => string): string[] {
       target === `${own.protocol === 'https:' ? 'wss' : 'ws'}://${own.host}`;
     if (!same) foreign.push(url);
   };
-  page.on('request', (request) => check(request.url()));
-  page.on('websocket', (socket) => check(socket.url()));
+  // Requests on the browser context (review L-1 of stu-pr12-14-review.md): that includes popups, new pages and
+  // service workers, which a listener on the page would miss. WebSockets are reported per page.
+  const context = page.context();
+  context.on('request', (request) => check(request.url()));
+  const watch = (target: Page) => target.on('websocket', (socket) => check(socket.url()));
+  watch(page);
+  context.on('page', watch);
   return foreign;
 }
