@@ -28,7 +28,9 @@ and so is a call of ``set_config``, ``pg_notify`` or a session-level advisory lo
 the check reads the statement's tokens (comments and literals left out, quoted identifiers unquoted, both ways of
 lexing ``'...'``), so ``"set_config"(`` and ``set_config/**/(`` are caught (R-L1 of the re-review). It remains a
 best-effort check: a function of the database's own that calls ``set_config`` is not visible in the text, and only
-the role's privileges limit what such functions do. The query engine (STU-011) must send user SQL through
+the role's privileges limit what such functions do. ``DO`` blocks and the functions that run a query given as text
+(``query_to_xml``, ``cursor_to_xml``, ``ts_stat``, ``ts_rewrite``, ``crosstab``, ``dblink``) are refused, since the
+check cannot see inside their literal (R2-L1 of re-review 2). The query engine (STU-011) must send user SQL through
 :func:`check_statement`, one ``read()`` per statement, and always through ``ConnectionRegistry.get`` (which checks the
 handle again).
 """
@@ -124,6 +126,9 @@ _SESSION_SETTINGS = frozenset(
 #: SELECT, where the SET check cannot see it; ``pg_notify()`` reaches other sessions like ``NOTIFY``; a session-level
 #: advisory lock stays held on the pooled connection after the transaction (I-R1 of the re-review). The
 #: transaction-level ``pg_advisory_xact_lock*`` functions end with Studio's transaction and stay allowed.
+#: Functions that run a query given as text are refused too, since the check cannot see inside a literal (R2-L1 of
+#: re-review 2): ``query_to_xml`` and ``cursor_to_xml`` with their schema forms, ``ts_stat`` and ``ts_rewrite``
+#: (core), ``crosstab`` (tablefunc) and ``dblink`` (dblink).
 _REFUSED_FUNCTIONS = frozenset(
     {
         "set_config",
@@ -132,6 +137,22 @@ _REFUSED_FUNCTIONS = frozenset(
         "pg_advisory_lock_shared",
         "pg_try_advisory_lock",
         "pg_try_advisory_lock_shared",
+        "query_to_xml",
+        "query_to_xmlschema",
+        "query_to_xml_and_xmlschema",
+        "cursor_to_xml",
+        "cursor_to_xmlschema",
+        "ts_stat",
+        "ts_rewrite",
+        "crosstab",
+        "crosstab2",
+        "crosstab3",
+        "crosstab4",
+        "dblink",
+        "dblink_exec",
+        "dblink_open",
+        "dblink_fetch",
+        "dblink_send_query",
     }
 )
 _DOLLAR_TAG = re.compile(r"\$(?:[A-Za-z_\u0080-\U0010ffff][A-Za-z0-9_\u0080-\U0010ffff]*)?\$")
@@ -247,8 +268,11 @@ def _calls_refused_function(sql: str) -> bool:
 
 
 #: Statements with an effect outside the transaction's data, or none a read-only view needs (``COPY ... TO`` writes a
-#: server file under ``pg_write_server_files``; ``LOAD`` loads a library; ``NOTIFY`` reaches other sessions).
-_OTHER_EFFECTS = frozenset({"copy", "load", "notify", "listen", "unlisten", "lock", "vacuum", "checkpoint", "cluster"})
+#: server file under ``pg_write_server_files``; ``LOAD`` loads a library; ``NOTIFY`` reaches other sessions). ``DO``
+#: runs a code block the check cannot see into (R2-L1 of re-review 2), and a read-only view does not need it.
+_OTHER_EFFECTS = frozenset(
+    {"copy", "load", "notify", "listen", "unlisten", "lock", "vacuum", "checkpoint", "cluster", "do"}
+)
 
 
 def _strip_leading(sql: str) -> str:

@@ -93,7 +93,7 @@ different environment, or if `database_file` now resolves elsewhere, the connect
   `PREPARE`, `RESET`, `DISCARD`.
 - These `SET` forms are refused: `SET TRANSACTION`, `SET SESSION CHARACTERISTICS`, `SET [SESSION|LOCAL]
   default_transaction_read_only | transaction_read_only | ROLE | SESSION AUTHORIZATION`.
-- So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT` and `CLUSTER`.
+- So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT`, `CLUSTER` and `DO`.
 
 **One statement, enforced by the server (H-1 of `stu-009-review.md`):** every PostgreSQL connection uses
 `prepare_threshold=0` (`driver_options`). So every statement is a prepared statement on the extended query protocol,
@@ -106,8 +106,11 @@ refuses `SET standard_conforming_strings` and `SET backslash_quote`, and a call 
 `_shared` forms, which would stay held on the pooled connection) anywhere in the statement. That check reads tokens:
 comments and literals are left out and quoted identifiers unquoted, and `'...'` is lexed both with and without
 backslash escapes, so `"set_config"(`, `set_config/**/(` and `pg_catalog.set_config (` are caught (R-L1 and I-R1 of
-the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. This is still
-a best-effort check, not the boundary: a database function that calls `set_config` is invisible in the text. SQLite's
+the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. `DO` blocks and the functions that run a query given as text (`query_to_xml`,
+`query_to_xmlschema`, `query_to_xml_and_xmlschema`, `cursor_to_xml`, `cursor_to_xmlschema`, `ts_stat`, `ts_rewrite`,
+`crosstab`, `dblink` and its forms) are refused as well, since the check cannot see inside a literal (R2-L1 of
+re-review 2). This is still a best-effort check, not the boundary: a database function that calls `set_config`, or
+a function of an extension Studio does not know that runs a query from text, is invisible in the text. SQLite's
 `execute` runs one statement only.
 
 **Binding for STU-011:** user SQL goes through `check_statement` and `OpenConnection.fetch`, with one `read()` per

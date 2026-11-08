@@ -543,6 +543,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Priority:** P1 High · **Status:** Open (`stu-009-review.md`, delta re-review: accepted with conditions; R-L1,
   R-L2, I-R1 and I-R2 done, the CI condition is a separate `.github/workflows` commit for the workflow-change review)
   · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **Re-review 2 (accepted with conditions; workflow change approved for the label):** R2-L1 (`DO` and the
+  query-in-text functions refused), R2-I2 (tests that kill T1 and T6) and R2-I1 (no pip option after a marker) are
+  done; the Info on the service port is done in a separate `.github` commit, which needs the workflow-change review
+  again before the label. Left: tabrion v0.1.0 (RC-8), then CI fully green including the RC-8 guard.
 - **Conditions to leave draft (re-review):** 1. CI installs the pinned tabrion and runs the `postgres` tests (L-2,
   below); 2. R-L2, the strict pin rule (done: `tests/security/test_dependencies.py` allows only plain requirements
   and the full-SHA pin, in every requirements or constraints file at any depth); 3. R-L1 (done: token-based function
