@@ -29,6 +29,22 @@ const STATES: [string, HarnessOptions, ((page: Page) => Promise<void>)?][] = [
   ],
   ['settings', { scenario: 'connections', path: '/settings' }],
   ['not found', { path: '/nowhere' }],
+  [
+    'command palette (STU-052)',
+    {},
+    async (page) => {
+      await page.keyboard.press('Control+k');
+      await expect(page.getByTestId('command-palette')).toBeVisible();
+    },
+  ],
+  [
+    'shortcut help (STU-052)',
+    {},
+    async (page) => {
+      await page.keyboard.press('Control+/');
+      await expect(page.getByTestId('shortcut-help')).toBeVisible();
+    },
+  ],
   ['PROD workspace', { scenario: 'prod' }],
   ['D-01 hostile and changed', { scenario: 'dialog-d01-hostile' }],
   ['D-02', { scenario: 'dialog-d02' }],

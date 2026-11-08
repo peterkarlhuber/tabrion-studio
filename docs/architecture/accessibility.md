@@ -2,11 +2,12 @@
 
 Target: WCAG 2.2 level AA (planning document 08 section 9). This page is the audit report for the shell as it is
 now: start page, connection manager with its assistant and dialogs, settings, not found, the status displays of a
-PROD workspace, the dialogs D-01, D-02, D-06 and D-08 and the sign-in notices. The explorer, the SQL editor, the result
+PROD workspace, the dialogs D-01, D-02, D-06 and D-08, the command palette and the shortcut help (STU-052) and the
+sign-in notices. The explorer, the SQL editor, the result
 grid and the data viewer do not exist yet. Their criteria are listed under *Waits for later packages* and are audited
 again with STU-050 and STU-053's final report.
 
-**Audit state:** 2026-11-08, master after #12 and #14, Chromium 1243 (the CI build is 1248). No open AA violation in
+**Audit state:** 2026-11-08, master after #12, #14 and #16, Chromium 1243 (the CI build is 1248). No open AA violation in
 the audited states; four findings were fixed in the STU-053 pull request (below).
 
 ## How it is checked
