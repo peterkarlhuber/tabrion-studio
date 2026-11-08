@@ -14,6 +14,13 @@ What the dialog shows (:class:`Review`): every connection, every host, every fil
 ``file:`` secrets, marked when outside the project), every ``env:`` variable a password would be read from (an
 attacker's file could name ``AWS_SECRET_ACCESS_KEY`` and send it to its own host) and every unknown key. When a
 trusted file changed, it also shows the difference to what was trusted (T-08, review U-1d).
+
+Per PostgreSQL connection the review also says where its password goes (T-5 and T-4 of ``stu-006-review.md``, L-1 of
+``stu-007-review.md``): ``flow`` names the secret's source (``env:NAME``, ``file:PATH``, ``keyring:`` or none), the
+host and port it is sent to and the TLS mode, and ``warnings`` marks a host outside this computer
+(``remote_host``), a TLS mode weaker than ``verify-full`` there (``weak_tls``), a variable that usually holds another
+credential (``sensitive_variable``: ``AWS_*``, ``GITHUB_TOKEN``, ``*_SECRET*`` ...) and a password file outside the
+project folder (``secret_outside``).
 """
 
 from __future__ import annotations
@@ -30,7 +37,14 @@ from typing import Any, Literal
 
 from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_file
 from tabrion_studio.config.locations import contained, lexical_target, safe_realpath
-from tabrion_studio.config.schema import Issue, Profile, ProfileFile, target_fingerprint, validate_profiles
+from tabrion_studio.config.schema import (
+    Issue,
+    Profile,
+    ProfileFile,
+    is_loopback,
+    target_fingerprint,
+    validate_profiles,
+)
 from tabrion_studio.paths import UnsafePathError, read_private_file, write_private_file
 
 PROJECT_DIR = ".tabrion"
@@ -92,21 +106,66 @@ def _add(items: list[Any], value: Any) -> None:
         items.append(value)
 
 
+#: Variables that usually hold a credential for something other than this database (L-1 of stu-007-review.md).
+_SENSITIVE_PREFIXES = (
+    "AWS_",
+    "AZURE_",
+    "GOOGLE_",
+    "GCP_",
+    "GITHUB_",
+    "GH_",
+    "GITLAB_",
+    "NPM_",
+    "PYPI_",
+    "DOCKER_",
+    "OPENAI_",
+    "ANTHROPIC_",
+    "SSH_",
+)
+_SENSITIVE_PARTS = ("SECRET", "TOKEN", "API_KEY", "PRIVATE_KEY", "ACCESS_KEY", "CREDENTIAL")
+
+
+def sensitive_variable(name: str) -> bool:
+    """Whether an ``env:`` variable looks like a credential of another service, not a database password."""
+    upper = name.upper()
+    return upper.startswith(_SENSITIVE_PREFIXES) or any(part in upper for part in _SENSITIVE_PARTS)
+
+
+def _flow(profile: Profile, project: Path, roots: Roots) -> tuple[dict[str, Any], list[str]]:
+    """Where a PostgreSQL profile's password goes, and what D-01 must mark about it (T-4, T-5, L-1)."""
+    ref = profile.password
+    secret = None if ref is None else ("keyring:" if ref.source == "keyring" else f"{ref.source}:{ref.target}")
+    host = profile.host or ""
+    remote = not is_loopback(host)
+    warnings: list[str] = []
+    if remote:
+        warnings.append("remote_host")
+        if profile.sslmode != "verify-full":
+            warnings.append("weak_tls")
+    if ref is not None and ref.source == "env" and sensitive_variable(ref.target):
+        warnings.append("sensitive_variable")
+    if ref is not None and ref.source == "file" and not _inside(ref.target, project, roots):
+        warnings.append("secret_outside")
+    flow = {"secret": secret, "to": f"{host}:{profile.port or 5432}", "tls": profile.sslmode}
+    return flow, warnings
+
+
 def review_of(parsed: ProfileFile, project: Path) -> Review:
     review = Review(unknown_keys=list(parsed.unknown_keys))
     project_roots = _roots(project)
     for profile in parsed.profiles:
         location = profile.path if profile.engine == "sqlite" else f"{profile.host}:{profile.port or 5432}"
-        review.connections.append(
-            {
-                "name": profile.name,
-                "engine": profile.engine,
-                "environment": profile.environment,
-                "location": location,
-                # Every field (secret references only), so that any change shows up as "changed" (U-1d).
-                "profile": profile.to_dict(),
-            }
-        )
+        connection: dict[str, Any] = {
+            "name": profile.name,
+            "engine": profile.engine,
+            "environment": profile.environment,
+            "location": location,
+            # Every field (secret references only), so that any change shows up as "changed" (U-1d).
+            "profile": profile.to_dict(),
+        }
+        if profile.engine == "postgresql":
+            connection["flow"], connection["warnings"] = _flow(profile, project, project_roots)
+        review.connections.append(connection)
         if profile.host is not None:
             _add(review.hosts, f"{profile.host}:{profile.port or 5432}")
         if profile.path is not None:
