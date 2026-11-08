@@ -1,0 +1,18 @@
+name: Feature request
+description: Suggest a change or a new capability for Tabrion Studio.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what stops you today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: How could Studio help? Studio is a local, read-only-first developer tool; it does not replace DBeaver or pgAdmin.
+    validations:
+      required: true

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "comment": "Mandatory checks per CI-FAST (STU-018, 05 section 3.5). A PR is ok only if every listed check ran on the PR head SHA and succeeded; ci-ok.yml posts that verdict as the commit status ci-ok. Changing this list needs a reason in the PR.",
+  "pull_request": {
+    "ci.yml": [
+      "backend lint",
+      "backend test (Python 3.11)",
+      "backend test (Python 3.12)",
+      "backend test (Python 3.13)",
+      "backend test (Python 3.14)",
+      "backend test (macos-latest)",
+      "backend test (windows-latest)",
+      "build and install (macos-latest)",
+      "build and install (ubuntu-latest)",
+      "build and install (windows-latest)",
+      "dependency audit",
+      "docs",
+      "frontend lint and typecheck",
+      "frontend unit",
+      "license and supply chain",
+      "security tests"
+    ]
+  },
+  "pull_request_path_filtered": {},
+  "path_filters": {},
+  "advisory": [],
+  "nightly": {
+    "nightly.yml": [
+      "report"
+    ]
+  }
+}

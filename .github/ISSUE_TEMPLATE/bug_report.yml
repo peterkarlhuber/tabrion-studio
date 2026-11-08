@@ -1,0 +1,34 @@
+name: Bug report
+description: Something in Tabrion Studio does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues do not belong here; see SECURITY.md. Remove passwords, connection strings and data values from everything you paste.
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Terminal output
+      render: text
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of `tabrion-studio --version`, `python --version`, your operating system and browser.
+      render: text
+    validations:
+      required: true

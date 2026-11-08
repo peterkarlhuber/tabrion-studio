@@ -1,0 +1,60 @@
+site_name: Tabrion Studio
+site_description: Local developer tool for SQLite and PostgreSQL databases, built on Tabrion.
+repo_url: https://github.com/peterkarlhuber/tabrion-studio
+repo_name: peterkarlhuber/tabrion-studio
+copyright: Copyright &copy; 2026 Peter Karlhuber – MIT License
+strict: true
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+
+plugins:
+  - search
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+
+nav:
+  - Home: index.md
+  - Architecture:
+      - Process model: architecture/process-model.md
+  - Development:
+      - Building and testing: development/building.md
+      - CI and supply chain: development/ci.md
+  - Architecture decisions:
+      - adr/README.md
+      - "0001 Local web app": adr/0001-local-web-app.md
+      - "0002 Local security model": adr/0002-local-security-model.md
+      - "0003 Writes behind a gate": adr/0003-writes-behind-gate.md
+      - "0004 Frontend reuse": adr/0004-frontend-reuse.md
+  - Open work: TODO.md
