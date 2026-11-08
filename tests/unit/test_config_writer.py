@@ -84,6 +84,9 @@ def test_settings_keep_only_what_differs_from_the_defaults() -> None:
     settings = Settings(language="de", log_sql=True, max_rows=500)
     data = checked_settings(settings)
     assert b"[limits]" in data and b"statement_timeout_ms" not in data
+    assert b"density" not in data  # compact is the default
+    appearance = checked_settings(Settings(language="en", theme="dark", density="normal"))
+    assert appearance.splitlines()[1:] == [b"version = 1", b'language = "en"', b'theme = "dark"', b'density = "normal"']
 
 
 def _user(tmp_path: Path) -> UserConfig:

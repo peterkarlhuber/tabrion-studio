@@ -16,15 +16,16 @@ import { MAX_ENTRIES, visible } from '../lib/visible';
 import connectionStyles from './connections/Connections.module.css';
 import { Field } from './connections/Field';
 import { issuesByField, problemText } from './connections/messages';
-import { currentLocale, setLocale, SUPPORTED_LOCALES } from '../i18n';
-import { navigate } from '../router';
 import {
-  setDensity,
-  setThemePreference,
-  useTheme,
-  type Density,
-  type ThemePreference,
-} from '../theme';
+  chooseDensity,
+  chooseLanguage,
+  chooseTheme,
+  useAppearanceSaves,
+  useAppearanceSync,
+} from '../appearance';
+import { currentLocale, SUPPORTED_LOCALES } from '../i18n';
+import { navigate } from '../router';
+import { useTheme, type Density, type ThemePreference } from '../theme';
 import styles from './Views.module.css';
 
 /** Inline code in translations (`<code>tabrion-studio</code>`); rendered as elements, never as HTML. */
@@ -110,7 +111,7 @@ function Choice<T extends string>({
  * Queries and security (08 section 4.10), saved in Studio's own `settings.toml` (`PUT /api/settings`, STU-008). The
  * limits take effect with the query engine (STU-011); SQL logging is an opt-in with a warning.
  */
-function ServerSettingsForm({ fetcher }: { fetcher: typeof fetch }) {
+function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revision: number }) {
   const { t } = useTranslation();
   const [state, setState] = useState<SettingsState | null | 'loading'>('loading');
   const [form, setForm] = useState<{ logSql: boolean; maxRows: string; timeout: string } | null>(
@@ -134,12 +135,17 @@ function ServerSettingsForm({ fetcher }: { fetcher: typeof fetch }) {
   useEffect(() => {
     let active = true;
     void fetchSettings(fetcher).then((next) => {
-      if (active) apply(next);
+      if (!active) return;
+      // After a saved appearance choice (revision) only the digest is new: keep what the user typed.
+      if (revision === 0 || form === null) apply(next);
+      else setState(next);
     });
     return () => {
       active = false;
     };
-  }, [fetcher]);
+    // apply only sets state; form is read once per load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetcher, revision]);
 
   if (state === 'loading') return <p className={connectionStyles.hint}>{t('settings.loading')}</p>;
   if (state === null || form === null) {
@@ -274,9 +280,23 @@ function ServerSettingsForm({ fetcher }: { fetcher: typeof fetch }) {
   );
 }
 
+/** Where the general choices are kept (TD-021): settings.toml, or this browser only when the file cannot be changed. */
+function AppearanceNote() {
+  const { t } = useTranslation();
+  const sync = useAppearanceSync();
+  return (
+    <p className={connectionStyles.hint} role="status" data-testid="appearance-sync">
+      {sync.kind === 'local'
+        ? t(`settings.generalLocal.${sync.reason}`)
+        : t('settings.generalHint')}
+    </p>
+  );
+}
+
 export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const { t } = useTranslation();
   const { preference, density } = useTheme();
+  const revision = useAppearanceSaves();
   return (
     <div className={styles.page}>
       <PageHeader title={t('settings.title')}>
@@ -286,7 +306,7 @@ export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         <h2 id="settings-general" className={styles.cardTitle}>
           {t('settings.general')}
         </h2>
-        <p className={connectionStyles.hint}>{t('settings.generalHint')}</p>
+        <AppearanceNote />
         <Choice
           name="language"
           legend={t('settings.language')}
@@ -296,7 +316,7 @@ export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             label: t(`languages.${locale}`),
             lang: locale,
           }))}
-          onChange={(locale) => void setLocale(locale)}
+          onChange={chooseLanguage}
         />
         <Choice<ThemePreference>
           name="theme"
@@ -307,7 +327,7 @@ export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             { value: 'light', label: t('settings.themeLight') },
             { value: 'dark', label: t('settings.themeDark') },
           ]}
-          onChange={setThemePreference}
+          onChange={chooseTheme}
         />
         <Choice<Density>
           name="density"
@@ -317,10 +337,10 @@ export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             { value: 'compact', label: t('settings.densityCompact') },
             { value: 'normal', label: t('settings.densityNormal') },
           ]}
-          onChange={setDensity}
+          onChange={chooseDensity}
         />
       </section>
-      <ServerSettingsForm fetcher={fetcher} />
+      <ServerSettingsForm fetcher={fetcher} revision={revision} />
     </div>
   );
 }

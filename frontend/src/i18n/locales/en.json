@@ -191,8 +191,8 @@
     "density": "Density",
     "densityCompact": "Compact",
     "densityNormal": "Normal",
-    "saved": "Language, theme and density are stored in this browser. Queries and security are saved in Studio's settings.toml.",
-    "generalHint": "Stored in this browser only.",
+    "saved": "Every setting is saved in Studio's settings.toml, so it is kept for the next start.",
+    "generalHint": "Saved in settings.toml as soon as you choose.",
     "queries": "Queries",
     "maxRows": "Maximum rows per result",
     "timeout": "Default statement timeout (seconds)",
@@ -205,7 +205,12 @@
     "unavailable": "The settings could not be loaded.",
     "fileIssues": "Your settings.toml has issues, so Studio does not change it. Fix these in the file:",
     "handWritten": "Your settings.toml was written by hand. Saving rewrites it; its comments are not kept.",
-    "overwrite": "Rewrite file and save"
+    "overwrite": "Rewrite file and save",
+    "generalLocal": {
+      "issues": "Kept in this browser only: your settings.toml has issues, so Studio does not change it. Studio forgets the choice at the next start.",
+      "hand_written": "Kept in this browser only: your settings.toml was written by hand. Save the settings below to let Studio rewrite it.",
+      "unavailable": "Kept in this browser only: the settings could not be saved. Studio forgets the choice at the next start."
+    }
   },
   "languages": {
     "en": "English",

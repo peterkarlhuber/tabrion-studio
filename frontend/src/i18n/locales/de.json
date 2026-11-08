@@ -191,8 +191,8 @@
     "density": "Dichte",
     "densityCompact": "Kompakt",
     "densityNormal": "Normal",
-    "saved": "Sprache, Design und Dichte werden in diesem Browser gespeichert. Abfragen und Sicherheit speichert Studio in seiner settings.toml.",
-    "generalHint": "Nur in diesem Browser gespeichert.",
+    "saved": "Alle Einstellungen werden in Studios settings.toml gespeichert und gelten beim nächsten Start weiter.",
+    "generalHint": "Wird sofort in settings.toml gespeichert.",
     "queries": "Abfragen",
     "maxRows": "Höchstzahl Zeilen je Ergebnis",
     "timeout": "Standard-Timeout je Abfrage (Sekunden)",
@@ -205,7 +205,12 @@
     "unavailable": "Die Einstellungen konnten nicht geladen werden.",
     "fileIssues": "Deine settings.toml hat Fehler, deshalb ändert Studio sie nicht. Behebe sie in der Datei:",
     "handWritten": "Deine settings.toml wurde von Hand geschrieben. Speichern schreibt sie neu; Kommentare bleiben nicht erhalten.",
-    "overwrite": "Datei neu schreiben und speichern"
+    "overwrite": "Datei neu schreiben und speichern",
+    "generalLocal": {
+      "issues": "Nur in diesem Browser gespeichert: Deine settings.toml hat Fehler, deshalb ändert Studio sie nicht. Beim nächsten Start ist die Auswahl vergessen.",
+      "hand_written": "Nur in diesem Browser gespeichert: Deine settings.toml wurde von Hand geschrieben. Speichere unten die Einstellungen, damit Studio sie neu schreibt.",
+      "unavailable": "Nur in diesem Browser gespeichert: Die Einstellungen konnten nicht gespeichert werden. Beim nächsten Start ist die Auswahl vergessen."
+    }
   },
   "languages": {
     "en": "English",

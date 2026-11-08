@@ -41,6 +41,7 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5; STU-007 L-1, I-4, I-5; R-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
+| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | In progress (appearance PR); palette commands follow when STU-052 is merged |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -516,7 +517,21 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Favorites and recently opened** are a 1.0 feature (03 §2 A).
 - **The `openapi in sync` CI job** (the first API types for the frontend) changes `.github/` and needs a
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
-- **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
-  accepts them, but the page does not send them yet.
+- **Language and theme in `settings.toml`:** done in the appearance PR (TD-021).
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
+
+### TD-021 · Language, theme and density in `settings.toml` (from TD-011)
+
+- **Priority:** P2 Medium · **Status:** In progress (appearance PR) · **Refs:** 03 section 4.3 (`settings.toml`: UI
+  settings, language), 08 section 4.10, `docs/architecture/configuration.md`
+- **Problem:** Studio listens on a free port, and a browser keeps localStorage per origin (port included). The
+  language, theme and density chosen in the settings were therefore forgotten at the next start.
+- **Done in the appearance PR:** `settings.toml` gains `density` (`compact`, `normal`; schema, writer and
+  `PUT /api/settings`). The page saves each choice at once (only that key, a fresh digest, one retry when stale), never
+  changes a file with issues or a hand-written one from there (the choice then stays in this browser and the view
+  says why), and applies the file's non-default values when it opens. Tests: `frontend/src/appearance.test.tsx`, the
+  real-server test in `frontend/e2e/backend.spec.ts`, and the schema, writer and API tests.
+- **Open:** once the STU-052 PR (#16) is on master, its palette commands for theme, density and language call
+  `chooseTheme`, `chooseDensity` and `chooseLanguage` from `src/appearance.ts` instead of the plain setters, so they
+  are saved too. Whichever of the two pull requests merges second makes that one-line change per command.
