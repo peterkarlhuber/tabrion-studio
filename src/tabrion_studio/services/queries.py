@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 import datetime
 import decimal
 import enum
+import json
 import logging
 import math
 import secrets
@@ -130,8 +131,6 @@ def json_value(value: object, cell_chars: int = CELL_CHARS) -> tuple[Any, int, b
     if isinstance(value, datetime.timedelta):
         return _text(str(value), cell_chars)
     if isinstance(value, dict | list | tuple):
-        import json
-
         text = json.dumps(value, default=str, ensure_ascii=False)
         if len(text) > cell_chars:
             return _text(text, cell_chars)

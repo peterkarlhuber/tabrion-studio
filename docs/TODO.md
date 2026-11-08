@@ -595,6 +595,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
   its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell (10 MB, 03
   §5.3) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost warning for prod profiles come with STU-012/013.
+- **Connections and running queries:** closing a connection (`DELETE /api/connections`, a stale profile) does not
+  cancel its running queries; they end at their timeout or with the connection's error. A connection's pool has 2
+  connections, shared by its queries (at most 2), the explorer and the health check; a third user waits up to the
+  pool timeout (10 s). Decide with STU-012 whether closing should cancel first and whether the pool should grow.
 - **The page's heartbeat:** the earlier plan let STU-011 replace the polling heartbeat with SSE. The STU-011 stream
   is per query (behind the session, CSRF and Origin checks like every API route); moving the heartbeat onto a
   long-lived stream is for STU-012, when the page reads streams.
