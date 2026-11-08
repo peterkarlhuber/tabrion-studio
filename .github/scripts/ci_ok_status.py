@@ -125,6 +125,9 @@ class Http:
             with urllib.request.urlopen(request, timeout=30) as response:
                 raw = response.read()
                 return int(response.status), json.loads(raw) if raw else None
+        except urllib.error.HTTPError as exc:
+            exc.close()
+            raise ApiError(f"{request.get_method()} {path}: HTTP {exc.code}") from None
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise ApiError(f"{request.get_method()} {path}: {exc}") from exc
 

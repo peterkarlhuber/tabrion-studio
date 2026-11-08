@@ -3,7 +3,7 @@
 The state directory holds the control token. In the user's profile the inherited ACL already limits it to the user,
 SYSTEM and the administrators. Elsewhere (``--state-dir D:\\shared`` or ``TABRION_STUDIO_STATE_DIR``) Studio accepts
 a directory only if it is owned by the user and every ACE that grants access names the user, SYSTEM, the
-administrators or CREATOR OWNER. A NULL DACL (everyone has full access) is never private.
+administrators, CREATOR OWNER or OWNER RIGHTS. A NULL DACL (everyone has full access) is never private.
 
 The module is empty on other platforms; :func:`dacl_problem` is only called on Windows.
 """
@@ -18,6 +18,7 @@ TRUSTED_SIDS = frozenset(
         "S-1-5-18",  # SYSTEM
         "S-1-5-32-544",  # BUILTIN\\Administrators
         "S-1-3-0",  # CREATOR OWNER (inherit-only; becomes the creator of each new file)
+        "S-1-3-4",  # OWNER RIGHTS (applies to the owner only, which is checked separately)
     }
 )
 

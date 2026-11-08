@@ -33,7 +33,7 @@ refuses an existing directory, and never silently repairs it, in these cases:
 - on POSIX, the lock file is not a regular file or belongs to another user;
 - on Windows, the directory or a folder between it and the user profile is a junction or another reparse point;
 - on Windows, the directory is outside `%USERPROFILE%` and `%LOCALAPPDATA%`, and its owner or ACL is not private: an
-  allowing entry names a principal other than the user, SYSTEM, Administrators or CREATOR OWNER, or there is a NULL
+  allowing entry names a principal other than the user, SYSTEM, Administrators, CREATOR OWNER or OWNER RIGHTS, or there is a NULL
   DACL (review F-07). The default directory lies in `%LOCALAPPDATA%`, whose inherited ACL is private.
 
 ## Control endpoint

@@ -252,6 +252,9 @@ def _request(url: str, *, method: str = "GET", token: str | None = None, timeout
     try:
         with _OPENER.open(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        exc.close()  # an HTTPError holds the open response; close it instead of leaving it to the GC
+        raise ControlError(f"{method} {url} failed: HTTP {exc.code}") from None
     except (urllib.error.URLError, OSError, ValueError) as exc:
         raise ControlError(f"{method} {url} failed: {exc}") from exc
 
