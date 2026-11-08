@@ -23,7 +23,9 @@ npm run typecheck      # tsc -b (strict)
 npm test               # vitest
 ```
 
-For `npm run dev`, start the backend on the proxied port: `tabrion-studio --port 8765 --no-browser`.
+For `npm run dev`, start the backend on the proxied port: `tabrion-studio --port 8765 --no-browser --print-url`,
+then open the printed one-time link with the port changed to 5173. The backend answers only its own Host and Origin
+(STU-003); the Vite proxy presents both as the backend's.
 
 ## Wheel
 

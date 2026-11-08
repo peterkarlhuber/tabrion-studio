@@ -24,7 +24,7 @@ def test_version(capsys: pytest.CaptureFixture[str]) -> None:
     [["--port", "70000"], ["--port", "-1"], ["--idle-timeout", "-1"], ["--idle-timeout", "nan"], ["--host", "0.0.0.0"]],
 )
 def test_bad_arguments(args: list[str], capsys: pytest.CaptureFixture[str]) -> None:
-    # STU-T-025: there is no option to bind another address.
+    # STU-T-025 (T-14): there is no option to bind another address.
     with pytest.raises(SystemExit) as exc:
         cli.main(args)
     assert exc.value.code == 2
@@ -61,10 +61,10 @@ def test_serve_reuse_and_stop_in_process(
     deadline = time.monotonic() + 5
     while not opened and time.monotonic() < deadline:  # the browser opens on a helper thread
         time.sleep(0.02)
-    assert opened == [info.url]
+    assert len(opened) == 1 and opened[0].startswith("file://")  # a redirect file (STU-003, F-02)
 
     assert cli.main([str(project), "--state-dir", str(state_dir)]) == cli.EXIT_OK
-    assert opened == [info.url, info.url]  # the second start opens the running instance
+    assert len(opened) == 2  # the second start opens the running instance
     assert cli.main([str(project), "--stop", "--state-dir", str(state_dir)]) == cli.EXIT_OK
     server.join(timeout=15)
     assert codes == [0]

@@ -6,9 +6,9 @@
 
 | Area | Rule |
 |---|---|
-| Network | Bind `127.0.0.1` only. Host allowlist `127.0.0.1:<port>`/`localhost:<port>`; forwarded headers are rejected |
-| Session | One-time launch token (32 bytes) in the URL fragment, exchanged through `POST /api/session` for an `HttpOnly; SameSite=Strict; Path=/` cookie; a second use gives `access.launch_used`; control file 0600 |
-| CSRF | strict `Origin` check on every unsafe method and on SSE; JSON only |
+| Network | Bind `127.0.0.1` only. Host allowlist `127.0.0.1:<port>` on every route (`localhost` is not accepted, review F-08); forwarded headers are rejected |
+| Session | One-time launch token (32 bytes) in the URL fragment, handed to the browser through a 0600 redirect file and never through a process argv (review F-02), exchanged through `POST /api/session` for an `HttpOnly; SameSite=Strict; Path=/` cookie; a second use gives `access.launch_used`; control file 0600 |
+| CSRF | strict `Origin` check on every unsafe method and on SSE; JSON only; a CSRF header on every request with a session, whose value lives in origin-scoped storage and never in a cookie (cookies are not port-scoped, review F-09); the control endpoint refuses browser requests (F-05) |
 | Browser | CSP `default-src 'self'`, no `unsafe-eval`/`unsafe-inline`; React text output, no `dangerouslySetInnerHTML`, no HTML/Markdown rendering of database content; `Cache-Control: no-store` on `/api/*` |
 | Secrets | `keyring:` then `env:` then `file:` (0600, no symlink) then session input; never a plaintext fallback; never in the frontend, logs or errors; URLs only through `tabrion.safe_url` |
 | Read-only | enforced by the database: SQLite `mode=ro` + `query_only` + authorizer against `ATTACH`; PostgreSQL `default_transaction_read_only=on` + a read-only transaction per query; the parser pre-check is UX only |
@@ -20,9 +20,9 @@
 
 ## State in this repository
 
-The skeleton implements the loopback bind, no forwarded headers, the 0600 state files and the token-protected
-control endpoint of the process model. Everything else in the table is STU-003 and later; G-S1 requires an
-independent security review agent.
+In place: the loopback bind, the 0600 state files and the token-protected control endpoint of the process model
+(STU-002), and the network, session, CSRF and browser rows (STU-003, `docs/architecture/access-protection.md`).
+Everything else in the table comes with later work packages; G-S1 requires an independent security review agent.
 
 ## Tests
 

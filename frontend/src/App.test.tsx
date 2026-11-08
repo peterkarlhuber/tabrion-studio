@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 
 import { App } from './App';
 import { fetchHealth, HEARTBEAT_MS, sendHeartbeat, startHeartbeat } from './heartbeat';
+import { CSRF_HEADER, CSRF_KEY } from './session';
 
 function jsonFetch(body: unknown, ok = true): typeof fetch {
   return vi.fn(async () => new Response(JSON.stringify(body), { status: ok ? 200 : 503 }));
@@ -12,6 +13,17 @@ describe('App', () => {
     render(<App fetcher={jsonFetch({ status: 'ok', version: '0.1.0.dev0' })} />);
     expect(screen.getByRole('heading', { name: 'Tabrion Studio' })).toBeInTheDocument();
     expect(await screen.findByText('Local server 0.1.0.dev0: ok')).toBeInTheDocument();
+  });
+
+  it('asks to run tabrion-studio again when the sign-in link was used', async () => {
+    render(<App fetcher={jsonFetch({ status: 'ok', version: '0.1.0.dev0' })} session="used" />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('already used');
+  });
+
+  it('shows no sign-in notice with a session', async () => {
+    render(<App fetcher={jsonFetch({ status: 'ok', version: '0.1.0.dev0' })} session="ok" />);
+    await screen.findByText('Local server 0.1.0.dev0: ok');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('says so when the server does not answer', async () => {
@@ -35,12 +47,17 @@ describe('heartbeat', () => {
     vi.useRealTimers();
   });
 
-  it('calls /api/heartbeat, not the health endpoint', async () => {
+  it('calls /api/heartbeat with the session CSRF header, not the health endpoint', async () => {
     const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
-    expect(await sendHeartbeat(fetcher)).toBe(true);
+    const storage = { getItem: (key: string) => (key === CSRF_KEY ? 'csrf-value' : null) };
+    expect(await sendHeartbeat(fetcher, storage)).toBe(true);
     expect(fetcher).toHaveBeenCalledWith(
       '/api/heartbeat',
-      expect.objectContaining({ cache: 'no-store' }),
+      expect.objectContaining({
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: expect.objectContaining({ [CSRF_HEADER]: 'csrf-value' }),
+      }),
     );
   });
 

@@ -1,8 +1,13 @@
 """The ``tabrion-studio`` command (03 section 4.1, STU-ADR-0001).
 
-``tabrion-studio [PROJECT] [--port N] [--no-browser] [--idle-timeout MINUTES]`` serves PROJECT (default: the current
-folder) on 127.0.0.1 and opens the system browser. If a Studio already runs for that folder, the command asks it for
-a new launch URL, opens that and exits; it never starts a second server. ``--stop`` ends the running instance.
+``tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]`` serves PROJECT
+(default: the current folder) on 127.0.0.1 and opens the system browser. If a Studio already runs for that folder,
+the command asks it for a new launch, opens that and exits; it never starts a second server. ``--stop`` ends the
+running instance.
+
+The browser is opened with the ``file://`` path of a private redirect file, never with the launch URL itself: the
+URL carries a one-time token, and the arguments of the browser process are visible to every local user (review F-02).
+Only ``--print-url`` shows a launch URL, in this terminal.
 """
 
 from __future__ import annotations
@@ -25,6 +30,7 @@ from tabrion_studio.instance import (
     control,
     find_running,
     validate_launch_url,
+    validate_redirect_file,
 )
 from tabrion_studio.paths import UnsafePathError, default_state_dir, remove_file
 
@@ -62,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--no-browser", action="store_true", help="do not open the system browser")
     parser.add_argument(
+        "--print-url",
+        action="store_true",
+        help="print a one-time sign-in link (for a browser started by hand; anyone who sees it can use it once)",
+    )
+    parser.add_argument(
         "--idle-timeout",
         type=_minutes,
         default=DEFAULT_IDLE_MINUTES,
@@ -77,6 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _open_browser(url: str) -> None:
+    """Open ``url`` (the ``file://`` URI of a redirect file, never a URL with a token) in the system browser."""
     webbrowser.open(url, new=2)
 
 
@@ -106,7 +118,7 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     if args.stop:
         return _stop(lock, acquired, paths, project, out, err)
     if not acquired:
-        return _reuse(paths, project, open_browser=not args.no_browser, out=out, err=err)
+        return _reuse(paths, project, open_browser=not args.no_browser, print_url=args.print_url, out=out, err=err)
 
     from tabrion_studio.server import PortUnavailableError, ServeOptions, serve
 
@@ -116,6 +128,7 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         port=args.port,
         idle_timeout_seconds=args.idle_timeout * 60,
         open_browser=None if args.no_browser else _open_browser,
+        print_url=args.print_url,
         started=_STARTED,
     )
     try:
@@ -126,23 +139,33 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         return EXIT_ERROR
 
 
-def _reuse(paths: InstancePaths, project: Path, *, open_browser: bool, out: TextIO, err: TextIO) -> int:
-    """A Studio already runs for this folder: ask it for a launch URL instead of starting a second server."""
+def _reuse(
+    paths: InstancePaths, project: Path, *, open_browser: bool, print_url: bool, out: TextIO, err: TextIO
+) -> int:
+    """A Studio already runs for this folder: ask it for a launch instead of starting a second server."""
     info = find_running(paths)
     if info is None:
         print(f"tabrion-studio: another Tabrion Studio holds the lock for {project} but does not answer", file=err)
         return EXIT_ERROR
+    running = f"Tabrion Studio is already running for {project}: {info.url}"
+    if not open_browser and not print_url:
+        print(running, file=out, flush=True)
+        return EXIT_OK
     try:
-        url = validate_launch_url(info, control(info, "launch").get("url"))
+        doc = control(info, "launch", body={"redirect": open_browser})
+        url = validate_launch_url(info, doc.get("url"))
+        redirect = validate_redirect_file(paths, url, doc.get("redirect")) if open_browser else None
     except ImpostorError as exc:
         print(f"tabrion-studio: {exc}", file=err)
         return EXIT_ERROR
     except ControlError as exc:
         print(f"tabrion-studio: the running Tabrion Studio did not answer: {exc}", file=err)
         return EXIT_ERROR
-    print(f"Tabrion Studio is already running for {project}: {url}", file=out, flush=True)
-    if open_browser:
-        _open_browser(url)
+    print(running, file=out, flush=True)
+    if print_url:
+        print(f"One-time sign-in link (do not share): {url}", file=out, flush=True)
+    if redirect is not None:
+        _open_browser(redirect.resolve().as_uri())
     return EXIT_OK
 
 

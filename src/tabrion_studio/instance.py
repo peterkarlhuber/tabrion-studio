@@ -13,7 +13,10 @@ Each project folder has two files in the state directory, named after a hash of 
 Before the client sends the token, the server proves that it knows it: the client sends a random nonce to
 ``GET /api/control/proof`` and checks ``HMAC-SHA256(token, "tabrion-studio-proof:" + nonce)``. Another program that
 took over a port named in an info file (review F-01) therefore never receives the token, and the client accepts a
-launch URL only if it points to ``http://127.0.0.1:<port>/`` of that instance.
+launch URL only if it is ``http://127.0.0.1:<port>/launch#<token>`` of that instance. The proof and the request with
+the token travel over **one** keep-alive connection (review R-4): an established TCP connection cannot be taken
+over, so the token only reaches the server that delivered the proof, even if that server stops in between and
+another program binds the port.
 
 The control client never uses a proxy: requests go straight to the loopback address.
 """
@@ -24,6 +27,7 @@ import contextlib
 from dataclasses import asdict, dataclass
 import hashlib
 import hmac
+import http.client
 import json
 import os
 from pathlib import Path
@@ -33,8 +37,6 @@ import stat
 import sys
 import time
 from typing import IO, Any
-import urllib.error
-import urllib.request
 
 from tabrion_studio.paths import (
     UnsafePathError,
@@ -43,6 +45,7 @@ from tabrion_studio.paths import (
     remove_file,
     write_private_file,
 )
+from tabrion_studio.security.launch import LAUNCH_PATH, TOKEN_PATTERN, redirect_file_pattern, redirect_page
 
 LOOPBACK = "127.0.0.1"
 INFO_VERSION = 1
@@ -226,8 +229,8 @@ else:
 # Control client (used by a second start and by `tabrion-studio --stop`)
 # ---------------------------------------------------------------------------------------------------------------------
 
-# No proxy, ever: the control token must only travel to the loopback address.
-_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+# No proxy, ever: the control token must only travel to the loopback address. http.client connects directly to the
+# given host and never reads proxy settings from the environment.
 
 
 class ControlError(RuntimeError):
@@ -238,69 +241,121 @@ class ImpostorError(ControlError):
     """The program on the instance's port could not prove that it knows the control token."""
 
 
-def _request(url: str, *, method: str = "GET", token: str | None = None, timeout: float = 5.0) -> Any:
-    if not url.startswith(f"http://{LOOPBACK}:"):
-        raise ControlError("control requests go to the loopback address only")
-    headers = {"Accept": "application/json"}
+def health(port: int, timeout: float = 2.0) -> dict[str, Any] | None:
+    """The health document of the server on ``port``, or None if nothing answers."""
+    conn = http.client.HTTPConnection(LOOPBACK, port, timeout=timeout)
+    try:
+        status, doc, _ = _exchange(conn, "GET", "/api/health")
+    except ControlError:
+        return None
+    finally:
+        conn.close()
+    return doc if status == 200 and isinstance(doc, dict) else None
+
+
+def _exchange(
+    conn: http.client.HTTPConnection, method: str, path: str, token: str | None = None, body: object = None
+) -> tuple[int, Any, bool]:
+    """One request on ``conn``: (status, JSON document or None, whether the server closes the connection)."""
+    headers = {"Accept": "application/json", "Host": f"{LOOPBACK}:{conn.port}"}
     data = None
     if token is not None:
         headers["Authorization"] = f"Bearer {token}"
     if method == "POST":
         headers["Content-Type"] = "application/json"
-        data = b"{}"
-    request = urllib.request.Request(url, data=data, method=method, headers=headers)  # noqa: S310 (loopback only)
+        data = json.dumps({} if body is None else body).encode("utf-8")
     try:
-        with _OPENER.open(request, timeout=timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        exc.close()  # an HTTPError holds the open response; close it instead of leaving it to the GC
-        raise ControlError(f"{method} {url} failed: HTTP {exc.code}") from None
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        raise ControlError(f"{method} {url} failed: {exc}") from exc
-
-
-def health(port: int, timeout: float = 2.0) -> dict[str, Any] | None:
-    """The health document of the server on ``port``, or None if nothing answers."""
+        conn.request(method, path, body=data, headers=headers)
+        response = conn.getresponse()
+        raw = response.read()
+    except (http.client.HTTPException, OSError) as exc:
+        raise ControlError(f"{method} {path} failed: {exc}") from exc
     try:
-        doc = _request(f"http://{LOOPBACK}:{port}/api/health", timeout=timeout)
-    except ControlError:
-        return None
-    return doc if isinstance(doc, dict) else None
+        doc = json.loads(raw.decode("utf-8")) if raw else None
+    except (UnicodeDecodeError, ValueError):
+        doc = None
+    return response.status, doc, bool(response.will_close)
 
 
-def verify_server(info: InstanceInfo, timeout: float = 5.0) -> None:
-    """Make the server on ``info.port`` prove that it knows the control token, without sending the token."""
+def _prove(conn: http.client.HTTPConnection, info: InstanceInfo) -> None:
+    """Make the server prove on ``conn`` that it knows the control token, without sending the token."""
     nonce = secrets.token_hex(16)
-    url = f"http://{LOOPBACK}:{info.port}/api/control/proof?nonce={nonce}"
     try:
-        doc = _request(url, timeout=timeout)
+        status, doc, closing = _exchange(conn, "GET", f"/api/control/proof?nonce={nonce}")
     except ControlError as exc:
         raise ImpostorError(f"the program on port {info.port} gave no proof: {exc}") from exc
-    proof = doc.get("proof") if isinstance(doc, dict) else None
+    proof = doc.get("proof") if status == 200 and isinstance(doc, dict) else None
     expected = control_proof(info.control_token, nonce)
     if not isinstance(proof, str) or not hmac.compare_digest(proof.encode("utf-8"), expected.encode("utf-8")):
         raise ImpostorError(
             f"the program on port {info.port} is not the Tabrion Studio of this folder (wrong proof); "
             "the control token was not sent"
         )
+    if closing or conn.sock is None:
+        raise ControlError(
+            f"the server on port {info.port} closed the connection after its proof; the control token was not sent"
+        )
 
 
-def control(info: InstanceInfo, action: str, timeout: float = 5.0) -> dict[str, Any]:
-    """Call ``POST /api/control/<action>`` on the running instance, after it has proved that it holds the token."""
-    verify_server(info, timeout=timeout)
-    doc = _request(
-        f"http://{LOOPBACK}:{info.port}/api/control/{action}", method="POST", token=info.control_token, timeout=timeout
-    )
+def verify_server(info: InstanceInfo, timeout: float = 5.0) -> None:
+    """Make the server on ``info.port`` prove that it knows the control token, without sending the token."""
+    conn = http.client.HTTPConnection(LOOPBACK, info.port, timeout=timeout)
+    try:
+        _prove(conn, info)
+    finally:
+        conn.close()
+
+
+def control(info: InstanceInfo, action: str, timeout: float = 5.0, body: object = None) -> dict[str, Any]:
+    """Call ``POST /api/control/<action>`` on the running instance, after it has proved that it holds the token.
+
+    Both requests use one connection (review R-4); the client never reconnects in between.
+    """
+    conn = http.client.HTTPConnection(LOOPBACK, info.port, timeout=timeout)
+    try:
+        _prove(conn, info)
+        conn.auto_open = 0  # a closed connection raises instead of silently opening a new one
+        status, doc, _ = _exchange(conn, "POST", f"/api/control/{action}", token=info.control_token, body=body)
+    finally:
+        conn.close()
+    if not 200 <= status < 300:
+        raise ControlError(f"POST /api/control/{action} failed: HTTP {status}")
     if not isinstance(doc, dict):
         raise ControlError(f"unexpected answer to {action}")
     return doc
 
 
 def validate_launch_url(info: InstanceInfo, url: object) -> str:
-    """The launch URL returned by the instance, if it points to that instance; else :class:`ControlError`."""
-    if not isinstance(url, str) or not url.startswith(info.url) or any(c in url for c in "\r\n\t\\ "):
+    """The launch URL returned by the instance, if it is ``http://127.0.0.1:<port>/launch#<token>`` of that instance."""
+    prefix = f"{info.url.rstrip('/')}{LAUNCH_PATH}#"
+    if not isinstance(url, str) or not url.startswith(prefix) or TOKEN_PATTERN.fullmatch(url[len(prefix) :]) is None:
         raise ControlError(f"refusing a launch URL that does not point to {info.url}")
     return url
+
+
+def validate_redirect_file(paths: InstancePaths, url: str, value: object) -> Path:
+    """The redirect file named by the instance, if it is this instance's private file that opens ``url`` (F-02).
+
+    It must lie in the state directory, have the instance's redirect file name, be a private regular file of this
+    user and contain exactly the redirect page for ``url``. Anything else raises :class:`ControlError`.
+    """
+    if not isinstance(value, str):
+        raise ControlError("the running Tabrion Studio returned no redirect file")
+    path = Path(value)
+    folder = paths.info.parent
+    if (
+        not path.is_absolute()
+        or redirect_file_pattern(paths.info.stem).fullmatch(path.name) is None
+        or os.path.normcase(os.path.abspath(path.parent)) != os.path.normcase(os.path.abspath(folder))
+    ):
+        raise ControlError(f"refusing a redirect file outside the state directory: {value}")
+    try:
+        content = read_private_file(path)
+    except (OSError, UnsafePathError) as exc:
+        raise ControlError(f"refusing the redirect file {path}: {exc}") from exc
+    if content is None or not hmac.compare_digest(content, redirect_page(url)):
+        raise ControlError(f"refusing the redirect file {path}: unexpected content")
+    return path
 
 
 def find_running(paths: InstancePaths, wait: float = 5.0) -> InstanceInfo | None:

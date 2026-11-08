@@ -31,13 +31,6 @@ def get(url: str, timeout: float = 2.0) -> tuple[int, bytes, dict[str, str]]:
         return int(response.status), response.read(), dict(response.headers)
 
 
-def heartbeat(base_url: str, timeout: float = 2.0) -> int:
-    """What an open tab sends: ``GET /api/heartbeat`` with the header a browser adds to a same-origin request."""
-    request = urllib.request.Request(f"{base_url}api/heartbeat", headers={"Sec-Fetch-Site": "same-origin"})
-    with _OPENER.open(request, timeout=timeout) as response:
-        return int(response.status)
-
-
 def get_json(url: str, timeout: float = 2.0) -> dict[str, object]:
     status, body, _ = get(url, timeout)
     assert status == 200

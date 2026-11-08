@@ -6,7 +6,8 @@ in your browser. It focuses on understanding schemas, running queries safely (re
 migration states and Tabrion profiles.
 
 > **Status: pre-alpha skeleton.** This repository currently contains the project skeleton, the command-line
-> process model and CI (work packages STU-001, STU-002, STU-018, STU-031). The page it serves is a placeholder.
+> process model, CI and the access protection (work packages STU-001, STU-002, STU-003, STU-018, STU-031). The page
+> it serves is a placeholder.
 > There is no release; nothing is published to PyPI. See [docs/TODO.md](docs/TODO.md) for what comes next.
 
 **Non-goals:** no hosted service, no shared server, no multi-user login, no replacement for administration tools
@@ -26,13 +27,15 @@ python -m pip install .                 # the wheel contains the built frontend
 ## Usage
 
 ```bash
-tabrion-studio [PROJECT] [--port N] [--no-browser] [--idle-timeout MINUTES]
+tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]
 tabrion-studio --stop [PROJECT]
 tabrion-studio --version
 ```
 
 - `PROJECT` is the project folder (default: the current folder). Studio serves it on `127.0.0.1` at a free port and
   opens the system browser.
+- Studio opens the browser with a one-time sign-in link (through a private file, so the link never shows up in the
+  process list). `--print-url` prints such a link instead, for a browser you start yourself; it works once.
 - One instance per project folder: starting `tabrion-studio` again for the same folder opens the running instance
   instead of starting a second server.
 - Studio stops on Ctrl+C, with `tabrion-studio --stop`, or after 30 minutes without an open tab

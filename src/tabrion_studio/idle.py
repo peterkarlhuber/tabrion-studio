@@ -1,8 +1,10 @@
-"""Idle exit (03 section 4.1): the server ends after a period without any request.
+"""Idle exit (03 section 4.1): the server ends after a period without activity.
 
-Every HTTP request counts as activity; the open frontend tab sends a heartbeat (``GET /api/health``) every
-:data:`HEARTBEAT_SECONDS`, so the instance stays up while a tab is open and ends about ``timeout`` after the last
-tab closed. The SSE heartbeat of the query API (STU-011) will replace the polling. A timeout of 0 turns it off.
+Activity is a request with a valid session (STU-003) or an authenticated control request (review F-06); health
+checks, static files and refused requests are not. The open frontend tab sends a heartbeat (``GET /api/heartbeat``
+with its session) every :data:`HEARTBEAT_SECONDS`, so the instance stays up while a tab is open and ends about
+``timeout`` after the last tab closed. The SSE heartbeat of the query API (STU-011) will replace the polling. A
+timeout of 0 turns it off.
 """
 
 from __future__ import annotations
