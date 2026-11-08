@@ -7,7 +7,7 @@
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel).
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -249,4 +249,6 @@ test('TD-021: language, theme and density are kept in settings.toml for the next
   await expect(other.locator('html')).toHaveAttribute('data-theme', 'dark');
   await expect(other.locator('html')).toHaveAttribute('data-density', 'normal');
   await fresh.close();
+  // L-6 of stu-052-td021-review.md: later tests sign in to an English page with the default look.
+  rmSync(file, { force: true });
 });

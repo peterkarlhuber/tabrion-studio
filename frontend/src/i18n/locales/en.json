@@ -208,7 +208,7 @@
     "overwrite": "Rewrite file and save",
     "generalLocal": {
       "issues": "Kept in this browser only: your settings.toml has issues, so Studio does not change it. Studio forgets the choice at the next start.",
-      "hand_written": "Kept in this browser only: your settings.toml was written by hand. Save the settings below to let Studio rewrite it.",
+      "hand_written": "Kept in this browser only: your settings.toml was written by hand, so Studio does not change it from here. Set the choice in the file, or let Studio rewrite it with “Rewrite file and save” below and then choose again.",
       "unavailable": "Kept in this browser only: the settings could not be saved. Studio forgets the choice at the next start."
     }
   },

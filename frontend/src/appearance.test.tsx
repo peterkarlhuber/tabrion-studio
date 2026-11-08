@@ -5,6 +5,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
+import { App } from './App';
 import {
   chooseTheme,
   parseAppearance,
@@ -295,5 +296,170 @@ describe('the settings view', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
     await waitFor(() => expect(puts(calls)).toHaveLength(2));
     expect((puts(calls)[1]?.body as { digest: string }).digest).toBe(after);
+  });
+});
+
+/**
+ * A server that behaves like the real one: every PUT must carry the current digest (else 409 config_stale), and a
+ * saved PUT changes the digest. `hold` keeps appearance PUTs waiting until it is released.
+ */
+function strictServer() {
+  let version = 0;
+  const digest = () => String(version).padStart(64, '0');
+  const doc: Record<string, unknown> = {
+    language: 'system',
+    theme: 'system',
+    density: 'compact',
+    log_sql: false,
+    limits: { max_rows: 10000, statement_timeout_ms: 30000 },
+  };
+  const calls: Call[] = [];
+  let release: (() => void) | null = null;
+  let gate: Promise<void> | null = null;
+  let releaseGets: (() => void) | null = null;
+  let getGate: Promise<void> | null = null;
+  let holdAfterPut = false;
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const call: Call = {
+      url: String(input),
+      method: init?.method ?? 'GET',
+      headers: (init?.headers ?? {}) as Record<string, string>,
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    };
+    calls.push(call);
+    if (call.url !== '/api/settings') {
+      return new Response(JSON.stringify({ status: 'ok', version: '0.1.0.dev0' }), { status: 200 });
+    }
+    if (call.method === 'GET') {
+      if (getGate !== null) await getGate;
+      return new Response(
+        JSON.stringify({
+          settings: doc,
+          file: { digest: digest(), hand_written: false },
+          issues: [],
+        }),
+        { status: 200 },
+      );
+    }
+    const body = call.body as { settings: Record<string, unknown>; digest: string };
+    if ('theme' in body.settings && gate !== null) await gate;
+    if (body.digest !== digest()) return stale();
+    Object.assign(doc, body.settings);
+    version += 1;
+    if (holdAfterPut) {
+      holdAfterPut = false;
+      getGate = new Promise((resolve) => {
+        releaseGets = resolve;
+      });
+    }
+    return new Response(JSON.stringify({ digest: digest(), settings: doc }), { status: 200 });
+  });
+  return {
+    fetcher: fetcher as unknown as typeof fetch,
+    calls,
+    doc,
+    hold() {
+      gate = new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+    release() {
+      release?.();
+      gate = null;
+    },
+    holdGetsAfterPut() {
+      holdAfterPut = true;
+    },
+    releaseGets() {
+      releaseGets?.();
+      getGate = null;
+    },
+    bump() {
+      version += 1; // a hand edit
+    },
+  };
+}
+
+describe('against a server that checks the digest (review L-5, M-1)', () => {
+  it('three quick choices are three saved PUTs, in order, without a stale retry', async () => {
+    const server = strictServer();
+    startAppearanceSync(server.fetcher);
+    chooseTheme('dark');
+    chooseTheme('light');
+    expect(await rememberAppearance({ density: 'normal' })).toEqual({ kind: 'saved' });
+    expect(puts(server.calls).map((call) => (call.body as { settings: unknown }).settings)).toEqual(
+      [{ theme: 'dark' }, { theme: 'light' }, { density: 'normal' }],
+    );
+    expect(server.doc).toMatchObject({ theme: 'light', density: 'normal' });
+  });
+
+  it('a form save while a choice is still on its way keeps both', async () => {
+    const server = strictServer();
+    startAppearanceSync(server.fetcher);
+    render(<SettingsView fetcher={server.fetcher} />);
+    const rows = await screen.findByLabelText('Maximum rows per result');
+    await userEvent.clear(rows);
+    await userEvent.type(rows, '500');
+    server.hold();
+    await userEvent.click(screen.getByRole('radio', { name: 'Dark' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(rows).toHaveValue('500');
+    server.release();
+    expect(await screen.findByTestId('settings-saved')).toBeVisible();
+    expect(server.doc).toMatchObject({ theme: 'dark', limits: { max_rows: 500 } });
+    expect(rows).toHaveValue('500');
+    expect(screen.queryByTestId('settings-problem')).toBeNull();
+  });
+
+  it('a choice saved before the form re-read the file does not make the form stale (M-1)', async () => {
+    const server = strictServer();
+    startAppearanceSync(server.fetcher);
+    render(<SettingsView fetcher={server.fetcher} />);
+    const rows = await screen.findByLabelText('Maximum rows per result');
+    await userEvent.clear(rows);
+    await userEvent.type(rows, '500');
+    // The choice is saved; the form's own re-read of the file is slow, so the user saves before it arrives.
+    server.holdGetsAfterPut();
+    await userEvent.click(screen.getByRole('radio', { name: 'Normal' }));
+    await waitFor(() => expect(server.doc.density).toBe('normal'));
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    server.releaseGets();
+    expect(await screen.findByTestId('settings-saved')).toBeVisible();
+    expect(screen.queryByTestId('settings-problem')).toBeNull();
+    expect(server.doc).toMatchObject({ density: 'normal', limits: { max_rows: 500 } });
+    expect(rows).toHaveValue('500');
+  });
+
+  it('after a change by someone else the form keeps its values and saves with the new digest', async () => {
+    const server = strictServer();
+    startAppearanceSync(server.fetcher);
+    render(<SettingsView fetcher={server.fetcher} />);
+    const rows = await screen.findByLabelText('Maximum rows per result');
+    await userEvent.clear(rows);
+    await userEvent.type(rows, '500');
+    server.bump();
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(await screen.findByTestId('settings-problem')).toBeVisible();
+    expect(rows).toHaveValue('500');
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    expect(await screen.findByTestId('settings-saved')).toBeVisible();
+    expect(server.doc).toMatchObject({ limits: { max_rows: 500 } });
+  });
+});
+
+describe('the command palette (C-1 of stu-052-td021-review.md)', () => {
+  it('saves a theme chosen in the palette to settings.toml', async () => {
+    const server = strictServer();
+    const user = userEvent.setup();
+    render(<App fetcher={server.fetcher} heartbeat={false} />);
+    await waitFor(() => expect(server.calls.some((c) => c.url === '/api/settings')).toBe(true));
+    await user.keyboard('{Control>}k{/Control}');
+    await user.type(screen.getByRole('combobox', { name: 'Search commands' }), 'density normal');
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(server.doc.density).toBe('normal'));
+    expect(puts(server.calls).map((call) => (call.body as { settings: unknown }).settings)).toEqual(
+      [{ density: 'normal' }],
+    );
+    expect(document.documentElement.dataset.density).toBe('normal');
   });
 });

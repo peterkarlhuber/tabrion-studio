@@ -107,7 +107,8 @@ for matching and for display, so the palette, the help and the header buttons al
   move, Enter or a click runs, Escape closes, Tab stays in the search, and the focus returns to the opener. A status
   region announces the number of matches. The commands (`commands.ts`) go to the views and change the theme, the
   density and the language, and open the help; the current page, theme, density and language are marked. The filter
-  matches every word, without case and accents. No command writes to a database or a file. The explorer, the SQL
+  matches every word, without case and accents. No command writes to a database; theme, density and language are
+  saved to `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The explorer, the SQL
   editor and the history add their commands when they arrive.
 - **Areas** (`regions.ts`): each area carries `data-region`; F6 focuses its current item (the active navigation link,
   the selected tab), else its first control, else the area itself, which then shows the focus ring

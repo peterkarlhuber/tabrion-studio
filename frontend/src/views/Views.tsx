@@ -1,6 +1,6 @@
 /** The views of the shell (STU-005): start, settings, not found; the connection manager is in connections/ (STU-008). */
 import { FolderOpen } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import type { Problem } from '../api/problem';
@@ -17,6 +17,7 @@ import connectionStyles from './connections/Connections.module.css';
 import { Field } from './connections/Field';
 import { issuesByField, problemText } from './connections/messages';
 import {
+  appearanceSaveCount,
   chooseDensity,
   chooseLanguage,
   chooseTheme,
@@ -120,6 +121,8 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
   const [problem, setProblem] = useState<Problem | null>(null);
   const [saved, setSaved] = useState(false);
   const [overwrite, setOverwrite] = useState(false);
+  // How many appearance choices had been saved when `state` (and so its digest) was read.
+  const readAtSaves = useRef(0);
 
   const apply = (next: SettingsState | null) => {
     setState(next);
@@ -134,8 +137,10 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
 
   useEffect(() => {
     let active = true;
+    const saves = appearanceSaveCount();
     void fetchSettings(fetcher).then((next) => {
       if (!active) return;
+      readAtSaves.current = saves;
       // After a saved appearance choice (revision) only the digest is new: keep what the user typed.
       if (revision === 0 || form === null) apply(next);
       else setState(next);
@@ -181,11 +186,31 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
       });
       return;
     }
-    const result = await saveSettings(fetcher, settings, state.file.digest, handWritten);
+    // M-1 of stu-052-td021-review.md: an appearance choice saved since the form read the file changed only its own
+    // key. Read the new digest first; the values typed here are kept.
+    let digest = state.file.digest;
+    if (appearanceSaveCount() !== readAtSaves.current) {
+      const saves = appearanceSaveCount();
+      const next = await fetchSettings(fetcher);
+      if (next !== null) {
+        setState(next);
+        readAtSaves.current = saves;
+        digest = next.file.digest;
+      }
+    }
+    const result = await saveSettings(fetcher, settings, digest, handWritten);
     if (!result.ok) {
       setProblem(result.problem);
       if (result.problem.code === 'studio.config_hand_written') setOverwrite(true);
-      if (result.problem.code === 'studio.config_stale') apply(await fetchSettings(fetcher));
+      if (result.problem.code === 'studio.config_stale') {
+        // Someone else changed the file: show its new digest, keep what was typed, let the user save again.
+        const saves = appearanceSaveCount();
+        const next = await fetchSettings(fetcher);
+        if (next !== null) {
+          setState(next);
+          readAtSaves.current = saves;
+        }
+      }
       return;
     }
     setProblem(null);

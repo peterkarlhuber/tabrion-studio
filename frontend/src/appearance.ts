@@ -180,6 +180,11 @@ export function useAppearanceSync(): SyncState {
   return useSyncExternalStore(subscribe, () => state);
 }
 
+/** The number of choices saved to the file so far (outside React). */
+export function appearanceSaveCount(): number {
+  return saves;
+}
+
 /** The number of choices saved to the file so far. */
 export function useAppearanceSaves(): number {
   return useSyncExternalStore(subscribe, () => saves);

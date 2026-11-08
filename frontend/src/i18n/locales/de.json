@@ -208,7 +208,7 @@
     "overwrite": "Datei neu schreiben und speichern",
     "generalLocal": {
       "issues": "Nur in diesem Browser gespeichert: Deine settings.toml hat Fehler, deshalb ändert Studio sie nicht. Beim nächsten Start ist die Auswahl vergessen.",
-      "hand_written": "Nur in diesem Browser gespeichert: Deine settings.toml wurde von Hand geschrieben. Speichere unten die Einstellungen, damit Studio sie neu schreibt.",
+      "hand_written": "Nur in diesem Browser gespeichert: Deine settings.toml wurde von Hand geschrieben, deshalb ändert Studio sie hier nicht. Trage die Auswahl in der Datei ein, oder lass Studio sie unten mit „Datei neu schreiben und speichern“ neu schreiben und wähle dann noch einmal.",
       "unavailable": "Nur in diesem Browser gespeichert: Die Einstellungen konnten nicht gespeichert werden. Beim nächsten Start ist die Auswahl vergessen."
     }
   },

@@ -42,7 +42,7 @@
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
-| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | In progress (appearance PR); palette commands follow when STU-052 is merged |
+| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | In progress (appearance PR, #17; review conditions done) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -566,7 +566,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-021 · Language, theme and density in `settings.toml` (from TD-011)
 
-- **Priority:** P2 Medium · **Status:** In progress (appearance PR) · **Refs:** 03 section 4.3 (`settings.toml`: UI
+- **Priority:** P2 Medium · **Status:** In progress (appearance PR, #17) · **Refs:** 03 section 4.3 (`settings.toml`: UI
   settings, language), 08 section 4.10, `docs/architecture/configuration.md`
 - **Problem:** Studio listens on a free port, and a browser keeps localStorage per origin (port included). The
   language, theme and density chosen in the settings were therefore forgotten at the next start.
@@ -575,6 +575,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   changes a file with issues or a hand-written one from there (the choice then stays in this browser and the view
   says why), and applies the file's non-default values when it opens. Tests: `frontend/src/appearance.test.tsx`, the
   real-server test in `frontend/e2e/backend.spec.ts`, and the schema, writer and API tests.
-- **Open:** once the STU-052 PR (#16) is on master, its palette commands for theme, density and language call
-  `chooseTheme`, `chooseDensity` and `chooseLanguage` from `src/appearance.ts` instead of the plain setters, so they
-  are saved too. Whichever of the two pull requests merges second makes that one-line change per command.
+- **Done after the review (`stu-052-td021-review.md`):** C-1, the palette's theme, density and language commands go
+  through `chooseTheme`, `chooseDensity` and `chooseLanguage`, so they are saved too (pinned by a Vitest); M-1, the
+  settings form reads the new digest itself when an appearance choice was saved since it read the file, and keeps
+  what was typed on `config_stale`; L-4, the note for a hand-written file says what to do; L-5, a fake server that
+  checks the digest pins the save queue; L-6, the real-server test removes its `settings.toml` again.
+- **Open (Info):** I-5 (a warnings-only file is refused by the server, so the note says "could not be saved"), I-6 (an
+  older build reports `density` as an unknown key; a release-notes line).
