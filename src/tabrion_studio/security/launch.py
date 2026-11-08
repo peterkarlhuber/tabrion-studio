@@ -31,6 +31,7 @@ import threading
 import time
 from typing import Literal
 
+from tabrion_studio.logs import register_secret
 from tabrion_studio.paths import remove_file, write_private_file
 
 LAUNCH_PATH = "/launch"
@@ -108,6 +109,7 @@ class LaunchTokens:
     def issue(self, *, redirect: bool) -> Launch:
         """A new one-time launch URL; with ``redirect``, also a redirect file that opens it."""
         token = secrets.token_urlsafe(32)
+        register_secret(token)  # never in a log record (STU-004)
         url = f"{self.origin}{LAUNCH_PATH}#{token}"
         path: Path | None = None
         if redirect:

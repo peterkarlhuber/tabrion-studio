@@ -13,7 +13,10 @@ Only two things count as activity for the idle timeout (review F-06): a control 
 request with a valid session (the open tab's heartbeat among them). Health checks, static files, failed requests and
 requests from other sites never postpone the idle exit.
 
-Problem JSON and logging arrive with STU-004.
+Every error answer is a problem document (STU-004, :mod:`tabrion_studio.problems`): the refusals of the access
+middleware, the framework's own errors (404, 405, a request that fails validation; never with the request's values)
+and unexpected exceptions (``studio.internal_error`` with a log ID, :mod:`tabrion_studio.request_log`). The request
+log middleware is the outermost layer.
 """
 
 from __future__ import annotations
@@ -27,12 +30,17 @@ import json
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tabrion_studio._version import __version__
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
+from tabrion_studio.logs import register_secret
+from tabrion_studio.problems import code_for_status, problem_response
+from tabrion_studio.request_log import RequestLogMiddleware
 from tabrion_studio.security.access import AccessMiddleware
 from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
@@ -66,8 +74,21 @@ class Runtime:
     sessions: Sessions = field(default_factory=Sessions)
 
 
-def _problem(status: int, code: str) -> Response:
-    return JSONResponse({"code": code}, status_code=status)
+def _problem(code: str) -> Response:
+    return problem_response(code)
+
+
+async def _http_error(_request: Request, exc: Exception) -> Response:
+    # A missing file, a wrong method, ...: the catalog code for the status, never the exception's own detail text.
+    status = exc.status_code if isinstance(exc, StarletteHTTPException) else 500
+    headers = getattr(exc, "headers", None) or {}
+    allow = {key: value for key, value in headers.items() if key.lower() == "allow"}
+    return problem_response(code_for_status(status), headers=allow or None)
+
+
+async def _validation_error(_request: Request, _exc: Exception) -> Response:
+    # FastAPI's default answer echoes the offending input values; this one names no value at all.
+    return problem_response("studio.invalid_request")
 
 
 async def _json_body(request: Request) -> dict[str, object] | None:
@@ -105,8 +126,12 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         redoc_url=None,
         openapi_url="/api/openapi.json",
         lifespan=lifespan,
+        exception_handlers={StarletteHTTPException: _http_error, RequestValidationError: _validation_error},
     )
+    register_secret(runtime.control_token)  # never in a log record (STU-004)
     app.add_middleware(AccessMiddleware, port=runtime.port, sessions=runtime.sessions, on_activity=runtime.idle.touch)
+    # Added last, so it is the outermost middleware: it sees every refusal and catches every unexpected error.
+    app.add_middleware(RequestLogMiddleware)
 
     @app.get("/api/health")
     async def get_health() -> Response:
@@ -117,10 +142,10 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         # The launch page sends the one-time token from its URL fragment (03 section 4.1, T-03).
         doc = await _json_body(request)
         if doc is None:
-            return _problem(400, "access.bad_request")
+            return _problem("access.bad_request")
         result = runtime.launches.redeem(doc.get("token"))
         if result != "ok":
-            return _problem(401, f"access.launch_{result}")
+            return _problem(f"access.launch_{result}")
         session_id, csrf = runtime.sessions.create()
         runtime.idle.touch()
         response = JSONResponse({"csrf": csrf})
@@ -139,7 +164,7 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         # Proves to a second `tabrion-studio` start that this server knows the control token, before that client
         # sends the token (review F-01). The answer depends on the client's random nonce, so it cannot be replayed.
         if NONCE_PATTERN.fullmatch(nonce) is None:
-            return _problem(400, "studio.bad_nonce")
+            return _problem("studio.bad_nonce")
         return JSONResponse({"proof": control_proof(runtime.control_token, nonce)})
 
     @app.post("/api/control/{action}", include_in_schema=False)
@@ -149,19 +174,19 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
             token.encode("utf-8"), runtime.control_token.encode("utf-8")
         )
         if not authorized:
-            return _problem(401, "access.control_denied")
+            return _problem("access.control_denied")
         runtime.idle.touch()
         if action == "launch":
             doc = await _json_body(request)
             if doc is None:
-                return _problem(400, "access.bad_request")
+                return _problem("access.bad_request")
             launch = runtime.launches.issue(redirect=doc.get("redirect") is True)
             redirect = None if launch.redirect is None else str(launch.redirect)
             return JSONResponse({"url": launch.url, "redirect": redirect})
         if action == "shutdown":
             runtime.request_shutdown("stop requested")
             return JSONResponse({"status": "stopping"}, status_code=202)
-        return _problem(404, "studio.not_found")
+        return _problem("studio.not_found")
 
     index = static_dir / "index.html"
     if index.is_file():

@@ -43,6 +43,12 @@ Studio is a local, single-user tool (STU-ADR-0002, `docs/adr/0002-local-security
   allowlist (`127.0.0.1:<port>` only) and an Origin check on every route; JSON-only API requests; a strict CSP and
   `Cache-Control: no-store` on every answer;
 - only requests with a valid session and authenticated control requests postpone the idle exit;
+- errors and logs (STU-004, `docs/architecture/errors-and-logging.md`): every error answer is a problem document
+  with a code and fixed texts, never an exception message, a path, a stack trace or request data (unexpected errors
+  give `studio.internal_error` with a log ID); log records are redacted before they are written (the process's
+  tokens, URL passwords, credential key values, bearer tokens and cookies removed; exceptions logged with frames
+  only, without messages), the request log names route templates without query strings, and log files are 0600 in a
+  0700 folder, rotated at 5 x 5 MB;
 - planned before the first release: secrets only in the OS keyring (or `env:`/`file:` references), read-only
   enforced by the database, production profiles without writes.
 

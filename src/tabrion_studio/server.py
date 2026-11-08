@@ -22,6 +22,7 @@ from collections.abc import Callable, Iterator
 import contextlib
 from dataclasses import dataclass, field
 import errno
+import logging
 import os
 from pathlib import Path
 import secrets
@@ -46,6 +47,7 @@ from tabrion_studio.instance import (
     remove_info_if_ours,
     write_info,
 )
+from tabrion_studio.logs import configure_logging
 from tabrion_studio.paths import UnsafePathError, remove_file
 from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
@@ -63,6 +65,8 @@ class ServeOptions:
     idle_timeout_seconds: float = 30 * 60
     open_browser: Callable[[str], None] | None = None
     print_url: bool = False
+    #: Where the rotating log file goes (03 section 4.5); None logs to the console only.
+    log_dir: Path | None = None
     started: float = field(default_factory=time.perf_counter)
 
 
@@ -219,6 +223,8 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     paths = InstancePaths.for_project(options.state_dir, options.project)
     remove_redirect_files(paths)
     sockets = bind_loopback(options.port)
+    # One log file per project instance (the lock makes this process its only writer), named like the info file.
+    logs = configure_logging(options.log_dir, paths.info.stem)
     port = sockets.port
     info = InstanceInfo(
         pid=os.getpid(),
@@ -253,6 +259,11 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         elapsed = time.perf_counter() - options.started
         print(f"Tabrion Studio {__version__} is running at {info.url} (ready in {elapsed:.2f} s)", file=out)
         print(f"Project: {options.project}", file=out)
+        if logs.file is not None:
+            print(f"Log: {logs.file}", file=out)
+        logging.getLogger("tabrion_studio.server").info(
+            "Tabrion Studio %s ready on port %d", __version__, port, extra={"event": "studio.ready"}
+        )
         if options.print_url:
             # Explicit opt-in (--print-url): the one-time link is now in the terminal and its scrollback.
             link = launches.issue(redirect=False).url
@@ -275,8 +286,10 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
 
     config = uvicorn.Config(
         create_app(runtime),
-        log_level="warning",
-        # 03 section 4.5: no access log (paths carry IDs); a request log without query strings comes with STU-004.
+        # Uvicorn's loggers go through the redacting handlers of configure_logging (STU-004), not its own config.
+        log_config=None,
+        log_level="info",
+        # 03 section 4.5: no access log (paths carry IDs); tabrion_studio.request_log logs routes without queries.
         access_log=False,
         # Forwarded headers are never trusted (T-01); the access middleware refuses requests that carry them.
         proxy_headers=False,
@@ -296,6 +309,10 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         remove_info_if_ours(paths, info.instance_id)
         sockets.close()
         lock.release()
+        logging.getLogger("tabrion_studio.server").info(
+            "Tabrion Studio stopped (%s)", server.stop_reason, extra={"event": "studio.stopped"}
+        )
+        logs.close()
     if not server.started:
         print("Tabrion Studio could not start.", file=out, flush=True)
         return 1

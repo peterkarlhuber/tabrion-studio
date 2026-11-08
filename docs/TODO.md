@@ -5,7 +5,8 @@
 > (planning documents 03, 05, 07, 08 and 09; program status in `tabrion/docs/program/STATUS.md`, K-12). "TABRION
 > <WP-ID>" names a work package of that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3-stu004` (TABRION STU-004: Problem
+> JSON and logging); before that against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
 > of `stu-005-051-review.md`; PR #5: STU-005 and STU-051 with S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and
 > R-1..R-7 of `stu-002-018-review.md`; PR #1: STU-001, STU-002, STU-018, STU-031).
 
@@ -19,7 +20,8 @@
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
 | OA-004 independent review of STU-003 (access protection) | P0 | Accepted (`stu-003-review.md`, PR #4 merged) |
 | OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Accepted (`stu-005-051-review.md`, PR #5 merged) |
-| OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Open (this PR) |
+| OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Accepted (`stu-follow-up-6-review.md`, PR #6 merged) |
+| OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Open (STU-004 PR) |
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Open (STU-006) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
@@ -48,6 +50,10 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   pre-release specifier on master, RC-8; enforced by `tests/security/test_dependencies.py`).
 - **Next step:** add `tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2` with the first WP that uses the Tabrion API
   (STU-009), after tabrion v0.1.0.
+- **Also with STU-009 (from STU-004):** replace the mirror `tabrion_studio.problems.DB_KINDS` with
+  `tabrion.errors.Kind`, build `db.<kind>` problems from `tabrion.errors.classify` and `safe_message` only, and add
+  `tabrion.errors.DbErrorRedactionFilter` to the log handlers next to Studio's `RedactionFilter`
+  (`docs/architecture/errors-and-logging.md`, "Database errors").
 
 ## Owner actions
 
@@ -97,7 +103,7 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-004 · Independent review of STU-003 (TABRION STU-003, 07 §6, G-S1)
 
-- **Priority:** P0 Critical · **Status:** Open (PR #4) · **Refs:** 07 §6 (packages with a network or credential
+- **Priority:** P0 Critical · **Status:** Accepted (PR #4 merged) · **Refs:** 07 §6 (packages with a network or credential
   surface), condition C-3 of `stu-002-018-review.md`, `docs/architecture/access-protection.md`
 - **What:** an independent review agent checks the access protection against the binding requirements below and the
   threat model (T-01, T-02, T-03, T-07, T-15), including the workflow-change gate changes (R-2, R-3), before the
@@ -124,16 +130,27 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-006 · Independent workflow-change review of the `e2e` job (review U-3)
 
-- **Priority:** P1 High · **Status:** Open (this PR) · **Refs:** `docs/development/ci.md` (workflow-change gate),
-  `stu-005-051-review.md` U-3
+- **Priority:** P1 High · **Status:** Accepted (`stu-follow-up-6-review.md`, PR #6 merged) · **Refs:**
+  `docs/development/ci.md` (workflow-change gate), `stu-005-051-review.md` U-3
 - **What:** the follow-up pull request adds the job `e2e` to `.github/workflows/ci.yml` and to the mandatory checks in
   `.github/ci-manifest.json`. It builds the wheel, installs it into a fresh environment, installs the Chromium build of
   the locked Playwright (`npm run e2e:install`) and runs every Playwright suite except the screenshots; a final step
   fails the job if a required suite (`a11y`, `backend`, `contrast`, `dialogs`, `status`) did not pass or was skipped.
   Actions are pinned by SHA; `ci_ok.py` is unchanged. Because the pull request changes `.github/`, ci-ok reports
   NOT OK until the label is set.
-- **Next step:** an independent review agent (or the owner) reads the `.github/` diff, sets the label
-  `workflow-change-reviewed` after the latest push and re-runs ci-ok.
+- **Result:** `stu-follow-up-6-review.md`: ACCEPTED, including the workflow-change review of the `.github/` diff.
+  Info notes W-1 (`retention-days` for the failure artifact) and W-2 (the browser download is not hash-pinned) need
+  no change now.
+
+### OA-007 · Independent review of STU-004 (TABRION STU-004, 07 §6)
+
+- **Priority:** P1 High · **Status:** Open (STU-004 PR) · **Refs:** 07 §6 (Studio packages with a credential
+  surface), T-05, SQ-04, `docs/architecture/errors-and-logging.md`
+- **What:** the pull request turns every error answer into Problem JSON and adds the redacting, rotating logs and the
+  request log. An independent review agent checks that no answer can carry an exception message, a path, a stack
+  trace or request data, that the redaction holds for every logger (Studio, Uvicorn, asyncio) and every field, and
+  the file handling of the log folder (0700, 0600, symlinks). No `.github/` file changes, so the workflow-change label
+  is not needed.
 
 ## STU-006 binding requirement (review U-1 of PR #5)
 
@@ -188,9 +205,9 @@ merge after OA-004.
 | WP | Title | Priority | Depends on | Note |
 |---|---|---|---|---|
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
-| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | request log without query strings (Uvicorn's access log is off) |
+| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | In progress (STU-004 PR, OA-007): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
-| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, this PR); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
+| TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | must meet the binding requirement U-1 (trust dialog D-01) |
 | TABRION STU-007 | Secret management | P0 | STU-006 | |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown |
@@ -219,8 +236,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 - **Priority:** P3 Low · **Status:** Open · **Refs:** 05 §3.2, AC-1
 - **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages, which arrive with
-  STU-006 and later. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI
-  and keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI.
+  STU-006 and later. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
+  keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
+  keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
 
 ### TD-002 · Sandboxed browsers cannot open the redirect file (TABRION STU-003)
 

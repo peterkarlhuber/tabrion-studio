@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+import os
 from pathlib import Path
 import sys
 import time
@@ -33,7 +34,7 @@ from tabrion_studio.instance import (
     validate_launch_url,
     validate_redirect_file,
 )
-from tabrion_studio.paths import UnsafePathError, default_state_dir, remove_file
+from tabrion_studio.paths import STATE_DIR_ENV, UnsafePathError, default_log_dir, default_state_dir, remove_file
 
 # Taken when the module loads; the server stack (FastAPI, Uvicorn) is imported only when this process serves, so
 # "ready in" includes those imports, and a second start that reuses the running instance never loads them.
@@ -84,6 +85,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--state-dir", type=Path, default=None, help="state directory (default: the per-user state directory)"
     )
+    parser.add_argument(
+        "--log-dir",
+        type=Path,
+        default=None,
+        help="log directory (default: the per-user log directory, or STATE_DIR/logs with --state-dir)",
+    )
     parser.add_argument("--version", action="version", version=f"tabrion-studio {__version__}")
     return parser
 
@@ -110,6 +117,8 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         return EXIT_USAGE
     project = project.resolve()
     state_dir: Path = args.state_dir if args.state_dir is not None else default_state_dir()
+    explicit_state = args.state_dir is not None or bool(os.environ.get(STATE_DIR_ENV))
+    log_dir: Path = args.log_dir if args.log_dir is not None else default_log_dir(state_dir if explicit_state else None)
     paths = InstancePaths.for_project(state_dir, project)
     lock = InstanceLock(paths.lock)
     try:
@@ -139,6 +148,7 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         idle_timeout_seconds=args.idle_timeout * 60,
         open_browser=None if args.no_browser else _open_browser,
         print_url=args.print_url,
+        log_dir=log_dir,
         started=_STARTED,
     )
     try:

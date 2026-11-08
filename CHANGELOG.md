@@ -44,7 +44,22 @@ All notable changes to this project are documented here. The format follows
   of the locked Playwright (`npm run e2e:install`) and fails if a required suite was skipped (review U-3 of
   `stu-005-051-review.md`). `npm run e2e` runs the suites locally.
 
+- Problem JSON and logging (STU-004, `docs/architecture/errors-and-logging.md`): every error answer is
+  `application/problem+json` with `code`, `kind`, `status` and fixed `title`, `detail` and `hint` texts from one
+  catalog, including the access refusals, 404, 405 and validation errors (which no longer echo the input); an
+  unexpected exception gives `studio.internal_error` with a log ID and is logged once, redacted. Logs go to a rotating
+  JSON-lines file per project instance (5 x 5 MB, 0600 in a 0700 folder, symlinks refused) and WARNING and above to
+  stderr; `--log-dir` and `TABRION_STUDIO_LOG_DIR` choose the folder (default: the per-user log directory, or
+  `STATE_DIR/logs` with `--state-dir`). A request log names the method, route template, status, duration and problem
+  code, never the query string. Uvicorn's loggers use the same handlers; its access log stays off. Canary tests
+  (STU-T-008, -009) prove that secrets, parameter values, server `DETAIL` texts and tokens reach neither an answer nor
+  a log line.
+
 ### Security
+
+- STU-004: access refusals no longer repeat request data in their text (`access.forwarded_not_allowed` named the
+  forwarded headers); the process's control token, launch tokens, session IDs and CSRF values are registered for log
+  redaction when they are created.
 
 - Review of PR #4 (`stu-003-review.md`), S-1: when the server no longer knows the tab's session (a restart, or a
   program on another local port that replaced the session cookie), the page stops the heartbeat and says "Your session

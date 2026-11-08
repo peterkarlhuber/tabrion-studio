@@ -96,6 +96,9 @@ A request that passes check 7 counts as activity for the idle timeout (review F-
 sites are allowed: these pages hold no data, and the redirect file is such a navigation. Every other unknown path is
 404.
 
+Every refusal is a problem document (`application/problem+json`) with the code of the table and fixed texts; it never
+repeats a header or other request data (STU-004, [Errors and logging](errors-and-logging.md)).
+
 Every answer, including refusals and errors, gets these headers:
 
 | Header | Value | Threat |
