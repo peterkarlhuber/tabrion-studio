@@ -540,19 +540,23 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-012 · STU-009 integration: what remains before it can merge
 
-- **Priority:** P1 High · **Status:** Open (`stu-009-review.md`: not accepted; H-1, M-1, L-1 fixed for the delta
-  re-review) · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **Priority:** P1 High · **Status:** Open (`stu-009-review.md`, delta re-review: accepted with conditions; R-L1,
+  R-L2, I-R1 and I-R2 done, the CI condition is a separate `.github/workflows` commit for the workflow-change review)
+  · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **Conditions to leave draft (re-review):** 1. CI installs the pinned tabrion and runs the `postgres` tests (L-2,
+  below); 2. R-L2, the strict pin rule (done: `tests/security/test_dependencies.py` allows only plain requirements
+  and the full-SHA pin, in every requirements or constraints file at any depth); 3. R-L1 (done: token-based function
+  check); 4. I-R2 (done: `test_i_r2_one_profile_read_per_connect` kills mutant N5).
 - **tabrion v0.1.0 (TS-001):** switch to the final range, pin the v0.1.0 commit by SHA in
   `constraints/tabrion-integration.txt`, merge master, run every check, then mark the PR ready.
-- **CI installs tabrion from the pin (L-2 of `stu-009-review.md`, stays open under RC-8):** every Python job runs
-  `pip install -e ".[dev]"` without the constraints file and fails, since tabrion is not on PyPI. pip reads a
-  constraints file only from `-c`, `PIP_CONSTRAINT` or a pip configuration file outside the repository, so the fix
-  changes `.github/workflows/ci.yml` (and `nightly.yml`): add `-c constraints/tabrion-integration.txt` to every
-  install, and to the wheel installs of `build and install` and the SBOM job. That needs a workflow-change review
-  (OA-003). The wheel smoke install with the constraints file works locally.
-- **The CI job `backend integration (PostgreSQL 17)`** changes `.github/` as well (OA-003). It must run the
-  `postgres` marker with `TABRION_STUDIO_TEST_POSTGRES` (a database owned by the test role). Until then, the
-  PostgreSQL tests run only locally (PostgreSQL 16 here).
+- **CI installs tabrion from the pin (L-2 of `stu-009-review.md`):** pip reads a constraints file only from `-c`,
+  `PIP_CONSTRAINT` or a pip configuration file outside the repository. The workflow commit on this branch adds
+  `-c constraints/tabrion-integration.txt` to every `pip install -e ".[dev]"` and sets `PIP_CONSTRAINT` for the wheel
+  installs (e2e, `build and install`, the SBOM job). It waits for the independent workflow-change review and the
+  `workflow-change-reviewed` label (OA-003).
+- **The CI job `backend integration (PostgreSQL 17)`** (same workflow commit, added to `.github/ci-manifest.json`):
+  a `postgres:17.10` service pinned by digest, a non-superuser role that owns its database, `pytest -m postgres`
+  with `TABRION_STUDIO_TEST_POSTGRES`, and a check that every PostgreSQL test ran and none was skipped.
 - **Binding for STU-011:** user SQL goes through `services.readonly.check_statement` and `OpenConnection.fetch`
   (prepared statements: the server refuses several commands, H-1), with one `Database.read()` per statement, and
   always through `ConnectionRegistry.get` (`fetch` does not check the handle again by itself; review I-5). SQLAlchemy

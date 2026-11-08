@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 import sqlalchemy
+import tabrion
 from tabrion.errors import TabrionError
 
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Settings
@@ -246,6 +247,22 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("set session backslash_quote to on", "studio.statement_transaction"),
         ("SELECT set_config('standard_conforming_strings','off',false)", "studio.statement_refused"),
         ("SELECT pg_catalog.SET_CONFIG ('role', 'postgres', false)", "studio.statement_refused"),
+        # R-L1 of the re-review: the spellings that passed the regex.
+        ("SELECT \"set_config\"('standard_conforming_strings','off',false)", "studio.statement_refused"),
+        ("SELECT set_config/**/('role','postgres',false)", "studio.statement_refused"),
+        ("SELECT set_config /* a /* nested */ comment */ ('role','postgres',false)", "studio.statement_refused"),
+        ("SELECT set_config -- line\n('role','postgres',false)", "studio.statement_refused"),
+        ("SELECT \"pg_catalog\".\"set_config\"\t(\n'role','postgres',false)", "studio.statement_refused"),
+        ("SELECT * FROM set_config('role','postgres',false)", "studio.statement_refused"),
+        ("SELECT U&\"\\0073et_config\"('role','postgres',false)", "studio.statement_refused"),
+        # A literal must not hide the call from either way the server lexes '...' (standard_conforming_strings).
+        ("SELECT 'a\\', set_config('role','postgres',false) --'", "studio.statement_refused"),
+        ("SELECT E'a\\'', set_config('role','postgres',false) --'", "studio.statement_refused"),
+        ("SELECT $$x$$, set_config('role','postgres',false)", "studio.statement_refused"),
+        # I-R1 of the re-review: calls that reach other sessions or outlive Studio's transaction.
+        ("SELECT pg_notify('channel', 'x')", "studio.statement_refused"),
+        ("SELECT pg_advisory_lock(1)", "studio.statement_refused"),
+        ("SELECT pg_try_advisory_lock_shared(1, 2)", "studio.statement_refused"),
     ],
 )
 def test_statements_studio_refuses(sql: str, code: str) -> None:
@@ -263,6 +280,14 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
         "SET search_path TO app",
         "EXPLAIN SELECT 1",
         "/* BEGIN */ SELECT 'COMMIT'",
+        # Not a call: a literal, a comment, a column and the transaction-level advisory lock.
+        "SELECT 'set_config(' AS text",
+        "SELECT 1 /* set_config( */",
+        "SELECT $body$ set_config('role','x',false) $body$",
+        "SELECT set_config_value FROM settings",
+        'SELECT "SET_CONFIG"(1)',
+        "SELECT pg_advisory_xact_lock(1)",
+        "SELECT current_setting('role')",
     ],
 )
 def test_statements_studio_passes_on(sql: str) -> None:
@@ -638,5 +663,37 @@ def test_l1_the_password_is_resolved_from_the_entry_the_url_comes_from(
         registry.open("user:y")
     finally:
         registry.close_all()
-    assert source.entries and source.resolved == [source.entries[0]]
+    # I-R2 of the re-review (mutant N5): one read, and the very object of that read (Entry compares by value).
+    assert len(source.entries) == 1
+    assert len(source.resolved) == 1 and source.resolved[0] is source.entries[0]
     assert url.password and url.password not in scrub(f"connect with {url.password}")
+
+
+@dataclass
+class SwappingSource(Source):
+    """A profile file that another program rewrites between two reads: the second read names another host."""
+
+    def entry(self, profile_id: str) -> Entry:
+        entry = super().entry(profile_id)
+        if len(self.entries) > 1:
+            entry = Entry(entry.id, entry.source, replace(entry.profile, host="swapped.example"))
+            self.entries[-1] = entry
+        return entry
+
+
+def test_i_r2_one_profile_read_per_connect(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mutant N5 of the re-review: the secret must come from the entry the URL is built from, read once."""
+    urls: list[sqlalchemy.URL] = []
+
+    def from_url(url: sqlalchemy.URL, **_options: Any) -> Any:
+        urls.append(url)
+        raise RegistryError("studio.connection_failed")
+
+    monkeypatch.setattr(tabrion.Database, "from_url", from_url)
+    profile = Profile("y", "postgresql", "dev", host="db.example", user="u", password=SecretRef("keyring", ""))
+    source = SwappingSource(profiles={"user:y": profile}, passwords={"user:y": "pw-1234"})
+    with pytest.raises(RegistryError):
+        ConnectionRegistry(source).open("user:y")
+    assert len(source.entries) == 1
+    assert [entry is source.entries[0] for entry in source.resolved] == [True]
+    assert [url.host for url in urls] == ["db.example"]

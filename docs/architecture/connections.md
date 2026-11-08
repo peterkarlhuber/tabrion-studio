@@ -101,8 +101,14 @@ and the server refuses a text with several commands (`42601`). The text split ca
 `standard_conforming_strings = off`, the review's text `SELECT '\''; ROLLBACK; BEGIN READ WRITE; INSERT ...` is one
 statement to `tabrion.sql.split_statements` and six to the server. Over the simple query protocol, the review's probe
 wrote three rows through Studio's read-only connection. Now the server refuses that text. `check_statement` also
-refuses `SET standard_conforming_strings`, `SET backslash_quote` and `set_config(` anywhere in the text (which also
-reaches `role`). SQLite's `execute` runs one statement only.
+refuses `SET standard_conforming_strings` and `SET backslash_quote`, and a call of `set_config` (which also reaches
+`role`), `pg_notify` or a session-level advisory lock function (`pg_advisory_lock`, `pg_try_advisory_lock` and their
+`_shared` forms, which would stay held on the pooled connection) anywhere in the statement. That check reads tokens:
+comments and literals are left out and quoted identifiers unquoted, and `'...'` is lexed both with and without
+backslash escapes, so `"set_config"(`, `set_config/**/(` and `pg_catalog.set_config (` are caught (R-L1 and I-R1 of
+the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. This is still
+a best-effort check, not the boundary: a database function that calls `set_config` is invisible in the text. SQLite's
+`execute` runs one statement only.
 
 **Binding for STU-011:** user SQL goes through `check_statement` and `OpenConnection.fetch`, with one `read()` per
 statement, and always through `ConnectionRegistry.get`: `fetch` does not check the handle again by itself. Send user

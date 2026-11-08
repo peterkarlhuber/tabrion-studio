@@ -22,6 +22,15 @@ All notable changes to this project are documented here. The format follows
     - M-1: without a password, libpq gets none of its own (no `PGPASSWORD`, `.pgpass` or service-file password).
     - L-1: the password is resolved from the same entry as the URL.
     - Info items: a connection test shares the connection limit.
+  - Delta re-review of `stu-009-review.md`:
+    - R-L1: the function check reads the statement's tokens (comments and literals left out, quoted identifiers
+      unquoted, `'...'` lexed with and without backslash escapes), so `"set_config"(` and `set_config/**/(` are
+      refused; so are `U&"..."` identifiers.
+    - I-R1: `pg_notify()` and the session-level advisory lock functions are refused like `NOTIFY` and `LOCK`.
+    - R-L2: a requirements or constraints file, at any depth, holds only plain requirements and the full-SHA tabrion
+      pin: pip options (`-e`, `-r`, `-c`, `-f`, index and host options), paths, wheel files, other URLs and
+      fragments are refused.
+    - I-R2: a test that fails when the secret comes from a second read of the profile.
   - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
     constraints file, and `pyproject.toml` keeps the final range with no direct reference.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
