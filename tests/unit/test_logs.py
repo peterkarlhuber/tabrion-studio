@@ -10,12 +10,14 @@ import os
 from pathlib import Path
 import stat
 import sys
+import time
 
 import pytest
 
 from tabrion_studio.logs import (
     BACKUP_COUNT,
     MAX_BYTES,
+    MAX_TRACEBACK,
     MESSAGE_REDACTED,
     REDACTED,
     PrivateRotatingFileHandler,
@@ -139,6 +141,108 @@ def test_scrub_patterns() -> None:
     assert scrub("Bearer abc.def") == f"Bearer {REDACTED}"
     assert scrub("tabrion_studio_session_8765=abc; other=1") == f"tabrion_studio_session_8765={REDACTED}; other=1"
     assert scrub("the password is wrong") == "the password is wrong"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # Review L-2 (stu-004-review.md, probe P-5): the key as a suffix of a longer name.
+        ("db_password=value-1", f"db_password={REDACTED}"),
+        ("PGPASSWORD=value-2 psql", f"PGPASSWORD={REDACTED} psql"),
+        ("user_token=value-3", f"user_token={REDACTED}"),
+        ("auth_secret: value-4", f"auth_secret: {REDACTED}"),
+        ("sslpassword=value-5", f"sslpassword={REDACTED}"),
+        ("privatekey=value-6", f"privatekey={REDACTED}"),
+        ("x-tabrion-csrf: value-7", f"x-tabrion-csrf: {REDACTED}"),
+        ("Authorization: Basic dmFsdWUtOA==", f"Authorization: Basic {REDACTED}"),
+        ("{'authorization': 'Basic dmFsdWUtOA=='}", f"{{'authorization': 'Basic {REDACTED}'}}"),
+        # A URL password up to the last @, also with @ or / in it.
+        ("postgresql://u:p@ss-value-9@h/db", "postgresql://u:***@h/db"),
+        ("postgresql://u:ab/value-10@h:5432/db", "postgresql://u:***@h:5432/db"),
+        ("'postgresql://u:pw@h/db' and x@y", "'postgresql://u:***@h/db' and x@y"),
+        # Words that only contain a key are left alone.
+        ("max_tokens: 5", "max_tokens: 5"),
+        ("tokenizer=x", "tokenizer=x"),
+    ],
+)
+def test_scrub_patterns_of_the_review(text: str, expected: str) -> None:
+    assert scrub(text) == expected
+
+
+@pytest.mark.parametrize("unit", ["y", "a:", "a://", "a://b:c", "-", "a_", "password", "password='", "x@"])
+def test_scrub_takes_linear_time_on_hostile_text(unit: str) -> None:
+    """Bounded repetitions: 200 KB of a repeated pattern is scrubbed quickly (the scrub runs before the caps)."""
+    text = unit * (200_000 // len(unit))
+    started = time.perf_counter()
+    scrub(text)
+    assert time.perf_counter() - started < 2.0
+
+
+def test_a_deep_traceback_is_capped() -> None:
+    """Review L-3: a RecursionError keeps its first and last frames only, and every traceback is capped."""
+
+    value = "-".join(("value", "11"))  # a runtime value, not source text (the frames show source lines)
+
+    # Two functions in turn: Python collapses only repeats of the same line, so these 500 frames are all printed.
+    def ping(n: int) -> None:
+        if n == 0:
+            raise RecursionError(value)
+        pong(n - 1)
+
+    def pong(n: int) -> None:
+        ping(n - 1)
+
+    try:
+        ping(500)
+    except RecursionError as exc:
+        text = safe_traceback(exc)
+    assert "  ... 462 more frames ...\n" in text
+    assert text.count("in ping") + text.count("in pong") == 39  # 40 frames, the first one is the test
+    assert len(text) < 16 * 1024 and value not in text
+    long = ValueError("x")
+    chain: BaseException = long
+    for index in range(20):  # a chain of 8 exceptions with 40 frames each still stays below the cap
+        try:
+            raise ValueError(str(index)) from chain
+        except ValueError as exc:
+            chain = exc
+    assert len(safe_traceback(chain)) <= MAX_TRACEBACK + 64
+    record = logging.LogRecord("t", logging.ERROR, __file__, 1, "x", None, None)
+    record.exc_text = "y" * (MAX_TRACEBACK * 3)
+    RedactionFilter().filter(record)
+    assert record.exc_text is not None and len(record.exc_text) < MAX_TRACEBACK + 64
+
+
+@pytest.mark.parametrize(
+    ("name", "message", "expected"),
+    [
+        (
+            "asyncio",
+            "Task exception was never retrieved\nfuture: <Task finished exception=ValueError('value-12')>",
+            "Task exception was never retrieved [details redacted]",
+        ),
+        ("asyncio", "Exception in callback f('value-13')\nhandle: <Handle f('value-13')>", None),
+        ("asyncio", "something new with value-14", f"asyncio: {MESSAGE_REDACTED}"),
+        ("asyncio", "Unhandled exception in event loop", "Unhandled exception in event loop"),
+        ("uvicorn.error", "Traceback (most recent call last):\n  File x\nRuntimeError: value-15", None),
+        ("tabrion_studio.x", "before\nTraceback (most recent call last):\nValueError: value-16", None),
+    ],
+)
+def test_exception_text_in_the_message_is_removed(name: str, message: str, expected: str | None) -> None:
+    """Review L-1: asyncio's reprs and formatted tracebacks in the message never reach the output."""
+    record = logging.LogRecord(name, logging.ERROR, __file__, 1, message, None, None)
+    RedactionFilter().filter(record)
+    assert "value-1" not in record.msg
+    if expected is not None:
+        assert record.msg == expected
+    if "Traceback" in message:
+        assert record.msg.endswith("[traceback text redacted]")
+
+
+def test_exception_arguments_are_formatted_as_their_type() -> None:
+    record = logging.LogRecord("t", logging.ERROR, __file__, 1, "failed: %r %s", (ValueError("value-17"), 3), None)
+    RedactionFilter().filter(record)
+    assert record.msg == f"failed: ValueError: {MESSAGE_REDACTED} 3"
 
 
 def test_safe_traceback_keeps_frames_drops_messages() -> None:

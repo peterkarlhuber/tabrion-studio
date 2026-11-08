@@ -22,7 +22,8 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
-from tabrion_studio.config.project import ProjectConfig, TrustError
+from tabrion_studio.config.project import ProjectConfig, ProjectState, TrustError
+from tabrion_studio.config.schema import Issue
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.problems import problem_response
 
@@ -41,9 +42,17 @@ def _profile_entries(source: str, profiles: list[Any]) -> list[dict[str, Any]]:
 
 
 def add_config_routes(app: FastAPI, config: Configuration) -> None:
+    def load_project() -> ProjectState:
+        """The project's state; an unexpected error makes it invalid instead of failing the route (review T-3)."""
+        try:
+            return config.project.load()
+        except Exception:
+            logger.exception("cannot read the project profiles", extra={"event": "studio.project_unreadable"})
+            return ProjectState("invalid", issues=[Issue("file", "config.unreadable")])
+
     @app.get("/api/project")
     async def get_project() -> Response:
-        return JSONResponse(config.project.load().to_dict(config.project.project))
+        return JSONResponse(load_project().to_dict(config.project.project))
 
     @app.post("/api/project/trust", status_code=204)
     async def post_trust(request: Request) -> Response:
@@ -65,7 +74,7 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
     @app.get("/api/profiles")
     async def get_profiles() -> Response:
         user = config.user.profiles()
-        project = config.project.load()
+        project = load_project()  # a hostile project file never hides the user's own profiles
         profiles = _profile_entries("user", user.profiles)
         if project.state == "trusted":
             profiles += _profile_entries("project", project.profiles)

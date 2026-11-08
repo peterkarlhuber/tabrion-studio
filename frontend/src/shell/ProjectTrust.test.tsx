@@ -86,6 +86,36 @@ it('shows the new content when the file changed after the dialog opened (studio.
   const dialog = await screen.findByRole('dialog');
   await user.click(within(dialog).getByRole('button', { name: 'Trust' }));
   expect(await screen.findByText('new.host:5432')).toBeInTheDocument();
+  // Review I-2: the dialog says that it now shows the new content.
+  expect(within(screen.getByRole('dialog')).getByTestId('trust-stale')).toHaveTextContent(
+    'The file changed after it was shown.',
+  );
+});
+
+it('says why the project profiles are not loaded when the file is invalid (review I-2)', async () => {
+  const user = userEvent.setup();
+  const pointer = `profile[0]."evil${String.fromCodePoint(0x202e)}"`;
+  const { fetcher } = server([
+    project('invalid', {
+      review: null,
+      issues: [
+        { pointer: 'profile[0].path', code: 'config.network_path', severity: 'error' },
+        { pointer, code: 'config.type', severity: 'error' },
+        { pointer: 'profile[0].x', code: 'config.unknown_key', severity: 'warning' },
+      ],
+    }),
+  ]);
+  render(<ProjectTrust fetcher={fetcher} />);
+  const notice = await screen.findByTestId('project-invalid');
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(notice).toHaveTextContent('Project profiles not loaded');
+  expect(notice).toHaveTextContent('.tabrion/studio.toml cannot be used');
+  const items = within(notice).getAllByRole('listitem');
+  expect(items).toHaveLength(2); // errors only
+  expect(items[0]).toHaveTextContent('profile[0].path config.network_path');
+  expect(items[1]?.querySelector('code')?.textContent).toBe('profile[0]."evil\\u202E"');
+  await user.click(within(notice).getByRole('button', { name: 'Dismiss' }));
+  expect(screen.queryByTestId('project-invalid')).toBeNull();
 });
 
 it("Don't load keeps the profiles unused and sends nothing", async () => {

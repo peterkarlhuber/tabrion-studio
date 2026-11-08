@@ -3,8 +3,9 @@
  *
  * It renders the real App with a fake local server and a workspace, so e2e/ can check states that the backend cannot
  * produce yet: a PROD connection with tabs (STU-051), each dialog, the sign-in notices and the ended session
- * (review S-1). Query parameters: `scenario` (start, prod, test, dialog-d01, dialog-d02, dialog-d06, dialog-d08,
- * ended, used), `path` (/, /connections, /settings), `theme` (light, dark) and `lang` (en, de).
+ * (review S-1), and the notices of project trust (review I-2 of stu-006-review.md). Query parameters: `scenario`
+ * (start, prod, test, dialog-d01, dialog-d01-hostile, dialog-d01-stale, dialog-d02, dialog-d06, dialog-d08, ended,
+ * used, project-invalid), `path` (/, /connections, /settings), `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -22,7 +23,7 @@ import '../styles/global.css';
 import { initTheme, setThemePreference } from '../theme';
 import { EMPTY_WORKSPACE, type Workspace } from '../workspace';
 import styles from './harness.module.css';
-import { DIFF, HOSTILE_REVIEW, REVIEW } from './trust';
+import { DIFF, HOSTILE_REVIEW, INVALID_PROJECT, REVIEW } from './trust';
 
 const params = new URLSearchParams(window.location.search);
 const scenario = params.get('scenario') ?? 'start';
@@ -44,6 +45,9 @@ const fakeServer: typeof fetch = async (input) => {
     return scenario === 'ended'
       ? new Response(JSON.stringify({ code: 'access.session_required' }), { status: 401 })
       : new Response(null, { status: 204 });
+  }
+  if (String(input) === '/api/project' && scenario === 'project-invalid') {
+    return new Response(JSON.stringify(INVALID_PROJECT), { status: 200 });
   }
   return new Response(JSON.stringify({ status: 'ok', version: '0.1.0.dev0' }), { status: 200 });
 };
@@ -93,6 +97,17 @@ function HarnessDialog({ id }: { id: string }) {
         file=".tabrion/studio.toml"
         review={HOSTILE_REVIEW}
         diff={DIFF}
+        onTrust={done('trust')}
+        onReject={done('cancel')}
+      />
+    ),
+    'dialog-d01-stale': (
+      <TrustProjectDialog
+        open={open}
+        file=".tabrion/studio.toml"
+        review={REVIEW}
+        diff={{ ...DIFF, unknown_keys: { added: ['profile[0].new'], removed: ['profile[0].old'] } }}
+        stale
         onTrust={done('trust')}
         onReject={done('cancel')}
       />

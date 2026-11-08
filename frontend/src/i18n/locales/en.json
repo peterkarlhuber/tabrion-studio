@@ -99,6 +99,11 @@
     "close": "Close",
     "cancel": "Cancel"
   },
+  "projectNotice": {
+    "title": "Project profiles not loaded",
+    "body": "{{file}} cannot be used, so Studio does not load its profiles. Fix these issues in the file:",
+    "dismiss": "Dismiss"
+  },
   "dialogs": {
     "trustProject": {
       "title": "Trust the project profiles?",
@@ -132,7 +137,9 @@
       "filesRemoved": "File references removed",
       "envAdded": "Environment variables added",
       "envRemoved": "Environment variables removed",
-      "keysAdded": "Unknown keys added"
+      "keysAdded": "Unknown keys added",
+      "keysRemoved": "Unknown keys removed",
+      "stale": "The file changed after it was shown. This is the new content: review it again before you trust it."
     },
     "prodConnect": {
       "title": "Production database",

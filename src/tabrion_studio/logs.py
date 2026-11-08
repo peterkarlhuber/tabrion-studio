@@ -16,7 +16,15 @@ logger, so that Studio's own loggers (``tabrion_studio.*``), Uvicorn's and async
 2. An exception is never formatted with its message. The traceback keeps the frames (file, line, function) of every
    exception in the chain, but each exception line shows only the type (``ValueError: [message redacted]``): a
    driver's message can hold ``DETAIL`` values, parameters or a connection URL with a password. Exception notes and
-   local variables are never printed. (STU-009 adds ``tabrion.errors.safe_message`` for database errors.)
+   local variables are never printed. Each exception keeps its first and last :data:`_EDGE_FRAMES` frames, and the
+   whole traceback is capped at :data:`MAX_TRACEBACK` characters. (STU-009 adds ``tabrion.errors.safe_message`` for
+   database errors.)
+2a. **Exception text in the message itself** (review L-1 of ``stu-004-review.md``): asyncio's default exception
+   handler writes ``repr(task)``/``repr(future)``, which contains ``exception=Type('message')``, and the repr of
+   callbacks with their arguments into the message; so a record of the ``asyncio`` logger keeps only a known fixed
+   first line (``Task exception was never retrieved``), never the rest. A formatted traceback passed as the message
+   (Starlette's lifespan failure, which Uvicorn logs as text) is cut at ``Traceback (most recent call last):``; Studio's
+   lifespan logs the exception itself with ``exc_info`` (frames only).
 3. Only the fields of :data:`EXTRA_FIELDS` reach the output, scrubbed and length-capped; anything else that a caller
    passes in ``extra`` is dropped.
 
@@ -41,6 +49,7 @@ import stat
 import sys
 import threading
 import traceback
+from types import TracebackType
 from typing import Any, TextIO
 
 from tabrion_studio.paths import UnsafePathError, ensure_private_dir
@@ -65,6 +74,10 @@ EXTRA_FIELDS = (
 _MAX_FIELD = 256
 _MAX_MESSAGE = 4096
 _MAX_CHAIN = 8
+#: Frames kept at each end of one exception's traceback; the frames in between are counted, not printed (L-3).
+_EDGE_FRAMES = 20
+#: The cap of one record's whole traceback text (L-3).
+MAX_TRACEBACK = 32 * 1024
 _MIN_SECRET = 8
 _MAX_SECRETS = 512
 
@@ -72,12 +85,25 @@ _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _BINARY = getattr(os, "O_BINARY", 0)
 _POSIX = sys.platform != "win32"
 
-_URL_PASSWORD = re.compile(r"(?P<head>[A-Za-z][A-Za-z0-9+.\-]*://[^\s:/?#@]*):[^\s/?#@]*@")
+#: ``scheme://user:password@host``: the password runs up to the *last* ``@`` of the address, so a password that
+#: contains ``@`` or ``/`` is masked as a whole (review L-2). Every repetition is bounded and the scheme starts only
+#: at a word start, so that a long hostile message is scrubbed in linear time.
+_URL_PASSWORD = re.compile(
+    r"(?P<head>(?<![A-Za-z0-9+.\-])[A-Za-z][A-Za-z0-9+.\-]{0,31}://[^\s:/?#@'\"<>]{0,256}):[^\s'\"<>]{0,512}@"
+)
+#: A credential key, also at the end of a longer name (``db_password``, ``PGPASSWORD``, ``sslpassword``,
+#: ``user_token``, ``auth_secret``, ``privatekey``), then ``=`` or ``:`` and the value (review L-2). Only the key word
+#: itself is matched (no prefix), which keeps the search linear.
 _KEY_VALUE = re.compile(
-    r"(?i)(?P<key>\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?token|csrf)\b[\"']?\s*[=:]\s*)"
+    r"(?i)(?P<key>(?:password|passwd|pwd|secret|token|api[_-]?key|private[_-]?key|csrf)"
+    r"(?![A-Za-z0-9])[\"']?\s{0,16}[=:]\s{0,16})"
     r"(?:'[^']*'|\"[^\"]*\"|[^\s&;,'\"]+)"
 )
 _BEARER = re.compile(r"(?i)\b(?P<key>bearer\s+)[A-Za-z0-9._~+/=\-]+")
+#: ``Authorization: Basic <base64>`` (and any other scheme): the scheme is kept, the credentials are removed.
+_AUTHORIZATION = re.compile(
+    r"(?i)\b(?P<key>(?:proxy-)?authorization[\"']?\s*[=:]\s*[\"']?(?:[A-Za-z][A-Za-z0-9_-]*\s+)?)[^\s'\",;]+"
+)
 _COOKIE = re.compile(r"(?P<key>tabrion_studio_session_\d*=)[^;\s,]+")
 #: C0 and C1 controls (newlines and tabs included), line separators and bidi controls: escaped in every field.
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]")
@@ -129,6 +155,7 @@ def scrub(text: str) -> str:
             text = text.replace(value, REDACTED)
     text = _URL_PASSWORD.sub(lambda m: f"{m['head']}:***@", text)
     text = _KEY_VALUE.sub(lambda m: f"{m['key']}{REDACTED}", text)
+    text = _AUTHORIZATION.sub(lambda m: f"{m['key']}{REDACTED}", text)
     text = _BEARER.sub(lambda m: f"{m['key']}{REDACTED}", text)
     return _COOKIE.sub(lambda m: f"{m['key']}{REDACTED}", text)
 
@@ -174,12 +201,88 @@ def safe_traceback(exc: BaseException) -> str:
             parts.append("\nThe above exception led to the following one:\n\n")
         if item.__traceback__ is not None:
             parts.append("Traceback (most recent call last):\n")
-            parts.extend(traceback.format_tb(item.__traceback__))
+            parts.extend(_frames(item.__traceback__))
         line = f"{_type_name(item)}: {MESSAGE_REDACTED}"
         if isinstance(item, BaseExceptionGroup):
             line += f" (group of {len(item.exceptions)} exceptions)"
         parts.append(line + "\n")
-    return scrub("".join(parts)).rstrip("\n")
+    return _cap(scrub("".join(parts)).rstrip("\n"), MAX_TRACEBACK)
+
+
+def _frames(tb: TracebackType) -> list[str]:
+    """The formatted frames of ``tb``: the first and last :data:`_EDGE_FRAMES`, the rest only counted (L-3)."""
+    summary = traceback.extract_tb(tb)
+    if len(summary) <= 2 * _EDGE_FRAMES:
+        return summary.format()
+    head = traceback.StackSummary.from_list(summary[:_EDGE_FRAMES]).format()
+    tail = traceback.StackSummary.from_list(summary[-_EDGE_FRAMES:]).format()
+    return [*head, f"  ... {len(summary) - 2 * _EDGE_FRAMES} more frames ...\n", *tail]
+
+
+#: The first lines of asyncio's exception handler contexts that are fixed texts; anything else is replaced (L-1).
+_ASYNCIO_MESSAGES = (
+    "Task exception was never retrieved",
+    "Future exception was never retrieved",
+    "Task was destroyed but it is pending!",
+    "Unhandled exception in event loop",
+    "Unhandled error in exception handler",
+    "Exception in callback",
+    "Exception in default exception handler",
+    "Fatal error on transport",
+    "Fatal error on SSL transport",
+    "Fatal read error on socket transport",
+    "Fatal write error on socket transport",
+    "Fatal error: protocol.data_received() call failed.",
+    "Fatal error: protocol.eof_received() call failed.",
+    "Fatal error: protocol.buffer_updated() call failed.",
+    "Fatal error: protocol.get_buffer() call failed.",
+    "Unhandled exception during asyncio.run() shutdown",
+    "unhandled exception during asyncio.run() shutdown",
+)
+_TRACEBACK_TEXT = "Traceback (most recent call last):"
+
+
+def _asyncio_message(message: str) -> str:
+    """asyncio's message without the reprs of tasks, futures, callbacks and their arguments (review L-1)."""
+    first = message.split("\n", 1)[0]
+    for known in _ASYNCIO_MESSAGES:
+        if first.startswith(known):
+            return f"{known} [details redacted]" if first != known or "\n" in message else known
+    return f"asyncio: {MESSAGE_REDACTED}"
+
+
+def _without_traceback_text(message: str) -> str:
+    """A message cut where a formatted traceback starts (its last line is the exception's message; review L-1)."""
+    index = message.find(_TRACEBACK_TEXT)
+    if index < 0:
+        return message
+    head = message[:index].rstrip()
+    return f"{head} [traceback text redacted]" if head else "[traceback text redacted]"
+
+
+class _ExceptionType:
+    """Stands in for an exception passed as a ``%s``/``%r`` argument: formats as its type only."""
+
+    def __init__(self, exc: BaseException) -> None:
+        self._text = f"{_type_name(exc)}: {MESSAGE_REDACTED}"
+
+    def __repr__(self) -> str:
+        return self._text
+
+    __str__ = __repr__
+
+
+def _safe_arg(value: object) -> object:
+    return _ExceptionType(value) if isinstance(value, BaseException) else value
+
+
+def _safe_args(args: Any) -> Any:
+    """``%s``/``%r`` arguments with every exception replaced by its type: its text is never formatted (L-1)."""
+    if isinstance(args, tuple):
+        return tuple(_safe_arg(value) for value in args)
+    if isinstance(args, dict):
+        return {key: _safe_arg(value) for key, value in args.items()}
+    return args
 
 
 class RedactionFilter(logging.Filter):
@@ -188,19 +291,22 @@ class RedactionFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:
         if getattr(record, "_tabrion_redacted", False):
             return True
+        record.args = _safe_args(record.args)
         try:
             message = record.getMessage()
         except Exception:  # a broken format string or a failing __str__ of an argument
             message = f"{record.msg!s} [arguments not shown]" if isinstance(record.msg, str) else "[message not shown]"
-        record.msg = _cap(scrub(message), _MAX_MESSAGE)
+        if record.name == "asyncio" or record.name.startswith("asyncio."):
+            message = _asyncio_message(message)
+        record.msg = _cap(scrub(_without_traceback_text(message)), _MAX_MESSAGE)
         record.args = None
         if record.exc_info and record.exc_info[1] is not None:
             record.exc_text = safe_traceback(record.exc_info[1])
         elif record.exc_text:
-            record.exc_text = scrub(record.exc_text)
+            record.exc_text = _cap(scrub(record.exc_text), MAX_TRACEBACK)
         record.exc_info = None
         if record.stack_info:
-            record.stack_info = scrub(record.stack_info)
+            record.stack_info = _cap(scrub(record.stack_info), MAX_TRACEBACK)
         for name in EXTRA_FIELDS:
             value = record.__dict__.get(name)
             if value is None or (isinstance(value, int | float) and not isinstance(value, bool)):

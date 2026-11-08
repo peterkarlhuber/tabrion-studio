@@ -23,7 +23,7 @@ import pytest
 
 from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.files import MAX_FILE_BYTES
-from tabrion_studio.config.project import ProjectConfig
+from tabrion_studio.config.project import ProjectConfig, TrustError
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.logs import configure_logging
 from tests.support.access import ORIGIN, Studio, make_studio
@@ -338,3 +338,171 @@ def test_config_routes_need_a_session(env: Env) -> None:
     env.studio.client.cookies.clear()
     for path in ("/api/project", "/api/profiles", "/api/settings"):
         assert env.studio.client.get(path).status_code == 401
+
+
+# --- Review stu-006-review.md: T-1 (drift after trust), T-2 (network paths), T-3 (no 500) ----------------------
+
+
+@pytest.mark.skipif(not POSIX, reason="symlinks")
+def test_a_folder_that_becomes_a_link_out_of_the_project_needs_a_new_confirmation(env: Env, tmp_path: Path) -> None:
+    """T-1 (probe P-4): same bytes, but data/ now leads out of the project: changed, with the file in the diff."""
+    (env.project / "data").mkdir()
+    digest = env.write(GOOD)
+    assert env.trust(digest).status_code == 204
+    assert env.project_doc()["state"] == "trusted"
+    assert env.project_config.database_file("parts-dev") == (env.project / "data" / "parts.db").resolve()
+    # A later checkout replaces data/ with a link out of the project; studio.toml is unchanged.
+    os.rmdir(env.project / "data")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (env.project / "data").symlink_to(elsewhere)
+    doc = env.project_doc()
+    assert doc["state"] == "changed" and doc["digest"] == digest and doc["trusted"] is False
+    assert doc["diff"]["files"] == {
+        "added": [{"path": "data/parts.db", "kind": "database", "outside": True}],
+        "removed": [{"path": "data/parts.db", "kind": "database", "outside": False}],
+    }
+    assert env.project_profiles() == []
+    with pytest.raises(TrustError) as caught:
+        env.project_config.database_file("parts-dev")
+    assert caught.value.code == "studio.project_untrusted"
+    # Confirming the new review (same digest) trusts it, now with "outside" recorded.
+    assert env.trust(digest).status_code == 204
+    assert env.project_doc()["state"] == "trusted"
+    assert env.project_config.database_file("parts-dev") == (elsewhere / "parts.db").resolve()
+
+
+@pytest.mark.skipif(not POSIX, reason="symlinks")
+def test_the_database_file_is_rechecked_when_it_is_opened(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T-1: the containment re-check at open time refuses a path confirmed as inside that now leads outside."""
+    (env.project / "data").mkdir()
+    assert env.trust(env.write(GOOD)).status_code == 204
+    with pytest.raises(TrustError) as caught:
+        env.project_config.database_file("measure-central")  # a PostgreSQL profile has no database file
+    assert caught.value.code == "studio.profile_not_found"
+    # Simulate the race: the link appears after load() saw a trusted state, before the file is opened.
+    load = env.project_config.load
+
+    def load_then_swap() -> Any:
+        state = load()
+        os.rmdir(env.project / "data")
+        (env.project / "data").symlink_to(tmp_path)
+        return state
+
+    monkeypatch.setattr(env.project_config, "load", load_then_swap)
+    with pytest.raises(TrustError) as caught:
+        env.project_config.database_file("parts-dev")
+    assert caught.value.code == "studio.database_outside"
+
+
+@pytest.mark.parametrize(
+    ("line", "pointer"),
+    [
+        ('path = "//attacker.example/share/x.db"', "profile[0].path"),
+        ('path = "\\\\\\\\attacker.example\\\\share\\\\x.db"', "profile[0].path"),
+        ('path = "\\\\\\\\?\\\\C:\\\\x.db"', "profile[0].path"),
+        ('path = "C:x.db"', "profile[0].path"),
+        ('path = "/net/attacker.example/x.db"', "profile[0].path"),
+        ('path = "a.db"\npassword = "file://attacker.example/s/x"', "profile[0].password"),
+    ],
+)
+def test_network_paths_are_refused_before_any_file_system_access(
+    env: Env, monkeypatch: pytest.MonkeyPatch, line: str, pointer: str
+) -> None:
+    """T-2: the page's automatic GET /api/project never resolves a value that names another host."""
+    env.write(f'version = 1\n[[profile]]\nname = "p"\nengine = "sqlite"\nenvironment = "dev"\n{line}\n')
+    touched: list[str] = []
+    resolve, lstat = Path.resolve, os.lstat
+
+    def watched_resolve(self: Path, strict: bool = False) -> Path:
+        touched.append(str(self))
+        return resolve(self, strict=strict)
+
+    def watched_lstat(path: Any, *args: Any, **kwargs: Any) -> os.stat_result:
+        touched.append(str(path))
+        return lstat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", watched_resolve)
+    monkeypatch.setattr(os, "lstat", watched_lstat)
+    doc = env.project_doc()
+    assert doc["state"] == "invalid"
+    assert {"pointer": pointer, "code": "config.network_path", "severity": "error"} in doc["issues"]
+    assert not any("attacker" in path or "x.db" in path for path in touched), touched
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows path resolution")
+def test_windows_never_resolves_a_unc_path_from_the_project_file(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """T-2 on Windows: nt._getfinalpathname (which opens the path, an SMB connection for UNC) is never called."""
+    import nt
+
+    called: list[str] = []
+    original = getattr(nt, "_getfinalpathname")  # noqa: B009 (private, not in the stubs)
+
+    def watched(path: str) -> str:
+        called.append(path)
+        return str(original(path))
+
+    monkeypatch.setattr(nt, "_getfinalpathname", watched)
+    for value in ("//attacker.example/share/x.db", "\\\\\\\\attacker.example\\\\share\\\\x.db"):
+        env.write(f'version = 1\n[[profile]]\nname = "p"\nengine = "sqlite"\nenvironment = "dev"\npath = "{value}"\n')
+        assert env.project_doc()["state"] == "invalid"
+    assert not any("attacker" in path for path in called), called
+
+
+def test_deeply_nested_project_file_is_invalid_and_user_profiles_still_show(env: Env) -> None:
+    """T-3 (probe P-6): 1.8 KB of nested arrays is invalid, not a 500, and the user's profiles still load."""
+    user = env.config_dir / "profiles.toml"
+    user.write_text('version = 1\n[[profile]]\nname = "mine"\nengine = "sqlite"\npath = "m.db"\nenvironment = "dev"\n')
+    user.chmod(0o600)
+    env.write(b"version = 1\nx = " + b"[" * 900 + b"]" * 900 + b"\n")
+    doc = env.project_doc()
+    assert doc["state"] == "invalid"
+    assert doc["issues"][0]["code"] in ("config.too_deep", "config.syntax")
+    response = env.studio.client.get("/api/profiles", headers=env.headers)
+    assert response.status_code == 200
+    assert [p["name"] for p in response.json()["profiles"]] == ["mine"]
+    assert response.json()["project_state"] == "invalid"
+
+
+@pytest.mark.parametrize(
+    "review",
+    [
+        '{"connections": 5, "hosts": [], "files": [], "env": [], "unknown_keys": []}',
+        '{"connections": [{"name": ["unhashable"]}], "hosts": [], "files": [], "env": [], "unknown_keys": []}',
+        '{"connections": [], "hosts": 7, "files": [], "env": [], "unknown_keys": []}',
+        '{"connections": [], "hosts": [], "files": [{"path": 1}], "env": [], "unknown_keys": []}',
+        '{"connections": [], "hosts": [[]], "files": [], "env": [], "unknown_keys": []}',
+        "{}",
+        '{"connections": ' + "[" * 100_000 + "]" * 100_000 + "}",
+    ],
+)
+def test_a_trust_record_with_a_damaged_review_means_untrusted(env: Env, review: str) -> None:
+    """T-3 (probe P-5): a record of the right owner and mode, but a wrongly typed or deeply nested review."""
+    digest = env.write(GOOD)
+    record = f'{{"version": 1, "project": {json.dumps(str(env.project))}, "digest": "{digest}", "review": {review}}}'
+    env.project_config.record.write_text(record, encoding="utf-8")
+    env.project_config.record.chmod(0o600)
+    assert env.project_doc()["state"] == "untrusted"
+    response = env.studio.client.get("/api/profiles", headers=env.headers)
+    assert response.status_code == 200 and response.json()["project_state"] == "untrusted"
+
+
+def test_an_unexpected_error_while_loading_the_project_keeps_the_user_profiles(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """T-3: whatever goes wrong with the project file, /api/profiles still lists the user's own profiles."""
+    user = env.config_dir / "profiles.toml"
+    user.write_text('version = 1\n[[profile]]\nname = "mine"\nengine = "sqlite"\npath = "m.db"\nenvironment = "dev"\n')
+    user.chmod(0o600)
+
+    def broken() -> Any:
+        raise TypeError(CANARY)
+
+    monkeypatch.setattr(env.project_config, "load", broken)
+    response = env.studio.client.get("/api/profiles", headers=env.headers)
+    assert response.status_code == 200
+    assert [p["name"] for p in response.json()["profiles"]] == ["mine"]
+    doc = env.project_doc()
+    assert doc["state"] == "invalid" and CANARY not in json.dumps(doc)

@@ -58,3 +58,18 @@ export const DIFF: TrustDiff = {
   env: { added: ['AWS_SECRET_ACCESS_KEY'], removed: [] },
   unknown_keys: { added: [], removed: [] },
 };
+
+/** An invalid project file as GET /api/project reports it: key paths and codes only (review I-2). */
+export const INVALID_PROJECT = {
+  path: '/work/parts',
+  profiles_file: '.tabrion/studio.toml',
+  state: 'invalid',
+  trusted: false,
+  digest: null,
+  review: null,
+  diff: null,
+  issues: [
+    { pointer: 'profile[0].path', code: 'config.network_path', severity: 'error' },
+    { pointer: 'profile[1].password', code: 'config.plain_password', severity: 'error' },
+  ],
+};

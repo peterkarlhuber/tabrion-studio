@@ -58,3 +58,11 @@
   border: 1px solid var(--tb-color-border-strong);
   border-radius: var(--tb-radius-md);
 }
+.stale {
+  margin: 0;
+  padding: var(--tb-space-2) var(--tb-space-3);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-warning-bg);
+  color: var(--tb-color-warning);
+  font-size: var(--tb-text-sm);
+}

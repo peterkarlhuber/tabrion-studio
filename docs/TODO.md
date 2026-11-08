@@ -5,7 +5,8 @@
 > (planning documents 03, 05, 07, 08 and 09; program status in `tabrion/docs/program/STATUS.md`, K-12). "TABRION
 > <WP-ID>" names a work package of that backlog.
 >
-> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3-stu006` (TABRION STU-006:
+> **Last full review:** 2026-11-08 against branch `claude/project-thread-rdo6g3-stu-conditions` (the conditions of
+> `stu-004-review.md` and `stu-006-review.md`), before that against branch `claude/project-thread-rdo6g3-stu006` (TABRION STU-006:
 > configuration, profiles and project trust, U-1) and `claude/project-thread-rdo6g3-stu004` (TABRION STU-004: Problem
 > JSON and logging, PR #7); before that against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
 > of `stu-005-051-review.md`; PR #5: STU-005 and STU-051 with S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and
@@ -22,8 +23,9 @@
 | OA-004 independent review of STU-003 (access protection) | P0 | Accepted (`stu-003-review.md`, PR #4 merged) |
 | OA-005 independent review of STU-005/STU-051 (app shell, dialogs, S-1, S-4) | P1 | Accepted (`stu-005-051-review.md`, PR #5 merged) |
 | OA-006 independent workflow-change review of the `e2e` CI job (U-3), then the label `workflow-change-reviewed` | P1 | Accepted (`stu-follow-up-6-review.md`, PR #6 merged) |
-| OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Open (PR #7) |
-| OA-008 independent review of STU-006 (project trust, D-01, U-1) | P1 | Open (STU-006 PR) |
+| OA-007 independent review of STU-004 (Problem JSON, log redaction) | P1 | Accepted with conditions (`stu-004-review.md`, PR #7 merged; C-1 done in the conditions PR) |
+| OA-008 independent review of STU-006 (project trust, D-01, U-1) | P1 | Accepted with conditions (`stu-006-review.md`, PR #8 merged; C-1, C-2 done in the conditions PR; C-3 is the STU-007 requirement) |
+| STU-007 binding requirement from the review (C-3: the reader of `file:` secrets) | P0 | Open (STU-007) |
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
@@ -33,6 +35,9 @@
 | TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented) |
 | TD-006 who may set the label `workflow-change-reviewed` (review S-3) | P3 | Open |
 | TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; QA-9) |
+| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
+| TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5) | P3 | Open |
+| TD-010 STU-006 review: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5) | P2 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -146,20 +151,71 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### OA-007 · Independent review of STU-004 (TABRION STU-004, 07 §6)
 
-- **Priority:** P1 High · **Status:** Open (PR #7) · **Refs:** 07 §6 (Studio packages with a credential
-  surface), T-05, SQ-04, `docs/architecture/errors-and-logging.md`
+- **Priority:** P1 High · **Status:** Accepted with conditions (`stu-004-review.md`, PR #7 merged) · **Refs:** 07 §6
+  (Studio packages with a credential surface), T-05, SQ-04, `docs/architecture/errors-and-logging.md`
 - **What:** the pull request turns every error answer into Problem JSON and adds the redacting, rotating logs and the
   request log. An independent review agent checks that no answer can carry an exception message, a path, a stack
   trace or request data, that the redaction holds for every logger (Studio, Uvicorn, asyncio) and every field, and
   the file handling of the log folder (0700, 0600, symlinks). No `.github/` file changes, so the workflow-change label
   is not needed.
+- **Result:** ACCEPTED WITH CONDITIONS, no High finding. **C-1 (L-1, Medium) is done in the conditions PR**
+  (branch `claude/project-thread-rdo6g3-stu-conditions`): records of the `asyncio` logger keep only a known fixed
+  first line (no `repr` of a task, future or callback), a formatted traceback in a message is cut at
+  `Traceback (most recent call last):`, Studio's lifespan logs its exception with `exc_info` (frames only), and an
+  exception passed as a `%s`/`%r` argument formats as its type. Canary tests: `test_canary.py`
+  (`test_asyncio_reprs_never_reach_a_log_line`, `test_a_failing_lifespan_of_any_app_logs_no_traceback_text`,
+  `test_a_failing_studio_startup_is_logged_with_frames_only`) and the real process in `test_log_process.py`
+  (`test_a_failing_startup_in_a_real_process_leaks_no_exception_text`). Also done: L-2 (key suffixes, `Authorization`,
+  URL passwords up to the last `@`; all patterns bounded, linear time) and L-3 (20 + 20 frames per exception, 32 KB
+  per record). The rest is TD-009.
 
 ### OA-008 · Independent review of STU-006 (TABRION STU-006, 07 §6)
 
-- **Priority:** P1 High · **Status:** Open (STU-006 PR) · **Refs:** 07 §6 (credential surface: `env:`/`file:`
-  references), T-08, `docs/architecture/configuration.md`, U-1 below
+- **Priority:** P1 High · **Status:** Accepted with conditions (`stu-006-review.md`, PR #8 merged) · **Refs:** 07 §6
+  (credential surface: `env:`/`file:` references), T-08, `docs/architecture/configuration.md`, U-1 below
 - **What:** project trust fails closed (links, `file:` outside, digest bound to the bytes on disk, damaged records),
   no value is echoed from a profile file, and D-01 meets U-1a..U-1d. No `.github/` file changes.
+- **Result:** ACCEPTED WITH CONDITIONS, no High finding. Done in the conditions PR:
+  - **C-1 (T-1):** `trusted` only if the digest matches **and** the current review equals the confirmed one;
+    otherwise `changed` with the diff. `ProjectConfig.database_file(name)` re-checks a trusted SQLite profile when its
+    file is opened; **STU-009 must call it and open the path it returns** (`test_project_trust.py`,
+    `test_a_folder_that_becomes_a_link_out_of_the_project_needs_a_new_confirmation`,
+    `test_the_database_file_is_rechecked_when_it_is_opened`).
+  - **C-2 (T-2):** `config.network_path` for UNC, device, drive-relative, `file://host` and `/net`, `/Network` values;
+    containment decided as text (`config/locations.py`) before any file-system access; no `Path.resolve()` on a value
+    from the project file (`test_config_locations.py` with `PureWindowsPath` and `PurePosixPath`;
+    `test_network_paths_are_refused_before_any_file_system_access`; on Windows
+    `test_windows_never_resolves_a_unc_path_from_the_project_file`, which patches `nt._getfinalpathname` and runs in
+    the `windows-latest` leg of the test matrix). The dedicated Windows CI job is TD-008.
+  - **T-3:** deeply nested TOML is `config.too_deep`; a damaged or deeply nested trust record means untrusted; an
+    unexpected load error makes the project `invalid` and `/api/profiles` still lists the user's profiles.
+  - **T-4:** loopback by `ipaddress` plus the literal `localhost` (and socket folders), so `127.evil.example` gets
+    `verify-full`.
+  - **I-2:** D-01 shows "Unknown keys removed", says so after `studio.trust_stale`, and an `invalid` file gets a
+    notice with its issues (de/en).
+  - **C-3** is the STU-007 binding requirement below. The other Low and Info items are TD-010.
+
+## STU-007 binding requirement (review C-3 of `stu-006-review.md`)
+
+**Status: open; TABRION STU-007 is accepted only if it meets it.** The schema accepts `file:PATH` password references,
+and today `file:~/...` passes, because it is read as project-relative (`<project>/~/...`): nothing calls
+`expanduser`. The checks at load time (`config/locations.py`, `_check_secret_files`) only decide whether the
+reference may be listed. The reader that STU-007 adds must, **at read time**:
+
+- **never call `expanduser`** (or `expandvars`): the path is the text of the reference, relative to the project
+  folder (or absolute);
+- **re-check containment** with `config.locations.contained` (inside the project folder or the user's configuration
+  folder, as text first, then the link walk), immediately before the open;
+- **open with `O_NOFOLLOW`** (plus `O_NONBLOCK` until `S_ISREG` is checked, so a FIFO cannot block the server) and
+  check the opened file with `fstat`: a regular file, `st_nlink == 1`, **owned by the current user and mode 0600**
+  (no group or other bit; POSIX), the same device and inode as the checked path; on Windows, no reparse point and a
+  private DACL (TD-003);
+- read at most a small fixed size, strip one trailing newline, register the value with
+  `tabrion_studio.logs.register_secret` and never log, return or echo it; every refusal is a code without the path's
+  content.
+
+Most `.env` and `.git/config` files are 0644, so the 0600 rule also blocks the case of review T-5 where a project
+names the user's own secret inside the project folder.
 
 ## STU-006 binding requirement (review U-1 of PR #5)
 
@@ -220,12 +276,12 @@ merge after OA-004.
 | WP | Title | Priority | Depends on | Note |
 |---|---|---|---|---|
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
-| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | In progress (PR #7, OA-007): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
+| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | Done (PR #7, OA-007 accepted with conditions; C-1 done in the conditions PR): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Playwright, axe and the first specs are in `frontend/e2e/` (STU-005); the `e2e` CI job runs them in Chromium, `backend.spec.ts` against the built wheel (review U-3, PR #6); QA-9 adds the platforms e2e smoke (05 §3.5), Firefox and WebKit (TD-007) |
-| TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | In progress (STU-006 PR, OA-008): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
-| TABRION STU-007 | Secret management | P0 | STU-006 | |
-| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown |
+| TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted with conditions; C-1, C-2 done in the conditions PR): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
+| TABRION STU-007 | Secret management | P0 | STU-006 | Must meet the binding requirement C-3 above (the reader of `file:` secrets) |
+| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-008, STU-010..STU-015 | Connection manager UI, explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | STU-008 adds the "openapi in sync" CI job (the first API types for the frontend); STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
@@ -316,3 +372,53 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   machines (now said in the docs and in `vite.config.ts`). The launch flow (`file://` meta refresh to http, the CSP)
   was checked in Chrome only.
 - **Next step:** QA-9 adds Firefox and WebKit runs of the launch flow against the built wheel.
+
+### TD-008 · Add a windows-latest CI job for the T-2 checks (review C-2 of `stu-006-review.md`)
+
+- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Open (needs a
+  workflow-change review, OA-003) · **Refs:** `stu-006-review.md` T-2 and C-2, `config/locations.py`
+- **What:** the review asks for a test in a Windows CI job that patches `nt._getfinalpathname` and asserts that it is
+  never called for a UNC value from the project file. The test exists
+  (`tests/security/test_project_trust.py::test_windows_never_resolves_a_unc_path_from_the_project_file`) and the pure
+  path tests use `PureWindowsPath` on every platform; today the Windows test runs in the `windows-latest` leg of the
+  test matrix. The conditions PR does not change `.github/`.
+- **Next step:** add a windows-latest CI job (or a required step in the existing leg) that runs the T-2 tests by name
+  and fails if they are skipped, like the `e2e` job's required-suite check; then the workflow-change review and the
+  label.
+
+### TD-009 · STU-004 review: remaining Low and Info items
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** `stu-004-review.md` L-2, I-1..I-5
+- **L-2 (rest):** the scrub does not remove `passwd <value>` without `=` or `:`, the short key `pw=`, or URL-encoded
+  `password%3D...`; matching those without false positives needs care (the regex is defence in depth only).
+- **I-1:** above 512 registered secrets the oldest, the control token, is dropped first. Pin it (a set that is never
+  evicted) or evict only session and launch values.
+- **I-2:** a hard link at the log path is accepted and a FIFO would block the start. Refuse `st_nlink != 1`; open with
+  `O_NONBLOCK`, check `S_ISREG`, then clear the flag.
+- **I-3:** Windows has no `O_NOFOLLOW`: check the log file with `lstat` (reparse bit) before `os.open`.
+- **I-4:** the refusal texts say "the state directory" also for the log folder; `warnings.warn` output goes to
+  stderr outside the redacting handlers (`logging.captureWarnings` is not set).
+- **I-5:** no test plants a log file owned by another user (mutant M11): `os.chown(path, 65534, 65534)` when running
+  as root, otherwise skip.
+- **Observed in the conditions PR:** when the lifespan fails at startup, Uvicorn exits through `sys.exit(3)`, so
+  `serve()` does not print "Tabrion Studio could not start." (its cleanup still runs). Catch `SystemExit` around
+  `server.run` if the message matters.
+
+### TD-010 · STU-006 review: remaining Low and Info items
+
+- **Priority:** P2 Medium (T-5 before STU-009) · **Status:** Open · **Refs:** `stu-006-review.md` T-1, T-4, T-5,
+  I-1, I-3..I-5
+- **T-1 (rest):** the trust POST binds to the bytes only. If only the file system changes between the dialog and the
+  click, the new review is stored without having been shown (the next GET compares against it). Bind the POST to a
+  digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
+  so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
+- **T-4 (rest):** D-01 does not show the TLS mode; mark a connection whose `sslmode` is weaker than `verify-full` on
+  a non-loopback host (T-10: a diagnostic finding for `disable` and `prefer`).
+- **T-5:** D-01 shows hosts, files and variables as separate lists; show one line per connection with host and
+  port, the secret's source and the TLS mode, and mark "secret sent to a host outside loopback".
+- **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
+- **I-3:** open `.tabrion` with `O_DIRECTORY|O_NOFOLLOW` and `studio.toml` with `dir_fd` (one path walk); test the
+  dev/ino compare (mutant T2); on Windows compare `GetFinalPathNameByHandle` with the expected path.
+- **I-4:** check the configuration folder like the state folder (owner, 0700, no link): `--config-dir /tmp/x` would
+  accept another user's `settings.toml`.
+- **I-5:** name STU-T-021 (T-10) in the `verify-full` test or note that it belongs to STU-010.

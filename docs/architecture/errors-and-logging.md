@@ -86,13 +86,26 @@ own filter, which keeps the SQLSTATE and the constraint name in log records.
 
 - The message is formatted once and scrubbed: every value registered with `register_secret` becomes `[redacted]`
   (the control token, every launch token, session ID and CSRF value of this process; registered where they are
-  created), URL passwords become `***` (`postgresql://user:***@host/db`), the values of `password=`, `pwd:`,
-  `secret`, `token`, `api_key`, `csrf` style keys (also JSON and Python-repr keys) are removed, and so are `Bearer`
-  credentials and Studio session cookies.
+  created), URL passwords become `***` (`postgresql://user:***@host/db`, up to the last `@`, so a password with `@`
+  or `/` is masked whole), the values of `password=`, `pwd:`, `secret`, `token`, `api_key`, `private_key`, `csrf`
+  style keys are removed, also as the end of a longer name (`db_password=`, `PGPASSWORD=`, `sslpassword=`,
+  `user_token=`, `auth_secret:`) and as JSON and Python-repr keys, and so are `Bearer` credentials, the credentials
+  of an `Authorization:` header (`Basic` and any other scheme) and Studio session cookies (review L-2). Every pattern
+  has bounded repetitions, so a long hostile message is scrubbed in linear time.
+- An exception passed as a `%s`/`%r` argument is formatted as its type only (`ValueError: [message redacted]`).
+- **Exception text in the message itself (review L-1 of `stu-004-review.md`).** asyncio's default exception handler
+  writes `repr(task)` or `repr(future)` (which contains `exception=ValueError('...')`) and the repr of callbacks with
+  their arguments into the message. A record of the `asyncio` logger therefore keeps only a known fixed first line
+  (`Task exception was never retrieved [details redacted]`, `Exception in callback [details redacted]`, otherwise
+  `asyncio: [message redacted]`); its `exc_info` is still logged, frames only. A formatted traceback passed as the
+  message (Starlette sends `traceback.format_exc()` when the lifespan fails, and Uvicorn logs it as text) is cut at
+  `Traceback (most recent call last):` (`[traceback text redacted]`); Studio's lifespan logs the exception itself
+  first, with `exc_info` (`event: studio.lifespan_failed`).
 - An exception is formatted without any message: each exception of the chain (cause first, at most 8, cycles end)
   shows its frames and `module.Type: [message redacted]`. Notes (`add_note`) and local variables are never printed.
   A driver's message may hold a server `DETAIL` with row values (B-06-1), SQLAlchemy's `[parameters: ...]` or a
-  connection URL with a password.
+  connection URL with a password. Each exception keeps its first and last 20 frames (`... N more frames ...` in
+  between), and the traceback of one record is capped at 32 KB (review L-3: a `RecursionError` wrote 160 KB).
 - Control characters, line and paragraph separators and bidi controls are escaped (`\x0a`, `‮`) in the text
   output and in every extra field, so a value cannot forge a second log line; messages are capped at 4 KB and
   fields at 256 characters.
@@ -114,7 +127,7 @@ every 4xx and 5xx answer at least at INFO. Uvicorn's access log stays off.
 
 | Test | What it proves |
 |---|---|
-| `tests/security/test_canary.py` (STU-T-008, -009) | a canary (`tabrion-canary-<uuid>`) in a connection URL password, a server `DETAIL`, `[parameters: ...]`, a chained cause, a note, a local variable, the query string, headers and the body is absent from the 500 answer and from both log outputs; the answer has no traceback, path or type name; the log has the log ID, the types and the frames; the process tokens are redacted in every field; the request log names routes, never query strings; validation errors do not echo input |
-| `tests/security/test_log_process.py` | a real `tabrion-studio` process writes the 0600 JSON log in a 0700 folder; canaries in a bogus launch token, query strings and headers appear neither in the log file nor in the terminal; Uvicorn's records pass the same handler; no access log |
+| `tests/security/test_canary.py` (STU-T-008, -009) | a canary (`tabrion-canary-<uuid>`) in a connection URL password, a server `DETAIL`, `[parameters: ...]`, a chained cause, a note, a local variable, the query string, headers and the body is absent from the 500 answer and from both log outputs; the answer has no traceback, path or type name; the log has the log ID, the types and the frames; the process tokens are redacted in every field; the request log names routes, never query strings; validation errors do not echo input; asyncio's task, future and callback reprs and a failing lifespan (any app under Uvicorn, and Studio's own) leak no canary (review L-1) |
+| `tests/security/test_log_process.py` | a real `tabrion-studio` process writes the 0600 JSON log in a 0700 folder; canaries in a bogus launch token, query strings and headers appear neither in the log file nor in the terminal; Uvicorn's records pass the same handler; no access log; a real process whose startup fails with a canary in asyncio's exception handler, in a callback argument and in the lifespan exception leaks it neither to the log file nor to the terminal (review L-1) |
 | `tests/unit/test_problems.py` | catalog texts are fixed and plain; every code sent is in the catalog; `problem()` refuses free text in every argument; refusals and framework errors are problem documents (404, 405 with `Allow`) |
-| `tests/unit/test_logs.py` | JSON and text formats, dropped extra fields, escaped control characters, private files, a symlinked log file and an unsafe folder refused, rotation to five 0600 files, the scrub patterns, safe tracebacks (chains, groups, cycles), broken records |
+| `tests/unit/test_logs.py` | JSON and text formats, dropped extra fields, escaped control characters, private files, a symlinked log file and an unsafe folder refused, rotation to five 0600 files, the scrub patterns (with the forms of review L-2) and their linear time, safe tracebacks (chains, groups, cycles, the frame and size caps of L-3), asyncio and traceback text in messages, exceptions as arguments, broken records |

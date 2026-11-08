@@ -66,6 +66,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Conditions of the reviews of PR #7 (`stu-004-review.md`) and PR #8 (`stu-006-review.md`):
+  - L-1 (C-1): exception text that reaches a log record as its *message* is removed too. Records of the `asyncio`
+    logger keep only a known fixed first line (no `repr` of a task, future or callback with its exception or
+    arguments), a formatted traceback in a message (Starlette's lifespan failure, which Uvicorn logs as text) is cut,
+    Studio's lifespan logs its own exception with frames only (`studio.lifespan_failed`), and an exception passed as a
+    `%s`/`%r` argument formats as its type. L-2: the scrub also removes `db_password=`, `PGPASSWORD=`, `*_token=`,
+    `sslpassword=`, `auth_secret:`, `privatekey=`, `Authorization: Basic ...` and URL passwords that contain `@` or
+    `/`; every pattern runs in linear time. L-3: a traceback keeps the first and last 20 frames of each exception and
+    is capped at 32 KB per record.
+  - T-1 (C-1): a trusted project file stays trusted only while the review equals the one the user confirmed, so a
+    database folder that later becomes a link out of the project makes it `changed`; `ProjectConfig.database_file`
+    re-checks containment when a database file is opened (for STU-009).
+  - T-2 (C-2): UNC (`//host`, `\\host`), device (`\\?\`, `\\.\`), drive-relative (`C:foo`), `file://host` and
+    `/net/<host>` paths in a profile file are refused as `config.network_path`, and containment is decided as text
+    before any file-system access; no value from a project file is passed to `Path.resolve()` (on Windows that opened
+    an SMB connection to the named host).
+  - T-3: deeply nested TOML is `config.too_deep`, a damaged trust record means untrusted, and the user's own profiles
+    still load when the project file cannot be read (no more HTTP 500). T-4: only `localhost`, a loopback IP address
+    and a socket folder default to `sslmode = "prefer"`; `127.evil.example` gets `verify-full`.
+  - I-2: D-01 shows "Unknown keys removed" and says when it shows a file that changed after it was opened
+    (`studio.trust_stale`); an invalid project file gets a notice with its issues (English and German).
+
 - STU-004: access refusals no longer repeat request data in their text (`access.forwarded_not_allowed` named the
   forwarded headers); the process's control token, launch tokens, session IDs and CSRF values are registered for log
   redaction when they are created.

@@ -99,6 +99,11 @@
     "close": "Schließen",
     "cancel": "Abbrechen"
   },
+  "projectNotice": {
+    "title": "Projektprofile nicht geladen",
+    "body": "{{file}} kann nicht verwendet werden, daher lädt Studio seine Profile nicht. Behebe diese Probleme in der Datei:",
+    "dismiss": "Schließen"
+  },
   "dialogs": {
     "trustProject": {
       "title": "Projektprofilen vertrauen?",
@@ -132,7 +137,9 @@
       "filesRemoved": "Entfernte Datei-Referenzen",
       "envAdded": "Neue Umgebungsvariablen",
       "envRemoved": "Entfernte Umgebungsvariablen",
-      "keysAdded": "Neue unbekannte Schlüssel"
+      "keysAdded": "Neue unbekannte Schlüssel",
+      "keysRemoved": "Entfernte unbekannte Schlüssel",
+      "stale": "Die Datei hat sich geändert, nachdem sie angezeigt wurde. Das ist der neue Inhalt: Prüfe ihn erneut, bevor du ihm vertraust."
     },
     "prodConnect": {
       "title": "Produktionsdatenbank",

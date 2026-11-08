@@ -9,7 +9,10 @@ outputs (the JSON file and the console) and require the canary to be absent from
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+import asyncio
+from collections.abc import AsyncIterator, Callable, Iterator
+import contextlib
+import gc
 import io
 import json
 import logging
@@ -17,9 +20,11 @@ from pathlib import Path
 from typing import Any
 import uuid
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 import pytest
+import uvicorn
 
+from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets, register_secret
 from tabrion_studio.problems import CATALOG, PROBLEM_MEDIA_TYPE
 from tests.support.access import ORIGIN, TOKEN, Studio, make_studio
@@ -251,3 +256,83 @@ def test_validation_errors_do_not_echo_the_input(static_dir: Path, logs: Logs) -
     assert response.json()["code"] == "studio.invalid_request"
     _assert_no_canary(response.text)
     _assert_no_canary(logs.everything())
+
+
+# --- Review L-1 of stu-004-review.md: exception text that arrives in the message, not in exc_info --------------
+
+
+def test_asyncio_reprs_never_reach_a_log_line(logs: Logs) -> None:
+    """asyncio's default handler puts ``repr(task)`` (with ``exception=ValueError('...')``) into the message."""
+
+    async def boom() -> None:
+        raise ValueError(f"DETAIL:  Key (email)=({CANARY}) already exists.")
+
+    def callback(value: str) -> None:
+        raise RuntimeError(value)
+
+    async def main() -> None:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(boom())
+        await asyncio.sleep(0.01)
+        del task
+        gc.collect()  # "Task exception was never retrieved", with the task's repr
+        future = loop.create_future()
+        future.set_exception(RuntimeError(f"password={CANARY}"))
+        exc = future.exception()
+        loop.call_exception_handler(
+            {"message": "Future exception was never retrieved", "exception": exc, "future": future}
+        )
+        loop.call_soon(callback, CANARY)  # "Exception in callback callback('<canary>')"
+        await asyncio.sleep(0.01)
+
+    asyncio.run(main())
+    gc.collect()
+    _assert_no_canary(logs.everything())
+    records = [record for record in logs.records() if record["logger"] == "asyncio"]
+    messages = [record["message"] for record in records]
+    assert "Task exception was never retrieved [details redacted]" in messages
+    assert "Future exception was never retrieved [details redacted]" in messages
+    assert "Exception in callback [details redacted]" in messages
+    # The exception itself is still logged, frames only.
+    task_record = records[messages.index("Task exception was never retrieved [details redacted]")]
+    assert "in boom" in str(task_record["exception"])
+    assert "ValueError: [message redacted]" in str(task_record["exception"])
+
+
+def _serve_until_lifespan_fails(app: Any) -> None:
+    config = uvicorn.Config(app, host="127.0.0.1", port=0, log_config=None, log_level="info", lifespan="on")
+    with contextlib.suppress(SystemExit):
+        uvicorn.Server(config).run()
+
+
+def test_a_failing_lifespan_of_any_app_logs_no_traceback_text(logs: Logs) -> None:
+    """Starlette sends ``traceback.format_exc()`` as text and Uvicorn logs it as the message; the filter cuts it."""
+
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        raise RuntimeError(f"cannot connect postgresql://u:x@h DETAIL: Key (email)=({CANARY})")
+        yield  # pragma: no cover
+
+    _serve_until_lifespan_fails(FastAPI(lifespan=lifespan))
+    _assert_no_canary(logs.everything())
+    messages = [str(record["message"]) for record in logs.records() if record["logger"] == "uvicorn.error"]
+    assert "[traceback text redacted]" in messages
+    assert "Application startup failed. Exiting." in messages
+
+
+def test_a_failing_studio_startup_is_logged_with_frames_only(
+    static_dir: Path, logs: Logs, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Studio's lifespan logs the exception itself (frames only), so cutting Uvicorn's text loses nothing."""
+
+    def fail(_self: object) -> bool:
+        raise RuntimeError(f"DETAIL:  Key (email)=({CANARY}) already exists.")
+
+    monkeypatch.setattr(IdleMonitor, "enabled", property(fail))
+    _serve_until_lifespan_fails(make_studio(static_dir).client.app)
+    _assert_no_canary(logs.everything())
+    failures = [record for record in logs.records() if record.get("event") == "studio.lifespan_failed"]
+    assert len(failures) == 1
+    assert failures[0]["message"] == "application startup failed"
+    assert "in fail" in str(failures[0]["exception"])
+    assert "RuntimeError: [message redacted]" in str(failures[0]["exception"])
