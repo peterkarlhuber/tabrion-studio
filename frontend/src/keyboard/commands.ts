@@ -8,6 +8,7 @@ import type { TFunction } from 'i18next';
 import { currentLocale, setLocale, SUPPORTED_LOCALES } from '../i18n';
 import { navigate, type Route } from '../router';
 import { setDensity, setThemePreference, type Density, type ThemePreference } from '../theme';
+import { focusRegion } from './regions';
 import { SHORTCUTS, type Shortcut } from './shortcuts';
 
 export type CommandGroup = 'navigate' | 'appearance' | 'help';
@@ -55,7 +56,11 @@ export function buildCommands({ t, path, theme, density, openHelp }: CommandCont
       group: 'navigate',
       label: t('keyboard.commands.goTo', { page: t(page.key) }),
       current: path === page.path,
-      run: () => navigate(page.path),
+      run: () => {
+        navigate(page.path);
+        // After the palette has closed and returned the focus to its opener (STU-053, review I-2).
+        window.setTimeout(() => focusRegion('main'), 0);
+      },
     })),
     ...THEMES.map((item): Command => ({
       id: `theme:${item.value}`,

@@ -41,7 +41,7 @@ the audited states; four findings were fixed in the STU-053 pull request (below)
 | 2.3.3 Animation from interactions (AAA, required by 08 section 9) | pass | `prefers-reduced-motion: reduce` sets every duration to 0; `a11y-audit.spec.ts` |
 | 2.4.1 Bypass blocks | pass | skip link to `#main` on every view |
 | 2.4.2 Page titled | pass | `Page – Tabrion Studio`, `[PROD] name – Tabrion Studio` with a connection; `AppShell.test.tsx` |
-| 2.4.3 Focus order | pass | DOM order; dialogs move the focus in and back |
+| 2.4.3 Focus order | pass | DOM order; dialogs move the focus in and back; after "Go to …" in the command palette the focus moves to the new page's main area (I-2 of `stu-052-td021-review.md`; `Keyboard.test.tsx`, `keyboard.spec.ts`) |
 | 2.4.4 Link purpose | pass | links have their target in their text or name |
 | 2.4.6 Headings and labels | pass | descriptive headings and labels in both languages |
 | 2.4.7 Focus visible, 2.4.11 Focus not obscured (minimum) | pass | one 2 px ring with at least 3:1; every Tab stop of the PROD shell shows it and is in view; `a11y-audit.spec.ts` |

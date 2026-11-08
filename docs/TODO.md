@@ -572,7 +572,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `docs/architecture/accessibility.md`
 - **Done in the STU-053 PR:** the WCAG 2.2 AA checklist for the current shell (no open violation), the fixes F-1
   (reflow at 320 px of the PROD header and the tabs), F-2 (24 px targets in D-01), F-3 (the connection switcher at
-  320 px) and F-4 (tooltips hoverable and dismissible with Escape), and `frontend/e2e/a11y-audit.spec.ts` (target size, reflow in en and de, text spacing, focus visible and not
+  320 px) and F-4 (tooltips hoverable and dismissible with Escape), the focus on the main area after "Go to …" in the
+  palette (I-2 of `stu-052-td021-review.md`), and `frontend/e2e/a11y-audit.spec.ts` (target size, reflow in en and de, text spacing, focus visible and not
   obscured, reduced motion, landmarks).
 - **Screen-reader sample** (VoiceOver on macOS, NVDA on Windows): needs a person on those desktops (owner or QA-S1).
 - **With STU-010..STU-013:** the explorer tree (WAI-ARIA tree), the result grid (`role="grid"`, `aria-rowcount`,
