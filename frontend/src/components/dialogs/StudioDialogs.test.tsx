@@ -310,6 +310,46 @@ describe('D-01 with an untrusted project file (binding requirement U-1)', () => 
   });
 });
 
+it('I-2: unknown keys added and removed are both shown, and a stale review says so', () => {
+  render(
+    <TrustProjectDialog
+      open
+      file=".tabrion/studio.toml"
+      review={REVIEW}
+      diff={{ ...DIFF, unknown_keys: { added: ['profile[0].new'], removed: ['profile[0].old'] } }}
+      stale
+      onTrust={() => undefined}
+      onReject={() => undefined}
+    />,
+  );
+  const dialog = screen.getByRole('dialog');
+  const codes = (id: string) =>
+    within(within(dialog).getByTestId(id))
+      .getAllByRole('listitem')
+      .map((item) => item.querySelector('code')?.textContent);
+  expect(codes('trust-diff-keys-added')).toEqual(['profile[0].new']);
+  expect(codes('trust-diff-keys-removed')).toEqual(['profile[0].old']);
+  expect(within(dialog).getByTestId('trust-diff-keys-removed')).toHaveTextContent(
+    'Unknown keys removed (1)',
+  );
+  expect(within(dialog).getByRole('alert')).toHaveTextContent(
+    'The file changed after it was shown.',
+  );
+});
+
+it('I-2: no stale notice by default', () => {
+  render(
+    <TrustProjectDialog
+      open
+      file=".tabrion/studio.toml"
+      review={REVIEW}
+      onTrust={() => undefined}
+      onReject={() => undefined}
+    />,
+  );
+  expect(screen.queryByTestId('trust-stale')).toBeNull();
+});
+
 it('D-01 without hosts says none', () => {
   render(
     <TrustProjectDialog

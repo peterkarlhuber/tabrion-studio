@@ -27,6 +27,7 @@ import contextlib
 from dataclasses import dataclass, field
 import hmac
 import json
+import logging
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -45,6 +46,8 @@ from tabrion_studio.request_log import RequestLogMiddleware
 from tabrion_studio.security.access import AccessMiddleware
 from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
+
+_logger = logging.getLogger("tabrion_studio.app")
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 #: Paths of the single-page app's own views (frontend/src/router.ts); a reload or a typed address on one of them gets
@@ -110,16 +113,26 @@ async def _json_body(request: Request) -> dict[str, object] | None:
 def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     @contextlib.asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-        tasks = [asyncio.create_task(_sweep_launches(runtime))]
-        if runtime.idle.enabled:
-            tasks.append(asyncio.create_task(_watch_idle(runtime)))
+        # Starlette reports a lifespan failure to Uvicorn as formatted traceback *text*, which the log redaction
+        # cuts (review L-1 of stu-004-review.md); so the exception itself is logged here, with exc_info (frames
+        # only), before it propagates.
+        phase = "startup"
         try:
-            yield
-        finally:
-            for task in tasks:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
+            tasks = [asyncio.create_task(_sweep_launches(runtime))]
+            if runtime.idle.enabled:
+                tasks.append(asyncio.create_task(_watch_idle(runtime)))
+            try:
+                phase = "running"
+                yield
+            finally:
+                phase = "shutdown"
+                for task in tasks:
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+        except Exception:
+            _logger.exception("application %s failed", phase, extra={"event": "studio.lifespan_failed"})
+            raise
 
     app = FastAPI(
         title="Tabrion Studio",

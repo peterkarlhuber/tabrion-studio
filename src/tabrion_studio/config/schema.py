@@ -31,14 +31,16 @@ change request 14) exists; it is meant to stay compatible with it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import ipaddress
 import re
 from typing import Any, Literal
+
+from tabrion_studio.config.locations import network_or_device
 
 SCHEMA_VERSION = 1
 ENGINES = ("sqlite", "postgresql")
 ENVIRONMENTS = ("dev", "test", "prod")
 SSL_MODES = ("disable", "allow", "prefer", "require", "verify-ca", "verify-full")
-LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
 MAX_PROFILES = 200
 MAX_NAME = 200
 MAX_TEXT = 1024
@@ -123,7 +125,22 @@ def _key(text: str) -> str:
 
 
 def is_loopback(host: str) -> bool:
-    return host.lower() in LOOPBACK_HOSTS or host.startswith("127.") or host.startswith("/")
+    """A Unix socket folder, the literal ``localhost`` or a loopback IP address; never a DNS name (review T-4).
+
+    ``127.evil.example`` or ``127.0.0.1.nip.io`` are names that anyone can point anywhere, so they are remote and
+    default to ``verify-full``.
+    """
+    if host.startswith("/"):
+        return True
+    name = host.lower()
+    if name == "localhost":
+        return True
+    if name.startswith("[") and name.endswith("]"):
+        name = name[1:-1]
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
 
 
 def parse_secret_ref(value: str) -> SecretRef | None:
@@ -200,6 +217,9 @@ def _profile(raw: Any, where: str, issues: list[Issue], unknown: list[str]) -> P
         if password is None:
             # Never the value: it may be a real password written into the file by mistake.
             issues.append(Issue(f"{where}.password", "config.plain_password"))
+        elif password.source == "file" and network_or_device(password.target):
+            # T-2: another host, a device or a drive-relative path; refused as text, before any file-system access.
+            issues.append(Issue(f"{where}.password", "config.network_path"))
     timeout = _integer(raw, "statement_timeout_ms", where, 1, 24 * 3600 * 1000, issues)
     read_only_role = raw.get("read_only_role")
     if read_only_role is not None and not isinstance(read_only_role, bool):
@@ -213,6 +233,8 @@ def _profile(raw: Any, where: str, issues: list[Issue], unknown: list[str]) -> P
             issues.append(Issue(f"{where}.path", "config.required"))
         elif path is not None and _CONTROL.search(path):
             issues.append(Issue(f"{where}.path", "config.control_character"))
+        elif path is not None and network_or_device(path):
+            issues.append(Issue(f"{where}.path", "config.network_path"))
     elif engine == "postgresql":
         host = _text(raw, "host", where, issues, limit=255)
         if "host" not in raw:

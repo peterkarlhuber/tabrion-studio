@@ -12,6 +12,7 @@ from tabrion_studio.config.schema import (
     MAX_PROFILES,
     SecretRef,
     Settings,
+    is_loopback,
     parse_secret_ref,
     validate_profiles,
     validate_settings,
@@ -204,3 +205,48 @@ def test_syntax_errors_keep_only_the_line() -> None:
     with pytest.raises(ConfigFileError) as caught:
         parse_toml(b"\xff\xfe")
     assert caught.value.code == "config.encoding"
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["db.internal", "127.evil.example", "127.0.0.1.nip.io", "localhost.evil.example", "127.1", "0x7f.0.0.1", "::2"],
+)
+def test_names_that_only_look_like_loopback_are_remote(host: str) -> None:
+    """Review T-4: only the literal localhost, a loopback IP address or a socket folder defaults to prefer."""
+    assert not is_loopback(host)
+    profile = validate_profiles(_one(engine="postgresql", path=None, host=host, database="d")).profiles[0]
+    assert profile.sslmode == "verify-full"
+
+
+@pytest.mark.parametrize("host", ["localhost", "LOCALHOST", "127.0.0.1", "127.8.9.10", "::1", "[::1]", "/run/pg"])
+def test_loopback_hosts(host: str) -> None:
+    assert is_loopback(host)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"path": "//attacker.example/share/x.db"},
+        {"path": "\\\\attacker.example\\share\\x.db"},
+        {"path": "\\\\?\\C:\\x.db"},
+        {"path": "\\\\.\\pipe\\x"},
+        {"path": "C:x.db"},
+        {"path": "file://attacker.example/x.db"},
+        {"path": "/net/attacker.example/x.db"},
+        {"password": "file://attacker.example/s/x"},
+        {"password": "file:\\\\attacker.example\\s\\x"},
+        {"password": "file:C:secret"},
+    ],
+)
+def test_network_and_device_paths_are_refused_by_the_schema(fields: dict[str, Any]) -> None:
+    """Review T-2: refused as text with config.network_path, so nothing ever resolves them."""
+    key = next(iter(fields))
+    assert (f"profile[0].{key}", "config.network_path") in _codes(_one(**fields))
+
+
+def test_deeply_nested_toml_is_too_deep_not_a_crash() -> None:
+    """Review T-3: 1.8 KB of nested arrays used to raise RecursionError out of the parser."""
+    with pytest.raises(ConfigFileError) as caught:
+        parse_toml(b"x = " + b"[" * 5000 + b"]" * 5000)
+    # A parser with its own nesting limit reports a syntax error instead; either way the file is invalid.
+    assert caught.value.code in ("config.too_deep", "config.syntax")

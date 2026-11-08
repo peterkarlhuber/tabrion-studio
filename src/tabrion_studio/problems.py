@@ -181,6 +181,21 @@ CATALOG: dict[str, Entry] = {
         "The project's profile file changed after it was shown for review.",
         "Review the file again before you trust it.",
     ),
+    "studio.project_untrusted": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Project profiles not trusted",
+        "The project's profiles are not trusted in their current form.",
+        "Review the project profiles again.",
+    ),
+    "studio.profile_not_found": Entry(404, ProblemKind.CONFIG, "Profile not found", "There is no such profile."),
+    "studio.database_outside": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Database file outside the project",
+        "The profile's database file now lies outside the project folder, which was not confirmed.",
+        "Review the project profiles again.",
+    ),
     "studio.trust_unavailable": Entry(
         500, ProblemKind.CONFIG, "Trust not saved", "Studio could not save the trust decision in its state folder."
     ),

@@ -86,3 +86,6 @@ def parse_toml(data: bytes) -> dict[str, Any]:
     except tomllib.TOMLDecodeError as exc:
         match = _POSITION.search(str(exc))
         raise ConfigFileError("config.syntax", int(match.group(1)) if match else None) from None
+    except RecursionError:
+        # 1.8 KB of nested arrays is enough (review T-3): invalid, never an HTTP 500 with a 160 KB traceback.
+        raise ConfigFileError("config.too_deep") from None

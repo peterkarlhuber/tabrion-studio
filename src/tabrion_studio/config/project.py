@@ -29,8 +29,9 @@ import time
 from typing import Any, Literal
 
 from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_file
+from tabrion_studio.config.locations import contained, lexical_target, safe_realpath
 from tabrion_studio.config.schema import Issue, Profile, ProfileFile, validate_profiles
-from tabrion_studio.paths import UnsafePathError, is_within, read_private_file, write_private_file
+from tabrion_studio.paths import UnsafePathError, read_private_file, write_private_file
 
 PROJECT_DIR = ".tabrion"
 PROJECT_FILE = "studio.toml"
@@ -40,23 +41,30 @@ _DIGEST = re.compile(r"[0-9a-f]{64}")
 TrustState = Literal["none", "untrusted", "changed", "trusted", "invalid"]
 
 
-def _inside(path: Path, roots: list[Path]) -> bool:
-    resolved = Path(os.path.abspath(path))
-    try:
-        real = path.resolve()
-    except (OSError, RuntimeError):
-        return False
-    return is_within(resolved, roots) and is_within(real, roots)
+@dataclass(frozen=True)
+class Roots:
+    """Folders a path may lie in: as given (made absolute, for the text check) and resolved (for the real path)."""
+
+    lexical: list[Path]
+    real: list[Path]
 
 
-def _roots(*folders: Path | None) -> list[Path]:
-    roots: list[Path] = []
+def _roots(*folders: Path | None) -> Roots:
+    # These folders come from the user (the project folder, the configuration folder), never from the project file,
+    # so resolving them is safe.
+    lexical: list[Path] = []
+    real: list[Path] = []
     for folder in folders:
         if folder is not None:
-            roots += [Path(os.path.abspath(folder))]
+            lexical.append(Path(os.path.abspath(folder)))
             with contextlib.suppress(OSError, RuntimeError):
-                roots.append(folder.resolve())
-    return roots
+                real.append(folder.resolve())
+    return Roots(lexical, real)
+
+
+def _inside(text: str, base: Path, roots: Roots) -> bool:
+    """T-2: decided as text first; the file system is consulted only for a path already lexically inside."""
+    return contained(text, base, roots.lexical, roots.real)
 
 
 @dataclass
@@ -102,13 +110,13 @@ def review_of(parsed: ProfileFile, project: Path) -> Review:
         if profile.host is not None:
             _add(review.hosts, f"{profile.host}:{profile.port or 5432}")
         if profile.path is not None:
-            outside = not _inside(project / profile.path, project_roots)
+            outside = not _inside(profile.path, project, project_roots)
             _add(review.files, {"path": profile.path, "kind": "database", "outside": outside})
         if profile.password is not None and profile.password.source == "file":
             target = profile.password.target
             _add(
                 review.files,
-                {"path": target, "kind": "secret", "outside": not _inside(project / target, project_roots)},
+                {"path": target, "kind": "secret", "outside": not _inside(target, project, project_roots)},
             )
         if profile.password is not None and profile.password.source == "env":
             _add(review.env, profile.password.target)
@@ -131,6 +139,36 @@ def diff_reviews(old: dict[str, Any], new: dict[str, Any]) -> dict[str, Any]:
         now = new.get(key, [])
         result[key] = {"added": [i for i in now if i not in was], "removed": [i for i in was if i not in now]}
     return result
+
+
+def _as_json(value: dict[str, Any]) -> dict[str, Any]:
+    """``value`` as it reads back from the trust record (JSON types only), so that the two compare equal."""
+    result: dict[str, Any] = json.loads(json.dumps(value))
+    return result
+
+
+def _strings(value: object) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _valid_review(review: object) -> bool:
+    """Whether a record's review has the shape :meth:`Review.to_dict` writes (T-3: no TypeError on a damaged one)."""
+    if not isinstance(review, dict):
+        return False
+    connections, files = review.get("connections"), review.get("files")
+    return (
+        isinstance(connections, list)
+        and all(isinstance(c, dict) and isinstance(c.get("name"), str) for c in connections)
+        and isinstance(files, list)
+        and all(
+            isinstance(f, dict)
+            and isinstance(f.get("path"), str)
+            and isinstance(f.get("kind"), str)
+            and isinstance(f.get("outside"), bool)
+            for f in files
+        )
+        and all(_strings(review.get(key)) for key in ("hosts", "env", "unknown_keys"))
+    )
 
 
 @dataclass
@@ -173,6 +211,13 @@ class ProjectConfig:
         self.config_dir = config_dir
 
     def load(self) -> ProjectState:
+        """The trust state of the project file; never raises for anything the file or the record contains (T-3)."""
+        try:
+            return self._load()
+        except RecursionError:  # nesting deeper than the parser or the comparison can follow: invalid, not a 500
+            return ProjectState("invalid", issues=[Issue("file", "config.too_deep")])
+
+    def _load(self) -> ProjectState:
         try:
             data = read_plain_file(self.file, folders=(self.project / PROJECT_DIR,))
             if data is None:
@@ -187,13 +232,43 @@ class ProjectConfig:
         if not parsed.ok:
             return ProjectState("invalid", digest=digest, issues=parsed.issues)
         review = review_of(parsed, self.project)
+        current = _as_json(review.to_dict())
         record = self._read_record()
-        if record is not None and record["digest"] == digest:
+        # T-1: what the user confirmed is the bytes *and* what D-01 showed for them. The review also depends on the
+        # file system (a database path that a later checkout turns into a link out of the project is "outside"
+        # now), so equal bytes with a different review are "changed", and D-01 shows the difference.
+        if record is not None and record["digest"] == digest and record["review"] == current:
             return ProjectState("trusted", digest, review, issues=parsed.issues, profiles=parsed.profiles)
         if record is not None:
-            changes = diff_reviews(record["review"], review.to_dict())
+            changes = diff_reviews(record["review"], current)
             return ProjectState("changed", digest, review, changes, parsed.issues)
         return ProjectState("untrusted", digest, review, issues=parsed.issues)
+
+    def database_file(self, name: str) -> Path:
+        """The real path of the trusted project profile ``name``'s database file, re-checked now (review T-1).
+
+        STU-009 calls this right before it opens a SQLite file, and opens the path it returns: the trust state is
+        computed again from the file on disk (the bytes and the review, so a folder that became a link out of the
+        project since the confirmation means ``changed``), and the containment the user confirmed is checked again
+        on the file system. A file confirmed as inside the project must still resolve inside it; one the user
+        confirmed as outside must not be a link to a network or device path. Raises :class:`TrustError`.
+        """
+        state = self.load()
+        if state.state != "trusted" or state.review is None:
+            raise TrustError("studio.project_untrusted")
+        profile = next((p for p in state.profiles if p.name == name and p.path is not None), None)
+        if profile is None or profile.path is None:
+            raise TrustError("studio.profile_not_found")
+        confirmed = next((f for f in state.review.files if f["kind"] == "database" and f["path"] == profile.path), None)
+        if confirmed is None:
+            raise TrustError("studio.project_untrusted")
+        target = lexical_target(profile.path, PurePath(os.path.abspath(self.project)))
+        real = None if target is None else safe_realpath(Path(target))
+        if real is None:
+            raise TrustError("studio.database_outside")
+        if not confirmed["outside"] and not _inside(profile.path, self.project, _roots(self.project)):
+            raise TrustError("studio.database_outside")
+        return real
 
     def _check_secret_files(self, parsed: ProfileFile) -> None:
         """T-08: a ``file:`` reference only inside the project or the user's configuration folder (else invalid)."""
@@ -202,19 +277,17 @@ class ProjectConfig:
             ref = profile.password
             if ref is None or ref.source != "file":
                 continue
-            target = PurePath(ref.target)
-            path = Path(target) if target.is_absolute() else self.project / target
-            if not _inside(path, roots):
+            if not _inside(ref.target, self.project, roots):
                 parsed.issues.append(Issue(f"profile[{index}].password", "config.file_outside"))
 
     def _read_record(self) -> dict[str, Any] | None:
-        """The trust record, or None if it is missing or not exactly what Studio writes (fail closed)."""
+        """The trust record, or None if it is missing or not exactly what Studio writes (fail closed, T-3)."""
         try:
             raw = read_private_file(self.record)
             if raw is None:
                 return None
             doc = json.loads(raw)
-        except (OSError, UnsafePathError, ValueError):
+        except (OSError, UnsafePathError, ValueError, RecursionError):
             return None
         if (
             not isinstance(doc, dict)
@@ -222,7 +295,7 @@ class ProjectConfig:
             or doc.get("project") != str(self.project)
             or not isinstance(doc.get("digest"), str)
             or _DIGEST.fullmatch(doc["digest"]) is None
-            or not isinstance(doc.get("review"), dict)
+            or not _valid_review(doc.get("review"))
         ):
             return None
         return doc

@@ -1,0 +1,43 @@
+/* The notice for a project file that cannot be used (review I-2 of stu-006-review.md). */
+.notice {
+  position: fixed;
+  right: var(--tb-space-4);
+  bottom: var(--tb-space-8);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  width: min(28rem, calc(100% - 2 * var(--tb-space-4)));
+  max-height: 50vh;
+  overflow: auto;
+  padding: var(--tb-space-3) var(--tb-space-4);
+  border: 1px solid var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-surface);
+  color: var(--tb-color-text);
+  box-shadow: var(--tb-shadow-lg);
+  font-size: var(--tb-text-sm);
+}
+.title {
+  margin: 0;
+  font-size: var(--tb-text-sm);
+  font-weight: 600;
+}
+.text {
+  margin: 0;
+}
+.list {
+  margin: 0;
+  padding-left: var(--tb-space-5);
+  overflow-wrap: anywhere;
+}
+.dismiss {
+  align-self: flex-end;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tb-color-link);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

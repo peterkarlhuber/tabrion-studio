@@ -140,6 +140,11 @@ function DiffSection({ diff }: { diff: TrustDiff }) {
       label: t('dialogs.trustProject.keysAdded'),
       items: diff.unknown_keys.added.map((value) => ({ value })),
     },
+    {
+      id: 'keys-removed',
+      label: t('dialogs.trustProject.keysRemoved'),
+      items: diff.unknown_keys.removed.map((value) => ({ value })),
+    },
   ];
   const changed = groups.filter((group) => group.items.length > 0);
   return (
@@ -179,6 +184,7 @@ export function TrustProjectDialog({
   file,
   review,
   diff = null,
+  stale = false,
   onTrust,
   onReject,
 }: {
@@ -186,6 +192,8 @@ export function TrustProjectDialog({
   file: string;
   review: TrustReview;
   diff?: TrustDiff | null;
+  /** The file changed after the dialog showed it (`studio.trust_stale`): this is the new content (review I-2). */
+  stale?: boolean;
   onTrust: () => void;
   onReject: () => void;
 }) {
@@ -209,6 +217,11 @@ export function TrustProjectDialog({
         },
       ]}
     >
+      {stale ? (
+        <p role="alert" className={styles.stale} data-testid="trust-stale">
+          {t('dialogs.trustProject.stale')}
+        </p>
+      ) : null}
       {diff !== null ? <DiffSection diff={diff} /> : null}
       <EntryList
         testId="trust-connections"

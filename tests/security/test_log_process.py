@@ -11,13 +11,15 @@ import json
 import os
 from pathlib import Path
 import stat
+import subprocess
 import sys
+import textwrap
 import uuid
 
 import pytest
 
 from tests.support.session import redeem, request, sign_in
-from tests.support.studio import start_studio
+from tests.support.studio import start_studio, studio_command
 
 pytestmark = pytest.mark.security
 
@@ -69,3 +71,61 @@ def test_default_log_dir_with_a_state_dir(project: Path, state_dir: Path) -> Non
         studio.interrupt()
         assert studio.wait_exit() == 0
     assert len(list((state_dir / "logs").glob("studio-*.log"))) == 1
+
+
+# Runs the real command line in a child process, with one change: reading IdleMonitor.enabled (Studio's lifespan does
+# that at startup) puts the canary into asyncio's exception handler, into a callback argument and into the startup
+# exception. Everything else (configure_logging, Uvicorn with log_config=None, Starlette's lifespan) is the product.
+_HOSTILE_STARTUP = """
+import asyncio, sys
+from tabrion_studio.cli import main
+from tabrion_studio.idle import IdleMonitor
+
+CANARY = sys.argv.pop(1)
+
+
+def fail(callback_value):
+    raise RuntimeError(callback_value)
+
+
+def enabled(self):
+    loop = asyncio.get_running_loop()
+    future = loop.create_future()
+    future.set_exception(ValueError(f"DETAIL:  Key (email)=({CANARY}) already exists."))
+    exc = future.exception()
+    # What Future.__del__ does for an exception nobody retrieved: the future's repr holds the exception's text.
+    loop.call_exception_handler({"message": "Future exception was never retrieved", "exception": exc, "future": future})
+    loop.call_soon(fail, CANARY)
+    raise RuntimeError(f"cannot connect to postgresql://u:{CANARY}@db/x DETAIL: Key (email)=({CANARY})")
+
+
+IdleMonitor.enabled = property(enabled)
+sys.exit(main())
+"""
+
+
+def test_a_failing_startup_in_a_real_process_leaks_no_exception_text(
+    project: Path, state_dir: Path, tmp_path: Path
+) -> None:
+    """Review L-1 (stu-004-review.md, probes P-3 and P-4) in a real process: asyncio and the lifespan failure."""
+    script = tmp_path / "hostile_startup.py"
+    script.write_text(textwrap.dedent(_HOSTILE_STARTUP), encoding="utf-8")
+    log_dir = tmp_path / "logs"
+    args = studio_command(str(project), "--no-browser", "--state-dir", str(state_dir), "--log-dir", str(log_dir))
+    command = [sys.executable, str(script), CANARY, *args[3:]]  # the script instead of ``-m tabrion_studio``
+    result = subprocess.run(
+        command, capture_output=True, text=True, timeout=60, check=False, env={**os.environ, "PYTHONUNBUFFERED": "1"}
+    )
+    output = result.stdout + result.stderr
+    assert result.returncode != 0, output  # Uvicorn exits with its startup-failure code
+    logs = list(log_dir.glob("studio-*.log"))
+    assert len(logs) == 1, logs
+    text = logs[0].read_text(encoding="utf-8")
+    assert CANARY not in text and CANARY not in output
+    assert CANARY.removeprefix("tabrion-canary-") not in text + output
+    records = [json.loads(line) for line in text.splitlines()]
+    by_message = {record["message"]: record for record in records}
+    assert by_message["Future exception was never retrieved [details redacted]"]["logger"] == "asyncio"
+    failure = next(record for record in records if record.get("event") == "studio.lifespan_failed")
+    assert "in enabled" in failure["exception"] and "RuntimeError: [message redacted]" in failure["exception"]
+    assert any(r["logger"] == "uvicorn.error" and r["message"] == "[traceback text redacted]" for r in records)
