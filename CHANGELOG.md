@@ -55,6 +55,15 @@ All notable changes to this project are documented here. The format follows
   (STU-T-008, -009) prove that secrets, parameter values, server `DETAIL` texts and tokens reach neither an answer nor
   a log line.
 
+- Configuration, profiles and project trust (STU-006, `docs/architecture/configuration.md`): TOML schema version 1 for
+  the project's `.tabrion/studio.toml`, the user's `profiles.toml` (must be 0600) and `settings.toml`, with key-path
+  issues that never repeat a value; `--config-dir` and `TABRION_STUDIO_CONFIG_DIR`. `GET /api/project`,
+  `POST /api/project/trust`, `GET /api/profiles` and `GET /api/settings`. Project profiles are used only after the
+  user confirmed the file's exact bytes in D-01; a changed file needs a new confirmation and shows the diff. D-01 now
+  lists each connection, host, file reference, password variable and unknown key as its own item with control and
+  bidi characters escaped, long values and lists capped, and the real totals (binding requirement U-1 of
+  `stu-005-051-review.md`). The German D-01 text says "definiert" (review wording nit).
+
 ### Security
 
 - STU-004: access refusals no longer repeat request data in their text (`access.forwarded_not_allowed` named the

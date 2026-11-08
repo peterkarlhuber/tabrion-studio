@@ -163,6 +163,27 @@ CATALOG: dict[str, Entry] = {
         422, ProblemKind.REQUEST, "Invalid request", "The request does not match what this address expects."
     ),
     "studio.bad_nonce": Entry(400, ProblemKind.REQUEST, "Bad nonce", "The proof request needs a 32-digit hex nonce."),
+    # Configuration and project trust (STU-006).
+    "studio.no_project_file": Entry(
+        404, ProblemKind.CONFIG, "No project profiles", "The project folder has no .tabrion/studio.toml."
+    ),
+    "studio.project_invalid": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Project profiles not valid",
+        "The project's profile file cannot be used, so it cannot be trusted.",
+        "Fix the issues that Studio lists for the file, then review it again.",
+    ),
+    "studio.trust_stale": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Project profiles changed",
+        "The project's profile file changed after it was shown for review.",
+        "Review the file again before you trust it.",
+    ),
+    "studio.trust_unavailable": Entry(
+        500, ProblemKind.CONFIG, "Trust not saved", "Studio could not save the trust decision in its state folder."
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,

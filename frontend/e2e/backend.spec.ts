@@ -6,8 +6,8 @@
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel).
  */
-import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync } from 'node:fs';
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -21,10 +21,11 @@ test.describe.configure({ mode: 'serial' });
 
 let studio: ChildProcess | undefined;
 let base = '';
+let root = '';
 const links: string[] = [];
 
 test.beforeAll(async () => {
-  const root = mkdtempSync(join(tmpdir(), 'studio-e2e-'));
+  root = mkdtempSync(join(tmpdir(), 'studio-e2e-'));
   mkdirSync(join(root, 'project'));
   studio = spawn(
     python as string,
@@ -59,7 +60,26 @@ test.afterAll(() => {
   studio?.kill('SIGTERM');
 });
 
-/** A fresh one-time link from the running server (a second `tabrion-studio --print-url --no-browser`). */
+/** A fresh one-time link from the running server: a second `tabrion-studio --print-url --no-browser`. */
+function newLink(): string {
+  const out = execFileSync(
+    python as string,
+    [
+      '-m',
+      'tabrion_studio',
+      join(root, 'project'),
+      '--no-browser',
+      '--print-url',
+      '--state-dir',
+      join(root, 'state'),
+    ],
+    { encoding: 'utf-8' },
+  );
+  const match = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/.exec(out);
+  if (!match?.[1]) throw new Error(`no sign-in link: ${out}`);
+  return match[1];
+}
+
 async function signIn(page: Page): Promise<string[]> {
   const violations: string[] = [];
   page.on('console', (message) => {
@@ -91,5 +111,55 @@ test('the launch link signs in and the page runs under the CSP', async ({ page }
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     expect(await seriousViolations(page)).toEqual([]);
   }
+  expect(violations).toEqual([]);
+});
+
+test('STU-006: D-01 asks before the project profiles are used, and trusting sticks', async ({
+  page,
+}) => {
+  // A project file with a hostile name, a host and a password variable (T-08).
+  mkdirSync(join(root, 'project', '.tabrion'), { recursive: true });
+  writeFileSync(
+    join(root, 'project', '.tabrion', 'studio.toml'),
+    [
+      'version = 1',
+      '[[profile]]',
+      'name = "parts-dev, safe (checked)"',
+      'engine = "postgresql"',
+      'host = "db.internal"',
+      'database = "parts"',
+      'password = "env:PGPASSWORD"',
+      'environment = "dev"',
+      '',
+    ].join('\n'),
+  );
+  links.push(newLink());
+  const violations = await signIn(page);
+  const dialog = page.getByRole('dialog', { name: 'Trust the project profiles?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('button', { name: "Don't load" })).toBeFocused();
+  await expect(dialog.getByTestId('trust-connections').locator('li code')).toHaveText([
+    'parts-dev, safe (checked)',
+  ]);
+  await expect(dialog.getByTestId('trust-hosts').locator('li code')).toHaveText([
+    'db.internal:5432',
+  ]);
+  await expect(dialog.getByTestId('trust-env').locator('li code')).toHaveText(['PGPASSWORD']);
+  expect(await seriousViolations(page)).toEqual([]);
+  const profiles = async () =>
+    page.evaluate(async () => {
+      const csrf = sessionStorage.getItem('tabrion-studio.csrf') ?? '';
+      const response = await fetch('/api/profiles', { headers: { 'X-Tabrion-CSRF': csrf } });
+      return ((await response.json()) as { profiles: { source: string }[] }).profiles.filter(
+        (p) => p.source === 'project',
+      ).length;
+    });
+  expect(await profiles()).toBe(0);
+  await dialog.getByRole('button', { name: 'Trust' }).click();
+  await expect(dialog).toBeHidden();
+  expect(await profiles()).toBe(1);
+  await page.reload();
+  await expect(page.getByTestId('backend-status')).toContainText('Local server');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(violations).toEqual([]);
 });

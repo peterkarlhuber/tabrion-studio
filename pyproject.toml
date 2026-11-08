@@ -186,6 +186,21 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "config-below-api"
+name = "Configuration and trust (STU-006) never import the API, the app, the server, the CLI or security"
+type = "forbidden"
+source_modules = ["tabrion_studio.config"]
+forbidden_modules = [
+    "tabrion_studio.api",
+    "tabrion_studio.app",
+    "tabrion_studio.server",
+    "tabrion_studio.instance",
+    "tabrion_studio.cli",
+    "tabrion_studio.security",
+    "tabrion_studio.request_log",
+]
+
+[[tool.importlinter.contracts]]
 id = "security-below-app"
 name = "The security package never imports the app, the server, the process model or the CLI"
 type = "forbidden"

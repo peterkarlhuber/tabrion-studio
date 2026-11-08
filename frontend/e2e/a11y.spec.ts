@@ -15,6 +15,7 @@ const PAGES: [string, { scenario?: string; path?: string }][] = [
   ['PROD workspace', { scenario: 'prod' }],
   ['TEST workspace', { scenario: 'test' }],
   ['D-01 trust project', { scenario: 'dialog-d01' }],
+  ['D-01 hostile and changed (U-1)', { scenario: 'dialog-d01-hostile' }],
   ['D-02 PROD connect', { scenario: 'dialog-d02' }],
   ['D-06 unsaved script', { scenario: 'dialog-d06' }],
   ['D-08 quit', { scenario: 'dialog-d08' }],

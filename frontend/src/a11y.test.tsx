@@ -15,6 +15,7 @@ import {
   TrustProjectDialog,
   UnsavedScriptDialog,
 } from './components/dialogs/StudioDialogs';
+import { DIFF, HOSTILE_REVIEW, REVIEW } from './harness/trust';
 import i18n from './i18n';
 import type { SessionState } from './session';
 import type { Workspace } from './workspace';
@@ -53,9 +54,21 @@ const PAGES: [string, string, () => ReactElement][] = [
       <TrustProjectDialog
         open
         file=".tabrion/studio.toml"
-        connections={['parts-dev', 'parts-pg']}
-        hosts={['db.internal']}
-        files={['./secrets/db']}
+        review={REVIEW}
+        onTrust={noop}
+        onReject={noop}
+      />
+    ),
+  ],
+  [
+    'D-01 hostile and changed (review U-1)',
+    '/',
+    () => (
+      <TrustProjectDialog
+        open
+        file=".tabrion/studio.toml"
+        review={HOSTILE_REVIEW}
+        diff={DIFF}
         onTrust={noop}
         onReject={noop}
       />

@@ -190,3 +190,14 @@ def test_symlinks_are_refused(tmp_path: Path) -> None:
         paths.read_private_file(link)
     with pytest.raises(paths.UnsafePathError, match="not a plain directory"):
         paths.ensure_private_dir(linked_dir)
+
+
+def test_default_config_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """STU-006: --config-dir > $TABRION_STUDIO_CONFIG_DIR > STATE_DIR/config > the per-user config folder."""
+    from tabrion_studio.paths import default_config_dir
+
+    monkeypatch.delenv("TABRION_STUDIO_CONFIG_DIR", raising=False)
+    assert default_config_dir(tmp_path) == tmp_path / "config"
+    assert "tabrion-studio" in str(default_config_dir())
+    monkeypatch.setenv("TABRION_STUDIO_CONFIG_DIR", str(tmp_path / "c"))
+    assert default_config_dir(tmp_path) == tmp_path / "c"
