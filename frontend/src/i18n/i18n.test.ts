@@ -52,6 +52,8 @@ const SAME_IN_BOTH = new Set([
   'settings.themeSystem',
   'settings.densityNormal',
   'dialogs.trustProject.hosts',
+  // "Theme" is the German word too (STU-052).
+  'keyboard.commands.theme',
 ]);
 
 describe('translations (de and en)', () => {

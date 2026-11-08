@@ -41,6 +41,7 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
+| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
@@ -326,7 +327,8 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | adds `backend integration (PostgreSQL 17)`; engines are disposed on shutdown; opens a project SQLite file only through `ProjectConfig.database_file` (review T-1) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
-| TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
+| TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
+| TABRION STU-050, STU-053 | UX acceptance, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
 
@@ -358,7 +360,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 |---|---|---|
 | TABRION QA-18 | `tests/packaging/test_independent.py`: import every tabrion module while orkexa, axentra, nodestro_* and tabrion_studio are blocked (05 §3.2) | P2 |
 | TABRION QA-21 | full AC-7 check against tabrion's `__all__`/API contract and export of the used names to `tabrion/docs/api-consumers.md` (the AST check for private names is in place) | P2 |
-| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, branch protection, English, license, SECURITY.md) | P2 |
+| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, English, license, SECURITY.md; branch protection, private vulnerability reporting and the social preview are optional, owner decision 2026-11-08) | P2 |
 
 ## Technical debt
 
@@ -547,6 +549,22 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
+
+### TD-020 · STU-052 parts that wait for the SQL editor and the explorer
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 sections 7 and 11 (STU-052, depends on STU-012),
+  `docs/architecture/frontend.md` ("Keyboard")
+- **Done in the STU-052 PR:** the shortcut table with platform keys, the command palette, the shortcut help and
+  F6/Shift+F6 over the shell's areas; Vitest and keyboard-only Playwright tests for the views that exist.
+- **Editor shortcuts** (08 section 7): run (⌘↵ / Ctrl+Enter), run script, cancel (⌘. / Ctrl+.; Esc in the result),
+  new editor tab (⌘T is the browser's: Alt+T, the palette shows the shortcut that works), close tab, save script,
+  format (1.0), explorer filter (⌘P / Ctrl+P), history (1.0). Add them to `SHORTCUTS`, the help and the palette with
+  STU-011, STU-012 and STU-020; F6 then also cycles explorer, editor and result.
+- **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); it is
+  met with STU-012.
+- **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
+  skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
+  `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 
