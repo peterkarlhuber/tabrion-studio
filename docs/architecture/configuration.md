@@ -164,6 +164,15 @@ The dialog shows only data from the untrusted file, so it follows U-1 of `stu-00
   entries and "and N more"; the headings show the real totals.
 - **U-1d:** a changed file shows the added, removed and changed connections and the added and removed hosts, files,
   variables and unknown keys. If none of them changed, the dialog says that other content of the file did.
+- **Where passwords go (T-4, T-5 of `stu-006-review.md`, L-1 of `stu-007-review.md`):** one line per PostgreSQL
+  connection, "name: `env:X` / `file:Y` / `keyring:` (or *password asked when connecting*) → `host:port`, TLS
+  `sslmode`", built by the server (`flow` and `warnings` in each review connection). It is marked when the host is not
+  loopback (`remote_host`), when TLS is weaker than `verify-full` on such a host (`weak_tls`), when an `env:`
+  variable looks like another service's credential (`sensitive_variable`: `AWS_`, `AZURE_`, `GOOGLE_`, `GCP_`,
+  `GITHUB_`, `GH_`, `GITLAB_`, `NPM_`, `PYPI_`, `DOCKER_`, `OPENAI_`, `ANTHROPIC_`, `SSH_` or a name containing
+  `SECRET`, `TOKEN`, `API_KEY`, `PRIVATE_KEY`, `ACCESS_KEY`, `CREDENTIAL`) and when a `file:` password lies outside the
+  project folder (`secret_outside`). The marks are warnings, not refusals. Because the review now holds these
+  fields, a project trusted before this change shows as `changed` once and must be confirmed again.
 - **Notices (review I-2):** after `studio.trust_stale` the dialog says that the file changed and that it now shows
   the new content. An `invalid` file gets a notice "Project profiles not loaded" with its error issues (key paths and
   codes, escaped like the dialog's entries; never values).
@@ -180,7 +189,8 @@ The dialog shows only data from the untrusted file, so it follows U-1 of `stu-00
 | `tests/unit/test_config_schema.py` | schema version 1: the example of 03 section 4.3, 29 invalid cases, plain passwords refused without echo, secret references, duplicates and limits, unknown keys, the `verify-full` default, settings defaults and invalid settings, syntax errors keep only the line; `config.network_path`, `config.too_deep`, loopback detection by IP address (T-4) |
 | `frontend/src/components/dialogs/StudioDialogs.test.tsx` | one Vitest test per U-1 point with hostile names (commas, newline, tab, U+202E, an overlong value, 20 entries) and the diff |
 | `frontend/src/shell/ProjectTrust.test.tsx` | the page sends back the digest it showed with the CSRF header; diff; `studio.trust_stale` shows the new content and says so; an invalid file shows a notice with its escaped issues; "Don't load" sends nothing; no dialog for other states or unexpected answers |
-| `frontend/e2e/dialogs.spec.ts`, `a11y.spec.ts` | the hostile, changed D-01 in Chromium: focus rules, escapes, caps, diff; axe without serious or critical violations in light/dark and en/de, also for the stale D-01 with removed unknown keys and the invalid-file notice |
+| `tests/security/test_project_trust.py` (T-4, T-5, STU-007 L-1) | each PostgreSQL connection says where its password goes (source, `host:port`, TLS) with `remote_host`, `weak_tls`, `sensitive_variable` and `secret_outside` marks; SQLite connections have no flow; the list of sensitive variables |
+| `frontend/e2e/dialogs.spec.ts`, `a11y.spec.ts` | the hostile, changed D-01 in Chromium: focus rules, escapes, caps, diff, the password lines; axe without serious or critical violations in light/dark and en/de, also for the stale D-01 with removed unknown keys and the invalid-file notice |
 | `frontend/e2e/backend.spec.ts` | a real `tabrion-studio` with a project file: D-01 appears after sign-in, the project profiles are unused before "Trust" and used after it, and a reload asks no more; a profile created in the page lands in `profiles.toml` (0600) and is deleted again (STU-008) |
 | `frontend/src/appearance.test.tsx` (TD-021) | the file's language, theme and density are applied at the start, defaults leave the browser's choice; a choice is saved alone with the fresh digest, CSRF and JSON, retried once when stale, kept local for a file with issues, a hand-written file or a failing server; saves run in order; the settings form keeps its input and saves with the new digest |
 | `frontend/e2e/backend.spec.ts` (TD-021) | a real server writes the choices to `settings.toml` (0600) and a fresh browser context opens in German, dark and normal density |

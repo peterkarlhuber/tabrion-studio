@@ -276,7 +276,16 @@
       "envRemoved": "Environment variables removed",
       "keysAdded": "Unknown keys added",
       "keysRemoved": "Unknown keys removed",
-      "stale": "The file changed after it was shown. This is the new content: review it again before you trust it."
+      "stale": "The file changed after it was shown. This is the new content: review it again before you trust it.",
+      "flows": "Where passwords go",
+      "flowNone": "password asked when connecting",
+      "flowTls": "TLS {{mode}}",
+      "flowWarning": {
+        "remote_host": "sent to a host outside this computer",
+        "weak_tls": "TLS weaker than verify-full",
+        "sensitive_variable": "this variable usually holds another service's credential",
+        "secret_outside": "password file outside the project folder"
+      }
     },
     "prodConnect": {
       "title": "Production database",

@@ -101,11 +101,13 @@ D-03..D-05 belong to the Data Editor and are not built. Every dialog follows the
 | Session ended (S-1), heartbeat stops | `src/App.test.tsx`, `e2e/status.spec.ts` | CI (`frontend unit`, `e2e`) |
 | Languages complete | `src/i18n/i18n.test.ts` | CI |
 | The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 
 The Playwright tests run against the Vite development server and the e2e harness `frontend/harness.html`
 (`src/harness/main.tsx`), which renders the real app with a fake local server and a workspace, so states that the
 backend cannot produce yet (a PROD connection, the dialogs) are covered. `vite build` builds only `index.html`, so the
 harness never reaches the wheel (the packaging test checks this). The CI job `e2e` (review U-3) runs every suite
 except the screenshots in Chromium on each pull request, `e2e/backend.spec.ts` against the built wheel, and fails if
-one of them is skipped. TABRION QA-9 extends it with the platforms smoke, Firefox and WebKit. Local runs:
+one of them is skipped. The platforms smoke, Firefox and WebKit belong to STU-050; they need CI changes and are
+open (`docs/TODO.md`, TD-007). Local runs:
 `docs/development/building.md`.

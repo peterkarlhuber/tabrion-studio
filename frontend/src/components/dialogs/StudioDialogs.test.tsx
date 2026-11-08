@@ -272,6 +272,23 @@ describe('D-01 with an untrusted project file (binding requirement U-1)', () => 
     expect(capped(`ab${String.fromCodePoint(0x202e)}`, 4)).toEqual(['ab', true]); // never half an escape
   });
 
+  it('T-5, T-4, L-1: one line per connection says which password goes where', async () => {
+    const dialog = renderHostile(null);
+    const flows = within(dialog).getByTestId('trust-flows');
+    const first = within(flows).getAllByRole('listitem')[0] as HTMLElement;
+    // Long lines are capped like every entry (U-1c); the full value is one click away.
+    await userEvent.click(within(first).getByRole('button', { name: 'Show full value' }));
+    expect(first.querySelector('code')?.textContent).toBe(
+      'parts-dev, safe (checked): env:AWS_SECRET_ACCESS_KEY → attacker\\u202Elacol:5432',
+    );
+    expect(first).toHaveTextContent(
+      "(TLS disable; sent to a host outside this computer; TLS weaker than verify-full; this variable usually holds another service's credential)",
+    );
+    expect(within(flows).getAllByRole('listitem')[1]).toHaveTextContent(
+      'password asked when connecting',
+    );
+  });
+
   it('U-1d: a changed file shows the diff to the trusted version', () => {
     const dialog = renderHostile(DIFF);
     expect(dialog).toHaveAccessibleName('The project profiles have changed. Trust them?');

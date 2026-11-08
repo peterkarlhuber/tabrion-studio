@@ -13,7 +13,7 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { seriousViolations } from './support';
+import { foreignRequests, seriousViolations } from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -192,6 +192,25 @@ test('STU-008: a profile created in the page is written to profiles.toml and del
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByTestId('connections-status')).toHaveText('e2e-parts deleted.');
   expect(readFileSync(file, 'utf-8')).not.toContain('e2e-parts');
+  expect(violations).toEqual([]);
+});
+
+test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
+  const foreign = foreignRequests(page, () => base);
+  const seen: string[] = [];
+  page.on('request', (request) => seen.push(new URL(request.url()).pathname));
+  links.push(newLink());
+  const violations = await signIn(page);
+  for (const name of ['Connections', 'Settings', 'Start']) {
+    await page.getByRole('link', { name }).click();
+    await page.waitForLoadState('networkidle');
+  }
+  await page.reload();
+  await page.waitForLoadState('networkidle');
+  // The page loaded its script, styles, fonts and logo, and called the API: all from 127.0.0.1.
+  expect(seen).toContain('/api/health');
+  expect(seen.some((path) => path.startsWith('/assets/'))).toBe(true);
+  expect(foreign).toEqual([]);
   expect(violations).toEqual([]);
 });
 
