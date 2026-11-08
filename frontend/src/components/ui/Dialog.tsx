@@ -88,7 +88,8 @@ function OpenDialog({
     } else {
       dialog.setAttribute('open', '');
     }
-    dialog.querySelector<HTMLElement>(`[data-action="${initialFocus}"]`)?.focus();
+    // The ID is escaped (review U-2): an ID with a quote or a bracket must focus its button, not throw.
+    dialog.querySelector<HTMLElement>(`[data-action="${CSS.escape(initialFocus)}"]`)?.focus();
     const onNativeCancel = (event: Event) => {
       // The browser's own Escape handling: keep the dialog open until the owner closes it.
       event.preventDefault();

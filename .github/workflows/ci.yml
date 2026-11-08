@@ -3,7 +3,8 @@ name: CI
 # STU-018 (05 section 3.5, 07 section 4.1): every job name below is a mandatory check in .github/ci-manifest.json;
 # ci-ok.yml aggregates them and posts the commit status "ci-ok" on the pull request head. Actions are pinned by full
 # commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
-# them: "backend integration (PostgreSQL 17)" (STU-009), "openapi in sync" (STU-008) and "e2e" (QA-9).
+# them: "backend integration (PostgreSQL 17)" (STU-009) and "openapi in sync" (STU-008). The "e2e" job (Chromium
+# and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke, Firefox and WebKit.
 # Nothing here releases or publishes anything (G-R).
 on:
   push:
@@ -135,6 +136,80 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci --no-audit --no-fund
       - run: npm test
+
+  e2e:
+    name: e2e
+    # Review U-3: the Playwright suites in Chromium on every pull request. a11y (axe, WCAG 2.0-2.2 A/AA with color
+    # contrast, light/dark x en/de), contrast, dialogs and status run against the e2e harness; backend.spec.ts runs
+    # the built wheel in a real tabrion-studio process under the CSP of STU-003. The screenshot suite is skipped
+    # (STUDIO_SCREENSHOTS unset).
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      # npm ci + npm run build; the result goes to src/tabrion_studio/static and into the wheel.
+      - run: python scripts/build_frontend.py
+      - run: pip install "build==1.6.1"
+      - run: python -m build --wheel --outdir dist
+      - name: Install the wheel into a fresh environment
+        run: |
+          python -m venv "$RUNNER_TEMP/studio"
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl
+      # The Chromium build that the locked @playwright/test expects (U-5), with its system libraries.
+      - run: npm run e2e:install
+        working-directory: frontend
+      - run: npm run e2e -- --reporter=list,json
+        working-directory: frontend
+        env:
+          TABRION_STUDIO_E2E_PYTHON: ${{ runner.temp }}/studio/bin/python
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/e2e.json
+      - name: Every suite ran and none was skipped
+        env:
+          E2E_REPORT: ${{ runner.temp }}/e2e.json
+        run: |
+          python -I - <<'PY'
+          import collections, json, os
+          report = json.load(open(os.environ["E2E_REPORT"]))
+          counts = collections.Counter()
+          def walk(suite, file):
+              file = suite.get("file", file)
+              for spec in suite.get("specs", []):
+                  for test in spec["tests"]:
+                      counts[(file, test["status"])] += 1
+              for child in suite.get("suites", []):
+                  walk(child, file)
+          for suite in report["suites"]:
+              walk(suite, None)
+          print(dict(counts))
+          required = ["a11y.spec.ts", "backend.spec.ts", "contrast.spec.ts", "dialogs.spec.ts", "status.spec.ts"]
+          for file in required:
+              assert counts[(file, "expected")] > 0, f"{file}: no test passed"
+              bad = {s: n for (f, s), n in counts.items() if f == file and s != "expected"}
+              assert not bad, f"{file}: {bad}"
+          assert report["stats"]["unexpected"] == 0, report["stats"]
+          rows = [f"| {f} | {counts[(f, 'expected')]} |" for f in required]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("### e2e (Chromium)\n\n| Suite | Passed |\n|---|---|\n" + "\n".join(rows) + "\n")
+          PY
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-test-results
+          path: frontend/test-results/
+          if-no-files-found: ignore
 
   packaging:
     name: build and install (${{ matrix.os }})

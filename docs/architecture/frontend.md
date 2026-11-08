@@ -90,15 +90,18 @@ D-03..D-05 belong to the Data Editor and are not built. Every dialog follows the
 |---|---|---|
 | Token contrast, light and dark (text 4.5:1, focus ring, control borders and PROD frame 3:1; the dark theme redefines every colour) | `src/styles/tokens.test.ts` | `npm test` (CI) |
 | axe, no serious or critical violation: every view, the PROD workspace, every dialog, every sign-in notice, en and de | `src/a11y.test.tsx` (jsdom, without colour contrast) | `npm test` (CI) |
-| axe with colour contrast, light and dark, en and de (48 page states) | `e2e/a11y.spec.ts` | Playwright, Chromium |
-| Rendered contrast of the shell in light and dark | `e2e/contrast.spec.ts` | Playwright, Chromium |
-| PROD badge in header, tabs and title; red frame | `src/shell/AppShell.test.tsx`, `e2e/status.spec.ts` | CI; Playwright |
-| Focus rules of D-01, D-02, D-06, D-08 | `src/components/dialogs/StudioDialogs.test.tsx`, `e2e/dialogs.spec.ts` (modality, inert page, focus trap in a real browser) | CI; Playwright |
-| Session ended (S-1), heartbeat stops | `src/App.test.tsx`, `e2e/status.spec.ts` | CI; Playwright |
+| axe with colour contrast, light and dark, en and de (48 page states) | `e2e/a11y.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| Rendered contrast of the shell in light and dark | `e2e/contrast.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| PROD badge in header, tabs and title; red frame | `src/shell/AppShell.test.tsx`, `e2e/status.spec.ts` | CI (`frontend unit`, `e2e`) |
+| Focus rules of D-01, D-02, D-06, D-08 | `src/components/dialogs/StudioDialogs.test.tsx`, `e2e/dialogs.spec.ts` (modality, inert page, focus trap in a real browser); `src/components/ui/Dialog.test.tsx` (initial focus with any action ID, U-2) | CI (`frontend unit`, `e2e`) |
+| Session ended (S-1), heartbeat stops | `src/App.test.tsx`, `e2e/status.spec.ts` | CI (`frontend unit`, `e2e`) |
 | Languages complete | `src/i18n/i18n.test.ts` | CI |
+| The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
 
 The Playwright tests run against the Vite development server and the e2e harness `frontend/harness.html`
 (`src/harness/main.tsx`), which renders the real app with a fake local server and a workspace, so states that the
 backend cannot produce yet (a PROD connection, the dialogs) are covered. `vite build` builds only `index.html`, so the
-harness never reaches the wheel (the packaging test checks this). The CI job for them (`e2e`) arrives with TABRION
-QA-9; until then they run locally (`docs/development/building.md`).
+harness never reaches the wheel (the packaging test checks this). The CI job `e2e` (review U-3) runs every suite
+except the screenshots in Chromium on each pull request, `e2e/backend.spec.ts` against the built wheel, and fails if
+one of them is skipped. TABRION QA-9 extends it with the platforms smoke, Firefox and WebKit. Local runs:
+`docs/development/building.md`.

@@ -15,6 +15,7 @@
       "build and install (windows-latest)",
       "dependency audit",
       "docs",
+      "e2e",
       "frontend lint and typecheck",
       "frontend unit",
       "license and supply chain",

@@ -52,6 +52,26 @@ def test_client_routes_serve_the_app(static_dir: Path) -> None:
     assert client.get("/settings", headers={"Host": "rebind.test"}).status_code == 403
 
 
+def test_client_routes_answer_head(static_dir: Path) -> None:
+    """HEAD on a view path answers like GET without a body, as HEAD on / and the static files do (review U-4)."""
+    client = make_studio(static_dir).client
+    for path in ("/", *CLIENT_ROUTES):
+        get = client.get(path)
+        head = client.head(path)
+        assert head.status_code == 200, path
+        assert head.content == b"", path
+        assert head.headers["content-type"] == get.headers["content-type"], path
+        assert head.headers["content-length"] == get.headers["content-length"], path
+        assert "default-src 'self'" in head.headers["content-security-policy"], path
+        assert head.headers["cache-control"] == "no-store", path
+    for path in ("/settings/x", "/nowhere"):
+        assert client.head(path).status_code == 404, path
+    # The Host allowlist applies to HEAD as well (STU-T-001).
+    assert client.head("/settings", headers={"Host": "rebind.test"}).status_code == 403
+    # Only GET and HEAD: a POST is still refused before it reaches the route (no Origin).
+    assert client.post("/settings").status_code == 403
+
+
 def test_client_routes_match_the_frontend_router() -> None:
     router = (ROOT / "frontend" / "src" / "router.ts").read_text(encoding="utf-8")
     routes = re.search(r"ROUTES = \[([^\]]*)\]", router)

@@ -6,11 +6,14 @@ import { defineConfig, devices } from '@playwright/test';
  * (harness.html, never built into the wheel) with a fake local server; e2e/backend.spec.ts also runs the built
  * frontend in a real `tabrion-studio` process when TABRION_STUDIO_E2E_PYTHON names a Python with Studio installed.
  *
- *     npx playwright test                      # Chromium from Playwright's cache
+ *     npm run e2e:install                      # once: the Chromium build this Playwright version expects
+ *     npx playwright test                      # Chromium from Playwright's browser folder
  *     PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npx playwright test
  *     STUDIO_SCREENSHOTS=<folder> npx playwright test e2e/screenshots.spec.ts
  *
- * The CI job for these tests (`e2e`, Chromium plus axe against the built wheel) arrives with TABRION QA-9.
+ * Playwright looks for one exact Chromium build; where another build is preinstalled (and downloads are off), set
+ * PLAYWRIGHT_CHROMIUM_EXECUTABLE to it instead of reinstalling (docs/development/building.md, review U-5). CI runs
+ * these tests in the job `e2e` (.github/workflows/ci.yml); QA-9 adds the platforms smoke, Firefox and WebKit.
  */
 const port = Number(process.env.STUDIO_E2E_PORT ?? 5175);
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;

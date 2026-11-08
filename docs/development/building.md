@@ -24,13 +24,33 @@ npm test               # vitest
 ```
 
 Browser tests (Playwright with axe; STU-005, STU-051). They start the Vite development server themselves and use the
-e2e harness `harness.html` with a fake local server; the CI job for them arrives with TABRION QA-9:
+e2e harness `harness.html` with a fake local server. `e2e/backend.spec.ts` also starts a real `tabrion-studio` when
+`TABRION_STUDIO_E2E_PYTHON` names a Python in which Studio is installed with its built frontend (the wheel, or
+`python scripts/build_frontend.py` plus `pip install -e .`); otherwise it is skipped. CI runs all of them in the job
+`e2e` (`docs/development/ci.md`):
 
 ```bash
-npx playwright install chromium                                  # once, or use an installed Chrome:
-PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npx playwright test
+npm run e2e:install                                              # once: the Chromium build of the locked Playwright
+npm run e2e                                                      # = npx playwright test
+TABRION_STUDIO_E2E_PYTHON=../.venv/bin/python npm run e2e        # with the real-server test
 STUDIO_SCREENSHOTS=/tmp/shots npx playwright test e2e/screenshots.spec.ts   # light and dark, 2x
 ```
+
+**Browser build (review U-5).** Each Playwright release expects one Chromium build: `@playwright/test` 1.64.1 (pinned
+in `package-lock.json`) looks for build 1248 in its browser folder (`PLAYWRIGHT_BROWSERS_PATH`, by default
+`~/.cache/ms-playwright`). `npm run e2e:install` downloads exactly that build, which is what CI does. Where a different
+build is preinstalled and downloads are off (`PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`), every test fails with
+"Executable doesn't exist". Do not reinstall there; point Playwright at the installed browser instead:
+
+```bash
+# for example an agent sandbox with Chromium 1243 in /opt/pw-browsers
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/opt/pw-browsers/chromium npm run e2e
+PLAYWRIGHT_CHROMIUM_EXECUTABLE=/usr/bin/google-chrome npm run e2e  # or an installed Chrome
+```
+
+A neighboring Chromium build runs the suites unchanged (82 passed with 1243); CI always uses the expected build. When
+`@playwright/test` is updated, update `playwright-core` to the same version (`package.json`); the CI job then installs
+the new build by itself.
 
 For `npm run dev`, start the backend on the proxied port: `tabrion-studio --port 8765 --no-browser --print-url`,
 then open the printed one-time link with the port changed to 5173. The backend answers only its own Host and Origin
