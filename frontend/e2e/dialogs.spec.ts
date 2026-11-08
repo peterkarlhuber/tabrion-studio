@@ -89,7 +89,13 @@ test('D-01 with a hostile project file shows every entry escaped, in its own ite
   await expect(dialog.getByTestId('trust-connections').getByRole('heading')).toHaveText(
     'Connections (20)',
   );
-  await expect(dialog.getByRole('button', { name: 'and 12 more' })).toBeVisible();
+  await expect(
+    dialog.getByTestId('trust-connections').getByRole('button', { name: 'and 12 more' }),
+  ).toBeVisible();
+  // T-5: one escaped line per PostgreSQL connection says where its password goes.
+  const flows = dialog.getByTestId('trust-flows');
+  await expect(flows.locator('li code')).toHaveCount(8);
+  await expect(flows.getByRole('button', { name: 'and 12 more' })).toBeVisible();
   const text = (await dialog.textContent()) ?? '';
   expect(text).not.toContain(String.fromCodePoint(0x202e));
   await expect(dialog.getByTestId('trust-diff-hosts-added').locator('li code')).toHaveText([

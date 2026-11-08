@@ -39,7 +39,7 @@
 | TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; QA-9) |
 | TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
-| TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, T-4 rest, T-5, I-1, I-3..I-5; STU-007 L-1, I-4, I-5; R-1 done) | P2 | Open |
+| TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -457,27 +457,26 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-010 · STU-006 review: remaining Low and Info items
 
-- **Priority:** P2 Medium (T-5 and STU-007 L-1 before STU-009) · **Status:** Open · **Refs:** `stu-006-review.md`
+- **Priority:** P2 Medium · **Status:** Open (T-4 rest, T-5 and STU-007 L-1 done in the D-01 flows PR) · **Refs:** `stu-006-review.md`
   T-1, T-4, T-5, I-1, I-3..I-5; `stu-007-review.md` L-1, I-4, I-5
 - **T-1 (rest):** the trust POST binds to the bytes only. If only the file system changes between the dialog and the
   click, the new review is stored without having been shown (the next GET compares against it). Bind the POST to a
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
   so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
-- **T-4 (rest):** D-01 does not show the TLS mode; mark a connection whose `sslmode` is weaker than `verify-full` on
-  a non-loopback host (T-10: a diagnostic finding for `disable` and `prefer`).
-- **T-5:** D-01 shows hosts, files and variables as separate lists; show one line per connection with host and
-  port, the secret's source and the TLS mode, and mark "secret sent to a host outside loopback".
+- **T-4 (rest), done:** D-01 shows each connection's TLS mode and marks `weak_tls` (weaker than `verify-full` on a
+  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` stays with STU-010.
+- **T-5, done:** D-01 shows one line per PostgreSQL connection with the secret's source, `host:port` and the TLS mode,
+  and marks `remote_host`.
 - **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
 - **I-3:** open `.tabrion` with `O_DIRECTORY|O_NOFOLLOW` and `studio.toml` with `dir_fd` (one path walk); test the
   dev/ino compare (mutant T2); on Windows compare `GetFinalPathNameByHandle` with the expected path.
 - **I-4:** check the configuration folder like the state folder (owner, 0700, no link): `--config-dir /tmp/x` would
   accept another user's `settings.toml`.
 - **I-5:** name STU-T-021 (T-10) in the `verify-full` test or note that it belongs to STU-010.
-- **STU-007 L-1 (`stu-007-review.md`, with T-5, before STU-009):** a trusted project can name any variable
-  (`env:AWS_SECRET_ACCESS_KEY`) and any file in the user's configuration folder and send it to a host of its choice.
-  Show one line per connection, "password from `env:X` / `file:Y` is sent to `host:port`"; consider limiting project
-  `file:` references to a subfolder such as `<config>/project-secrets/` and warning on well-known variables
-  (`AWS_*`, `GITHUB_TOKEN`, `*_SECRET*`).
+- **STU-007 L-1, done:** the D-01 line reads "password from `env:X` / `file:Y` is sent to `host:port`" and marks
+  well-known credential variables (`sensitive_variable`) and `file:` passwords outside the project
+  (`secret_outside`). Not done: limiting project `file:` references to a subfolder such as
+  `<config>/project-secrets/`; the marks are warnings, the user decides.
 - **STU-007 I-4:** `select_backend` refuses a denylist of backends; a third-party plain-text backend configured
   through `PYTHON_KEYRING_BACKEND` or `keyringrc.cfg` would be accepted (user configuration only). Consider an
   allowlist: `keyring.backends.macOS`, `Windows`, `SecretService`, `libsecret`, `kwallet`.
