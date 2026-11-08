@@ -36,6 +36,8 @@ posix_only = pytest.mark.skipif(not POSIX, reason="symlinks")
         "\\\\?\\UNC\\attacker.example\\share\\x",
         "\\\\.\\pipe\\x",
         "\\\\.\\PhysicalDrive0",
+        "\\??\\UNC\\attacker.example\\share",  # the NT namespace prefix (re-review R-3)
+        "/??/C:/x",
         "C:foo.db",
         "c:",
         "file://attacker.example/s/x",
@@ -182,3 +184,17 @@ def test_contained_with_links(tmp_path: Path) -> None:
     assert contained("in/x.db", project, roots, roots)
     assert not contained("out/x.db", project, roots, roots)
     assert not contained(str(outside / "x.db"), project, roots, roots)
+
+
+@posix_only
+def test_a_relative_link_that_climbs_to_net_is_refused_before_lstat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Re-review R-1: on macOS, lstat("/net/<host>") triggers the automount; the walk refuses /net before it."""
+    depth = len(tmp_path.parts)
+    (tmp_path / "l").symlink_to("../" * depth + "net/attacker.example/share")
+    (tmp_path / "m").symlink_to("l")  # the same over two hops
+    calls = _no_file_system(monkeypatch)
+    assert safe_realpath(tmp_path / "l" / "x.db") is None
+    assert safe_realpath(tmp_path / "m" / "x.db") is None
+    assert not any("/net" in call for call in calls), calls

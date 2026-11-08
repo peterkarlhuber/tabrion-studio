@@ -196,6 +196,66 @@ CATALOG: dict[str, Entry] = {
         "The profile's database file now lies outside the project folder, which was not confirmed.",
         "Review the project profiles again.",
     ),
+    # Secret management (STU-007): never a value, a path or a variable's content.
+    "studio.secret_missing": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "No password",
+        "There is no password for this profile.",
+        "Enter the password, or store it in the system keyring.",
+    ),
+    "studio.secret_invalid": Entry(
+        400, ProblemKind.REQUEST, "Password not accepted", "The password must be 1 to 1024 characters."
+    ),
+    "studio.secret_not_storable": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Password source fixed",
+        "This profile reads its password from an environment variable or a file.",
+        "Change the profile to keyring: to store a password.",
+    ),
+    "studio.secret_env_missing": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Environment variable not set",
+        "The environment variable this profile reads its password from is not set.",
+        "Set it before you start tabrion-studio.",
+    ),
+    "studio.secret_file_outside": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Password file not allowed",
+        "The password file lies outside the project folder and the configuration folder.",
+    ),
+    "studio.secret_file_unsafe": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Password file not safe",
+        "The password file is a link, not a regular file, has more than one name, or belongs to another user.",
+    ),
+    "studio.secret_file_not_private": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Password file not private",
+        "Other users can read the password file.",
+        "Make it readable by you only (chmod 600).",
+    ),
+    "studio.secret_file_unreadable": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Password file not usable",
+        "The password file is missing, empty, larger than 4 KB or not UTF-8.",
+    ),
+    "studio.keyring_unavailable": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "No system keyring",
+        "No usable system keyring was found, and Studio never stores passwords in a plain file.",
+        "Enter the password for this session, or use an env: or file: reference.",
+    ),
+    "studio.keyring_failed": Entry(
+        502, ProblemKind.CONFIG, "Keyring error", "The system keyring did not complete the request."
+    ),
     "studio.trust_unavailable": Entry(
         500, ProblemKind.CONFIG, "Trust not saved", "Studio could not save the trust decision in its state folder."
     ),

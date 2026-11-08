@@ -207,6 +207,7 @@ class ProjectConfig:
     def __init__(self, project: Path, state_dir: Path, key: str, config_dir: Path | None = None) -> None:
         self.project = project
         self.file = project / PROJECT_DIR / PROJECT_FILE
+        self.key = key
         self.record = state_dir / f"trust-{key}.json"
         self.config_dir = config_dir
 

@@ -44,8 +44,10 @@ statement_timeout_ms = 15000
   SQLite; `host` and `database` for PostgreSQL. Keys of the other engine are errors.
 - `password` must be a reference: `keyring:`, `env:NAME` or `file:PATH`. Anything else is the error
   `config.plain_password`, and the value is never repeated, not in the API, not in a log.
+  How a reference is resolved, and the checks of a `file:` secret at read time, are in
+  [Secret management](secrets.md) (STU-007).
 - A database `path` or a `file:` reference that names another host, a device or a drive-relative path is the error
-  `config.network_path` (review T-2): `//host/...` and `\\host\...` (also mixed separators), `\\?\...` and
+  `config.network_path` (review T-2): `//host/...` and `\\host\...` (also mixed separators), `\\?\...`, `\??\...` and
   `\\.\...`, `C:foo`, `file://host/...` (also `file:///...`: write `file:/...`), and the automount folders `/net/...`
   and `/Network/...`. The check is text only and the same on every platform.
 - A file nested deeper than the TOML parser can follow is `config.too_deep` (review T-3).
