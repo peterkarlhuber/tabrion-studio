@@ -355,7 +355,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 | Ref | What | Priority |
 |---|---|---|
 | TABRION QA-18 | `tests/packaging/test_independent.py`: import every tabrion module while orkexa, axentra, nodestro_* and tabrion_studio are blocked (05 §3.2) | P2 |
-| TABRION QA-21 | full AC-7 check against tabrion's `__all__`/API contract and export of the used names to `tabrion/docs/api-consumers.md` (the AST check for private names is in place) | P2 |
+| TABRION QA-21 | Done in this repository: `scripts/check_tabrion_api.py` (the same file as in axentra, orkexa and nodestro-runtime) also checks used names against the installed Tabrion's `__all__` and, with `--surface`, Tabrion's `docs/api/surface.json`, and exports them to `docs/api-consumers.md`, enforced by `tests/architecture/test_tabrion_api_export.py`. Open: `--check-export docs/api-consumers.md` on the existing CI step (a `.github` change), and Tabrion collecting the consumer lists into `tabrion/docs/api-consumers.md` | P3 |
 | TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, branch protection, English, license, SECURITY.md) | P2 |
 
 ## Technical debt
