@@ -40,7 +40,8 @@ settings.
   neutral grey, TEST amber, PROD red and filled), `--tb-null`, `--tb-diff-added/changed/removed`.
 - **Themes:** light and dark, both complete. `src/theme.ts` writes the resolved theme to `<html data-theme>`: the
   system setting unless the user picks one in the settings. **Density:** compact (28 px rows, default) or normal
-  (36 px), `<html data-density>`.
+  (36 px), `<html data-density>`. Both, and the language, are saved to Studio's `settings.toml` when chosen and read
+  from it when the page opens (`src/appearance.ts`, TD-021; `docs/architecture/configuration.md`).
 - **Typography:** system UI stack; monospace for code and values (`ui-monospace, SFMono-Regular, Menlo, Consolas`).
 - **Focus:** one 2 px focus ring for everything, at least 3:1 against every surface.
 - **Components** (`src/components/ui/`): Button, IconButton, EmptyState and Dialog are copied from
@@ -59,7 +60,8 @@ popovers, menus and tooltips, which do not inject styles.
 ## Languages
 
 English is the source language, German is complete (`src/i18n/locales/en.json`, `de.json`; i18next and
-react-i18next). The language follows the stored choice, then the browser's languages, then English, and sets
+react-i18next). The language follows the choice in `settings.toml`, then the one stored in this browser, then the
+browser's languages, then English, and sets
 `<html lang>`. `src/i18n/i18n.test.ts` checks that both files have the same keys, the same placeholders and inline
 tags, no empty strings and no untranslated text apart from names. German texts address the user informally ("du"),
 like the planning documents. es, fr, it and pt-BR are a later extension (STU-027).
@@ -105,7 +107,8 @@ for matching and for display, so the palette, the help and the header buttons al
   move, Enter or a click runs, Escape closes, Tab stays in the search, and the focus returns to the opener. A status
   region announces the number of matches. The commands (`commands.ts`) go to the views and change the theme, the
   density and the language, and open the help; the current page, theme, density and language are marked. The filter
-  matches every word, without case and accents. No command writes to a database or a file. The explorer, the SQL
+  matches every word, without case and accents. No command writes to a database; theme, density and language are
+  saved to `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The explorer, the SQL
   editor and the history add their commands when they arrive.
 - **Areas** (`regions.ts`): each area carries `data-region`; F6 focuses its current item (the active navigation link,
   the selected tab), else its first control, else the area itself, which then shows the focus ring

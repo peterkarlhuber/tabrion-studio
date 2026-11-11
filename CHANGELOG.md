@@ -40,6 +40,11 @@ All notable changes to this project are documented here. The format follows
   a command palette (go to a view, theme, density, language, help) with the combobox pattern; ⌘/ / Ctrl+/ shows the
   keyboard shortcuts; F6 and Shift+F6 move between header, activity bar, tabs, main area and status bar. Shortcuts are
   shown with the keys of the platform (⌘ on macOS, Ctrl or Strg elsewhere); the header has buttons for both dialogs.
+- Language, theme and density are saved in Studio's `settings.toml` as soon as they are chosen, and applied from it
+  when the page opens. They were browser preferences only, which a browser keeps per port, so they were lost at every
+  start (TD-021). `settings.toml` accepts `density = "compact" | "normal"`. A file with issues or one written by hand
+  is not changed from the general settings; the choice then stays in the browser and the view says so. The command
+  palette's theme, density and language commands are saved the same way.
 - Accessibility audit of the shell (STU-053, first part; `docs/architecture/accessibility.md`): WCAG 2.2 AA
   checklist, and `e2e/a11y-audit.spec.ts` checks target size, reflow at 320 px, text spacing, focus visible and not
   obscured, reduced motion and the landmarks. Fixed on the way: a PROD workspace no longer scrolls sideways at 320 px

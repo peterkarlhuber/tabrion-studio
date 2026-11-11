@@ -1,13 +1,15 @@
 /**
  * The commands of the command palette (08 section 1: "a command palette for everything", section 7). Every command
  * works on the views that exist now; the explorer, the SQL editor and the history add theirs when they arrive. No
- * command writes to a database or to a file: the palette only navigates and changes browser preferences.
+ * command writes to a database. Theme, density and language go through src/appearance.ts like the settings view, so
+ * they are also saved to Studio's own settings.toml (`PUT /api/settings`, TD-021).
  */
 import type { TFunction } from 'i18next';
 
-import { currentLocale, setLocale, SUPPORTED_LOCALES } from '../i18n';
+import { chooseDensity, chooseLanguage, chooseTheme } from '../appearance';
+import { currentLocale, SUPPORTED_LOCALES } from '../i18n';
 import { navigate, type Route } from '../router';
-import { setDensity, setThemePreference, type Density, type ThemePreference } from '../theme';
+import type { Density, ThemePreference } from '../theme';
 import { focusRegion } from './regions';
 import { SHORTCUTS, type Shortcut } from './shortcuts';
 
@@ -67,14 +69,14 @@ export function buildCommands({ t, path, theme, density, openHelp }: CommandCont
       group: 'appearance',
       label: t('keyboard.commands.theme', { theme: t(item.key) }),
       current: theme === item.value,
-      run: () => setThemePreference(item.value),
+      run: () => chooseTheme(item.value),
     })),
     ...DENSITIES.map((item): Command => ({
       id: `density:${item.value}`,
       group: 'appearance',
       label: t('keyboard.commands.density', { density: t(item.key) }),
       current: density === item.value,
-      run: () => setDensity(item.value),
+      run: () => chooseDensity(item.value),
     })),
     ...SUPPORTED_LOCALES.map((value): Command => ({
       id: `language:${value}`,
@@ -82,7 +84,7 @@ export function buildCommands({ t, path, theme, density, openHelp }: CommandCont
       // Languages are named in their own language ("Deutsch"), so they can be found in either one.
       label: t('keyboard.commands.language', { language: t(`languages.${value}`) }),
       current: locale === value,
-      run: () => void setLocale(value),
+      run: () => chooseLanguage(value),
     })),
     {
       id: 'help:shortcuts',

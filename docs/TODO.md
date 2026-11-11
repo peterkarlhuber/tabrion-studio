@@ -42,6 +42,7 @@
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
+| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -536,8 +537,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Favorites and recently opened** are a 1.0 feature (03 §2 A).
 - **The `openapi in sync` CI job** (the first API types for the frontend) changes `.github/` and needs a
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
-- **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
-  accepts them, but the page does not send them yet.
+- **Language and theme in `settings.toml`:** done in the appearance PR (TD-021).
 - **PR #13 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
   - **L-1:** in the assistant, `secretKept` hides `secretProblem`. When a retarget could neither remove the old
     keyring entry nor store the new password, the page only says the old one was kept. Show both.
@@ -565,6 +565,28 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
   skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
   `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
+
+### TD-021 · Language, theme and density in `settings.toml` (from TD-011)
+
+- **Priority:** P2 Medium · **Status:** Open (#17 merged as `061db9d`; only I-5 and I-6 left) · **Refs:** 03 section 4.3 (`settings.toml`: UI
+  settings, language), 08 section 4.10, `docs/architecture/configuration.md`
+- **Problem:** Studio listens on a free port, and a browser keeps localStorage per origin (port included). The
+  language, theme and density chosen in the settings were therefore forgotten at the next start.
+- **Done in the appearance PR:** `settings.toml` gains `density` (`compact`, `normal`; schema, writer and
+  `PUT /api/settings`). The page saves each choice at once (only that key, a fresh digest, one retry when stale), never
+  changes a file with issues or a hand-written one from there (the choice then stays in this browser and the view
+  says why), and applies the file's non-default values when it opens. Tests: `frontend/src/appearance.test.tsx`, the
+  real-server test in `frontend/e2e/backend.spec.ts`, and the schema, writer and API tests.
+- **Done after the review (`stu-052-td021-review.md`):** C-1, the palette's theme, density and language commands go
+  through `chooseTheme`, `chooseDensity` and `chooseLanguage`, so they are saved too (pinned by a Vitest); M-1, the
+  settings form reads the new digest itself when an appearance choice was saved since it read the file, and keeps
+  what was typed on `config_stale`; L-4, the note for a hand-written file says what to do; L-5, a fake server that
+  checks the digest pins the save queue; L-6, the real-server test removes its `settings.toml` again.
+- **D-1 (Low, `stu-052-td021-review.md`), done in the STU-053 PR:** the palette test ran only "density normal", so a
+  theme command that skipped `chooseTheme` passed; it now runs the theme, density and language commands and checks
+  each saved key.
+- **Open (Info):** I-5 (a warnings-only file is refused by the server, so the note says "could not be saved"), I-6 (an
+  older build reports `density` as an unknown key; a release-notes line).
 
 ### TD-022 · STU-053 parts that wait for later packages or a person
 
