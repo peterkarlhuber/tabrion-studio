@@ -2,7 +2,7 @@
  * STU-052 in the shell: the command palette (⌘K / Ctrl+K), the shortcut help (⌘/ / Ctrl+/) and the area change with
  * F6 and Shift+F6 (08 section 7). The same flows run keyboard-only in Chromium in e2e/keyboard.spec.ts.
  */
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../App';
@@ -86,6 +86,9 @@ describe('command palette', () => {
     expect(palette()).toBeNull();
     expect(window.location.pathname).toBe('/settings');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    // The focus moves to the new page's main area, with the ring (STU-053, review I-2).
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
+    expect(screen.getByRole('main')).toHaveAttribute('data-region-focus');
   });
 
   it('says so when no command matches, and Enter does nothing then', async () => {

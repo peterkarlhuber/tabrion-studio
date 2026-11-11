@@ -42,7 +42,8 @@
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
-| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | In progress (appearance PR, #17; review conditions done) |
+| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
+| TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -327,7 +328,8 @@ merge after OA-004.
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
-| TABRION STU-050, STU-053 | UX acceptance, accessibility audit | P1/P2 | | |
+| TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
+| TABRION STU-050 | UX acceptance | P1 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
 
@@ -566,7 +568,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-021 · Language, theme and density in `settings.toml` (from TD-011)
 
-- **Priority:** P2 Medium · **Status:** In progress (appearance PR, #17) · **Refs:** 03 section 4.3 (`settings.toml`: UI
+- **Priority:** P2 Medium · **Status:** Open (#17 merged as `061db9d`; only I-5 and I-6 left) · **Refs:** 03 section 4.3 (`settings.toml`: UI
   settings, language), 08 section 4.10, `docs/architecture/configuration.md`
 - **Problem:** Studio listens on a free port, and a browser keeps localStorage per origin (port included). The
   language, theme and density chosen in the settings were therefore forgotten at the next start.
@@ -580,5 +582,34 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   settings form reads the new digest itself when an appearance choice was saved since it read the file, and keeps
   what was typed on `config_stale`; L-4, the note for a hand-written file says what to do; L-5, a fake server that
   checks the digest pins the save queue; L-6, the real-server test removes its `settings.toml` again.
+- **D-1 (Low, `stu-052-td021-review.md`), done in the STU-053 PR:** the palette test ran only "density normal", so a
+  theme command that skipped `chooseTheme` passed; it now runs the theme, density and language commands and checks
+  each saved key.
 - **Open (Info):** I-5 (a warnings-only file is refused by the server, so the note says "could not be saved"), I-6 (an
   older build reports `density` as an unknown key; a release-notes line).
+
+### TD-022 · STU-053 parts that wait for later packages or a person
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 section 9, 09 STU-053 (depends on STU-050),
+  `docs/architecture/accessibility.md`
+- **Done in the STU-053 PR:** the WCAG 2.2 AA checklist for the current shell (no open violation), the fixes F-1
+  (reflow at 320 px of the PROD header and the tabs), F-2 (24 px targets in D-01), F-3 (the connection switcher at
+  320 px, with titles for names cut with "…"), F-4 (tooltips hoverable and dismissible with Escape, and no click
+  through a tooltip shown for the keyboard focus) and F-5 (the logo link's name below 720 px), the focus on the main area after "Go to …" in the
+  palette (I-2 of `stu-052-td021-review.md`), and `frontend/e2e/a11y-audit.spec.ts` (target size, reflow in en and de, text spacing, focus visible and not
+  obscured, reduced motion, landmarks, tooltips).
+- **Review of the STU-053 PR (`stu-053-review.md`):** L-1 (a click beside a focused link followed it through its
+  tooltip), L-2 (header wrap, mark size and switcher name pinned at 320 px), L-3 (the header icon-button tooltip's
+  Escape and no-gap rules tested) and L-4 (`title` on cut names; the text-spacing comment replaced by a check) are
+  done. The redundant rules `.brand { flex: none }` and `.switcher > * { min-width: 0 }` were removed, since no test
+  could tell them apart (the header wraps before it would shrink the brand). I-1: refresh the report's
+  "Chromium 1243" line when CI's Chromium runs it.
+- **Screen-reader sample** (VoiceOver on macOS, NVDA on Windows): needs a person on those desktops (owner or QA-S1).
+- **With STU-010..STU-013:** the explorer tree (WAI-ARIA tree), the result grid (`role="grid"`, `aria-rowcount`,
+  `aria-rowindex`), the live region for the query status, the SQL editor (CodeMirror, leaving it with Escape); with
+  STU-023 the ER diagram's table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
+- **Required e2e suite:** `a11y-audit.spec.ts` runs in the CI job `e2e`, but is not in the list of suites that must
+  pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
+- **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
+  every MVP flow.

@@ -27,8 +27,12 @@ test('keyboard only: palette to Settings, F6 through the areas, help and back', 
   await expect(palette).toBeHidden();
   await expect(page).toHaveURL(/\/settings$/);
   await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible();
+  // The focus is on the new page's main area (STU-053, review I-2 of stu-052-td021-review.md).
+  await expect(page.locator('#main')).toBeFocused();
 
-  // F6: header, navigation (the current page), tabs (the selected one), main area, status bar, and around.
+  // F6: status bar, then around: header, navigation (the current page), tabs (the selected one), main area.
+  await page.keyboard.press('F6');
+  await expect(page.getByRole('contentinfo')).toBeFocused();
   await page.keyboard.press('F6');
   await expect(page.getByRole('link', { name: 'Tabrion Studio' })).toBeFocused();
   await page.keyboard.press('F6');

@@ -33,13 +33,28 @@ export function moveRegion(direction: 1 | -1, root: ParentNode = document): stri
         : all[all.length - 1]
       : all[(index + direction + all.length) % all.length];
   if (next === undefined) return null;
-  const element = target(next);
-  if (element === next) {
-    if (!next.hasAttribute('tabindex')) next.tabIndex = -1;
+  focusArea(next);
+  return next.dataset.region ?? null;
+}
+
+function focusArea(region: HTMLElement): void {
+  const element = target(region);
+  if (element === region) {
+    if (!region.hasAttribute('tabindex')) region.tabIndex = -1;
     // An area has no focus ring of its own (tabindex -1); a keyboard move shows one until the focus leaves.
-    next.dataset.regionFocus = '';
-    next.addEventListener('blur', () => delete next.dataset.regionFocus, { once: true });
+    region.dataset.regionFocus = '';
+    region.addEventListener('blur', () => delete region.dataset.regionFocus, { once: true });
   }
   element.focus();
-  return next.dataset.region ?? null;
+}
+
+/**
+ * Focus one area by name, with the ring (I-2 of stu-052-td021-review.md, STU-053): after "Go to …" in the palette the
+ * focus moves to the new page's main area, so a screen reader starts reading there instead of at the old opener.
+ */
+export function focusRegion(name: string, root: ParentNode = document): boolean {
+  const region = regions(root).find((area) => area.dataset.region === name);
+  if (region === undefined) return false;
+  focusArea(region);
+  return true;
 }
