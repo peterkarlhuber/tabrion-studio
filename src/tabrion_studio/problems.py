@@ -496,6 +496,13 @@ CATALOG: dict[str, Entry] = {
         "Migration status timed out",
         "Reading the revisions took too long and was stopped.",
     ),
+    "studio.migrations_busy": Entry(
+        429,
+        ProblemKind.DATABASE,
+        "Migration status busy",
+        "Studio reads the revisions of one migration status at a time, and another one is running.",
+        "Try again when it has finished.",
+    ),
     "studio.migrations_revisions": Entry(
         422,
         ProblemKind.CONFIG,

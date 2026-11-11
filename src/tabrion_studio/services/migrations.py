@@ -19,13 +19,17 @@ Everything reads. Studio never migrates (03 section 2 F: "Migrationen ausführen
 from __future__ import annotations
 
 from collections.abc import Callable
+import contextlib
 from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
+import selectors
 import signal
 import subprocess
 import sys
+import threading
+import time
 from typing import Any
 
 import tabrion_studio
@@ -39,6 +43,9 @@ __all__ = ["NOT_TRUSTED", "WORKER_TIMEOUT_S", "Migrations", "run_worker", "worke
 WORKER_TIMEOUT_S = 30.0
 #: The largest answer the worker may give; its answer is a few revision ids.
 MAX_ANSWER_BYTES = 1024 * 1024
+#: How long to wait for a killed worker to end before giving up on it (it ends at once; this is never unbounded).
+_REAP_S = 5.0
+_PIPE_CHUNK = 65536
 NOT_TRUSTED = "unknown (project not trusted)"
 _REVISIONS_TEXT = {
     "untrusted": NOT_TRUSTED,
@@ -82,11 +89,16 @@ def worker_environment(environ: dict[str, str] | None = None) -> dict[str, str]:
 
 
 def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
-    """Run :mod:`.migration_worker` with ``request`` on its standard input; its answer, or ``{error}``."""
+    """Run :mod:`.migration_worker` with ``request`` on its standard input; its answer, or ``{error}``.
+
+    Bounded in time and size whatever the project's code does: the answer is read up to its line end or
+    :data:`MAX_ANSWER_BYTES`, never until the pipe closes (a child that left the process group may keep it open), and
+    after ``timeout_s`` the worker's process group is killed and nothing more is waited for."""
     package_root = str(Path(tabrion_studio.__file__).resolve().parent.parent)
     posix = os.name == "posix"
+    deadline = time.monotonic() + timeout_s
     process = subprocess.Popen(  # noqa: S603 - a fixed command: this interpreter and the worker module
-        [sys.executable, "-I", "-c", _BOOT, package_root],
+        [sys.executable, "-I", "-B", "-c", _BOOT, package_root],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
@@ -94,23 +106,99 @@ def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_
         env=worker_environment(),
         start_new_session=posix,  # the whole process group can be killed, also children of the project's code
     )
+    data = json.dumps(request).encode("utf-8")
     try:
-        output, _ = process.communicate(json.dumps(request).encode("utf-8"), timeout=timeout_s)
-    except subprocess.TimeoutExpired:
-        _kill(process, posix)
-        process.communicate()
-        return {"error": "studio.migrations_timeout"}
+        output = _exchange_posix(process, data, deadline) if posix else _exchange_threads(process, data, deadline)
     finally:
-        if process.poll() is None:
+        # The answer is in (the worker only exits after it), or the time is up: the worker's process group goes, with
+        # any child the project's code left in it. Killed before it is waited for, so the group id is still its own.
+        if posix or process.poll() is None:
             _kill(process, posix)
-            process.wait()
-    if len(output) > MAX_ANSWER_BYTES:
+        # On Windows a reader thread may still be blocked on the answer pipe; closing it there could wait for it.
+        for pipe in (process.stdin, process.stdout) if posix else (process.stdin,):
+            if pipe is not None:
+                with contextlib.suppress(OSError):
+                    pipe.close()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            process.wait(_REAP_S)  # killed: it ends at once; never an unbounded wait
+    if output is None:
+        return {"error": "studio.migrations_timeout"}
+    if len(output) > MAX_ANSWER_BYTES or not output.endswith(b"\n"):
         return {"error": "studio.migrations_failed"}
     try:
         doc = json.loads(output)
     except ValueError:
         return {"error": "studio.migrations_failed"}
     return doc if isinstance(doc, dict) else {"error": "studio.migrations_failed"}
+
+
+def _exchange_posix(process: subprocess.Popen[bytes], data: bytes, deadline: float) -> bytes | None:
+    """Write ``data``, read up to the first line end (at most ``MAX_ANSWER_BYTES + 1`` bytes); None at the deadline."""
+    if process.stdin is None or process.stdout is None:
+        raise ValueError("the worker's pipes are missing")
+    stdin, stdout = process.stdin.fileno(), process.stdout.fileno()
+    os.set_blocking(stdin, False)
+    os.set_blocking(stdout, False)
+    output = bytearray()
+    with selectors.DefaultSelector() as selector:
+        selector.register(stdin, selectors.EVENT_WRITE)
+        selector.register(stdout, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return None
+            for key, _ in selector.select(remaining):
+                if key.fd == stdin:
+                    try:
+                        data = data[os.write(stdin, data[:_PIPE_CHUNK]) :]
+                    except BlockingIOError:
+                        continue
+                    except OSError:  # BrokenPipeError: the worker stopped reading; its answer tells why
+                        data = b""
+                    if not data:
+                        selector.unregister(stdin)
+                        process.stdin.close()
+                    continue
+                try:
+                    chunk = os.read(stdout, _PIPE_CHUNK)
+                except BlockingIOError:
+                    continue
+                output += chunk
+                if not chunk or b"\n" in chunk or len(output) > MAX_ANSWER_BYTES:
+                    return bytes(output[: MAX_ANSWER_BYTES + 1])
+
+
+def _exchange_threads(process: subprocess.Popen[bytes], data: bytes, deadline: float) -> bytes | None:
+    """Like :func:`_exchange_posix` with a reader thread (Windows: no ``select`` on pipes). After a timeout the
+    thread may stay blocked while a child of the worker that survived its kill holds the pipe (see docs/TODO.md)."""
+    if process.stdin is None or process.stdout is None:
+        raise ValueError("the worker's pipes are missing")
+    stdout = process.stdout.fileno()
+    output = bytearray()
+    done = threading.Event()
+
+    def read() -> None:
+        try:
+            while not done.is_set():
+                chunk = os.read(stdout, _PIPE_CHUNK)
+                output.extend(chunk)
+                if not chunk or b"\n" in chunk or len(output) > MAX_ANSWER_BYTES:
+                    break
+        except (OSError, ValueError):
+            pass
+        finally:
+            done.set()
+
+    reader = threading.Thread(target=read, name="tabrion-studio-migration-worker", daemon=True)
+    reader.start()
+    try:
+        process.stdin.write(data)
+        process.stdin.close()
+    except OSError:
+        pass
+    if not done.wait(max(deadline - time.monotonic(), 0.0)):
+        return None
+    return bytes(output[: MAX_ANSWER_BYTES + 1])
 
 
 def _kill(process: subprocess.Popen[bytes], posix: bool) -> None:
@@ -136,6 +224,8 @@ class Migrations:
     registry: ConnectionRegistry
     code: CodeTrust
     runner: Callable[..., dict[str, Any]] = field(default=run_worker)
+    #: One worker at a time: a second request while one runs gets ``studio.migrations_busy`` (review L-3 of #29).
+    _busy: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
 
     def status(self, connection_id: object) -> dict[str, Any]:
         connection = self.registry.get(connection_id)
@@ -174,7 +264,13 @@ class Migrations:
             "sys_path": [str(path) for path in code.scan.sys_path],
             "digest": code.scan.digest,
         }
-        answer = self.runner(request, cwd=self.code.project)
+        if not self._busy.acquire(blocking=False):
+            answer: dict[str, Any] = {"error": "studio.migrations_busy"}
+        else:
+            try:
+                answer = self.runner(request, cwd=self.code.project)
+            finally:
+                self._busy.release()
         error = answer.get("error")
         heads, pending = _revisions(answer.get("heads")), _revisions(answer.get("pending"))
         found, unknown = _revisions(answer.get("current")), _revisions(answer.get("unknown"))
