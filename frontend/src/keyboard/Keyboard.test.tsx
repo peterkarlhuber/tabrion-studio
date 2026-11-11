@@ -2,7 +2,7 @@
  * STU-052 in the shell: the command palette (⌘K / Ctrl+K), the shortcut help (⌘/ / Ctrl+/) and the area change with
  * F6 and Shift+F6 (08 section 7). The same flows run keyboard-only in Chromium in e2e/keyboard.spec.ts.
  */
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from '../App';
@@ -86,6 +86,9 @@ describe('command palette', () => {
     expect(palette()).toBeNull();
     expect(window.location.pathname).toBe('/settings');
     expect(screen.getByRole('heading', { level: 1, name: 'Settings' })).toBeInTheDocument();
+    // The focus moves to the new page's main area, with the ring (STU-053, review I-2).
+    await waitFor(() => expect(screen.getByRole('main')).toHaveFocus());
+    expect(screen.getByRole('main')).toHaveAttribute('data-region-focus');
   });
 
   it('says so when no command matches, and Enter does nothing then', async () => {
@@ -156,6 +159,57 @@ describe('command palette', () => {
     expect(palette()).toBeNull();
     expect(help()).toBeNull();
     expect(screen.getByRole('button', { name: 'Cancel' })).toHaveFocus();
+  });
+});
+
+describe('events the page shortcuts leave alone (L-3 of stu-052-td021-review.md)', () => {
+  it('Ctrl+K during an IME composition does nothing', () => {
+    renderApp();
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, isComposing: true, bubbles: true }),
+      );
+    });
+    expect(palette()).toBeNull();
+  });
+
+  it('Ctrl+K that another handler already took does nothing', () => {
+    renderApp();
+    const event = new KeyboardEvent('keydown', {
+      key: 'k',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    event.preventDefault();
+    act(() => {
+      window.dispatchEvent(event);
+    });
+    expect(palette()).toBeNull();
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true }),
+      );
+    });
+    expect(palette()).not.toBeNull(); // the probe: the same shortcut without preventDefault opens it
+  });
+
+  it('Escape in the palette does not reach the page behind it', async () => {
+    const user = userEvent.setup();
+    const seen = vi.fn();
+    const listener = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') seen();
+    };
+    window.addEventListener('keydown', listener);
+    try {
+      renderApp();
+      await user.keyboard('{Control>}k{/Control}');
+      await user.keyboard('{Escape}');
+      expect(palette()).toBeNull();
+      expect(seen).not.toHaveBeenCalled();
+    } finally {
+      window.removeEventListener('keydown', listener);
+    }
   });
 });
 

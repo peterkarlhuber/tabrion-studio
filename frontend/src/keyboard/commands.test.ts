@@ -55,7 +55,11 @@ describe('buildCommands', () => {
       'Gehe zu Start',
       'Gehe zu Verbindungen',
       'Gehe zu Einstellungen',
-      'Theme: System',
+      'Darstellung: System',
+    ]);
+    // L-1 of stu-052-td021-review.md: the word of the settings view finds the theme commands.
+    expect(labels(filterCommands(buildCommands(context()), 'darstellung dunkel'))).toEqual([
+      'Darstellung: Dunkel',
     ]);
   });
 
