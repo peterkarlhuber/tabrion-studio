@@ -448,18 +448,28 @@ describe('against a server that checks the digest (review L-5, M-1)', () => {
 });
 
 describe('the command palette (C-1 of stu-052-td021-review.md)', () => {
-  it('saves a theme chosen in the palette to settings.toml', async () => {
+  // D-1 of stu-052-td021-review.md: every appearance command saves its own key (language last: it renames the box).
+  it('saves the theme, density and language chosen in the palette to settings.toml', async () => {
     const server = strictServer();
     const user = userEvent.setup();
     render(<App fetcher={server.fetcher} heartbeat={false} />);
     await waitFor(() => expect(server.calls.some((c) => c.url === '/api/settings')).toBe(true));
-    await user.keyboard('{Control>}k{/Control}');
-    await user.type(screen.getByRole('combobox', { name: 'Search commands' }), 'density normal');
-    await user.keyboard('{Enter}');
+    const run = async (query: string) => {
+      await user.keyboard('{Control>}k{/Control}');
+      await user.type(screen.getByRole('combobox'), query);
+      await user.keyboard('{Enter}');
+    };
+    await run('theme dark');
+    await waitFor(() => expect(server.doc.theme).toBe('dark'));
+    expect(document.documentElement.dataset.theme).toBe('dark');
+    await run('density normal');
     await waitFor(() => expect(server.doc.density).toBe('normal'));
-    expect(puts(server.calls).map((call) => (call.body as { settings: unknown }).settings)).toEqual(
-      [{ density: 'normal' }],
-    );
     expect(document.documentElement.dataset.density).toBe('normal');
+    await run('Deutsch');
+    await waitFor(() => expect(server.doc.language).toBe('de'));
+    expect(document.documentElement.lang).toBe('de');
+    expect(puts(server.calls).map((call) => (call.body as { settings: unknown }).settings)).toEqual(
+      [{ theme: 'dark' }, { density: 'normal' }, { language: 'de' }],
+    );
   });
 });
