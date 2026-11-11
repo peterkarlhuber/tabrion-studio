@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 import hashlib
+import itertools
 import os
 from pathlib import Path
 import shutil
@@ -25,6 +26,7 @@ from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Sett
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import scrub
 from tabrion_studio.services import connections as connections_module
+from tabrion_studio.services import readonly as readonly_module
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.connections import (
     ConnectionRegistry,
@@ -35,7 +37,7 @@ from tabrion_studio.services.connections import (
     driver_options,
     studio_profile,
 )
-from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer
+from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
 
 pytestmark = pytest.mark.security
 
@@ -238,7 +240,8 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("COMMIT; INSERT INTO t VALUES (1)", "studio.statement_multiple"),
         ("BEGIN", "studio.statement_transaction"),
         ("start transaction read write", "studio.statement_transaction"),
-        ("/* a /* nested */ comment */ COMMIT", "studio.statement_transaction"),
+        ("/* a /* nested */ comment */ COMMIT", "studio.statement_refused"),  # SQLite does not nest: no agreement
+        ("/* a /* nested */ comment */ SELECT 1", "studio.statement_refused"),
         ("-- x\n  ROLLBACK", "studio.statement_transaction"),
         ("END", "studio.statement_transaction"),
         ("SAVEPOINT a", "studio.statement_transaction"),
@@ -344,6 +347,74 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
 )
 def test_statements_studio_passes_on(sql: str) -> None:
     assert check_statement(sql)
+
+
+# R-H1 of the delta re-review (stu-011-review.md): the first word comes from the lexer, in every reading.
+
+#: The reviewer's probes: PostgreSQL ends ``--`` at ``\r`` too, so the server runs the statement before ``/*`` and
+#: a line-based scan saw ``show``; SQLite does not nest block comments, so it runs the ``DELETE``.
+R_H1_PROBES = [
+    "-- x\rDECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(6) /*\nshow */",
+    "-- x\rDECLARE heldc CURSOR WITH HOLD FOR SELECT 1 /*\nshow */",
+    "-- x\rDO $$BEGIN PERFORM pg_advisory_lock(4242); END$$ /*\nshow */",
+    "-- x\rCOPY (SELECT 'rr18d') TO '/tmp/rr18d_copy.txt' /*\nshow */",
+    "-- x\rCOMMIT /*\nshow */",
+    "-- x\rSET statement_timeout = 0 /*\nshow */",
+    "-- x\rDELETE FROM part /*\nselect */",
+    "/* /* */ DELETE FROM part -- */ select\n",
+    "/* /* */ VACUUM -- */ select\n",
+    "-- x\r\nSELECT 1 -- ok\n".replace("SELECT 1", "DELETE FROM part"),
+    "\u00a0DELETE FROM part",  # a non-ASCII space is not white space to either server
+    '"select" 1',
+    "[select] 1",
+    "`select` 1",
+]
+
+
+@pytest.mark.parametrize("sql", R_H1_PROBES)
+def test_r_h1_the_first_word_cannot_hide_behind_a_comment(sql: str) -> None:
+    with pytest.raises(StatementRefused) as raised:
+        check_statement(sql)
+    assert raised.value.code in ("studio.statement_refused", "studio.statement_transaction", "studio.statement_empty")
+    assert first_word(sql) not in readonly_module._FIRST_WORDS
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "-- a comment\r\nSELECT 1",
+        "-- a comment\nSELECT 1 -- and one at the end",
+        "/* one */ /* two */ (SELECT 1)",
+        "\t\f\vSELECT 1",
+        "EXPLAIN /* plan */ SELECT 1",
+    ],
+)
+def test_r_h1_comments_that_all_readings_agree_on_still_pass(sql: str) -> None:
+    assert check_statement(sql)
+
+
+#: Pieces whose concatenations cover the lexers' corners: both line ends, nested and open comments, quotes.
+_PIECES = ("--", "/*", "*/", "\r", "\n", " ", "select", "delete", "'", '"', "$$", "(", "[", "x")
+
+
+def test_r_h1_the_checked_first_word_is_the_lexers_in_every_reading() -> None:
+    """Property: whatever text passes the check starts, in every reading, with the same allowed word."""
+    passed = 0
+    for size in range(1, 6):
+        for parts in itertools.product(_PIECES, repeat=size):
+            sql = "".join(parts)
+            try:
+                check_statement(sql)
+            except StatementRefused:
+                continue
+            passed += 1
+            starts = set()
+            for backslash, sqlite in readonly_module._READINGS:
+                tokens = readonly_module._tokens(sql, backslash_strings=backslash, sqlite=sqlite)
+                tokens = list(itertools.dropwhile(lambda token: token == "(", tokens))
+                starts.add(tokens[0] if tokens else "")
+            assert starts == {"select"}, sql
+    assert passed > 100  # the property was exercised
 
 
 #: R2-I2 of re-review 2: each text hides the call under one way of lexing '...' and shows it under the other.

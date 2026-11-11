@@ -604,6 +604,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   statement that ignores the cancel still holds its slot until the driver returns); I-3 `max_result_mb` (1 to 200).
   Open from the review: I-1 (bind a query to its session if Studio ever has several sessions) and I-4 (the SSE
   generator polls every 50 ms; a condition would avoid it), both for STU-012, by 2026-12-15.
+- **Delta re-review of `stu-011-review.md` (head 170aeaa, done in the STU-011 draft):** R-H1 the first word, the
+  control checks and the cursor choice come from the lexer (`readonly._lex`) in three readings (PostgreSQL with and
+  without backslash escapes, SQLite), which must agree; `--` ends at `\r` in PostgreSQL, SQLite block comments do not
+  nest. The check-in reset also runs `CLOSE ALL` and `pg_advisory_unlock_all()`. R-M1 the fetch budget follows the
+  largest row so far, grows at most twice per fetch and counts nested values. R-I1 a `search_path` or
+  `transaction_timeout` in the session settings is refused by `startup_options` until it can quote the one and check
+  the server version for the other like tabrion (with tabrion 0.2's session reset, TD-013). Open: R-I2 (`_expire`
+  may report a user cancel shortly before the timeout as `db.timeout`; cosmetic, STU-012 by 2026-12-15).
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
