@@ -82,10 +82,10 @@ In their place, Studio checks what the application actually gets (`STU-DX-004`, 
 
 **Markers (CI-1 of the delta review).** The tests that make roles need `TABRION_STUDIO_TEST_POSTGRES_SUPERUSER` (a
 superuser of the same server) and carry the marker `postgres_superuser` instead of `postgres`: a role that owns its
-database but may not create roles (the PostgreSQL 17 CI job's `studio_owner`) cannot set them up, and the job's
-"none skipped" check selects `-m postgres`. Run them with `pytest -m "postgres or postgres_superuser"` and both URLs
-set. CI runs them once the PostgreSQL 17 job sets the superuser URL (a workflow change; `docs/TODO.md`, "STU-014
-diagnostics").
+database but may not create roles (the PostgreSQL 17 CI job's `studio_owner`) cannot set them up. The tests that only
+need the owner keep the marker `postgres`. Run both with `pytest -m "postgres or postgres_superuser"`
+and both URLs set. The PostgreSQL 17 CI job does exactly that: the service's own superuser URL is set on its pytest
+step only, and its "none skipped" check expects at least 50 tests.
 
 **Cost of the role query (I-2 of the delta review).** `STU-DX-003` checks every table against every role the session
 can become, so its cost is tables times member roles: a NOINHERIT role with 400 memberships on 3000 tables took
