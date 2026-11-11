@@ -56,6 +56,8 @@ All notable changes to this project are documented here. The format follows
       comments is linear (512 k characters of `--\n`: 10 s before, about 0.2 s now); the same for the placeholder
       scan.
     - R2-I2: a text with a NUL character is refused.
+    - R2-I1: the check-in reset also takes back a role change (`SET SESSION AUTHORIZATION DEFAULT`, `RESET ROLE`),
+      which `RESET ALL` keeps.
 - STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no

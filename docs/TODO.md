@@ -621,9 +621,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   may report a user cancel shortly before the timeout as `db.timeout`; cosmetic, STU-012 by 2026-12-15).
 - **Delta re-review 2 of `stu-011-review.md` (head 70ca2f9, accepted):** R2-L1 done (the lexer and the placeholder
   scan skip white space and `--` comments with one possessive regular expression; a timing test at the API cap),
-  R2-I2 done (NUL refused). Open: R2-I1, add `RESET ROLE` (or `SET SESSION AUTHORIZATION DEFAULT`) to the check-in
-  reset, since `RESET ALL` keeps a `SET ROLE` that a database function made (defense in depth; the text check already
-  refuses `SET`), with STU-012 by 2026-12-15. R2-I3 and R2-I4 need nothing (the server rejects those texts).
+  R2-I2 done (NUL refused), R2-I1 done (the check-in reset also runs `SET SESSION AUTHORIZATION DEFAULT` and
+  `RESET ROLE`, which `RESET ALL` leaves alone; `test_pg_r2_i1_*`). R2-I3 and R2-I4 need nothing (the server rejects
+  those texts).
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
