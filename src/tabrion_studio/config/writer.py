@@ -118,7 +118,7 @@ def dump_profiles(profiles: list[Profile]) -> bytes:
 def dump_settings(settings: Settings) -> bytes:
     defaults = Settings()
     lines = [HEADER, f"version = {SCHEMA_VERSION}\n"]
-    for key in ("language", "theme", "log_sql"):
+    for key in ("language", "theme", "density", "log_sql"):
         value = getattr(settings, key)
         if value != getattr(defaults, key):
             lines.append(f"{key} = {_value(value)}\n")

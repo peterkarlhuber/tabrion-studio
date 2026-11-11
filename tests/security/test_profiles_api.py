@@ -224,6 +224,16 @@ def test_settings_are_saved(env: Env) -> None:
     )
     assert bad.status_code == 422
     assert bad.json()["issues"] == [{"pointer": "settings.limits.max_rows", "code": "config.range"}]
+    # The appearance (TD-021): keys left out keep their value, so the page can send one choice alone.
+    look = env.send("PUT", "/api/settings", {"settings": {"theme": "dark"}, "digest": response.json()["digest"]})
+    assert look.status_code == 200
+    assert look.json()["settings"]["theme"] == "dark"
+    assert look.json()["settings"]["limits"]["max_rows"] == 500
+    feel = env.send("PUT", "/api/settings", {"settings": {"density": "normal"}, "digest": look.json()["digest"]})
+    assert feel.status_code == 200 and feel.json()["settings"]["density"] == "normal"
+    wrong = env.send("PUT", "/api/settings", {"settings": {"density": "tiny"}, "digest": feel.json()["digest"]})
+    assert wrong.status_code == 422
+    assert wrong.json()["issues"] == [{"pointer": "settings.density", "code": "config.choice"}]
     unknown = env.send("PUT", "/api/settings", {"settings": {"telemetry": True}, "digest": None})
     assert unknown.status_code == 422 and unknown.json()["issues"] == [
         {"pointer": "settings", "code": "config.unknown_key"}
