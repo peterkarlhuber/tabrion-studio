@@ -13,6 +13,9 @@
   ``unknown (project not trusted)``; ``code_trust`` gives the state (``untrusted``, ``changed``, ``invalid``,
   ``trusted``).
 
+* ``nodestro``, ``axentra``, ``orkexa`` (PostgreSQL, STU-024): the version tables of the Levuvo platforms compared
+  with the migration files of the project folder (:mod:`.levuvo_migrations`); nothing is imported or run.
+
 Everything reads. Studio never migrates (03 section 2 F: "Migrationen ausführen" is not in 1.0).
 """
 
@@ -32,6 +35,7 @@ import tabrion_studio
 from tabrion_studio.config.code_trust import CodeTrust, CodeTrustState
 from tabrion_studio.problems import problem
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
+from tabrion_studio.services.levuvo_migrations import levuvo_formats
 
 __all__ = ["NOT_TRUSTED", "WORKER_TIMEOUT_S", "Migrations", "run_worker", "worker_environment"]
 
@@ -145,6 +149,7 @@ class Migrations:
         code = self.code.load()
         if code.state != "none":
             formats.append(self._alembic(connection, code))
+        formats += levuvo_formats(connection, self.code.project)  # STU-024: reads only, runs nothing
         return {"connection_id": connection.id, "engine": connection.engine, "formats": formats}
 
     def _alembic(self, connection: OpenConnection, code: CodeTrustState) -> dict[str, Any]:

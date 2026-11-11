@@ -1,13 +1,13 @@
 # Migration status and code trust
 
-STU-015 (03 section 2 F) shows the migration status of an open connection: Alembic, and SQLite's `user_version`. The
-other formats of 03 section 2 F (Nodestro, Axentra, Orkexa) are STU-024. Studio reads only and never migrates.
+STU-015 (03 section 2 F) shows the migration status of an open connection: Alembic, and SQLite's `user_version`.
+STU-024 adds the Levuvo formats Nodestro, Axentra and Orkexa on PostgreSQL. Studio only reads and never migrates.
 
 ## Routes
 
 | Route | Answer |
 |---|---|
-| `GET /api/connections/{id}/migrations` | `{connection_id, engine, formats: [...]}`, one entry per format found |
+| `GET /api/connections/{id}/migrations` | `{connection_id, engine, formats: [...]}`, one entry per format found (and per schema and namespace for the Levuvo formats) |
 | `GET /api/project/code-trust` | `{state, trusted, format, config_file, digest, script_location, revision_files, issue, notice}` |
 | `POST /api/project/code-trust` | `{"digest": "<the digest the dialog showed>"}`: 204, or `studio.trust_stale`, `studio.migrations_invalid`, `studio.no_migrations` |
 | `DELETE /api/project/code-trust` | 204: the project's code is not trusted any more |
@@ -27,6 +27,45 @@ The formats:
     (migrations folder not valid)` when the files cannot be checked.
   - If the worker fails, `problem` holds the problem (`studio.migrations_timeout`, `studio.migrations_revisions`,
     `studio.migrations_changed`, `studio.migrations_failed`), and `revisions` is `unknown (could not be read)`.
+
+## Levuvo formats (STU-024)
+
+`services/levuvo_migrations.py` reads the platforms' version tables in every schema of the database, and the
+migration files of the project folder. It runs nothing.
+
+| Format | Version table | Files | Compared by |
+|---|---|---|---|
+| `nodestro` | `nodestro_schema_migrations` (`version`, `name` = file name, `checksum`) | `nodestro_runtime/migrations/postgres/NNNN_name.sql` | version, file name, checksum (an old table without `checksum` compares by name) |
+| `axentra` | `axentra_schema_migrations` (`namespace`, `version`, `name`, `checksum`) | `axentra/data/sql/NNNN_name.sql` (namespace `axentra`) | per namespace: version, name, checksum |
+| `orkexa` | `<prefix>orkexa_schema` (`version`) | none (the schema is code) | the newest version against `SCHEMA_VERSION` in `orkexa/backends/postgres/schema.py` |
+
+- **The checksum.** It is the one both runners record: SHA-256 of the file's text as `Path.read_text` gives it
+  (UTF-8, every line end `\n`).
+- **Where the files are found.** Studio uses the first folder found inside the project folder: `src/<package
+  path>`, `<package path>`, or the `site-packages` of a `.venv` or `venv` in the project.
+- **Axentra product namespaces** (`crm`, ...) are registered in code (`database.extra_migrations`), so Studio has no
+  files for them. They show what the database recorded, with `state: no_files`.
+- **Orkexa's version** is read as text with a regular expression. The module is never imported.
+
+Each entry has a `state`:
+
+- `current`: everything applied.
+- `pending`: files the database has not applied. Each pending step comes with its file name, checksum and the first
+  2 000 characters of its SQL.
+- `newer`: the database has versions that the files do not know.
+- `changed`: an applied file's name or checksum differs.
+- `no_files`: Studio found no files to compare with.
+
+Each step has a `status`: `applied`, `pending`, `unknown` or `changed`.
+
+**Trust.** These files are SQL and text that Studio only reads, so threat T-16 does not apply and they need no code
+trust. They follow the same file rules as the Alembic files:
+
+- the folder must stay inside the project after links are followed;
+- each file must be a regular file and not a link;
+- at most 2 000 files, and 256 KB per file.
+
+The tests use files copied from the three repositories (`tests/security/levuvo_fixtures/SOURCE.txt`).
 
 ## Why the revisions need trust
 
