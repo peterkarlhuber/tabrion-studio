@@ -13,7 +13,7 @@ settings.
 ┌ header: mark · "Tabrion Studio" · connection switcher · [PROD] · Writing locked · No transaction ┐
 ├──┬────────────────────────────────────────────────────────────────────────────────────────────────┤
 │⌂ │ [Query 1 PROD] [parts-dev DEV] [parts-pg TEST]      ← tabs, only with a workspace               │
-│🗄│ main view: Start · Connections · Settings · Not found                                            │
+│🗄│ main view: Start · Connections · Migrations · Settings · Not found                               │
 │  │                                                                                                 │
 │⚙ │                                                                                                 │
 ├──┴────────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -24,9 +24,10 @@ settings.
 - `src/App.tsx` chooses between the shell (with a session) and the sign-in notice (`src/shell/SessionNotice.tsx`).
   With a session it sends the heartbeat; when the server answers 401 (or 403 `access.csrf_invalid`), the heartbeat
   stops and the page says "Your session has ended. Run `tabrion-studio` again to open Studio." (review S-1).
-- `src/shell/AppShell.tsx`: skip link, header with the status displays, activity bar (Start, Connections, Settings),
+- `src/shell/AppShell.tsx`: skip link, header with the status displays, activity bar (Start, Connections, Migrations,
+  Settings),
   tabs, main area, status bar (server version or "does not answer", language).
-- `src/router.ts`: a minimal history router for `/`, `/connections` and `/settings`. The backend serves `index.html`
+- `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations` and `/settings`. The backend serves `index.html`
   for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists equal); every other path stays 404.
 - `src/workspace.ts`: the active connection, its environment and the open tabs. Nothing fills it until the connection
   registry and manager arrive (STU-008, STU-009); the shell shows "No connection".

@@ -1,0 +1,51 @@
+/** The code trust and migration status the e2e harness answers in its `migrations` scenario (STU-015). */
+export const CODE_DIGEST = 'a'.repeat(64);
+
+export function codeTrust(trusted: boolean) {
+  return {
+    state: trusted ? 'trusted' : 'untrusted',
+    trusted,
+    format: 'alembic',
+    config_file: 'alembic.ini',
+    digest: CODE_DIGEST,
+    script_location: 'migrations',
+    revision_files: ['0001_parts.py', '0002_measurements.py', '0003_indexes.py'],
+    issue: null,
+    notice: '',
+  };
+}
+
+export function migrationStatus(trusted: boolean) {
+  const alembic = trusted
+    ? {
+        current: ['0002'],
+        heads: ['0003'],
+        pending: ['0003'],
+        is_current: false,
+        unknown: ['ghost-1'],
+        revisions: 'read',
+      }
+    : {
+        current: ['0002'],
+        heads: null,
+        pending: null,
+        is_current: null,
+        unknown: null,
+        revisions: 'unknown (project not trusted)',
+      };
+  return {
+    connection_id: 'c1',
+    engine: 'sqlite',
+    formats: [
+      { format: 'sqlite_user_version', current: 3 },
+      {
+        format: 'alembic',
+        code_trust: trusted ? 'trusted' : 'untrusted',
+        code_issue: null,
+        script_location: 'migrations',
+        problem: null,
+        ...alembic,
+      },
+    ],
+  };
+}

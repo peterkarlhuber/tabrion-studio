@@ -109,6 +109,36 @@ What the measure does not cover. Trusting the code means trusting it as you woul
   `alembic.ini` and the revision files do.
 - **Windows:** children of the project's code are not bounded (see the worker).
 
-The trust is for the project's code as a whole. The dialog's text says so. Doc 03 section 7.3 T-08 ("Alembic `env.py`
+The trust is for the project's code as a whole. The dialog's text says so (see [The page](#the-page)). Doc 03 section 7.3 T-08 ("Alembic `env.py`
 is not run: status via `ScriptDirectory`") needs this entry as a new row. The planning documents are kept by the
 coordinating thread (TODO).
+
+## The page
+
+The view **Migrations** (`/migrations`, `frontend/src/views/migrations/MigrationsView.tsx`) shows the code trust and
+the status. It only reads; there is no button that migrates.
+
+- **Migration code.** The state of `GET /api/project/code-trust` in words: no Alembic configuration, not trusted,
+  changed since it was trusted, trusted (with the number of revision files), or not valid (with the reason for the
+  fixed `issue` code; an unknown code is shown escaped). An answer without a known state reads as "could not read".
+- **Trust dialog** (`TrustCodeDialog` in `components/dialogs/StudioDialogs.tsx`). "Review files" opens it for the
+  states `untrusted` and `changed`. It names what trusting means, in the page's own de/en text rather than the
+  server's `notice`: the code runs as the user in a separate process for at most 30 seconds, it gets the open
+  connection's address and password, it can change the database and read the user's files and Studio's settings,
+  modules that revision files import are trusted with them but not checked for changes. Below the text it lists
+  `alembic.ini`, the `script_location` and every revision file, each as its own escaped and capped entry like D-01
+  (U-1). The focus starts on "Don't trust"; Escape and the close button reject. "Trust and run" sends the digest
+  the dialog showed. On `studio.trust_stale` the dialog stays open with the new list and says that the files
+  changed; trusting then sends the new digest. "Stop trusting" sends `DELETE` (with a JSON body like every write).
+- **Status.** The user picks a profile and chooses "Show status". The page opens the profile's read-only connection
+  (`POST /api/connections`; for a PROD profile D-02 first, Cancel opens nothing) and reads
+  `GET /api/connections/{id}/migrations`. Per format: SQLite's `user_version`; for Alembic the version in the
+  database, the heads and the revisions not yet applied (or "unknown" with the reason: code not trusted, folder not
+  valid, or the problem of the worker such as `studio.migrations_busy`), and the revisions the database names that
+  the project's files do not contain. Revision ids and file names come from the project or the database and are
+  shown escaped (`lib/visible.ts`).
+
+Tests: `MigrationsView.test.tsx` (trust with the shown digest, stale, refused, revoke, the states, D-02, escaping,
+problems), the focus rules and U-1 cases of the dialog in `StudioDialogs.test.tsx`, axe in jsdom (`a11y.test.tsx`)
+and in Chromium in light and dark, English and German (`e2e/migrations.spec.ts`, `e2e/a11y.spec.ts`,
+`e2e/dialogs.spec.ts`).

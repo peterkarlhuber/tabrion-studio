@@ -66,12 +66,16 @@ function text(value: unknown): string | null {
 
 function texts(value: unknown): string[] | null {
   if (typeof value === 'string') return [value];
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : null;
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : null;
 }
 
+/** The trust state, or null for an answer without a known state (the page then says it could not read it). */
 export function parseCodeTrust(body: unknown): CodeTrust | null {
   if (typeof body !== 'object' || body === null) return null;
   const doc = body as Record<string, unknown>;
+  if (!STATES.includes(doc.state as CodeTrustState)) return null;
   return {
     state: state(doc.state),
     configFile: text(doc.config_file),
@@ -144,7 +148,10 @@ export function revokeCodeTrust(fetcher: typeof fetch): Promise<Result<null>> {
 }
 
 /** Open (or get back) the read-only connection of a profile; its id. */
-export async function openConnection(fetcher: typeof fetch, profileId: string): Promise<Result<string>> {
+export async function openConnection(
+  fetcher: typeof fetch,
+  profileId: string,
+): Promise<Result<string>> {
   const result = await send<{ connection_id?: unknown }>(fetcher, 'POST', '/api/connections', {
     profile_id: profileId,
   });
@@ -158,11 +165,14 @@ export async function fetchMigrations(
   connectionId: string,
 ): Promise<Result<MigrationStatus>> {
   try {
-    const response = await fetcher(`/api/connections/${encodeURIComponent(connectionId)}/migrations`, {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      headers: apiHeaders(),
-    });
+    const response = await fetcher(
+      `/api/connections/${encodeURIComponent(connectionId)}/migrations`,
+      {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        headers: apiHeaders(),
+      },
+    );
     if (!response.ok) return { ok: false, problem: await readProblem(response) };
     const status = parseMigrations(await response.json());
     return status === null ? { ok: false, problem: OFFLINE } : { ok: true, value: status };

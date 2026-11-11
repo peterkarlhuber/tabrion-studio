@@ -1,0 +1,474 @@
+/**
+ * STU-015: the migration status view. The project's Alembic files run only after the user trusted exactly the files
+ * the dialog showed (threat T-16): the trust dialog opens on "Don't trust", sends the digest it showed, shows the new
+ * list when the files changed meanwhile (`studio.trust_stale`), and the trust can be taken back. The status opens the
+ * profile's read-only connection (D-02 first for PROD) and shows every format; values from the project or the
+ * database are escaped (U-1). Every write sends Content-Type: application/json, DELETE included.
+ */
+import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+
+import { parseCodeTrust, parseMigrations } from '../../api/migrations';
+import { MigrationsView } from './MigrationsView';
+
+const DIGEST = 'a'.repeat(64);
+const NEW_DIGEST = 'd'.repeat(64);
+const BIDI = String.fromCodePoint(0x202e);
+const HOSTILE_FILE = `evil${BIDI}yp.py`;
+
+function trust(extra: Record<string, unknown> = {}) {
+  return {
+    state: 'untrusted',
+    trusted: false,
+    format: 'alembic',
+    config_file: 'alembic.ini',
+    digest: DIGEST,
+    script_location: 'migrations',
+    revision_files: ['0001_init.py', HOSTILE_FILE],
+    issue: null,
+    notice: 'server text that the page does not show',
+    ...extra,
+  };
+}
+
+const PROFILES = {
+  profiles: [
+    {
+      id: 'project:parts-dev',
+      source: 'project',
+      name: 'parts-dev',
+      engine: 'sqlite',
+      environment: 'dev',
+      path: 'data/parts.db',
+      password: null,
+      secret: { source: null, has_secret: null },
+    },
+    {
+      id: 'user:measure',
+      source: 'user',
+      name: `measure${BIDI}`,
+      engine: 'postgresql',
+      environment: 'prod',
+      host: 'db.internal',
+      database: 'm',
+      user: 'ro',
+      sslmode: 'verify-full',
+      password: { source: 'keyring', target: '' },
+      secret: { source: 'keyring', has_secret: true },
+    },
+  ],
+  project_state: 'trusted',
+  issues: { user: [] },
+  user_file: { digest: 'b'.repeat(64), hand_written: false },
+};
+
+function alembic(extra: Record<string, unknown> = {}) {
+  return {
+    format: 'alembic',
+    code_trust: 'untrusted',
+    code_issue: null,
+    script_location: 'migrations',
+    current: [`rev${BIDI}1`],
+    heads: null,
+    pending: null,
+    is_current: null,
+    unknown: null,
+    revisions: 'unknown (project not trusted)',
+    problem: null,
+    ...extra,
+  };
+}
+
+function migrations(formats: unknown[]) {
+  return { connection_id: 'c1', engine: 'sqlite', formats };
+}
+
+type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
+type Answer = (call: Call) => Response;
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
+const problem = (status: number, code: string) => json({ code, kind: 'config', status }, status);
+
+function server(answers: Record<string, Answer | Answer[]> = {}) {
+  const calls: Call[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const call: Call = {
+      url: String(input),
+      method: init?.method ?? 'GET',
+      headers: (init?.headers ?? {}) as Record<string, string>,
+      body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+    };
+    calls.push(call);
+    const answer = answers[`${call.method} ${call.url}`];
+    // A list answers in turn and repeats its last entry.
+    if (Array.isArray(answer)) {
+      const next = answer.length > 1 ? answer.shift() : answer[0];
+      if (next) return next(call);
+    } else if (answer) return answer(call);
+    if (call.url === '/api/profiles') return json(PROFILES);
+    if (call.url === '/api/project/code-trust') return json(trust());
+    if (call.url === '/api/connections' && call.method === 'POST') {
+      return json({ connection_id: 'c1' }, 201);
+    }
+    if (call.url === '/api/connections/c1/migrations') {
+      return json(migrations([{ format: 'sqlite_user_version', current: 7 }, alembic()]));
+    }
+    return new Response(null, { status: 204 });
+  });
+  return { fetcher: fetcher as unknown as typeof fetch, calls };
+}
+
+function writes(calls: Call[]) {
+  return calls.filter((call) => call.method !== 'GET');
+}
+
+async function ready() {
+  await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+}
+
+describe('migration status view: code trust (T-16)', () => {
+  it('opens the trust dialog on "Don\'t trust" and sends the digest it showed', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust()),
+        () => json(trust({ state: 'trusted', trusted: true })),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    expect(await screen.findByTestId('code-trust-state')).toHaveTextContent(
+      "The project's Alembic files are not trusted.",
+    );
+    await user.click(screen.getByRole('button', { name: 'Review files' }));
+    const dialog = screen.getByRole('dialog', { name: "Run the project's migration code?" });
+    expect(dialog).toHaveAccessibleDescription(/runs their code on this computer/);
+    expect(dialog).toHaveAccessibleDescription(
+      /it gets the open connection's address and password/,
+    );
+    expect(within(dialog).getByRole('button', { name: "Don't trust" })).toHaveFocus();
+    // The file names come from the project: each its own entry, escaped (U-1).
+    const files = within(dialog).getByTestId('trust-code-files');
+    expect(
+      within(files)
+        .getAllByRole('listitem')
+        .map((item) => item.querySelector('code')?.textContent),
+    ).toEqual(['0001_init.py', 'evil\\u202Eyp.py']);
+    expect(within(dialog).getByTestId('trust-code-config')).toHaveTextContent('alembic.ini');
+    expect(within(dialog).getByTestId('trust-code-config')).toHaveTextContent('migrations');
+    expect(dialog.textContent).not.toContain(BIDI);
+    expect(dialog.textContent).not.toContain('server text');
+    await user.click(within(dialog).getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(writes(calls)).toEqual([
+      expect.objectContaining({
+        method: 'POST',
+        url: '/api/project/code-trust',
+        body: { digest: DIGEST },
+      }),
+    ]);
+    expect(writes(calls)[0]?.headers['Content-Type']).toBe('application/json');
+    expect(screen.getByTestId('migrations-message')).toHaveTextContent(
+      'The migration code is trusted.',
+    );
+    expect(screen.getByTestId('code-trust-state')).toHaveTextContent(
+      "You trust the project's Alembic files (2 revision files).",
+    );
+  });
+
+  it('"Don\'t trust" sends nothing', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server();
+    render(<MigrationsView fetcher={fetcher} />);
+    await user.click(await screen.findByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: "Don't trust" }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Review files' }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it('files changed meanwhile: the dialog stays open with the new list and sends the new digest', async () => {
+    const user = userEvent.setup();
+    const changed = trust({
+      state: 'changed',
+      digest: NEW_DIGEST,
+      revision_files: ['0001_init.py', '0002_more.py'],
+    });
+    const { fetcher, calls } = server({
+      'GET /api/project/code-trust': [() => json(trust()), () => json(changed)],
+      'POST /api/project/code-trust': [
+        () => problem(409, 'studio.trust_stale'),
+        () => new Response(null, { status: 204 }),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await user.click(await screen.findByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByTestId('trust-code-stale')).toHaveTextContent(
+      'The files changed after they were shown.',
+    );
+    expect(within(dialog).getByTestId('trust-code-files')).toHaveTextContent('0002_more.py');
+    await user.click(within(dialog).getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(writes(calls).map((call) => call.body)).toEqual([
+      { digest: DIGEST },
+      { digest: NEW_DIGEST },
+    ]);
+  });
+
+  it('a refused trust closes the dialog and says why', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'POST /api/project/code-trust': () => problem(409, 'studio.migrations_invalid'),
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await user.click(await screen.findByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByTestId('migrations-message').textContent).not.toBe('');
+    expect(screen.getByTestId('migrations-message')).not.toHaveTextContent(
+      'The migration code is trusted.',
+    );
+  });
+
+  it('takes the trust back with a JSON DELETE', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust({ state: 'trusted', trusted: true })),
+        () => json(trust()),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await user.click(await screen.findByRole('button', { name: 'Stop trusting' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-message')).toHaveTextContent(
+        'The migration code is no longer trusted.',
+      ),
+    );
+    const [revoke] = writes(calls);
+    expect(revoke).toEqual(
+      expect.objectContaining({ method: 'DELETE', url: '/api/project/code-trust', body: {} }),
+    );
+    expect(revoke?.headers['Content-Type']).toBe('application/json');
+    expect(screen.getByRole('button', { name: 'Review files' })).toBeVisible();
+  });
+
+  it('shows the states without a trust action: none, invalid (with the reason), unavailable', async () => {
+    const none = server({
+      'GET /api/project/code-trust': () =>
+        json(
+          trust({
+            state: 'none',
+            format: null,
+            config_file: null,
+            digest: null,
+            revision_files: [],
+          }),
+        ),
+    });
+    const { unmount } = render(<MigrationsView fetcher={none.fetcher} />);
+    expect(await screen.findByTestId('code-trust-state')).toHaveTextContent(
+      'The project has no Alembic configuration',
+    );
+    expect(screen.queryByRole('button', { name: 'Review files' })).toBeNull();
+    unmount();
+
+    const invalid = server({
+      'GET /api/project/code-trust': () =>
+        json(trust({ state: 'invalid', digest: null, issue: 'migrations.location_outside' })),
+    });
+    const second = render(<MigrationsView fetcher={invalid.fetcher} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('code-trust-state')).toHaveTextContent(
+        'script_location lies outside the project folder.',
+      ),
+    );
+    expect(screen.queryByRole('button', { name: 'Review files' })).toBeNull();
+    second.unmount();
+
+    const odd = server({
+      'GET /api/project/code-trust': () =>
+        json(trust({ state: 'invalid', digest: null, issue: `config.x${BIDI}` })),
+    });
+    const third = render(<MigrationsView fetcher={odd.fetcher} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('code-trust-state')).toHaveTextContent(
+        'the check failed (config.x\\u202E).',
+      ),
+    );
+    third.unmount();
+
+    const down = server({ 'GET /api/project/code-trust': () => problem(500, 'studio.internal') });
+    render(<MigrationsView fetcher={down.fetcher} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('code-trust-state')).toHaveTextContent(
+        'Studio could not read the trust state',
+      ),
+    );
+  });
+});
+
+describe('migration status view: status', () => {
+  it('opens the read-only connection and shows each format, escaped', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server();
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    const sqlite = await screen.findByTestId('migrations-sqlite');
+    expect(sqlite).toHaveTextContent('7');
+    const section = screen.getByTestId('migrations-alembic');
+    expect(within(section).getByTestId('migrations-summary')).toHaveTextContent(
+      "the project's migration code is not trusted",
+    );
+    expect(section).toHaveTextContent('rev\\u202E1');
+    expect(section.textContent).not.toContain(BIDI);
+    expect(writes(calls)).toEqual([
+      expect.objectContaining({
+        method: 'POST',
+        url: '/api/connections',
+        body: { profile_id: 'project:parts-dev' },
+      }),
+    ]);
+    expect(calls.some((call) => call.url === '/api/connections/c1/migrations')).toBe(true);
+  });
+
+  it('asks D-02 before it opens a PROD connection; Cancel opens nothing', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server();
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    let dialog = screen.getByRole('dialog', { name: 'Production database' });
+    expect(dialog).toHaveAccessibleDescription(/measure\\u202E is marked as PROD/);
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(writes(calls)).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await screen.findByTestId('migrations-alembic');
+    expect(writes(calls)).toEqual([
+      expect.objectContaining({ body: { profile_id: 'user:measure' } }),
+    ]);
+  });
+
+  it('shows pending revisions, revisions the project does not know, and up to date', async () => {
+    const user = userEvent.setup();
+    const read = alembic({
+      code_trust: 'trusted',
+      current: ['0001'],
+      heads: ['0003'],
+      pending: ['0002', '0003'],
+      is_current: false,
+      unknown: [`ghost${BIDI}`],
+      revisions: 'read',
+    });
+    const { fetcher } = server({
+      'GET /api/connections/c1/migrations': [
+        () => json(migrations([read])),
+        () =>
+          json(
+            migrations([
+              alembic({
+                code_trust: 'trusted',
+                current: ['0003'],
+                heads: ['0003'],
+                pending: [],
+                is_current: true,
+                unknown: [],
+                revisions: 'read',
+              }),
+            ]),
+          ),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    expect(await screen.findByTestId('migrations-summary')).toHaveTextContent(
+      '2 revisions are not yet applied.',
+    );
+    expect(screen.getByTestId('migrations-alembic')).toHaveTextContent('0002');
+    expect(screen.getByTestId('migrations-unknown')).toHaveTextContent('ghost\\u202E');
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-summary')).toHaveTextContent(
+        'The database is up to date.',
+      ),
+    );
+    expect(screen.queryByTestId('migrations-unknown')).toBeNull();
+  });
+
+  it('shows the problem of the revisions and of opening the connection', async () => {
+    const user = userEvent.setup();
+    const busy = alembic({
+      code_trust: 'trusted',
+      revisions: 'unknown (could not be read)',
+      problem: { code: 'studio.migrations_busy', kind: 'database', status: 429 },
+    });
+    const { fetcher } = server({
+      'GET /api/connections/c1/migrations': () => json(migrations([busy])),
+      'POST /api/connections': [
+        () => json({ connection_id: 'c1' }, 201),
+        () => problem(502, 'studio.connection_failed'),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    expect(await screen.findByTestId('migrations-summary')).toHaveTextContent(
+      'Studio is already reading the revisions for another migration status.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Studio could not reach the database.',
+    );
+    expect(screen.queryByTestId('migrations-alembic')).toBeNull();
+  });
+
+  it('says so without profiles or without a format', async () => {
+    const user = userEvent.setup();
+    const empty = server({
+      'GET /api/profiles': () => json({ ...PROFILES, profiles: [] }),
+    });
+    const { unmount } = render(<MigrationsView fetcher={empty.fetcher} />);
+    expect(await screen.findByText(/There are no connection profiles yet/)).toBeVisible();
+    unmount();
+    const nothing = server({
+      'GET /api/connections/c1/migrations': () => json(migrations([])),
+    });
+    render(<MigrationsView fetcher={nothing.fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    expect(
+      await screen.findByText('Studio found no migration format for this database.'),
+    ).toBeVisible();
+  });
+});
+
+describe('migration API parsing', () => {
+  it('fails closed on unexpected values', () => {
+    expect(parseCodeTrust(null)).toBeNull();
+    expect(parseCodeTrust({ state: 'root' })).toBeNull();
+    expect(parseCodeTrust({ state: 'trusted', revision_files: [1, 'a.py'] })).toEqual({
+      state: 'trusted',
+      configFile: null,
+      digest: null,
+      scriptLocation: null,
+      revisionFiles: ['a.py'],
+      issue: null,
+    });
+    expect(parseMigrations('x')).toBeNull();
+    const parsed = parseMigrations({
+      connection_id: 'c1',
+      engine: 'sqlite',
+      formats: [null, { format: 'flyway' }, { format: 'sqlite_user_version', current: '7' }],
+    });
+    expect(parsed?.formats).toEqual([{ format: 'sqlite_user_version', current: null }]);
+  });
+});

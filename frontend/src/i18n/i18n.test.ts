@@ -38,6 +38,8 @@ const SAME_IN_BOTH = new Set([
   'connections.wizard.name',
   'dialogs.trustProject.heading',
   'dialogs.trustProject.flowTls',
+  // The product name of the migration tool (STU-015).
+  'migrations.status.alembic',
   'app.name',
   'app.title',
   'app.connectionTitle',

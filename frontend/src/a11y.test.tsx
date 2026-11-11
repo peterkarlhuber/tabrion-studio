@@ -12,9 +12,11 @@ import { App } from './App';
 import {
   ProdConnectDialog,
   QuitDialog,
+  TrustCodeDialog,
   TrustProjectDialog,
   UnsavedScriptDialog,
 } from './components/dialogs/StudioDialogs';
+import { codeTrust } from './harness/migrations';
 import { PROFILES, SETTINGS } from './harness/profiles';
 import { DIFF, HOSTILE_REVIEW, REVIEW } from './harness/trust';
 import i18n from './i18n';
@@ -46,6 +48,14 @@ const profiles: typeof fetch = async (input) => {
     return new Response(JSON.stringify({ keyring: { available: false } }), { status: 200 });
   }
   return health(input);
+};
+
+/** STU-015: the project's Alembic files, not trusted yet. */
+const migrations: typeof fetch = async (input) => {
+  if (String(input) === '/api/project/code-trust') {
+    return new Response(JSON.stringify(codeTrust(false)), { status: 200 });
+  }
+  return profiles(input);
 };
 
 const PAGES: [string, string, () => ReactElement][] = [
@@ -109,6 +119,22 @@ const PAGES: [string, string, () => ReactElement][] = [
     ),
   ],
   ['D-08', '/', () => <QuitDialog open running={2} onQuit={noop} onCancel={noop} />],
+  ['migrations (STU-015)', '/migrations', () => <App fetcher={migrations} heartbeat={false} />],
+  [
+    'trust the migration code (STU-015)',
+    '/',
+    () => (
+      <TrustCodeDialog
+        open
+        configFile="alembic.ini"
+        scriptLocation="migrations"
+        revisionFiles={['0001_parts.py']}
+        stale
+        onTrust={noop}
+        onReject={noop}
+      />
+    ),
+  ],
   [
     'connections with profiles (STU-008)',
     '/connections',

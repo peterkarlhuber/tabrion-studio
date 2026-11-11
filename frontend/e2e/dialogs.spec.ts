@@ -12,6 +12,7 @@ const DIALOGS: [string, string, string, string | null][] = [
   ['dialog-d01', 'Trust the project profiles?', "Don't load", null],
   ['dialog-d01-hostile', 'The project profiles have changed. Trust them?', "Don't load", null],
   ['dialog-d02', 'Production database', 'Cancel', null],
+  ['dialog-trust-code', "Run the project's migration code?", "Don't trust", null],
   ['dialog-d06', 'Script not saved', 'Cancel', 'Discard'],
   ['dialog-d08', '2 queries are running', 'Cancel', 'Quit'],
 ];

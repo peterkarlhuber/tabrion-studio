@@ -85,7 +85,11 @@ function AlembicResult({ status }: { status: AlembicStatus }) {
     summary = t('migrations.status.pending', { count: status.pending?.length ?? 0 });
   }
   return (
-    <section className={styles.format} aria-labelledby="migrations-alembic" data-testid="migrations-alembic">
+    <section
+      className={styles.format}
+      aria-labelledby="migrations-alembic"
+      data-testid="migrations-alembic"
+    >
       <h3 id="migrations-alembic" className={styles.formatTitle}>
         {t('migrations.status.alembic')}
       </h3>
@@ -146,7 +150,9 @@ function StatusResult({ status }: { status: MigrationStatus }) {
               <dt>
                 <code>user_version</code>
               </dt>
-              <dd>{format.current === null ? t('migrations.status.unknown') : String(format.current)}</dd>
+              <dd>
+                {format.current === null ? t('migrations.status.unknown') : String(format.current)}
+              </dd>
             </dl>
           </section>
         ) : (
@@ -282,7 +288,11 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
         }}
         onRevoke={() => void revoke()}
       />
-      <section className={viewStyles.card} aria-labelledby="migrations-status" data-testid="migrations-status">
+      <section
+        className={viewStyles.card}
+        aria-labelledby="migrations-status"
+        data-testid="migrations-status"
+      >
         <h2 id="migrations-status" className={viewStyles.cardTitle}>
           {t('migrations.status.title')}
         </h2>
