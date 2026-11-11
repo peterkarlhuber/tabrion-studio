@@ -22,13 +22,28 @@ All notable changes to this project are documented here. The format follows
   tabrion 0.2): `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host
   (T-10), a read-only role that can write, no statement timeout for the role or database, SQLite rows written with
-  foreign keys off.
+  foreign keys off. Review fix round (`stu-014-review.md`): the diagnosis stops at the connection's statement
+  timeout and can be canceled (`POST .../diagnostics/cancel`; `STU-DX-008` names what did not run, also SQLite's
+  `quick_check`); `STU-DX-003` covers column grants, `TRUNCATE`, views, foreign tables, sequences and every role the
+  session can `SET ROLE` to; `STU-DX-006` finds an owner role in any schema (it replaces `TAB-PG-003`, which sees
+  the current schema only); `STU-DX-007` default privileges; role settings follow PostgreSQL's precedence, and
+  `STU-DX-010` covers `lock_timeout`, `idle_in_transaction_session_timeout` and `application_name`; a broken foreign
+  key definition is `STU-DX-009` instead of a failed route; no TLS finding twice, none for a Unix socket.
 - STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary
   key, by `rowid` or `ctid` without one, and by `OFFSET` for views (`hint: unstable_order`). Column names must be
   reflected columns, filter values are bound parameters, and key values stay in the backend. Past the profile's
   timeout the answer is `db.timeout`.
+  - Review `stu-013-review.md`: PostgreSQL pages without a primary key go by `(tableoid, ctid)`, so partitioned
+    tables and inheritance parents lose no rows; keys are compared in the column's own type (a `real`, `jsonb` or
+    array sort no longer loops or fails on page 2), and `json`, `xml` and geometric columns are refused for sorting
+    (`studio.viewer_sort_unsupported`); NULLs in a SQLite primary key are ordered by the row id; the cell detail by
+    `ctid` or `rowid` answers `studio.viewer_row_gone` when another row took the id; lengths are measured on the
+    server before values are fetched (64 KB per cell, `max_result_mb` per page with `truncated: "bytes"`, 10 MB of
+    bytes for the cell detail, fetches of about 2 MB); tokens are bound to the session, at most 64 per session and
+    connection, and dropped with their connection; reflection is cached for 10 s; at most 4 viewer statements at a
+    time, 2 per connection.
 - STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
   until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
@@ -39,6 +54,9 @@ All notable changes to this project are documented here. The format follows
     `studio.object_not_found`; a busy pool is `studio.connection_busy` (503); unknown names rebuild the catalog at
     most every 5 seconds; a closed connection's catalog is dropped at once; `GET /api/connections/{id}/table?schema=&name=`
     for names with `/`; SQLite facts without `PRAGMA table_list` before SQLite 3.37.
+  - Delta re-review of `stu-010-review.md`: a partitioned table's foreign key is shown once, without its
+    partitions' copies (N-1); a query that finds no free session is `studio.connection_busy` too (I-9); SQLite
+    before 3.37 still reports `without_rowid` as true or false.
 - STU-011 (integration branch only, stacked on STU-009; on tabrion 0.1 behind `services/tabrion_compat.py` until
   tabrion 0.2):
   - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
@@ -62,6 +80,14 @@ All notable changes to this project are documented here. The format follows
     - L-2, H-1: a connection that got a cancel is invalidated on both engines (closed if that fails), with tests of
       both cancel guards.
     - L-3: one cancel worker per query. I-3: the byte cap is the new `max_result_mb` setting (20 MB, up to 200 MB).
+  - Delta re-review of `stu-011-review.md`:
+    - R-H1: the first word of a statement comes from the lexer, read the way PostgreSQL (with and without backslash
+      escapes) and SQLite lex it; the readings must agree. `-- x\r<statement> /*\nshow */` and a SQLite nested
+      comment can no longer hide a statement. The check-in reset also closes held cursors and session-level advisory
+      locks.
+    - R-M1: the fetch budget follows the largest row so far, grows at most twice per fetch and counts arrays and json
+      in full.
+    - R-I1: a `search_path` or `transaction_timeout` session setting is refused at startup (Studio sets neither).
 - STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no

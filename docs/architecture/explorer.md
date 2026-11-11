@@ -28,8 +28,9 @@ other engine give `studio.explorer_engine`.
 **Foreign keys on PostgreSQL** come from one fixed query on `pg_constraint` with bound values (keys out of and into
 the table, with their columns in order). SQLAlchemy's reflection takes the referenced schema from
 `pg_get_constraintdef()`, which leaves it out for a table on the search path, so a key into `public` looked like one
-into the referencing table's own schema (M-1 of `stu-010-review.md`). SQLite has one schema, so its reflection is
-exact.
+into the referencing table's own schema (M-1 of `stu-010-review.md`). The copies PostgreSQL keeps of a partitioned
+table's key for each partition (`conparentid` set) are left out, so the key shows once, on the partitioned table
+(N-1). SQLite has one schema, so its reflection is exact.
 
 **Visibility:** like `psql \d`, the catalog and the detail show every schema, table, column and comment that
 PostgreSQL's catalogs show the role, also objects it has no `USAGE` or `SELECT` privilege on. Reading their rows
