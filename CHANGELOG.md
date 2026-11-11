@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-021 backend (integration branch only, stacked on STU-013; on tabrion 0.1 like STU-011): `POST /api/exports`
+  exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
+  statement and object checks run before the first byte, so refusals are problem documents. Limits: at most
+  1 000 000 rows, 10 minutes, one export per connection and 2 at a time. CSV escapes formula-like text and base64
+  with a leading `'` (`escape_formulas`); JSON keeps rows as arrays and marks a cut export (`truncated`).
 - STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary

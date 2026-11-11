@@ -63,6 +63,7 @@ nav:
       - Query engine: architecture/queries.md
       - Database explorer: architecture/explorer.md
       - Data viewer: architecture/viewer.md
+      - Export: architecture/exports.md
       - App shell and design system: architecture/frontend.md
   - Development:
       - Building and testing: development/building.md

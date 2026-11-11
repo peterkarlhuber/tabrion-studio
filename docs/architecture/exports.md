@@ -1,0 +1,74 @@
+# Export
+
+STU-021 (03 sections 2 D and 6) exports the result of a query, or a whole table or view, as CSV or JSON. The file is
+streamed to the page, and nothing is collected in memory. The export only reads. It runs one checked, read-only
+statement through `OpenConnection.stream` in its own `Database.read()`, like every other Studio statement (see
+[Connections and read-only enforcement](connections.md)).
+
+## Route
+
+| Route | Answer |
+|---|---|
+| `POST /api/exports` | `{"connection_id", "format": "csv" \| "json", "sql"?, "params"?, "table"?: {"schema", "name"}, "max_rows"?, "escape_formulas"?}`: `200` with the file as an attachment (`Content-Disposition`), streamed |
+
+- **One source.** A request names exactly one of `sql` and `table`.
+  - **`sql`:** the statement passes `check_statement` (the same first-word allowlist as the query engine), and its
+    `:name` parameters are bound by the driver.
+  - **`table`:** the object must be in the connection's catalog ([Database explorer](explorer.md)). The statement is
+    `SELECT <reflected columns> FROM <schema>.<name>`, with every name quoted, so no request text becomes statement
+    text.
+- **Refusals come first.** The statement check, the parameters, the object check and the first fetch run before the
+  response starts. So a refusal is a problem document:
+  - `studio.export_invalid`, `studio.export_busy`;
+  - `studio.statement_*`, `studio.parameter_*`, `studio.object_not_found`;
+  - `db.<kind>`;
+  - the problems of the connection routes.
+
+  An error after the first byte ends the download early, and the log records it with the error's type but never
+  the SQL text or a value.
+- **Access.** The route sits behind the session and the CSRF and Origin checks of the access middleware, like every
+  changing request. The page downloads the file with `fetch`.
+
+## Formats
+
+- **CSV** (`text/csv; charset=utf-8`):
+  - The first line is a header row of column names, and fields are quoted as RFC 4180 requires.
+  - `NULL` is the empty field. Bytes are base64; dates and times are ISO 8601; JSON and array values are written as
+    JSON text.
+  - **CSV injection:** a text that a spreadsheet would read as a formula starts with `=`, `+`, `-`, `@`, a tab or a
+    carriage return. Such a text gets a leading `'`, and so does base64 (which can start with `+`). Numbers, dates
+    and JSON values are never changed. `"escape_formulas": false` turns this off.
+  - CSV cannot mark a cut export. The row count tells.
+- **JSON** (`application/json`): `{"columns": [...], "rows": [[...], ...], "truncated": null | "rows"}`.
+  - Rows are arrays, so two columns with the same name stay apart.
+  - Bytes are `{"base64": "..."}`. Decimals, UUIDs, dates, times and intervals are text, and so are `NaN` and the
+    infinities.
+  - Formula-like text is not changed, because JSON is data.
+
+## Limits
+
+| Limit | Value |
+|---|---|
+| Rows | `max_rows`, 1 to 1 000 000 (the default is 1 000 000); a JSON export over it says `"truncated": "rows"` |
+| Time | 10 minutes; then the export is canceled like a query (PostgreSQL cancel, SQLite interrupt) |
+| Parallel | One export per connection and 2 at a time (`studio.export_busy`). Each holds one of the connection's sessions while it runs |
+| Memory | Bounded (see below); the acceptance of STU-021 is 1 million rows with a peak under 100 MB |
+
+## Streaming and memory
+
+- **A producer thread** runs the statement and fetches in batches whose size follows the largest row so far. The
+  budget is the query engine's `next_batch_rows`, about 2 MB per fetch, and PostgreSQL reads through a server-side
+  cursor.
+- **Encoding.** Each row is encoded at once. The bytes go into a queue of at most 8 chunks of about 256 KB, which
+  the response reads.
+- **Backpressure.** A slow client makes the producer wait, and the database cursor waits with it.
+- **Stopping.** When the client goes away, or the response ends for any reason, the export is closed. Closing cancels
+  the running statement and frees the export's slot.
+
+`tests/security/test_exports.py` exports 1 million rows as CSV and as JSON under `tracemalloc` and checks the peak. It
+also covers 300 000 rows through a PostgreSQL server-side cursor.
+
+## Not in this package
+
+- **The export dialog in the page** (format, rows, the formula option) comes with the frontend lane after STU-012.
+- **Other formats** (Excel, Parquet, SQL `INSERT`s) are not in 03 section 2 D for 1.0.
