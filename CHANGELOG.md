@@ -13,6 +13,15 @@ All notable changes to this project are documented here. The format follows
   key, by `rowid` or `ctid` without one, and by `OFFSET` for views (`hint: unstable_order`). Column names must be
   reflected columns, filter values are bound parameters, and key values stay in the backend. Past the profile's
   timeout the answer is `db.timeout`.
+  - Review `stu-013-review.md`: PostgreSQL pages without a primary key go by `(tableoid, ctid)`, so partitioned
+    tables and inheritance parents lose no rows; keys are compared in the column's own type (a `real`, `jsonb` or
+    array sort no longer loops or fails on page 2), and `json`, `xml` and geometric columns are refused for sorting
+    (`studio.viewer_sort_unsupported`); NULLs in a SQLite primary key are ordered by the row id; the cell detail by
+    `ctid` or `rowid` answers `studio.viewer_row_gone` when another row took the id; lengths are measured on the
+    server before values are fetched (64 KB per cell, `max_result_mb` per page with `truncated: "bytes"`, 10 MB of
+    bytes for the cell detail, fetches of about 2 MB); tokens are bound to the session, at most 64 per session and
+    connection, and dropped with their connection; reflection is cached for 10 s; at most 4 viewer statements at a
+    time, 2 per connection.
 - STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
   until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),

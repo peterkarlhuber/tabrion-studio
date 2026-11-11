@@ -22,6 +22,7 @@ page renders them as text, never as HTML. Nothing of this is logged.
 from __future__ import annotations
 
 from collections.abc import Callable
+import dataclasses
 from dataclasses import dataclass, field
 import os
 import sqlite3
@@ -29,12 +30,13 @@ import stat
 import threading
 import time
 from typing import Any, TypeVar
+import warnings
 
 import sqlalchemy
 
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 
-__all__ = ["KINDS", "Explorer", "ExplorerError"]
+__all__ = ["KINDS", "Explorer", "ExplorerError", "Reflected"]
 
 _T = TypeVar("_T")
 
@@ -75,6 +77,23 @@ _EXTENSIONS_SQL = (
     "FROM pg_catalog.pg_extension e JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace "
     "LEFT JOIN pg_catalog.pg_available_extensions a ON a.name = e.extname ORDER BY e.extname"
 )
+#: STU-013: the PostgreSQL type facts of a relation's columns (base type of a domain, array element, category), which
+#: SQLAlchemy's reflection leaves out or loses (an unknown type reflects as ``NullType``).
+_PG_COLUMN_TYPES_SQL = (
+    "SELECT a.attname, pg_catalog.format_type(a.atttypid, a.atttypmod), b.typname, e.typname, "
+    "COALESCE(e.typcategory, b.typcategory) "
+    "FROM pg_catalog.pg_attribute a "
+    "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+    "JOIN pg_catalog.pg_type t ON t.oid = a.atttypid "
+    "JOIN pg_catalog.pg_type b ON b.oid = CASE WHEN t.typtype = 'd' THEN t.typbasetype ELSE t.oid END "
+    "LEFT JOIN pg_catalog.pg_type e ON e.oid = b.typelem AND b.typcategory = 'A' "
+    "WHERE n.nspname = :schema AND c.relname = :name AND a.attnum > 0 AND NOT a.attisdropped "
+    "LIMIT 1601"  # a relation has at most 1600 columns; the viewer's statements all have a LIMIT
+)
+#: L-5 of stu-013-review.md: how long the viewer's reflection of one object is reused (two catalog round trips less
+#: per page); a refresh of the catalog or a closed connection drops it at once.
+COLUMNS_TTL_S = 10.0
 _SQLITE_PRAGMAS = ("journal_mode", "user_version", "page_size", "page_count", "foreign_keys")
 
 
@@ -128,6 +147,17 @@ class _Cached:
     doc: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class Reflected:
+    """What :meth:`Explorer.columns` reflects of one object (``rowid``: SQLite tables only, whether it has one)."""
+
+    connection: OpenConnection
+    kind: str
+    columns: list[dict[str, Any]]
+    primary: list[str]
+    rowid: bool | None
+
+
 @dataclass
 class Explorer:
     """Catalog cache and readers. Blocking (call it off the event loop); thread-safe."""
@@ -136,6 +166,7 @@ class Explorer:
     clock: Callable[[], float] = time.time
     _cache: dict[str, _Cached] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
+    _columns: dict[tuple[str, str, str], tuple[float, Reflected]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.registry.on_close(self.forget)
@@ -144,6 +175,8 @@ class Explorer:
         """Drop the cached catalog of ``connection_id`` (its connection closed, or an object of it is gone)."""
         with self._lock:
             self._cache.pop(connection_id, None)
+            for key in [key for key in self._columns if key[0] == connection_id]:
+                del self._columns[key]
 
     def _reflect(self, connection: OpenConnection, consume: Callable[[sqlalchemy.Inspector], _T]) -> _T:
         """``connection.inspect(consume)``; an object dropped since the catalog was built is ``object_not_found``
@@ -167,7 +200,12 @@ class Explorer:
             open_ids = {c.id for c in self.registry.list()} | {connection.id}
             for stale in [key for key in self._cache if key not in open_ids]:
                 del self._cache[stale]
+            for gone in [key for key in self._columns if key[0] not in open_ids]:
+                del self._columns[gone]
             cached = None if refresh else self._cache.get(connection.id)
+            if refresh:
+                for key in [key for key in self._columns if key[0] == connection.id]:
+                    del self._columns[key]
         if cached is not None:
             return {**cached.doc, "cached": True}
         doc = {"connection_id": connection.id, **connection.inspect(lambda found: self._catalog(connection, found))}
@@ -217,30 +255,68 @@ class Explorer:
                 return str(item["kind"])
         return None
 
-    def columns(
-        self, connection_id: object, schema: str, name: str
-    ) -> tuple[OpenConnection, str, list[dict[str, Any]], list[str]]:
-        """The connection, kind, columns (``name``, ``type``, ``nullable``) and primary key of a catalog object
-        (STU-013's data viewer; the table detail without constraints, indexes and incoming keys)."""
+    def columns(self, connection_id: object, schema: str, name: str) -> Reflected:
+        """The connection, kind, columns and primary key of a catalog object (STU-013's data viewer; the table
+        detail without constraints, indexes and incoming keys).
+
+        Each column has ``name``, ``type`` (display), ``nullable`` and the facts the viewer pages by: for PostgreSQL
+        ``base`` (the type's name, a domain resolved to its base type), ``element`` (an array's element type) and
+        ``category`` (``pg_type.typcategory`` of the element or base type). Kept for :data:`COLUMNS_TTL_S`, keyed
+        like the catalog (L-5 of ``stu-013-review.md``), and dropped with it.
+        """
         connection, kind = self._known(connection_id, schema, name)
+        cache_key = (connection.id, schema, name)
+        with self._lock:
+            cached = self._columns.get(cache_key)
+        if cached is not None and self.clock() - cached[0] < COLUMNS_TTL_S and cached[1].kind == kind:
+            return dataclasses.replace(cached[1], connection=connection)
         if kind == "sequence":
-            return connection, kind, [], []
+            return Reflected(connection, kind, [], [], None)
         key = None if connection.engine == "sqlite" else schema
 
-        def read(found: sqlalchemy.Inspector) -> tuple[list[dict[str, Any]], list[str]]:
+        def read(found: sqlalchemy.Inspector) -> tuple[list[dict[str, Any]], list[str], bool | None]:
+            with warnings.catch_warnings():
+                # A type SQLAlchemy does not know (point, a type of an extension) reflects as NullType with a warning;
+                # its name comes from the catalog below.
+                warnings.simplefilter("ignore", sqlalchemy.exc.SAWarning)
+                reflected = found.get_columns(name, schema=key)
             columns = [
                 {
                     "name": str(column["name"]),
                     "type": _type_name(column["type"]),
                     "nullable": bool(column.get("nullable", True)),
+                    "base": None,
+                    "element": None,
+                    "category": None,
                 }
-                for column in found.get_columns(name, schema=key)
+                for column in reflected
             ]
             primary = found.get_pk_constraint(name, schema=key)
-            return columns, [str(n) for n in primary.get("constrained_columns") or []]
+            rowid: bool | None = None
+            if connection.engine == "sqlite" and kind == "table":
+                # M-2: a rowid table (not WITHOUT ROWID) can hold NULL in a primary key that is not the row id.
+                rowid = bool(found.get_table_options(name).get("sqlite_with_rowid", True))
+            return columns, [str(n) for n in primary.get("constrained_columns") or []], rowid
 
-        found_columns, primary = self._reflect(connection, read)
-        return connection, kind, found_columns, primary
+        found_columns, primary, rowid = self._reflect(connection, read)
+        if connection.engine == "postgresql":
+            facts = {
+                str(row[0]): row[1:] for row in connection.fetch(_PG_COLUMN_TYPES_SQL, {"schema": schema, "name": name})
+            }
+            for column in found_columns:
+                fact = facts.get(column["name"])
+                if fact is not None:
+                    if column["type"] in (None, "NULL"):  # a type SQLAlchemy does not know
+                        column["type"] = _text(fact[0])
+                    column["base"], column["element"], column["category"] = (
+                        _text(fact[1]),
+                        _text(fact[2]),
+                        _text(fact[3]),
+                    )
+        reflected = Reflected(connection, kind, found_columns, primary, rowid)
+        with self._lock:
+            self._columns[cache_key] = (self.clock(), reflected)
+        return reflected
 
     # Table detail
 

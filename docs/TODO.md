@@ -347,7 +347,7 @@ merge after OA-004.
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
-| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
+| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"). Open: the grid tab in the page (frontend lane), editing stays STU-026 |
 | TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
@@ -542,6 +542,24 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     users do not learn to click through a changed D-01.
   - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
     `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
+
+### STU-013 viewer: review items kept open
+
+- **Priority:** P3 · **Status:** Open · **Refs:** `stu-013-review.md`, `docs/architecture/viewer.md`
+- **L-2 (OFFSET pages of a view are not in a stable order without a sort):** not done on purpose. Ordering every
+  page of a view by all its columns makes each page evaluate and sort the whole view, so a large or endless view
+  would only reach the timeout (the SQLite test with an endless view shows it). The page keeps `hint:
+  "unstable_order"`; a sort column gives a stable order for distinct sort values. Revisit with the grid tab
+  (STU-012): it could offer "sort by all columns" for small views.
+- **L-5 (one budget with the query engine):** the viewer now has its own limit with the same numbers (4 statements
+  in Studio, 2 per connection, `studio.query_limit`), but it does not share the query engine's count, so 4 queries
+  and 4 viewer statements can run at once. One shared budget needs a small slot API on `QueryEngine`; do it when the
+  grid tab and the SQL editor run side by side (STU-012).
+- **I-3 (filter type mismatches):** `id eq "abc"` on PostgreSQL stays a classified database problem (`db.data`,
+  `db.undefined_object`), which is safe (no SQL, no values). Mapping it to `studio.viewer_filter_invalid` needs the
+  column types in the filter check; with the grid tab.
+- **SQLite text in another encoding:** the byte caps cut text as UTF-8; a database in UTF-16 is cut at the same
+  number of bytes but decoded as UTF-8. No reference app uses UTF-16; check with STU-016.
 
 ### TD-012 · STU-009 integration: what remains before it can merge
 
