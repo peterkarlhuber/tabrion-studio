@@ -241,6 +241,38 @@ def test_a_slow_revision_file_is_killed_with_its_children(shop: Shop) -> None:
     assert not any(_alive(pid) for pid in pids)
 
 
+#: A child that writes the time to a file every 0.1 s for a minute: it is alive while the file changes.
+HEARTBEAT = (
+    "import os, pathlib, subprocess, sys, time\n"
+    "beat = pathlib.Path(__file__).resolve().parents[2] / 'beat'\n"
+    "code = 'import pathlib, sys, time\\nfor _ in range(600):\\n'\n"
+    "code += '    pathlib.Path(sys.argv[1]).write_text(repr(time.time()))\\n    time.sleep(0.1)\\n'\n"
+    "subprocess.Popen([sys.executable, '-c', code, str(beat)])\n"
+    "time.sleep(60)\n"
+)
+
+
+def test_children_end_with_the_worker_on_every_platform(shop: Shop) -> None:
+    """POSIX: the process group; Windows: the job object (TD-024). Checked by a heartbeat file, not by pid."""
+    (shop.project / "migrations" / "versions" / "0002_suppliers.py").write_text(revision("0002", "0001", HEARTBEAT))
+    trust(shop)
+    shop.migrations.runner = lambda request, cwd: run_worker(request, cwd=cwd, timeout_s=4.0)
+    found = alembic(shop.migrations.status(shop.connection_id))
+    assert found["problem"]["code"] == "studio.migrations_timeout"
+    beat = shop.project / "beat"
+    assert beat.exists()  # the child ran
+    time.sleep(1.0)
+    last = beat.read_text()
+    time.sleep(1.0)
+    assert beat.read_text() == last  # it stopped beating
+
+
+def test_no_job_object_outside_windows(shop: Shop) -> None:
+    if sys.platform == "win32":
+        pytest.skip("Windows makes a job object")
+    assert migrations_module._windows_job(None)() is None  # type: ignore[arg-type]
+
+
 def _alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
