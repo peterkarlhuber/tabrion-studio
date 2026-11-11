@@ -560,6 +560,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   column types in the filter check; with the grid tab.
 - **SQLite text in another encoding:** the byte caps cut text as UTF-8; a database in UTF-16 is cut at the same
   number of bytes but decoded as UTF-8. No reference app uses UTF-16; check with STU-016.
+- **Progress guard of the viewer (finding 3 of the re-review of `974b958`):** the guard only makes a walk end. With a
+  sort key whose text does not read back as its value (float text without the `extra_float_digits=3` pin), rows can
+  repeat before it trips (page 2 ends on a new lossy key) or be skipped silently (a descending page after a lossy
+  anchor comes back empty, and the guard does not look at an empty page). The pin is the real fix and holds on every
+  supported server; revisit if another type's text turns out lossy (compare the anchor on the server, or refuse).
+- **Decoded size (R-1 of the re-review of `974b958`):** a page's first row and the cell detail are not bounded by the
+  decoded size: one row of many large `json`/`jsonb`/array columns, or a 10 MB `jsonb` value in the cell detail, can
+  take about 20 times its text in Python. The cell detail could return such values as text; with the grid tab.
 - **Info items of the delta re-review of `4ad445a`:** a domain over a domain resolves one level only in
   `_PG_COLUMN_TYPES_SQL` (a `json` domain two levels deep is not refused up front, it fails on page 1 as a database
   problem; a `bytea` domain shows as hex text); `xid` and `cid` have no ordering, so a sort by them is a database

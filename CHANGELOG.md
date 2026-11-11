@@ -25,7 +25,9 @@ All notable changes to this project are documented here. The format follows
   - Delta re-review of `stu-013-review.md`: a primary key column whose name starts with `@` is a quoted column like
     any other (the row identity is typed, not marked by a prefix); every PostgreSQL session starts with
     `extra_float_digits=3`, and a keyset walk that makes no progress goes on by `OFFSET` instead of repeating pages;
-    the fetch batch is capped by the widest row the byte caps allow, so a small first row cannot inflate it.
+    the fetch batch is capped by the widest row the byte caps allow, so a small first row cannot inflate it; a
+    decoded `json`, `jsonb` or array value counts toward the batch and the page cap at the memory its Python objects
+    take, not at its text bytes.
 - STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
   until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
