@@ -131,6 +131,7 @@ for matching and for display, so the palette, the help and the header buttons al
 | Languages complete | `src/i18n/i18n.test.ts` | CI |
 | Keyboard (STU-052): shortcut matching and display per platform, the palette's commands and filter, the palette (combobox, arrows, Enter, Escape, focus return, Tab, no match), the help, F6 order, no page shortcut while a dialog is open | `src/keyboard/*.test.ts(x)` | `npm test` (CI) |
 | Keyboard only in Chromium: palette to Settings, F6 through every area with a visible ring, help and back; the palette is modal; axe for palette and help in light/dark, en/de | `e2e/keyboard.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| Accessibility audit (STU-053): target size, reflow at 320 px, text spacing, focus visible, reduced motion, landmarks | `e2e/a11y-audit.spec.ts`; report in `docs/architecture/accessibility.md` | Playwright, Chromium (CI `e2e`) |
 | The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
 | No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 
