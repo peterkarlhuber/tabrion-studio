@@ -115,7 +115,8 @@ none. Values: numbers beyond JavaScript's safe integers, decimals, dates, times 
 ## Errors and logs
 
 Errors are problems with fixed texts: `studio.statement_*`, `studio.query_*`, `studio.connection_*` and
-`db.<kind>` with the SQLSTATE (STU-009). The log has one `studio.query_finished` record per query (state, row count,
+`db.<kind>` with the SQLSTATE (STU-009). A query that finds no free session of the connection's pool within
+10 seconds fails with `studio.connection_busy` (I-9 of `stu-010-review.md`), not `db.resource`. The log has one `studio.query_finished` record per query (state, row count,
 duration, engine, problem code) and never the SQL text, a parameter value or a row; a database error goes through
 tabrion's `DbErrorRedactionFilter`.
 

@@ -44,9 +44,13 @@ KINDS = ("table", "view", "materialized_view", "sequence", "foreign_table")
 _SYSTEM_SCHEMAS = frozenset({"information_schema"})
 #: L-3 of stu-010-review.md: a name missing from a catalog at least this old rebuilds it once; a younger one does not.
 REBUILD_AFTER_S = 5.0
+#: ``PRAGMA table_list`` (STRICT, WITHOUT ROWID) needs SQLite 3.37; a module value, so a test can force the fallback.
+_HAS_TABLE_LIST = sqlite3.sqlite_version_info >= (3, 37)
 #: M-1 of stu-010-review.md: PostgreSQL foreign keys out of and into one table, from the catalog itself. SQLAlchemy's
 #: reflection reads the referenced schema from ``pg_get_constraintdef()``, which leaves it out for a table on the
-#: search path, so a key into ``public`` looked like one into the referencing table's own schema.
+#: search path, so a key into ``public`` looked like one into the referencing table's own schema. ``conparentid = 0``
+#: leaves out the copies PostgreSQL keeps for each partition of a partitioned table (N-1 of the delta re-review): the
+#: key is shown once, on the partitioned table.
 _PG_FOREIGN_KEYS_SQL = (
     "SELECT con.conname, sn.nspname, sc.relname, tn.nspname, tc.relname, "
     "ARRAY(SELECT a.attname::text FROM unnest(con.conkey) WITH ORDINALITY k(n, i) "
@@ -58,7 +62,7 @@ _PG_FOREIGN_KEYS_SQL = (
     "JOIN pg_catalog.pg_namespace sn ON sn.oid = sc.relnamespace "
     "JOIN pg_catalog.pg_class tc ON tc.oid = con.confrelid "
     "JOIN pg_catalog.pg_namespace tn ON tn.oid = tc.relnamespace "
-    "WHERE con.contype = 'f' AND ((sn.nspname = :schema AND sc.relname = :name) "
+    "WHERE con.contype = 'f' AND con.conparentid = 0 AND ((sn.nspname = :schema AND sc.relname = :name) "
     "OR (tn.nspname = :schema AND tc.relname = :name)) "
     "ORDER BY sn.nspname, sc.relname, con.conname"
 )
@@ -362,16 +366,24 @@ class Explorer:
         if connection.engine != "sqlite" or connection.database_file is None:
             raise ExplorerError("studio.explorer_engine")
         pragmas = {name: connection.fetch(f"PRAGMA {name}")[0][0] for name in _SQLITE_PRAGMAS}
-        if sqlite3.sqlite_version_info >= (3, 37):
+        if _HAS_TABLE_LIST:
             tables = [
                 {"name": row[1], "type": row[2], "strict": bool(row[5]), "without_rowid": bool(row[4])}
                 for row in connection.fetch("PRAGMA table_list")
                 if row[0] == "main" and not str(row[1]).startswith("sqlite_")
             ]
-        else:  # pragma: no cover - PRAGMA table_list needs SQLite 3.37 (I-7); older ones do not know STRICT
+        else:
+            # PRAGMA table_list needs SQLite 3.37 (I-7); older ones do not know STRICT. index_info of a WITHOUT ROWID
+            # table lists its primary key, of a rowid table nothing.
             tables = [
-                {"name": row[0], "type": row[1], "strict": False, "without_rowid": None}
-                for row in connection.fetch(
+                {
+                    "name": name,
+                    "type": kind,
+                    "strict": False,
+                    "without_rowid": kind == "table"
+                    and connection.fetch("SELECT count(*) FROM pragma_index_info(:name)", {"name": name})[0][0] > 0,
+                }
+                for name, kind in connection.fetch(
                     "SELECT name, type FROM sqlite_master "
                     "WHERE type IN ('table', 'view') AND name NOT LIKE 'sqlite!_%' ESCAPE '!'"
                 )

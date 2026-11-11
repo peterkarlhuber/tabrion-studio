@@ -17,6 +17,9 @@ All notable changes to this project are documented here. The format follows
     `studio.object_not_found`; a busy pool is `studio.connection_busy` (503); unknown names rebuild the catalog at
     most every 5 seconds; a closed connection's catalog is dropped at once; `GET /api/connections/{id}/table?schema=&name=`
     for names with `/`; SQLite facts without `PRAGMA table_list` before SQLite 3.37.
+  - Delta re-review of `stu-010-review.md`: a partitioned table's foreign key is shown once, without its
+    partitions' copies (N-1); a query that finds no free session is `studio.connection_busy` too (I-9); SQLite
+    before 3.37 still reports `without_rowid` as true or false.
 - STU-011 (integration branch only, stacked on STU-009; on tabrion 0.1 behind `services/tabrion_compat.py` until
   tabrion 0.2):
   - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
