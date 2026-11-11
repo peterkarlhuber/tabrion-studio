@@ -191,8 +191,8 @@
     "density": "Dichte",
     "densityCompact": "Kompakt",
     "densityNormal": "Normal",
-    "saved": "Sprache, Design und Dichte werden in diesem Browser gespeichert. Abfragen und Sicherheit speichert Studio in seiner settings.toml.",
-    "generalHint": "Nur in diesem Browser gespeichert.",
+    "saved": "Alle Einstellungen werden in Studios settings.toml gespeichert und gelten beim nächsten Start weiter.",
+    "generalHint": "Wird sofort in settings.toml gespeichert.",
     "queries": "Abfragen",
     "maxRows": "Höchstzahl Zeilen je Ergebnis",
     "timeout": "Standard-Timeout je Abfrage (Sekunden)",
@@ -205,7 +205,12 @@
     "unavailable": "Die Einstellungen konnten nicht geladen werden.",
     "fileIssues": "Deine settings.toml hat Fehler, deshalb ändert Studio sie nicht. Behebe sie in der Datei:",
     "handWritten": "Deine settings.toml wurde von Hand geschrieben. Speichern schreibt sie neu; Kommentare bleiben nicht erhalten.",
-    "overwrite": "Datei neu schreiben und speichern"
+    "overwrite": "Datei neu schreiben und speichern",
+    "generalLocal": {
+      "issues": "Nur in diesem Browser gespeichert: Deine settings.toml hat Fehler, deshalb ändert Studio sie nicht. Beim nächsten Start ist die Auswahl vergessen.",
+      "hand_written": "Nur in diesem Browser gespeichert: Deine settings.toml wurde von Hand geschrieben, deshalb ändert Studio sie hier nicht. Trage die Auswahl in der Datei ein, oder lass Studio sie unten mit „Datei neu schreiben und speichern“ neu schreiben und wähle dann noch einmal.",
+      "unavailable": "Nur in diesem Browser gespeichert: Die Einstellungen konnten nicht gespeichert werden. Beim nächsten Start ist die Auswahl vergessen."
+    }
   },
   "languages": {
     "en": "English",
@@ -335,5 +340,45 @@
     "other": "Die Anfrage ist fehlgeschlagen ({{code}}).",
     "config_too_large": "Die Datei würde größer, als Studio liest (256 KB). Entferne Profile, die du nicht mehr brauchst.",
     "config_not_storable": "Studio konnte diese Werte nicht unverändert speichern (zum Beispiel wegen eines ungewöhnlichen Zeichens). Es wurde nichts geschrieben."
+  },
+  "keyboard": {
+    "palette": {
+      "open": "Befehlspalette ({{keys}})",
+      "title": "Befehlspalette",
+      "search": "Befehle suchen",
+      "placeholder": "Befehl eingeben…",
+      "list": "Befehle",
+      "current": "aktuell",
+      "noMatch": "Kein Befehl passt.",
+      "count_one": "{{count}} Befehl",
+      "count_other": "{{count}} Befehle",
+      "hint": "↑ ↓ zum Auswählen, Enter zum Ausführen, Esc zum Schließen"
+    },
+    "help": {
+      "open": "Tastenkürzel ({{keys}})",
+      "title": "Tastenkürzel",
+      "lead": "Diese Kürzel funktionieren überall in Studio. Die Befehlspalette listet alle Befehle.",
+      "caption": "Tastenkürzel",
+      "action": "Aktion",
+      "keys": "Tasten",
+      "close": "Schließen",
+      "later": "Kürzel zum Ausführen und Abbrechen von Abfragen und für Editor-Tabs kommen mit dem SQL-Editor."
+    },
+    "shortcuts": {
+      "palette": "Befehlspalette öffnen",
+      "help": "Tastenkürzel anzeigen",
+      "nextRegion": "Zum nächsten Bereich (Kopfzeile, Navigation, Tabs, Hauptbereich, Statusleiste)",
+      "previousRegion": "Zum vorherigen Bereich"
+    },
+    "commands": {
+      "goTo": "Gehe zu {{page}}",
+      "theme": "Theme: {{theme}}",
+      "density": "Dichte: {{density}}",
+      "language": "Sprache: {{language}}",
+      "shortcuts": "Tastenkürzel anzeigen"
+    },
+    "keys": {
+      "ctrl": "Strg"
+    }
   }
 }

@@ -42,6 +42,15 @@ All notable changes to this project are documented here. The format follows
 - Brand assets (`assets/branding/`): the Tabrion Studio lockup, marks and favicons derived from Peter Karlhuber's logo
   master with the shared brand kit (no redraw, no CSS filters), the social preview, and `TRADEMARKS.md` (the names and
   logos are not MIT). The committed masters carry no C2PA or eXIf metadata; a test proves the pixels unchanged.
+- Keyboard and command palette (STU-052, first part; `docs/architecture/frontend.md`, "Keyboard"): ⌘K / Ctrl+K opens
+  a command palette (go to a view, theme, density, language, help) with the combobox pattern; ⌘/ / Ctrl+/ shows the
+  keyboard shortcuts; F6 and Shift+F6 move between header, activity bar, tabs, main area and status bar. Shortcuts are
+  shown with the keys of the platform (⌘ on macOS, Ctrl or Strg elsewhere); the header has buttons for both dialogs.
+- Language, theme and density are saved in Studio's `settings.toml` as soon as they are chosen, and applied from it
+  when the page opens. They were browser preferences only, which a browser keeps per port, so they were lost at every
+  start (TD-021). `settings.toml` accepts `density = "compact" | "normal"`. A file with issues or one written by hand
+  is not changed from the general settings; the choice then stays in the browser and the view says so. The command
+  palette's theme, density and language commands are saved the same way.
 - The command prints a hint when the default browser on Linux is a snap or a Flatpak, which cannot open the sign-in
   file in a hidden state directory (TD-002, review S-4 of `stu-003-review.md`).
 - CI job `e2e` (mandatory check): the Playwright suites in Chromium on every pull request, namely axe with color
