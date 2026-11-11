@@ -44,6 +44,9 @@
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
+| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
+| TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -331,7 +334,7 @@ merge after OA-004.
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
-| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
+| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part in the user-guide PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R);
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
@@ -360,7 +363,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 | Ref | What | Priority |
 |---|---|---|
 | TABRION QA-18 | `tests/packaging/test_independent.py`: import every tabrion module while orkexa, axentra, nodestro_* and tabrion_studio are blocked (05 §3.2) | P2 |
-| TABRION QA-21 | full AC-7 check against tabrion's `__all__`/API contract and export of the used names to `tabrion/docs/api-consumers.md` (the AST check for private names is in place) | P2 |
+| TABRION QA-21 | Done in this repository: `scripts/check_tabrion_api.py` (the same file as in axentra, orkexa and nodestro-runtime) also checks used names against the installed Tabrion's `__all__` (a used name without an installed Tabrion fails; a module whose extra is missing is reported with its import error) and, with `--surface`, Tabrion's `docs/api/surface.json` (stable `S` names only: experimental `X` names are refused, 02 §14 S-2), and exports them to `docs/api-consumers.md`, enforced by `tests/architecture/test_tabrion_api_export.py` (stale or missing export, a fake installed Tabrion for the `__all__` part, the script's SHA-256 so the four copies stay identical). The `__all__` and `--surface` parts first have a name to check with the first Tabrion pin (STU-009). Open: `--check-export docs/api-consumers.md` on the existing CI step (a `.github` change), and Tabrion collecting the consumer lists into `tabrion/docs/api-consumers.md` | P3 |
 | TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, English, license, SECURITY.md; branch protection, private vulnerability reporting and the social preview are optional, owner decision 2026-11-08) | P2 |
 
 ## Technical debt
@@ -623,3 +626,54 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
   every MVP flow.
+
+### TD-023 · User guide parts that wait for later packages (STU-017)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 03 section 10 (STU-017: installation, start, security model,
+  troubleshooting), 09 STU-017 (depends on STU-016), `docs/guide/`
+- **Done in the user-guide PR:** `docs/guide/` for the features that exist: installation from a Git commit (no PyPI,
+  owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
+  connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
+- **With STU-009..STU-015:** connecting and the connection test, the explorer, the SQL editor and its shortcuts, the
+  data viewer, diagnostics and migration status; update the "Development version" note on `guide/index.md`.
+- **Troubleshooting:** the tables grow with the problem codes those packages add; the guide's command lines are
+  checked by the STU-017 clean-install test.
+- **With STU-017:** the documentation checklist, the clean-install test on Linux, macOS and Windows, the tag `v0.1.0`
+  (no publication, G-R) and the install section then names that tag instead of a commit.
+- **Done after the review (`stu-27-review.md`):** L-1, `--print-url` also opens the browser unless `--no-browser` is
+  given, so the guide and the troubleshooting row say `--no-browser --print-url`; L-2, the README status names only
+  what is on master and takes the PyPI sentence of the publication-policy PR (#22); L-3, the security page lists every
+  file Studio writes (settings, profiles, trust records, instance files, sign-in files, logs); L-4, the test wants a
+  row in the options table for every option and a real `nav` line (not a comment) for every guide page; I-2, I-4 and
+  I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
+- **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
+  binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
+
+### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
+
+- **Priority:** P3 Low · **Status:** Open (watch) · **Refs:** TABRION QA-8, `docs/development/ci.md` (QA-8 evidence)
+- **What:** `npm audit` over the whole tree reports GHSA-g3hv-75wg-m249 (moderate, a denial of service through
+  glob patterns) in `minimatch` 7.0.0..11.0.0, used only by eslint, `@eslint/config-array` and typescript-eslint.
+  Nothing of it ships: `npm audit --omit=dev --audit-level=high` finds nothing, and the wheel contains only the
+  built frontend. The fix npm offers (`npm audit fix --force`) downgrades eslint to 9.39.5 and typescript-eslint
+  to 8.36.0 (semver-major). `npm audit` lists **10** moderate entries: the one advisory through its dependency
+  cascade. `eslint-plugin-jsx-a11y` uses `minimatch` 3.1.5, outside the range.
+- **Next step:** take the eslint/typescript-eslint update that moves to a fixed `minimatch` when Dependabot proposes
+  it; no forced downgrade. A `package.json` `overrides` of `minimatch` to `^11.0.1` is an alternative, but a major
+  version for eslint's dependency: check eslint with it before using it.
+
+### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
+  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
+  `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
+  `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
+  The CI jobs still build with the unhashed `pyproject.toml` pin.
+- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
+  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
+  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
+  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
+  (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
+  `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.

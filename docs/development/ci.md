@@ -86,3 +86,46 @@ The same job writes CycloneDX SBOMs and uploads them as the artifact `sbom`:
 ## Dependency audit
 
 `pip-audit` over the development environment and `npm audit --omit=dev --audit-level=high`.
+
+## Reproducible builds
+
+The wheel is reproducible for one build backend version: hatchling writes fixed timestamps and order, but the
+wheel's `WHEEL` file names the hatchling version.
+`pyproject.toml` therefore pins `hatchling==1.33.0` (the same pin as tabrion), and `build-constraints.txt` pins it
+and its dependencies with SHA-256 hashes:
+
+```bash
+PIP_CONSTRAINT=build-constraints.txt PIP_REQUIRE_HASHES=1 python -m build
+```
+
+Its header also shows the offline build from a local wheel cache (`PIP_NO_INDEX=1 PIP_FIND_LINKS=wheelhouse`). The
+job `build and install` builds the wheel twice more from the same tree with these pins and requires the same SHA-256
+as its own wheel (`tests/packaging/test_artifacts.py::test_two_builds_give_the_same_wheel_hash`);
+`tests/unit/test_build_constraints.py` checks that the two pins agree. The test removes `SOURCE_DATE_EPOCH` for
+those builds, as the job builds its own wheel without it, and
+`test_two_builds_with_source_date_epoch_match` builds twice with a fixed epoch (the zip entries then carry that
+date). The CI build steps do not use the hashed pins yet (TODO TD-031).
+
+Those builds package one frontend build. Whether Vite's output depends only on the sources and the lockfile is a
+separate check, run by hand (not in CI):
+
+```bash
+python scripts/check_frontend_reproducible.py   # needs frontend/node_modules (npm ci)
+```
+
+It runs `npm run build` twice, compares a sorted SHA-256 listing of `frontend/dist` and prints the listing, so the
+listings of two machines (Linux and a Windows checkout) can be compared too. On 2026-11-11 on Linux: 9 files, both
+builds identical (Vite writes content-hashed names, no source maps). Cross-OS equality is not checked; a CI step for
+it is part of TD-031.
+
+## QA-8 evidence (TABRION QA-8)
+
+Acceptance (planning document 09): pip-audit and npm audit without a High finding; a CycloneDX SBOM per build; two
+builds with the same wheel hash. Checked on 2026-11-08 at master `5166315` plus the QA-8 pull request; hashes updated on 2026-11-11 after the merge of master `061db9d`.
+
+| Criterion | Result | Evidence |
+|---|---|---|
+| pip-audit without High | Met: no known vulnerability; the job fails on any finding, stricter than "no High" | job `dependency audit`; local run "No known vulnerabilities found" |
+| npm audit without High | Met for shipped packages (`--omit=dev --audit-level=high`: 0 vulnerabilities). The full tree (development tools included) has one **moderate** advisory, GHSA-g3hv-75wg-m249 in `minimatch` 7.0.0..11.0.0, pulled in by eslint and typescript-eslint only (TODO TD-030) | job `dependency audit`; local `npm audit` |
+| SBOM per build | Met: `tabrion-studio-python.cdx.json` and `tabrion-studio-frontend.cdx.json` on every CI run, artifact `sbom`, with a content check | job `license and supply chain` (section [SBOM](#sbom)) |
+| Two builds, same wheel hash | Met, for the pinned build backend (`hatchling==1.33.0`, hashed in `build-constraints.txt`): two complete local builds (frontend with `scripts/build_frontend.py`, then `python -m build`) gave the same wheel hash every time, also with the hashed backend pins: `d3086260...4d5d79` for the sources of merge `4fb8986` (master `061db9d` plus this pull request; the wheel holds only the package and the built frontend, so documentation changes keep it). The sdist also holds the documentation, so its hash changes with every docs edit and is not recorded; the packaging test checks the wheel in CI on Linux, macOS and Windows | `tests/packaging/test_artifacts.py` |

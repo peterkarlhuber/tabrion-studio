@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TABRION QA-21 (AC-7): `scripts/check_tabrion_api.py` is now the check shared with axentra, orkexa and
+  nodestro-runtime. Besides private Tabrion modules it refuses `_` attributes on Tabrion names, `getattr` and
+  `import_module` with a private constant and star imports. Every used name must be in its module's `__all__` in the
+  installed Tabrion (a used name without an installed Tabrion fails), and `--surface` compares with Tabrion's frozen
+  API snapshot and refuses experimental (`X`) names. `--export` writes the used names to `docs/api-consumers.md` (in
+  the docs under Development), and `tests/architecture/test_tabrion_api_export.py` fails when that file is stale or
+  missing.
+- Reproducible-wheel check (QA-8): the packaging tests build the wheel twice more and require the same SHA-256 as the
+  CI build, with the build backend pinned exactly (`hatchling==1.33.0`, hashed in `build-constraints.txt`); the QA-8
+  evidence (audits, SBOMs, hashes) is in `docs/development/ci.md`. A fixed `SOURCE_DATE_EPOCH` build is tested too, and
+  `scripts/check_frontend_reproducible.py` checks by hand that two frontend builds match.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).
@@ -117,14 +128,18 @@ All notable changes to this project are documented here. The format follows
 - Network log check (QA-9, SQ-08): `e2e/network.spec.ts` visits every view, dialog and notice of the e2e harness, and
   `e2e/backend.spec.ts` the real server, and fails if the page requests any other host (no CDN font, telemetry,
   external image or script). It listens on the browser context, so popups, new pages and workers count too.
+- User guide (STU-017, first part; `docs/guide/`): installation from a Git commit, starting and stopping with every
+  option, connections and the trust dialog, passwords, settings and keyboard, how Studio protects your data, and
+  troubleshooting with the messages of the page and the command. A test checks that every command-line option has a
+  row in the guide's options table and that every guide page has an entry in the site navigation.
 
-- Dependency policy (QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy K-33 from nodestro-studio (only its
-  outgoing edges: `tabrion[postgres,sqlalchemy,migrations]` in the core), and `scripts/check_dependency_policy.py` is the unchanged checker from there;
-  `scripts/DEPENDENCY_POLICY_SOURCE.md` records their origin and SHA-256. `python scripts/check_dependency_policy.py`
-  checks `pyproject.toml` (core, every extra and dependency group) against the copy.
-  `tests/architecture/test_dependency_policy.py` checks the checksums, runs the checker and probes forbidden
-  requirements (Axentra, a platform, extras beyond the edge). Ruff skips the vendored script (it is linted in nodestro-studio). The
-  sdist ships the policy copy.
+- Dependency policy (QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy K-33
+  from nodestro-studio (only its outgoing edges: `tabrion[postgres,sqlalchemy,migrations]` in the core), and
+  `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`
+  records their origin and SHA-256. `python scripts/check_dependency_policy.py` checks `pyproject.toml` (core, every
+  extra and dependency group) against the copy. `tests/architecture/test_dependency_policy.py` checks the checksums,
+  runs the checker and probes forbidden requirements (Axentra, a platform, extras beyond the edge). Ruff skips the
+  vendored script (it is linted in nodestro-studio). The sdist ships the policy copy.
 
 - Import-contract mutation probe (QA-16, AC-1): `tests/architecture/test_forbidden_probe.py` runs `lint-imports` on
   the repository and on a copy of the package, and on copies with one forbidden import each, which must fail and name
