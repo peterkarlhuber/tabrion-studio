@@ -34,7 +34,7 @@ the address, shows "Not signed in". Run `tabrion-studio` again to get a signed-i
 | `PROJECT` | the project folder; default: the current folder |
 | `--port N` | listen on this port of `127.0.0.1`; default: a free port. Studio never listens on another address |
 | `--no-browser` | do not open the browser (and issue no sign-in link) |
-| `--print-url` | print a one-time sign-in link instead of opening the browser, for a browser you start yourself. Anyone who sees the link can use it once; do not share it |
+| `--print-url` | also print a one-time sign-in link; the browser still opens unless you add `--no-browser`. Use `--no-browser --print-url` for a browser you start yourself. Anyone who sees the link can use it once; do not share it |
 | `--idle-timeout MINUTES` | stop after this many minutes without an open Studio tab; default 30, `0` = never |
 | `--state-dir DIR` | the folder for running instances and trust records; also `TABRION_STUDIO_STATE_DIR` |
 | `--log-dir DIR` | the log folder; also `TABRION_STUDIO_LOG_DIR`; default: the per-user log folder, or `DIR/logs` with `--state-dir` |

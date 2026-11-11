@@ -43,7 +43,7 @@
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | In progress (appearance PR, #17; review conditions done) |
-| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open |
+| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -597,3 +597,11 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   checked by the STU-017 clean-install test.
 - **With STU-017:** the documentation checklist, the clean-install test on Linux, macOS and Windows, the tag `v0.1.0`
   (no publication, G-R) and the install section then names that tag instead of a commit.
+- **Done after the review (`stu-27-review.md`):** L-1, `--print-url` also opens the browser unless `--no-browser` is
+  given, so the guide and the troubleshooting row say `--no-browser --print-url`; L-2, the README status names only
+  what is on master and takes the PyPI sentence of the publication-policy PR (#22); L-3, the security page lists every
+  file Studio writes (settings, profiles, trust records, instance files, sign-in files, logs); L-4, the test wants a
+  row in the options table for every option and a real `nav` line (not a comment) for every guide page; I-2, I-4 and
+  I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
+- **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
+  binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).

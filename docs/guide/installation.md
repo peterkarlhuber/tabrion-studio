@@ -6,7 +6,7 @@ the commit SHA is the version you pin (owner decision 2026-11-08).
 ## Requirements
 
 - Python 3.11 or later, on Linux, macOS or Windows.
-- To **build** the frontend once: Node.js 22 with npm. Studio itself runs without Node.
+- To **build** the frontend once: Node.js 22.22 or later with npm. Studio itself runs without Node.
 - A current Chrome, Edge, Firefox or Safari.
 - Optional: an operating system keyring (macOS Keychain, Windows Credential Manager, Secret Service or KWallet on
   Linux) to save database passwords. Without one, Studio asks for the password once per session.
@@ -28,14 +28,12 @@ The wheel contains the built frontend. A build without it stops with a message t
 `scripts/build_frontend.py`. For the same reason, `pip install git+https://…@<SHA>` does not work: the built frontend
 is not in Git.
 
-Check the installation:
+A tool such as `pipx` works too (`pipx install .` after the frontend build). Put the command on your `PATH`, or call
+it with the full path of the virtual environment. Check the installation:
 
 ```bash
-tabrion-studio --version
+~/.venvs/tabrion-studio/bin/tabrion-studio --version   # or just tabrion-studio --version once it is on your PATH
 ```
-
-A tool such as `pipx` works too (`pipx install .` after the frontend build). Put the command on your `PATH`, or call
-it with the full path of the virtual environment.
 
 ## Update
 

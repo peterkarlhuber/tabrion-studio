@@ -11,8 +11,8 @@ Studio is a tool for one person on one computer. In short:
   session.
 - **Read-only towards databases.** Studio 1.0 does not write to databases. SQLite files are opened read-only. Writing
   stays locked behind a separate gate; for a `PROD` profile it stays locked always.
-- **Your files only.** Studio writes only its own `settings.toml` and `profiles.toml` (0600, in a private folder)
-  and its trust records. It never writes a project's `.tabrion/studio.toml`, and never rewrites a file of yours that
+- **Your files only.** Studio writes only in its own private folders: its `settings.toml` and `profiles.toml`
+  (0600), its trust records, the instance files of a running Studio, the one-time sign-in files and its logs. It never writes a project's `.tabrion/studio.toml`, and never rewrites a file of yours that
   has issues or comments without asking.
 - **Untrusted projects.** A project's profiles are used only after you confirmed exactly that file in the trust
   dialog, which shows where each password would go.

@@ -8,7 +8,7 @@
 | "This sign-in link was already used." or "… has expired." | a sign-in link works once, within 2 minutes | run `tabrion-studio` again |
 | "Your session has ended." | Studio stopped or restarted, or another local server replaced Studio's cookie | run `tabrion-studio` again |
 | "The local server does not answer." | Studio stopped (Ctrl+C, `--stop`, the idle timeout) | run `tabrion-studio` again |
-| the browser does not open, or shows a "file not found" page | a browser in a sandbox (on Linux, for example the Firefox snap or a Flatpak) cannot read Studio's private sign-in file; Studio prints a hint when it detects one | start with `tabrion-studio --print-url` and open the printed link yourself, or use `--state-dir` with a folder the browser can read |
+| the browser does not open, or shows a "file not found" page | a browser in a sandbox (on Linux, for example the Firefox snap or a Flatpak) cannot read Studio's private sign-in file; Studio prints a hint when it detects one | start with `tabrion-studio --no-browser --print-url` and open the printed link yourself, or use `--state-dir` with a folder the browser can read |
 | an address with `localhost` or `[::1]` is refused | Studio answers only `127.0.0.1` | use the address Studio printed |
 | "Kept in this browser only: your settings.toml has issues …" | Studio does not change a file with issues, or one written by hand, from the general settings | fix `settings.toml`, or rewrite it from the Settings view |
 | "Your profiles.toml has issues, so Studio does not change it." | the file has an error or an unknown key | fix the listed issues in the file |

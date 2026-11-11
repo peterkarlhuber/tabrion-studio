@@ -110,8 +110,8 @@ All notable changes to this project are documented here. The format follows
   external image or script). It listens on the browser context, so popups, new pages and workers count too.
 - User guide (STU-017, first part; `docs/guide/`): installation from a Git commit, starting and stopping with every
   option, connections and the trust dialog, passwords, settings and keyboard, how Studio protects your data, and
-  troubleshooting with the messages of the page and the command. A test checks that every command-line option is in
-  the guide and that every guide page is in the site navigation.
+  troubleshooting with the messages of the page and the command. A test checks that every command-line option has a
+  row in the guide's options table and that every guide page has an entry in the site navigation.
 
 ### Security
 
