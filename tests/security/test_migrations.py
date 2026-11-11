@@ -181,7 +181,8 @@ def test_trusted_code_runs_in_a_separate_process_with_only_the_target(
     assert found["is_current"] is False and found["unknown"] == []
     ran = shop.ran()
     assert ran is not None and ran["pid"] != os.getpid()
-    assert set(ran["env"]) <= set(migrations_module._WORKER_VARIABLES)
+    # macOS's CoreFoundation sets __CF_USER_TEXT_ENCODING in every process (the user id and the text encoding).
+    assert set(ran["env"]) - {"__CF_USER_TEXT_ENCODING"} <= set(migrations_module._WORKER_VARIABLES)
     assert "STUDIO_CANARY_SECRET" not in ran["env"] and "PGPASSWORD" not in ran["env"]
     assert ran["module"] == "shop"  # prepend_sys_path = . (inside the project)
     assert Path(ran["cwd"]).resolve() == shop.project.resolve()
