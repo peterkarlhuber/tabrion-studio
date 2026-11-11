@@ -33,7 +33,9 @@ the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`,
 
 **Time limit (M-1):** a diagnosis runs at most the connection's statement timeout; then every statement is canceled
 like a query (:class:`.tabrion_compat.Cancel`: SQLite interrupt, psycopg cancel), and the checks that did not
-run are named in ``STU-DX-008``. :meth:`Diagnostics.cancel` stops a running diagnosis the same way.
+run are named in ``STU-DX-008``. :meth:`Diagnostics.cancel` stops a running diagnosis the same way. On SQLite,
+tabrion's step runs even past the limit and the cancel stops only its ``quick_check`` (N-1 of the delta review), so
+tabrion's other findings stay; the stopped integrity check is named in ``STU-DX-008``.
 
 Everything here reads. Nothing is logged but the event and the counts; findings name no path, password or value.
 """
@@ -43,10 +45,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import re
+import sqlite3
 import threading
 import time
 from typing import Any, TypeVar
 
+from tabrion import TabrionError
 from tabrion.check import Finding
 
 from tabrion_studio.config.schema import is_loopback
@@ -76,6 +80,8 @@ SESSION_CODES = frozenset(
 REPLACED_CODES = frozenset({"TAB-PG-003"})
 _TABRION_TLS_CODES = frozenset({"TAB-PG-010", "TAB-PG-011"})
 _ORDER = {"error": 0, "warning": 1, "info": 2}
+#: The SQLite errors of ``PRAGMA foreign_key_check`` that mean a broken foreign key definition (L-5).
+_BROKEN_FOREIGN_KEY = ("foreign key mismatch", "no such table")
 #: How many foreign-key violations ``STU-DX-005`` reads at most (it only counts them).
 MAX_FK_ROWS = 1_000
 #: STU-DX-003 checks every role the session can become: itself and every role it is a member of, INHERIT or not
@@ -144,6 +150,11 @@ def effective_settings(rows: list[tuple[Any, ...]]) -> dict[str, str]:
     return {name: value for name, (_, value) in ranked.items()}
 
 
+def _not_checked(finding: Finding, code: str) -> bool:
+    """tabrion's "not checked" form of ``code`` (an info finding; the damage finding is an error)."""
+    return finding.code == code and str(finding.severity) == "info"
+
+
 def _unset(settings: dict[str, str], name: str) -> bool:
     value = settings.get(name, "").strip().strip('"')
     if name == "application_name":
@@ -168,9 +179,10 @@ class _Run:
     canceled: bool = False
     skipped: list[str] = field(default_factory=list)
 
-    def step(self, name: str, work: Callable[[], _T], default: _T) -> _T:
-        """``work()``, or ``default`` with ``name`` noted when the time limit or a cancel stopped it."""
-        if self.hook.requested:
+    def step(self, name: str, work: Callable[[], _T], default: _T, *, always: bool = False) -> _T:
+        """``work()``, or ``default`` with ``name`` noted when the time limit or a cancel stopped it. ``always``: run
+        ``work`` even after the limit or a cancel (it stops its own long part, see :func:`.tabrion_compat.check`)."""
+        if self.hook.requested and not always:
             self.skipped.append(name)
             return default
         try:
@@ -212,7 +224,14 @@ class Diagnostics:
         timer.start()
         try:
             empty: list[Finding] = []
-            tabrion = run.step("tabrion's checks", lambda: connection.tabrion_findings(cancel=run.hook), empty)
+            # N-1 of the delta review: on SQLite the cancel stops only tabrion's quick_check, so its other findings
+            # (file mode, journal) come back even past the limit; they take milliseconds.
+            sqlite = connection.engine == "sqlite"
+            tabrion = run.step(
+                "tabrion's checks", lambda: connection.tabrion_findings(cancel=run.hook), empty, always=sqlite
+            )
+            if sqlite and run.hook.requested and any(_not_checked(finding, "TAB-SQ-006") for finding in tabrion):
+                run.skipped.append("tabrion's integrity check (TAB-SQ-006)")
             findings = [
                 _from_tabrion(finding)
                 for finding in tabrion
@@ -337,14 +356,22 @@ class Diagnostics:
 
         try:
             found = run.step("STU-DX-005", violations, 0)
-        except Exception:
-            # L-5: a foreign key that points at columns without a unique index ("foreign key mismatch"), or a
-            # missing parent table on old SQLite; the other findings stay.
+        except TabrionError as exc:
+            # L-5: a database error of the check, not one of Studio's; the other findings stay. Only "foreign key
+            # mismatch" (parent columns without a unique index) and "no such table" (a missing parent on old SQLite)
+            # say that a definition is broken; a busy, locked or unreadable file says nothing about the keys.
+            cause = str(exc.original) if isinstance(exc.original, sqlite3.Error) else ""
+            if cause.startswith(_BROKEN_FOREIGN_KEY):
+                return [_finding(
+                    "STU-DX-009", "warning", "Foreign keys could not be checked",
+                    "PRAGMA foreign_key_check failed: a foreign key definition is broken, for example it points at "
+                    "columns without a primary key or unique index.",
+                    "Fix the foreign key definitions (the parent columns need a PRIMARY KEY or UNIQUE constraint).",
+                )]  # fmt: skip
             return [_finding(
                 "STU-DX-009", "warning", "Foreign keys could not be checked",
-                "PRAGMA foreign_key_check failed: a foreign key definition is broken, for example it points at "
-                "columns without a primary key or unique index.",
-                "Fix the foreign key definitions (the parent columns need a PRIMARY KEY or UNIQUE constraint).",
+                "PRAGMA foreign_key_check could not run: the database was busy, locked or not readable.",
+                "Run the diagnosis again when no other program holds a lock on the file.",
             )]  # fmt: skip
         if not found:
             return []
