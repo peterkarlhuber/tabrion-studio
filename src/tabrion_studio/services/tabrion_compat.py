@@ -28,7 +28,9 @@ What each part replaces:
 
 Every statement still runs inside ``Database.read()``: PostgreSQL ``BEGIN READ ONLY`` on a read-only session,
 SQLite ``query_only`` and Studio's authorizer, and every PostgreSQL statement is a prepared statement
-(``prepare_threshold=0``), the server cursor's ``DECLARE`` too.
+(``prepare_threshold=0``), the server cursor's ``DECLARE`` too. The one exception is :func:`check`: on PostgreSQL,
+tabrion's collectors run on the read-only session in their own read-only transactions, before SQLAlchemy has sent
+``BEGIN`` (I-1 of ``stu-014-review.md``).
 """
 
 from __future__ import annotations
@@ -149,18 +151,26 @@ def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
             dbapi.close()
 
 
+_RESET_STATEMENTS = ("CLOSE ALL", "SELECT pg_catalog.pg_advisory_unlock_all()", "RESET ALL")
+
+
 def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
     """Pool ``checkin`` listener (PostgreSQL): ``RESET ALL``, back to the startup values (M-2 of ``stu-011-review.md``).
 
     Studio gives its session settings as startup options too (``connections.startup_options``), so this restores
     the profile's timeouts and ``default_transaction_read_only`` and drops any other setting a statement changed.
+    ``CLOSE ALL`` and ``pg_advisory_unlock_all()`` drop held cursors and session-level advisory locks too (defense in
+    depth for R-H1 of the delta re-review: the statement check refuses both). ``DISCARD ALL`` would cover them, but it
+    cannot run in a transaction block.
     A connection that cannot be reset leaves the pool. tabrion 0.2: a session reset of tabrion's own (TD-013).
     """
     if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
         return
     try:
+        dbapi_connection.rollback()  # whatever a statement left open
         with dbapi_connection.cursor() as cursor:
-            cursor.execute("RESET ALL")
+            for statement in _RESET_STATEMENTS:
+                cursor.execute(statement)
         dbapi_connection.commit()
     except Exception as exc:
         connection_record.invalidate(exc)
@@ -202,15 +212,29 @@ def stream(
         raise Cancelled
 
 
-def check(transaction: tabrion.Transaction) -> list[tabrion_check.Finding]:
+def check(transaction: tabrion.Transaction, *, cancel: Cancel) -> list[tabrion_check.Finding]:
     """``tabrion.check`` on the driver connection of ``transaction`` (STU-014).
 
     tabrion 0.1's ``check(Database)`` is not there yet (layer B); its SQLite and psycopg collectors are, and they
-    read only (pragmas and catalog queries), so they run inside Studio's ``Database.read()``. tabrion 0.2:
-    ``tabrion.check(db)`` (TD-013).
+    read only (pragmas and catalog queries). They run on the driver connection of Studio's ``Database.read()``,
+    which is read-only (SQLite ``mode=ro``, ``query_only`` and the authorizer; PostgreSQL a read-only session), but
+    on PostgreSQL not inside its transaction: SQLAlchemy has sent no ``BEGIN`` yet, so tabrion opens and rolls back
+    its own read-only transactions (I-1 of ``stu-014-review.md``). The session's startup ``statement_timeout``
+    bounds each of them. tabrion 0.2: ``tabrion.check(db)`` (TD-013).
+
+    ``cancel`` stops the checks from another thread like :func:`stream` (M-1 of ``stu-014-review.md``: SQLite's
+    ``quick_check`` has no other limit). The findings come back even when a cancel was sent (tabrion maps an
+    interrupted ``quick_check`` to "not checked", ``TAB-SQ-006``); the caller asks ``cancel.requested``. A connection
+    that got a cancel leaves the pool.
     """
-    dbapi: Any = transaction.connection.connection.dbapi_connection
-    return tabrion_check.check(dbapi)
+    connection = transaction.connection
+    dbapi: Any = connection.connection.dbapi_connection
+    cancel.attach(dbapi)
+    try:
+        return tabrion_check.check(dbapi)
+    finally:
+        if cancel.detach():
+            _discard(connection, dbapi)
 
 
 @contextlib.contextmanager

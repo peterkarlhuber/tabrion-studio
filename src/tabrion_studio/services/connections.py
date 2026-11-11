@@ -48,7 +48,7 @@ from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, targe
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import register_secret
 from tabrion_studio.services import tabrion_compat
-from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer, strip_leading
+from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
 from tabrion_studio.services.sqltext import BoundStatement, Dialect, bind, is_bound
 from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
@@ -66,14 +66,12 @@ __all__ = [
 logger = logging.getLogger("tabrion_studio.connections")
 _T = TypeVar("_T")
 #: Statements a PostgreSQL cursor (``DECLARE ... CURSOR FOR``) can hold; others (``EXPLAIN``, ``SHOW``, ...) use a
-#: plain cursor. Comments before the first word are skipped like in ``check_statement``.
+#: plain cursor. The first word comes from the same lexer as in ``check_statement`` (R-H1 of the delta re-review).
 _CURSOR_WORDS = frozenset({"select", "with", "values", "table"})
-_FIRST_WORD = re.compile(r"[(\s]*([A-Za-z]+)")
 
 
 def _cursor_query(statement: str) -> bool:
-    match = _FIRST_WORD.match(strip_leading(statement))
-    return match is not None and match.group(1).lower() in _CURSOR_WORDS
+    return first_word(statement) in _CURSOR_WORDS
 
 
 MAX_OPEN = 8
@@ -152,10 +150,13 @@ _STARTUP_SETTINGS = {
     "statement_timeout_ms": "statement_timeout",
     "lock_timeout_ms": "lock_timeout",
     "idle_in_transaction_timeout_ms": "idle_in_transaction_session_timeout",
-    "transaction_timeout_ms": "transaction_timeout",
-    "search_path": "search_path",
     "timezone": "TimeZone",
 }
+#: Settings that cannot go into startup options as they are (R-I1 of the delta re-review): tabrion quotes
+#: ``search_path`` as identifiers, and sets ``transaction_timeout`` only on servers that know it (PostgreSQL 17),
+#: while a server refuses an unknown startup parameter. Studio sets neither; a session with one is refused until the
+#: startup options can match tabrion (TD-013).
+_NOT_AT_STARTUP = ("search_path", "transaction_timeout_ms")
 _STARTUP_VALUE = re.compile(r"[A-Za-z0-9_/+-]{1,64}")
 
 
@@ -164,6 +165,8 @@ def startup_options(session: SessionSettings) -> str:
 
     Only plain values (numbers, names like ``UTC``): anything else would need libpq's escaping, so it is refused.
     """
+    if any(getattr(session, name) is not None for name in _NOT_AT_STARTUP):
+        raise RegistryError("studio.connection_config")
     pairs = [("default_transaction_read_only", "on")]
     for name, setting in _STARTUP_SETTINGS.items():
         value = getattr(session, name)
@@ -333,14 +336,18 @@ class OpenConnection:
         with self._read() as transaction, tabrion_compat.inspector(transaction) as found:
             return consume(found)
 
-    def tabrion_findings(self) -> list[Finding]:
-        """``tabrion.check`` on this connection, inside one ``Database.read()`` (STU-014; it only reads)."""
+    def tabrion_findings(self, *, cancel: Cancel | None = None) -> list[Finding]:
+        """``tabrion.check`` on the driver connection of one ``Database.read()`` (STU-014; it only reads, see
+        :func:`.tabrion_compat.check`). ``cancel`` stops it from another thread."""
         with self._read() as transaction:
-            return tabrion_compat.check(transaction)
+            return tabrion_compat.check(transaction, cancel=cancel if cancel is not None else Cancel())
 
-    def fetch(self, sql: str, params: Mapping[str, object] | None = None) -> list[tuple[Any, ...]]:
+    def fetch(
+        self, sql: str, params: Mapping[str, object] | None = None, *, cancel: Cancel | None = None
+    ) -> list[tuple[Any, ...]]:
         """All rows of one read-only statement, for Studio's own small queries; a refused one raises
-        ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps)."""
+        ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps).
+        ``cancel`` stops it from another thread."""
 
         def every_row(cursor: ResultCursor) -> list[tuple[Any, ...]]:
             rows: list[tuple[Any, ...]] = []
@@ -348,7 +355,7 @@ class OpenConnection:
                 rows += batch
             return rows
 
-        return self.stream(self.prepare(sql, params), every_row)
+        return self.stream(self.prepare(sql, params), every_row, cancel=cancel)
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))

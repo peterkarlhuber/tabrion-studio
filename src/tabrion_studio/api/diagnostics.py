@@ -4,6 +4,9 @@
   ``{connection_id, engine, environment, ran_at, findings: [{code, severity, title, detail, remedy, source}],
   counts: {error, warning, info}}``. A ``POST`` because it runs checks against the database (``PRAGMA quick_check``
   on SQLite can take a while), never because it changes anything; the access middleware asks for the CSRF header.
+  A diagnosis stops at the connection's statement timeout; the checks it could not run are named in ``STU-DX-008``.
+* ``POST /api/connections/{id}/diagnostics/cancel``: 202 ``{"canceled": true|false}``; stops the running diagnoses
+  of that connection within a second (M-1 of ``stu-014-review.md``). Their answers then carry ``STU-DX-008``.
 
 Errors are the problems of the connection routes. The work runs in a worker thread.
 """
@@ -34,3 +37,7 @@ def add_diagnostics_routes(app: FastAPI, diagnostics: Diagnostics) -> None:
             return refused
         logger.info("diagnostics", extra={"event": "studio.diagnostics", **doc["counts"]})
         return JSONResponse(doc)
+
+    @app.post("/api/connections/{connection_id}/diagnostics/cancel", status_code=202)
+    async def cancel_diagnostics(connection_id: str) -> Response:
+        return JSONResponse({"canceled": diagnostics.cancel(connection_id)}, status_code=202)

@@ -3,24 +3,37 @@
 ``Diagnostics.run`` gives a list of findings ``{code, severity, title, detail, remedy, source}``; ``severity`` is
 ``error``, ``warning`` or ``info`` (tabrion's scale), and ``source`` is ``tabrion`` or ``studio``.
 
-**tabrion's findings** (``TAB-SQ-*``, ``TAB-PG-*``) come from ``tabrion.check`` on the connection's driver
-connection, inside one ``Database.read()`` (:func:`.tabrion_compat.check`). Some of them describe the session they
-run in, and Studio's session is not the application's: Studio sets its own timeouts, ``application_name``,
+**tabrion's findings** (``TAB-SQ-*``, ``TAB-PG-*``) come from ``tabrion.check`` on the driver connection of one
+``Database.read()`` (:func:`.tabrion_compat.check`; on PostgreSQL in tabrion's own read-only transactions, I-1 of
+``stu-014-review.md``). Some of them describe the session they run in, and Studio's session is not the
+application's: Studio sets its own timeouts, ``application_name``, ``default_transaction_read_only``,
 ``foreign_keys``, ``busy_timeout`` and ``trusted_schema``. Those findings (:data:`SESSION_CODES`) are left out, and
-Studio checks what the application gets instead (``STU-DX-004``, ``STU-DX-005``).
+Studio checks what the application gets instead (``STU-DX-004``, ``-005``, ``-010``). ``TAB-PG-003`` looks only at
+the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`, M-3 of the review).
 
 **Studio's findings** (``STU-DX-*``):
 
-* ``001`` (error): a ``prod`` profile without ``sslmode`` ``verify-ca`` or ``verify-full`` (03 section 5.4);
-* ``002`` (warning): ``sslmode`` ``disable``, ``allow`` or ``prefer`` to a host that is not loopback (T-10, STU-T-021);
-* ``003``: ``read_only_role = true``, but the role may insert, update or delete in a table (error for ``prod``);
-* ``004`` (warning): no ``statement_timeout`` for the role or the database (``ALTER ROLE``/``ALTER DATABASE ...
-  SET``); an application that sets none runs without a limit, unless ``postgresql.conf`` sets one, which a role
-  without superuser rights cannot read;
-* ``005`` (warning, SQLite): rows that break a foreign key (``PRAGMA foreign_key_check``): data was written with
-  ``foreign_keys`` off.
+* ``001`` (error): a ``prod`` profile without ``sslmode`` ``verify-ca`` or ``verify-full`` (03 section 5.4); not for
+  a Unix socket, which has no TLS;
+* ``002`` (warning): ``sslmode`` ``disable``, ``allow`` or ``prefer`` to a host that is not loopback (T-10,
+  STU-T-021), when tabrion did not already report the connection's TLS (``TAB-PG-010``, ``-011``);
+* ``003``: ``read_only_role = true``, but the role, or a role it can ``SET ROLE`` to, may write in a table, view,
+  foreign table or sequence: ``INSERT``, ``UPDATE``, ``DELETE``, ``TRUNCATE``, a column grant, ownership, superuser
+  (error for ``prod``);
+* ``004`` (warning): no ``statement_timeout`` for the role or the database, after the precedence of
+  ``pg_db_role_setting`` (role in database, then role, then database); ``postgresql.conf`` cannot be read;
+* ``005`` (warning, SQLite): rows that break a foreign key (``PRAGMA foreign_key_check``);
+* ``006`` (warning, error for ``prod``): the role owns, or can become the owner of, tables in any schema;
+* ``007`` (info): ``read_only_role = true``, and default privileges grant the role write access to future tables;
+* ``008`` (info): not every check ran: the connection's time limit ended the diagnosis, or the user canceled it;
+* ``009`` (warning, SQLite): ``PRAGMA foreign_key_check`` could not run, for example because a foreign key points
+  at columns without a unique index;
+* ``010`` (warning if ``idle_in_transaction_session_timeout`` is missing, else info): no ``lock_timeout``,
+  ``idle_in_transaction_session_timeout`` or ``application_name`` for the role or the database.
 
-On a ``prod`` profile, a role that owns tables (``TAB-PG-003``) is an error, not a warning (03 section 5.4).
+**Time limit (M-1):** a diagnosis runs at most the connection's statement timeout; then every statement is canceled
+like a query (:class:`.tabrion_compat.Cancel`: SQLite interrupt, psycopg cancel), and the checks that did not
+run are named in ``STU-DX-008``. :meth:`Diagnostics.cancel` stops a running diagnosis the same way.
 
 Everything here reads. Nothing is logged but the event and the counts; findings name no path, password or value.
 """
@@ -28,38 +41,78 @@ Everything here reads. Nothing is logged but the event and the counts; findings 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import re
+import threading
 import time
-from typing import Any
+from typing import Any, TypeVar
 
-from tabrion.check import Finding, Severity
+from tabrion.check import Finding
 
 from tabrion_studio.config.schema import is_loopback
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
+from tabrion_studio.services.queries import CANCEL_ATTEMPTS, CANCEL_INTERVAL_S
+from tabrion_studio.services.tabrion_compat import Cancel
 
-__all__ = ["SESSION_CODES", "Diagnostics"]
+__all__ = ["REPLACED_CODES", "SESSION_CODES", "Diagnostics"]
 
-#: tabrion findings about the session the check runs in, which is Studio's and not the application's.
+_T = TypeVar("_T")
+
+#: tabrion findings about the session the check runs in, which is Studio's and not the application's. TAB-PG-021
+#: ("standby with a write session") reads ``default_transaction_read_only``, which is always on in Studio (I-2).
 SESSION_CODES = frozenset(
-    {"TAB-PG-004", "TAB-PG-005", "TAB-PG-006", "TAB-PG-007", "TAB-SQ-001", "TAB-SQ-005", "TAB-SQ-009"}
+    {
+        "TAB-PG-004",
+        "TAB-PG-005",
+        "TAB-PG-006",
+        "TAB-PG-007",
+        "TAB-PG-021",
+        "TAB-SQ-001",
+        "TAB-SQ-005",
+        "TAB-SQ-009",
+    }
 )
+#: tabrion findings that a Studio check replaces: TAB-PG-003 counts only the current schema (STU-DX-006).
+REPLACED_CODES = frozenset({"TAB-PG-003"})
+_TABRION_TLS_CODES = frozenset({"TAB-PG-010", "TAB-PG-011"})
 _ORDER = {"error": 0, "warning": 1, "info": 2}
 #: How many foreign-key violations ``STU-DX-005`` reads at most (it only counts them).
 MAX_FK_ROWS = 1_000
+#: STU-DX-003 checks every role the session can become: itself and every role it is a member of, INHERIT or not
+#: (one SET ROLE away; ``pg_has_role(..., 'MEMBER')``), as tabrion's role checks count "can become" (I-20).
 _WRITABLE_SQL = (
     "SELECT count(*) FROM (SELECT 1 FROM pg_catalog.pg_class c "
     "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-    "WHERE c.relkind IN ('r', 'p') AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
-    "AND (pg_catalog.has_table_privilege(c.oid, 'INSERT') OR pg_catalog.has_table_privilege(c.oid, 'UPDATE') "
-    "OR pg_catalog.has_table_privilege(c.oid, 'DELETE')) LIMIT 1000) AS writable"
+    "WHERE c.relkind IN ('r', 'p', 'v', 'f', 'S') AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
+    "AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles b "
+    "WHERE pg_catalog.pg_has_role(current_user, b.oid, 'MEMBER') AND CASE WHEN c.relkind = 'S' "
+    "THEN pg_catalog.has_sequence_privilege(b.oid, c.oid, 'UPDATE') "
+    "ELSE pg_catalog.has_table_privilege(b.oid, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE') "
+    "OR pg_catalog.has_any_column_privilege(b.oid, c.oid, 'INSERT, UPDATE') END) "
+    "LIMIT 1000) AS writable"
 )
-_ROLE_TIMEOUT_SQL = (
-    "SELECT count(*) FROM pg_catalog.pg_db_role_setting s, unnest(s.setconfig) AS item "
-    "WHERE (s.setrole = 0 OR s.setrole = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = current_user)) "
+_DEFAULT_WRITE_SQL = (
+    "SELECT count(*) FROM pg_catalog.pg_default_acl d, pg_catalog.aclexplode(d.defaclacl) AS a "
+    "WHERE d.defaclobjtype IN ('r', 'S') AND a.privilege_type IN ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE') "
+    "AND (a.grantee = 0 OR pg_catalog.pg_has_role(current_user, a.grantee, 'MEMBER'))"
+)
+_OWNER_SQL = (
+    "SELECT count(*) FROM (SELECT 1 FROM pg_catalog.pg_class c "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f') AND n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
+    "AND pg_catalog.pg_has_role(current_user, c.relowner, 'MEMBER') LIMIT 1000) AS owned"
+)
+#: The settings the login role gets from ``ALTER ROLE``/``ALTER DATABASE ... SET``, with their scope.
+_ROLE_SETTINGS_SQL = (
+    "SELECT s.setrole <> 0, s.setdatabase <> 0, item "
+    "FROM pg_catalog.pg_db_role_setting s, unnest(s.setconfig) AS item "
+    "WHERE (s.setrole = 0 OR s.setrole = (SELECT oid FROM pg_catalog.pg_roles WHERE rolname = session_user)) "
     "AND (s.setdatabase = 0 OR s.setdatabase = (SELECT oid FROM pg_catalog.pg_database "
-    "WHERE datname = current_database())) "
-    "AND item ~ '^statement_timeout=' AND item !~ '^statement_timeout=0+(ms|s|min|h|d)?$'"
+    "WHERE datname = current_database()))"
 )
+_ZERO_TIME = re.compile(r"^0+(ms|s|min|h|d)?$")
+#: The session settings STU-DX-010 checks, besides statement_timeout (STU-DX-004); L-1 of the review.
+_OTHER_SETTINGS = ("lock_timeout", "idle_in_transaction_session_timeout", "application_name")
 _SECURE_TLS = frozenset({"verify-ca", "verify-full"})
 _WEAK_TLS = frozenset({"disable", "allow", "prefer"})
 
@@ -68,18 +121,65 @@ def _finding(code: str, severity: str, title: str, detail: str, remedy: str) -> 
     return {"code": code, "severity": severity, "title": title, "detail": detail, "remedy": remedy, "source": "studio"}
 
 
-def _from_tabrion(finding: Finding, *, prod: bool) -> dict[str, str]:
-    severity = str(finding.severity)
-    if prod and finding.code == "TAB-PG-003" and finding.severity is Severity.WARNING:
-        severity = "error"  # 03 section 5.4: a prod profile needs a role that is not the owner
+def _from_tabrion(finding: Finding) -> dict[str, str]:
     return {
         "code": finding.code,
-        "severity": severity,
+        "severity": str(finding.severity),
         "title": finding.title,
         "detail": finding.detail,
         "remedy": finding.remedy,
         "source": "tabrion",
     }
+
+
+def effective_settings(rows: list[tuple[Any, ...]]) -> dict[str, str]:
+    """The value each setting has for the login role in this database (L-4 of the review): a role-in-database
+    setting wins over a role setting, which wins over a database setting (PostgreSQL's order)."""
+    ranked: dict[str, tuple[int, str]] = {}
+    for for_role, for_database, item in rows:
+        name, _, value = str(item).partition("=")
+        rank = 2 * bool(for_role) + bool(for_database)
+        if name not in ranked or rank > ranked[name][0]:
+            ranked[name] = (rank, value)
+    return {name: value for name, (_, value) in ranked.items()}
+
+
+def _unset(settings: dict[str, str], name: str) -> bool:
+    value = settings.get(name, "").strip().strip('"')
+    if name == "application_name":
+        return value == ""
+    return value == "" or bool(_ZERO_TIME.match(value))
+
+
+def _expire(hook: Cancel, finished: threading.Event) -> None:
+    """Cancel, and repeat it every 0.1 s (for 3 s) until the running statement stops (as the viewer does)."""
+    for _ in range(CANCEL_ATTEMPTS):
+        hook.cancel()
+        if finished.wait(CANCEL_INTERVAL_S):
+            return
+
+
+@dataclass
+class _Run:
+    """One running diagnosis: its cancel hook and which checks it could not run."""
+
+    hook: Cancel = field(default_factory=Cancel)
+    finished: threading.Event = field(default_factory=threading.Event)
+    canceled: bool = False
+    skipped: list[str] = field(default_factory=list)
+
+    def step(self, name: str, work: Callable[[], _T], default: _T) -> _T:
+        """``work()``, or ``default`` with ``name`` noted when the time limit or a cancel stopped it."""
+        if self.hook.requested:
+            self.skipped.append(name)
+            return default
+        try:
+            return work()
+        except Exception:
+            if not self.hook.requested:
+                raise
+            self.skipped.append(name)
+            return default
 
 
 @dataclass
@@ -88,20 +188,57 @@ class Diagnostics:
 
     registry: ConnectionRegistry
     clock: Callable[[], float] = time.time
+    _running: dict[str, list[_Run]] = field(default_factory=dict, init=False, repr=False)
+    _lock: threading.Lock = field(default_factory=threading.Lock, init=False, repr=False)
+
+    def cancel(self, connection_id: object) -> bool:
+        """Stop the running diagnoses of a connection (each ends with ``STU-DX-008``); whether one was running."""
+        with self._lock:
+            runs = list(self._running.get(connection_id, [])) if isinstance(connection_id, str) else []
+        for run in runs:
+            run.canceled = True
+            threading.Thread(target=_expire, args=(run.hook, run.finished), daemon=True).start()
+        return bool(runs)
 
     def run(self, connection_id: object) -> dict[str, Any]:
         connection = self.registry.get(connection_id)
         profile = self.registry.source.entry(connection.profile_id).profile
         prod = connection.environment == "prod"
-        findings = [
-            _from_tabrion(finding, prod=prod)
-            for finding in connection.tabrion_findings()
-            if finding.code not in SESSION_CODES
-        ]
-        if connection.engine == "postgresql":
-            findings += self._postgres(connection, profile, prod=prod)
-        else:
-            findings += self._sqlite(connection)
+        run = _Run()
+        timer = threading.Timer(connection.timeout_s, _expire, args=(run.hook, run.finished))
+        timer.daemon = True
+        with self._lock:
+            self._running.setdefault(connection.id, []).append(run)
+        timer.start()
+        try:
+            empty: list[Finding] = []
+            tabrion = run.step("tabrion's checks", lambda: connection.tabrion_findings(cancel=run.hook), empty)
+            findings = [
+                _from_tabrion(finding)
+                for finding in tabrion
+                if finding.code not in SESSION_CODES and finding.code not in REPLACED_CODES
+            ]
+            tabrion_tls = any(finding.code in _TABRION_TLS_CODES for finding in tabrion)
+            if connection.engine == "postgresql":
+                findings += self._postgres(connection, profile, run, prod=prod, tabrion_tls=tabrion_tls)
+            else:
+                findings += self._sqlite(connection, run)
+        finally:
+            run.finished.set()
+            timer.cancel()
+            with self._lock:
+                runs = self._running.get(connection.id, [])
+                if run in runs:
+                    runs.remove(run)
+                if not runs:
+                    self._running.pop(connection.id, None)
+        if run.skipped:
+            why = "you canceled it" if run.canceled else f"it reached the time limit of {connection.timeout_s:g} s"
+            findings.append(_finding(
+                "STU-DX-008", "info", "Not every check ran",
+                f"The diagnosis stopped because {why}. Not run: {', '.join(run.skipped)}.",
+                "Run the diagnosis again; for a large SQLite file, give the profile a longer statement timeout.",
+            ))  # fmt: skip
         findings.sort(key=lambda item: (_ORDER.get(item["severity"], 3), item["code"]))
         counts = {name: sum(item["severity"] == name for item in findings) for name in _ORDER}
         return {
@@ -114,51 +251,106 @@ class Diagnostics:
         }
 
     @staticmethod
-    def _postgres(connection: OpenConnection, profile: Any, *, prod: bool) -> list[dict[str, str]]:
+    def _postgres(
+        connection: OpenConnection, profile: Any, run: _Run, *, prod: bool, tabrion_tls: bool
+    ) -> list[dict[str, str]]:
         found: list[dict[str, str]] = []
         sslmode = str(profile.sslmode or "")
         host = str(profile.host or "")
-        if prod and sslmode not in _SECURE_TLS:
+        socket = host.startswith("/")  # a Unix socket folder has no TLS at all (L-3 of the review)
+        if prod and not socket and sslmode not in _SECURE_TLS:
             found.append(_finding(
                 "STU-DX-001", "error", "Production connection without a verified certificate",
                 f"The prod profile uses sslmode {sslmode or 'unset'}; the server's certificate is not verified.",
                 "Set sslmode to verify-full (or verify-ca) in the profile and give the server's CA.",
             ))  # fmt: skip
-        if sslmode in _WEAK_TLS and host and not is_loopback(host):
+        if sslmode in _WEAK_TLS and host and not is_loopback(host) and not tabrion_tls:
             found.append(_finding(
                 "STU-DX-002", "warning", "Weak TLS to a remote host",
                 f"The profile uses sslmode {sslmode} for a host that is not loopback: traffic can be read or changed "
                 "on the way (T-10).",
                 "Use sslmode verify-full.",
             ))  # fmt: skip
+
+        def count(sql: str) -> int:
+            value = connection.fetch(sql, cancel=run.hook)[0][0]
+            return value if isinstance(value, int) else 0
+
         if profile.read_only_role:
-            writable = connection.fetch(_WRITABLE_SQL)[0][0]
-            if isinstance(writable, int) and writable > 0:
+            writable = run.step("STU-DX-003", lambda: count(_WRITABLE_SQL), 0)
+            if writable > 0:
                 found.append(_finding(
                     "STU-DX-003", "error" if prod else "warning", "The read-only role can write",
-                    f"The profile says read_only_role, but the role may insert, update or delete in {writable}"
-                    f"{'+' if writable >= 1000 else ''} table(s). Studio's session is read-only; the role is not.",
-                    "Connect with a role that has only SELECT (and USAGE on the schemas).",
+                    "The profile says read_only_role, but the role, or a role it can SET ROLE to, may write in "
+                    f"{writable}{'+' if writable >= 1000 else ''} table(s), view(s) or sequence(s) (INSERT, UPDATE, "
+                    "DELETE, TRUNCATE, a column grant or ownership). Studio's session is read-only; the role is not.",
+                    "Connect with a role that has only SELECT (and USAGE on the schemas), and no membership in a "
+                    "role that can write.",
                 ))  # fmt: skip
-        if connection.fetch(_ROLE_TIMEOUT_SQL)[0][0] == 0:
+            if run.step("STU-DX-007", lambda: count(_DEFAULT_WRITE_SQL), 0) > 0:
+                found.append(_finding(
+                    "STU-DX-007", "info", "Future tables will be writable",
+                    "Default privileges (ALTER DEFAULT PRIVILEGES) grant the role, or a role it belongs to, write "
+                    "access to tables or sequences created later.",
+                    "ALTER DEFAULT PRIVILEGES ... REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM the role.",
+                ))  # fmt: skip
+        owned = run.step("STU-DX-006", lambda: count(_OWNER_SQL), 0)
+        if owned > 0:
             found.append(_finding(
-                "STU-DX-004", "warning", "No statement timeout for the role or database",
-                "Neither the role nor the database sets statement_timeout, so an application that sets none runs "
-                "statements without a limit (unless postgresql.conf sets one, which this role cannot read).",
-                "ALTER ROLE ... SET statement_timeout = '30s' (or ALTER DATABASE), or set it in the application "
-                "(tabrion's SessionSettings does).",
+                "STU-DX-006", "error" if prod else "warning", "Role owns tables",
+                f"The role owns, or can become the owner of, {owned}{'+' if owned >= 1000 else ''} table(s) or "
+                "view(s) in the database; an owner can change them and is not subject to row-level security unless "
+                "FORCE ROW LEVEL SECURITY is set.",
+                "Use an owner role for migrations and a separate runtime role for the application"
+                f"{' (03 section 5.4: required for prod)' if prod else ''}.",
             ))  # fmt: skip
+        rows = run.step("STU-DX-004", lambda: connection.fetch(_ROLE_SETTINGS_SQL, cancel=run.hook), None)
+        if rows is not None:
+            settings = effective_settings(rows)
+            if _unset(settings, "statement_timeout"):
+                found.append(_finding(
+                    "STU-DX-004", "warning", "No statement timeout for the role or database",
+                    "Neither the role nor the database sets statement_timeout (or the most specific setting is 0), "
+                    "so an application that sets none runs statements without a limit (unless postgresql.conf sets "
+                    "one, which this role cannot read).",
+                    "ALTER ROLE ... SET statement_timeout = '30s' (or ALTER DATABASE), or set it in the application "
+                    "(tabrion's SessionSettings does).",
+                ))  # fmt: skip
+            missing = [name for name in _OTHER_SETTINGS if _unset(settings, name)]
+            if missing:
+                found.append(_finding(
+                    "STU-DX-010",
+                    "warning" if "idle_in_transaction_session_timeout" in missing else "info",
+                    "Session settings missing for the role or database",
+                    f"Neither the role nor the database sets {', '.join(missing)}; an application that sets none "
+                    "runs without them (unless postgresql.conf sets them, which this role cannot read).",
+                    "ALTER ROLE ... SET (or ALTER DATABASE), or set them in the application (tabrion's "
+                    "SessionSettings does).",
+                ))  # fmt: skip
         return found
 
     @staticmethod
-    def _sqlite(connection: OpenConnection) -> list[dict[str, str]]:
-        statement = connection.prepare("PRAGMA foreign_key_check")
-        violations = len(connection.stream(statement, lambda cursor: cursor.fetch(MAX_FK_ROWS)))
-        if not violations:
+    def _sqlite(connection: OpenConnection, run: _Run) -> list[dict[str, str]]:
+        def violations() -> int:
+            statement = connection.prepare("PRAGMA foreign_key_check")
+            return len(connection.stream(statement, lambda cursor: cursor.fetch(MAX_FK_ROWS), cancel=run.hook))
+
+        try:
+            found = run.step("STU-DX-005", violations, 0)
+        except Exception:
+            # L-5: a foreign key that points at columns without a unique index ("foreign key mismatch"), or a
+            # missing parent table on old SQLite; the other findings stay.
+            return [_finding(
+                "STU-DX-009", "warning", "Foreign keys could not be checked",
+                "PRAGMA foreign_key_check failed: a foreign key definition is broken, for example it points at "
+                "columns without a primary key or unique index.",
+                "Fix the foreign key definitions (the parent columns need a PRIMARY KEY or UNIQUE constraint).",
+            )]  # fmt: skip
+        if not found:
             return []
         return [_finding(
             "STU-DX-005", "warning", "Rows break foreign keys",
-            f"PRAGMA foreign_key_check finds {violations}{'+' if violations >= MAX_FK_ROWS else ''} row(s) whose "
+            f"PRAGMA foreign_key_check finds {found}{'+' if found >= MAX_FK_ROWS else ''} row(s) whose "
             "foreign key points nowhere: data was written with foreign_keys off.",
             "Open the database with foreign_keys on (tabrion.sqlite.connect does) and repair the rows.",
         )]  # fmt: skip

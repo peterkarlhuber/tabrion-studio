@@ -44,7 +44,7 @@ import sqlite3
 
 from tabrion.sql import split_statements
 
-__all__ = ["StatementRefused", "check_statement", "sqlite_authorizer", "strip_leading"]
+__all__ = ["StatementRefused", "check_statement", "first_word", "sqlite_authorizer"]
 
 _ALLOWED_ACTIONS = frozenset(
     {
@@ -105,8 +105,6 @@ class StatementRefused(Exception):
         self.code = code
 
 
-_LEADING = re.compile(r"(?:\s+|--[^\n]*(?:\n|$))+")
-_WORDS = re.compile(r"[A-Za-z_]+")
 #: First words of the transaction-control classes (03 section 5.1) and of statements that change the session's role.
 _CONTROL = frozenset(
     {"begin", "start", "commit", "end", "rollback", "abort", "savepoint", "release", "prepare", "reset", "discard"}
@@ -187,23 +185,33 @@ def _string_end(sql: str, start: int, *, backslash: bool) -> int:
     return size
 
 
-def _tokens(sql: str, *, backslash_strings: bool) -> list[str]:
-    """The words and symbols of ``sql``, without white space, comments and literals.
+#: White space as both servers read it (PostgreSQL's ``space``, SQLite's ``CC_SPACE``); any other character, also a
+#: non-ASCII space, is part of a token, so it cannot hide where the first word starts.
+_SPACE = frozenset(" \t\n\r\f\v")
+#: The ways to lex a text that the check reads (R-H1 of the delta re-review): PostgreSQL with and without backslash
+#: escapes in ``'...'`` (``standard_conforming_strings``), and SQLite (``--`` ends only at ``\n``, block comments do
+#: not nest, ``[...]`` and backticks quote identifiers, no dollar quoting). A text must give the same first word in
+#: all of them, and every check holds for each.
+_READINGS = ((False, False), (True, False), (False, True))
 
-    Unquoted words are lowercased; a quoted identifier gives its exact content (``"set_config"`` -> ``set_config``).
-    ``backslash_strings`` reads ``'...'`` the way the server does with ``standard_conforming_strings = off``;
-    ``E'...'`` always takes backslash escapes. Linear in the length of ``sql``.
-    """
-    tokens: list[str] = []
+
+def _lex(sql: str, *, backslash_strings: bool, sqlite: bool = False) -> list[tuple[str, bool]]:
+    """The tokens of ``sql`` (see :func:`_tokens`), each with whether it was a quoted identifier."""
+    tokens: list[tuple[str, bool]] = []
     index, size = 0, len(sql)
     while index < size:
         char = sql[index]
-        if char.isspace():
+        if char in _SPACE:
             index += 1
         elif sql.startswith("--", index):
-            ends = [position for position in (sql.find("\n", index), sql.find("\r", index)) if position >= 0]
+            ends = [sql.find("\n", index)] if sqlite else [sql.find("\n", index), sql.find("\r", index)]
+            ends = [position for position in ends if position >= 0]
             index = min(ends) if ends else size
         elif sql.startswith("/*", index):
+            if sqlite:
+                close = sql.find("*/", index + 2)
+                index = size if close < 0 else close + 2
+                continue
             depth, index = 1, index + 2
             while index < size and depth:
                 if sql.startswith("/*", index):
@@ -213,26 +221,31 @@ def _tokens(sql: str, *, backslash_strings: bool) -> list[str]:
                 else:
                     index += 1
         elif char == "'":
-            index = _string_end(sql, index, backslash=backslash_strings)
-        elif char == '"':
+            index = _string_end(sql, index, backslash=backslash_strings and not sqlite)
+        elif char == '"' or (sqlite and char == "`"):
             end = index + 1
             parts = []
             while end < size:
-                close = sql.find('"', end)
+                close = sql.find(char, end)
                 if close < 0:
                     parts.append(sql[end:])
                     end = size
                     break
                 parts.append(sql[end:close])
-                if sql.startswith('""', close):
-                    parts.append('"')
+                if sql.startswith(char * 2, close):
+                    parts.append(char)
                     end = close + 2
                 else:
                     end = close + 1
                     break
-            tokens.append("".join(parts))
+            tokens.append(("".join(parts), True))
             index = end
-        elif char == "$" and (match := _DOLLAR_TAG.match(sql, index)) is not None:
+        elif sqlite and char == "[":
+            close = sql.find("]", index + 1)
+            end = size if close < 0 else close + 1
+            tokens.append((sql[index + 1 : close if close >= 0 else size], True))
+            index = end
+        elif not sqlite and char == "$" and (match := _DOLLAR_TAG.match(sql, index)) is not None:
             close = sql.find(match.group(), match.end())
             index = size if close < 0 else close + len(match.group())
         elif _is_word_start(char):
@@ -240,17 +253,52 @@ def _tokens(sql: str, *, backslash_strings: bool) -> list[str]:
             while end < size and _is_word_char(sql[end]):
                 end += 1
             word = sql[index:end].lower()
-            if word == "e" and sql.startswith("'", end):
+            if not sqlite and word == "e" and sql.startswith("'", end):
                 index = _string_end(sql, end, backslash=True)
                 continue
-            if word == "u" and sql.startswith('&"', end):
-                tokens.append(_UNICODE_IDENTIFIER)
-            tokens.append(word)
+            if not sqlite and word == "u" and sql.startswith('&"', end):
+                tokens.append((_UNICODE_IDENTIFIER, False))
+            tokens.append((word, False))
             index = end
         else:
-            tokens.append(char)
+            tokens.append((char, False))
             index += 1
     return tokens
+
+
+def _tokens(sql: str, *, backslash_strings: bool, sqlite: bool = False) -> list[str]:
+    """The words and symbols of ``sql``, without white space, comments and literals.
+
+    Unquoted words are lowercased; a quoted identifier gives its exact content (``"set_config"`` -> ``set_config``).
+    ``backslash_strings`` reads ``'...'`` the way the server does with ``standard_conforming_strings = off``;
+    ``E'...'`` always takes backslash escapes. ``sqlite`` lexes comments and quotes the way SQLite does. Linear in the
+    length of ``sql``.
+    """
+    return [token for token, _ in _lex(sql, backslash_strings=backslash_strings, sqlite=sqlite)]
+
+
+def _leading_words(sql: str, *, backslash_strings: bool, sqlite: bool) -> list[str]:
+    """The first words of ``sql`` after leading ``(``, from the lexer (R-H1); a word that is a quoted identifier or a
+    symbol ends them, and ``[]`` means the text does not start with a word."""
+    tokens = _lex(sql, backslash_strings=backslash_strings, sqlite=sqlite)
+    index = 0
+    while index < len(tokens) and tokens[index] == ("(", False):
+        index += 1
+    words: list[str] = []
+    for token, quoted in tokens[index : index + 4]:
+        if quoted or not _is_word_start(token[:1] or "0"):
+            break
+        words.append(token)
+    return words
+
+
+def first_word(sql: str) -> str:
+    """The first word of ``sql`` as every reading of :data:`_READINGS` sees it, ``""`` if they disagree or there is
+    none. ``connections`` uses it to choose the cursor; :func:`check_statement` refuses a text without one."""
+    seen = {
+        tuple(_leading_words(sql, backslash_strings=backslash, sqlite=sqlite)[:1]) for backslash, sqlite in _READINGS
+    }
+    return seen.pop()[0] if len(seen) == 1 and () not in seen else ""
 
 
 def _calls_refused_function(sql: str) -> bool:
@@ -259,7 +307,7 @@ def _calls_refused_function(sql: str) -> bool:
     The text is read twice, with and without backslash escapes in ``'...'``, so a literal cannot hide a call from
     whichever way the server lexes it (R-L1 of the re-review: ``"set_config"(`` and ``set_config/**/(``).
     """
-    for backslash_strings in (False, True):
+    for backslash_strings in (False, True):  # PostgreSQL's functions, so PostgreSQL's readings
         tokens = _tokens(sql, backslash_strings=backslash_strings)
         if _UNICODE_IDENTIFIER in tokens:
             return True
@@ -275,30 +323,6 @@ def _calls_refused_function(sql: str) -> bool:
 _OTHER_EFFECTS = frozenset(
     {"copy", "load", "notify", "listen", "unlisten", "lock", "vacuum", "checkpoint", "cluster", "do"}
 )
-
-
-def strip_leading(sql: str) -> str:
-    """``sql`` without leading white space, line comments and (nested) block comments."""
-    text = sql
-    while True:
-        match = _LEADING.match(text)
-        if match:
-            text = text[match.end() :]
-        if not text.startswith("/*"):
-            return text
-        depth, index = 0, 0
-        while index < len(text):
-            if text.startswith("/*", index):
-                depth, index = depth + 1, index + 2
-            elif text.startswith("*/", index):
-                depth, index = depth - 1, index + 2
-                if depth == 0:
-                    break
-            else:
-                index += 1
-        if depth != 0:
-            return ""
-        text = text[index:]
 
 
 #: The first words a statement may have (M-1, M-2 and I-2 of ``stu-011-review.md``): an allowlist, since a read-only
@@ -334,23 +358,11 @@ def _explains_a_query(tokens: list[str]) -> bool:
     return index < len(tokens) and tokens[index] in _QUERY_WORDS
 
 
-def check_statement(sql: str) -> str:
-    """The one statement of ``sql``; :class:`StatementRefused` for none, several, a transaction-control statement or
-    one whose first word is not in the allowlist (:data:`_FIRST_WORDS`)."""
-    statements = split_statements(sql)
-    if not statements:
-        raise StatementRefused("studio.statement_empty")
-    if len(statements) > 1:
-        raise StatementRefused("studio.statement_multiple")
-    words = [word.lower() for word in _WORDS.findall(strip_leading(statements[0])[:200])[:4]]
-    if not words:
-        raise StatementRefused("studio.statement_empty")
+def _check_words(words: list[str]) -> None:
     first = words[0]
     if first in _CONTROL:
         raise StatementRefused("studio.statement_transaction")
     if first in _OTHER_EFFECTS:
-        raise StatementRefused("studio.statement_refused")
-    if _calls_refused_function(statements[0]):
         raise StatementRefused("studio.statement_refused")
     if first == "set":
         rest = [word for word in words[1:] if word not in ("session", "local")]
@@ -360,8 +372,32 @@ def check_statement(sql: str) -> str:
             raise StatementRefused("studio.statement_transaction")
     if first not in _FIRST_WORDS:
         raise StatementRefused("studio.statement_refused")
-    if first == "explain" and not all(
-        _explains_a_query(_tokens(statements[0], backslash_strings=backslash)) for backslash in (False, True)
-    ):
+
+
+def _explains_a_query_or_is_none(tokens: list[str]) -> bool:
+    start = 0
+    while start < len(tokens) and tokens[start] == "(":
+        start += 1
+    return tokens[start : start + 1] != ["explain"] or _explains_a_query(tokens[start:])
+
+
+def check_statement(sql: str) -> str:
+    """The one statement of ``sql``; :class:`StatementRefused` for none, several, a transaction-control statement or
+    one whose first word is not in the allowlist (:data:`_FIRST_WORDS`)."""
+    statements = split_statements(sql)
+    if not statements:
+        raise StatementRefused("studio.statement_empty")
+    if len(statements) > 1:
+        raise StatementRefused("studio.statement_multiple")
+    statement = statements[0]
+    if not first_word(statement):  # no word, or the readings disagree where the statement starts (R-H1)
+        raise StatementRefused(
+            "studio.statement_empty" if not _tokens(statement, backslash_strings=False) else "studio.statement_refused"
+        )
+    if _calls_refused_function(statement):
         raise StatementRefused("studio.statement_refused")
+    for backslash, sqlite in _READINGS:
+        _check_words(_leading_words(statement, backslash_strings=backslash, sqlite=sqlite))
+        if not _explains_a_query_or_is_none(_tokens(statement, backslash_strings=backslash, sqlite=sqlite)):
+            raise StatementRefused("studio.statement_refused")
     return statements[0]
