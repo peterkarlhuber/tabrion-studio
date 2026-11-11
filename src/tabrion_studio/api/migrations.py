@@ -32,9 +32,11 @@ logger = logging.getLogger("tabrion_studio.migrations")
 #: What the trust dialog says (fixed text; the page shows it with the file list).
 NOTICE = (
     "To read the Alembic revisions, Python imports the project's revision files, which runs their code. Studio "
-    "does this only when you trust this project's code, in a separate process that gets only the open "
-    "connection's address and password and stops after 30 seconds. Trust only code you would run yourself with "
-    "alembic heads. Any change to alembic.ini or a revision file needs your trust again."
+    "does this only when you trust this project's code, in a separate process that gets the open connection's "
+    "address and password and stops after 30 seconds. The code runs as you, as with alembic heads: it can use "
+    "that password to change the database and can read your files and Studio's settings. Trust only code you would "
+    "run yourself. Any change to alembic.ini or a revision file needs your trust again; the project modules that "
+    "revision files import are part of the trusted code but are not checked for changes."
 )
 _MAX_BODY = 4096
 

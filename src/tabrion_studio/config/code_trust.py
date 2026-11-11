@@ -13,9 +13,11 @@ profiles and bound to exactly these files:
 * the record ``<state_dir>/code-trust-<key>.json`` (0600) holds the digest the user confirmed; any change to these
   files makes the state ``changed``, and nothing runs until the user trusts the new digest.
 
-Off by default: without a record, the state is ``untrusted``. The digest covers the files Alembic imports itself; a
-revision file can import other modules of the project, which the digest does not cover (the trust is for the
-project's code, see the threat-model entry in ``docs/architecture/migrations.md``).
+Off by default: without a record, the state is ``untrusted``. The digest covers the files Alembic imports itself, and
+the worker runs exactly the bytes it hashed (:mod:`tabrion_studio.services.migration_worker`). A revision file can
+import other modules of the project (``prepend_sys_path``), which the digest does not cover: they are part of the
+trusted code, and a change to them does not ask for trust again (see the threat-model entry T-16 in
+``docs/architecture/migrations.md``).
 
 States: ``none`` (no ``alembic.ini`` or no ``script_location``), ``invalid``, ``untrusted``, ``changed``,
 ``trusted``. Fail closed: a record that is missing, unreadable, malformed or of another project means not trusted.
@@ -67,6 +69,8 @@ class Scan:
     script_location: Path
     revision_files: tuple[str, ...]
     sys_path: tuple[Path, ...]
+    #: The bytes that were hashed, by file name; only with ``scan(..., keep=True)`` (the worker runs these bytes).
+    contents: dict[str, bytes] = field(default_factory=dict, repr=False, compare=False)
 
 
 @dataclass
@@ -129,8 +133,10 @@ def _inside(text: str, project: Path) -> Path | None:
     return Path(os.path.realpath(os.path.join(root, text)))
 
 
-def scan(project: Path) -> Scan | None:
-    """The digest and what it covers, or None without ``alembic.ini``/``script_location``; raises ``_Invalid``."""
+def scan(project: Path, *, keep: bool = False) -> Scan | None:
+    """The digest and what it covers, or None without ``alembic.ini``/``script_location``; raises ``_Invalid``.
+
+    With ``keep``, ``Scan.contents`` holds the revision files' bytes as they were hashed."""
     try:
         ini = read_plain_file(project / ALEMBIC_INI)
     except ConfigFileError as exc:
@@ -156,6 +162,7 @@ def scan(project: Path) -> Scan | None:
         raise _Invalid("migrations.too_many_files")
     digest = hashlib.sha256(b"tabrion-studio code trust 1\0")
     digest.update(len(ini).to_bytes(8, "big") + ini)
+    contents: dict[str, bytes] = {}
     for name in names:
         if _REVISION_NAME.fullmatch(name) is None:
             raise _Invalid("migrations.file_name")
@@ -167,8 +174,10 @@ def scan(project: Path) -> Scan | None:
             raise _Invalid("migrations.changed")
         encoded = name.encode("utf-8")
         digest.update(len(encoded).to_bytes(8, "big") + encoded + len(data).to_bytes(8, "big") + data)
+        if keep:
+            contents[name] = data
     sys_path = tuple(path for path in (_inside(part, project) for part in extra) if path is not None)
-    return Scan(digest.hexdigest(), location, tuple(names), sys_path)
+    return Scan(digest.hexdigest(), location, tuple(names), sys_path, contents)
 
 
 @dataclass
