@@ -28,9 +28,10 @@ untyped parameter, which the server reads with the column's own input function: 
 column's type for every type (``real``, ``jsonb``, arrays, enums, domains; H-2 and M-1). A sort column whose type has
 no ordering (``json``, ``xml``, geometric types) is ``studio.viewer_sort_unsupported``. Float text is exact because
 every Studio session starts with ``extra_float_digits=3`` (``connections.startup_options``), whatever the role or
-database sets. As a guard, a keyset page that ends where an earlier page of the walk did (a key whose text does not
-read back as its value) is not shown: the walk goes on by ``OFFSET`` after the previous page's own anchor, to its end
-(H-2 residual of ``stu-013-review.md``). Only the last row's key is
+database sets; that pin is the fix. As a backstop only, a keyset page that ends where an earlier page of the walk did
+(a key whose text does not read back as its value) is read again by ``OFFSET`` after the previous page's own anchor,
+and the walk stays on ``OFFSET``: the walk always ends, but such a key can still repeat or skip rows before the guard
+trips (H-2 residual of ``stu-013-review.md``, finding 3 of its re-review; ``docs/TODO.md``). Only the last row's key is
 kept, and the identity of every row for the cell detail (L-1); a key longer than :data:`KEY_BYTES` is not kept, and
 the next page then continues from the last kept key with an ``OFFSET``.
 
@@ -42,11 +43,14 @@ Tokens are bound to the session that made them (a digest of its CSRF value) and 
 ``truncated_cells``), a page at most the ``max_result_mb`` setting (20 MB by default; the rest waits for the next
 page, ``truncated: "bytes"``), and rows are fetched in batches of at most about 2 MB (as in the query engine): the
 batch is sized by the widest row the caps allow (every capped value at its cap), never by the rows so far alone, so a
-small first row cannot make the next batch large (M-4 residual); a row wider than 2 MB is fetched alone. The cell detail
-loads one value up to 10 MB of its bytes (text as UTF-8; 03 section 5.3: "Vollständig laden") and finds the row
-again by its full primary key; by a physical id only if the row still shows the same values (M-3). A row's identity
-is a list of typed parts, ``("column", name)`` or a physical id (``rowid``, ``tableoid``, ``ctid``, ``xmin``): a key
-column is always a quoted identifier, whatever its name (``@a`` included; N-1).
+small first row cannot make the next batch large (M-4 residual); a row wider than 2 MB is fetched alone. A
+PostgreSQL ``json``, ``jsonb`` or array value is decoded by the driver into Python objects that can take about 20
+times the bytes of its text: the batch counts it at :data:`CONTAINER_FACTOR` times its cap, and the page cap counts
+the memory of the decoded value, if that is more than its JSON size (R-1). One row is always shown, however large.
+The cell detail loads one value up to 10 MB of its bytes (text as UTF-8; 03 section 5.3: "Vollständig laden") and
+finds the row again by its full primary key; by a physical id only if the row still shows the same values (M-3). A
+row's identity is a list of typed parts, ``("column", name)`` or a physical id (``rowid``, ``tableoid``, ``ctid``,
+``xmin``): a key column is always a quoted identifier, whatever its name (``@a`` included; N-1).
 
 Each statement runs in its own ``Database.read()`` through ``OpenConnection.stream``, under the profile's timeout
 (the same cancel as the query engine; past it, the answer is ``db.timeout``), and at most 4 at a time in Studio, 2
@@ -62,6 +66,7 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import secrets
+import sys
 import threading
 from typing import Any, Literal, TypeVar
 
@@ -98,6 +103,9 @@ KEPT_PER_SESSION = 64
 KEPT_ANCHORS = 32
 MAX_FILTERS = 20
 BATCH_ROWS = 500
+#: How many times the bytes of its text a decoded json, jsonb or array value may take in Python, at most (about 21
+#: for ``[[], [], ...]``: 3 bytes of text become a 56-byte list and its 8-byte pointer); sizes the fetch batch (R-1).
+CONTAINER_FACTOR = 32
 OPERATORS = frozenset({"eq", "ne", "lt", "le", "gt", "ge", "contains", "starts_with", "is_null", "not_null"})
 _T = TypeVar("_T")
 #: Both compile to ``:name`` placeholders, the form of a checked statement; ``sqltext.driver_text`` gives the driver's
@@ -157,6 +165,10 @@ class _Column:
     def small(self, engine: str) -> bool:
         return engine == "postgresql" and self.element is None and self.base in _PG_SMALL
 
+    def container(self, engine: str) -> bool:
+        """psycopg decodes it into lists and dicts, which take many times the bytes of its text (R-1)."""
+        return engine == "postgresql" and (self.element is not None or self.base in ("json", "jsonb"))
+
 
 @dataclass(frozen=True)
 class _Part:
@@ -166,6 +178,7 @@ class _Part:
     width: int  # how many select expressions it takes
     limit: int
     binary: bool | None = None  # PostgreSQL: bytea; SQLite: decided per value
+    container: bool = False  # PostgreSQL json, jsonb or an array: the driver decodes it into Python objects (R-1)
 
 
 #: The parts of a row's identity (N-1 of the delta re-review): a column of the primary key, or one of the row's
@@ -321,7 +334,7 @@ def _project(
             size = sqlalchemy.func.octet_length(text)
             head = sqlalchemy.func.substr(sqlalchemy.func.convert_to(text, "UTF8"), 1, limit)
         selected = [size, sqlalchemy.case((size <= limit, expression)), sqlalchemy.case((size > limit, head))]
-        return selected, _Part(engine, 3, limit, binary)
+        return selected, _Part(engine, 3, limit, binary, column is not None and column.container(engine))
     raw = sqlalchemy.cast(expression, sqlalchemy.LargeBinary)
     size = sqlalchemy.func.length(raw)
     selected = [
@@ -382,6 +395,20 @@ def _read_key(part: _Part, values: Sequence[Any]) -> tuple[Any, bool]:
     return (values[1], True) if values[0] <= KEY_BYTES else (None, False)
 
 
+def _footprint(value: Any) -> int:
+    """About how many bytes of memory a decoded JSON or array value takes (every object counted, shared ones too)."""
+    total, stack = 0, [value]
+    while stack:
+        item = stack.pop()
+        total += sys.getsizeof(item)
+        if isinstance(item, dict):
+            stack += item.keys()
+            stack += item.values()
+        elif isinstance(item, list | tuple):
+            stack += item
+    return total
+
+
 def _raw_size(row: Sequence[Any]) -> int:
     return sum(len(value) if isinstance(value, str | bytes | bytearray | memoryview) else 16 for value in row)
 
@@ -408,7 +435,9 @@ class _Shape:
     selected: list[ColumnElement[Any]]
 
     def encode(self, row: Sequence[Any]) -> tuple[list[Any], list[int | None], int, list[int]]:
-        """The page values of one row, their sizes on the server, the row's JSON size and its cut columns."""
+        """The page values of one row, their sizes on the server, the row's size and its cut columns. The size is the
+        JSON size, or for a decoded json, jsonb or array value the memory its Python objects take, if that is more
+        (R-1)."""
         values: list[Any] = []
         sizes: list[int | None] = []
         total, at = 2, 0
@@ -417,6 +446,8 @@ class _Shape:
             value, size, truncated = _read(part, row[at : at + part.width])
             at += part.width
             encoded, length, shortened = json_value(value, CELL_CHARS)
+            if part.container and isinstance(encoded, list | dict):
+                length = max(length, _footprint(encoded))
             values.append(encoded)
             sizes.append(size)
             total += length + 1
@@ -590,7 +621,11 @@ class Viewer:
         # M-4 residual: a fetch holds at most about FETCH_BUDGET_BYTES, by the largest row the byte caps allow (every
         # capped value at its cap), so a small first row cannot make the next batch large; a row of more than the
         # budget is fetched alone.
-        widest = sum(part.limit if part.width > 1 else 16 for part in [*shape.parts, *key_parts])
+        # R-1: a decoded json, jsonb or array value takes up to about CONTAINER_FACTOR times the bytes of its text.
+        widest = sum(
+            part.limit * (CONTAINER_FACTOR if part.container else 1) if part.width > 1 else 16
+            for part in [*shape.parts, *key_parts]
+        )
         batch_cap = max(1, min(BATCH_ROWS, FETCH_BUDGET_BYTES // max(1, widest)))
 
         def consume(cursor: ResultCursor) -> tuple[list[_Found], bool]:
