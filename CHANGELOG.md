@@ -8,11 +8,11 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - TABRION QA-21 (AC-7): `scripts/check_tabrion_api.py` is now the check shared with axentra, orkexa and
   nodestro-runtime. Besides private Tabrion modules it refuses `_` attributes on Tabrion names, `getattr` and
-  `import_module` with a private constant and star imports; with Tabrion installed every used name must be in its
-  module's `__all__`, and `--surface` compares with Tabrion's frozen API snapshot. `--export` writes the used names
-  to `docs/api-consumers.md` (in the docs under Development), and `tests/architecture/test_tabrion_api_export.py`
-  fails when that file is stale.
-
+  `import_module` with a private constant and star imports. Every used name must be in its module's `__all__` in the
+  installed Tabrion (a used name without an installed Tabrion fails), and `--surface` compares with Tabrion's frozen
+  API snapshot and refuses experimental (`X`) names. `--export` writes the used names to `docs/api-consumers.md` (in
+  the docs under Development), and `tests/architecture/test_tabrion_api_export.py` fails when that file is stale or
+  missing.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).
