@@ -40,6 +40,7 @@ All notable changes to this project are documented here. The format follows
   a command palette (go to a view, theme, density, language, help) with the combobox pattern; ⌘/ / Ctrl+/ shows the
   keyboard shortcuts; F6 and Shift+F6 move between header, activity bar, tabs, main area and status bar. Shortcuts are
   shown with the keys of the platform (⌘ on macOS, Ctrl or Strg elsewhere); the header has buttons for both dialogs.
+  In German the theme commands read "Darstellung", like the settings view.
 - Language, theme and density are saved in Studio's `settings.toml` as soon as they are chosen, and applied from it
   when the page opens. They were browser preferences only, which a browser keeps per port, so they were lost at every
   start (TD-021). `settings.toml` accepts `density = "compact" | "normal"`. A file with issues or one written by hand
