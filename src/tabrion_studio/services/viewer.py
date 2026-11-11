@@ -26,7 +26,11 @@ reflected columns, never from text of the request:
 part of a statement. On PostgreSQL a key is read as the type's own text (``CAST(key AS text)``) and bound back as an
 untyped parameter, which the server reads with the column's own input function: the comparison happens in the
 column's type for every type (``real``, ``jsonb``, arrays, enums, domains; H-2 and M-1). A sort column whose type has
-no ordering (``json``, ``xml``, geometric types) is ``studio.viewer_sort_unsupported``. Only the last row's key is
+no ordering (``json``, ``xml``, geometric types) is ``studio.viewer_sort_unsupported``. Float text is exact because
+every Studio session starts with ``extra_float_digits=3`` (``connections.startup_options``), whatever the role or
+database sets. As a guard, a keyset page that ends where an earlier page of the walk did (a key whose text does not
+read back as its value) is not shown: the walk goes on by ``OFFSET`` after the previous page's own anchor, to its end
+(H-2 residual of ``stu-013-review.md``). Only the last row's key is
 kept, and the identity of every row for the cell detail (L-1); a key longer than :data:`KEY_BYTES` is not kept, and
 the next page then continues from the last kept key with an ``OFFSET``.
 
@@ -36,9 +40,13 @@ Tokens are bound to the session that made them (a digest of its CSRF value) and 
 **Bytes (M-4):** the length of every value that can be long is measured on the server (``octet_length``,
 ``length``) before it is fetched: a page cell loads at most 64 KB (longer ones are cut and listed in
 ``truncated_cells``), a page at most the ``max_result_mb`` setting (20 MB by default; the rest waits for the next
-page, ``truncated: "bytes"``), and rows are fetched in batches of about 2 MB, as in the query engine. The cell detail
+page, ``truncated: "bytes"``), and rows are fetched in batches of at most about 2 MB (as in the query engine): the
+batch is sized by the widest row the caps allow (every capped value at its cap), never by the rows so far alone, so a
+small first row cannot make the next batch large (M-4 residual); a row wider than 2 MB is fetched alone. The cell detail
 loads one value up to 10 MB of its bytes (text as UTF-8; 03 section 5.3: "Vollständig laden") and finds the row
-again by its full primary key; by a physical id only if the row still shows the same values (M-3).
+again by its full primary key; by a physical id only if the row still shows the same values (M-3). A row's identity
+is a list of typed parts, ``("column", name)`` or a physical id (``rowid``, ``tableoid``, ``ctid``, ``xmin``): a key
+column is always a quoted identifier, whatever its name (``@a`` included; N-1).
 
 Each statement runs in its own ``Database.read()`` through ``OpenConnection.stream``, under the profile's timeout
 (the same cancel as the query engine; past it, the answer is ``db.timeout``), and at most 4 at a time in Studio, 2
@@ -55,7 +63,7 @@ import hashlib
 import json
 import secrets
 import threading
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 import sqlalchemy
 from sqlalchemy.dialects import postgresql, sqlite
@@ -86,6 +94,8 @@ FULL_CELL_BYTES = 10 * 1024 * 1024
 KEY_BYTES = 64 * 1024
 KEPT_PAGES = 256
 KEPT_PER_SESSION = 64
+#: A page keeps the digests of this many anchors of the pages before it, to see a keyset that goes in a circle.
+KEPT_ANCHORS = 32
 MAX_FILTERS = 20
 BATCH_ROWS = 500
 OPERATORS = frozenset({"eq", "ne", "lt", "le", "gt", "ge", "contains", "starts_with", "is_null", "not_null"})
@@ -158,6 +168,15 @@ class _Part:
     binary: bool | None = None  # PostgreSQL: bytea; SQLite: decided per value
 
 
+#: The parts of a row's identity (N-1 of the delta re-review): a column of the primary key, or one of the row's
+#: physical ids. A column part names its column, which is quoted like any other identifier; a physical part is one of
+#: the fixed names below and never a column name, so no column name (one that starts with ``@``, say) can become one.
+_IdentityKind = Literal["column", "rowid", "ctid", "tableoid", "xmin"]
+_IdentityPart = tuple[_IdentityKind, str]  # (kind, column name); the name is "" for a physical id
+#: The SQL of the physical ids (PostgreSQL system columns; SQLite's row id is named by :func:`_rowid_name`).
+_SYSTEM_COLUMNS: dict[str, str] = {"ctid": "ctid", "tableoid": "tableoid", "xmin": "xmin"}
+
+
 @dataclass
 class _Row:
     ident: tuple[Any, ...] | None  # the identity parts' values (None: one is too long to keep)
@@ -175,11 +194,27 @@ class _Page:
     filters: tuple[Filter, ...]
     limit: int
     paging: str
-    identity: list[str]  # primary key columns, then "@tableoid", "@ctid", "@xmin" or "@rowid"
+    identity: list[_IdentityPart]  # ("column", name) of the primary key, then the physical ids
     rows: list[_Row]
     anchor: tuple[Any, ...] | None  # the keyset the next page starts after (None: from the start)
     skip: int  # the rows the next page skips after the anchor
     more: bool
+    base_anchor: tuple[Any, ...] | None  # the anchor and skip this page's own statement used
+    base_skip: int
+    stuck: bool  # the keyset made no progress: the walk goes on by OFFSET (H-2 residual)
+    seen: tuple[bytes, ...]  # digests of the anchors of the pages before (the last KEPT_ANCHORS)
+
+
+@dataclass
+class _Loaded:
+    """One page's statement, read."""
+
+    more: bool
+    cut_bytes: bool
+    rows: list[list[Any]] = field(default_factory=list)
+    cells: list[list[int]] = field(default_factory=list)
+    kept: list[_Row] = field(default_factory=list)
+    last_key: tuple[Any, ...] | None = None
 
 
 def _value(value: object) -> Any:
@@ -351,6 +386,11 @@ def _raw_size(row: Sequence[Any]) -> int:
     return sum(len(value) if isinstance(value, str | bytes | bytearray | memoryview) else 16 for value in row)
 
 
+def _anchor_digest(anchor: tuple[Any, ...] | None) -> bytes:
+    text = json.dumps(anchor, default=repr, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.blake2b(text.encode("utf-8"), digest_size=16).digest()
+
+
 def _digest(values: list[Any], sizes: list[int | None]) -> bytes:
     text = json.dumps([values, sizes], default=str, ensure_ascii=False, separators=(",", ":"))
     return hashlib.blake2b(text.encode("utf-8"), digest_size=16).digest()
@@ -443,13 +483,19 @@ class Viewer:
         return _Shape(connection.engine, table, names, columns, parts, selected)
 
     @staticmethod
-    def _physical(names: Sequence[str], part: str) -> ColumnElement[Any]:
-        if part == "@rowid":
+    def _physical(names: Sequence[str], kind: _IdentityKind) -> ColumnElement[Any]:
+        """A physical id's expression: a fixed name, never a column name (N-1)."""
+        if kind == "rowid":
             alias = _rowid_name(names)
             if alias is None:  # pragma: no cover - the table changed its columns since the page
                 raise ViewerError("studio.viewer_row_gone")
             return sqlalchemy.literal_column(alias)
-        return sqlalchemy.literal_column(part[1:])
+        return sqlalchemy.literal_column(_SYSTEM_COLUMNS[kind])
+
+    @classmethod
+    def _identity_expression(cls, shape: _Shape, part: _IdentityPart) -> ColumnElement[Any]:
+        kind, name = part
+        return shape.table.c[name] if kind == "column" else cls._physical(shape.names, kind)
 
     def rows(
         self,
@@ -489,15 +535,15 @@ class Viewer:
         primary = [n for n in reflected.primary if n in names]
         rowid_table = engine == "sqlite" and reflected.kind == "table" and bool(reflected.rowid)
         rowid_free = _rowid_name(names) is not None
-        physical: list[str] = []
+        physical: list[_IdentityKind] = []
         if primary:
             paging = "primary_key"
             if rowid_table and rowid_free and any(columns[n].nullable for n in primary):
-                physical = ["@rowid"]  # M-2: NULL keys are told apart by the row id
+                physical = ["rowid"]  # M-2: NULL keys are told apart by the row id
         elif rowid_table and rowid_free:
-            paging, physical = "rowid", ["@rowid"]
+            paging, physical = "rowid", ["rowid"]
         elif engine == "postgresql" and reflected.kind in ("table", "materialized_view"):
-            paging, physical = "ctid", ["@tableoid", "@ctid"]  # H-1: a ctid is unique per relation only
+            paging, physical = "ctid", ["tableoid", "ctid"]  # H-1: a ctid is unique per relation only
         else:
             paging = "offset"
         # The order: (expression, descending, nullable, small).
@@ -512,36 +558,44 @@ class Viewer:
         ]
         keys += [(self._physical(names, p), False, False, True) for p in physical]
         # The identity of a row for the cell detail: the primary key, the physical id and, on PostgreSQL, xmin (M-3).
-        identity = primary + physical + (["@xmin"] if paging == "ctid" else [])
+        identity: list[_IdentityPart] = [("column", n) for n in primary]
+        versions: list[_IdentityKind] = ["xmin"] if paging == "ctid" else []
+        identity += [(kind, "") for kind in [*physical, *versions]]
         key_parts: list[_Part] = []
         key_selected: list[ColumnElement[Any]] = []
         if paging != "offset":
-            extra = [(self._physical(names, "@xmin"), False, False, True)] if paging == "ctid" else []
+            extra = [(self._physical(names, "xmin"), False, False, True)] if paging == "ctid" else []
             for expression, _, _, small in keys + extra:
                 expressions, part = _key(engine, expression, small)
                 # Labeled apart: "CAST(ctid AS TEXT) AS ctid" would make ORDER BY ctid order the text.
                 key_selected += [e.label(f"__studio_key_{len(key_selected) + i}") for i, e in enumerate(expressions)]
                 key_parts.append(part)
         order_keys = [(e, d, n) for e, d, n, _ in keys]
-        statement = sqlalchemy.select(*shape.selected, *key_selected)
+        base = sqlalchemy.select(*shape.selected, *key_selected)
         for item in parsed:
-            statement = statement.where(_condition(table.c[item.column], item))
-        anchor = previous.anchor if previous is not None else None
-        skip = previous.skip if previous is not None else 0
-        if anchor is not None:
-            if len(anchor) != len(order_keys):  # the table changed its key since the page before
-                raise ViewerError("studio.viewer_page_unknown")
-            statement = statement.where(_after(order_keys, anchor))
+            base = base.where(_condition(table.c[item.column], item))
         order = [(e.desc() if d else e.asc()).nulls_last() for e, d, _ in order_keys]
-        statement = statement.order_by(*order).limit(limit + 1)
-        if skip:
-            statement = statement.offset(skip)
+
+        def statement(anchor: tuple[Any, ...] | None, skip: int) -> sqlalchemy.Select[Any]:
+            query = base
+            if anchor is not None:
+                if len(anchor) != len(order_keys):  # the table changed its key since the page before
+                    raise ViewerError("studio.viewer_page_unknown")
+                query = query.where(_after(order_keys, anchor))
+            query = query.order_by(*order).limit(limit + 1)
+            return query.offset(skip) if skip else query
+
         width = len(shape.selected)
         page_bytes = self.limits().max_result_mb * 1024 * 1024
+        # M-4 residual: a fetch holds at most about FETCH_BUDGET_BYTES, by the largest row the byte caps allow (every
+        # capped value at its cap), so a small first row cannot make the next batch large; a row of more than the
+        # budget is fetched alone.
+        widest = sum(part.limit if part.width > 1 else 16 for part in [*shape.parts, *key_parts])
+        batch_cap = max(1, min(BATCH_ROWS, FETCH_BUDGET_BYTES // max(1, widest)))
 
         def consume(cursor: ResultCursor) -> tuple[list[_Found], bool]:
-            # M-4: the first fetch is one row, the next ones as many rows as fit about 2 MB at the size so far; the
-            # page stops at the byte cap (one row at least).
+            # The first fetch is one row, the next ones as many rows as fit the budget at the size so far, never more
+            # than batch_cap; the page stops at the byte cap (one row at least).
             found: list[_Found] = []
             total, batch = 0, 1
             while len(found) <= limit:
@@ -563,32 +617,54 @@ class Viewer:
                     total += size
                     found.append((values, cut, sizes, kept, whole))
                 loaded = sum(_raw_size(row) for row in fetched)
-                batch = max(1, min(BATCH_ROWS, FETCH_BUDGET_BYTES * len(fetched) // max(1, loaded)))
+                batch = max(1, min(batch_cap, FETCH_BUDGET_BYTES * len(fetched) // max(1, loaded)))
             return found, False
 
-        fetched, cut_bytes = self._run(connection, statement, consume)
-        more = cut_bytes or len(fetched) > limit
-        fetched = fetched[:limit]
-        rows: list[list[Any]] = []
-        cells: list[list[int]] = []
-        kept_rows: list[_Row] = []
         sort_offset = 1 if sort_key else 0
-        last_key: tuple[Any, ...] | None = None
-        for index, (values, cut, sizes, kept, whole) in enumerate(fetched):
-            rows.append(values)
-            cells += [[index, column] for column in cut]
-            if paging == "offset":
-                kept_rows.append(_Row(None, None))
-                continue
-            last_key = tuple(kept[: len(keys)]) if all(whole[: len(keys)]) else None
-            ident = tuple(kept[sort_offset:]) if all(whole[sort_offset:]) else None
-            kept_rows.append(_Row(ident, _digest(values, sizes) if physical else None))
+
+        def load(anchor: tuple[Any, ...] | None, skip: int) -> _Loaded:
+            fetched, cut_bytes = self._run(connection, statement(anchor, skip), consume)
+            loaded = _Loaded(more=cut_bytes or len(fetched) > limit, cut_bytes=cut_bytes)
+            for index, (values, cut, sizes, kept, whole) in enumerate(fetched[:limit]):
+                loaded.rows.append(values)
+                loaded.cells += [[index, column] for column in cut]
+                if paging == "offset":
+                    loaded.kept.append(_Row(None, None))
+                    continue
+                loaded.last_key = tuple(kept[: len(keys)]) if all(whole[: len(keys)]) else None
+                ident = tuple(kept[sort_offset:]) if all(whole[sort_offset:]) else None
+                loaded.kept.append(_Row(ident, _digest(values, sizes) if physical else None))
+            return loaded
+
+        anchor = previous.anchor if previous is not None else None
+        skip = previous.skip if previous is not None else 0
+        stuck = previous is not None and previous.stuck
+        seen = previous.seen if previous is not None else ()
+        loaded = load(anchor, skip)
+        if (
+            previous is not None
+            and paging != "offset"
+            and not stuck
+            and loaded.rows
+            and loaded.last_key is not None
+            and _anchor_digest(loaded.last_key) in {*seen, _anchor_digest(anchor)}
+        ):
+            # H-2 residual (progress guard): a key that does not come back as the value it was read from (float text
+            # with a low extra_float_digits, say) can make a keyset page end where an earlier one did, and following
+            # ``next`` would never end. The keyset cannot be trusted then: the walk goes on by OFFSET after the
+            # previous page's own anchor, which returned exactly that page's rows, and stays on it to the end.
+            stuck = True
+            anchor, skip = previous.base_anchor, previous.base_skip + len(previous.rows)
+            loaded = load(anchor, skip)
+        base_anchor, base_skip = anchor, skip
         next_anchor: tuple[Any, ...] | None
         next_skip: int
-        if paging != "offset" and fetched and last_key is not None:
-            next_anchor, next_skip = last_key, 0
+        if paging != "offset" and not stuck and loaded.rows and loaded.last_key is not None:
+            next_anchor, next_skip = loaded.last_key, 0
         else:
-            next_anchor, next_skip = anchor, skip + len(fetched)
+            next_anchor, next_skip = anchor, skip + len(loaded.rows)
+        if anchor is not None:
+            seen = (*seen, _anchor_digest(anchor))[-KEPT_ANCHORS:]
         page = _Page(
             connection.id,
             owner,
@@ -600,10 +676,14 @@ class Viewer:
             limit,
             paging,
             identity,
-            kept_rows,
+            loaded.kept,
             next_anchor,
             next_skip,
-            more,
+            loaded.more,
+            base_anchor,
+            base_skip,
+            stuck,
+            seen,
         )
         token = self._keep(page)
         return {
@@ -611,11 +691,11 @@ class Viewer:
             "schema": schema,
             "name": name,
             "columns": [{"name": n, "type": columns[n].type} for n in names],
-            "rows": rows,
-            "truncated_cells": cells,
-            "truncated": "bytes" if cut_bytes else None,
+            "rows": loaded.rows,
+            "truncated_cells": loaded.cells,
+            "truncated": "bytes" if loaded.cut_bytes else None,
             "page": token,
-            "next": token if more else None,
+            "next": token if loaded.more else None,
             "paging": paging,
             "hint": {"primary_key": None, "offset": "unstable_order"}.get(paging, "no_primary_key"),
             "sort": sort,
@@ -648,10 +728,10 @@ class Viewer:
         kept = state.rows[row]
         if kept.ident is None:
             raise ViewerError("studio.viewer_cell_unavailable")  # a key too long to keep
-        if any(p not in shape.names for p in state.identity if not p.startswith("@")):
+        if any(kind == "column" and n not in shape.names for kind, n in state.identity):
             raise ViewerError("studio.viewer_row_gone")  # the table changed its key since the page
         parts = list(zip(state.identity, kept.ident, strict=True))
-        primary = [(p, v) for p, v in parts if not p.startswith("@")]
+        primary = [(p, v) for p, v in parts if p[0] == "column"]
         # M-3: the full primary key identifies a row. A physical id (ctid, rowid) can be reused by another row, so it
         # identifies one only together with what the page showed of the row.
         by_key = state.paging == "primary_key" and all(v is not None for _, v in primary)
@@ -659,7 +739,7 @@ class Viewer:
         target, target_part = _project(engine, shape.table.c[column], shape.columns[column], FULL_CELL_BYTES)
         statement = sqlalchemy.select(*target, *([] if by_key else shape.selected))
         for part, value in used:
-            expression = shape.table.c[part] if not part.startswith("@") else self._physical(shape.names, part)
+            expression = self._identity_expression(shape, part)
             statement = statement.where(expression.is_(None) if value is None else expression == _bind(value))
         statement = statement.limit(2)
         found = self._run(connection, statement, lambda cursor: cursor.fetch(2))

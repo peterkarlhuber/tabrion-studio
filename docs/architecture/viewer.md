@@ -55,6 +55,19 @@ untyped parameter: the server reads it with the column's input function and comp
 `xml`, geometric types such as `point`) is refused before any statement: `studio.viewer_sort_unsupported`. On SQLite
 keys go back as the driver returned them.
 
+**Float text and the progress guard (H-2 residual).** The text of a `float4`/`float8` key is exact only with
+`extra_float_digits` above 0 (`0.30000000000000004` reads as `0.3` with 0, the default up to PostgreSQL 11 and a
+common role or database setting). Every Studio session starts with `extra_float_digits=3` in its startup options
+(`connections.startup_options`), which `RESET ALL` keeps and which wins over a role or database setting. As a guard
+for any key text that does not read back as its value, a keyset page whose last key equals an anchor of the walk
+(the last 32 are kept as digests) is not shown: the page is read again by `OFFSET` after the previous page's own
+anchor, and the walk stays on `OFFSET` to its end. Every row then comes exactly once, and `next` always ends.
+
+**Row identity (N-1).** The identity of a row for the cell detail is a list of typed parts: `("column", name)` for
+each primary key column, then the physical ids (`rowid`, `tableoid`, `ctid`, `xmin`). A key column is always a quoted
+identifier, whatever its name (one called `@a` or `@1=1 OR 1` included); a physical id is one of the fixed names and
+never comes from a column name.
+
 **What is kept.** The key values stay in the backend: the answer carries an opaque token (`page`, and `next` when
 more rows exist). A page keeps only its last row's key, and for every row its identity for the cell detail. A key
 longer than 64 KB is not kept; the next page then starts after the last key kept, with an `OFFSET` for the rows
@@ -76,7 +89,9 @@ same statement. A value that fits is fetched as it is; a longer one only as its 
 UTF-8). So a page cell loads at most 64 KB (cut ones are listed in `truncated_cells` as `[row, column]`; bytes go out
 as base64 of at most 32 KB, as in the query engine). A page stops at the `max_result_mb` setting (20 MB by default,
 the query engine's cap; at least one row) with `truncated: "bytes"` and a `next` token, and rows are fetched one
-first, then in batches of about 2 MB at the size so far (the query engine's fetch budget).
+first, then in batches of about 2 MB at the size so far (the query engine's fetch budget), never more rows than 2 MB
+holds of the widest row the caps allow (every capped value at its cap, M-4 residual): a small first row cannot make
+the next batch large. With 11 text columns that is 2 rows per fetch; a row wider than 2 MB is fetched alone.
 
 The cell detail loads at most 10 MB of the value's bytes (text as UTF-8; a character cut at the end is left out;
 bytes as base64 of up to 10 MB); `truncated` says whether it was cut, and `size` is the whole value's size in bytes.
@@ -107,3 +122,4 @@ and problem codes; never a value.
 | `tests/security/test_viewer.py` (SQLite) | a spy on `tabrion_compat.stream`: every statement has a `LIMIT` and no literal; keyset pages walk 250 rows exactly once, ascending and descending, by primary key, a nullable `REAL` and repeated text; `rowid` paging with a column called `rowid`; `offset` paging of a view; filters with hostile column names and `%`/`_` values; malformed filters and unknown columns refused before any statement; page tokens (unknown, foreign, last page, eviction); the cell detail and a deleted row; the timeout on an endless view; the routes behind the session check |
 | `tests/security/test_viewer.py` (PostgreSQL) | keyset pages over `numeric` with `NULL`s in both directions, a composite primary key, `ctid` paging of a table and a materialized view, `offset` for a view, filters with a quoted schema and a hostile column name, the statement timeout |
 | `tests/security/test_viewer.py` (fix round of `stu-013-review.md`) | the reviewer's probes: a partitioned table and an inheritance parent without a primary key walk all 20 rows (H-1); `real`, `jsonb` and `int[]` sorts with repeated values walk to the end, `json`, `xml` and `point` are refused (H-2, M-1); NULLs in a SQLite `TEXT PRIMARY KEY` (M-2); a reused `rowid` and a reused `ctid` after `VACUUM` answer `viewer_row_gone` (M-3); a 30 MB blob or `bytea` and a 12 MB text stay in the database for a page (tracemalloc), the cell detail loads 10 MB of bytes, a page stops at `max_result_mb` (M-4); long sort keys (L-1); tokens per session and connection (L-4); the reflection cache and the statement limit (L-5); every route form without a session or from a foreign origin (I-1) |
+| `tests/security/test_viewer.py` (delta re-review of `4ad445a`) | N-1: primary keys with columns named `@1=1 OR 1`, `@a` and `@rowid` on SQLite and PostgreSQL: the statements quote them, the cell of a deleted row whose key came back with another `@a` value is `viewer_row_gone`; H-2 residual: with `extra_float_digits = 0` on the database, a `float8` sort over 30 equal `0.1 + 0.2` walks 30 rows in both directions, and without the startup pin the progress guard still walks every row exactly once; M-4 residual: 10 text columns of 60 KB after a tiny first row fetch at most 2 rows at a time, under 8 MB peak |
