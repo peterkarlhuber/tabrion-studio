@@ -270,7 +270,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         connections=registry,
         queries=QueryEngine(registry, configuration.limits),
         explorer=explorer,
-        viewer=Viewer(explorer),
+        viewer=Viewer(explorer, configuration.limits),
         diagnostics=Diagnostics(registry),
         migrations=Migrations(registry, CodeTrust(options.project, options.state_dir, project_key(options.project))),
         instance_id=info.instance_id,

@@ -20,12 +20,14 @@ import sys
 import threading
 import time
 from typing import Any
+import uuid
 
 import pytest
 import sqlalchemy
 
 from tabrion_studio.config.schema import Profile, SecretRef
 from tabrion_studio.services import connections as connections_module
+from tabrion_studio.services import explorer as explorer_module
 from tabrion_studio.services.connections import ConnectionRegistry, RegistryError
 from tabrion_studio.services.explorer import Explorer, ExplorerError
 from tests.security.test_read_only import Source
@@ -104,6 +106,16 @@ def test_the_table_detail(lite: tuple[Explorer, str, Source]) -> None:
     assert [item["table"] for item in supplier["referenced_by"]] == ["part"]
     assert supplier["unique_constraints"][0]["columns"] == ["name"]
     assert explorer.table(connection_id, "main", "heavy")["kind"] == "view"
+
+
+def test_the_sqlite_facts_before_3_37(lite: tuple[Explorer, str, Source], monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fallback without ``PRAGMA table_list`` still tells WITHOUT ROWID tables apart, as a bool."""
+    explorer, connection_id, _ = lite
+    monkeypatch.setattr(explorer_module, "_HAS_TABLE_LIST", False)
+    tables = {table["name"]: table for table in explorer.sqlite_info(connection_id)["tables"]}
+    assert tables["tag"]["without_rowid"] is True and tables["part"]["without_rowid"] is False
+    assert tables["heavy"] == {"name": "heavy", "type": "view", "strict": False, "without_rowid": False}
+    assert all(table["strict"] is False for table in tables.values())
 
 
 @pytest.mark.parametrize(
@@ -351,21 +363,40 @@ def test_l2_i6_busy_pool_and_names_with_a_slash(
 @pytest.mark.postgres
 @postgres
 def test_pg_m1_foreign_keys_into_search_path_schemas(pg: tuple[Explorer, str]) -> None:
-    """A key into ``public`` and one into the schema named like the role (``$user``) keep their schema."""
+    """A key into ``public``, one into the schema named like the role (``$user``) and one into another schema keep
+    their schema; a partitioned table's key is shown once, without its partitions' copies (N-1). The test creates a
+    uniquely named schema and touches the role's schema only if it creates it (N-2)."""
     explorer, connection_id = pg
     assert PG_URL is not None
     url = sqlalchemy.make_url(PG_URL)
     role = str(url.username)
+    other = f"studio_explorer_{uuid.uuid4().hex[:8]}"
     admin = sqlalchemy.create_engine(url.set(drivername="postgresql+psycopg"))
+    with admin.begin() as connection:
+        role_schema_exists = bool(
+            connection.exec_driver_sql("SELECT count(*) FROM pg_namespace WHERE nspname = %(n)s", {"n": role}).scalar()
+        )
+    user_schema = None if role_schema_exists else role
     setup = [
         "CREATE TABLE public.studio_explorer_ref (id int PRIMARY KEY)",
-        f'CREATE SCHEMA "{role}"',
-        f'CREATE TABLE "{role}".studio_explorer_dup (id int PRIMARY KEY)',
+        f'CREATE SCHEMA "{other}"',
+        f'CREATE TABLE "{other}".studio_explorer_dup (id int PRIMARY KEY)',
         "CREATE TABLE studio_explorer.studio_explorer_dup (id int PRIMARY KEY)",  # a decoy of the same name
         "CREATE TABLE studio_explorer.child (id int PRIMARY KEY, "
         "r int CONSTRAINT to_public REFERENCES public.studio_explorer_ref (id), "
-        f'd int CONSTRAINT to_user REFERENCES "{role}".studio_explorer_dup (id))',
+        f'd int CONSTRAINT to_other REFERENCES "{other}".studio_explorer_dup (id))',
+        "CREATE TABLE studio_explorer.pchild (id int, r int CONSTRAINT p_to_public "
+        "REFERENCES public.studio_explorer_ref (id)) PARTITION BY RANGE (id)",
+        "CREATE TABLE studio_explorer.pchild_1 PARTITION OF studio_explorer.pchild FOR VALUES FROM (0) TO (100)",
+        "CREATE TABLE studio_explorer.pchild_2 PARTITION OF studio_explorer.pchild FOR VALUES FROM (100) TO (200)",
     ]
+    if user_schema is not None:
+        setup += [
+            f'CREATE SCHEMA "{user_schema}"',
+            f'CREATE TABLE "{user_schema}".studio_explorer_mine (id int PRIMARY KEY)',
+            "CREATE TABLE studio_explorer.mine_child (id int PRIMARY KEY, "
+            f'm int CONSTRAINT to_user REFERENCES "{user_schema}".studio_explorer_mine (id))',
+        ]
     try:
         with admin.begin() as connection:
             for statement in setup:
@@ -373,20 +404,30 @@ def test_pg_m1_foreign_keys_into_search_path_schemas(pg: tuple[Explorer, str]) -
         child = explorer.table(connection_id, "studio_explorer", "child")
         keys = {key["name"]: key for key in child["foreign_keys"]}
         assert keys["to_public"]["referred_schema"] == "public" and keys["to_public"]["columns"] == ["r"]
-        assert keys["to_user"]["referred_schema"] == role and keys["to_user"]["referred_columns"] == ["id"]
+        assert keys["to_other"]["referred_schema"] == other and keys["to_other"]["referred_columns"] == ["id"]
         ref = explorer.table(connection_id, "public", "studio_explorer_ref")
         assert [(item["schema"], item["table"], item["columns"]) for item in ref["referenced_by"]] == [
-            ("studio_explorer", "child", ["r"])
+            ("studio_explorer", "child", ["r"]),
+            ("studio_explorer", "pchild", ["r"]),
         ]
-        dup = explorer.table(connection_id, role, "studio_explorer_dup")
-        assert [item["name"] for item in dup["referenced_by"]] == ["to_user"]
+        dup = explorer.table(connection_id, other, "studio_explorer_dup")
+        assert [item["name"] for item in dup["referenced_by"]] == ["to_other"]
         decoy = explorer.table(connection_id, "studio_explorer", "studio_explorer_dup")
         assert decoy["referenced_by"] == []
+        pchild = explorer.table(connection_id, "studio_explorer", "pchild")
+        assert [key["name"] for key in pchild["foreign_keys"]] == ["p_to_public"]
         part = explorer.table(connection_id, "studio_explorer", "part")  # a key inside one schema still works
         assert part["foreign_keys"][0]["referred_schema"] == "studio_explorer"
+        if user_schema is not None:
+            mine = explorer.table(connection_id, "studio_explorer", "mine_child")
+            assert mine["foreign_keys"][0]["referred_schema"] == user_schema
     finally:
         with admin.begin() as connection:
-            connection.exec_driver_sql("DROP TABLE IF EXISTS studio_explorer.child")
+            for table in ("child", "pchild", "mine_child"):
+                connection.exec_driver_sql(f"DROP TABLE IF EXISTS studio_explorer.{table}")
+            connection.exec_driver_sql("DROP TABLE IF EXISTS studio_explorer.studio_explorer_dup")
             connection.exec_driver_sql("DROP TABLE IF EXISTS public.studio_explorer_ref")
-            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{role}" CASCADE')
+            connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{other}" CASCADE')
+            if user_schema is not None:
+                connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{user_schema}" CASCADE')
         admin.dispose()
