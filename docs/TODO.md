@@ -45,6 +45,8 @@
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 | TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
+| TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -642,3 +644,32 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
 - **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
   binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
+
+### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
+
+- **Priority:** P3 Low · **Status:** Open (watch) · **Refs:** TABRION QA-8, `docs/development/ci.md` (QA-8 evidence)
+- **What:** `npm audit` over the whole tree reports GHSA-g3hv-75wg-m249 (moderate, a denial of service through
+  glob patterns) in `minimatch` 7.0.0..11.0.0, used only by eslint, `@eslint/config-array` and typescript-eslint.
+  Nothing of it ships: `npm audit --omit=dev --audit-level=high` finds nothing, and the wheel contains only the
+  built frontend. The fix npm offers (`npm audit fix --force`) downgrades eslint to 9.39.5 and typescript-eslint
+  to 8.36.0 (semver-major). `npm audit` lists **10** moderate entries: the one advisory through its dependency
+  cascade. `eslint-plugin-jsx-a11y` uses `minimatch` 3.1.5, outside the range.
+- **Next step:** take the eslint/typescript-eslint update that moves to a fixed `minimatch` when Dependabot proposes
+  it; no forced downgrade. A `package.json` `overrides` of `minimatch` to `^11.0.1` is an alternative, but a major
+  version for eslint's dependency: check eslint with it before using it.
+
+### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
+  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
+  `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
+  `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
+  The CI jobs still build with the unhashed `pyproject.toml` pin.
+- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
+  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
+  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
+  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
+  (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
+  `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.
