@@ -138,13 +138,13 @@ def _columns(cursor: Any, dbapi: Any, postgres: bool) -> tuple[Column, ...]:
 def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
     """A connection that got a cancel never goes back to the pool (H-1 of ``tab-033-review.md``, L-2 of
     ``stu-011-review.md``): PostgreSQL may act on a cancel packet after the statement ended and abort the next user's
-    statement; SQLite's interrupt flag is cleared only when no statement runs. If SQLAlchemy cannot invalidate it,
-    the driver connection is closed, so the pool can only throw it away."""
-    try:
+    statement; SQLite's interrupt flag is cleared only when no statement runs. The driver connection is closed in
+    any case (after ``invalidate()`` too), so a traceback that keeps it alive cannot keep it open until garbage
+    collection (the ResourceWarning lead of ``stu-013-review.md``)."""
+    with contextlib.suppress(Exception):
         connection.invalidate()
-    except Exception:
-        with contextlib.suppress(Exception):
-            dbapi.close()
+    with contextlib.suppress(Exception):
+        dbapi.close()
 
 
 _RESET_STATEMENTS = ("CLOSE ALL", "SELECT pg_catalog.pg_advisory_unlock_all()", "RESET ALL")
