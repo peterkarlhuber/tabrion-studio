@@ -610,3 +610,6 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
   `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
   pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
+  (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
+  `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.

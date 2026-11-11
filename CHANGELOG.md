@@ -9,7 +9,8 @@ All notable changes to this project are documented here. The format follows
 
 - Reproducible-wheel check (QA-8): the packaging tests build the wheel twice more and require the same SHA-256 as the
   CI build, with the build backend pinned exactly (`hatchling==1.33.0`, hashed in `build-constraints.txt`); the QA-8
-  evidence (audits, SBOMs, hashes) is in `docs/development/ci.md`.
+  evidence (audits, SBOMs, hashes) is in `docs/development/ci.md`. A fixed `SOURCE_DATE_EPOCH` build is tested too, and
+  `scripts/check_frontend_reproducible.py` checks by hand that two frontend builds match.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).
