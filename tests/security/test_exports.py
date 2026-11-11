@@ -109,13 +109,21 @@ def test_csv_quoting_nulls_bytes_and_formulas(shop: tuple[Exports, ConnectionReg
     rows = list(csv.reader(io.StringIO(text.decode("utf-8"))))
     assert rows[0] == ["id", "name", "price", "data"]
     assert rows[1] == ["1", "bolt", "0.5", "AAE="]
-    assert rows[2][1] == "'=HYPERLINK(\"http://evil.example\")" and rows[2][2] == "" and rows[2][3] == ""
+    assert rows[2][1] == '\'=HYPERLINK("http://evil.example")' and rows[2][2] == "" and rows[2][3] == ""
     assert rows[3][1] == 'quote " and, comma\nnewline'
     assert rows[4][1] == "'-2+3"
     raw = b"".join(
         exports.start(connection_id, "csv", table={"schema": "main", "name": "part"}, escape_formulas=False).chunks()
     )
     assert list(csv.reader(io.StringIO(raw.decode())))[2][1].startswith("=HYPERLINK")
+
+
+def test_numbers_are_never_escaped_as_formulas(shop: tuple[Exports, ConnectionRegistry, str]) -> None:
+    exports, _, connection_id = shop
+    text = b"".join(
+        exports.start(connection_id, "csv", sql="SELECT -5 AS n, -0.5 AS f, '-5' AS t, X'FB' AS b").chunks()
+    )
+    assert list(csv.reader(io.StringIO(text.decode()))) == [["n", "f", "t", "b"], ["-5", "-0.5", "'-5", "'+w=="]]
 
 
 def test_json_is_valid_and_keeps_types(shop: tuple[Exports, ConnectionRegistry, str]) -> None:
@@ -133,10 +141,8 @@ def test_json_is_valid_and_keeps_types(shop: tuple[Exports, ConnectionRegistry, 
 
 def test_parameters_and_refusals_come_before_the_first_byte(shop: tuple[Exports, ConnectionRegistry, str]) -> None:
     exports, _, connection_id = shop
-    found = json.loads(
-        b"".join(exports.start(connection_id, "json", sql="SELECT name FROM part WHERE id = :id", params={"id": 1})
-                 .chunks())  # fmt: skip
-    )
+    export = exports.start(connection_id, "json", sql="SELECT name FROM part WHERE id = :id", params={"id": 1})
+    found = json.loads(b"".join(export.chunks()))
     assert found["rows"] == [["bolt"]]
     with pytest.raises(StatementRefused):
         exports.start(connection_id, "csv", sql="DELETE FROM part")
@@ -199,7 +205,9 @@ def test_the_export_route(shop: tuple[Exports, ConnectionRegistry, str], tmp_pat
     assert answer.headers["cache-control"] == "no-store"
     assert answer.text.splitlines()[0] == "id,name,price,data"
     refused = studio.client.post(
-        "/api/exports", json={"connection_id": connection_id, "format": "csv", "sql": "DROP TABLE part"}, headers=headers
+        "/api/exports",
+        json={"connection_id": connection_id, "format": "csv", "sql": "DROP TABLE part"},
+        headers=headers,
     )
     assert refused.json()["code"].startswith("studio.statement")
     assert "DROP" not in refused.text
@@ -229,19 +237,20 @@ def test_pg_a_server_side_cursor_export(tmp_path: Path) -> None:
     try:
         exports = Exports(registry, Explorer(registry))
         connection_id = registry.open("user:pg").id
-        sql = "SELECT g AS id, repeat('x', 20) AS name, now() AS at, gen_random_uuid() AS u FROM generate_series(1, 300000) g"
+        sql = (
+            "SELECT g AS id, repeat('x', 20) AS name, now() AS at, gen_random_uuid() AS u "
+            "FROM generate_series(1, 300000) g"
+        )
         tracemalloc.start()
         try:
-            size, lines, tail = drain(exports.start(connection_id, "csv", sql=sql).chunks())
+            _, lines, tail = drain(exports.start(connection_id, "csv", sql=sql).chunks())
             _, peak = tracemalloc.get_traced_memory()
         finally:
             tracemalloc.stop()
         assert lines == 300_001 and tail.split(b"\r\n")[-2].startswith(b"300000,")
         assert peak < 60 * 1024 * 1024, peak
-        doc: dict[str, Any] = json.loads(
-            b"".join(exports.start(connection_id, "json", sql="SELECT 1.5::numeric AS n, '{\"a\": [1]}'::jsonb AS j")
-                     .chunks())  # fmt: skip
-        )
+        typed = exports.start(connection_id, "json", sql="SELECT 1.5::numeric AS n, '{\"a\": [1]}'::jsonb AS j")
+        doc: dict[str, Any] = json.loads(b"".join(typed.chunks()))
         assert doc["rows"] == [["1.5", {"a": [1]}]]
         with pytest.raises(StatementRefused):
             exports.start(connection_id, "csv", sql="COPY (SELECT 1) TO STDOUT")

@@ -14,7 +14,9 @@ runs it in one ``Database.read()``, PostgreSQL through a server-side cursor) and
 * **CSV** (``text/csv``, UTF-8, a header row of column names, RFC 4180 quoting): ``NULL`` is the empty field, bytes
   are base64, dates and times ISO 8601, JSON values JSON text. A text value that a spreadsheet would read as a
   formula (it starts with ``=``, ``+``, ``-``, ``@``, tab or carriage return) gets a leading ``'`` (CSV injection),
-  unless the request turns ``escape_formulas`` off. A cut export cannot say so in CSV: the row count tells.
+  unless the request turns ``escape_formulas`` off; so does base64 of bytes, which may start with ``+``. Numbers,
+  dates and JSON values are never changed (a negative number stays a number). A cut export cannot say so in CSV:
+  the row count tells.
 * **JSON** (``application/json``): ``{"columns": [...], "rows": [[...], ...], "truncated": null | "rows"}``; rows as
   arrays, so two columns of the same name stay apart. Bytes are ``{"base64": ...}``, decimals, dates, times and
   UUIDs text, ``NaN`` and infinities text.
@@ -136,9 +138,16 @@ class _Encoder:
     def _cell(self, value: str) -> str:
         return "'" + value if self.escape and value.startswith(_FORMULA_STARTS) else value
 
+    def _field(self, value: object) -> str:
+        if value is None:
+            return ""
+        text = _text(value)
+        # Only text and bytes (base64 may start with "+") can be read as a formula; a negative number stays a number.
+        return self._cell(text) if isinstance(value, str | bytes | bytearray | memoryview) else text
+
     def row(self, row: Sequence[Any]) -> None:
         if self.format == "csv":
-            self._csv.writerow(["" if value is None else self._cell(_text(value)) for value in row])
+            self._csv.writerow([self._field(value) for value in row])
         else:
             if self.rows:
                 self._buffer.write(",")
