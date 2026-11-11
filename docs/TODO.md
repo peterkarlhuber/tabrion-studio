@@ -43,7 +43,7 @@
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 draft) |
-| TD-024 STU-015 migration worker on Windows: children of trusted project code are not bounded (no process group) | P2 | Open (STU-015 draft) |
+| TD-024 STU-015 migration worker on Windows: children of trusted project code (job object done; needs a Windows run) | P2 | In progress (STU-015 draft) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -620,16 +620,18 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-024 · STU-015 migration worker on Windows: children of trusted project code
 
-- **Priority:** P2 Medium · **Status:** Open (STU-015 draft PR, M-2 of `stu-015-review.md`; by 2026-12-15) ·
+- **Priority:** P2 Medium · **Status:** In progress (STU-015 draft PR, M-2 of `stu-015-review.md`; by 2026-12-15) ·
   **Refs:** T-16, `docs/architecture/migrations.md`
-- **What:** on POSIX, Studio kills the migration worker's process group once the answer is in or after 30 s, reads
-  the answer up to its line end and never waits for the pipe to close. On Windows there is no process group:
-  `process.kill()` ends only the worker, and the answer is read by a thread. A child process that trusted revision
-  code starts keeps running, and while it holds the answer pipe after a timeout, that reader thread stays blocked
-  (the request itself returns after the timeout).
-- **Next step:** put the worker into a Windows Job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (through
-  `ctypes`, assigned before the worker reads its request), close the job after the answer or the timeout, and add the
-  Windows run of `test_a_slow_revision_file_is_killed_with_its_children` to `platforms.yml`.
+- **Done:**
+  - POSIX: Studio kills the migration worker's process group after the answer or after 30 s, reads the answer up to
+    its line end, and never waits for the pipe to close.
+  - Windows: the worker goes into a job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before it gets its request
+    (`migrations._windows_job`, through `ctypes`). Closing the job ends every process in it.
+  - `test_children_end_with_the_worker_on_every_platform` checks the result with a heartbeat file.
+- **Open:**
+  - Run `platforms.yml` (windows-latest) on the STU-015 branch, because the job object has run only on mypy's
+    `--platform win32` so far.
+  - If Windows cannot make the job (nested jobs before Windows 8), only the worker is killed.
 - **Also from the review (Info, accepted):** I-2 the answer can be forged by trusted code (`_revisions()` validates
   it); I-3 the digest is computed on every code-trust and status request (cache by mtime, size and inode if it
   shows up in profiles); I-5 the untrusted path reads at most 100 `version_num` rows without a length cap.

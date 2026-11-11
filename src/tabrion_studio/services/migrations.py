@@ -33,7 +33,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any
+from typing import Any, cast
 
 import tabrion_studio
 from tabrion_studio.config.code_trust import CodeTrust, CodeTrustState
@@ -50,6 +50,8 @@ MAX_ANSWER_BYTES = 1024 * 1024
 #: How long to wait for a killed worker to end before giving up on it (it ends at once; this is never unbounded).
 _REAP_S = 5.0
 _PIPE_CHUNK = 65536
+_JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
+_JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
 NOT_TRUSTED = "unknown (project not trusted)"
 _REVISIONS_TEXT = {
     "untrusted": NOT_TRUSTED,
@@ -110,10 +112,14 @@ def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_
         env=worker_environment(),
         start_new_session=posix,  # the whole process group can be killed, also children of the project's code
     )
+    # Windows: the worker goes into a job that ends every process in it when it is closed (TD-024). It is assigned
+    # before the worker gets its request, so no project code has run yet.
+    close_job = _windows_job(process)
     data = json.dumps(request).encode("utf-8")
     try:
         output = _exchange_posix(process, data, deadline) if posix else _exchange_threads(process, data, deadline)
     finally:
+        close_job()
         # The answer is in (the worker only exits after it), or the time is up: the worker's process group goes, with
         # any child the project's code left in it. Killed before it is waited for, so the group id is still its own.
         if posix or process.poll() is None:
@@ -203,6 +209,66 @@ def _exchange_threads(process: subprocess.Popen[bytes], data: bytes, deadline: f
     if not done.wait(max(deadline - time.monotonic(), 0.0)):
         return None
     return bytes(output[: MAX_ANSWER_BYTES + 1])
+
+
+def _windows_job(process: subprocess.Popen[bytes]) -> Callable[[], None]:
+    """On Windows, put the worker into a job object with ``JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`` and return what closes
+    it, which ends the worker and every process it started (children cannot leave the job). Elsewhere, or when the
+    job cannot be made, a no-op: then only the worker itself is killed."""
+    if sys.platform != "win32":
+        return lambda: None
+    import ctypes
+    from ctypes import wintypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [  # the layout of JOBOBJECT_BASIC_LIMIT_INFORMATION
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", wintypes.DWORD),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", wintypes.DWORD),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", wintypes.DWORD),
+            ("SchedulingClass", wintypes.DWORD),
+        ]
+
+    class Counters(ctypes.Structure):
+        _fields_ = [  # IO_COUNTERS
+            (name, ctypes.c_uint64) for name in ("Reads", "Writes", "Others", "ReadBytes", "WriteBytes", "OtherBytes")
+        ]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [  # JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+            ("BasicLimitInformation", Basic),
+            ("IoInfo", Counters),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+    kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+    kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return lambda: None
+    info = Extended()
+    info.BasicLimitInformation.LimitFlags = _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    handle = int(cast(Any, process)._handle)  # Popen's process handle on Windows
+    if not (
+        kernel32.SetInformationJobObject(
+            job, _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info), ctypes.sizeof(info)
+        )
+        and kernel32.AssignProcessToJobObject(job, handle)
+    ):
+        kernel32.CloseHandle(job)
+        return lambda: None
+    return lambda: kernel32.CloseHandle(job) and None
 
 
 def _kill(process: subprocess.Popen[bytes], posix: bool) -> None:
