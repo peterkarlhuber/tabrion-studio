@@ -18,6 +18,9 @@ All notable changes to this project are documented here. The format follows
   the current schema only); `STU-DX-007` default privileges; role settings follow PostgreSQL's precedence, and
   `STU-DX-010` covers `lock_timeout`, `idle_in_transaction_session_timeout` and `application_name`; a broken foreign
   key definition is `STU-DX-009` instead of a failed route; no TLS finding twice, none for a Unix socket.
+  Delta review: on SQLite a time limit or cancel stops tabrion's `quick_check` alone, so tabrion's other findings
+  (a 0644 file's `TAB-SQ-003`, say) stay and `TAB-SQ-006` says "not checked"; `STU-DX-009` calls only "foreign key
+  mismatch" and "no such table" a broken definition (a lock or I/O error gets a neutral text).
 - STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary

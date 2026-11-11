@@ -222,19 +222,59 @@ def check(transaction: tabrion.Transaction, *, cancel: Cancel) -> list[tabrion_c
     its own read-only transactions (I-1 of ``stu-014-review.md``). The session's startup ``statement_timeout``
     bounds each of them. tabrion 0.2: ``tabrion.check(db)`` (TD-013).
 
-    ``cancel`` stops the checks from another thread like :func:`stream` (M-1 of ``stu-014-review.md``: SQLite's
-    ``quick_check`` has no other limit). The findings come back even when a cancel was sent (tabrion maps an
-    interrupted ``quick_check`` to "not checked", ``TAB-SQ-006``); the caller asks ``cancel.requested``. A connection
-    that got a cancel leaves the pool.
+    ``cancel`` stops the checks from another thread (M-1 of ``stu-014-review.md``):
+
+    * **SQLite:** only the integrity check (``PRAGMA quick_check``) can take long; tabrion's other checks are a few
+      pragmas and file modes. So the cancel stops that statement alone (N-1 of the delta review): a progress handler
+      ends it when a cancel comes while it runs, and a cancel requested before it started interrupts it as it starts
+      (from the trace callback, while it is the only running statement, so SQLite clears the flag when it ends).
+      Every other statement runs to its end. tabrion maps the stopped ``quick_check`` to "not checked"
+      (``TAB-SQ-006``, info) and keeps every other finding (``TAB-SQ-003``, say). No interrupt can reach a later
+      statement, so the connection may go back to the pool.
+    * **PostgreSQL:** the psycopg cancel is attached for the whole check, as for :func:`stream`; a connection that
+      got a cancel leaves the pool.
+
+    The caller asks ``cancel.requested``.
     """
     connection = transaction.connection
     dbapi: Any = connection.connection.dbapi_connection
+    if isinstance(dbapi, sqlite3.Connection):
+        return _check_sqlite(dbapi, cancel)
     cancel.attach(dbapi)
     try:
         return tabrion_check.check(dbapi)
     finally:
         if cancel.detach():
             _discard(connection, dbapi)
+
+
+#: The statements the cancel stops in tabrion's SQLite checks (upper case, without blanks).
+_LONG_SQLITE_CHECKS = ("PRAGMAQUICK_CHECK", "PRAGMAINTEGRITY_CHECK")
+#: How many SQLite VM steps between two looks at the cancel while the integrity check runs (as tabrion's deadline).
+_CHECK_PROGRESS_STEPS = 1_000
+
+
+def _check_sqlite(dbapi: sqlite3.Connection, cancel: Cancel) -> list[tabrion_check.Finding]:
+    long = [False]  # whether the running statement is the integrity check
+
+    def trace(statement: str) -> None:
+        # Called as a statement starts running (inside its first step). A cancel requested before the integrity
+        # check started stops it here: the interrupt reaches only the statements running now, this one, and SQLite
+        # clears it when no statement runs any more.
+        long[0] = "".join(statement.split()).upper().startswith(_LONG_SQLITE_CHECKS)
+        if long[0] and cancel.requested:
+            dbapi.interrupt()
+
+    def progress() -> int:
+        return int(long[0] and cancel.requested)  # a cancel requested while it runs
+
+    dbapi.set_trace_callback(trace)
+    dbapi.set_progress_handler(progress, _CHECK_PROGRESS_STEPS)
+    try:
+        return tabrion_check.check(dbapi)
+    finally:
+        dbapi.set_progress_handler(None, _CHECK_PROGRESS_STEPS)
+        dbapi.set_trace_callback(None)
 
 
 @contextlib.contextmanager

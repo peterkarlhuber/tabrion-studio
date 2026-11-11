@@ -5,7 +5,8 @@ timeout), and the rules of ``services/diagnostics.py``.
   the findings about Studio's own session (TAB-SQ-001, -005, -009) are left out.
 * PostgreSQL: no statement timeout for the role or database (STU-DX-004, gone after ``ALTER ROLE ... SET``), a
   read-only role that can write (STU-DX-003), a prod profile without a verified certificate (STU-DX-001), an owner
-  role on prod as an error; a superuser (TAB-PG-001) with ``TABRION_STUDIO_TEST_POSTGRES_SUPERUSER``.
+  role on prod as an error; a superuser (TAB-PG-001) with ``TABRION_STUDIO_TEST_POSTGRES_SUPERUSER``. The tests that
+  need that superuser (to make roles) carry the marker ``postgres_superuser`` instead of ``postgres`` (CI-1).
 * The route sits behind the session and CSRF checks; no finding names the database file's path.
 """
 
@@ -15,6 +16,7 @@ from collections.abc import Iterator
 from dataclasses import replace
 import os
 from pathlib import Path
+import re
 import secrets
 import sqlite3
 import sys
@@ -24,11 +26,16 @@ from typing import Any
 
 import pytest
 import sqlalchemy
+from tabrion import TabrionError
+import tabrion.check as tabrion_check_module
 from tabrion.check import Finding, Severity
 
 from tabrion_studio.config.schema import Profile, SecretRef
-from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.services import diagnostics as diagnostics_module
+from tabrion_studio.services import tabrion_compat
+from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tabrion_studio.services.diagnostics import REPLACED_CODES, SESSION_CODES, Diagnostics, effective_settings
+from tabrion_studio.services.tabrion_compat import Cancel
 from tests.security.test_read_only import Source
 from tests.support.access import ORIGIN, make_studio
 
@@ -289,7 +296,7 @@ def test_pg_no_timeout_writable_read_only_role_and_prod_rules() -> None:
         admin.dispose()
 
 
-@pytest.mark.postgres
+@pytest.mark.postgres_superuser
 @pytest.mark.skipif(PG_SUPERUSER_URL is None, reason="TABRION_STUDIO_TEST_POSTGRES_SUPERUSER is not set")
 def test_pg_a_superuser_is_an_error() -> None:
     assert PG_SUPERUSER_URL is not None
@@ -301,7 +308,10 @@ def test_pg_a_superuser_is_an_error() -> None:
     assert found["TAB-PG-001"] == "error"
 
 
-# M-2, M-3, L-4 against the server: roles made for the test by the superuser, dropped at the end.
+# M-2, M-3, L-4 against the server: roles made for the test by the superuser, dropped at the end. These tests carry
+# the marker "postgres_superuser", not "postgres": a role that owns its database but may not create roles (CI-1 of
+# the delta review, the PostgreSQL 17 job) cannot set them up. What such a role can check itself is in
+# test_pg_owner_settings_and_schemas_as_a_plain_owner below.
 
 
 @pytest.fixture
@@ -349,7 +359,7 @@ def _run_as(user: str, password: str, **profile: Any) -> dict[str, str]:
         registry.close_all()
 
 
-@pytest.mark.postgres
+@pytest.mark.postgres_superuser
 @pytest.mark.parametrize(
     ("grant", "revoke"),
     [
@@ -377,7 +387,7 @@ def test_pg_read_only_role_write_paths(pg_roles: tuple[sqlalchemy.Engine, str, s
             connection.exec_driver_sql(revoke.format(p=prefix))
 
 
-@pytest.mark.postgres
+@pytest.mark.postgres_superuser
 def test_pg_default_privileges_are_an_info(pg_roles: tuple[sqlalchemy.Engine, str, str]) -> None:
     admin, prefix, password = pg_roles
     statement = "ALTER DEFAULT PRIVILEGES IN SCHEMA {p} {verb} INSERT ON TABLES {to} {p}_ro"
@@ -391,7 +401,7 @@ def test_pg_default_privileges_are_an_info(pg_roles: tuple[sqlalchemy.Engine, st
             connection.exec_driver_sql(statement.format(p=prefix, verb="REVOKE", to="FROM"))
 
 
-@pytest.mark.postgres
+@pytest.mark.postgres_superuser
 def test_pg_owner_outside_the_current_schema(pg_roles: tuple[sqlalchemy.Engine, str, str]) -> None:
     """M-3: a role that owns a table in another schema than its search_path is an owner, an error on prod."""
     admin, prefix, password = pg_roles
@@ -401,9 +411,20 @@ def test_pg_owner_outside_the_current_schema(pg_roles: tuple[sqlalchemy.Engine, 
     found = _run_as(f"{prefix}_ro", password)
     assert found["STU-DX-006"] == "warning" and "TAB-PG-003" not in found
     assert _run_as(f"{prefix}_ro", password, environment="prod")["STU-DX-006"] == "error"
+    # T-1: an owner through a group role (MEMBER, not relowner = current_user) is an owner too.
+    with admin.begin() as connection:
+        connection.exec_driver_sql(f"ALTER TABLE {prefix}.t OWNER TO {prefix}_writer")
+    assert "STU-DX-006" not in _run_as(f"{prefix}_ro", password)
+    with admin.begin() as connection:
+        connection.exec_driver_sql(f"GRANT {prefix}_writer TO {prefix}_ro")
+    try:
+        assert _run_as(f"{prefix}_ro", password)["STU-DX-006"] == "warning"
+    finally:
+        with admin.begin() as connection:
+            connection.exec_driver_sql(f"REVOKE {prefix}_writer FROM {prefix}_ro")
 
 
-@pytest.mark.postgres
+@pytest.mark.postgres_superuser
 def test_pg_role_setting_precedence(pg_roles: tuple[sqlalchemy.Engine, str, str]) -> None:
     """L-4 and L-1: the role's 0 wins over the database's 30s; the other settings are STU-DX-010."""
     admin, prefix, password = pg_roles
@@ -460,9 +481,9 @@ def test_sqlite_diagnosis_stops_at_the_time_limit(tmp_path: Path) -> None:
     assert found["STU-DX-008"]["severity"] == "info"
     assert "time limit" in found["STU-DX-008"]["detail"] and "STU-DX-005" in found["STU-DX-008"]["detail"]
     assert "STU-DX-005" not in found  # not counted, so not claimed
-    # The limit reached tabrion's quick_check too: "not checked", or the whole tabrion step named as not run.
-    assert "TAB-SQ-006" in found or "tabrion's checks" in found["STU-DX-008"]["detail"]
-    assert found.get("TAB-SQ-006", {"severity": "info"})["severity"] == "info"  # never "damaged"
+    # N-1: the limit stopped tabrion's quick_check alone: "not checked" (never "damaged"), and tabrion's step ran.
+    assert found["TAB-SQ-006"]["severity"] == "info"
+    assert "TAB-SQ-006" in found["STU-DX-008"]["detail"] and "tabrion's checks" not in found["STU-DX-008"]["detail"]
 
 
 @posix
@@ -488,7 +509,9 @@ def test_sqlite_diagnosis_can_be_canceled(tmp_path: Path) -> None:
         registry.close_all()
     details = {item["code"]: item["detail"] for item in result["findings"]}
     assert "you canceled it" in details["STU-DX-008"]
-    assert "TAB-SQ-006" in details or "tabrion's checks" in details["STU-DX-008"]  # quick_check was stopped
+    severities = {item["code"]: item["severity"] for item in result["findings"]}
+    assert severities["TAB-SQ-006"] == "info"  # quick_check was stopped: "not checked", the other checks ran
+    assert "tabrion's checks" not in details["STU-DX-008"]
     assert diagnostics.cancel(connection_id) is False  # nothing runs any more
 
 
@@ -523,3 +546,303 @@ def test_the_cancel_route_and_the_csrf_check(
     for route in ("diagnostics", "diagnostics/cancel"):
         refused = studio.client.post(f"/api/connections/{connection_id}/{route}", json={}, headers=no_csrf)
         assert refused.status_code == 403 and refused.json()["code"] == "access.csrf_invalid"
+
+
+# The delta review of a11c8bb (stu-014-review.md, FINAL): N-1, CI-1, T-1 and L-5.
+
+
+def _wait_for_the_limit(diagnostics: Diagnostics, monkeypatch: pytest.MonkeyPatch) -> None:
+    """tabrion's file checks (just before quick_check) wait until the run's limit or cancel has hit, so the cancel is
+    requested when quick_check starts, however fast the machine is."""
+    real = tabrion_check_module._file_findings
+
+    def after_the_limit(files: Any) -> Any:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            runs = [run for runs in diagnostics._running.values() for run in runs]
+            if runs and all(run.hook.requested for run in runs):
+                break
+            time.sleep(0.002)
+        return real(files)
+
+    monkeypatch.setattr(tabrion_check_module, "_file_findings", after_the_limit)
+
+
+@posix
+def test_n1_a_limit_during_quick_check_keeps_tabrions_other_findings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-1: the limit stops quick_check alone. TAB-SQ-003 (0644) and TAB-SQ-002 stay, TAB-SQ-006 is "not checked"."""
+    path = prepared(tmp_path / "shop.db", mode=0o644, orphans=True, wal=False)
+    source = Source(
+        profiles={"project:shop": Profile("shop", "sqlite", "dev", path="shop.db", statement_timeout_ms=1)},
+        files={"project:shop": path},
+    )
+    registry = ConnectionRegistry(source)
+    diagnostics = Diagnostics(registry)
+    _wait_for_the_limit(diagnostics, monkeypatch)
+    try:
+        connection = registry.open("project:shop")
+        doc = diagnostics.run(connection.id)
+        # The pooled connection works afterwards: no interrupt was left on it.
+        for _ in range(3):
+            assert connection.fetch("SELECT count(*) FROM part") == [(6,)]
+    finally:
+        registry.close_all()
+    found = {item["code"]: item for item in doc["findings"]}
+    assert found["TAB-SQ-003"]["severity"] == "error" and found["TAB-SQ-002"]["severity"] == "info"
+    assert found["TAB-SQ-006"]["severity"] == "info"  # not checked, never "damaged"
+    assert "TAB-SQ-006" in found["STU-DX-008"]["detail"] and "tabrion's checks" not in found["STU-DX-008"]["detail"]
+
+
+def test_n1_the_cancel_stops_only_the_integrity_check(tmp_path: Path) -> None:
+    """N-1, at the compat layer: with a cancel requested before tabrion's check starts, every pragma still runs and
+    only quick_check is stopped (a cancel that interrupts every statement fails the check instead)."""
+    path = prepared(tmp_path / "shop.db", mode=0o600, orphans=False, wal=False)
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        hook = Cancel()
+        hook.cancel()  # requested; nothing attached yet
+        found = {(f.code, str(f.severity)) for f in tabrion_compat._check_sqlite(connection, hook)}
+        assert ("TAB-SQ-006", "info") in found and ("TAB-SQ-002", "info") in found
+        assert connection.execute("PRAGMA quick_check(1)").fetchone() == ("ok",)  # the handler is gone
+        assert {(f.code, str(f.severity)) for f in tabrion_compat._check_sqlite(connection, Cancel())} == found - {
+            ("TAB-SQ-006", "info")
+        }
+    finally:
+        connection.close()
+
+
+@pytest.mark.postgres
+@postgres
+def test_t1_a_cancel_during_tabrions_postgres_check_stops_it_and_discards_the_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """T-1 (attach, discard): tabrion's collector runs a long statement; the cancel stops it, and the driver
+    connection that got the cancel never goes back to the pool (it is closed)."""
+    assert PG_URL is not None
+    used: list[Any] = []
+
+    def slow_collector(dbapi: Any, **_: Any) -> list[Finding]:
+        used.append(dbapi)
+        dbapi.execute("SELECT pg_catalog.pg_sleep(20)")
+        return []
+
+    monkeypatch.setattr(tabrion_check_module, "check", slow_collector)
+    registry, _ = _pg_registry(PG_URL)
+    diagnostics = Diagnostics(registry)
+    result: dict[str, Any] = {}
+    try:
+        connection_id = registry.open("user:pg").id
+        worker = threading.Thread(target=lambda: result.update(diagnostics.run(connection_id)))
+        started = time.monotonic()
+        worker.start()
+        while not used:
+            assert worker.is_alive() and time.monotonic() - started < 10
+            time.sleep(0.01)
+        time.sleep(0.2)  # pg_sleep runs
+        assert diagnostics.cancel(connection_id)
+        worker.join(10)
+        assert not worker.is_alive() and time.monotonic() - started < 5
+        assert used[0].closed  # discarded, not checked in
+        detail = next(item["detail"] for item in result["findings"] if item["code"] == "STU-DX-008")
+        assert "you canceled it" in detail and "tabrion's checks" in detail
+        monkeypatch.undo()
+        assert "STU-DX-008" not in codes(diagnostics.run(connection_id))  # the pool still works
+    finally:
+        registry.close_all()
+
+
+@pytest.mark.postgres
+@postgres
+def test_t1_a_cancel_stops_studios_own_postgres_queries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """T-1 (Studio's PostgreSQL queries get the cancel): a long owner query ends at the cancel, not after 20 s."""
+    assert PG_URL is not None
+    monkeypatch.setattr(tabrion_check_module, "check", lambda dbapi, **_: [])
+    monkeypatch.setattr(diagnostics_module, "_OWNER_SQL", "SELECT count(*) FROM (SELECT pg_catalog.pg_sleep(20)) s")
+    registry, _ = _pg_registry(PG_URL)
+    diagnostics = Diagnostics(registry)
+    result: dict[str, Any] = {}
+    try:
+        connection_id = registry.open("user:pg").id
+        worker = threading.Thread(target=lambda: result.update(diagnostics.run(connection_id)))
+        started = time.monotonic()
+        worker.start()
+        time.sleep(0.5)
+        assert diagnostics.cancel(connection_id)
+        worker.join(10)
+        assert not worker.is_alive() and time.monotonic() - started < 5
+    finally:
+        registry.close_all()
+    detail = next(item["detail"] for item in result["findings"] if item["code"] == "STU-DX-008")
+    assert "you canceled it" in detail and "STU-DX-006" in detail and "STU-DX-004" in detail
+
+
+#: A statement of about 5 to 20 s on SQLite that returns nothing, in place of PRAGMA foreign_key_check.
+SLOW_SQLITE = (
+    "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 100000000) SELECT x FROM c WHERE x < 0"
+)
+
+
+@pytest.fixture
+def slow_fk(monkeypatch: pytest.MonkeyPatch) -> None:
+    """tabrion's check is left out, and STU-DX-005's statement takes seconds."""
+    real = OpenConnection.prepare
+
+    def prepare(self: OpenConnection, sql: str, params: Any = None) -> Any:
+        return real(self, SLOW_SQLITE if sql == "PRAGMA foreign_key_check" else sql, params)
+
+    monkeypatch.setattr(OpenConnection, "prepare", prepare)
+    monkeypatch.setattr(OpenConnection, "tabrion_findings", lambda self, cancel=None: [])
+
+
+@posix
+def test_t1_the_limit_stops_the_foreign_key_check(tmp_path: Path, slow_fk: None) -> None:
+    """T-1 (STU-DX-005 gets the cancel): the limit ends the foreign key check itself."""
+    path = prepared(tmp_path / "shop.db", mode=0o600, orphans=False, wal=True)
+    source = Source(
+        profiles={"project:shop": Profile("shop", "sqlite", "dev", path="shop.db", statement_timeout_ms=300)},
+        files={"project:shop": path},
+    )
+    registry = ConnectionRegistry(source)
+    try:
+        started = time.monotonic()
+        doc = Diagnostics(registry).run(registry.open("project:shop").id)
+        assert time.monotonic() - started < 2.5
+    finally:
+        registry.close_all()
+    detail = next(item["detail"] for item in doc["findings"] if item["code"] == "STU-DX-008")
+    assert "time limit" in detail and "STU-DX-005" in detail
+
+
+@posix
+def test_t1_a_cancel_stops_only_its_own_connections_run(tmp_path: Path, slow_fk: None) -> None:
+    """T-1 (per-connection scope): canceling connection B leaves A's run alone; canceling A stops it."""
+    profiles, files = {}, {}
+    for name in ("a", "b"):
+        files[f"project:{name}"] = prepared(tmp_path / f"{name}.db", mode=0o600, orphans=False, wal=True)
+        profiles[f"project:{name}"] = Profile(name, "sqlite", "dev", path=f"{name}.db")
+    registry = ConnectionRegistry(Source(profiles=profiles, files=files))
+    diagnostics = Diagnostics(registry)
+    result: dict[str, Any] = {}
+    try:
+        a, b = registry.open("project:a").id, registry.open("project:b").id
+        worker = threading.Thread(target=lambda: result.update(diagnostics.run(a)))
+        worker.start()
+        while not diagnostics._running.get(a):
+            assert worker.is_alive()
+            time.sleep(0.001)
+        assert diagnostics.cancel(b) is False
+        time.sleep(0.4)
+        assert worker.is_alive()  # B's cancel did not stop A
+        assert diagnostics.cancel(a) is True
+        worker.join(5)
+        assert not worker.is_alive()
+    finally:
+        registry.close_all()
+    detail = next(item["detail"] for item in result["findings"] if item["code"] == "STU-DX-008")
+    assert "you canceled it" in detail and "STU-DX-005" in detail
+
+
+def test_t1_the_cancel_repeats_until_the_statement_stops(monkeypatch: pytest.MonkeyPatch) -> None:
+    """T-1 (the repeat): a cancel that came before the statement started does nothing, so it is sent again every
+    interval until the run finishes (or the attempts run out)."""
+    monkeypatch.setattr(diagnostics_module, "CANCEL_INTERVAL_S", 0.001)
+    sent: list[int] = []
+
+    class Hook:
+        def cancel(self) -> None:
+            sent.append(1)
+            if len(sent) == 5:
+                finished.set()
+
+    finished = threading.Event()
+    diagnostics_module._expire(Hook(), finished)  # type: ignore[arg-type]
+    assert len(sent) == 5
+    sent.clear()
+    finished = threading.Event()
+    monkeypatch.setattr(diagnostics_module, "CANCEL_ATTEMPTS", 7)
+
+    class Never:
+        def cancel(self) -> None:
+            sent.append(1)
+
+    diagnostics_module._expire(Never(), threading.Event())  # type: ignore[arg-type]
+    assert len(sent) == 7
+
+
+class _ErrorConnection:
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    def prepare(self, sql: str) -> str:
+        return sql
+
+    def stream(self, statement: Any, consume: Any, *, cancel: Any) -> Any:
+        raise self.error
+
+
+@pytest.mark.parametrize(
+    ("error", "broken"),
+    [
+        (TabrionError("database.unknown", original=sqlite3.OperationalError('foreign key mismatch - "c"')), True),
+        (TabrionError("database.unknown", original=sqlite3.OperationalError("no such table: main.p")), True),
+        (TabrionError("database.busy", original=sqlite3.OperationalError("database is locked")), False),
+        (TabrionError("database.unknown", original=sqlite3.OperationalError("disk I/O error")), False),
+    ],
+)  # fmt: skip
+def test_l5_only_a_broken_definition_is_called_broken(error: BaseException, broken: bool) -> None:
+    """L-5: a lock or an I/O error is STU-DX-009 with a neutral text, not "a foreign key definition is broken"."""
+    found = Diagnostics._sqlite(_ErrorConnection(error), diagnostics_module._Run())  # type: ignore[arg-type]
+    assert [item["code"] for item in found] == ["STU-DX-009"]
+    assert ("definition is broken" in found[0]["detail"]) is broken
+
+
+def test_l5_other_errors_are_not_findings() -> None:
+    with pytest.raises(ZeroDivisionError):
+        Diagnostics._sqlite(_ErrorConnection(ZeroDivisionError()), diagnostics_module._Run())  # type: ignore[arg-type]
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_owner_settings_and_schemas_as_a_plain_owner() -> None:
+    """CI-1: what a role that owns its database (no superuser, no CREATEROLE: the PostgreSQL 17 job) can check
+    itself. L-4: its own role-in-database setting wins over the database's; M-3: a table it owns in a schema off its
+    search_path counts."""
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    registry, _ = _pg_registry(PG_URL)
+    admin = sqlalchemy.create_engine(url.set(drivername="postgresql+psycopg"))
+    schema = f"studio_diag_{secrets.token_hex(4)}"
+
+    def owned(found: dict[str, Any]) -> int:
+        detail = next(item["detail"] for item in found["findings"] if item["code"] == "STU-DX-006")
+        return int(re.search(r"owner of, (\d+)", detail).group(1))  # type: ignore[union-attr]
+
+    try:
+        diagnostics = Diagnostics(registry)
+        connection_id = registry.open("user:pg").id
+        with admin.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.exec_driver_sql(f"ALTER DATABASE \"{url.database}\" SET statement_timeout = '30s'")
+            connection.exec_driver_sql(
+                f'ALTER ROLE CURRENT_USER IN DATABASE "{url.database}" SET statement_timeout = 0'
+            )
+        assert codes(diagnostics.run(connection_id))["STU-DX-004"] == "warning"  # the role's 0 wins
+        with admin.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.exec_driver_sql(f'ALTER ROLE CURRENT_USER IN DATABASE "{url.database}" RESET ALL')
+        assert "STU-DX-004" not in codes(diagnostics.run(connection_id))  # the database's 30s
+        with admin.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE IF NOT EXISTS public.studio_diag_owned (id int)")
+        before = owned(diagnostics.run(connection_id))
+        with admin.begin() as connection:
+            connection.exec_driver_sql(f"CREATE SCHEMA {schema}")
+            connection.exec_driver_sql(f"CREATE TABLE {schema}.t (id int)")
+        assert owned(diagnostics.run(connection_id)) == before + 1  # not on the search_path, still counted
+    finally:
+        registry.close_all()
+        with admin.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.exec_driver_sql(f'ALTER DATABASE "{url.database}" RESET statement_timeout')
+            connection.exec_driver_sql(f'ALTER ROLE CURRENT_USER IN DATABASE "{url.database}" RESET ALL')
+            connection.exec_driver_sql(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+            connection.exec_driver_sql("DROP TABLE IF EXISTS public.studio_diag_owned")
+        admin.dispose()
