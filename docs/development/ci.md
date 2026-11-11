@@ -8,7 +8,7 @@
 | `ci-ok.yml` | `workflow_run` of CI | evaluates the mandatory checks of `.github/ci-manifest.json` on the PR head SHA (`ci_ok.py`, byte-identical to the canonical copy in nodestro-studio) and posts the verdict as the commit status `ci-ok` on that SHA (`ci_ok_status.py`), so that branch protection can require it |
 | `nightly.yml` (`Nightly`) | cron 03:30 UTC, manual | the whole CI on master plus a test-ID inventory; a red run opens or updates the issue "Nightly failed" |
 
-There is no release workflow, and no PyPI release is planned: distribution is by Git SHA pin (owner decision
+There is no release workflow, and no PyPI release is needed for now: distribution is by Git SHA pin (owner decision
 2026-11-08). Any publication (a GitHub release, for example) needs the owner's approval G-R for every version;
 `tests/security/test_workflows.py` fails if a workflow gains a publish step or `id-token: write`.
 
