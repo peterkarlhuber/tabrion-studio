@@ -48,7 +48,7 @@ from tabrion_studio.problems import problem_response
 logger = logging.getLogger("tabrion_studio.config")
 _MAX_BODY = 4096
 _MAX_FORM_BODY = 16 * 1024
-_SETTINGS_KEYS = frozenset({"language", "theme", "log_sql", "limits"})
+_SETTINGS_KEYS = frozenset({"language", "theme", "density", "log_sql", "limits"})
 _LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms"})
 
 
@@ -201,6 +201,7 @@ def form_settings(raw: object, current: Settings) -> Settings:
         "version": SCHEMA_VERSION,
         "language": raw.get("language", current.language),
         "theme": raw.get("theme", current.theme),
+        "density": raw.get("density", current.density),
         "log_sql": raw.get("log_sql", current.log_sql),
         "limits": {
             "max_rows": limits.get("max_rows", current.max_rows),
