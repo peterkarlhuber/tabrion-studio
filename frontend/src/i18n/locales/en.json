@@ -9,6 +9,7 @@
     "label": "Main navigation",
     "start": "Start",
     "connections": "Connections",
+    "migrations": "Migrations",
     "settings": "Settings"
   },
   "header": {
@@ -180,6 +181,56 @@
     "deletedSecretKept": "{{name}} deleted, but the system keyring did not remove its saved password. Remove it in the keyring app.",
     "savedSecretKept": "{{name}} saved, but the system keyring did not remove the old saved password. Remove it in the keyring app."
   },
+  "migrations": {
+    "title": "Migrations",
+    "lead": "The migration status of a connection's database. Studio only reads it; it never runs a migration.",
+    "code": {
+      "title": "Migration code",
+      "unavailable": "Studio could not read the trust state of the project's migration code.",
+      "none": "The project has no Alembic configuration (alembic.ini with a script_location). Studio reads SQLite's user_version without it.",
+      "untrusted": "The project's Alembic files are not trusted. Studio shows the version in the database, but not the revisions, until you trust them.",
+      "changed": "The project's Alembic files changed after you trusted them. Review them again to read the revisions.",
+      "trusted_one": "You trust the project's Alembic files ({{count}} revision file).",
+      "trusted_other": "You trust the project's Alembic files ({{count}} revision files).",
+      "invalid": "Studio cannot trust the project's Alembic files: {{reason}}",
+      "review": "Review files",
+      "revoke": "Stop trusting",
+      "trustedNow": "The migration code is trusted.",
+      "revokedNow": "The migration code is no longer trusted."
+    },
+    "issue": {
+      "config_invalid": "alembic.ini cannot be read.",
+      "location_outside": "script_location lies outside the project folder.",
+      "location_missing": "the versions folder of script_location does not exist.",
+      "too_many_files": "the versions folder holds more revision files than Studio checks.",
+      "file_name": "a revision file has a name Studio does not accept.",
+      "unreadable": "the files could not be read.",
+      "changed": "the files changed while Studio read them.",
+      "other": "the check failed ({{code}})."
+    },
+    "status": {
+      "title": "Migration status",
+      "profile": "Connection profile",
+      "show": "Show status",
+      "reading": "Reading…",
+      "noProfiles": "There are no connection profiles yet. Add one under Connections.",
+      "noFormats": "Studio found no migration format for this database.",
+      "sqlite": "SQLite user_version",
+      "alembic": "Alembic",
+      "current": "Version in the database",
+      "heads": "Latest revisions (heads)",
+      "pendingLabel": "Not yet applied",
+      "none": "none",
+      "noTable": "no alembic_version table",
+      "unknown": "unknown",
+      "unknownRevisions": "The database names revisions that the project's files do not contain:",
+      "notTrusted": "The revisions are unknown because the project's migration code is not trusted.",
+      "invalidFolder": "The revisions are unknown because the project's migrations folder is not valid.",
+      "upToDate": "The database is up to date.",
+      "pending_one": "{{count}} revision is not yet applied.",
+      "pending_other": "{{count}} revisions are not yet applied."
+    }
+  },
   "settings": {
     "title": "Settings",
     "general": "General",
@@ -298,6 +349,15 @@
       "title_other": "{{count}} queries are running",
       "body": "Quitting Studio cancels them.",
       "quit": "Quit"
+    },
+    "trustCode": {
+      "title": "Run the project's migration code?",
+      "body": "To read the revisions, Studio imports the project's Alembic files, which runs their code on this computer. Trust them only if you know the project. Studio checks the files again before every read and asks again when they change.",
+      "stale": "The files changed after they were shown. This is the new list: review it again before you trust it.",
+      "config": "Alembic configuration",
+      "files": "Revision files",
+      "reject": "Don't trust",
+      "trust": "Trust and run"
     }
   },
   "issues": {
@@ -334,6 +394,28 @@
     "offline": "The local server does not answer.",
     "other": "The request failed ({{code}}).",
     "config_too_large": "The file would be larger than Studio reads (256 KB). Remove profiles you no longer use.",
-    "config_not_storable": "Studio could not store these values unchanged (for example an unusual character). Nothing was written."
+    "config_not_storable": "Studio could not store these values unchanged (for example an unusual character). Nothing was written.",
+    "project_untrusted": "The project profiles are not trusted in their current form. Review them first.",
+    "trust_stale": "The files changed after they were shown. Review them again.",
+    "trust_unavailable": "Studio could not save the trust decision.",
+    "no_migrations": "The project folder has no alembic.ini with a script_location.",
+    "migrations_invalid": "The project's Alembic files cannot be checked, so their code cannot be trusted.",
+    "migrations_changed": "The project's Alembic files changed after they were trusted, so their code did not run. Review them again.",
+    "migrations_revisions": "Alembic could not read the revisions of the project's migrations folder. Run alembic heads in the project to see the error.",
+    "migrations_database": "The database did not answer while Studio read the version table.",
+    "migrations_timeout": "Reading the revisions took too long and was stopped.",
+    "migrations_failed": "Reading the revisions failed. Run alembic heads in the project to see whether its revision files load.",
+    "connection_failed": "Studio could not reach the database.",
+    "connection_config": "The driver did not accept the profile's settings.",
+    "connection_tls": "The profile's TLS mode is weaker than the host needs.",
+    "connection_limit": "Studio keeps at most 8 connections open. Close one first.",
+    "connection_busy": "The connection is busy. Try again in a moment.",
+    "connection_stale": "The connection was closed because its profile changed. Try again.",
+    "connection_not_found": "The connection is no longer open. Try again.",
+    "database_missing": "The profile's SQLite file does not exist.",
+    "database_unsafe": "The profile's SQLite file is a link or changed while it was opened.",
+    "database_outside": "The profile's database file lies outside the project folder. Review the project profiles again.",
+    "secret_missing": "There is no password for this profile. Store it under Connections.",
+    "secret_env_missing": "The environment variable this profile reads its password from is not set."
   }
 }

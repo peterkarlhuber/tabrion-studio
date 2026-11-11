@@ -3,7 +3,7 @@
  * tabs, status bar. With a PROD connection the shell gets a 3 px red frame at the top, every tab and the header show
  * the PROD badge and the window title starts with "[PROD]" (STU-051).
  */
-import { Database, House, Settings } from 'lucide-react';
+import { Database, GitBranch, House, Settings } from 'lucide-react';
 import { useEffect, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -22,6 +22,7 @@ export type ServerState =
 const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/', key: 'nav.start', icon: <House /> },
   { path: '/connections', key: 'nav.connections', icon: <Database /> },
+  { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
 ];
 
 /** The window title: `[PROD] name – Tabrion Studio` with a connection, else the page title. */

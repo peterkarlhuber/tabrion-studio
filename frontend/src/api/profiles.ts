@@ -147,7 +147,7 @@ export function profileFields(item: ProfileItem): ProfileFields {
   return fields;
 }
 
-async function getJson(fetcher: typeof fetch, path: string): Promise<unknown> {
+export async function getJson(fetcher: typeof fetch, path: string): Promise<unknown> {
   try {
     const response = await fetcher(path, {
       cache: 'no-store',
@@ -175,7 +175,7 @@ export type Result<T> = { ok: true; value: T } | { ok: false; problem: Problem }
  * A write to the API. Every one sends `Content-Type: application/json` with a JSON body, DELETE included: the access
  * middleware refuses an unsafe request without it (review of STU-007).
  */
-async function send<T>(
+export async function send<T>(
   fetcher: typeof fetch,
   method: 'POST' | 'PUT' | 'DELETE',
   path: string,
