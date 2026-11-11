@@ -346,8 +346,8 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Draft PR on the integration branch (tabrion 546d254 pinned, RC-8; not before v0.1.0): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`. Open: the `backend integration (PostgreSQL 17)` job (OA-003), the page (TD-011, TD-012) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
-| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7). Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
-| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
+| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
+| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"). Open: the grid tab in the page (frontend lane), editing stays STU-026 |
 | TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..005` (prod TLS, T-10 / STU-T-021, read-only role that can write, no role timeout, SQLite rows written with foreign keys off); the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
 | TABRION STU-012, STU-015 | SQL editor, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
@@ -544,6 +544,24 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
     `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
 
+### STU-013 viewer: review items kept open
+
+- **Priority:** P3 · **Status:** Open · **Refs:** `stu-013-review.md`, `docs/architecture/viewer.md`
+- **L-2 (OFFSET pages of a view are not in a stable order without a sort):** not done on purpose. Ordering every
+  page of a view by all its columns makes each page evaluate and sort the whole view, so a large or endless view
+  would only reach the timeout (the SQLite test with an endless view shows it). The page keeps `hint:
+  "unstable_order"`; a sort column gives a stable order for distinct sort values. Revisit with the grid tab
+  (STU-012): it could offer "sort by all columns" for small views.
+- **L-5 (one budget with the query engine):** the viewer now has its own limit with the same numbers (4 statements
+  in Studio, 2 per connection, `studio.query_limit`), but it does not share the query engine's count, so 4 queries
+  and 4 viewer statements can run at once. One shared budget needs a small slot API on `QueryEngine`; do it when the
+  grid tab and the SQL editor run side by side (STU-012).
+- **I-3 (filter type mismatches):** `id eq "abc"` on PostgreSQL stays a classified database problem (`db.data`,
+  `db.undefined_object`), which is safe (no SQL, no values). Mapping it to `studio.viewer_filter_invalid` needs the
+  column types in the filter check; with the grid tab.
+- **SQLite text in another encoding:** the byte caps cut text as UTF-8; a database in UTF-16 is cut at the same
+  number of bytes but decoded as UTF-8. No reference app uses UTF-16; check with STU-016.
+
 ### TD-012 · STU-009 integration: what remains before it can merge
 
 - **Priority:** P1 High · **Status:** Open (`stu-009-review.md`, delta re-review: accepted with conditions; R-L1,
@@ -606,6 +624,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   statement that ignores the cancel still holds its slot until the driver returns); I-3 `max_result_mb` (1 to 200).
   Open from the review: I-1 (bind a query to its session if Studio ever has several sessions) and I-4 (the SSE
   generator polls every 50 ms; a condition would avoid it), both for STU-012, by 2026-12-15.
+- **Delta re-review of `stu-011-review.md` (head 170aeaa, done in the STU-011 draft):** R-H1 the first word, the
+  control checks and the cursor choice come from the lexer (`readonly._lex`) in three readings (PostgreSQL with and
+  without backslash escapes, SQLite), which must agree; `--` ends at `\r` in PostgreSQL, SQLite block comments do not
+  nest. The check-in reset also runs `CLOSE ALL` and `pg_advisory_unlock_all()`. R-M1 the fetch budget follows the
+  largest row so far, grows at most twice per fetch and counts nested values. R-I1 a `search_path` or
+  `transaction_timeout` in the session settings is refused by `startup_options` until it can quote the one and check
+  the server version for the other like tabrion (with tabrion 0.2's session reset, TD-013). Open: R-I2 (`_expire`
+  may report a user cancel shortly before the timeout as `db.timeout`; cosmetic, STU-012 by 2026-12-15).
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within

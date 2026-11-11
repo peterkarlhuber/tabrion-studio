@@ -268,7 +268,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         connections=registry,
         queries=QueryEngine(registry, configuration.limits),
         explorer=explorer,
-        viewer=Viewer(explorer),
+        viewer=Viewer(explorer, configuration.limits),
         diagnostics=Diagnostics(registry),
         instance_id=info.instance_id,
         control_token=info.control_token,

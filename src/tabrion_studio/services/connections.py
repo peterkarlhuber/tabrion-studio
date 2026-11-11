@@ -48,7 +48,7 @@ from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, targe
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import register_secret
 from tabrion_studio.services import tabrion_compat
-from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer, strip_leading
+from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
 from tabrion_studio.services.sqltext import BoundStatement, Dialect, bind, is_bound
 from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
@@ -65,14 +65,12 @@ __all__ = [
 logger = logging.getLogger("tabrion_studio.connections")
 _T = TypeVar("_T")
 #: Statements a PostgreSQL cursor (``DECLARE ... CURSOR FOR``) can hold; others (``EXPLAIN``, ``SHOW``, ...) use a
-#: plain cursor. Comments before the first word are skipped like in ``check_statement``.
+#: plain cursor. The first word comes from the same lexer as in ``check_statement`` (R-H1 of the delta re-review).
 _CURSOR_WORDS = frozenset({"select", "with", "values", "table"})
-_FIRST_WORD = re.compile(r"[(\s]*([A-Za-z]+)")
 
 
 def _cursor_query(statement: str) -> bool:
-    match = _FIRST_WORD.match(strip_leading(statement))
-    return match is not None and match.group(1).lower() in _CURSOR_WORDS
+    return first_word(statement) in _CURSOR_WORDS
 
 
 MAX_OPEN = 8
@@ -151,10 +149,13 @@ _STARTUP_SETTINGS = {
     "statement_timeout_ms": "statement_timeout",
     "lock_timeout_ms": "lock_timeout",
     "idle_in_transaction_timeout_ms": "idle_in_transaction_session_timeout",
-    "transaction_timeout_ms": "transaction_timeout",
-    "search_path": "search_path",
     "timezone": "TimeZone",
 }
+#: Settings that cannot go into startup options as they are (R-I1 of the delta re-review): tabrion quotes
+#: ``search_path`` as identifiers, and sets ``transaction_timeout`` only on servers that know it (PostgreSQL 17),
+#: while a server refuses an unknown startup parameter. Studio sets neither; a session with one is refused until the
+#: startup options can match tabrion (TD-013).
+_NOT_AT_STARTUP = ("search_path", "transaction_timeout_ms")
 _STARTUP_VALUE = re.compile(r"[A-Za-z0-9_/+-]{1,64}")
 
 
@@ -163,6 +164,8 @@ def startup_options(session: SessionSettings) -> str:
 
     Only plain values (numbers, names like ``UTC``): anything else would need libpq's escaping, so it is refused.
     """
+    if any(getattr(session, name) is not None for name in _NOT_AT_STARTUP):
+        raise RegistryError("studio.connection_config")
     pairs = [("default_transaction_read_only", "on")]
     for name, setting in _STARTUP_SETTINGS.items():
         value = getattr(session, name)
