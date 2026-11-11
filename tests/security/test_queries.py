@@ -855,6 +855,18 @@ def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Sou
     assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
 
 
+@pytest.mark.postgres
+@postgres
+def test_pg_r2_i1_a_role_change_does_not_outlive_its_statement(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    login = connection.fetch("SELECT session_user")[0][0]
+    # Past the text check (what a function of the database could do); RESET ALL alone keeps the role.
+    for _ in range(3):  # whichever of the pool's connections it lands on
+        _below_the_check(connection, f'SET ROLE "{login}"')
+    assert {connection.fetch("SELECT pg_catalog.current_setting('role')")[0][0] for _ in range(4)} == {"none"}
+
+
 def test_r_h1_the_sqlite_nested_comment_probe_is_refused(lite: tuple[QueryEngine, str, Source]) -> None:
     engine, connection_id, _ = lite
     with pytest.raises(StatementRefused):
