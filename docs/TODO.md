@@ -376,6 +376,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `services` layer arrives with STU-009. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
+- **Status note:** every contract has a mutation probe in `tests/architecture/test_forbidden_probe.py` (TABRION
+  QA-16); the layer contract, and any new contract, needs its own probe there.
 
 ### TD-002 · Sandboxed browsers cannot open the redirect file (TABRION STU-003)
 

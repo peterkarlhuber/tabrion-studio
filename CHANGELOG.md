@@ -133,6 +133,12 @@ All notable changes to this project are documented here. The format follows
   troubleshooting with the messages of the page and the command. A test checks that every command-line option has a
   row in the guide's options table and that every guide page has an entry in the site navigation.
 
+- Import-contract mutation probe (QA-16, AC-1): `tests/architecture/test_forbidden_probe.py` runs `lint-imports` on
+  the repository and on a copy of the package, and on copies with one forbidden import each, which must fail and name
+  the broken contract (every contract has at least one probe). It also checks that the edge to `tabrion` stays
+  allowed (K-33), that the K-33 contract names every known Levuvo platform, and scans for imports of any `orkexa*`,
+  `axentra*`, `nodestro*` or `levuvo*` package by prefix.
+
 ### Security
 
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
