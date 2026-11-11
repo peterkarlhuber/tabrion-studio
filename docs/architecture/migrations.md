@@ -135,8 +135,12 @@ the status. It only reads; there is no button that migrates.
   `GET /api/connections/{id}/migrations`. Per format: SQLite's `user_version`; for Alembic the version in the
   database, the heads and the revisions not yet applied (or "unknown" with the reason: code not trusted, folder not
   valid, or the problem of the worker such as `studio.migrations_busy`), and the revisions the database names that
-  the project's files do not contain. Revision ids and file names come from the project or the database and are
-  shown escaped (`lib/visible.ts`).
+  the project's files do not contain. With STU-024, each Nodestro, Axentra and Orkexa version table shows its
+  state, current version, open steps and problem; a format the page does not know is counted in a fixed line,
+  never dropped (TD-025). The result region names the profile's environment (badge) and is announced politely
+  (`aria-live`). After a trust or a revoke, the shown status is read again on its open connection; the page never
+  opens a connection for that, so D-02 cannot be skipped. Revision ids, table, step and file names come from the
+  project or the database and are shown escaped (`lib/visible.ts`).
 
 Tests: `MigrationsView.test.tsx` (trust with the shown digest, stale, refused, revoke, the states, D-02, escaping,
 problems), the focus rules and U-1 cases of the dialog in `StudioDialogs.test.tsx`, axe in jsdom (`a11y.test.tsx`)

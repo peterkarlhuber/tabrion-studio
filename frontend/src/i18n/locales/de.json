@@ -228,7 +228,23 @@
       "invalidFolder": "Die Revisionen sind unbekannt, weil der Migrationsordner des Projekts nicht gültig ist.",
       "upToDate": "Die Datenbank ist auf dem neuesten Stand.",
       "pending_one": "{{count}} Revision ist noch nicht angewendet.",
-      "pending_other": "{{count}} Revisionen sind noch nicht angewendet."
+      "pending_other": "{{count}} Revisionen sind noch nicht angewendet.",
+      "others_one": "{{count}} weiteres Migrationsformat wurde gefunden, wird hier aber noch nicht angezeigt.",
+      "others_other": "{{count}} weitere Migrationsformate wurden gefunden, werden hier aber noch nicht angezeigt."
+    },
+    "levuvo": {
+      "current": "Die Datenbank ist auf dem Stand der Dateien.",
+      "pending": "Die Dateien enthalten Schritte, die die Datenbank noch nicht ausgeführt hat.",
+      "newer": "Die Datenbank hat Versionen, die die Dateien nicht kennen.",
+      "changed": "Eine ausgeführte Datei wurde danach geändert.",
+      "no_files": "Studio hat zu dieser Tabelle keine Dateien gefunden; es zeigt, was die Datenbank verzeichnet hat.",
+      "unreadable": "Studio konnte diese Versionstabelle nicht lesen.",
+      "steps": {
+        "pending": "noch nicht ausgeführt",
+        "unknown": "nicht in den Dateien",
+        "changed": "nach dem Ausführen geändert",
+        "other": "{{status}}"
+      }
     }
   },
   "settings": {

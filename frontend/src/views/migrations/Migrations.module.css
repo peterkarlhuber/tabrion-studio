@@ -22,3 +22,6 @@
   list-style: none;
   overflow-wrap: anywhere;
 }
+.env {
+  margin: 0;
+}

@@ -228,7 +228,23 @@
       "invalidFolder": "The revisions are unknown because the project's migrations folder is not valid.",
       "upToDate": "The database is up to date.",
       "pending_one": "{{count}} revision is not yet applied.",
-      "pending_other": "{{count}} revisions are not yet applied."
+      "pending_other": "{{count}} revisions are not yet applied.",
+      "others_one": "{{count}} further migration format was found but is not shown here yet.",
+      "others_other": "{{count}} further migration formats were found but are not shown here yet."
+    },
+    "levuvo": {
+      "current": "The database is up to date with the files.",
+      "pending": "The files have steps the database has not applied.",
+      "newer": "The database has versions that the files do not know.",
+      "changed": "An applied file was changed after it ran.",
+      "no_files": "Studio found no files for this table; it shows what the database recorded.",
+      "unreadable": "Studio could not read this version table.",
+      "steps": {
+        "pending": "not yet applied",
+        "unknown": "not in the files",
+        "changed": "changed after it ran",
+        "other": "{{status}}"
+      }
     }
   },
   "settings": {

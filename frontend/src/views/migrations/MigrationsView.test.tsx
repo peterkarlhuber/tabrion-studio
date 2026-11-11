@@ -469,6 +469,144 @@ describe('migration API parsing', () => {
       engine: 'sqlite',
       formats: [null, { format: 'flyway' }, { format: 'sqlite_user_version', current: '7' }],
     });
-    expect(parsed?.formats).toEqual([{ format: 'sqlite_user_version', current: null }]);
+    expect(parsed?.formats).toEqual([
+      { format: 'other', name: 'flyway' },
+      { format: 'sqlite_user_version', current: null },
+    ]);
+    const levuvo = parseMigrations({
+      formats: [
+        { format: 'orkexa', schema: 's', table: 't', current: 'x', state: 'boom', steps: [3] },
+      ],
+    });
+    expect(levuvo?.formats).toEqual([
+      {
+        format: 'orkexa',
+        table: 's.t',
+        namespace: null,
+        current: null,
+        state: 'unreadable',
+        steps: [],
+        problem: null,
+      },
+    ]);
+  });
+});
+
+describe('migration status view: review fixes of #32', () => {
+  it('C-1: shows the Levuvo version tables, escaped, and counts formats it cannot show', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'GET /api/connections/c1/migrations': () =>
+        json({
+          connection_id: 'c1',
+          engine: 'postgresql',
+          formats: [
+            {
+              format: 'nodestro',
+              schema: 'public',
+              table: `nodestro_schema_migrations${BIDI}`,
+              current: 1,
+              state: 'pending',
+              files: 'nodestro_runtime/migrations/postgres',
+              files_issue: null,
+              steps: [
+                { version: 1, name: '0001_init.sql', status: 'applied' },
+                {
+                  version: 2,
+                  name: `0002_x${BIDI}.sql`,
+                  status: 'pending',
+                  preview: 'DROP TABLE x',
+                },
+              ],
+              problem: null,
+            },
+            {
+              format: 'axentra',
+              schema: 'public',
+              table: 'axentra_schema_migrations',
+              namespace: 'axentra',
+              current: null,
+              state: 'unreadable',
+              steps: [],
+              problem: { code: 'studio.connection_failed', kind: 'database', status: 502 },
+            },
+            { format: 'flyway' },
+          ],
+        }),
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    const [nodestro, axentra] = await screen.findAllByTestId('migrations-levuvo');
+    expect(nodestro).toHaveTextContent('Nodestro public.nodestro_schema_migrations\\u202E');
+    expect(nodestro).toHaveTextContent('The files have steps the database has not applied.');
+    expect(nodestro).toHaveTextContent('2 0002_x\\u202E.sql (not yet applied)');
+    expect(nodestro).not.toHaveTextContent('0001_init.sql');
+    expect(nodestro?.textContent).not.toContain(BIDI);
+    expect(nodestro?.textContent).not.toContain('DROP TABLE');
+    expect(axentra).toHaveTextContent('Studio could not read this version table.');
+    expect(axentra).toHaveTextContent('Studio could not reach the database.');
+    expect(screen.getByTestId('migrations-others')).toHaveTextContent(
+      '1 further migration format was found but is not shown here yet.',
+    );
+    expect(screen.queryByText('Studio found no migration format for this database.')).toBeNull();
+  });
+
+  it('L-1: after trusting, reads the shown status again on its connection without opening one', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server();
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await screen.findByTestId('migrations-alembic');
+    const reads = () =>
+      calls.filter((call) => call.url === '/api/connections/c1/migrations').length;
+    expect(reads()).toBe(1);
+    await user.click(screen.getByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() => expect(reads()).toBe(2));
+    expect(calls.filter((call) => call.url === '/api/connections').length).toBe(1);
+  });
+
+  it('L-2: escapes profile names in the selector', async () => {
+    const { fetcher } = server();
+    render(<MigrationsView fetcher={fetcher} />);
+    const option = await screen.findByRole('option', { name: 'measure\\u202E (PROD)' });
+    expect(option.textContent).not.toContain(BIDI);
+  });
+
+  it('L-3: marks the environment of the shown status', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server();
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    await screen.findByTestId('migrations-alembic');
+    expect(
+      within(screen.getByTestId('migrations-result')).getByTestId('env-badge'),
+    ).toHaveAttribute('data-env', 'prod');
+    expect(screen.getByTestId('migrations-result')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('L-4: stale, then a state that cannot be trusted: the dialog closes and says why', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust()),
+        () => json(trust({ state: 'invalid', digest: null, issue: 'migrations.file_name' })),
+      ],
+      'POST /api/project/code-trust': () => problem(409, 'studio.trust_stale'),
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await user.click(await screen.findByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-message')).toHaveTextContent(
+        'The files changed after they were shown.',
+      ),
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

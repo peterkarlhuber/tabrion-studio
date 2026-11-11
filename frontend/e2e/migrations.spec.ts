@@ -39,6 +39,8 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       expect(await seriousViolations(page)).toEqual([]);
       await page.getByRole('button', { name: text.show }).click();
       await expect(page.getByTestId('migrations-alembic')).toBeVisible();
+      await expect(page.getByTestId('migrations-levuvo')).toContainText('0002_parts.sql');
+      await expect(page.getByTestId('migrations-others')).toBeVisible();
       expect(await seriousViolations(page)).toEqual([]);
       await page.getByRole('button', { name: text.review }).click();
       const dialog = page.getByRole('dialog');

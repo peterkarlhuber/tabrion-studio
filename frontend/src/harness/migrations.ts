@@ -46,6 +46,20 @@ export function migrationStatus(trusted: boolean) {
         problem: null,
         ...alembic,
       },
+      // A Levuvo version table (STU-024) and a format the page does not show yet (review C-1 of #32).
+      {
+        format: 'nodestro',
+        schema: 'public',
+        table: 'nodestro_schema_migrations',
+        current: 1,
+        state: 'pending',
+        steps: [
+          { version: 1, name: '0001_init.sql', status: 'applied' },
+          { version: 2, name: '0002_parts.sql', status: 'pending' },
+        ],
+        problem: null,
+      },
+      { format: 'later' },
     ],
   };
 }

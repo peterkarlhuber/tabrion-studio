@@ -46,12 +46,81 @@ export interface AlembicStatus {
   problem: Problem | null;
 }
 
-export type FormatStatus = SqliteVersionStatus | AlembicStatus;
+/** The Levuvo platforms' own version tables (STU-024): read only, nothing runs. */
+export type LevuvoFormat = 'nodestro' | 'axentra' | 'orkexa';
+export type LevuvoState = 'current' | 'pending' | 'newer' | 'changed' | 'no_files' | 'unreadable';
+
+export interface LevuvoStep {
+  version: number | null;
+  name: string | null;
+  status: string;
+}
+
+export interface LevuvoStatus {
+  format: LevuvoFormat;
+  /** `schema.table` of the version table; null when the database has none (only files were found). */
+  table: string | null;
+  namespace: string | null;
+  current: number | null;
+  /** An unknown state reads as `unreadable` (fail closed). */
+  state: LevuvoState;
+  steps: LevuvoStep[];
+  problem: Problem | null;
+}
+
+/** A format this page does not know yet; it is counted, never dropped silently (review C-1 of #32). */
+export interface OtherFormatStatus {
+  format: 'other';
+  name: string;
+}
+
+export type FormatStatus = SqliteVersionStatus | AlembicStatus | LevuvoStatus | OtherFormatStatus;
 
 export interface MigrationStatus {
   connectionId: string;
   engine: string;
   formats: FormatStatus[];
+}
+
+const LEVUVO_FORMATS: readonly LevuvoFormat[] = ['nodestro', 'axentra', 'orkexa'];
+const LEVUVO_STATES: readonly LevuvoState[] = [
+  'current',
+  'pending',
+  'newer',
+  'changed',
+  'no_files',
+  'unreadable',
+];
+
+function integer(value: unknown): number | null {
+  return typeof value === 'number' && Number.isInteger(value) ? value : null;
+}
+
+function parseLevuvo(format: LevuvoFormat, entry: Record<string, unknown>): LevuvoStatus {
+  const schema = text(entry.schema);
+  const table = text(entry.table);
+  const steps = Array.isArray(entry.steps) ? entry.steps : [];
+  return {
+    format,
+    table: table === null ? null : schema === null ? table : `${schema}.${table}`,
+    namespace: text(entry.namespace),
+    current: integer(entry.current),
+    state: LEVUVO_STATES.includes(entry.state as LevuvoState)
+      ? (entry.state as LevuvoState)
+      : 'unreadable',
+    steps: steps.flatMap((item: unknown): LevuvoStep[] => {
+      if (typeof item !== 'object' || item === null) return [];
+      const step = item as Record<string, unknown>;
+      return [
+        {
+          version: integer(step.version),
+          name: text(step.name),
+          status: text(step.status) ?? 'unknown',
+        },
+      ];
+    }),
+    problem: parseProblem(entry.problem),
+  };
 }
 
 const STATES: readonly CodeTrustState[] = ['none', 'untrusted', 'changed', 'trusted', 'invalid'];
@@ -115,7 +184,12 @@ export function parseMigrations(body: unknown): MigrationStatus | null {
           },
         ];
       }
-      if (entry.format !== 'alembic') return [];
+      if (LEVUVO_FORMATS.includes(entry.format as LevuvoFormat)) {
+        return [parseLevuvo(entry.format as LevuvoFormat, entry)];
+      }
+      if (entry.format !== 'alembic') {
+        return [{ format: 'other', name: text(entry.format) ?? '' }];
+      }
       return [
         {
           format: 'alembic',

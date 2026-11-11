@@ -22,11 +22,14 @@ import {
   trustCode,
   type AlembicStatus,
   type CodeTrust,
+  type LevuvoFormat,
+  type LevuvoStatus,
   type MigrationStatus,
 } from '../../api/migrations';
 import type { Problem } from '../../api/problem';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import { ProdConnectDialog, TrustCodeDialog } from '../../components/dialogs/StudioDialogs';
+import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
@@ -135,30 +138,96 @@ function AlembicResult({ status }: { status: AlembicStatus }) {
   );
 }
 
+const LEVUVO_TITLES: Record<LevuvoFormat, string> = {
+  nodestro: 'Nodestro',
+  axentra: 'Axentra',
+  orkexa: 'Orkexa',
+};
+
+const STEP_STATUSES = new Set(['pending', 'unknown', 'changed']);
+
+/** A Levuvo version table (STU-024): its state, version and the steps not yet applied or not known. */
+function LevuvoResult({ status }: { status: LevuvoStatus }) {
+  const { t } = useTranslation();
+  const open = status.steps.filter((step) => step.status !== 'applied');
+  const where = [status.table, status.namespace].filter((part): part is string => part !== null);
+  return (
+    <section className={styles.format} data-testid="migrations-levuvo">
+      <h3 className={styles.formatTitle}>
+        {LEVUVO_TITLES[status.format]}
+        {where.length > 0 ? (
+          <>
+            {' '}
+            <code>{visible(where.join(' / '))}</code>
+          </>
+        ) : null}
+      </h3>
+      <p
+        className={status.state === 'current' ? connectionStyles.status : connectionStyles.warning}
+        data-testid="migrations-levuvo-state"
+      >
+        {status.state === 'unreadable' && status.problem !== null
+          ? `${t('migrations.levuvo.unreadable')} ${problemText(t, status.problem)}`
+          : t(`migrations.levuvo.${status.state}`)}
+      </p>
+      <dl className={connectionStyles.details}>
+        <dt>{t('migrations.status.current')}</dt>
+        <dd>{status.current === null ? t('migrations.status.unknown') : String(status.current)}</dd>
+      </dl>
+      {open.length > 0 ? (
+        <ul className={styles.ids}>
+          {open.map((step, index) => (
+            <li key={index}>
+              <code>{visible(`${step.version ?? '?'} ${step.name ?? ''}`.trim())}</code>{' '}
+              {STEP_STATUSES.has(step.status)
+                ? `(${t(`migrations.levuvo.steps.${step.status}`)})`
+                : `(${t('migrations.levuvo.steps.other', { status: visible(step.status) })})`}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </section>
+  );
+}
+
 function StatusResult({ status }: { status: MigrationStatus }) {
   const { t } = useTranslation();
-  if (status.formats.length === 0) {
+  const others = status.formats.filter((format) => format.format === 'other').length;
+  const shown = status.formats.filter((format) => format.format !== 'other');
+  if (shown.length === 0 && others === 0) {
     return <p className={connectionStyles.hint}>{t('migrations.status.noFormats')}</p>;
   }
   return (
     <>
-      {status.formats.map((format, index) =>
-        format.format === 'sqlite_user_version' ? (
-          <section key={index} className={styles.format} data-testid="migrations-sqlite">
-            <h3 className={styles.formatTitle}>{t('migrations.status.sqlite')}</h3>
-            <dl className={connectionStyles.details}>
-              <dt>
-                <code>user_version</code>
-              </dt>
-              <dd>
-                {format.current === null ? t('migrations.status.unknown') : String(format.current)}
-              </dd>
-            </dl>
-          </section>
-        ) : (
-          <AlembicResult key={index} status={format} />
-        ),
-      )}
+      {others > 0 ? (
+        <p className={connectionStyles.warning} data-testid="migrations-others">
+          {t('migrations.status.others', { count: others })}
+        </p>
+      ) : null}
+      {shown.map((format, index) => {
+        switch (format.format) {
+          case 'sqlite_user_version':
+            return (
+              <section key={index} className={styles.format} data-testid="migrations-sqlite">
+                <h3 className={styles.formatTitle}>{t('migrations.status.sqlite')}</h3>
+                <dl className={connectionStyles.details}>
+                  <dt>
+                    <code>user_version</code>
+                  </dt>
+                  <dd>
+                    {format.current === null
+                      ? t('migrations.status.unknown')
+                      : String(format.current)}
+                  </dd>
+                </dl>
+              </section>
+            );
+          case 'alembic':
+            return <AlembicResult key={index} status={format} />;
+          default:
+            return <LevuvoResult key={index} status={format} />;
+        }
+      })}
     </>
   );
 }
@@ -207,6 +276,8 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
   const [status, setStatus] = useState<MigrationStatus | null>(null);
+  /** The environment of the profile whose status is shown (PROD is marked there until TD-011 fills the shell). */
+  const [statusEnv, setStatusEnv] = useState<ProfileItem['environment'] | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<'trust' | 'prod' | null>(null);
@@ -245,8 +316,23 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     const opened = await openConnection(fetcher, profile.id);
     const result = opened.ok ? await fetchMigrations(fetcher, opened.value) : opened;
     setBusy(false);
+    if (result.ok) {
+      setStatus(result.value);
+      setStatusEnv(profile.environment);
+    } else setProblem(result.problem);
+  };
+
+  /** Read the shown status again on its open connection: never opens one, so D-02 cannot be skipped (L-1). */
+  const reread = async () => {
+    if (status === null) return;
+    setBusy(true);
+    const result = await fetchMigrations(fetcher, status.connectionId);
+    setBusy(false);
     if (result.ok) setStatus(result.value);
-    else setProblem(result.problem);
+    else {
+      setStatus(null);
+      setProblem(result.problem);
+    }
   };
 
   const trustNow = async (digest: string) => {
@@ -257,8 +343,14 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     if (result.ok) {
       setDialog(null);
       setMessage(t('migrations.code.trustedNow'));
-      if (status !== null) void show();
-    } else if (!stillStale || next === null) {
+      void reread();
+    } else if (
+      !stillStale ||
+      next === null ||
+      next.digest === null ||
+      (next.state !== 'untrusted' && next.state !== 'changed')
+    ) {
+      // A refusal, or the files changed into a state that cannot be trusted (review L-4): say why.
       setDialog(null);
       setMessage(problemText(t, result.problem));
     }
@@ -268,7 +360,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     const result = await revokeCodeTrust(fetcher);
     await loadTrust();
     setMessage(result.ok ? t('migrations.code.revokedNow') : problemText(t, result.problem));
-    if (result.ok && status !== null) void show();
+    if (result.ok) void reread();
   };
 
   return (
@@ -311,6 +403,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
               onChange={(event) => {
                 setSelected(event.target.value);
                 setStatus(null);
+                setStatusEnv(null);
                 setProblem(null);
               }}
             >
@@ -334,7 +427,18 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
             {problemText(t, problem)}
           </p>
         ) : null}
-        {status !== null ? <StatusResult status={status} /> : null}
+        <div aria-live="polite" aria-busy={busy} data-testid="migrations-result">
+          {status !== null ? (
+            <>
+              {statusEnv !== null ? (
+                <p className={styles.env}>
+                  <EnvBadge environment={statusEnv} size="sm" />
+                </p>
+              ) : null}
+              <StatusResult status={status} />
+            </>
+          ) : null}
+        </div>
       </section>
       {dialog === 'trust' && trust !== null && trust.digest !== null ? (
         <TrustCodeDialog
