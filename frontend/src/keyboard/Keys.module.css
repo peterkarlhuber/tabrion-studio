@@ -1,0 +1,22 @@
+.keys {
+  display: inline-flex;
+  flex: none;
+}
+.visual {
+  display: inline-flex;
+  gap: 2px;
+}
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.6em;
+  padding: 0 var(--tb-space-1);
+  border: 1px solid var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-text);
+  font-family: var(--tb-font-mono);
+  font-size: var(--tb-text-xs);
+  line-height: 1.6;
+}

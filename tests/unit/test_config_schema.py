@@ -168,12 +168,20 @@ def test_postgres_defaults_to_verify_full_for_remote_hosts() -> None:
 def test_settings_defaults_and_values() -> None:
     assert validate_settings({}) == (Settings(), [])
     settings, issues = validate_settings(
-        {"version": 1, "language": "de", "theme": "dark", "log_sql": True, "limits": {"max_rows": 500}}
+        {
+            "version": 1,
+            "language": "de",
+            "theme": "dark",
+            "density": "normal",
+            "log_sql": True,
+            "limits": {"max_rows": 500},
+        }
     )
     assert issues == []
     assert settings.to_dict() == {
         "language": "de",
         "theme": "dark",
+        "density": "normal",
         "log_sql": True,
         "telemetry": False,
         "limits": {"max_rows": 500, "statement_timeout_ms": 30000, "max_result_mb": 20},
@@ -182,11 +190,19 @@ def test_settings_defaults_and_values() -> None:
 
 def test_invalid_settings_keep_their_defaults() -> None:
     settings, issues = validate_settings(
-        {"language": "fr", "log_sql": "yes", "telemetry": True, "limits": {"max_rows": 0, "x": 1}, "y": 2}
+        {
+            "language": "fr",
+            "density": "tiny",
+            "log_sql": "yes",
+            "telemetry": True,
+            "limits": {"max_rows": 0, "x": 1},
+            "y": 2,
+        }
     )
     assert settings == Settings()
     assert {(i.pointer, i.code) for i in issues} == {
         ("settings.language", "config.choice"),
+        ("settings.density", "config.choice"),
         ("settings.log_sql", "config.type"),
         ("settings.telemetry", "config.telemetry_unsupported"),
         ("settings.limits.max_rows", "config.range"),

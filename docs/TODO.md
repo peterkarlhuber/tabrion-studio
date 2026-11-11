@@ -43,6 +43,11 @@
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 draft) |
+| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
+| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
+| TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
+| TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -347,7 +352,9 @@ merge after OA-004.
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010, STU-012..STU-015 | Explorer, SQL editor, data viewer, diagnostics, migration status | P1 | STU-009, STU-011, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
-| TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
+| TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
+| TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
+| TABRION STU-050 | UX acceptance | P1 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
 
@@ -379,7 +386,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 |---|---|---|
 | TABRION QA-18 | `tests/packaging/test_independent.py`: import every tabrion module while orkexa, axentra, nodestro_* and tabrion_studio are blocked (05 §3.2) | P2 |
 | TABRION QA-21 | full AC-7 check against tabrion's `__all__`/API contract and export of the used names to `tabrion/docs/api-consumers.md` (the AST check for private names is in place) | P2 |
-| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, branch protection, English, license, SECURITY.md) | P2 |
+| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, English, license, SECURITY.md; branch protection, private vulnerability reporting and the social preview are optional, owner decision 2026-11-08) | P2 |
 
 ## Technical debt
 
@@ -643,8 +650,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Favorites and recently opened** are a 1.0 feature (03 §2 A).
 - **The `openapi in sync` CI job** (the first API types for the frontend) changes `.github/` and needs a
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
-- **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
-  accepts them, but the page does not send them yet.
+- **Language and theme in `settings.toml`:** done in the appearance PR (TD-021).
 - **PR #13 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
   - **L-1:** in the assistant, `secretKept` hides `secretProblem`. When a retarget could neither remove the old
     keyring entry nor store the new password, the page only says the old one was kept. Show both.
@@ -656,3 +662,102 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
+
+### TD-020 · STU-052 parts that wait for the SQL editor and the explorer
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 sections 7 and 11 (STU-052, depends on STU-012),
+  `docs/architecture/frontend.md` ("Keyboard")
+- **Done in the STU-052 PR:** the shortcut table with platform keys, the command palette, the shortcut help and
+  F6/Shift+F6 over the shell's areas; Vitest and keyboard-only Playwright tests for the views that exist.
+- **Editor shortcuts** (08 section 7): run (⌘↵ / Ctrl+Enter), run script, cancel (⌘. / Ctrl+.; Esc in the result),
+  new editor tab (⌘T is the browser's: Alt+T, the palette shows the shortcut that works), close tab, save script,
+  format (1.0), explorer filter (⌘P / Ctrl+P), history (1.0). Add them to `SHORTCUTS`, the help and the palette with
+  STU-011, STU-012 and STU-020; F6 then also cycles explorer, editor and result.
+- **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); it is
+  met with STU-012.
+- **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
+  skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
+  `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
+- **Review of #16 (`stu-052-td021-review.md`, accepted):** L-1 (German palette says "Darstellung" like the settings
+  view), L-2 (README: "no PyPI release is needed for now; a later publication needs a new decision and G-R") and L-3
+  (tests for IME composition, a shortcut another handler took, Escape not reaching the page; mutants K9, K12, K19) are
+  done in the STU-052 follow-up PR. Open Info items: I-1 (F6 replaces the browser's F6 inside Studio; Ctrl+L still
+  works), I-2 (move the focus to `#main` after "Go to …", with STU-053), I-3 (the docs sentence on F6's "first
+  control" applies to header and navigation only), I-4 ("Umschalt" instead of "Shift" in German, optional).
+
+### TD-021 · Language, theme and density in `settings.toml` (from TD-011)
+
+- **Priority:** P2 Medium · **Status:** Open (#17 merged as `061db9d`; only I-5 and I-6 left) · **Refs:** 03 section 4.3 (`settings.toml`: UI
+  settings, language), 08 section 4.10, `docs/architecture/configuration.md`
+- **Problem:** Studio listens on a free port, and a browser keeps localStorage per origin (port included). The
+  language, theme and density chosen in the settings were therefore forgotten at the next start.
+- **Done in the appearance PR:** `settings.toml` gains `density` (`compact`, `normal`; schema, writer and
+  `PUT /api/settings`). The page saves each choice at once (only that key, a fresh digest, one retry when stale), never
+  changes a file with issues or a hand-written one from there (the choice then stays in this browser and the view
+  says why), and applies the file's non-default values when it opens. Tests: `frontend/src/appearance.test.tsx`, the
+  real-server test in `frontend/e2e/backend.spec.ts`, and the schema, writer and API tests.
+- **Done after the review (`stu-052-td021-review.md`):** C-1, the palette's theme, density and language commands go
+  through `chooseTheme`, `chooseDensity` and `chooseLanguage`, so they are saved too (pinned by a Vitest); M-1, the
+  settings form reads the new digest itself when an appearance choice was saved since it read the file, and keeps
+  what was typed on `config_stale`; L-4, the note for a hand-written file says what to do; L-5, a fake server that
+  checks the digest pins the save queue; L-6, the real-server test removes its `settings.toml` again.
+- **D-1 (Low, `stu-052-td021-review.md`), done in the STU-053 PR:** the palette test ran only "density normal", so a
+  theme command that skipped `chooseTheme` passed; it now runs the theme, density and language commands and checks
+  each saved key.
+- **Open (Info):** I-5 (a warnings-only file is refused by the server, so the note says "could not be saved"), I-6 (an
+  older build reports `density` as an unknown key; a release-notes line).
+
+### TD-022 · STU-053 parts that wait for later packages or a person
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 section 9, 09 STU-053 (depends on STU-050),
+  `docs/architecture/accessibility.md`
+- **Done in the STU-053 PR:** the WCAG 2.2 AA checklist for the current shell (no open violation), the fixes F-1
+  (reflow at 320 px of the PROD header and the tabs), F-2 (24 px targets in D-01), F-3 (the connection switcher at
+  320 px, with titles for names cut with "…"), F-4 (tooltips hoverable and dismissible with Escape, and no click
+  through a tooltip shown for the keyboard focus) and F-5 (the logo link's name below 720 px), the focus on the main area after "Go to …" in the
+  palette (I-2 of `stu-052-td021-review.md`), and `frontend/e2e/a11y-audit.spec.ts` (target size, reflow in en and de, text spacing, focus visible and not
+  obscured, reduced motion, landmarks, tooltips).
+- **Review of the STU-053 PR (`stu-053-review.md`):** L-1 (a click beside a focused link followed it through its
+  tooltip), L-2 (header wrap, mark size and switcher name pinned at 320 px), L-3 (the header icon-button tooltip's
+  Escape and no-gap rules tested) and L-4 (`title` on cut names; the text-spacing comment replaced by a check) are
+  done. The redundant rules `.brand { flex: none }` and `.switcher > * { min-width: 0 }` were removed, since no test
+  could tell them apart (the header wraps before it would shrink the brand). I-1: refresh the report's
+  "Chromium 1243" line when CI's Chromium runs it.
+- **Screen-reader sample** (VoiceOver on macOS, NVDA on Windows): needs a person on those desktops (owner or QA-S1).
+- **With STU-010..STU-013:** the explorer tree (WAI-ARIA tree), the result grid (`role="grid"`, `aria-rowcount`,
+  `aria-rowindex`), the live region for the query status, the SQL editor (CodeMirror, leaving it with Escape); with
+  STU-023 the ER diagram's table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
+- **Required e2e suite:** `a11y-audit.spec.ts` runs in the CI job `e2e`, but is not in the list of suites that must
+  pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
+- **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
+  every MVP flow.
+
+### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
+
+- **Priority:** P3 Low · **Status:** Open (watch) · **Refs:** TABRION QA-8, `docs/development/ci.md` (QA-8 evidence)
+- **What:** `npm audit` over the whole tree reports GHSA-g3hv-75wg-m249 (moderate, a denial of service through
+  glob patterns) in `minimatch` 7.0.0..11.0.0, used only by eslint, `@eslint/config-array` and typescript-eslint.
+  Nothing of it ships: `npm audit --omit=dev --audit-level=high` finds nothing, and the wheel contains only the
+  built frontend. The fix npm offers (`npm audit fix --force`) downgrades eslint to 9.39.5 and typescript-eslint
+  to 8.36.0 (semver-major). `npm audit` lists **10** moderate entries: the one advisory through its dependency
+  cascade. `eslint-plugin-jsx-a11y` uses `minimatch` 3.1.5, outside the range.
+- **Next step:** take the eslint/typescript-eslint update that moves to a fixed `minimatch` when Dependabot proposes
+  it; no forced downgrade. A `package.json` `overrides` of `minimatch` to `^11.0.1` is an alternative, but a major
+  version for eslint's dependency: check eslint with it before using it.
+
+### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
+  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
+  `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
+  `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
+  The CI jobs still build with the unhashed `pyproject.toml` pin.
+- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
+  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
+  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
+  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
+  (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
+  `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.

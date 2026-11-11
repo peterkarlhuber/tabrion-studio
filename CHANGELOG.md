@@ -75,6 +75,10 @@ All notable changes to this project are documented here. The format follows
     - CI: the PostgreSQL service port is published on `127.0.0.1` only.
   - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
     constraints file, and `pyproject.toml` keeps the final range with no direct reference.
+- Reproducible-wheel check (QA-8): the packaging tests build the wheel twice more and require the same SHA-256 as the
+  CI build, with the build backend pinned exactly (`hatchling==1.33.0`, hashed in `build-constraints.txt`); the QA-8
+  evidence (audits, SBOMs, hashes) is in `docs/development/ci.md`. A fixed `SOURCE_DATE_EPOCH` build is tested too, and
+  `scripts/check_frontend_reproducible.py` checks by hand that two frontend builds match.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).
@@ -104,6 +108,24 @@ All notable changes to this project are documented here. The format follows
 - Brand assets (`assets/branding/`): the Tabrion Studio lockup, marks and favicons derived from Peter Karlhuber's logo
   master with the shared brand kit (no redraw, no CSS filters), the social preview, and `TRADEMARKS.md` (the names and
   logos are not MIT). The committed masters carry no C2PA or eXIf metadata; a test proves the pixels unchanged.
+- Keyboard and command palette (STU-052, first part; `docs/architecture/frontend.md`, "Keyboard"): ⌘K / Ctrl+K opens
+  a command palette (go to a view, theme, density, language, help) with the combobox pattern; ⌘/ / Ctrl+/ shows the
+  keyboard shortcuts; F6 and Shift+F6 move between header, activity bar, tabs, main area and status bar. Shortcuts are
+  shown with the keys of the platform (⌘ on macOS, Ctrl or Strg elsewhere); the header has buttons for both dialogs.
+  In German the theme commands read "Darstellung", like the settings view.
+- Language, theme and density are saved in Studio's `settings.toml` as soon as they are chosen, and applied from it
+  when the page opens. They were browser preferences only, which a browser keeps per port, so they were lost at every
+  start (TD-021). `settings.toml` accepts `density = "compact" | "normal"`. A file with issues or one written by hand
+  is not changed from the general settings; the choice then stays in the browser and the view says so. The command
+  palette's theme, density and language commands are saved the same way.
+- Accessibility audit of the shell (STU-053, first part; `docs/architecture/accessibility.md`): WCAG 2.2 AA
+  checklist, and `e2e/a11y-audit.spec.ts` checks target size, reflow at 320 px, text spacing, focus visible and not
+  obscured, reduced motion and the landmarks. Fixed on the way: a PROD workspace no longer scrolls sideways at 320 px
+  (the header wraps; the tabs' screen-reader texts stay inside the tab list), the D-01 "Show full value" and "and N
+  more" buttons are 24 px high, the tooltips can be hovered and hidden with Escape, and a click beside a focused
+  link no longer follows it through its tooltip (WCAG 1.4.10, 2.5.8, 1.4.13). A long connection name or tab title
+  is cut with "…" and shown in full as a title; below 720 px the logo link keeps its accessible name (4.1.2). After "Go to …" in the
+  command palette the focus moves to the new page's main area.
 - The command prints a hint when the default browser on Linux is a snap or a Flatpak, which cannot open the sign-in
   file in a hidden state directory (TD-002, review S-4 of `stu-003-review.md`).
 - CI job `e2e` (mandatory check): the Playwright suites in Chromium on every pull request, namely axe with color

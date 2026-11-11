@@ -62,6 +62,7 @@ nav:
       - Connections and read-only enforcement: architecture/connections.md
       - Query engine: architecture/queries.md
       - App shell and design system: architecture/frontend.md
+      - Accessibility audit: architecture/accessibility.md
   - Development:
       - Building and testing: development/building.md
       - CI and supply chain: development/ci.md
