@@ -112,7 +112,10 @@ export function ConnectionSwitcher({
       >
         <span className={clsx(styles.dot, styles[connection.status])} aria-hidden="true" />
         <span className="tb-sr-only">{t('header.connection.label')}: </span>
-        <span className={styles.name}>{connection.name}</span>
+        {/* A long name is cut with "…" (WCAG 1.4.10); the title shows it in full (STU-053 review L-4). */}
+        <span className={styles.name} title={connection.name}>
+          {connection.name}
+        </span>
         <span className="tb-sr-only">, </span>
         <span className={styles.status}>{status}</span>
       </button>
