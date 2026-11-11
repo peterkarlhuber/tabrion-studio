@@ -13,19 +13,21 @@ and create and drop their own schema.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Iterator
 import contextlib
 import json
 import os
 from pathlib import Path
 import sqlite3
+import threading
 import time
 from typing import Any
 
 import pytest
 import sqlalchemy
 
-from tabrion_studio.config.schema import Profile, SecretRef
+from tabrion_studio.config.schema import Profile, SecretRef, Settings
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services import viewer as viewer_module
 from tabrion_studio.services.connections import ConnectionRegistry
@@ -355,6 +357,21 @@ def pg() -> Iterator[tuple[Viewer, str]]:
         'CREATE TABLE "Studio Viewer".stamped (id uuid PRIMARY KEY, at timestamptz, amount numeric)',
         'INSERT INTO "Studio Viewer".stamped SELECT md5(g::text)::uuid, '
         "timestamptz '2026-01-01' + g * interval '1 hour', g / 3.0 FROM generate_series(1, 50) g",
+        # H-1: no primary key, rows of several relations (the review's probes).
+        'CREATE TABLE "Studio Viewer".parted (k int, v text) PARTITION BY RANGE (k)',
+        'CREATE TABLE "Studio Viewer".parted_1 PARTITION OF "Studio Viewer".parted FOR VALUES FROM (0) TO (100)',
+        'CREATE TABLE "Studio Viewer".parted_2 PARTITION OF "Studio Viewer".parted FOR VALUES FROM (100) TO (200)',
+        "INSERT INTO \"Studio Viewer\".parted SELECT g, 'p' || g FROM generate_series(1, 10) g",
+        "INSERT INTO \"Studio Viewer\".parted SELECT 100 + g, 'p' || g FROM generate_series(1, 10) g",
+        'CREATE TABLE "Studio Viewer".parent (k int, v text)',
+        'CREATE TABLE "Studio Viewer".child () INHERITS ("Studio Viewer".parent)',
+        "INSERT INTO \"Studio Viewer\".parent SELECT g, 'own' FROM generate_series(1, 10) g",
+        "INSERT INTO \"Studio Viewer\".child SELECT g, 'child' FROM generate_series(11, 20) g",
+        # H-2 and M-1: key types that do not come back from the driver as the database compares them.
+        'CREATE TABLE "Studio Viewer".typed (id int PRIMARY KEY, r real, j jsonb, a int[], t json, p point, '
+        "x xml, b bytea, long text)",
+        "INSERT INTO \"Studio Viewer\".typed SELECT g, 0.1, jsonb_build_object('k', mod(g, 4)), ARRAY[mod(g, 3), 1], "
+        "'{}', point(g, g), '<a/>', NULL, NULL FROM generate_series(1, 30) g",
     ]
     with admin.begin() as connection:
         for statement in statements:
@@ -461,3 +478,332 @@ def test_pg_the_statement_timeout(pg: tuple[Viewer, str]) -> None:
     assert time.monotonic() - started < 4.0  # 1.5 s timeout
     assert isinstance(raised.value, ViewerTimeout) or getattr(raised.value, "code", None) == "db.timeout"
     assert viewer.rows(connection_id, "Studio Viewer", "item", limit=1)["rows"][0][0] == 1
+
+
+# The fix round of stu-013-review.md: the reviewer's probes as tests.
+
+
+def _sqlite(path: Path, *statements: str) -> None:
+    connection = sqlite3.connect(path)
+    try:
+        for statement in statements:
+            connection.execute(statement)
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def test_nulls_in_a_sqlite_primary_key_lose_no_rows(lite: tuple[Viewer, str, Path]) -> None:
+    """M-2: SQLite allows NULL in a primary key that is not the row id, in several rows."""
+    viewer, connection_id, path = lite
+    _sqlite(
+        path,
+        "CREATE TABLE nk (k TEXT PRIMARY KEY, v INT)",
+        "INSERT INTO nk VALUES ('a', 1), (NULL, 2), (NULL, 3), ('b', 4), (NULL, 5)",
+    )
+    viewer.explorer.catalog(connection_id, refresh=True)
+    for options in ({}, {"sort": "v"}, {"sort": "v", "desc": True}, {"sort": "k", "desc": True}):
+        rows, modes = walk(viewer, connection_id, "main", "nk", limit=2, **options)
+        assert modes == {"primary_key"}
+        assert sorted(row[1] for row in rows) == [1, 2, 3, 4, 5], options
+    first = viewer.rows(connection_id, "main", "nk", limit=5, sort="v")
+    # A row with a NULL key is found again by its row id (and what the page showed of it).
+    assert viewer.cell(connection_id, "main", "nk", first["page"], 2, "v")["value"] == 3
+    _sqlite(path, "UPDATE nk SET v = 30 WHERE v = 3")
+    with pytest.raises(ViewerError) as gone:
+        viewer.cell(connection_id, "main", "nk", first["page"], 2, "v")
+    assert gone.value.code == "studio.viewer_row_gone"
+    # A row with its full key is found by the key: a changed value is the value now.
+    _sqlite(path, "UPDATE nk SET v = 40 WHERE k = 'b'")
+    assert viewer.cell(connection_id, "main", "nk", first["page"], 3, "v")["value"] == 40
+
+
+def test_a_reused_rowid_is_not_another_rows_cell(lite: tuple[Viewer, str, Path]) -> None:
+    """M-3: a rowid freed by a delete and taken by an insert does not show the new row under the old one."""
+    viewer, connection_id, path = lite
+    _sqlite(path, "CREATE TABLE notes (a TEXT)", "INSERT INTO notes VALUES ('one'), ('two'), ('secret-old')")
+    viewer.explorer.catalog(connection_id, refresh=True)
+    page = viewer.rows(connection_id, "main", "notes")
+    assert page["paging"] == "rowid"
+    assert viewer.cell(connection_id, "main", "notes", page["page"], 2, "a")["value"] == "secret-old"
+    _sqlite(path, "DELETE FROM notes WHERE a = 'secret-old'", "INSERT INTO notes VALUES ('different-row')")
+    with pytest.raises(ViewerError) as gone:
+        viewer.cell(connection_id, "main", "notes", page["page"], 2, "a")
+    assert gone.value.code == "studio.viewer_row_gone"
+    assert viewer.cell(connection_id, "main", "notes", page["page"], 0, "a")["value"] == "one"
+
+
+def test_bytes_are_capped_on_the_server(lite: tuple[Viewer, str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    """M-4: lengths are measured before values are fetched; pages and cells have byte caps."""
+    import tracemalloc
+
+    viewer, connection_id, path = lite
+    huge_text = "é" * (6 * 1024 * 1024)  # 12 MB of UTF-8, 6 M characters
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE big (id INTEGER PRIMARY KEY, t TEXT, b BLOB)")
+    connection.execute("INSERT INTO big VALUES (1, ?, ?)", (huge_text, b"\x00" * (30 * 1024 * 1024)))
+    connection.executemany("INSERT INTO big VALUES (?, ?, NULL)", [(i, "w" * 100_000) for i in range(2, 42)])
+    connection.commit()
+    connection.close()
+    viewer.explorer.catalog(connection_id, refresh=True)
+    tracemalloc.start()
+    try:
+        page = viewer.rows(connection_id, "main", "big", limit=1)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 1024 * 1024  # the 12 MB text and the 30 MB blob stay in the database
+    assert page["truncated_cells"] == [[0, 1], [0, 2]]
+    assert len(page["rows"][0][1].encode("utf-8")) <= 64 * 1024 and set(page["rows"][0][1]) == {"é"}
+    assert len(page["rows"][0][2]["base64"]) <= 64 * 1024
+    peaks = []
+    for column in ("t", "b"):
+        tracemalloc.start()
+        try:
+            cells = {column: viewer.cell(connection_id, "main", "big", page["page"], 0, column)}
+            peaks.append(tracemalloc.get_traced_memory()[1])
+        finally:
+            tracemalloc.stop()
+        text = cells.get("t", locals().get("text"))
+        blob = cells.get("b")
+    # The blob in full would be 30 MB, and its base64 40 MB more; 10 MB of it and its base64 are less than 40 MB.
+    assert peaks[0] < 40 * 1024 * 1024 and peaks[1] < 40 * 1024 * 1024
+    assert text is not None and blob is not None
+    # 10 MB means bytes: of UTF-8 for text (a cut character is left out), of the value for bytes.
+    assert text["truncated"] and text["size"] == len(huge_text.encode("utf-8"))
+    assert 10 * 1024 * 1024 - 2 <= len(text["value"].encode("utf-8")) <= 10 * 1024 * 1024
+    assert blob["truncated"] and blob["size"] == 30 * 1024 * 1024
+    assert len(base64.b64decode(blob["value"]["base64"])) == 10 * 1024 * 1024
+    # A page stops at the byte cap (max_result_mb) and the next page goes on from there.
+    monkeypatch.setattr(viewer, "limits", lambda: Settings(max_result_mb=1))
+    first = viewer.rows(connection_id, "main", "big", limit=1000, filters=[{"column": "id", "op": "gt", "value": 1}])
+    assert first["truncated"] == "bytes" and 5 <= len(first["rows"]) < 40 and first["next"] is not None
+    rows, _ = walk(viewer, connection_id, "main", "big", limit=1000, filters=[{"column": "id", "op": "gt", "value": 1}])
+    assert [row[0] for row in rows] == list(range(2, 42))
+
+
+def test_long_sort_keys_are_not_kept(lite: tuple[Viewer, str, Path]) -> None:
+    """L-1: only the last row's key is kept, and a key too long to keep continues the walk with an OFFSET."""
+    viewer, connection_id, path = lite
+    connection = sqlite3.connect(path)
+    connection.execute("CREATE TABLE wide (id INTEGER PRIMARY KEY, s TEXT)")
+    connection.executemany(
+        "INSERT INTO wide VALUES (?, ?)", [(i, f"{(i * 7) % 23:02d}" + "z" * 70_000) for i in range(23)]
+    )
+    connection.commit()
+    connection.close()
+    viewer.explorer.catalog(connection_id, refresh=True)
+    rows, _ = walk(viewer, connection_id, "main", "wide", limit=4, sort="s", desc=True)
+    assert [row[0] for row in rows] == sorted(range(23), key=lambda i: (i * 7) % 23, reverse=True)
+    page = viewer.rows(connection_id, "main", "wide", limit=4, sort="s")
+    state = viewer._pages[page["page"]]
+    assert state.anchor is None and state.skip == 4  # nothing of 70 KB kept
+    # The row's identity is its primary key, which is short: the cell detail still finds the row.
+    assert viewer.cell(connection_id, "main", "wide", page["page"], 0, "s")["value"].startswith("00z")
+    short = viewer.rows(connection_id, "main", "item", limit=10, sort="name")
+    # (name, id, rowid) of the last row only: the row id orders keys that SQLite lets be NULL (M-2).
+    assert len(viewer._pages[short["page"]].anchor or ()) == 3
+
+
+def test_page_tokens_belong_to_their_session_and_connection(
+    lite: tuple[Viewer, str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-4: a token works only in the session that got it; a closed connection drops its pages."""
+    viewer, connection_id, _ = lite
+    page = viewer.rows(connection_id, "main", "item", limit=5, owner="session-a")
+    for owner in ("session-b", None):
+        with pytest.raises(ViewerError) as raised:
+            viewer.rows(connection_id, "main", "item", after=page["next"], owner=owner)
+        assert raised.value.code == "studio.viewer_page_unknown"
+        with pytest.raises(ViewerError):
+            viewer.cell(connection_id, "main", "item", page["page"], 0, "name", owner=owner)
+    assert viewer.rows(connection_id, "main", "item", after=page["next"], owner="session-a")["rows"]
+    monkeypatch.setattr(viewer_module, "KEPT_PER_SESSION", 2)
+    other = viewer.rows(connection_id, "main", "item", limit=5, owner="session-b")
+    for _ in range(3):
+        viewer.rows(connection_id, "main", "item", limit=5, owner="session-a")
+    assert viewer.rows(connection_id, "main", "item", after=other["next"], owner="session-b")["rows"]
+    with pytest.raises(ViewerError):  # pushed out by its own session's pages only
+        viewer.rows(connection_id, "main", "item", after=page["next"], owner="session-a")
+    kept = viewer.rows(connection_id, "main", "item", limit=5, owner="session-a")
+    viewer.explorer.registry.close(connection_id)
+    assert not any(p.connection_id == connection_id for p in viewer._pages.values())
+    assert kept["page"] not in viewer._pages
+
+
+def test_reflection_is_cached_and_statements_are_limited(
+    lite: tuple[Viewer, str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """L-5: no reflection per page while the cache is fresh; at most so many viewer statements at a time."""
+    viewer, connection_id, _ = lite
+    connection = viewer.explorer.registry.get(connection_id)
+    calls: list[int] = []
+    real = type(connection).inspect
+
+    def counted(self: Any, consume: Any) -> Any:
+        calls.append(1)
+        return real(self, consume)
+
+    monkeypatch.setattr(type(connection), "inspect", counted)
+    page = viewer.rows(connection_id, "main", "item", limit=5)
+    calls.clear()
+    viewer.rows(connection_id, "main", "item", after=page["next"])
+    viewer.cell(connection_id, "main", "item", page["page"], 0, "name")
+    assert calls == []
+    viewer.explorer.catalog(connection_id, refresh=True)  # a refresh drops it
+    calls.clear()
+    viewer.rows(connection_id, "main", "item", limit=5)
+    assert len(calls) == 1  # the columns again (the refresh built the catalog)
+    busy = Viewer(viewer.explorer, max_parallel=0)
+    with pytest.raises(ViewerError) as raised:
+        busy.rows(connection_id, "main", "item")
+    assert raised.value.code == "studio.query_limit"
+    single = Viewer(viewer.explorer, per_connection=1)
+    inner: list[str] = []
+
+    def other() -> None:
+        try:
+            single.rows(connection_id, "main", "odd")
+        except ViewerError as exc:
+            inner.append(exc.code)
+
+    def nested(cursor: Any) -> Any:
+        # A second request (another thread, like another tab) while this statement runs on the same connection.
+        worker = threading.Thread(target=other)
+        worker.start()
+        worker.join(5)
+        return cursor.fetch(2)
+
+    statement: sqlalchemy.Select[Any] = sqlalchemy.select(sqlalchemy.literal_column("1")).limit(1)
+    single._run(connection, statement, nested)
+    assert inner == ["studio.query_limit"]
+    assert single.rows(connection_id, "main", "odd")["rows"]  # the slot is free again
+
+
+def test_the_routes_refuse_without_a_session_or_from_elsewhere(lite: tuple[Viewer, str, Path], tmp_path: Path) -> None:
+    """I-1 and L-4: every form of both routes sits behind the session check; a token stays in its session."""
+    viewer, connection_id, _ = lite
+    studio = make_studio(tmp_path / "static", connections=viewer.explorer.registry, viewer=viewer)
+    client = studio.client
+    base = f"/api/connections/{connection_id}"
+    forms: list[tuple[str, dict[str, str | int]]] = [
+        (f"{base}/tables/main/item/rows", {}),
+        (f"{base}/rows", {"schema": "main", "name": "item"}),
+        (f"{base}/tables/main/item/cell", {"page": "p_x", "row": 0, "column": "name"}),
+        (f"{base}/cell", {"schema": "main", "name": "item", "page": "p_x", "row": 0, "column": "name"}),
+    ]
+    for path, params in forms:
+        assert client.get(path, params=params).status_code in (401, 403)
+    headers = {**studio.sign_in(), "Origin": ORIGIN}
+    for path, params in forms:
+        answer = client.get(path, params=params, headers={**headers, "Origin": "https://elsewhere.example"})
+        assert answer.status_code == 403
+        answer = client.get(path, params=params, headers={**headers, "Sec-Fetch-Site": "cross-site"})
+        assert answer.status_code == 403
+    page = client.get(forms[0][0], params={"limit": 2}, headers=headers).json()
+    assert client.get(forms[0][0], params={"after": page["next"]}, headers=headers).status_code == 200
+    other = {**studio.sign_in(), "Origin": ORIGIN}  # a second session (its cookie replaces the first)
+    answer = client.get(forms[0][0], params={"after": page["next"]}, headers=other)
+    assert (answer.status_code, answer.json()["code"]) == (404, "studio.viewer_page_unknown")
+    answer = client.get(forms[2][0], params={"page": page["page"], "row": 0, "column": "name"}, headers=other)
+    assert answer.json()["code"] == "studio.viewer_page_unknown"
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_partitions_and_inheritance_lose_no_rows(pg: tuple[Viewer, str], statements: list[str]) -> None:
+    """H-1: the physical key is (tableoid, ctid); a ctid alone repeats across partitions and children."""
+    viewer, connection_id = pg
+    for name, want in [("parted", sorted([*range(1, 11), *range(101, 111)])), ("parent", list(range(1, 21)))]:
+        for options in ({}, {"sort": "v"}, {"sort": "v", "desc": True}):
+            rows, modes = walk(viewer, connection_id, "Studio Viewer", name, limit=3, **options)
+            assert modes == {"ctid"}
+            assert sorted(row[0] for row in rows) == want, (name, options)
+    page = viewer.rows(connection_id, "Studio Viewer", "parted", limit=20)
+    found = {viewer.cell(connection_id, "Studio Viewer", "parted", page["page"], i, "k")["value"] for i in range(20)}
+    assert found == {*range(1, 11), *range(101, 111)}
+    assert all(" LIMIT " in sql.replace("\n", " ") for sql in statements)
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_keys_are_compared_in_their_own_type(pg: tuple[Viewer, str]) -> None:
+    """H-2 and M-1: real, jsonb and array keys page to the end; json, xml and point are not sortable."""
+    viewer, connection_id = pg
+    for sort in ("r", "j", "a"):
+        for desc in (False, True):
+            rows, _ = walk(viewer, connection_id, "Studio Viewer", "typed", limit=5, sort=sort, desc=desc)
+            assert sorted(row[0] for row in rows) == list(range(1, 31)), (sort, desc)
+    rows, _ = walk(viewer, connection_id, "Studio Viewer", "typed", limit=4, sort="j")
+    assert [row[2]["k"] for row in rows] == sorted(row[2]["k"] for row in rows)
+    for sort in ("t", "p", "x"):
+        with pytest.raises(ViewerError) as raised:
+            viewer.rows(connection_id, "Studio Viewer", "typed", sort=sort)
+        assert raised.value.code == "studio.viewer_sort_unsupported"
+    page = viewer.rows(connection_id, "Studio Viewer", "typed", limit=3)
+    assert page["columns"][5]["type"] == "point"  # a type SQLAlchemy does not know keeps its name
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_a_reused_ctid_is_not_another_rows_cell(pg: tuple[Viewer, str]) -> None:
+    """M-3: after a delete, VACUUM and an insert, the same ctid holds another row: row_gone, not its value."""
+    viewer, connection_id = pg
+    assert PG_URL is not None
+    engine = sqlalchemy.create_engine(sqlalchemy.make_url(PG_URL).set(drivername="postgresql+psycopg"))
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql('CREATE TABLE "Studio Viewer".notes (a text)')
+            connection.exec_driver_sql("""INSERT INTO "Studio Viewer".notes VALUES ('one'), ('two'), ('secret-old')""")
+        viewer.explorer.catalog(connection_id, refresh=True)
+        page = viewer.rows(connection_id, "Studio Viewer", "notes")
+        assert viewer.cell(connection_id, "Studio Viewer", "notes", page["page"], 2, "a")["value"] == "secret-old"
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.exec_driver_sql("""DELETE FROM "Studio Viewer".notes WHERE a = 'secret-old'""")
+            connection.exec_driver_sql('VACUUM "Studio Viewer".notes')
+            connection.exec_driver_sql("""INSERT INTO "Studio Viewer".notes VALUES ('different-row')""")
+            reused = connection.exec_driver_sql(
+                """SELECT ctid::text FROM "Studio Viewer".notes WHERE a = 'different-row'"""
+            ).scalar()
+        assert reused == "(0,3)"  # the probe's precondition: the slot was reused
+        with pytest.raises(ViewerError) as gone:
+            viewer.cell(connection_id, "Studio Viewer", "notes", page["page"], 2, "a")
+        assert gone.value.code == "studio.viewer_row_gone"
+        assert viewer.cell(connection_id, "Studio Viewer", "notes", page["page"], 1, "a")["value"] == "two"
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str]) -> None:
+    """M-4: a 30 MB bytea and a 12 MB text stay in the database for a page; the cell loads 10 MB of their bytes."""
+    import tracemalloc
+
+    viewer, connection_id = pg
+    assert PG_URL is not None
+    engine = sqlalchemy.create_engine(sqlalchemy.make_url(PG_URL).set(drivername="postgresql+psycopg"))
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                """UPDATE "Studio Viewer".typed SET b = decode(repeat('00', 30 * 1024 * 1024), 'hex'), """
+                """long = repeat('é', 6 * 1024 * 1024) WHERE id = 1"""
+            )
+    finally:
+        engine.dispose()
+    tracemalloc.start()
+    try:
+        page = viewer.rows(connection_id, "Studio Viewer", "typed", limit=2)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 4 * 1024 * 1024
+    assert [0, 7] in page["truncated_cells"] and [0, 8] in page["truncated_cells"]
+    blob = viewer.cell(connection_id, "Studio Viewer", "typed", page["page"], 0, "b")
+    text = viewer.cell(connection_id, "Studio Viewer", "typed", page["page"], 0, "long")
+    assert blob["truncated"] and blob["size"] == 30 * 1024 * 1024
+    assert len(base64.b64decode(blob["value"]["base64"])) == 10 * 1024 * 1024
+    assert text["truncated"] and text["size"] == 12 * 1024 * 1024
+    assert 10 * 1024 * 1024 - 2 <= len(text["value"].encode("utf-8")) <= 10 * 1024 * 1024
+    small = viewer.cell(connection_id, "Studio Viewer", "typed", page["page"], 1, "j")
+    assert small == {"value": {"k": 2}, "size": len('{"k": 2}'), "truncated": False}

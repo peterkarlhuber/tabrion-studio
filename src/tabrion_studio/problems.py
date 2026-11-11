@@ -443,6 +443,13 @@ CATALOG: dict[str, Entry] = {
         "Filter not valid",
         "A filter is a list of at most 20 entries with a column, an operator and a text, number, true, false or null.",
     ),
+    "studio.viewer_sort_unsupported": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Column cannot be sorted",
+        "The column's type has no order (for example json, xml or a geometric type).",
+        "Sort by another column.",
+    ),
     "studio.viewer_page_unknown": Entry(
         404,
         ProblemKind.NOT_FOUND,
@@ -454,14 +461,15 @@ CATALOG: dict[str, Entry] = {
         409,
         ProblemKind.REQUEST,
         "Cell not available",
-        "Rows of a view without a primary key cannot be found again, so the full value cannot be loaded.",
+        "Rows of a view without a primary key, or rows with a very long key, cannot be found again, so the full "
+        "value cannot be loaded.",
         "Open the value with a query in the SQL editor.",
     ),
     "studio.viewer_row_gone": Entry(
         409,
         ProblemKind.DATABASE,
         "Row changed",
-        "The row is no longer in the table, or its key changed.",
+        "The row is no longer in the table, or it changed.",
         "Load the table again.",
     ),
     # Migration status and code trust (STU-015, threat T-16).
@@ -487,6 +495,13 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.DATABASE,
         "Migration status timed out",
         "Reading the revisions took too long and was stopped.",
+    ),
+    "studio.migrations_busy": Entry(
+        429,
+        ProblemKind.DATABASE,
+        "Migration status busy",
+        "Studio reads the revisions of one migration status at a time, and another one is running.",
+        "Try again when it has finished.",
     ),
     "studio.migrations_revisions": Entry(
         422,

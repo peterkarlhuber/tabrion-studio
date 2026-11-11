@@ -27,6 +27,7 @@ The formats:
     (migrations folder not valid)` when the files cannot be checked.
   - If the worker fails, `problem` holds the problem (`studio.migrations_timeout`, `studio.migrations_revisions`,
     `studio.migrations_changed`, `studio.migrations_failed`), and `revisions` is `unknown (could not be read)`.
+    Studio runs one worker at a time; a second status request meanwhile gets `studio.migrations_busy`.
 
 ## Why the revisions need trust
 
@@ -47,38 +48,66 @@ repository (AT4) could put any code into a revision file. So:
 ## The worker
 
 When the code is trusted, `services/migrations.py` starts `services/migration_worker.py` as its own process:
-`python -I -c <boot> <package folder>`. The boot code loads the worker from the same `tabrion_studio` package as Studio.
-`-I` keeps out the `PYTHON*` variables, the user site and the current folder.
+`python -I -B -c <boot> <package folder>`. The boot code loads the worker from the same `tabrion_studio` package as
+Studio. `-I` keeps out the `PYTHON*` variables, the user site and the current folder (the project folder, where the
+worker runs), so no file of the project is imported while the worker starts.
 
 - **Only this connection's target.** The worker gets the target on standard input, never in its arguments or its
   environment: the target fields, the timeouts, and the password or the database file, read again for this run
-  (`ConnectionRegistry.worker_target`). Nothing else of Studio reaches it: no other profile, no session or control
-  token, no keyring access through Studio.
+  (`ConnectionRegistry.worker_target`). Studio passes nothing else, no other profile and no session or control token.
+  This keeps Studio's other secrets out of the worker's input; it does not keep trusted code away from them (see
+  below).
 - **A minimal environment.** The worker inherits only `PATH`, the home and temporary folders, `SYSTEMROOT`/`WINDIR`/
   `COMSPEC` and the locale. It gets no `env:` secret of another profile and no `PG*` variable. libpq's own password
   fallbacks are off, as on every Studio connection.
 - **The same read-only connection.** The worker opens its connection through `connections.read_only_database`:
   `default_transaction_read_only`, Studio's timeouts, the SQLite authorizer, and `Database.read()` around the version
   table.
-- **Checked again before import.** The worker computes the digest again and refuses to import anything if it
-  differs (`studio.migrations_changed`).
+- **Checked again, and run as checked.** The worker computes the digest again and refuses to import anything if it
+  differs (`studio.migrations_changed`). It keeps the bytes it hashed, and Alembic's loader for the revision files is
+  replaced by one that compiles exactly those bytes. A revision file that changes on disk afterwards, or a file that
+  was not hashed, is not run.
+- **No bytecode of the project.** The worker writes no bytecode, and from the moment the project's folders are on
+  `sys.path` it reads none: `sys.pycache_prefix` points to an empty private folder, so no `__pycache__` file is used,
+  and the `prepend_sys_path` folders get an import finder for `.py` sources only (no `.pyc` or extension module).
+  Folders that were on `sys.path` before (Studio's own environment) keep the usual finder.
+- **Studio's modules first.** The worker opens the connection once before the `prepend_sys_path` folders are put on
+  `sys.path`. The database driver, the dialect and what they import are
+  therefore loaded from Studio's environment, never from a module of the same name in the project.
 - **Isolated output.** Its standard input, output and error are closed before any project code runs. The answer goes
-  out on a copy of standard output taken before, and Studio reads at most 1 MB of it.
+  out on a copy of standard output taken before. Studio reads it up to the first line end and at most 1 MB, and does
+  not wait for the pipe to close. After the answer, the worker ends with `os._exit`, so no exit handler of the
+  project's code runs.
 - **Bounded.** The worker runs in the project folder with `prepend_sys_path` folders inside the project, as Alembic
-  does. It is killed with its process group after 30 seconds (`studio.migrations_timeout`), together with any child
-  that the project's code started (POSIX).
+  does. Once the answer is in, or after 30 seconds (`studio.migrations_timeout`), Studio kills the worker's process
+  group (POSIX), which also ends the children the project's code started in it. Studio then waits at most 5 seconds
+  for the killed worker and never for the pipe, so a child that left the process group (its own session) cannot hold
+  the request. Such a child itself keeps running until it ends.
+- **Windows.** There is no process group: Studio kills only the worker, and children of the project's code are not
+  bounded. The answer is read by a thread; after a timeout that thread can stay blocked while such a child holds the
+  pipe (docs/TODO.md, TD-024).
 
 ## Threat model entry
 
 | ID | STRIDE | Threat | Measure | Test |
 |---|---|---|---|---|
-| T-16 | E/I | AT4: a revision file of a cloned project runs code when Studio reads the Alembic revision graph (`ScriptDirectory` imports `versions/*.py`). That code could read Studio's secrets or act with them. | The revision graph is read only when the project's code is trusted, which is off by default and bound to the digest of `alembic.ini` and the revision files. It runs in a separate process that gets only the open connection's target on standard input, with a minimal environment and closed standard streams. The process is checked again before import and killed with its children after 30 s. Without trust, the revisions are `unknown (project not trusted)`, and `current` comes from plain SQL. | `tests/security/test_migrations.py` |
+| T-16 | E/I | AT4: a revision file of a cloned project runs code when Studio reads the Alembic revision graph (`ScriptDirectory` imports `versions/*.py`). That code could read Studio's secrets or act with them. | The revision graph is read only when the project's code is trusted, which is off by default and bound to the digest of `alembic.ini` and the revision files; no other project code runs before the user trusts it. The worker runs the hashed bytes, reads no bytecode of the project and loads the driver before the project's folders are on `sys.path`. It is a separate process that gets only the open connection's target on standard input, with a minimal environment and closed standard streams, and its process group is killed after the answer or after 30 s (POSIX). Without trust, the revisions are `unknown (project not trusted)`, and `current` comes from plain SQL. Once trusted, the code runs as the user: the separate process and the read-only connection protect against mistakes, not against the trusted code (see below). | `tests/security/test_migrations.py` |
 
-What the measure does not cover:
+What the measure does not cover. Trusting the code means trusting it as you would trust `alembic heads`:
 
-- A trusted revision file runs as the user, as `alembic heads` would. It can do whatever the user's account can,
-  including reading the keyring directly.
-- A revision file can import other modules of the project, which the digest does not cover.
+- **Trusted code runs as the user.** It can do whatever the user's account can: read the keyring, Studio's state
+  folder (session and control tokens), Studio's own environment (for example through `/proc` on Linux, with the
+  `env:` secrets of every profile and any `PG*` variable), and the password of the connection, which the worker
+  holds in memory.
+- **The read-only connection is not a boundary for trusted code.** The code can open its own connection with that
+  password and write to the database, or write to a SQLite file directly. The read-only settings, the minimal
+  environment and the separate process keep Studio's own reads from writing and keep secrets out of the worker by
+  accident. They do not stop code that sets out to do otherwise. The worker runs no user SQL, so Studio's SQL checks
+  (STU-011) play no part here.
+- **Modules on `prepend_sys_path` are not covered by the digest.** A revision file can import other modules of the
+  project, and those modules are part of the trusted code. A change to them does not ask for trust again; only
+  `alembic.ini` and the revision files do.
+- **Windows:** children of the project's code are not bounded (see the worker).
 
 The trust is for the project's code as a whole. The dialog's text says so. Doc 03 section 7.3 T-08 ("Alembic `env.py`
 is not run: status via `ScriptDirectory`") needs this entry as a new row. The planning documents are kept by the
