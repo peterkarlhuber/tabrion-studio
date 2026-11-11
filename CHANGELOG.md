@@ -33,6 +33,10 @@ All notable changes to this project are documented here. The format follows
     bytes for the cell detail, fetches of about 2 MB); tokens are bound to the session, at most 64 per session and
     connection, and dropped with their connection; reflection is cached for 10 s; at most 4 viewer statements at a
     time, 2 per connection.
+  - Delta re-review of `stu-013-review.md`: a primary key column whose name starts with `@` is a quoted column like
+    any other (the row identity is typed, not marked by a prefix); every PostgreSQL session starts with
+    `extra_float_digits=3`, and a keyset walk that makes no progress goes on by `OFFSET` instead of repeating pages;
+    the fetch batch is capped by the widest row the byte caps allow, so a small first row cannot inflate it.
 - STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
   until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
