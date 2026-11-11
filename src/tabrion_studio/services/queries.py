@@ -68,6 +68,8 @@ __all__ = [
     "QueryEngine",
     "QueryError",
     "json_value",
+    "next_batch_rows",
+    "raw_size",
 ]
 
 logger = logging.getLogger("tabrion_studio.queries")
@@ -118,6 +120,10 @@ def _raw_size(row: tuple[Any, ...]) -> int:
         else:
             size += 16
     return size
+
+
+#: The public name of the row size the fetch budget uses (STU-021's export sizes its fetches the same way).
+raw_size = _raw_size
 
 
 def next_batch_rows(fetched: int, largest: int) -> int:

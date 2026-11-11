@@ -57,6 +57,7 @@ from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.explorer import Explorer
+from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.viewer import Viewer
 
@@ -268,6 +269,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         queries=QueryEngine(registry, configuration.limits),
         explorer=explorer,
         viewer=Viewer(explorer, configuration.limits),
+        exports=Exports(registry, explorer),
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),

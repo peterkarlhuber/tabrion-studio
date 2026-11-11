@@ -15,6 +15,7 @@ from tabrion_studio.security.launch import LaunchTokens
 from tabrion_studio.security.sessions import CSRF_HEADER
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.explorer import Explorer
+from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.viewer import Viewer
 
@@ -63,6 +64,7 @@ def make_studio(
     queries: QueryEngine | None = None,
     explorer: Explorer | None = None,
     viewer: Viewer | None = None,
+    exports: Exports | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -78,6 +80,7 @@ def make_studio(
         queries=queries,
         explorer=explorer,
         viewer=viewer,
+        exports=exports,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)
