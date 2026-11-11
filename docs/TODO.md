@@ -43,6 +43,7 @@
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test, Connect, URL paste, file dialog, `openapi in sync` job) | P1 | Open |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | In progress (appearance PR, #17; review conditions done) |
+| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -329,7 +330,7 @@ merge after OA-004.
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-050, STU-053 | UX acceptance, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
-| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
+| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part in the user-guide PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R);
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
@@ -582,3 +583,17 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   checks the digest pins the save queue; L-6, the real-server test removes its `settings.toml` again.
 - **Open (Info):** I-5 (a warnings-only file is refused by the server, so the note says "could not be saved"), I-6 (an
   older build reports `density` as an unknown key; a release-notes line).
+
+### TD-023 · User guide parts that wait for later packages (STU-017)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 03 section 10 (STU-017: installation, start, security model,
+  troubleshooting), 09 STU-017 (depends on STU-016), `docs/guide/`
+- **Done in the user-guide PR:** `docs/guide/` for the features that exist: installation from a Git commit (no PyPI,
+  owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
+  connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
+- **With STU-009..STU-015:** connecting and the connection test, the explorer, the SQL editor and its shortcuts, the
+  data viewer, diagnostics and migration status; update the "Development version" note on `guide/index.md`.
+- **Troubleshooting:** the tables grow with the problem codes those packages add; the guide's command lines are
+  checked by the STU-017 clean-install test.
+- **With STU-017:** the documentation checklist, the clean-install test on Linux, macOS and Windows, the tag `v0.1.0`
+  (no publication, G-R) and the install section then names that tag instead of a commit.
