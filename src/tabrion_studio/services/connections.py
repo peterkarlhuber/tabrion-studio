@@ -59,6 +59,7 @@ __all__ = [
     "ProfileSource",
     "RegistryError",
     "connection_url",
+    "read_only_database",
     "studio_profile",
 ]
 
@@ -226,6 +227,33 @@ def _install_authorizer(dbapi_connection: Any, _record: Any) -> None:
         dbapi_connection.set_authorizer(sqlite_authorizer)
 
 
+def read_only_database(
+    profile: Profile, limits: Settings, password: str | None, database_file: Path | None
+) -> tabrion.Database:
+    """A read-only ``tabrion.Database`` for ``profile`` with Studio's guards: the connection registry's, and the
+    migration worker's (STU-015). Not connected yet. Raises :class:`RegistryError`."""
+    url = connection_url(profile, password, database_file)
+    settings = studio_profile(profile, limits)
+    options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password, settings.postgres)}
+    try:
+        db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
+    except FileNotFoundError:
+        raise RegistryError("studio.database_missing") from None
+    except UnsafePath:
+        raise RegistryError("studio.database_unsafe") from None
+    except ConfigurationError as exc:
+        raise RegistryError(
+            "studio.connection_tls" if exc.code == "config.tls" else "studio.connection_config"
+        ) from None
+    if db.dialect == "sqlite":
+        event.listen(db.engine, "connect", _install_authorizer)
+    else:
+        # M-2 of stu-011-review.md: no session setting outlives the statement that made it (after tabrion's own
+        # check-in listener, which gives psycopg's read_only back to the session default).
+        event.listen(db.engine, "checkin", tabrion_compat.reset_session)
+    return db
+
+
 @dataclass
 class OpenConnection:
     """One open, read-only connection. The engine is private; only reading is offered."""
@@ -349,10 +377,9 @@ class ConnectionRegistry:
             with contextlib.suppress(Exception):
                 listener(connection_id)
 
-    def _connect(self, profile_id: str) -> OpenConnection:
-        entry = self.source.entry(profile_id)
+    def _credentials(self, profile_id: str, entry: Any) -> tuple[Path | None, str | None]:
+        """The database file (SQLite) or the password (PostgreSQL) of ``entry``, read now."""
         profile = entry.profile
-        limits = self.source.limits()
         database_file: Path | None = None
         password: str | None = None
         if profile.engine == "sqlite":
@@ -371,25 +398,37 @@ class ConnectionRegistry:
                     raise
             if password is not None:
                 register_secret(password)
-        url = connection_url(profile, password, database_file)
-        settings = studio_profile(profile, limits)
-        options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password, settings.postgres)}
-        try:
-            db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
-        except FileNotFoundError:
-            raise RegistryError("studio.database_missing") from None
-        except UnsafePath:
-            raise RegistryError("studio.database_unsafe") from None
-        except ConfigurationError as exc:
-            raise RegistryError(
-                "studio.connection_tls" if exc.code == "config.tls" else "studio.connection_config"
-            ) from None
-        if db.dialect == "sqlite":
-            event.listen(db.engine, "connect", _install_authorizer)
-        else:
-            # M-2 of stu-011-review.md: no session setting outlives the statement that made it (after tabrion's own
-            # check-in listener, which gives psycopg's read_only back to the session default).
-            event.listen(db.engine, "checkin", tabrion_compat.reset_session)
+        return database_file, password
+
+    def worker_target(self, connection_id: object) -> dict[str, Any]:
+        """What a migration worker needs to open the same read-only connection as ``connection_id`` (STU-015): the
+        target fields, the timeouts, the database file or the password, read again now, and nothing else. The
+        connection must be open and still valid (``get``)."""
+        connection = self.get(connection_id)
+        entry = self.source.entry(connection.profile_id)
+        if target_fingerprint(entry.profile.to_dict()) != connection.fingerprint:
+            raise RegistryError("studio.connection_stale")
+        database_file, password = self._credentials(connection.profile_id, entry)
+        profile = entry.profile
+        limits = self.source.limits()
+        return {
+            "profile": {
+                **{key: getattr(profile, key) for key in TARGET_FIELDS},
+                "name": profile.name,
+                "environment": profile.environment,
+                "statement_timeout_ms": profile.statement_timeout_ms,
+            },
+            "limits": {"statement_timeout_ms": limits.statement_timeout_ms, "max_rows": limits.max_rows},
+            "database_file": None if database_file is None else str(database_file),
+            "password": password,
+        }
+
+    def _connect(self, profile_id: str) -> OpenConnection:
+        entry = self.source.entry(profile_id)
+        profile = entry.profile
+        limits = self.source.limits()
+        database_file, password = self._credentials(profile_id, entry)
+        db = read_only_database(profile, limits, password, database_file)
         timeout = profile.statement_timeout_ms or (
             PROD_STATEMENT_TIMEOUT_MS if profile.environment == "prod" else limits.statement_timeout_ms
         )
