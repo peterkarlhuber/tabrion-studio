@@ -16,9 +16,11 @@ import asyncio
 from collections.abc import AsyncIterator, Iterator
 import json
 import logging
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 from tabrion.errors import TabrionError
 
 from tabrion_studio.api.connections import connection_problem
@@ -40,6 +42,21 @@ def _refusal(exc: BaseException) -> Response | None:
 
 def _next(chunks: Iterator[bytes]) -> bytes | None:
     return next(chunks, None)
+
+
+class _ExportResponse(StreamingResponse):
+    """Closes the export when the response ends for any reason (F-8 of stu-021-review.md): the end of the file, a
+    client that went away, or a server that cancels the response before the body generator ever ran."""
+
+    def __init__(self, export: Export, body: AsyncIterator[bytes], **kwargs: Any) -> None:
+        super().__init__(body, **kwargs)
+        self.export = export
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            self.export.close()
 
 
 def add_export_routes(app: FastAPI, exports: Exports) -> None:
@@ -95,7 +112,8 @@ def add_export_routes(app: FastAPI, exports: Exports) -> None:
             finally:
                 running.close()  # the client went away, or the export ended: stop the producer either way
 
-        return StreamingResponse(
+        return _ExportResponse(
+            export,
             body(),
             media_type=export.media_type,
             headers={"Content-Disposition": f'attachment; filename="{export.filename}"'},

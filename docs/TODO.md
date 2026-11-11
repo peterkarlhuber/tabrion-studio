@@ -43,6 +43,7 @@
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 draft) |
+| TD-025 STU-021 export: infinite and out-of-range dates, Unicode file names, the problem code of data-modifying CTEs (F-7, F-9, F-10) | P3 | Open (STU-021 draft) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -348,7 +349,7 @@ merge after OA-004.
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). Open: the grid tab in the page (frontend lane), editing stays STU-026 |
-| TABRION STU-021 | Export (CSV, JSON) | P1 | STU-011, STU-013 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 like STU-011 (TD-013): `POST /api/exports` streams a query result or a table as CSV or JSON (refusals before the first byte, at most 1 000 000 rows, 10 minutes, one export per connection and 2 at a time, CSV formula escaping for text and bytes); 1 million rows under 100 MB (tracemalloc test); `docs/architecture/exports.md`. Open: the export dialog in the page (frontend lane, after STU-012) |
+| TABRION STU-021 | Export (CSV, JSON) | P1 | STU-011, STU-013 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 like STU-011 (TD-013): `POST /api/exports` streams a query result or a table as CSV or JSON (refusals before the first byte, at most 1 000 000 rows, 10 minutes, one export per connection and 2 at a time, CSV formula escaping for text and bytes); 1 million rows under 100 MB (tracemalloc test); `docs/architecture/exports.md`. Review `stu-021-review.md` (accepted with conditions): F-1 fetches of at most 32 rows (RSS test of wide rows after narrow ones), F-2 tests for every guard, F-3 fullwidth formula starts, F-4 one spelling of non-finite values, F-5 large integers as text, F-6 ISO 8601 intervals, F-8 the response closes the export; F-7, F-9, F-10 are TD-025. Open: the export dialog in the page (frontend lane, after STU-012) |
 | TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
@@ -602,6 +603,19 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   Studio connection (M-1). Other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`,
   `PGSSLROOTCERT`, ...) still apply to what the URL leaves out; a project file cannot set them. Decide whether
   Studio should clear them too.
+
+### TD-025 · STU-021 export: what `stu-021-review.md` left as info
+
+- **Priority:** P3 Low · **Status:** Open (STU-021 draft PR #33; by 2026-12-15, with STU-012) · **Refs:**
+  `docs/architecture/exports.md`
+- **F-7:** psycopg's default loaders fail on PostgreSQL `infinity`/`-infinity` dates and timestamps, BC dates and
+  years above 9999 (`db.data`). A table with `valid_to = 'infinity'` cannot be exported, viewed or queried. Fix it
+  for the query engine, the viewer and the export together: custom loaders in `tabrion_compat` that give these values
+  as text (`infinity`, `-infinity`, PostgreSQL's own text for BC and large years).
+- **F-9:** add `filename*=UTF-8''<percent-encoded>` to `Content-Disposition`, so a table export keeps a non-ASCII
+  table name.
+- **F-10:** map PostgreSQL's "feature not supported" for a data-modifying CTE under `DECLARE CURSOR` to
+  `db.read_only`, or refuse such a CTE in `check_statement`, so the problem says why.
 
 ### TD-013 · STU-011 query engine on tabrion 0.1: what changes with tabrion 0.2
 

@@ -12,6 +12,9 @@ All notable changes to this project are documented here. The format follows
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most
   1 000 000 rows, 10 minutes, one export per connection and 2 at a time. CSV escapes formula-like text and base64
   with a leading `'` (`escape_formulas`); JSON keeps rows as arrays and marks a cut export (`truncated`).
+  After the review: an export fetches at most 32 rows at a time, so wide rows stay under 100 MB too. The fullwidth
+  formula starts are escaped. Non-finite numbers are spelled `NaN`/`Infinity`. Large integers are text in JSON, and
+  intervals are ISO 8601 durations.
 - STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary

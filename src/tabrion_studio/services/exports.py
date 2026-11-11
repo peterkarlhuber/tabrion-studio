@@ -45,7 +45,7 @@ import uuid
 
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tabrion_studio.services.explorer import Explorer
-from tabrion_studio.services.queries import next_batch_rows, raw_size
+from tabrion_studio.services.queries import FETCH_BUDGET_BYTES, raw_size
 from tabrion_studio.services.sqltext import BoundStatement
 from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
@@ -65,7 +65,13 @@ EXPORT_TIMEOUT_S = 600.0
 MAX_PARALLEL = 2
 CHUNK_BYTES = 256 * 1024
 QUEUE_CHUNKS = 8
-_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r")
+#: The most rows one fetch may take (F-1 of stu-021-review.md). A PostgreSQL ``FETCH n`` holds all n rows at once
+#: (libpq's result and the Python rows), and an export has no per-value cap, so the batch must stay small even after
+#: a run of narrow rows: at most this many rows of the widest kind can be in memory at a time.
+EXPORT_BATCH_ROWS = 32
+#: The OWASP set (``= + - @``, tab, carriage return) and the fullwidth forms some spreadsheets read the same way.
+_FORMULA_STARTS = ("=", "+", "-", "@", "\t", "\r", "\uff1d", "\uff0b", "\uff0d", "\uff20")
+_JS_SAFE_INTEGER = 2**53 - 1
 _FILE_NAME = re.compile(r"[^A-Za-z0-9_.-]+")
 _END = object()
 
@@ -86,6 +92,39 @@ def _iso(value: datetime.date | datetime.time) -> str:
     return value.isoformat()
 
 
+def next_export_batch(fetched: int, largest: int) -> int:
+    """The size of the next export fetch after one of ``fetched`` rows, with ``largest`` the largest row so far: at
+    most twice the last one, at most :data:`EXPORT_BATCH_ROWS`, and as many as fit the fetch budget at that size."""
+    return max(1, min(EXPORT_BATCH_ROWS, 2 * fetched, FETCH_BUDGET_BYTES // max(1, largest)))
+
+
+def _non_finite(value: float | decimal.Decimal) -> str:
+    """PostgreSQL's spelling of a value that is not a finite number (F-4): ``NaN``, ``Infinity``, ``-Infinity``."""
+    if (isinstance(value, decimal.Decimal) and value.is_nan()) or (isinstance(value, float) and math.isnan(value)):
+        return "NaN"
+    return "Infinity" if value > 0 else "-Infinity"
+
+
+def _duration(value: datetime.timedelta) -> str:
+    """An interval as an ISO 8601 duration, PostgreSQL's ``iso_8601`` style: ``P428DT4H5M6S``, ``P-1DT-2H``,
+    ``PT0S`` (F-6). Every part carries the sign, so the text never starts with ``-``."""
+    total = (value.days * 86_400 + value.seconds) * 1_000_000 + value.microseconds
+    sign = "-" if total < 0 else ""
+    days, rest = divmod(abs(total), 86_400_000_000)
+    hours, rest = divmod(rest, 3_600_000_000)
+    minutes, rest = divmod(rest, 60_000_000)
+    seconds, micros = divmod(rest, 1_000_000)
+    second_text = f"{seconds}.{micros:06d}".rstrip("0") if micros else str(seconds)
+    time_parts = [(hours, "H"), (minutes, "M")]
+    text = "P" + (f"{sign}{days}D" if days else "")
+    times = "".join(f"{sign}{amount}{unit}" for amount, unit in time_parts if amount)
+    if seconds or micros:
+        times += f"{sign}{second_text}S"
+    if times:
+        text += "T" + times
+    return text if text != "P" else "PT0S"
+
+
 def _text(value: object) -> str:
     """A value as CSV text (``None`` is handled by the caller)."""
     if isinstance(value, str):
@@ -96,26 +135,39 @@ def _text(value: object) -> str:
         return base64.b64encode(bytes(value)).decode("ascii")
     if isinstance(value, datetime.date | datetime.time):
         return _iso(value)
+    if isinstance(value, datetime.timedelta):
+        return _duration(value)
+    if isinstance(value, float) and not math.isfinite(value):
+        return _non_finite(value)
+    if isinstance(value, decimal.Decimal) and not value.is_finite():
+        return _non_finite(value)
     if isinstance(value, dict | list | tuple):
-        return json.dumps(_plain(value), ensure_ascii=False, separators=(",", ":"))
+        return json.dumps(_plain(value, nested=True), ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     return str(value)
 
 
-def _plain(value: object) -> Any:
-    """A value as a JSON value (recursively for arrays and JSON documents)."""
-    if value is None or isinstance(value, bool | int | str):
+def _plain(value: object, *, nested: bool = False) -> Any:
+    """A value as a JSON value (recursively for arrays and JSON documents). A column's integer beyond JavaScript's
+    safe integers is text, as in the query engine (F-5); inside a JSON document numbers stay as they are."""
+    if value is None or isinstance(value, bool | str):
         return value
+    if isinstance(value, int):
+        return value if nested or -_JS_SAFE_INTEGER <= value <= _JS_SAFE_INTEGER else str(value)
     if isinstance(value, float):
-        return value if math.isfinite(value) else str(value)
+        return value if math.isfinite(value) else _non_finite(value)
     if isinstance(value, bytes | bytearray | memoryview):
         return {"base64": base64.b64encode(bytes(value)).decode("ascii")}
     if isinstance(value, datetime.date | datetime.time):
         return _iso(value)
     if isinstance(value, list | tuple):
-        return [_plain(item) for item in value]
+        return [_plain(item, nested=True) for item in value]
     if isinstance(value, dict):
-        return {str(key): _plain(item) for key, item in value.items()}
-    if isinstance(value, decimal.Decimal | uuid.UUID | datetime.timedelta):
+        return {str(key): _plain(item, nested=True) for key, item in value.items()}
+    if isinstance(value, decimal.Decimal):
+        return str(value) if value.is_finite() else _non_finite(value)
+    if isinstance(value, datetime.timedelta):
+        return _duration(value)
+    if isinstance(value, uuid.UUID):
         return str(value)
     return str(value)
 
@@ -151,7 +203,7 @@ class _Encoder:
         else:
             if self.rows:
                 self._buffer.write(",")
-            self._buffer.write("\n" + json.dumps([_plain(value) for value in row], ensure_ascii=False))
+            self._buffer.write("\n" + json.dumps([_plain(value) for value in row], ensure_ascii=False, allow_nan=False))
         self.rows += 1
 
     def tail(self, truncated: bool) -> None:
@@ -265,7 +317,7 @@ class Exports:
             raise ExportError("studio.export_invalid")
         columns = ", ".join(_quote(column["name"]) for column in reflected.columns)
         text = f"SELECT {columns} FROM {_quote(schema)}.{_quote(name)}"  # noqa: S608 - reflected, quoted names
-        return connection.prepare(text), _FILE_NAME.sub("_", name)[:100] or "export"
+        return connection.prepare(text), _FILE_NAME.sub("_", name).lstrip(".")[:100] or "export"
 
     def _produce(
         self,
@@ -292,13 +344,13 @@ class Exports:
         def consume(cursor: ResultCursor) -> int:
             encoder = _Encoder(export_format, [column.name for column in cursor.columns], escape_formulas)
             encoder.head()
-            batch_rows, largest, truncated = 1, 1, False
+            batch_rows, largest, truncated = 1, 1, False  # the first fetch is one row
             while not export._stopped.is_set():
                 batch = cursor.fetch(min(batch_rows, max_rows + 1 - encoder.rows))
                 if not batch:
                     break
                 largest = max(largest, *(raw_size(row) for row in batch))
-                batch_rows = next_batch_rows(len(batch), largest)
+                batch_rows = next_export_batch(len(batch), largest)
                 for row in batch:
                     if encoder.rows >= max_rows:
                         truncated = True
