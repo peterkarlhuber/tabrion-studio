@@ -46,6 +46,11 @@ migration files of the project folder. It runs nothing.
 - **Axentra product namespaces** (`crm`, ...) are registered in code (`database.extra_migrations`), so Studio has no
   files for them. They show what the database recorded, with `state: no_files`.
 - **Orkexa's version** is read as text with a regular expression. The module is never imported.
+- **Orkexa's version tables** are only the names Orkexa can create: its table prefix (`PREFIX` in
+  `orkexa/backends/postgres/_sql.py`: a lower-case letter, up to 30 of `[a-z0-9_]`, ending in `_`) followed by
+  `orkexa_schema`. Other tables whose names end in `orkexa_schema` are ignored.
+- **Limits.** At most 100 version tables (sorted by schema and name) and 10 000 rows per table are read. Nothing flags
+  a cut yet (M-3 of `stu-024-review.md`, in `docs/TODO.md`).
 
 Each entry has a `state`:
 
@@ -55,8 +60,17 @@ Each entry has a `state`:
 - `newer`: the database has versions that the files do not know.
 - `changed`: an applied file's name or checksum differs.
 - `no_files`: Studio found no files to compare with.
+- `unreadable`: Studio could not read this version table. `problem` holds the reason, `current` is `null` and
+  `steps` is empty. The other tables and formats are read as usual, so one such table never fails the answer.
+  - `db.permission`: the role has no `USAGE` on the schema or no `SELECT` on the table. The catalog query checks this
+    first, and Studio does not query the table.
+  - `studio.migrations_table`: a column Studio reads is missing, `version` is not `smallint`, `integer` or `bigint`,
+    or a value cannot be converted.
+  - another `db.<kind>` or `studio.statement_refused` when reading the table failed.
 
-Each step has a `status`: `applied`, `pending`, `unknown` or `changed`.
+Every Levuvo entry has `problem`, which is `null` unless the state is `unreadable`. Each step has a `status`:
+`applied`, `pending`, `unknown` or `changed`. When several apply, the entry's state is the first of `changed`,
+`newer`, `pending`.
 
 **Trust.** These files are SQL and text that Studio only reads, so threat T-16 does not apply and they need no code
 trust. They follow the same file rules as the Alembic files:
