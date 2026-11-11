@@ -7,7 +7,7 @@ schema version 1), `files.py` (reading without following links), `project.py` (p
 
 | File | Content | Trust |
 |---|---|---|
-| `<config dir>/settings.toml` | language, theme, `log_sql`, limits; telemetry does not exist (`telemetry = true` is reported and ignored) | the user's own file; not a link |
+| `<config dir>/settings.toml` | language, theme, density, `log_sql`, limits; telemetry does not exist (`telemetry = true` is reported and ignored) | the user's own file; not a link |
 | `<config dir>/profiles.toml` | the user's profiles | the user's own file; must be 0600 and owned by the user (POSIX), not a link |
 | `<project>/.tabrion/studio.toml` | the project's profiles, checked into the repository | **untrusted** until the user confirms exactly these bytes (D-01) |
 | `<state dir>/trust-<key>.json` | the trust record of one project folder: the SHA-256 of the confirmed file and what the dialog showed | written by Studio, 0600 |
@@ -49,7 +49,7 @@ in the configuration folder (and the trust records in the state folder); **it ne
 | `POST /api/profiles` | `{"profile": {...}, "digest", "overwrite"?}` | 201 `{"id": "user:<name>", "digest"}` |
 | `PUT /api/profiles` | `{"id": "user:<name>", "profile": {...}, "digest", "overwrite"?}` | 200 `{"id", "digest"}`; the name cannot change (`config.rename_unsupported`) |
 | `DELETE /api/profiles` | `{"id": "user:<name>", "digest", "overwrite"?}` | 200 `{"digest"}`; also removes the profile's saved password (keyring and session) |
-| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
+| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "density"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
 
 The id is in the body, not the path (03 section 6 sketches `/profiles/{id}`): a profile name may contain `/`, and
 `/api/profiles/{id}/secret` must never be read as a profile route. A profile has the keys of the file;
@@ -64,8 +64,12 @@ The connection manager (`frontend/src/views/connections/`) uses these routes: a 
 with a filter and a detail panel, the three-step "New connection" assistant of 08 section 4.2 (database; password
 source: keyring, variable, file, this session or none; name, the required environment and the read-only role), a
 delete confirmation whose default is Cancel, and a password dialog (`PUT /api/profiles/{id}/secret`). The settings
-view saves the query limits and the SQL logging opt-in (with its warning) to `settings.toml`; language, theme and
-density stay browser preferences. Testing and connecting need the connection registry (STU-009) and are shown
+view saves the query limits and the SQL logging opt-in (with its warning) to `settings.toml`. Language, theme and
+density are saved there too, each as soon as it is chosen (TD-021, `frontend/src/appearance.ts`): Studio listens on a
+free port and a browser keeps its storage per origin, so a browser-only preference would be gone at the next start.
+The page sends only the changed key with a freshly read digest (a stale digest is retried once), never changes a file
+with issues or one written by hand from there (the choice then stays in this browser, and the view says so), and
+applies the file's non-default values when it opens. Testing and connecting need the connection registry (STU-009) and are shown
 disabled.
 
 ## Schema version 1
@@ -188,6 +192,8 @@ The dialog shows only data from the untrusted file, so it follows U-1 of `stu-00
 | `tests/security/test_project_trust.py` (T-4, T-5, STU-007 L-1) | each PostgreSQL connection says where its password goes (source, `host:port`, TLS) with `remote_host`, `weak_tls`, `sensitive_variable` and `secret_outside` marks; SQLite connections have no flow; the list of sensitive variables |
 | `frontend/e2e/dialogs.spec.ts`, `a11y.spec.ts` | the hostile, changed D-01 in Chromium: focus rules, escapes, caps, diff, the password lines; axe without serious or critical violations in light/dark and en/de, also for the stale D-01 with removed unknown keys and the invalid-file notice |
 | `frontend/e2e/backend.spec.ts` | a real `tabrion-studio` with a project file: D-01 appears after sign-in, the project profiles are unused before "Trust" and used after it, and a reload asks no more; a profile created in the page lands in `profiles.toml` (0600) and is deleted again (STU-008) |
+| `frontend/src/appearance.test.tsx` (TD-021) | the file's language, theme and density are applied at the start, defaults leave the browser's choice; a choice is saved alone with the fresh digest, CSRF and JSON, retried once when stale, kept local for a file with issues, a hand-written file or a failing server; saves run in order; the settings form keeps its input and saves with the new digest |
+| `frontend/e2e/backend.spec.ts` (TD-021) | a real server writes the choices to `settings.toml` (0600) and a fresh browser context opens in German, dark and normal density |
 | `tests/unit/test_config_writer.py` (STU-008) | hostile strings round-trip and never inject a key; profiles and settings read back exactly; created 0600 in a 0700 folder; a stale digest, a hand-written file (only with `overwrite`) and a file with issues (never); a link at the target or at the temporary name is not written through; an unsafe folder (link, shared, a file) is refused |
 | `tests/security/test_profiles_api.py` (STU-008) | create, change and delete user profiles; a plain password is refused without echo and never written; issues name fixed keys only; names unique and never renamed; project profiles never written; stale digest and hand-written file; settings; session, CSRF, Origin and JSON (DELETE too) required; a retargeted or deleted profile forgets its saved password |
 | `frontend/src/views/connections/ConnectionsView.test.tsx`, `frontend/e2e/connections.spec.ts` (STU-008) | groups and escaped names; the three steps with required fields; the password goes only to the secret route; issues at their fields; the hand-written confirmation; delete and password dialogs with Cancel as default; every write sends `Content-Type: application/json`, DELETE included; axe in light/dark and en/de for the list, every step and the dialogs |
