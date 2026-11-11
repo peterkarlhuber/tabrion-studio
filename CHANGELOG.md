@@ -11,7 +11,13 @@ All notable changes to this project are documented here. The format follows
   tabrion 0.2): `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host
   (T-10), a read-only role that can write, no statement timeout for the role or database, SQLite rows written with
-  foreign keys off.
+  foreign keys off. Review fix round (`stu-014-review.md`): the diagnosis stops at the connection's statement
+  timeout and can be canceled (`POST .../diagnostics/cancel`; `STU-DX-008` names what did not run, also SQLite's
+  `quick_check`); `STU-DX-003` covers column grants, `TRUNCATE`, views, foreign tables, sequences and every role the
+  session can `SET ROLE` to; `STU-DX-006` finds an owner role in any schema (it replaces `TAB-PG-003`, which sees
+  the current schema only); `STU-DX-007` default privileges; role settings follow PostgreSQL's precedence, and
+  `STU-DX-010` covers `lock_timeout`, `idle_in_transaction_session_timeout` and `application_name`; a broken foreign
+  key definition is `STU-DX-009` instead of a failed route; no TLS finding twice, none for a Unix socket.
 - STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary

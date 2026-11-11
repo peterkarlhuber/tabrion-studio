@@ -348,7 +348,7 @@ merge after OA-004.
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"). Open: the grid tab in the page (frontend lane), editing stays STU-026 |
-| TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..005` (prod TLS, T-10 / STU-T-021, read-only role that can write, no role timeout, SQLite rows written with foreign keys off); the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
+| TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..010` (prod TLS, T-10 / STU-T-021, read-only role that can write in any way or through any role it can become, owner in any schema, default privileges, role settings with their precedence, SQLite rows written with foreign keys off or a broken foreign key, the time limit); `POST .../diagnostics/cancel`; the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout, the write paths of M-2). Review `stu-014-review.md` fix round done (M-1..M-3, L-1..L-6, I-1..I-3). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
 | TABRION STU-012, STU-015 | SQL editor, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
@@ -543,6 +543,23 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     users do not learn to click through a changed D-01.
   - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
     `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
+
+### STU-014 diagnostics: review items and limits kept open
+
+- **Priority:** P3 · **Status:** Open · **Refs:** `stu-014-review.md`, `docs/architecture/diagnostics.md`
+- **TAB-PG-003 in tabrion (M-3):** tabrion's owner finding counts only tables in `current_schema()`, which hides an
+  owner role from every tabrion user whose tables live elsewhere. Studio leaves `TAB-PG-003` out and uses its own
+  `STU-DX-006` (any schema). Raise it as a tabrion issue (a `role_info(owner_scope="database")` or a wider default)
+  through the coordinator; Studio takes it with tabrion 0.2 (TD-013).
+- **Sequence `USAGE` (M-2):** `STU-DX-003` counts `UPDATE` on a sequence (`setval`), not `USAGE` (`nextval`): a
+  read-only role often has `USAGE` for `currval`, and flagging it would be noise.
+- **Schema `USAGE` (I-3):** `has_table_privilege` ignores `USAGE` on the schema, so a grant in a schema the role
+  cannot enter still counts as writable. Conservative on purpose.
+- **Server-wide settings:** `STU-DX-004` and `-010` read `pg_db_role_setting` only; `postgresql.conf` and
+  `ALTER SYSTEM` values need `pg_read_all_settings`, which a runtime role should not have. The detail says so.
+- **One time limit for the whole diagnosis:** the connection's statement timeout (30 s, 15 s on prod) bounds the
+  sum of the checks, not each. A very large SQLite file can therefore stop in `quick_check` every time; the finding
+  `STU-DX-008` says to give the profile a longer statement timeout.
 
 ### STU-013 viewer: review items kept open
 

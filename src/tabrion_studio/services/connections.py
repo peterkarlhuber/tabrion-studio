@@ -308,14 +308,18 @@ class OpenConnection:
         with self._read() as transaction, tabrion_compat.inspector(transaction) as found:
             return consume(found)
 
-    def tabrion_findings(self) -> list[Finding]:
-        """``tabrion.check`` on this connection, inside one ``Database.read()`` (STU-014; it only reads)."""
+    def tabrion_findings(self, *, cancel: Cancel | None = None) -> list[Finding]:
+        """``tabrion.check`` on the driver connection of one ``Database.read()`` (STU-014; it only reads, see
+        :func:`.tabrion_compat.check`). ``cancel`` stops it from another thread."""
         with self._read() as transaction:
-            return tabrion_compat.check(transaction)
+            return tabrion_compat.check(transaction, cancel=cancel if cancel is not None else Cancel())
 
-    def fetch(self, sql: str, params: Mapping[str, object] | None = None) -> list[tuple[Any, ...]]:
+    def fetch(
+        self, sql: str, params: Mapping[str, object] | None = None, *, cancel: Cancel | None = None
+    ) -> list[tuple[Any, ...]]:
         """All rows of one read-only statement, for Studio's own small queries; a refused one raises
-        ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps)."""
+        ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps).
+        ``cancel`` stops it from another thread."""
 
         def every_row(cursor: ResultCursor) -> list[tuple[Any, ...]]:
             rows: list[tuple[Any, ...]] = []
@@ -323,7 +327,7 @@ class OpenConnection:
                 rows += batch
             return rows
 
-        return self.stream(self.prepare(sql, params), every_row)
+        return self.stream(self.prepare(sql, params), every_row, cancel=cancel)
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))
