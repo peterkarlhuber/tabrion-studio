@@ -145,18 +145,26 @@ def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
             dbapi.close()
 
 
+_RESET_STATEMENTS = ("CLOSE ALL", "SELECT pg_catalog.pg_advisory_unlock_all()", "RESET ALL")
+
+
 def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
     """Pool ``checkin`` listener (PostgreSQL): ``RESET ALL``, back to the startup values (M-2 of ``stu-011-review.md``).
 
     Studio gives its session settings as startup options too (``connections.startup_options``), so this restores
     the profile's timeouts and ``default_transaction_read_only`` and drops any other setting a statement changed.
+    ``CLOSE ALL`` and ``pg_advisory_unlock_all()`` drop held cursors and session-level advisory locks too (defense in
+    depth for R-H1 of the delta re-review: the statement check refuses both). ``DISCARD ALL`` would cover them, but it
+    cannot run in a transaction block.
     A connection that cannot be reset leaves the pool. tabrion 0.2: a session reset of tabrion's own (TD-013).
     """
     if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
         return
     try:
+        dbapi_connection.rollback()  # whatever a statement left open
         with dbapi_connection.cursor() as cursor:
-            cursor.execute("RESET ALL")
+            for statement in _RESET_STATEMENTS:
+                cursor.execute(statement)
         dbapi_connection.commit()
     except Exception as exc:
         connection_record.invalidate(exc)

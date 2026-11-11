@@ -713,6 +713,80 @@ def test_m3_a_wide_blob_result_keeps_peak_memory_bounded(lite: tuple[QueryEngine
     assert peak < 60 * 1024 * 1024, peak
 
 
+# R-M1 of the delta re-review: the budget follows the largest row so far, grows at most twice per fetch and counts
+# nested values.
+
+NULL_FIRST = (
+    "WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 24) "
+    "SELECT x, CASE WHEN x > 1 THEN zeroblob(4000000) END AS b FROM c"
+)
+
+
+def peak_of(engine: QueryEngine, connection_id: str, sql: str) -> tuple[Query, int]:
+    tracemalloc.start()
+    try:
+        query = wait(engine.start(connection_id, sql), 60.0)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    return query, peak
+
+
+def test_r_m1_a_null_first_row_does_not_open_the_budget(lite: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, source = lite
+    source.profiles["project:parts"] = replace(source.profiles["project:parts"], statement_timeout_ms=None)
+    query, peak = peak_of(engine, connection_id, NULL_FIRST)
+    assert query.state == "done", query.problem
+    assert len(query.rows) == 24
+    # Before: 1 row, then the other 23 in one fetch (92 MB). Now: 1, 2, then one at a time.
+    assert peak < 30 * 1024 * 1024, peak
+
+
+def test_r_m1_nested_values_count_in_full() -> None:
+    raw_size = queries_module._raw_size
+    assert raw_size((["x" * 1000] * 100,)) >= 100_000
+    assert raw_size(({"k": ["y" * 500, {"z": "w" * 500}]},)) >= 1000
+    deep: Any = "x"
+    for _ in range(10_000):  # deeper than the recursion limit
+        deep = [deep]
+    assert raw_size((deep,)) > 10_000
+    assert raw_size((None, 1, 2.5)) == 48
+
+
+def test_r_m1_batches_grow_at_most_twice_per_fetch() -> None:
+    sizes, fetched = [], 1
+    for _ in range(12):
+        fetched = queries_module.next_batch_rows(fetched, 100)
+        sizes.append(fetched)
+    assert sizes == [2, 4, 8, 16, 32, 64, 128, 256, 500, 500, 500, 500]
+    assert queries_module.next_batch_rows(256, 4_000_000) == 1  # one large row closes the budget again
+    assert queries_module.next_batch_rows(8, 300_000) == 6
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r_m1_wide_arrays_and_a_null_first_row_keep_peak_memory_bounded(
+    pg: tuple[QueryEngine, str, Source],
+) -> None:
+    engine, connection_id, source = pg
+    source.profiles["user:pg"] = replace(source.profiles["user:pg"], statement_timeout_ms=60_000)
+    engine.registry.close_all()
+    connection_id = engine.registry.open("user:pg").id
+    arrays, peak = peak_of(
+        engine, connection_id, "SELECT array_fill('xxxxxxxx'::text, ARRAY[100000]) FROM generate_series(1, 30)"
+    )
+    assert arrays.state == "done", arrays.problem
+    # Before: 1 row, then 29 rows of 100000 strings in one fetch (about 200 MB). Now one row at a time.
+    assert peak < 80 * 1024 * 1024, peak
+    nulls, peak = peak_of(
+        engine,
+        connection_id,
+        "SELECT CASE WHEN g > 1 THEN repeat('x', 4000000) END FROM generate_series(1, 24) AS g",
+    )
+    assert nulls.state == "done", nulls.problem
+    assert peak < 40 * 1024 * 1024, peak
+
+
 def test_i3_the_byte_cap_is_the_max_result_mb_setting(sqlite_file: Any) -> None:
     source = sqlite_source(sqlite_file, max_result_mb=1)
     registry = ConnectionRegistry(source)
@@ -738,6 +812,13 @@ def test_m2_startup_options_carry_studios_session_settings() -> None:
     assert options.split(" -c ")[0] == "-c default_transaction_read_only=on"
     assert "-c statement_timeout=30000" in options and "-c lock_timeout=5000" in options
     assert "-c TimeZone=UTC" in options
+
+
+def test_r_i1_settings_the_startup_options_cannot_match_are_refused() -> None:
+    settings = studio_profile(sqlite_source_profile(), Settings()).postgres
+    for change in ({"search_path": ("App", "public")}, {"transaction_timeout_ms": 60_000}):
+        with pytest.raises(RegistryError):
+            startup_options(replace(settings, **change))
 
 
 def sqlite_source_profile() -> Any:
@@ -772,6 +853,40 @@ def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Sou
     assert shown["search_path"] == {'"$user", public'}
     assert shown["default_transaction_read_only"] == {"on"}
     assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
+
+
+def test_r_h1_the_sqlite_nested_comment_probe_is_refused(lite: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = lite
+    with pytest.raises(StatementRefused):
+        engine.start(connection_id, "/* /* */ DELETE FROM part -- */ select\n")
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r_h1_the_carriage_return_probes_are_refused(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    for statement in (
+        "DECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(6)",
+        "DO $$BEGIN PERFORM pg_advisory_lock(4242); END$$",
+        "COPY (SELECT 'rr18d') TO '/tmp/studio_r_h1_copy.txt'",
+        "COMMIT",
+    ):
+        with pytest.raises(StatementRefused):
+            engine.start(connection_id, f"-- x\r{statement} /*\nshow */")
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r_h1_check_in_closes_held_cursors_and_advisory_locks(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    # Past the text check: what a function of the database could leave on the session.
+    _below_the_check(connection, "DECLARE studio_r_h1 CURSOR WITH HOLD FOR SELECT 1")
+    _below_the_check(connection, "SELECT pg_advisory_lock(424242)")
+    for _ in range(4):  # whichever of the pool's connections it lands on
+        assert connection.fetch("SELECT count(*) FROM pg_cursors WHERE name = 'studio_r_h1'") == [(0,)]
+    held = connection.fetch("SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' AND objid = 424242 AND granted")
+    assert held == [(0,)]
 
 
 @pytest.mark.postgres

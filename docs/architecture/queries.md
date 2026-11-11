@@ -13,8 +13,10 @@ what the SQL editor (STU-012) and the data viewer (STU-013) call.
    - The answer is 202 with the query's state; a worker thread runs the statement.
 2. The worker runs `OpenConnection.stream`: one `Database.read()` per statement, the statement checked once more
    (also the driver text it executes: it must be what binding the checked text gives), and the rows read in
-   batches until a limit is reached. The first fetch is one row; the next ones as many rows as fit about 2 MB at
-   the size so far, at most 500.
+   batches until a limit is reached. The first fetch is one row; each next one at most twice the one before and as
+   many rows as fit about 2 MB at the size of the largest row so far (text, binary and nested values such as arrays
+   and json counted in full), at most 500. A run of small rows followed by large ones can still load one fetch of
+   that many large rows.
 3. The page follows `GET /api/queries/{id}/events` (server-sent events) and reads `GET /api/queries/{id}/rows`
    in pages of up to 5 000 rows, also while the query runs.
 4. `POST /api/queries/{id}/cancel` stops it.
@@ -43,7 +45,7 @@ slice `a[1:n]` reads `:n` as a placeholder; write `a[1 : n]`.
 |---|---|---|
 | Rows per result | 1 000 by default; `max_rows` up to the `max_rows` setting (10 000 by default, at most 1 000 000) | `truncated_by: "rows"` |
 | Bytes per result | the `max_result_mb` setting: 20 MB of JSON values by default, at most 200 MB | `truncated_by: "bytes"` |
-| One fetch | about 2 MB (one value larger than that still loads in full: the database's own limit bounds a single value) | |
+| One fetch | about 2 MB at the size of the largest row so far, at most twice the fetch before (one value larger than that still loads in full: the database's own limit bounds a single value) | |
 | Cell | 64 KB of text, 32 KB of bytes (as base64) | `truncated_cells: [[row, column], ...]` |
 | Time | the profile's timeout (30 s, 15 s for `prod`) for the whole query; PostgreSQL also `statement_timeout` per statement and `lock_timeout` 5 s | `db.timeout` |
 | Parallel queries | 4 in Studio, 2 per connection | `studio.query_limit` (429) |
@@ -78,12 +80,25 @@ effects that outlive Studio's one-statement transaction:
 - `SET` (also `SET LOCAL`, which does nothing useful in a one-statement transaction) is refused: a plain `SET`
   stays on the pooled connection (`SET statement_timeout = 0`).
 
+The first word comes from the same lexer as the rest of the check (R-H1 of the delta re-review), not from a scan of
+the text: it skips white space, comments and leading `(` the way the server does. The text is lexed three ways:
+PostgreSQL with and without backslash escapes in `'...'`, and SQLite (`--` ends only at a line feed, block comments
+do not nest, `[...]` and backticks quote identifiers). Every reading must start with the same allowed word, and
+every check must hold in each. So `-- x\rDECLARE ... /*\nshow */` (PostgreSQL ends `--` at a carriage return too)
+and `/* /* */ DELETE ... -- */ select` (SQLite does not nest) are refused, and so is a nested block comment before
+the first word. White space is ASCII only (space, tab, line feed, carriage return, form feed, vertical tab): a
+non-ASCII space belongs to the next word, as in both servers. The cursor choice (`DECLARE ... CURSOR` or a plain
+cursor) uses the same first word.
+
 Writes (`INSERT`, `CREATE`, ...) are refused by the same rule; the read-only session stays the boundary for them,
 which the STU-T-010 tests prove by sending them below the check. As a second layer, every PostgreSQL connection
 gets Studio's session settings (`statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
-`TimeZone`, `default_transaction_read_only=on`, `application_name`) as startup options too, and runs `RESET ALL`
-when it goes back to the pool: whatever a statement changed (for example through a function of the database), the
-next statement gets the profile's values. A connection that cannot be reset leaves the pool.
+`TimeZone`, `default_transaction_read_only=on`, `application_name`) as startup options too, and runs `CLOSE ALL`,
+`pg_advisory_unlock_all()` and `RESET ALL` when it goes back to the pool: whatever a statement left on the session
+(for example through a function of the database: a setting, a held cursor, a session-level advisory lock), the next
+statement gets the profile's values and none of it. A connection that cannot be reset leaves the pool. A
+`search_path` or `transaction_timeout` in the session settings is refused for now: the startup options would not
+quote the one the way tabrion does, and an older server refuses the other at startup (R-I1; Studio sets neither).
 
 ## Events and states
 
