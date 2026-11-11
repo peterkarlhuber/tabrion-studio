@@ -104,6 +104,7 @@ markers = [
     "security: workflow pins, supply chain and other security regressions",
     "packaging: needs a built wheel (TABRION_STUDIO_DIST)",
     "postgres: needs a PostgreSQL server (TABRION_STUDIO_TEST_POSTGRES, a libpq URL of a database it may change)",
+    "postgres_superuser: needs TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER (a superuser of the same server; makes and drops its own roles)",
 ]
 filterwarnings = ["error"]
 

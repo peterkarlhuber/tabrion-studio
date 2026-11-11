@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+import gc
 import importlib
 import importlib.util
 from pathlib import Path
@@ -17,6 +19,14 @@ def no_real_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
         return
     studio_secrets = importlib.import_module("tabrion_studio.config.secrets")
     monkeypatch.setattr(studio_secrets, "select_backend", lambda: None)
+
+
+@pytest.fixture(autouse=True)
+def collect_garbage_after_each_test() -> Iterator[None]:
+    """A connection that a test leaks is finalized (and its ResourceWarning raised) in that test's teardown, not
+    during some later test's setup (the ResourceWarning flake of stu-013-review.md)."""
+    yield
+    gc.collect()
 
 
 @pytest.fixture

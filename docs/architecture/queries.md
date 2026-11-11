@@ -93,7 +93,7 @@ cursor) uses the same first word.
 Writes (`INSERT`, `CREATE`, ...) are refused by the same rule; the read-only session stays the boundary for them,
 which the STU-T-010 tests prove by sending them below the check. As a second layer, every PostgreSQL connection
 gets Studio's session settings (`statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
-`TimeZone`, `default_transaction_read_only=on`, `application_name`) as startup options too, and runs `CLOSE ALL`,
+`TimeZone`, `default_transaction_read_only=on`, `extra_float_digits=3` (exact float text for the viewer's keys), `application_name`) as startup options too, and runs `CLOSE ALL`,
 `pg_advisory_unlock_all()` and `RESET ALL` when it goes back to the pool: whatever a statement left on the session
 (for example through a function of the database: a setting, a held cursor, a session-level advisory lock), the next
 statement gets the profile's values and none of it. A connection that cannot be reset leaves the pool. A

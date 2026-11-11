@@ -161,13 +161,16 @@ _STARTUP_VALUE = re.compile(r"[A-Za-z0-9_/+-]{1,64}")
 
 
 def startup_options(session: SessionSettings) -> str:
-    """libpq ``options`` for ``session`` and ``default_transaction_read_only=on``: the values ``RESET ALL`` gives back.
+    """libpq ``options`` for ``session``, ``default_transaction_read_only=on`` and ``extra_float_digits=3``: the values
+    ``RESET ALL`` gives back.
 
     Only plain values (numbers, names like ``UTC``): anything else would need libpq's escaping, so it is refused.
     """
     if any(getattr(session, name) is not None for name in _NOT_AT_STARTUP):
         raise RegistryError("studio.connection_config")
-    pairs = [("default_transaction_read_only", "on")]
+    # extra_float_digits=3: float text is exact (shortest round-trip), whatever the role or database sets, so the
+    # viewer's keyset (keys kept as their text, H-2 of stu-013-review.md) compares the same value it showed.
+    pairs = [("default_transaction_read_only", "on"), ("extra_float_digits", "3")]
     for name, setting in _STARTUP_SETTINGS.items():
         value = getattr(session, name)
         if value is None:
