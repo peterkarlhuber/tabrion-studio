@@ -1188,8 +1188,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - **Export from the tab** (STU-021 has the backend), the route `/c/:conn/t/:schema/:name` (TD-011) and the tree's
     context menu (TD-041).
   - **D-02 on the server:** the tab never opens a connection; the explorer opens it through the shared page
-    confirmation. The server-side check of `confirmed_environment` on `POST /api/connections` comes with #48 and is
-    adopted at the next master merge.
+    confirmation, and since #48 the server checks `confirmed_environment` on `POST /api/connections` too (adopted
+    with the master merge of `ed24015`; nothing in the tab changed).
   - **CI:** `e2e/viewer.spec.ts` and `e2e/viewer-backend.spec.ts` run in the job `e2e` (every spec runs), but the
     step "Every suite ran and none was skipped" does not list them; the coordinator's planned workflow-change pull
     request adds them (like TD-037).
