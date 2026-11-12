@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-024 backend: `GET /api/connections/{id}/migrations` also reports the
+  Levuvo formats on PostgreSQL. It compares Nodestro's and Axentra's version tables with the project's SQL migration
+  files (checksums as their runners record them; pending steps with an SQL preview), and Orkexa's version table with
+  `SCHEMA_VERSION`. Studio reads these files as text and runs nothing. A version table the role may not read, or
+  one with unexpected columns or types, is reported as `state: unreadable` with its problem
+  (`studio.migrations_table` is new) and does not fail the answer.
 - STU-015 backend: `GET /api/connections/{id}/migrations` with SQLite's
   `user_version` and the Alembic status. The Alembic `current` comes from the version table; `heads` and `pending`
   need the project's revision files to be imported, so they are read only after the user trusted the project's code
