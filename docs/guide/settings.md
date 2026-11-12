@@ -32,6 +32,9 @@ with "Rewrite file and save".
 | Shift+F6 | Shift+F6 | move to the previous area |
 | Esc | Esc | close the palette or a dialog |
 
+The SQL editor has shortcuts of its own (run, run script, cancel, new and close tab, save); they are listed in
+[SQL editor](sql-editor.md) and in the shortcut list.
+
 The command palette shows the commands whose name contains every word you type: go to a view ("go settings"),
 change the theme, density or language ("theme dark", "Deutsch"), or open the shortcut list. The arrow keys choose,
 Enter runs, Esc closes. Theme, density and language chosen there are saved like in the settings.

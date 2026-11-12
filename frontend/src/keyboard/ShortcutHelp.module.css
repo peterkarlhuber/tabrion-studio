@@ -19,3 +19,8 @@
   color: var(--tb-color-text-muted);
   font-size: var(--tb-text-sm);
 }
+.table th.group {
+  padding-top: var(--tb-space-3);
+  color: var(--tb-color-text);
+  font-weight: var(--tb-weight-semibold);
+}

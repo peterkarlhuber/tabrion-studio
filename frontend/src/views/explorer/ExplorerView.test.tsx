@@ -242,7 +242,7 @@ describe('opening and the tree', () => {
     expect(screen.getByTestId('explorer-open')).not.toHaveAttribute('aria-disabled');
   });
 
-  it('Open on a profile that is gone says so and opens nothing', async () => {
+  it('Open on a profile that is gone: the picker moves to a remaining profile and takes the focus', async () => {
     const { fetcher, calls } = server({
       'GET /api/profiles': [
         () => json(PROFILES),
@@ -257,9 +257,33 @@ describe('opening and the tree', () => {
       'The profile no longer exists.',
     );
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    const picker = screen.getByLabelText<HTMLSelectElement>('Connection profile');
+    // The value is one of the options (not the deleted id), and the focus is on the picker, never on the body.
+    expect(picker.value).toBe('user:measure');
+    expect([...picker.options].map((option) => option.value)).toEqual(['user:measure']);
+    await waitFor(() => expect(picker).toHaveFocus());
+    expect(screen.getByTestId('explorer-open')).not.toHaveAttribute('aria-disabled');
+    // The page's own selection follows the picker: Open works on the profile shown (PROD, so D-02 asks).
+    expect(screen.getByTestId('explorer-open')).toBeEnabled();
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(await screen.findByRole('dialog')).toHaveTextContent('measure');
   });
 
-  it('Open when the list cannot be read again: the loaded profile decides (PROD still asks D-02)', async () => {
+  it('Open on the last profile, now gone: the focus goes to the problem, not the body', async () => {
+    const { fetcher } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => json({ ...PROFILES, profiles: [] })],
+    });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    const alert = await screen.findByTestId('explorer-problem');
+    expect(screen.getByText(/There are no connection profiles yet/)).toBeInTheDocument();
+    await waitFor(() => expect(alert).toHaveFocus());
+    expect(document.activeElement).not.toBe(document.body);
+  });
+
+  it('Open when the list cannot be read again: fail closed, no D-02 and no connection', async () => {
     const { fetcher, calls } = server({
       'GET /api/profiles': [() => json(PROFILES), () => new Response(null, { status: 503 })],
     });
@@ -268,8 +292,17 @@ describe('opening and the tree', () => {
     await screen.findByRole('option', { name: 'parts-dev (DEV)' });
     await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
     await user.click(screen.getByTestId('explorer-open'));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(await screen.findByTestId('explorer-problem')).toHaveTextContent(
+      'The local server does not answer.',
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    // The same for a DEV profile: without the current list nothing is opened.
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'project:parts-dev');
+    await user.click(screen.getByTestId('explorer-open'));
+    await screen.findByTestId('explorer-problem');
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    expect(screen.getByTestId('explorer-open')).not.toHaveAttribute('aria-disabled');
   });
 
   it('says so when there are no profiles', async () => {
@@ -1082,6 +1115,38 @@ describe('the shared connection state of STU-008 (#42)', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     await screen.findByRole('tree');
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2);
+  });
+
+  it('a PROD profile whose target changed while the page stayed open asks D-02 again', async () => {
+    const measure = PROFILES.profiles[1] as Record<string, unknown>;
+    const moved = {
+      ...PROFILES,
+      profiles: [PROFILES.profiles[0], { ...measure, host: 'db2.internal' }],
+    };
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => json(PROFILES), () => json(moved)],
+    });
+    const shared = session();
+    const user = userEvent.setup();
+    render(
+      <ConnectionSessionContext.Provider value={shared.value}>
+        <ExplorerView fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: 'Connect' }),
+    );
+    await screen.findByRole('tree');
+    // Same profile id, other host: the confirmation was for the old target, so D-02 asks again.
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }));
+    await screen.findByRole('tree');
+    expect(shared.confirmed.size).toBe(2);
   });
 
   it('a connection gone on Refresh leaves the header too', async () => {
