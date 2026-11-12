@@ -1007,7 +1007,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 ### TD-039 · Queries made when a PostgreSQL connection is opened (TABRION STU-022 review)
 
 - **Priority:** P1 High · **Status:** Done (PR #45) · **Refs:** `stu-022-review.md` (off GitHub, delta
-  review D-1), `services/connections.py`, `services/tabrion_compat.py`, `docs/architecture/connections.md`
+  review D-1), `services/connections.py`, `services/tabrion_compat.py`, `docs/architecture/connections.md`,
+  `docs/architecture/explorer.md`
 - **What:** the queries SQLAlchemy's dialect sends when a connection is opened (`current_schema()` among them) and
   the driver's hstore type lookup ran under the session's `search_path`, before Studio's own catalog reads
   (STU-022) pin theirs. This predated STU-022.
@@ -1018,7 +1019,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   ahead of `pg_catalog`, and checks that user SQL still sees the session's path, on two sessions at once (L-1 of
   `td-039-review.md`); an `hstore` value comes back as the server's text (L-2). Studio's own catalog reads and the
   connection setup share one path constant (`tabrion_compat.CATALOG_SEARCH_PATH`), and the STU-022 regression test
-  for planted objects now places them before the connection is opened, so it covers the setup too (I-3).
+  for planted objects now places them before the connection is opened, so it covers the setup too (I-3); it plants
+  the functions the setup calls unqualified as well, so a setup without its fixed path fails it (DL-1 of the delta
+  review).
 - **Not in scope:** tabrion's diagnostics collectors are fully qualified and stay on the session's path, since they
   report it. User SQL, the viewer and the exports keep the session's path on purpose, and so do the statements that
   Alembic and `tabrion.migrations` send in the migration worker after the setup (I-1), like the viewer's.
