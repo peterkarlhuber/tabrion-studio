@@ -618,6 +618,41 @@ describe('EditorView: export (TD-043)', () => {
     expect(open).toHaveFocus();
   });
 
+  it('exports the statement and parameter as they ran, not the editor text or field typed since (C-1)', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const ran = 'select * from generate_series(1, 4) where n > :min';
+    const { log } = setup({ sql: ran }, { saveExport: save });
+    const text = (await editor()) as HTMLTextAreaElement;
+    await user.click(screen.getByTestId('editor-run'));
+    const min = screen.getByRole('textbox', { name: ':min' });
+    await waitFor(() => expect(min).toHaveFocus());
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Type of :min' }), 'number');
+    fireEvent.change(min, { target: { value: '0' } });
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('4 rows · 25 ms'),
+    );
+    // After the run: another statement in the editor (a different table, a write after it) and another value.
+    const typed =
+      "select * from generate_series(1, 9) where n > :min; update parts set material = 'X'";
+    fireEvent.change(text, { target: { value: typed } });
+    expect(text).toHaveValue(typed);
+    fireEvent.change(screen.getByRole('textbox', { name: ':min' }), { target: { value: '7' } });
+    expect(screen.getByRole('textbox', { name: ':min' })).toHaveValue('7');
+    await user.click(screen.getByRole('button', { name: 'Export…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Export' });
+    await user.click(within(dialog).getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(log.exports).toHaveLength(1);
+    expect(log.exports[0]?.sql).toBe(ran);
+    expect(log.exports[0]?.params).toEqual({ min: 0 });
+    expect(log.exports[0]?.maxRows).toBe(4);
+    // The file holds the ran statement's rows (4, not 9).
+    const csv = await (save.mock.calls[0]?.[0] as Blob).text();
+    expect(csv.split('\r\n').filter((line) => line !== '')).toHaveLength(5);
+  });
+
   it('offers no export on the messages, for a failed statement, or while a statement runs', async () => {
     const user = userEvent.setup();
     setup({ sql: 'select missing_table;\nselect pg_sleep(60)' });

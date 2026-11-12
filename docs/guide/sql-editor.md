@@ -61,7 +61,10 @@ Studio runs the statement again for the export, read-only and with the same para
 as they are now. If there are more rows than the limit, the file stops there; a JSON file says so, and Studio tells
 you after the download. A CSV file cannot say it. **Cancel export** (or Esc) stops it, and nothing is saved. Studio
 runs one export per connection and two at a time, and an export stops after 10 minutes. The browser holds the file
-until it is saved, so a very large export needs that much browser memory.
+until it is saved, so a large export needs that much browser memory. Studio stops an export when the file passes
+1 GB: the export is canceled, nothing is saved, and the dialog asks you to export fewer rows or columns. If the
+connection breaks while the file arrives, nothing is saved either, and the dialog says that the file did not arrive
+whole.
 
 ## Tabs and drafts
 

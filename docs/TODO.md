@@ -63,7 +63,7 @@
 | TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Open (needs a `.github/` pull request; does not block STU-012) |
-| TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, `export.spec.ts` in the e2e job's required list, no server-side size estimate) | P2 | Open (export dialog PR) |
+| TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, `export.spec.ts` in the e2e job's required list, no server-side size estimate) | P2 | Open (export dialog PR) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -1093,15 +1093,24 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   CSV formula option, progress, cancel by button or Escape, closing and leaving abort, a double press starts one
   export, the cut hints, refusals in en/de). The SQL editor opens it from a finished result ("Export…"), with the
   statement and the parameters it ran with, on the result's connection, after the shared D-02 guard.
+- **Review** `stu-021-export-ui-review.md` (accepted with conditions), done in the same PR: C-1/M-1 a test runs a
+  statement with a parameter, changes the editor text and the parameter field, exports, and checks that the request
+  holds the statement and value as they ran (Vitest and `e2e/export.spec.ts`; kills the mutant "export the editor's
+  current text"); C-2/M-2 the page's byte ceiling of 1 GiB (`MAX_EXPORT_BYTES`, see "Open"); L-1 a stream that
+  breaks after some bytes is "did not arrive whole", not "the local server does not answer"; L-2 (the redundant
+  profile guard on "Export…") stays as defense in depth.
 - **Seam for the data viewer (STU-013, built in parallel):** the viewer mounts `ExportDialog` with
   `source: {kind: "table", schema, name}`, its open connection, `fetchedRows: null` (or the rows it holds) and asks
   D-02 through `useConnect().guard` first, like the editor. Nothing in the dialog is editor-specific; the editor's
   own problem wording is passed in (`describeProblem`).
 - **Open:**
   - The file is held in the browser's memory until it is saved (a `Blob`; `fetch` cannot hand a stream to the
-    download). The server's memory bound of STU-021 holds; the browser's grows with the file. A save straight to
-    disk needs the File System Access API (Chromium only) or a download route without the CSRF header, which the
-    access model of STU-003 does not allow. Revisit with the desktop package.
+    download). The server's memory bound of STU-021 holds; the browser's grows with the file up to the page's
+    ceiling, `MAX_EXPORT_BYTES` = 1 GiB (M-2 of `stu-021-export-ui-review.md`): past it the page aborts the request,
+    drops the bytes, saves nothing and says "export fewer rows or columns" (en/de). The server bounds rows and time,
+    not bytes, so a larger file cannot be exported from the page today. A save straight to disk needs the File
+    System Access API (Chromium only) or a download route without the CSRF header, which the access model of STU-003
+    does not allow. Revisit with the desktop package.
   - `e2e/export.spec.ts` and the export test in `e2e/editor-backend.spec.ts` run in the e2e job but are not in its
     list of suites that must pass (with TD-037; needs a `.github/` pull request).
   - #48 (server-side D-02, `confirmed_environment` on opening a connection) is adopted with the next master merge;

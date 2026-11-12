@@ -1,9 +1,10 @@
 /**
  * TD-043 (STU-021 in the page): the export client. The request body for a statement and for a table, the file name
  * rule (the server's name only in its form), the media type, a JSON file without its end, the cut marker, progress,
- * abort, refusals and a server that does not answer.
+ * abort, refusals and a server that does not answer, the page's byte ceiling (M-2 of the review: the request is
+ * aborted, nothing is kept) and a stream that breaks after some bytes (L-1: incomplete, not offline).
  */
-import { downloadExport, exportFilename, type ExportRequest } from './exports';
+import { downloadExport, exportFilename, MAX_EXPORT_BYTES, type ExportRequest } from './exports';
 
 const SQL: ExportRequest = {
   connectionId: 'c1',
@@ -176,5 +177,85 @@ describe('downloadExport', () => {
     (push as unknown as (chunk: string) => void)('a\r\n');
     const result = await pending;
     expect(result.ok === false && result.problem.code).toBe('studio.export_canceled');
+  });
+
+  it('stops past the byte ceiling: the request is aborted, the stream canceled, nothing returned', async () => {
+    expect(MAX_EXPORT_BYTES).toBe(1024 * 1024 * 1024);
+    let canceled = false;
+    let pulls = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        // Six chunks of 10 bytes, more than the ceiling of 25 below.
+        pulls += 1;
+        if (pulls > 6) controller.close();
+        else controller.enqueue(new TextEncoder().encode('0123456789'));
+      },
+      cancel() {
+        canceled = true;
+      },
+    });
+    const { fetcher, calls } = recorder(() => file(stream, 'text/csv'));
+    const progress: number[] = [];
+    const result = await downloadExport(fetcher, SQL, {
+      maxBytes: 25,
+      onProgress: (bytes) => progress.push(bytes),
+    });
+    expect(result.ok === false && result.problem.code).toBe('studio.export_too_large');
+    expect(calls[0]?.init.signal?.aborted).toBe(true);
+    expect(canceled).toBe(true);
+    expect(progress).toEqual([10, 20]);
+    expect(pulls).toBeLessThan(5);
+
+    // Exactly at the ceiling is still saved.
+    const exact = await downloadExport(
+      recorder(() => file('0123456789', 'text/csv')).fetcher,
+      SQL,
+      { maxBytes: 10 },
+    );
+    expect(exact.ok && exact.value.bytes).toBe(10);
+
+    // An answer without a readable stream is bounded too.
+    const whole = new Response('0123456789', { headers: { 'Content-Type': 'text/csv' } });
+    Object.defineProperty(whole, 'body', { value: null });
+    const flat = await downloadExport(recorder(() => whole).fetcher, SQL, { maxBytes: 9 });
+    expect(flat.ok === false && flat.problem.code).toBe('studio.export_too_large');
+  });
+
+  it("the caller's abort reaches the request", async () => {
+    const abort = new AbortController();
+    const { fetcher, calls } = recorder(
+      () =>
+        new Promise<Response>(() => {
+          /* never answers */
+        }),
+    );
+    void downloadExport(fetcher, SQL, { signal: abort.signal });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls[0]?.init.signal?.aborted).toBe(false);
+    abort.abort();
+    expect(calls[0]?.init.signal?.aborted).toBe(true);
+  });
+
+  it('a stream that breaks after some bytes is incomplete, not offline, and nothing is returned', async () => {
+    for (const format of ['csv', 'json'] as const) {
+      let sent = false;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (sent) {
+            controller.error(new TypeError('network error'));
+            return;
+          }
+          sent = true;
+          controller.enqueue(
+            new TextEncoder().encode(format === 'csv' ? 'a\r\n1\r\n' : '{"rows":['),
+          );
+        },
+      });
+      const result = await downloadExport(
+        recorder(() => file(stream, format === 'csv' ? 'text/csv' : 'application/json')).fetcher,
+        { ...SQL, format },
+      );
+      expect(result.ok === false && result.problem.code).toBe('studio.export_incomplete');
+    }
   });
 });

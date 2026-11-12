@@ -12,7 +12,9 @@
  * - **CSV formulas:** on by default (the server's protection against CSV injection); JSON is data and never changed.
  * - **Running:** the bytes received are announced; Cancel (or Escape) aborts the request with an `AbortController`,
  *   which makes the server close the export, and nothing is saved. Closing the dialog or leaving the page aborts too.
- *   The file is saved only when it arrived whole, under the server's file name when it has the expected form.
+ *   The file is saved only when it arrived whole, under the server's file name when it has the expected form. The
+ *   file is held in the page until then, so an export past `MAX_EXPORT_BYTES` (1 GiB) is stopped there: the request
+ *   is aborted, nothing is saved, and the dialog says to export fewer rows or columns.
  * - **Problems** are the page's en/de texts; the caller can pass its own wording for statement problems.
  */
 import type { TFunction } from 'i18next';
@@ -22,6 +24,8 @@ import { useTranslation } from 'react-i18next';
 import {
   downloadExport,
   EXPORT_CANCELED,
+  EXPORT_TOO_LARGE,
+  MAX_EXPORT_BYTES,
   MAX_EXPORT_ROWS,
   type ExportFormat,
   type ExportSource,
@@ -47,6 +51,8 @@ export interface ExportDialogProps {
   /** The text of a problem; by default the page's general problem texts. */
   describeProblem?: (t: TFunction, problem: Problem) => string;
   save?: SaveFile;
+  /** The most bytes the page holds of the file (`MAX_EXPORT_BYTES`; tests pass a small one). */
+  maxBytes?: number;
   /** After a saved export, with the sentence for the page's status line. */
   onDone: (message: string) => void;
   onClose: () => void;
@@ -54,13 +60,14 @@ export interface ExportDialogProps {
 
 type RowsMode = 'fetched' | 'limit';
 
-/** The byte count for people: B, KB or MB, one decimal. */
+/** The byte count for people: B, KB, MB or GB, one decimal. */
 export function formatBytes(bytes: number, locale: string): string {
   const number = (value: number, digits: number) =>
     new Intl.NumberFormat(locale, { maximumFractionDigits: digits }).format(value);
   if (bytes < 1024) return `${number(bytes, 0)} B`;
   if (bytes < 1024 * 1024) return `${number(bytes / 1024, 1)} KB`;
-  return `${number(bytes / (1024 * 1024), 1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${number(bytes / (1024 * 1024), 1)} MB`;
+  return `${number(bytes / (1024 * 1024 * 1024), 1)} GB`;
 }
 
 /** The row limit typed in the dialog, or null when it is not a whole number from 1 to `MAX_EXPORT_ROWS`. */
@@ -98,6 +105,7 @@ export function ExportDialog({
   capped = false,
   describeProblem,
   save = saveFile,
+  maxBytes = MAX_EXPORT_BYTES,
   onDone,
   onClose,
 }: ExportDialogProps) {
@@ -132,7 +140,11 @@ export function ExportDialog({
   );
 
   const describe = (value: Problem) =>
-    describeProblem ? describeProblem(t, value) : exportProblemText(t, value);
+    value.code === EXPORT_TOO_LARGE.code
+      ? t('export.problems.tooLarge', { size: formatBytes(maxBytes, locale) })
+      : describeProblem
+        ? describeProblem(t, value)
+        : exportProblemText(t, value);
 
   const start = async () => {
     if (runningNow.current) return;
@@ -154,6 +166,7 @@ export function ExportDialog({
       { connectionId, format, source, maxRows, escapeFormulas: escape },
       {
         signal: controller.signal,
+        maxBytes,
         onProgress: (bytes) =>
           setProgress(t('export.received', { size: formatBytes(bytes, locale) })),
       },

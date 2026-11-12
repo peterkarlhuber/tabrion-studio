@@ -127,8 +127,11 @@ download, with a hint when the export is cut.
   server closes the export when the request goes away, and nothing is saved. A second press before the next render
   starts nothing.
 - **Problems** are the page's en/de texts (`studio.export_invalid`, `studio.export_busy`, `studio.export_stopped`,
-  a closed connection, and in the editor the statement's own wording).
-- **Memory in the browser:** the file is held as a `Blob` until it is saved (TD-043).
+  a closed connection, and in the editor the statement's own wording). A stream that breaks after some bytes have
+  arrived is `studio.export_incomplete` ("did not arrive whole"), not "the server does not answer".
+- **Memory in the browser:** the file is held until it is saved (TD-043), at most `MAX_EXPORT_BYTES` (1 GiB): past it
+  the page aborts the request (the server closes the export), drops the bytes, saves nothing and answers
+  `studio.export_too_large` ("export fewer rows or columns"). The server bounds rows and time, not bytes.
 
 Tests: `src/api/exports.test.ts`, `src/components/export/ExportDialog.test.tsx`, the export part of
 `EditorView.test.tsx`, axe in jsdom (`a11y.test.tsx`); in Chromium `e2e/export.spec.ts` (axe in light and dark, English

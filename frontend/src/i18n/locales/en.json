@@ -932,6 +932,7 @@
       "busy": "Another export is running on this connection, or two are running already. Wait until one has finished.",
       "stopped": "The export took longer than 10 minutes and was stopped. Export fewer rows, or filter the query.",
       "incomplete": "The file did not arrive whole, so nothing was saved. Try again.",
+      "tooLarge": "The file is larger than {{size}}, too large to assemble in the browser, so the export was stopped and nothing was saved. Export fewer rows or columns.",
       "connectionGone": "The connection is no longer open. Run the statement again, then export."
     }
   }

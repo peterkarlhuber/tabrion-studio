@@ -932,6 +932,7 @@
       "busy": "Auf dieser Verbindung läuft schon ein Export, oder es laufen bereits zwei. Warte, bis einer fertig ist.",
       "stopped": "Der Export dauerte länger als 10 Minuten und wurde gestoppt. Exportiere weniger Zeilen oder filtere die Abfrage.",
       "incomplete": "Die Datei kam nicht vollständig an, daher wurde nichts gespeichert. Versuche es erneut.",
+      "tooLarge": "Die Datei ist größer als {{size}} und zu groß, um sie im Browser zusammenzusetzen; der Export wurde daher gestoppt und nichts wurde gespeichert. Exportiere weniger Zeilen oder Spalten.",
       "connectionGone": "Die Verbindung ist nicht mehr offen. Führe die Anweisung erneut aus und exportiere dann."
     }
   }

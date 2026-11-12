@@ -12,7 +12,10 @@ All notable changes to this project are documented here. The format follows
   runs again with its parameters on the result's connection (D-02 through the shared guard; no new connection). The
   dialog shows the bytes received, Cancel or Esc aborts the request and saves nothing, a file is saved only when it
   arrived whole and of the asked type, under the server's file name only when that has the expected form, and a JSON
-  export the server cut says so. en/de; the data viewer (STU-013) can mount the same dialog with a table.
+  export the server cut says so. The page holds the file until it is saved, at most 1 GiB: past it the export is
+  aborted, nothing is saved, and the dialog says to export fewer rows or columns; a stream that breaks after some
+  bytes says the file did not arrive whole (not that the server does not answer). en/de; the data viewer (STU-013)
+  can mount the same dialog with a table.
 - STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
   `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
   sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.

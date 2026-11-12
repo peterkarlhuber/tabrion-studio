@@ -8,7 +8,12 @@
  * once, and the server closes the export when the request goes away. It keeps the file only when the media type is the
  * one asked for, and saves it under the server's `Content-Disposition` name only when that name has the server's form
  * (`exportFilename`); otherwise under a fixed one. A JSON file that does not end with the server's closing
- * `"truncated"` member is an export that ended early, and is not saved.
+ * `"truncated"` member is an export that ended early, and is not saved; so is one whose stream broke after some bytes
+ * had arrived (`EXPORT_INCOMPLETE`, not "the server does not answer").
+ *
+ * The whole file is held in the page until it is saved (no streaming save yet), so the page stops at
+ * `MAX_EXPORT_BYTES` (1 GiB): past it the request is aborted (the server closes the export), the bytes are dropped,
+ * nothing is saved, and the answer is `EXPORT_TOO_LARGE` (TD-043).
  *
  * The source is a statement of the SQL editor today; the data viewer (STU-013) passes a table (`ExportSource`).
  */
@@ -45,9 +50,23 @@ export interface ExportFile {
 /** The server's row limit of an export (`MAX_EXPORT_ROWS`). */
 export const MAX_EXPORT_ROWS = 1_000_000;
 
-/** The answer the page cannot use (another media type, a JSON file without its end). */
+/**
+ * The most bytes of an export the page holds (1 GiB). The file is assembled in the browser before it is saved; a larger
+ * one could take the tab down. The server bounds rows and time, not bytes.
+ */
+export const MAX_EXPORT_BYTES = 1024 * 1024 * 1024;
+
+/** The answer the page cannot use (another media type, a JSON file without its end, a stream broken midway). */
 export const EXPORT_INCOMPLETE: Problem = {
   code: 'studio.export_incomplete',
+  kind: 'internal',
+  status: 0,
+  logId: null,
+};
+
+/** The file passed `MAX_EXPORT_BYTES`; the page stopped it and saved nothing. */
+export const EXPORT_TOO_LARGE: Problem = {
+  code: 'studio.export_too_large',
   kind: 'internal',
   status: 0,
   logId: null,
@@ -94,14 +113,22 @@ function body(request: ExportRequest): Record<string, unknown> {
 
 /**
  * Run the export and read the whole file. `onProgress` gets the bytes received so far. An abort through `signal`
- * answers `EXPORT_CANCELED`; nothing of a stopped, refused or broken export is returned.
+ * answers `EXPORT_CANCELED`; a file past `maxBytes` (default `MAX_EXPORT_BYTES`) aborts the request and answers
+ * `EXPORT_TOO_LARGE`; a stream that breaks after some bytes answers `EXPORT_INCOMPLETE`. Nothing of a stopped,
+ * refused, too large or broken export is returned.
  */
 export async function downloadExport(
   fetcher: typeof fetch,
   request: ExportRequest,
-  options: { signal?: AbortSignal; onProgress?: (bytes: number) => void } = {},
+  options: { signal?: AbortSignal; onProgress?: (bytes: number) => void; maxBytes?: number } = {},
 ): Promise<Result<ExportFile>> {
-  const { signal, onProgress } = options;
+  const { signal, onProgress, maxBytes = MAX_EXPORT_BYTES } = options;
+  // The request's own controller: the caller's abort reaches it, and the page aborts it itself past `maxBytes`.
+  const requestAbort = new AbortController();
+  const follow = () => requestAbort.abort();
+  if (signal?.aborted) requestAbort.abort();
+  else signal?.addEventListener('abort', follow, { once: true });
+  let bytes = 0;
   try {
     const response = await fetcher('/api/exports', {
       method: 'POST',
@@ -109,7 +136,7 @@ export async function downloadExport(
       credentials: 'same-origin',
       headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body(request)),
-      signal,
+      signal: requestAbort.signal,
     });
     if (!response.ok) return { ok: false, problem: await readProblem(response) };
     const type = (response.headers.get('Content-Type') ?? '').split(';')[0]?.trim().toLowerCase();
@@ -117,8 +144,13 @@ export async function downloadExport(
       await response.body?.cancel().catch(() => undefined);
       return { ok: false, problem: EXPORT_INCOMPLETE };
     }
-    const parts: Uint8Array[] = [];
-    let bytes = 0;
+    let parts: Uint8Array[] = [];
+    const tooLarge = async (cancel: () => Promise<void>) => {
+      parts = [];
+      requestAbort.abort();
+      await cancel().catch(() => undefined);
+      return { ok: false as const, problem: EXPORT_TOO_LARGE };
+    };
     if (response.body) {
       const reader = response.body.getReader();
       for (;;) {
@@ -128,14 +160,16 @@ export async function downloadExport(
           await reader.cancel().catch(() => undefined);
           return { ok: false, problem: EXPORT_CANCELED };
         }
-        parts.push(value);
         bytes += value.byteLength;
+        if (bytes > maxBytes) return await tooLarge(() => reader.cancel());
+        parts.push(value);
         onProgress?.(bytes);
       }
     } else {
       const whole = new Uint8Array(await response.arrayBuffer());
-      parts.push(whole);
       bytes = whole.byteLength;
+      if (bytes > maxBytes) return await tooLarge(async () => undefined);
+      parts.push(whole);
       onProgress?.(bytes);
     }
     let truncated: boolean | null = null;
@@ -155,7 +189,13 @@ export async function downloadExport(
       },
     };
   } catch {
-    return { ok: false, problem: signal?.aborted ? EXPORT_CANCELED : OFFLINE };
+    // The server answered when bytes had arrived: a stream broken then is an incomplete file, not "offline".
+    return {
+      ok: false,
+      problem: signal?.aborted ? EXPORT_CANCELED : bytes > 0 ? EXPORT_INCOMPLETE : OFFLINE,
+    };
+  } finally {
+    signal?.removeEventListener('abort', follow);
   }
 }
 

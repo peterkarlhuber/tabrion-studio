@@ -2,12 +2,14 @@
  * TD-043: the export dialog with the fake export route of the harness (`harness/queries.ts`). Format, rows (the
  * fetched rows or a limit), the CSV formula option, the limit check, progress, cancel by button and by Escape (the
  * request is aborted and nothing is saved), closing and leaving abort too, a double press starts one export, the cut
- * hint, refusals in the page's words, German, and the focus rules of the shared dialog.
+ * hint, refusals in the page's words, the byte ceiling (M-2: aborted, nothing saved), a stream broken midway (L-1:
+ * incomplete, not offline), German, and the focus rules of the shared dialog.
  */
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 
+import { MAX_EXPORT_BYTES } from '../../api/exports';
 import { createQueryServer } from '../../harness/queries';
 import i18n from '../../i18n';
 import type { SaveFile } from '../../lib/download';
@@ -238,6 +240,41 @@ describe('ExportDialog', () => {
     expect(own.save).not.toHaveBeenCalled();
   });
 
+  it('stops an export past the byte ceiling: the request is aborted, nothing is saved, and it says why (M-2)', async () => {
+    const user = userEvent.setup();
+    const { log, save, onDone } = setup({
+      source: { kind: 'sql', sql: 'select export_slow', params: {} },
+      maxBytes: 8,
+    });
+    await user.click(within(dialog()).getByRole('button', { name: 'Export' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The file is larger than 8 B, too large to assemble in the browser, so the export was stopped and nothing was saved. Export fewer rows or columns.',
+    );
+    expect(log.exports[0]?.aborted).toBe(true);
+    expect(save).not.toHaveBeenCalled();
+    expect(onDone).not.toHaveBeenCalled();
+    expect(screen.getByTestId('export-progress')).toHaveTextContent('');
+    expect(within(dialog()).getByRole('button', { name: 'Export' })).not.toHaveAttribute(
+      'aria-disabled',
+    );
+  });
+
+  it('a stream that breaks after the first rows says the file is incomplete, not that the server is gone (L-1)', async () => {
+    const user = userEvent.setup();
+    for (const format of ['CSV (for spreadsheets)', 'JSON (for programs)']) {
+      const { save, view } = setup({
+        source: { kind: 'sql', sql: 'select export_broken', params: {} },
+      });
+      await user.click(within(dialog()).getByRole('radio', { name: format }));
+      await user.click(within(dialog()).getByRole('button', { name: 'Export' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The file did not arrive whole, so nothing was saved. Try again.',
+      );
+      expect(save).not.toHaveBeenCalled();
+      view.unmount();
+    }
+  });
+
   it('speaks German', async () => {
     await act(async () => {
       await i18n.changeLanguage('de');
@@ -253,6 +290,22 @@ describe('ExportDialog', () => {
     expect(within(de).getByRole('button', { name: 'Abbrechen' })).toHaveFocus();
     expect(within(de).getByRole('textbox', { name: 'Zeilenlimit' })).toBeVisible();
   });
+
+  it('says in German when the file is too large', async () => {
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    const user = userEvent.setup();
+    setup({ source: { kind: 'sql', sql: 'select export_slow', params: {} }, maxBytes: 8 });
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Exportieren' })).getByRole('button', {
+        name: 'Exportieren',
+      }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Die Datei ist größer als 8 B und zu groß, um sie im Browser zusammenzusetzen; der Export wurde daher gestoppt und nichts wurde gespeichert. Exportiere weniger Zeilen oder Spalten.',
+    );
+  });
 });
 
 describe('export helpers', () => {
@@ -260,6 +313,8 @@ describe('export helpers', () => {
     expect(formatBytes(512, 'en')).toBe('512 B');
     expect(formatBytes(1536, 'en')).toBe('1.5 KB');
     expect(formatBytes(5 * 1024 * 1024, 'de')).toBe('5 MB');
+    expect(formatBytes(1024 * 1024 * 1024, 'en')).toBe('1 GB');
+    expect(formatBytes(MAX_EXPORT_BYTES, 'de')).toBe('1 GB');
     expect(parseRowLimit(' 42 ')).toBe(42);
     expect(parseRowLimit('1000000')).toBe(1_000_000);
     for (const bad of ['0', '1000001', '1e3', '1.0', '', ' ', '+5', '0x10']) {

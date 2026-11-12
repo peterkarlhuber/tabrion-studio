@@ -17,8 +17,9 @@
  *
  * - `POST /api/exports` (STU-021, TD-043) answers the statement's rows as CSV or JSON like the real route: up to
  *   `max_rows`, the file name in `Content-Disposition`, CSV formulas escaped unless `escape_formulas` is false; a
- *   statement with `export_slow` streams until the request is aborted, `export_busy` answers `studio.export_busy`, a
- *   statement that is not a reading one `studio.statement_refused`.
+ *   statement with `export_slow` streams until the request is aborted, `export_broken` sends the first rows and then
+ *   breaks the stream (a server error midway), `export_busy` answers `studio.export_busy`, a statement that is not a
+ *   reading one `studio.statement_refused`.
  *
  * `requests` records what the page sent (no parameter value is ever logged by the real server; this is a test fake).
  */
@@ -192,6 +193,7 @@ export function createQueryServer(
     };
     const names = ['n', 'label', 'note', ...(param === undefined ? [] : ['param'])];
     const slow = /export_slow/i.test(body.sql);
+    const broken = /export_broken/i.test(body.sql);
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(
@@ -207,6 +209,12 @@ export function createQueryServer(
           });
           return;
         }
+        if (broken) {
+          // The first row; the stream breaks once the page has read it (`pull`), like the real server, which ends a
+          // chunked answer early on an error.
+          controller.enqueue(encoder.encode(csv ? line(1) : `\n${line(1)}`));
+          return;
+        }
         for (let n = 1; n <= count; n += 1) {
           controller.enqueue(encoder.encode(csv ? line(n) : `${n > 1 ? ',' : ''}\n${line(n)}`));
         }
@@ -216,6 +224,9 @@ export function createQueryServer(
           );
         }
         controller.close();
+      },
+      pull(controller) {
+        if (broken) controller.error(new TypeError('network error'));
       },
     });
     return Promise.resolve(
