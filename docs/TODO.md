@@ -1084,7 +1084,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   **Refs:** `.github/workflows/ci.yml` (job `e2e`), OA-003
 - **Done:** the step "Every suite ran and none was skipped" now requires every `frontend/e2e/*.spec.ts` except
   `screenshots.spec.ts` (it takes screenshots only when `STUDIO_SCREENSHOTS` names a folder), so both editor suites,
-  and any spec added later, must pass with no test skipped.
+  and any spec added later, must pass with no test skipped; `explorer-definitions.spec.ts` (STU-022 page, #54) is
+  required that way since it reached master.
 - **Problem:** `e2e/editor.spec.ts` and `e2e/editor-backend.spec.ts` run in the CI job `e2e`, but the step "Every
   suite ran and none was skipped" does not list them, so a skipped editor suite would not fail the job. Adding them
   changes `.github/workflows/ci.yml` and needs a workflow-change review (OA-003), like `keyboard.spec.ts` (TD-020) and
