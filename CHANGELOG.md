@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows
   again on the open connection. The page only reads; every database text is escaped and capped, the answers are
   parsed fail-closed, and stale answers after a profile switch are dropped. E2E against the parts and measurements
   reference apps (`e2e/explorer-reference.spec.ts`; not in CI yet). Open parts: TD-041.
+  Follow-up: Open fails closed when the profile list cannot be read again (the offline problem, no D-02 and no
+  connection), and a profile deleted meanwhile moves the picker to a remaining profile and the focus to it.
 - STU-025 backend: `POST /api/connections/{id}/diagnostics/report` with
   `{"format": "markdown" | "json"}` runs a diagnosis with its backup hints and answers it as a file
   (`Content-Disposition: attachment`). The report is built from an allowlist: no password, token, connection URL or
