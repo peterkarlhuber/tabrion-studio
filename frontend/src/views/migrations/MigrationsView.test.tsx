@@ -330,7 +330,7 @@ describe('migration status view: status', () => {
       expect.objectContaining({
         method: 'POST',
         url: '/api/connections',
-        body: { profile_id: 'project:parts-dev' },
+        body: { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
       }),
     ]);
     expect(calls.some((call) => call.url === '/api/connections/c1/migrations')).toBe(true);
@@ -353,7 +353,9 @@ describe('migration status view: status', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
     await screen.findByTestId('migrations-alembic');
     expect(writes(calls)).toEqual([
-      expect.objectContaining({ body: { profile_id: 'user:measure' } }),
+      expect.objectContaining({
+        body: { profile_id: 'user:measure', confirmed_environment: 'prod' },
+      }),
     ]);
   });
 
@@ -897,5 +899,41 @@ describe('migration status view: the step cap boundary', () => {
     const entry = await screen.findByTestId('migrations-levuvo');
     expect(within(entry).getAllByRole('listitem')).toHaveLength(MAX_LEVUVO_STEPS);
     expect(screen.queryByTestId('migrations-levuvo-more')).toBeNull();
+  });
+});
+
+describe('migrations view: D-02 on the server (TD-038)', () => {
+  it('a profile that became PROD after the page read it: the refusal reads the profiles again, the next try asks D-02', async () => {
+    const user = userEvent.setup();
+    const flipped = {
+      ...PROFILES,
+      profiles: [{ ...PROFILES.profiles[0], environment: 'prod' }, PROFILES.profiles[1]],
+    };
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => json(flipped)],
+      'POST /api/connections': [
+        () =>
+          json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409),
+        () => json({ connection_id: 'c1' }, 201),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    expect(await screen.findByText(/This profile is marked as PROD now/)).toBeVisible();
+    await screen.findByRole('option', { name: 'parts-dev (PROD)' });
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    const dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(
+        writes(calls)
+          .filter((call) => call.url === '/api/connections')
+          .map((call) => call.body),
+      ).toEqual([
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+        { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+      ]),
+    );
   });
 });

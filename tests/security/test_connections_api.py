@@ -133,7 +133,7 @@ def test_a_project_file_opens_only_after_trust(env: Env) -> None:
     assert refused.status_code == 404 and refused.json()["code"] == "studio.profile_not_found"
     digest = env.send("GET", "/api/project").json()["digest"]
     assert env.send("POST", "/api/project/trust", {"digest": digest}).status_code == 204
-    opened = env.send("POST", "/api/connections", {"profile_id": "project:proj"})
+    opened = env.send("POST", "/api/connections", {"profile_id": "project:proj", "confirmed_environment": "prod"})
     assert opened.status_code == 201 and opened.json()["environment"] == "prod"
     # The project file changes: the trust is gone, so is the connection.
     (env.project / ".tabrion" / "studio.toml").write_text(PROJECT.replace("p.db", "q.db"), encoding="utf-8")
@@ -193,6 +193,41 @@ def test_the_routes_need_a_session_csrf_and_json(env: Env) -> None:
         assert response.status_code in (401, 403), (method, path)
     bad = env.send("POST", "/api/connections", {"profile_id": 3})
     assert bad.status_code == 400 and bad.json()["code"] == "access.bad_request"
+    assert env.registry.list() == []
+
+
+def test_td_038_a_profile_changed_to_prod_elsewhere_needs_d02(env: Env) -> None:
+    """D-02 on the server (TD-038): the page confirmed the profile as DEV, then it became PROD in another tab or in
+    profiles.toml. Open and test are refused with studio.prod_confirmation_required until the page confirms PROD."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    digest = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    prod = {"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "prod"}
+    assert env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": prod, "digest": digest}).status_code == 200
+    for path in ("/api/connections", "/api/connection-tests"):
+        for confirmed in ({"confirmed_environment": "dev"}, {"confirmed_environment": None}, {}):
+            refused = env.send("POST", path, {"profile_id": "user:parts", **confirmed})
+            assert refused.status_code == 409, (path, confirmed)
+            doc = refused.json()
+            assert doc["code"] == "studio.prod_confirmation_required" and doc["kind"] == "database"
+            assert refused.headers["content-type"] == "application/problem+json"
+    assert env.registry.list() == []
+    # The page reads the profile again, asks D-02 and sends the request again.
+    assert env.send("GET", "/api/profiles").json()["profiles"][0]["environment"] == "prod"
+    tested = env.send("POST", "/api/connection-tests", {"profile_id": "user:parts", "confirmed_environment": "prod"})
+    assert tested.status_code == 200 and tested.json()["environment"] == "prod"
+    opened = env.send("POST", "/api/connections", {"profile_id": "user:parts", "confirmed_environment": "prod"})
+    assert opened.status_code == 201 and opened.json()["environment"] == "prod"
+    # The open PROD connection is not handed to a request that did not confirm PROD.
+    again = env.send("POST", "/api/connections", {"profile_id": "user:parts"})
+    assert again.status_code == 409 and again.json()["code"] == "studio.prod_confirmation_required"
+
+
+@pytest.mark.parametrize("value", ["PROD", "production", "", 3, True, ["prod"], {"prod": True}])
+def test_td_038_a_confirmed_environment_outside_the_three_is_a_bad_request(env: Env, value: object) -> None:
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    for path in ("/api/connections", "/api/connection-tests"):
+        response = env.send("POST", path, {"profile_id": "user:parts", "confirmed_environment": value})
+        assert (response.status_code, response.json()["code"]) == (400, "access.bad_request")
     assert env.registry.list() == []
 
 

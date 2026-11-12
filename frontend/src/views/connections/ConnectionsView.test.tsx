@@ -206,7 +206,7 @@ describe('connection manager', () => {
     expect(JSON.stringify(create?.body)).not.toContain('pw-canary');
     expect(secret?.body).toEqual({ secret: 'pw-canary', store: 'keyring' });
     expect(test?.url).toBe('/api/connection-tests');
-    expect(test?.body).toEqual({ profile_id: 'user:measure' });
+    expect(test?.body).toEqual({ profile_id: 'user:measure', confirmed_environment: 'prod' });
     expect(
       await within(screen.getByTestId('connection-detail')).findByText(/Connection works/),
     ).toHaveTextContent('PostgreSQL 17.6');

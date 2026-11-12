@@ -53,7 +53,8 @@ export function useConnect(fetcher: typeof fetch): {
       status: 'connecting',
       profileId: item.id,
     });
-    const result = await openConnection(fetcher, item.id);
+    // The environment this page confirmed for (D-02 on the server, TD-038).
+    const result = await openConnection(fetcher, item.id, item.environment);
     if (session.isLatestConnect(request)) {
       if (result.ok) {
         session.setActive({

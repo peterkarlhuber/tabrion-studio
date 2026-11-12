@@ -150,6 +150,32 @@ test('08 section 5 "Connect": test, D-02 once per session, header, PROD frame, d
   for (const write of sent) expect(write.contentType).toBe('application/json');
 });
 
+test('TD-038: a profile another tab made PROD is refused by the server, read again and asked D-02', async ({
+  page,
+}) => {
+  await openHarness(page, { scenario: 'connections', path: '/connections' });
+  const detail = page.getByTestId('connection-detail');
+  await page.getByTestId('connection-item').nth(0).click();
+  await expect(detail).toContainText('parts-dev');
+  await page.evaluate(() =>
+    (window as unknown as { harnessMakeProd: (id: string) => void }).harnessMakeProd(
+      'project:parts-dev',
+    ),
+  );
+  await detail.getByRole('button', { name: 'Connect', exact: true }).click();
+  const prod = page.getByRole('dialog', { name: 'Production database' });
+  await expect(prod).toContainText('parts-dev is marked as PROD');
+  await expect(prod.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  expect(await seriousViolations(page)).toEqual([]);
+  await prod.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(page).toHaveTitle('[PROD] parts-dev – Tabrion Studio');
+  const sent = await writes(page);
+  expect(sent.map((w) => `${w.method} ${w.url}`)).toEqual([
+    'POST /api/connections',
+    'POST /api/connections',
+  ]);
+});
+
 test('create, delete and password: every write is JSON', async ({ page }) => {
   await openHarness(page, { scenario: 'connections', path: '/connections' });
   await page.getByRole('button', { name: 'New connection' }).click();

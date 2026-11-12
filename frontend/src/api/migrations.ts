@@ -9,7 +9,9 @@
  *
  * Names, paths and revision ids come from the project, so the page shows them escaped (`lib/visible.ts`, U-1).
  */
+import { connectBody } from './connections';
 import { readProblem, OFFLINE, type Problem } from './problem';
+import type { EnvironmentTag } from './profiles';
 import { getJson, send, type Result } from './profiles';
 import { apiHeaders } from '../session';
 
@@ -221,14 +223,22 @@ export function revokeCodeTrust(fetcher: typeof fetch): Promise<Result<null>> {
   return send<null>(fetcher, 'DELETE', '/api/project/code-trust', {});
 }
 
-/** Open (or get back) the read-only connection of a profile; its id. */
+/**
+ * Open (or get back) the read-only connection of a profile; its id. `confirmedEnvironment`: the profile's environment
+ * as the page showed it, after D-02 for PROD (see `connectBody` in `./connections`; without it a PROD profile is
+ * refused with `studio.prod_confirmation_required`).
+ */
 export async function openConnection(
   fetcher: typeof fetch,
   profileId: string,
+  confirmedEnvironment?: EnvironmentTag,
 ): Promise<Result<string>> {
-  const result = await send<{ connection_id?: unknown }>(fetcher, 'POST', '/api/connections', {
-    profile_id: profileId,
-  });
+  const result = await send<{ connection_id?: unknown }>(
+    fetcher,
+    'POST',
+    '/api/connections',
+    connectBody(profileId, confirmedEnvironment),
+  );
   if (!result.ok) return result;
   const id = result.value.connection_id;
   return typeof id === 'string' ? { ok: true, value: id } : { ok: false, problem: OFFLINE };

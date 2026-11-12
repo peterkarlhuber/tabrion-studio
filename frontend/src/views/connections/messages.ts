@@ -38,6 +38,7 @@ const PROBLEMS = new Set([
   'connection_limit',
   'connection_busy',
   'connection_stale',
+  'prod_confirmation_required',
   'connection_not_found',
   'database_missing',
   'database_unsafe',

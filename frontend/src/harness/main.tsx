@@ -58,14 +58,43 @@ sent.writes = [];
 /** The connections the connections scenario opened, by id. */
 const openConnections = new Map<string, Record<string, unknown>>();
 
+/**
+ * Profiles another tab made PROD (TD-038 flip scenario): `window.harnessMakeProd(id)` changes the profile as the
+ * server would read it from now on, without telling the page.
+ */
+const madeProd = new Set<string>();
+(window as unknown as { harnessMakeProd: (id: string) => void }).harnessMakeProd = (id) => {
+  madeProd.add(id);
+};
+
+function currentProfiles(): typeof PROFILES {
+  return {
+    ...PROFILES,
+    profiles: PROFILES.profiles.map((item) =>
+      madeProd.has(item.id) ? { ...item, environment: 'prod' as const } : item,
+    ),
+  };
+}
+
 /** The connection test and "Connect" of the connections scenario (STU-008). */
 function connectionAnswer(method: string, url: string, body: string): Response {
-  const doc = JSON.parse(body) as { profile_id?: string; connection_id?: string };
+  const doc = JSON.parse(body) as {
+    profile_id?: string;
+    connection_id?: string;
+    confirmed_environment?: string;
+  };
   if (method === 'DELETE') {
     openConnections.delete(doc.connection_id ?? '');
     return new Response(null, { status: 204 });
   }
-  const profile = PROFILES.profiles.find((item) => item.id === doc.profile_id);
+  const profile = currentProfiles().profiles.find((item) => item.id === doc.profile_id);
+  // D-02 on the server (TD-038): a PROD profile needs a request that confirmed PROD.
+  if (profile?.environment === 'prod' && doc.confirmed_environment !== 'prod') {
+    return new Response(
+      JSON.stringify({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }),
+      { status: 409 },
+    );
+  }
   if (profile === undefined || profile.id === 'project:parts-pg') {
     return new Response(
       JSON.stringify({ code: 'db.connection', kind: 'connection', status: 502, sqlstate: '08001' }),
@@ -111,7 +140,9 @@ const fakeServer: typeof fetch = async (input, init) => {
         status: method === 'POST' ? 201 : 200,
       });
     }
-    if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    if (url === '/api/profiles') {
+      return new Response(JSON.stringify(currentProfiles()), { status: 200 });
+    }
     if (url === '/api/connections') {
       return new Response(JSON.stringify({ connections: [...openConnections.values()] }), {
         status: 200,

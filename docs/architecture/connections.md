@@ -20,16 +20,40 @@ services (import-linter contracts `services-below-api` and `engines-only-in-serv
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/connections` | `{"profile_id"}` | 201 `{connection_id, profile_id, engine, environment, read_only: true, url, opened_at}` |
+| `POST /api/connections` | `{"profile_id", "confirmed_environment"}` | 201 `{connection_id, profile_id, engine, environment, read_only: true, url, opened_at}`; `studio.prod_confirmation_required` (409, see below) |
 | `GET /api/connections` | – | `{"connections": [...]}` (each checked against its profile; a stale one is closed and left out) |
 | `DELETE /api/connections` | `{"connection_id"}` | 204, or `studio.connection_not_found` |
-| `POST /api/connection-tests` | `{"profile_id"}` | `{ok, engine, environment, server_version, latency_ms, read_only, facts}`; the connection is closed again |
+| `POST /api/connection-tests` | `{"profile_id", "confirmed_environment"}` | `{ok, engine, environment, server_version, latency_ms, read_only, facts}`; the connection is closed again; `studio.prod_confirmation_required` (409) |
 
 The ids go in the body, like the profile routes. All routes sit behind the access middleware (session, CSRF,
 Origin, JSON). `url` comes from `tabrion.safe_url` and never contains the password. The connection is checked with
 `Database.health()` before the answer, so a wrong password is the answer to "open" (a `db.<kind>` problem).
 An open connection of the same profile is returned again, and at most 8 are open (`studio.connection_limit`).
 Opening and closing run in a worker thread. Shutdown disposes every engine.
+
+### D-02 on the server: `confirmed_environment` (TD-038)
+
+The page asks D-02 before it opens a PROD connection, but it decides from the profile list it loaded. That list can
+be stale: another tab, or a hand edit of `profiles.toml`, may have made the profile PROD since. So the server checks
+too.
+
+- **Every caller of `POST /api/connections` and `POST /api/connection-tests` sends `confirmed_environment`:** the
+  profile's environment as the page shows it (`"dev"`, `"test"` or `"prod"`), and `"prod"` only after D-02 was
+  confirmed for that profile. In the page this is the third argument of `openConnection` (`api/connections.ts` and
+  `api/migrations.ts`) and `testConnection`: `openConnection(fetcher, profile.id, profile.environment)`, called after
+  the view's D-02 step.
+- The server reads the profile when it opens the connection, and checks it on that same read
+  (`require_prod_confirmation` in `services/connections.py`). A profile that is `prod` now opens, is tested, or has its
+  already open connection returned only with `"prod"`.
+- **Fail closed:** a missing or `null` value means "not confirmed". A view that does not send the field (code written
+  before this change) still opens DEV and TEST profiles, but gets 409 `studio.prod_confirmation_required` for every
+  PROD profile. A value other than the three is `access.bad_request`.
+- **On 409 `studio.prod_confirmation_required`:** the problem carries no profile data (problems never carry request or
+  profile values, T-05). The page reads the profile again (`GET /api/profiles`), asks D-02 for it as it is now, and
+  sends the request again with `"prod"`. The connection manager does this at once. The migration status and
+  diagnostics views show the problem text, read their profile list again, and ask D-02 on the next click.
+- D-02 is still a page dialog; the server only refuses a PROD connection that no page confirmed. It cannot tell which
+  person confirmed, so a script with a session can still send `"prod"`.
 
 ## The connection test (STU-008)
 
@@ -55,8 +79,8 @@ nowhere else (OA-010), so "Test the connection after saving" replaces 08's test 
 The test opens a connection, so for a PROD profile the page asks D-02 before it, like before "Connect": the button,
 the test after saving and the retry after the password dialog (`stu-008-connect-review.md` C-2). The confirmation
 holds for the page session and belongs to the profile's target (id, environment, engine, host, port, database, user,
-path); saving or deleting the profile and trusting the project file again forget it. D-02 is a page rule: the routes
-do not check the environment (TD-038).
+path); saving or deleting the profile and trusting the project file again forget it. The routes check it too: see
+"D-02 on the server" above.
 
 ## How a connection is opened
 

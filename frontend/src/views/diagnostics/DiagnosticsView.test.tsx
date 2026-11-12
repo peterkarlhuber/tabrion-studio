@@ -187,7 +187,11 @@ describe('diagnostics view: run', () => {
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
     await screen.findByTestId('diagnostics-findings');
     expect(writes(calls).map((call) => [call.method, call.url, call.body])).toEqual([
-      ['POST', '/api/connections', { profile_id: 'project:parts-dev' }],
+      [
+        'POST',
+        '/api/connections',
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+      ],
       ['POST', '/api/connections/c1/diagnostics', {}],
     ]);
     for (const call of writes(calls)) expect(call.headers['Content-Type']).toBe('application/json');
@@ -276,7 +280,10 @@ describe('diagnostics view: run', () => {
       '/api/connections',
       '/api/connections/c1/diagnostics',
     ]);
-    expect(writes(calls)[0]?.body).toEqual({ profile_id: 'user:measure' });
+    expect(writes(calls)[0]?.body).toEqual({
+      profile_id: 'user:measure',
+      confirmed_environment: 'prod',
+    });
     expect(screen.getByTestId('env-badge')).toHaveAttribute('data-env', 'prod');
   });
 
@@ -913,5 +920,41 @@ describe('diagnostics view: review fixes of #39 (stu-014-ui-review.md)', () => {
     expect(findings()).toHaveLength(2);
     expect(screen.getByTestId('diagnostics-card')).not.toHaveTextContent('Backup hint text');
     expect(screen.getByTestId('diagnostics-card')).not.toHaveTextContent('STU-BK-010');
+  });
+});
+
+describe('diagnostics view: D-02 on the server (TD-038)', () => {
+  it('a profile that became PROD after the page read it: the refusal reads the profiles again, the next try asks D-02', async () => {
+    const user = userEvent.setup();
+    const flipped = {
+      ...PROFILES,
+      profiles: [{ ...PROFILES.profiles[0], environment: 'prod' }, PROFILES.profiles[1]],
+    };
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => json(flipped)],
+      'POST /api/connections': [
+        () =>
+          json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409),
+        () => json({ connection_id: 'c1' }, 201),
+      ],
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    expect(await screen.findByText(/This profile is marked as PROD now/)).toBeVisible();
+    await screen.findByRole('option', { name: 'parts-dev (PROD)' });
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    const dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(
+        writes(calls)
+          .filter((call) => call.url === '/api/connections')
+          .map((call) => call.body),
+      ).toEqual([
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+        { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+      ]),
+    );
   });
 });

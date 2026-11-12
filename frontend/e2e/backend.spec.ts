@@ -289,6 +289,40 @@ test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "C
   await expect(page.getByTestId('connection-outcome')).toHaveText(
     'Test failed: The file is not a SQLite database, or the database is damaged.',
   );
+  // TD-038, D-02 on the server: another tab makes e2e-dev PROD. This page still shows it as DEV, so it connects
+  // without D-02; the server refuses, the page reads the profile again and asks D-02.
+  await page.getByTestId('connection-item').filter({ hasText: 'e2e-dev' }).click();
+  await detail.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.getByRole('button', { name: /No connection/ })).toBeVisible();
+  const status = await page.evaluate(async (path) => {
+    const headers = {
+      'X-Tabrion-CSRF': sessionStorage.getItem('tabrion-studio.csrf') ?? '',
+      'Content-Type': 'application/json',
+    };
+    const listed = (await (await fetch('/api/profiles', { headers })).json()) as {
+      user_file: { digest: string };
+    };
+    const profile = { name: 'e2e-dev', engine: 'sqlite', path, environment: 'prod' };
+    const body = { id: 'user:e2e-dev', profile, digest: listed.user_file.digest };
+    const response = await fetch('/api/profiles', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(body),
+    });
+    return response.status;
+  }, database);
+  expect(status).toBe(200);
+  await expect(page.getByTestId('connection-detail')).toContainText('e2e-dev');
+  await expect(detail.locator('[data-env]').first()).toHaveAttribute('data-env', 'dev');
+  await detail.getByRole('button', { name: 'Connect', exact: true }).click();
+  const again = page.getByRole('dialog', { name: 'Production database' });
+  await expect(again).toContainText('e2e-dev is marked as PROD');
+  await expect(detail.getByTestId('connection-outcome')).toContainText(
+    'This profile is marked as PROD now.',
+  );
+  await again.getByRole('button', { name: 'Connect' }).click();
+  await expect(page).toHaveTitle('[PROD] e2e-dev – Tabrion Studio');
+  expect(await open()).toEqual(['user:e2e-dev true']);
   // Clean up for the later tests: the user's profiles go, the connection with them.
   rmSync(join(root, 'state', 'config', 'profiles.toml'), { force: true });
   expect(violations).toEqual([]);

@@ -124,7 +124,7 @@ def sqlite_connection(sqlite_file: Path) -> Iterator[tuple[OpenConnection, Conne
     )
     registry = ConnectionRegistry(source)
     try:
-        yield registry.open("project:parts"), registry, source
+        yield registry.open("project:parts", "prod"), registry, source
     finally:
         registry.close_all()
 
@@ -568,7 +568,7 @@ def test_a_connection_whose_profile_changes_is_closed(
         registry.get(connection.id)  # closed and gone
     assert registry.list() == []
     source.profiles["project:parts"] = replace(source.profiles["project:parts"], path="data/parts.db")
-    again = registry.open("project:parts")
+    again = registry.open("project:parts", "prod")
     other = tmp_path / "swapped.db"
     shutil.copyfile(sqlite_file, other)  # not a rename: Windows keeps an open file in place
     source.files["project:parts"] = other  # database_file now resolves elsewhere (a link swapped in, T-1)
@@ -577,7 +577,7 @@ def test_a_connection_whose_profile_changes_is_closed(
         registry.get(again.id)
     del source.profiles["project:parts"]
     with pytest.raises(SecretError):
-        registry.open("project:parts")
+        registry.open("project:parts", "prod")
 
 
 def test_sqlite_refuses_several_statements_itself(
@@ -621,6 +621,62 @@ def test_a_connection_test_shares_the_limit(sqlite_file: Path) -> None:
         with pytest.raises(RegistryError) as raised:
             registry.test("user:p")
         assert raised.value.code == "studio.connection_limit"
+    finally:
+        registry.close_all()
+
+
+@pytest.mark.parametrize("confirmed", [None, "dev", "test"])
+def test_td_038_a_prod_profile_opens_only_when_prod_was_confirmed(sqlite_file: Path, confirmed: str | None) -> None:
+    """D-02 on the server (TD-038): open and test of a PROD profile need ``confirmed_environment="prod"``; nothing
+    sent means "not confirmed". Other environments need nothing."""
+    source = Source(
+        profiles={
+            "user:p": Profile("p", "sqlite", "prod", path="p.db"),
+            "user:d": Profile("d", "sqlite", "dev", path="d.db"),
+        },
+        files={"user:p": sqlite_file, "user:d": sqlite_file},
+    )
+    registry = ConnectionRegistry(source)
+    try:
+        for call in (registry.open, registry.test):
+            with pytest.raises(RegistryError) as raised:
+                call("user:p", confirmed)
+            assert raised.value.code == "studio.prod_confirmation_required"
+        assert registry.list() == []
+        # Refused before anything was resolved or opened.
+        assert ("database_file", "user:p") not in source.calls
+        assert registry.open("user:d", confirmed).environment == "dev"
+        assert registry.test("user:p", "prod")["environment"] == "prod"
+        opened = registry.open("user:p", "prod")
+        # An open PROD connection is not handed out without the confirmation either.
+        with pytest.raises(RegistryError) as raised:
+            registry.open("user:p", confirmed)
+        assert raised.value.code == "studio.prod_confirmation_required"
+        assert registry.open("user:p", "prod") is opened
+    finally:
+        registry.close_all()
+
+
+def test_td_038_the_confirmation_is_checked_on_the_profile_read_that_connects(sqlite_file: Path) -> None:
+    """The profile flips from dev to prod between reads (another tab, profiles.toml): the check and the connection use
+    one read, so a connection never opens as PROD for a caller that confirmed dev."""
+
+    class Flipping(Source):
+        def entry(self, profile_id: str) -> Entry:
+            entry = super().entry(profile_id)
+            current = self.profiles[profile_id]
+            self.profiles[profile_id] = replace(current, environment="prod" if current.environment == "dev" else "dev")
+            return entry
+
+    source = Flipping(profiles={"user:p": Profile("p", "sqlite", "dev", path="p.db")}, files={"user:p": sqlite_file})
+    registry = ConnectionRegistry(source)
+    try:
+        opened = registry.open("user:p", "dev")
+        assert opened.environment == "dev"
+        # The next read says prod: refused, never opened as prod.
+        with pytest.raises(RegistryError) as raised:
+            registry.test("user:p", "dev")
+        assert raised.value.code == "studio.prod_confirmation_required"
     finally:
         registry.close_all()
 

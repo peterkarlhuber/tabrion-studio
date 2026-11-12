@@ -180,7 +180,7 @@ describe('connection test', () => {
     expect(writes(calls)).toEqual([
       expect.objectContaining({
         url: '/api/connection-tests',
-        body: { profile_id: 'user:measure' },
+        body: { profile_id: 'user:measure', confirmed_environment: 'prod' },
         headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
       }),
     ]);
@@ -277,7 +277,7 @@ describe('connect', () => {
     await userEvent.click(within(detail).getByRole('button', { name: 'Disconnect' }));
     await within(header()).findByRole('button', { name: /No connection/ });
     expect(writes(calls).map((call) => [call.method, call.body])).toEqual([
-      ['POST', { profile_id: 'project:parts-dev' }],
+      ['POST', { profile_id: 'project:parts-dev', confirmed_environment: 'dev' }],
       ['DELETE', { connection_id: 'c-project:parts-dev' }],
     ]);
     await waitFor(() =>
@@ -693,6 +693,119 @@ describe('review fixes of the connect review (#42)', () => {
     await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
     expect(screen.queryByRole('dialog')).toBeNull();
     await within(detail).findByText(/Connection works/);
+  });
+});
+
+describe('D-02 on the server (TD-038)', () => {
+  /** The server's rule: a PROD profile opens or is tested only when the request confirmed PROD. */
+  function strict(
+    state: { profiles: Record<string, unknown>[] },
+    open?: { current: Map<string, Record<string, unknown>> | null },
+  ): Answer {
+    return (call) => {
+      const body = call.body as { profile_id: string; confirmed_environment?: string };
+      const profile = state.profiles.find((item) => item.id === body.profile_id);
+      if (profile?.environment === 'prod' && body.confirmed_environment !== 'prod') {
+        return json(
+          { code: 'studio.prod_confirmation_required', kind: 'database', status: 409 },
+          409,
+        );
+      }
+      if (open?.current == null || profile === undefined) return null;
+      // Opened with the profile as the server reads it now.
+      const opened = {
+        connection_id: `c-${body.profile_id}`,
+        profile_id: body.profile_id,
+        engine: profile.engine,
+        environment: profile.environment,
+        read_only: true,
+        url: 'sqlite:///x',
+        opened_at: 1,
+      };
+      open.current.set(opened.connection_id, opened);
+      return json(opened, 201);
+    };
+  }
+
+  it.each(['Connect', 'Test connection'])(
+    'a profile changed to PROD elsewhere: %s is refused, the page reads it again and asks D-02',
+    async (button) => {
+      const live = liveProfiles([...PROFILES.profiles]);
+      const opened: { current: Map<string, Record<string, unknown>> | null } = { current: null };
+      const { fetcher, calls, open } = server({
+        'GET /api/profiles': live.answer,
+        'POST /api/connections': strict(live.state, opened),
+        'POST /api/connection-tests': strict(live.state),
+      });
+      opened.current = open;
+      await manager(fetcher);
+      const detail = await select('parts-dev');
+      // Another tab (or profiles.toml) makes parts-dev PROD; this page still shows it as DEV.
+      live.state.profiles = [
+        { ...(PROFILES.profiles[0] as Record<string, unknown>), environment: 'prod' },
+        MEASURE,
+      ];
+      await userEvent.click(within(detail).getByRole('button', { name: button }));
+      const dialog = await screen.findByRole('dialog', { name: 'Production database' });
+      expect(within(detail).getByTestId('connection-outcome')).toHaveTextContent(
+        'This profile is marked as PROD now.',
+      );
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Connect' }));
+      const url = button === 'Connect' ? '/api/connections' : '/api/connection-tests';
+      await waitFor(() =>
+        expect(
+          writes(calls)
+            .filter((call) => call.url === url)
+            .map((call) => call.body),
+        ).toEqual([
+          { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+          { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+        ]),
+      );
+      if (button === 'Connect') {
+        await waitFor(() => expect(document.title).toBe('[PROD] parts-dev – Tabrion Studio'));
+      } else {
+        await within(detail).findByText(/Connection works/);
+      }
+    },
+  );
+
+  it('Cancel in the D-02 that follows a refusal opens nothing', async () => {
+    const live = liveProfiles([...PROFILES.profiles]);
+    const { fetcher, calls } = server({
+      'GET /api/profiles': live.answer,
+      'POST /api/connections': strict(live.state),
+    });
+    await manager(fetcher);
+    const detail = await select('parts-dev');
+    live.state.profiles = [
+      { ...(PROFILES.profiles[0] as Record<string, unknown>), environment: 'prod' },
+      MEASURE,
+    ];
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Production database' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(writes(calls).filter((call) => call.url === '/api/connections')).toHaveLength(1);
+    expect(within(header()).getByRole('button', { name: /No connection/ })).toBeInTheDocument();
+  });
+
+  it('a refusal for a profile the page already shows as PROD is shown, not asked again', async () => {
+    const { fetcher, calls } = server({
+      'POST /api/connections': problem(409, {
+        code: 'studio.prod_confirmation_required',
+        kind: 'database',
+        status: 409,
+      }),
+    });
+    await manager(fetcher);
+    const detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    expect(await within(detail).findByText(/Not connected/)).toHaveTextContent(
+      'This profile is marked as PROD now.',
+    );
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(writes(calls).filter((call) => call.url === '/api/connections')).toHaveLength(1);
   });
 });
 

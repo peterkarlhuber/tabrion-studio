@@ -546,6 +546,7 @@
     "connection_limit": "Studio keeps at most 8 connections open. Close one first.",
     "connection_busy": "The connection is busy. Try again in a moment.",
     "connection_stale": "The connection was closed because its profile changed. Try again.",
+    "prod_confirmation_required": "This profile is marked as PROD now. Confirm the production database, then try again.",
     "connection_not_found": "The connection is no longer open. Try again.",
     "database_missing": "The profile's SQLite file does not exist.",
     "database_unsafe": "The profile's SQLite file is a link or changed while it was opened.",

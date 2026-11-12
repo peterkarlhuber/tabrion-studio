@@ -27,6 +27,7 @@ import {
 } from '../../api/diagnostics';
 import { openConnection } from '../../api/migrations';
 import type { Problem } from '../../api/problem';
+import { PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import { ProdConnectDialog } from '../../components/dialogs/StudioDialogs';
 import { EnvBadge } from '../../components/status/Status';
@@ -279,12 +280,19 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
     setShown(null);
     setMessage(t('diagnostics.opening'));
     setQuiet(false);
-    const opened = await openConnection(fetcher, profile.id);
+    // The environment this page confirmed for (D-02 on the server, TD-038).
+    const opened = await openConnection(fetcher, profile.id, profile.environment);
     if (mine !== request.current) return;
     if (!opened.ok) {
       setPhase('idle');
       setProblem(opened.problem);
       setMessage('');
+      // The profile became PROD after this page read it: read the profiles again, so the next run asks D-02.
+      if (opened.problem.code === PROD_CONFIRMATION_REQUIRED) {
+        void fetchProfiles(fetcher).then((list) => {
+          if (list !== null) setProfiles(list.profiles);
+        });
+      }
       return;
     }
     setMessage(t('diagnostics.runningNote'));

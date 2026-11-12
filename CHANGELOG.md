@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- D-02 on the server (TD-038): `POST /api/connections` and `POST /api/connection-tests` take `confirmed_environment`,
+  the environment the page confirmed for. A profile that is PROD now opens, is tested or has its open connection
+  returned only with `"prod"`; otherwise 409 `studio.prod_confirmation_required` (a missing value counts as not
+  confirmed). So a page with a stale profile list (the profile became PROD in another tab or in `profiles.toml`) no
+  longer opens PROD without D-02: the connection manager reads the profile again and asks D-02, and the migration
+  status and diagnostics views read their list again and ask on the next try. English and German.
 - STU-008 connection test and Connect (the parts that waited for STU-009): in the connection manager, **Test
   connection** shows the time, the server version and, for PostgreSQL, the role, superuser, TLS, encoding and time
   zone (for SQLite foreign keys, journal mode and encoding), with a warning for a superuser role or one that bypasses

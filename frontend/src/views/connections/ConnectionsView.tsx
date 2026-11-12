@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import {
   closeConnection,
   fetchOpenConnections,
+  PROD_CONFIRMATION_REQUIRED,
   testConnection,
   type ConnectionTest,
   type OpenedConnection,
@@ -393,18 +394,34 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     return true;
   };
 
+  /**
+   * D-02 on the server (TD-038): the profile is PROD now, but the list this page asked D-02 from said otherwise (it
+   * changed in another tab or in `profiles.toml`). Read the list again and run the action on the profile as it is
+   * now, which asks D-02. Only once: a refusal for a profile the page already shows as PROD is just shown.
+   */
+  const reconfirm = (item: ProfileItem, problem: Problem, then: Action): boolean => {
+    if (problem.code !== PROD_CONFIRMATION_REQUIRED || item.environment === 'prod') return false;
+    void load().then((list) => {
+      const fresh = list?.profiles.find((profile) => profile.id === item.id);
+      if (fresh?.environment !== 'prod') return;
+      if (then === 'test') runTest(fresh);
+      else runConnect(fresh);
+    });
+    return true;
+  };
+
   /** The test connects too: D-02 first for a PROD profile (C-2 of the connect review). */
   const runTest = (item: ProfileItem) => guard(item, () => void testNow(item));
 
   const testNow = async (item: ProfileItem) => {
     outcome(item.id, { kind: 'busy', action: 'test' });
-    const result = await testConnection(fetcher, item.id);
+    const result = await testConnection(fetcher, item.id, item.environment);
     if (result.ok) {
       outcome(item.id, { kind: 'tested', test: result.value });
       return;
     }
     outcome(item.id, { kind: 'problem', action: 'test', problem: result.problem });
-    askPassword(item, result.problem, 'test');
+    if (!reconfirm(item, result.problem, 'test')) askPassword(item, result.problem, 'test');
   };
 
   const connected = (result: Result<OpenedConnection>, item: ProfileItem) => {
@@ -420,7 +437,7 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     outcome(item.id, { kind: 'problem', action: 'connect', problem: result.problem });
     // The header may have gone back to a connection that was closed meanwhile (L-4): read the open list again.
     refreshOpen();
-    askPassword(item, result.problem, 'connect');
+    if (!reconfirm(item, result.problem, 'connect')) askPassword(item, result.problem, 'connect');
   };
 
   const runConnect = (item: ProfileItem) =>

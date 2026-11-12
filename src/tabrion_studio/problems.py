@@ -316,6 +316,13 @@ CATALOG: dict[str, Entry] = {
         "The connection's profile changed, was removed or is no longer trusted, so Studio closed the connection.",
         "Connect again.",
     ),
+    "studio.prod_confirmation_required": Entry(
+        409,
+        ProblemKind.DATABASE,
+        "Production database not confirmed",
+        "The profile is marked as PROD, and the request did not confirm a PROD connection.",
+        "Confirm the production database, then connect again.",
+    ),
     "studio.connection_limit": Entry(
         409,
         ProblemKind.DATABASE,
