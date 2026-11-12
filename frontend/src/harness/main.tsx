@@ -11,7 +11,8 @@
  * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036;
  * editor: the profiles and a fake query engine for the SQL editor of STU-012, with `sql` as the first tab's draft,
  * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
- * catalogs and details of STU-010), `path` (/, /connections, /explorer, /sql, /migrations, /diagnostics, /settings),
+ * catalogs and details of STU-010 and the data viewer's pages of STU-013), `path` (/, /connections, /explorer, /sql,
+ * /migrations, /diagnostics, /settings),
  * `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
@@ -32,6 +33,7 @@ import { installTooltipDismiss } from '../lib/tooltips';
 import { initTheme, setThemePreference } from '../theme';
 import type { Workspace } from '../workspace';
 import { explorerAnswer } from './explorer';
+import { createViewer } from './viewer';
 import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
@@ -63,6 +65,9 @@ sent.writes = [];
 
 /** The fake query engine of the editor scenario; e2e/editor.spec.ts reads what the page sent (`window.queryLog`). */
 // `connectDelay` (ms) delays opening a connection (e2e/editor.spec.ts: run, cancel and close while connecting).
+/** The data viewer of the explorer scenario (STU-013 page); e2e reads what the page asked for. */
+const viewer = createViewer();
+(window as unknown as { viewerLog: unknown }).viewerLog = viewer.log;
 const queryServer = createQueryServer({ connectDelayMs: Number(params.get('connectDelay') ?? 0) });
 (window as unknown as { queryLog: unknown }).queryLog = queryServer.log;
 const draft = params.get('sql');
@@ -274,6 +279,8 @@ const fakeServer: typeof fetch = async (input, init) => {
       sent.writes.push({ method, url, contentType: headers['Content-Type'] ?? '' });
     }
     if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    const page = method === 'GET' ? viewer.answer(url) : null;
+    if (page !== null) return page;
     const answer = explorerAnswer(url, method, typeof init?.body === 'string' ? init.body : '');
     if (answer !== null) return answer;
   }

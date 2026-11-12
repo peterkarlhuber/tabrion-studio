@@ -403,6 +403,7 @@ describe('one panel per connection and object (L-2)', () => {
         onFollow={() => undefined}
         fetcher={fetcher}
         connectionId="c-x"
+        onGone={() => undefined}
       />
     );
   }

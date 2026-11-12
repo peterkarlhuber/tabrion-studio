@@ -589,6 +589,7 @@ describe('the details', () => {
       'Constraints',
       'Indexes',
       'Relationships',
+      'Data',
       'SQLite',
       'DDL',
     ]);
@@ -624,20 +625,22 @@ describe('the details', () => {
         .map((i) => i.textContent),
     ).toEqual(['main.part_relation (assembly_id) → id', 'main.property (part_id) → id']);
     await user.keyboard('{ArrowRight}');
-    expect(tabs[4]).toHaveFocus();
+    expect(tabs[4]).toHaveFocus(); // Data (STU-013 page)
+    await user.keyboard('{ArrowRight}');
+    expect(tabs[5]).toHaveFocus();
     expect(within(detail).getByTestId('detail-sqlite')).toHaveTextContent(
       'STRICTYesWITHOUT ROWIDNo',
     );
     await user.keyboard('{End}');
-    expect(tabs[5]).toHaveFocus();
+    expect(tabs[6]).toHaveFocus();
     expect(await within(detail).findByTestId('detail-ddl')).toBeVisible();
     await user.keyboard('{Home}');
     expect(tabs[0]).toHaveFocus();
     await user.keyboard('{ArrowLeft}'); // wraps around
-    expect(tabs[5]).toHaveFocus();
+    expect(tabs[6]).toHaveFocus();
     // The panel is labelled by its tab and takes the focus (WAI-ARIA tabs).
     const panel = within(detail).getByRole('tabpanel');
-    expect(panel).toHaveAttribute('aria-labelledby', tabs[5]?.id);
+    expect(panel).toHaveAttribute('aria-labelledby', tabs[6]?.id);
     expect(panel).toHaveAttribute('tabindex', '0');
   });
 
@@ -1131,7 +1134,7 @@ describe('STU-022: the DDL and policies tabs and the SQLite row count', () => {
       within(detail)
         .getAllByRole('tab')
         .map((tab) => tab.textContent),
-    ).toEqual(['Columns', 'Constraints', 'Indexes', 'Relationships', 'DDL', 'Policies']);
+    ).toEqual(['Columns', 'Constraints', 'Indexes', 'Relationships', 'Data', 'DDL', 'Policies']);
     // Nothing is read before its tab is chosen; no row count on PostgreSQL (its estimate is shown).
     expect(calls.filter((c) => /\/(ddl|policies|row-count)\?/.test(c.url))).toEqual([]);
     expect(screen.queryByRole('button', { name: 'Count rows' })).toBeNull();
@@ -1156,7 +1159,7 @@ describe('STU-022: the DDL and policies tabs and the SQLite row count', () => {
         within(screen.getByTestId('explorer-detail'))
           .queryAllByRole('tab')
           .map((tab) => tab.textContent),
-      ).toEqual(['Columns', 'Constraints', 'Indexes', 'Relationships', 'DDL']),
+      ).toEqual(['Columns', 'Constraints', 'Indexes', 'Relationships', 'Data', 'DDL']),
     );
   });
 

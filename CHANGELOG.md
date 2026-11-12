@@ -11,9 +11,20 @@ All notable changes to this project are documented here. The format follows
   DDL**, a **Policies** tab for a PostgreSQL table (row-level security on and forced, the owner and the connection's
   role, whether the policies bind that role and why not, a warning when RLS is on without a policy, every policy with
   its command, roles, `USING` and `WITH CHECK`), and **Count rows** for a SQLite table or view (on request; a count
-  past the server's timeout says so). Read-only on the explorer's open connection; every text escaped (line breaks in
-  the DDL kept), the DDL cut after 100,000 characters with a note; answers for another object or connection refused.
+  past the server's timeout says so). Read-only on the explorer's open connection; every text escaped (line breaks and
+  tabs in the DDL kept), the DDL cut after 100,000 characters with a note; answers for another object or connection refused.
   New user-guide page "Explorer".
+- STU-013 page: the data viewer as the explorer's **Data** tab (08 section 4.5), read-only. Pages of 50 to 1,000 rows
+  through the server's keyset tokens (Next, Previous, Reload), sort by a column, up to 20 filters the server binds as
+  parameters, a search in the current page, and the SQL editor's grid and cell detail with "Load in full" (10 MB). A
+  page asks for no more rows than fit in 64 MB at its column types' widest values, and says so; the paging hint
+  shows without a primary key. The tab reads on the explorer's connection (D-02 through the shared confirmation),
+  is bound to its connection and object, drops stale answers and hands a connection that is gone back to the
+  explorer. The explorer gets "Show data", "SELECT … LIMIT 100 in the SQL editor" (a new editor tab; nothing runs by
+  itself) and "Copy name". User guide page "Data viewer". Open items are TD-042. After the review: filters too long
+  for one request (12 KB, below the server's 16 KB head limit) are refused in the form; the memory estimate counts 4
+  bytes a character (code points above U+FFFF); the first page is read 150 ms after the tab opens, so passing
+  through it reads nothing; "Load in full" is aborted when its cell is left.
 - D-02 on the server (TD-038): `POST /api/connections` and `POST /api/connection-tests` take `confirmed_environment`,
   the environment the page confirmed for. A profile that is PROD now opens, is tested or has its open connection
   returned only with `"prod"`; otherwise 409 `studio.prod_confirmation_required` (a missing value counts as not

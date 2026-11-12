@@ -300,6 +300,7 @@
       "constraints": "Constraints",
       "indexes": "Indizes",
       "relationships": "Beziehungen",
+      "data": "Daten",
       "sqlite": "SQLite",
       "ddl": "DDL",
       "policies": "Policies"
@@ -397,6 +398,13 @@
       "resultTimed_one": "{{rows}} Zeile (gezählt in {{ms}} ms).",
       "resultTimed_other": "{{rows}} Zeilen (gezählt in {{ms}} ms).",
       "timeout": "Das Zählen dauerte länger als 10 Sekunden oder das Zeitlimit des Profils und wurde abgebrochen."
+    },
+    "actions": {
+      "data": "Daten anzeigen",
+      "select": "SELECT … LIMIT 100 im SQL-Editor",
+      "copy": "Namen kopieren",
+      "copied": "Name kopiert.",
+      "copyFailed": "Der Name konnte nicht kopiert werden."
     }
   },
   "migrations": {
@@ -948,6 +956,85 @@
     "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt.",
     "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt.",
     "exportSubject": "Ergebnis {{number}} von {{tab}}"
+  },
+  "viewer": {
+    "loading": "Seite wird geladen …",
+    "gridLabel": "Daten von {{name}}",
+    "pageSize": "Zeilen je Seite",
+    "previous": "Zurück",
+    "next": "Weiter",
+    "refresh": "Seite neu laden",
+    "firstPage": "Zurück zur ersten Seite",
+    "limited": "Seiten hier enthalten höchstens {{rows}} Zeilen, damit eine Seite mit den breitesten Werten im Speicherlimit des Browsers bleibt.",
+    "cutByBytes": "Diese Seite endet an der Größengrenze für Ergebnisse; „Weiter“ zeigt den Rest.",
+    "sort": {
+      "label": "Sortieren nach",
+      "none": "Tabellenreihenfolge",
+      "direction": "Richtung",
+      "asc": "Aufsteigend",
+      "desc": "Absteigend"
+    },
+    "search": {
+      "label": "Auf dieser Seite suchen",
+      "matches_one": "{{count}} von {{total}} Zeilen dieser Seite passen.",
+      "matches_other": "{{count}} von {{total}} Zeilen dieser Seite passen."
+    },
+    "status": {
+      "rows": "Zeilen {{first}}–{{last}}; weitere Zeilen folgen.",
+      "rowsLast": "Zeilen {{first}}–{{last}}; dies ist die letzte Seite.",
+      "empty": "Es gibt keine Zeilen.",
+      "noMatch": "Keine Zeile passt zu den Filtern."
+    },
+    "hint": {
+      "no_primary_key": "Kein Primärschlüssel: Die Zeilen werden nach ihrer physischen Position (rowid oder ctid) geblättert; die Reihenfolge ist bei Änderungen nicht stabil.",
+      "unstable_order": "Kein Primärschlüssel: Die Zeilen werden nach Position geblättert; ihre Reihenfolge kann sich zwischen Seiten ändern."
+    },
+    "filter": {
+      "title": "Filter",
+      "applied_one": "({{count}} angewendet)",
+      "applied_other": "({{count}} angewendet)",
+      "add": "Filter hinzufügen",
+      "apply": "Anwenden",
+      "clear": "Filter entfernen",
+      "column": "Spalte von Filter {{number}}",
+      "op": "Operator von Filter {{number}}",
+      "value": "Wert von Filter {{number}}",
+      "remove": "Filter {{number}} entfernen",
+      "chooseColumn": "Wählen Sie für jeden Filter eine Spalte.",
+      "tooLong": "Diese Filter sind zu lang für eine Anfrage. Kürzen Sie ihre Werte oder verwenden Sie weniger Filter.",
+      "most": "Höchstens {{count}} Filter.",
+      "caseSqlite": "Alle Filter müssen zutreffen. „enthält“ und „beginnt mit“ ignorieren unter SQLite die Groß- und Kleinschreibung von ASCII-Buchstaben.",
+      "casePostgres": "Alle Filter müssen zutreffen. „enthält“ und „beginnt mit“ beachten unter PostgreSQL die Groß- und Kleinschreibung."
+    },
+    "ops": {
+      "eq": "=",
+      "ne": "≠",
+      "lt": "<",
+      "le": "≤",
+      "gt": ">",
+      "ge": "≥",
+      "contains": "enthält",
+      "starts_with": "beginnt mit",
+      "is_null": "ist NULL",
+      "not_null": "ist nicht NULL"
+    },
+    "full": {
+      "load": "Vollständig laden",
+      "loading": "Der ganze Wert wird geladen …",
+      "done": "Der ganze Wert wird angezeigt ({{size}} Bytes).",
+      "cut": "Die ersten 10 MB des Werts werden angezeigt (er hat {{size}} Bytes).",
+      "unavailable": "Zeilen einer View ohne Primärschlüssel lassen sich nicht wiederfinden; der ganze Wert kann hier nicht geladen werden. Öffnen Sie ihn mit einer Abfrage im SQL-Editor."
+    },
+    "problems": {
+      "viewer_column_unknown": "Das Objekt hat keine Spalte mit diesem Namen mehr. Aktualisieren Sie den Katalog.",
+      "viewer_filter_invalid": "Ein Filter ist ungültig.",
+      "viewer_filter_too_long": "Diese Filter sind zu lang für eine Anfrage. Kürzen Sie ihre Werte oder verwenden Sie weniger Filter.",
+      "viewer_sort_unsupported": "Nach dieser Spalte kann nicht sortiert werden (ihr Typ hat keine Ordnung, etwa json, xml oder ein geometrischer Typ). Sortieren Sie nach einer anderen Spalte.",
+      "viewer_page_unknown": "Studio hält diese Seite nicht mehr vor. Beginnen Sie wieder mit der ersten Seite.",
+      "viewer_cell_unavailable": "Der ganze Wert kann für diese Zeile nicht geladen werden. Öffnen Sie ihn mit einer Abfrage im SQL-Editor.",
+      "viewer_row_gone": "Die Zeile ist nicht mehr vorhanden oder hat sich geändert. Laden Sie die Seite neu.",
+      "query_limit": "Studio führt bereits so viele Abfragen aus, wie es zulässt, insgesamt oder auf dieser Verbindung. Warten Sie, bis eine fertig ist."
+    }
   },
   "export": {
     "title": "Exportieren",

@@ -10,8 +10,8 @@ only reads here: there is nothing that changes the database.
 2. The tree lists the objects by schema and type. Type in **Filter objects** (⌘P / Ctrl+P) to find one by the start
    of its name, or of `schema.name`.
 3. Select an object. Its details open on the right, in tabs: **Columns**, **Constraints**, **Indexes**,
-   **Relationships**, on SQLite **SQLite** (`STRICT`, `WITHOUT ROWID`), then **DDL** and, for a PostgreSQL table,
-   **Policies**. The arrow keys move between the tabs.
+   **Relationships**, **Data** (the rows, see [Data viewer](data-viewer.md)), on SQLite **SQLite** (`STRICT`,
+   `WITHOUT ROWID`), then **DDL** and, for a PostgreSQL table, **Policies**. The arrow keys move between the tabs.
 
 **Refresh** reads the catalog again on the open connection. It never opens a new one.
 
@@ -29,8 +29,9 @@ The **DDL** tab shows the statements that create the object:
 A sequence has no tabs. Its DDL is shown on its own.
 
 Control characters in the DDL are shown as `\uXXXX` and a backslash as `\\`, so nothing in a name or a string can
-change how the text reads. Line breaks and tabs stay as they are. **Copy DDL** copies the exact text, without these escapes.
-A DDL longer than 100,000 characters is shown only in part, and the tab says so. **Copy DDL** still copies all of it.
+change how the text reads. Line breaks and tabs stay as they are. **Copy DDL** copies the exact text, without these
+escapes. A DDL longer than 100,000 characters is shown only in part, and the tab says so. **Copy DDL** still copies
+all of it.
 
 ## Policies (PostgreSQL)
 

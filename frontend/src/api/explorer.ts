@@ -518,10 +518,12 @@ export function parseRowCount(body: unknown): RowCount | null {
   return { schema, name, count: rows, elapsedMs: count(root.elapsed_ms) };
 }
 
-async function read<T>(
+/** A GET of the API, parsed fail-closed (also used by the data viewer, `api/viewer.ts`). */
+export async function read<T>(
   fetcher: typeof fetch,
   path: string,
   parse: (body: unknown) => T | null,
+  signal?: AbortSignal,
 ): Promise<Result<T>> {
   let response: Response;
   try {
@@ -529,6 +531,7 @@ async function read<T>(
       cache: 'no-store',
       credentials: 'same-origin',
       headers: apiHeaders(),
+      signal,
     });
   } catch {
     return { ok: false, problem: OFFLINE };
@@ -544,7 +547,7 @@ async function read<T>(
   return value === null ? { ok: false, problem: ANSWER_INVALID } : { ok: true, value };
 }
 
-function base(connectionId: string): string {
+export function base(connectionId: string): string {
   return `/api/connections/${encodeURIComponent(connectionId)}`;
 }
 

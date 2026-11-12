@@ -13,6 +13,7 @@ import { PROFILES, SETTINGS } from '../../harness/profiles';
 import { editorActions } from '../../keyboard/editorActions';
 import type { SaveFile } from '../../lib/download';
 import { DRAFTS_KEY, draftsKey } from './drafts';
+import { handToEditor } from './handoff';
 import { EditorView, queryProblemText, scriptFileName } from './EditorView';
 import type { SqlEditorHandle, SqlEditorProps } from './SqlEditor';
 import i18n from '../../i18n';
@@ -585,6 +586,23 @@ describe('EditorView', () => {
     expect(tabs).toHaveLength(1);
     expect(tabs[0]).toHaveTextContent('Query 1');
     expect(screen.getByRole('textbox', { name: 'SQL of Query 1' })).toHaveValue('');
+  });
+
+  it('opens a statement the explorer handed over in a new tab, once, and runs nothing (TD-041)', async () => {
+    handToEditor({
+      profileId: 'user:measure-central',
+      title: 'measurement',
+      sql: 'SELECT * FROM "public"."measurement" LIMIT 100;',
+    });
+    const { log } = setup({ sql: 'select 1' });
+    const text = await screen.findByRole('textbox', { name: 'SQL of measurement' });
+    expect(text).toHaveValue('SELECT * FROM "public"."measurement" LIMIT 100;');
+    const tabs = screen.getAllByTestId('editor-tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[1]).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByTestId('editor-profile')).toHaveValue('user:measure-central');
+    expect(log.connections).toEqual([]);
+    expect(log.starts).toEqual([]);
   });
 
   it('opens a new tab with Alt+T and offers its commands to the palette', async () => {

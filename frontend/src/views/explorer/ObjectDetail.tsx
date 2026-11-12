@@ -1,14 +1,15 @@
 /**
  * The detail of the selected tree row (STU-010, 08 section 4.3): an object's header and its tabs (columns,
- * constraints, indexes, relationships and, on SQLite, the table's SQLite facts), the PostgreSQL extensions, or the
- * SQLite file. Everything only reads; there is no action that changes the database (STU-026 stays locked). The DDL
- * and policies tabs and SQLite's row count on request (STU-022) are in `Definitions.tsx`.
+ * constraints, indexes, relationships, the data of a table or view (STU-013 page, `views/viewer/DataTab.tsx`) and,
+ * on SQLite, the table's SQLite facts), the PostgreSQL extensions, or the SQLite file. Everything only reads; there
+ * is no action that changes the database (STU-026 stays locked). The DDL and policies tabs and SQLite's row
+ * count on request (STU-022) are in `Definitions.tsx`.
  *
  * Every value from the database (names, types, defaults, check texts, comments, versions) is escaped and capped with a
  * visible "…" (`lib/visible.ts`, U-1); lists are cut after MAX_DETAIL_ROWS with "and N more".
  */
 import type { TFunction } from 'i18next';
-import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type {
@@ -19,7 +20,9 @@ import type {
   SqliteInfo,
   TableDetail,
 } from '../../api/explorer';
+import type { Problem } from '../../api/problem';
 import { capped } from '../../lib/visible';
+import { DataTab } from '../viewer/DataTab';
 import connectionStyles from '../connections/Connections.module.css';
 import { DdlView, PoliciesView, RowCount } from './Definitions';
 import styles from './Explorer.module.css';
@@ -425,7 +428,15 @@ function SqliteTab({ name, info }: { name: string; info: SqliteInfo | null }) {
 }
 
 type TabId =
-  'columns' | 'constraints' | 'indexes' | 'relationships' | 'sqlite' | 'ddl' | 'policies';
+  'columns' | 'constraints' | 'indexes' | 'relationships' | 'data' | 'sqlite' | 'ddl' | 'policies';
+
+/** The kinds whose rows the data viewer reads (STU-013): not sequences, not kinds the page does not know. */
+export const DATA_KINDS: readonly ObjectKind[] = [
+  'table',
+  'view',
+  'materialized_view',
+  'foreign_table',
+];
 
 /** WAI-ARIA tabs with automatic activation: ← → Home End move between them. */
 function Tabs({
@@ -476,6 +487,7 @@ function Tabs({
             type="button"
             role="tab"
             id={`${base}-${tab.id}`}
+            data-tab={tab.id}
             aria-selected={tab.id === current}
             aria-controls={`${base}-panel`}
             tabIndex={tab.id === current ? 0 : -1}
@@ -524,6 +536,7 @@ export function TableView({
   onFollow,
   fetcher,
   connectionId,
+  onGone,
 }: {
   detail: TableDetail;
   engine: Engine;
@@ -533,10 +546,15 @@ export function TableView({
   find: (schema: string, name: string) => CatalogObject | null;
   onFollow: Follow;
   fetcher: typeof fetch;
-  /** The explorer's open connection: the tabs that read (DDL, policies) read on it and never open one. */
+  /** The explorer's open connection: the tabs that read (data, DDL, policies) read on it and never open one. */
   connectionId: string;
+  onGone: (problem: Problem) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const columns = useMemo(
+    () => detail.columns.map((column) => ({ name: column.name, type: column.type })),
+    [detail.columns],
+  );
   // The STU-022 panels read on the explorer's connection; one panel per connection and object (stale answers dropped).
   const target = { fetcher, connectionId, schema: detail.schema, name: detail.name };
   // JSON, not a separator: names may hold any character (L-2 of stu-022-page-review.md).
@@ -554,6 +572,9 @@ export function TableView({
     { id: 'constraints', label: t('explorer.tabs.constraints') },
     { id: 'indexes', label: t('explorer.tabs.indexes') },
     { id: 'relationships', label: t('explorer.tabs.relationships') },
+    ...(DATA_KINDS.includes(detail.kind)
+      ? [{ id: 'data' as const, label: t('explorer.tabs.data') }]
+      : []),
     ...(engine === 'sqlite' ? [{ id: 'sqlite' as const, label: t('explorer.tabs.sqlite') }] : []),
     { id: 'ddl', label: t('explorer.tabs.ddl') },
     ...(engine === 'postgresql' && detail.kind === 'table'
@@ -571,6 +592,21 @@ export function TableView({
       break;
     case 'relationships':
       panel = <RelationshipsTab detail={detail} find={find} onFollow={onFollow} />;
+      break;
+    case 'data':
+      panel = (
+        // Bound to the connection and object: a JSON key keeps `"a|b"."c"` and `"a"."b|c"` apart (I-1).
+        <DataTab
+          key={JSON.stringify([connectionId, detail.schema, detail.name])}
+          fetcher={fetcher}
+          connectionId={connectionId}
+          engine={engine}
+          schema={detail.schema}
+          name={detail.name}
+          columns={columns}
+          onGone={onGone}
+        />
+      );
       break;
     case 'sqlite':
       panel = <SqliteTab name={detail.name} info={sqliteInfo} />;

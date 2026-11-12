@@ -151,11 +151,14 @@ and by the header.
   from 2 000 objects on the page says that it loads names only.
 - **Filter:** a name prefix (case-insensitive; with a dot, a prefix of `schema.name`) and an object type (03 section
   2 B). Matching groups open; a status line counts the matches. ⌘P / Ctrl+P focuses the filter on this page.
-- **Details:** tabs Columns, Constraints, Indexes, Relationships and, on SQLite, the table's `STRICT` and
-  `WITHOUT ROWID`. A related table is a button that selects it and moves the focus to its tree row. PostgreSQL
+- **Details:** tabs Columns, Constraints, Indexes, Relationships, Data (tables, views, materialized views and
+  foreign tables; the data viewer of the STU-013 page, see [Data viewer](viewer.md#the-page-stu-013-page)) and, on
+  SQLite, the table's `STRICT` and `WITHOUT ROWID`. Above the tabs, **Show data** selects the Data tab and focuses
+  it, **SELECT … LIMIT 100 in the SQL editor** opens that statement in a new editor tab on the same profile (nothing
+  runs by itself), and **Copy name** copies the qualified name. A related table is a button that selects it and moves the focus to its tree row. PostgreSQL
   shows the row estimate; the extensions node lists versions and updates; the SQLite file node lists the pragmas,
   the file size and its permission bits.
-- **Safety:** the page sends only GET requests and the connection open; it offers no action that changes the
+- **Safety:** the page sends only GET requests (the explorer's and the data viewer's) and the connection open; it offers no action that changes the
   database (STU-026 stays locked). Every database text is escaped (`visible()`: control, separator and bidi
   characters as `\uXXXX`) and cut with a visible "…" (names 64, types 64, defaults 160, comments and check texts
   300 characters); lists stop after 500 entries with "and N more".
@@ -184,8 +187,8 @@ and by the header.
   an earlier selection is dropped. Copy DDL empties its status before the new text, so a second copy is announced
   again.
 
-Open: "Open in editor" and "SELECT … LIMIT 100" (with the SQL editor, #41), the data tab (STU-013 page), the
-virtualized tree, the estimates of `row-estimates` in the tree, and following the header's connection; see TD-041.
+Open: the tree's context menu (its actions are buttons above the tabs for now), the virtualized tree, the estimates
+of `row-estimates` in the tree, and following the header's connection; see TD-041.
 
 ## Tests
 
@@ -195,7 +198,7 @@ virtualized tree, the estimates of `row-estimates` in the tree, and following th
 | `tests/security/test_explorer.py` (PostgreSQL) | the catalog of 502 tables in a schema in under a second, materialized views and sequences, no system schemas; comments, FKs in and out, the row estimate, extensions |
 | `tests/security/test_definitions.py` (SQLite) | the DDL of the measurements device file equals its migrations and `sqlite_master`, the parts schema likewise; `count(*)` on request, every name quoted (keywords, a broken view reports `db.*`), unknown names refused, the timeout cancels a count that would run for minutes (`db.timeout`) within seconds and repeats its cancel; only checked `SELECT` statements reach the database (spy); the routes with both name forms behind session and CSRF |
 | `tests/security/test_definitions.py` (PostgreSQL) | STU-022 acceptance: the DDL of the parts, measurements and `extras` schemas, and of both apps in `public`, equals `pg_dump --schema-only` statement by statement (recorded and live); `extras` includes rules, child-only `NOT NULL`, replica identity, `CLUSTER ON`, column statistics, storage and compression, a materialized view with options, a statistics target and `CLUSTER ON`, a view column default, a type and a domain; identity and owned sequences, policies and `rls_applies` (forced, not forced, owner, member, `BYPASSRLS`, superuser), row estimates with partitions (an unanalyzed partition gives none), a foreign table (superuser), the spy, the routes |
-| `tests/security/test_definitions.py` (PostgreSQL superuser) | the fixed catalog search path: objects another role plants in `public`, armed before the connection is opened (so the connection's setup is covered too, TD-039), are never called by Studio's catalog reads (DDL, policies, estimates, the catalog, table detail, extensions, the migration lookups), with `pg_catalog` implicit and with `public` placed before it in the role's `search_path` |
+| `tests/security/test_definitions.py` (PostgreSQL superuser) | the fixed catalog search path: operators, and the function the connection's setup calls unqualified (`current_schema()`; `version()` is planted too as a guard, though the setup calls it qualified), that another role plants in `public`, armed before the connection is opened (so the connection's setup is covered too, TD-039), are never called by Studio's catalog reads (DDL, policies, estimates, the catalog, table detail, extensions, the migration lookups), with `pg_catalog` implicit and with `public` placed before it in the role's `search_path` |
 | `frontend/src/views/explorer/ExplorerView.test.tsx`, `tree.test.ts`, `src/api/explorer.test.ts` | the page: D-02, the tree keyboard, the filter, the detail tabs, U-1 escaping and caps, stale answers, focus, fail-closed parsing, no write |
 | `frontend/src/views/explorer/Definitions.test.tsx` | STU-022 in the page: one GET on the given connection per panel, the DDL escaped per line with its line breaks, the cut note, Copy DDL (exact text, refused clipboard), the policies' facts, reasons and rows (escaped), fail-closed answers, an answer for another object or connection refused, late answers dropped, the row count on request and its timeout |
 | `frontend/e2e/explorer-definitions.spec.ts` | the DDL and policies tabs and the row count in Chromium with axe (light/dark, en/de); the DDL region takes the focus and keeps hostile text escaped; Copy DDL; no write but the connection open |

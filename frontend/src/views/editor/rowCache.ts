@@ -36,6 +36,14 @@ export interface CachedRow {
   cut: Set<number>;
 }
 
+/** What the grid reads rows from: the editor's `RowCache`, or one page of the data viewer (STU-013). */
+export interface GridRows {
+  readonly rowCount: number;
+  /** The row, or undefined while it loads. */
+  get(index: number): CachedRow | undefined;
+  subscribe(listener: () => void): () => void;
+}
+
 interface Chunk {
   rows: CachedRow[];
   bytes: number;
@@ -66,7 +74,7 @@ export function rowBytes(values: unknown[]): number {
   return total;
 }
 
-export class RowCache {
+export class RowCache implements GridRows {
   private readonly chunks = new Map<number, Chunk>();
   private readonly loading = new Set<number>();
   private bytes = 0;

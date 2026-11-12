@@ -61,6 +61,7 @@ nav:
       - Diagnostics: guide/diagnostics.md
       - Explorer: guide/explorer.md
       - SQL editor: guide/sql-editor.md
+      - Data viewer: guide/data-viewer.md
       - Settings and keyboard: guide/settings.md
       - How Studio protects your data: guide/security.md
       - Troubleshooting: guide/troubleshooting.md
