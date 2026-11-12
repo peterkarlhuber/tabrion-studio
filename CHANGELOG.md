@@ -7,8 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- STU-011 (integration branch only, stacked on STU-009; on tabrion 0.1 behind `services/tabrion_compat.py` until
-  tabrion 0.2):
+- STU-011 (on tabrion 0.1 behind `services/tabrion_compat.py` until tabrion 0.2):
   - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
     (server-sent events), `GET /api/queries/{id}/rows` and `POST /api/queries/{id}/cancel`.
   - One checked statement per `Database.read()`, through `ConnectionRegistry.get`; `:name` parameters are bound by
