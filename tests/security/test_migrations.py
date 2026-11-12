@@ -547,6 +547,25 @@ def test_a_child_that_left_the_process_group_does_not_hold_studio(shop: Shop, wo
                 os.kill(int(escaped.read_text()), signal.SIGKILL)
 
 
+def record_exchanges(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Which exchange ``run_worker`` used ("posix" or "windows"): L-1 of stu-29-30-windows-delta-review.md, so that a
+    "windows" case that silently ran the POSIX exchange (``_POSIX`` ignored) fails."""
+    used: list[str] = []
+    real_posix, real_threads = migrations_module._exchange_posix, migrations_module._exchange_threads
+
+    def posix_exchange(*args: Any) -> tuple[bytes | None, threading.Thread | None]:
+        used.append("posix")
+        return real_posix(*args)
+
+    def threads_exchange(*args: Any) -> tuple[bytes | None, threading.Thread | None]:
+        used.append("windows")
+        return real_threads(*args)
+
+    monkeypatch.setattr(migrations_module, "_exchange_posix", posix_exchange)
+    monkeypatch.setattr(migrations_module, "_exchange_threads", threads_exchange)
+    return used
+
+
 @pytest.mark.parametrize("worker", ["answers", "hangs", "too_big"])
 def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker: str) -> None:
     write = {
@@ -557,10 +576,12 @@ def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.M
     boot = "import os, sys, time\nrequest = sys.stdin.buffer.read()\n" + write
     monkeypatch.setattr(migrations_module, "_BOOT", boot)
     monkeypatch.setattr(migrations_module, "_POSIX", False)  # the Windows exchange, also on POSIX
+    used = record_exchanges(monkeypatch)
     request = {"padding": "x" * 300_000}
     started = time.monotonic()
     answer = run_worker(request, cwd=tmp_path, timeout_s=3.0)
     assert time.monotonic() - started < 8
+    assert used == ["windows"]
     expected = {
         "answers": {"size": len(json.dumps(request))},
         "hangs": {"error": "studio.migrations_timeout"},
@@ -584,6 +605,7 @@ def test_the_worker_pipes_are_closed_on_every_platform(
     monkeypatch.setattr(migrations_module, "_BOOT", "import os, sys, time\nsys.stdin.buffer.read()\n" + write)
     if exchange == "windows":
         monkeypatch.setattr(migrations_module, "_POSIX", False)
+    used = record_exchanges(monkeypatch)
     started: list[subprocess.Popen[bytes]] = []
 
     class Recorded(subprocess.Popen[bytes]):
@@ -598,6 +620,7 @@ def test_the_worker_pipes_are_closed_on_every_platform(
         "too_big": {"error": "studio.migrations_failed"},
     }
     assert run_worker({}, cwd=tmp_path, timeout_s=2.0) == expected[worker]
+    assert used == ["windows" if exchange == "windows" or os.name != "posix" else "posix"]
     [process] = started
     assert process.stdin is not None and process.stdin.closed
     assert process.stdout is not None and process.stdout.closed
@@ -609,6 +632,50 @@ def test_the_worker_pipes_are_closed_on_every_platform(
         warnings.simplefilter("always", ResourceWarning)
         gc.collect()
     assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
+
+
+@posix
+@pytest.mark.parametrize("worker", ["hangs", "exits"])
+def test_an_escaped_child_does_not_hold_the_windows_exchange(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker: str
+) -> None:
+    """L-2 of stu-29-30-windows-delta-review.md: the Windows exchange without a job object (the no-job fallback of
+    TD-024). The worker forks a child that leaves its session and keeps the answer pipe open, so the reader thread
+    stays blocked; ``run_worker`` still returns within the timeout plus its bounded reap and join."""
+    escape = (
+        "import os, pathlib, sys, time\n"
+        "sys.stdin.buffer.read()\n"
+        "if os.fork() == 0:\n"
+        "    os.setsid()\n"
+        "    pathlib.Path('escaped').write_text(str(os.getpid()))\n"
+        "    time.sleep(30)\n"
+        "    os._exit(0)\n"
+    )
+    monkeypatch.setattr(migrations_module, "_BOOT", escape + ("time.sleep(60)\n" if worker == "hangs" else ""))
+    monkeypatch.setattr(migrations_module, "_POSIX", False)
+    used = record_exchanges(monkeypatch)
+    timeout_s = 2.0
+    escaped = tmp_path / "escaped"
+    started = time.monotonic()
+    try:
+        assert run_worker({}, cwd=tmp_path, timeout_s=timeout_s) == {"error": "studio.migrations_timeout"}
+        took = time.monotonic() - started
+        assert used == ["windows"]
+        # The child held the pipe, so the reader was still blocked when run_worker gave up on it: the bound mattered.
+        assert [thread for thread in threading.enumerate() if thread.name == "tabrion-studio-migration-worker"]
+        assert took < timeout_s + 2 * migrations_module._REAP_S + 2
+    finally:
+        deadline = time.monotonic() + 5
+        while not escaped.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        if escaped.exists():
+            with contextlib.suppress(ProcessLookupError, ValueError):
+                os.kill(int(escaped.read_text()), signal.SIGKILL)
+        # The child is gone, so the reader reads the pipe's end, closes it and ends.
+        for thread in threading.enumerate():
+            if thread.name == "tabrion-studio-migration-worker":
+                thread.join(10)
+    assert not [thread for thread in threading.enumerate() if thread.name == "tabrion-studio-migration-worker"]
 
 
 @posix

@@ -547,6 +547,9 @@ def test_bytes_are_capped_on_the_server(lite: tuple[Viewer, str, Path], monkeypa
     connection.commit()
     connection.close()
     viewer.explorer.catalog(connection_id, refresh=True)
+    # A memory test, not a clock test: under tracemalloc (and coverage's line tracer) the statement check can take
+    # longer than the fixture's short profile timeout, so the statement gets a timeout it cannot reach.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "main", "big", limit=1)
@@ -777,7 +780,7 @@ def test_pg_a_reused_ctid_is_not_another_rows_cell(pg: tuple[Viewer, str]) -> No
 
 @pytest.mark.postgres
 @postgres
-def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str]) -> None:
+def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """M-4: a 30 MB bytea and a 12 MB text stay in the database for a page; the cell loads 10 MB of their bytes."""
     import tracemalloc
 
@@ -792,6 +795,9 @@ def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str]) -> None:
             )
     finally:
         engine.dispose()
+    # A memory test, not a clock test: under tracemalloc (and coverage's line tracer) the statement check can take
+    # longer than the fixture's short profile timeout, so the statement gets a timeout it cannot reach.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "Studio Viewer", "typed", limit=2)
@@ -1026,6 +1032,9 @@ def test_pg_r1_decoded_json_counts_toward_the_page_cap(pg: tuple[Viewer, str], m
         engine.dispose()
     viewer.explorer.catalog(connection_id, refresh=True)
     monkeypatch.setattr(viewer, "limits", lambda: Settings(max_result_mb=1))
+    # As in the M-4 test: this test is about memory, not the clock. Under tracemalloc and Python 3.12's line tracer
+    # (coverage) the statement check alone can take longer than the `pg` fixture's 1.5 s timeout (ViewerTimeout).
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "Studio Viewer", "nested", limit=1000)
