@@ -28,6 +28,7 @@ describe('buildCommands', () => {
       'Go to Connections',
       'Go to SQL editor',
       'Go to Migrations',
+      'Go to Diagnostics',
       'Go to Settings',
       'Theme: System',
       'Theme: Light',
@@ -54,11 +55,12 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 6)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 7)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
       'Gehe zu SQL-Editor',
       'Gehe zu Migrationen',
+      'Gehe zu Diagnose',
       'Gehe zu Einstellungen',
       'Darstellung: System',
     ]);

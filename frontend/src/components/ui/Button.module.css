@@ -22,10 +22,12 @@
   cursor: pointer;
   transition: background-color var(--tb-duration-fast) var(--tb-ease-standard);
 }
-.button:hover:not(:disabled) {
+.button:hover:not(:disabled, [aria-disabled='true']) {
   background: var(--btn-bg-hover);
 }
-.button:disabled {
+/* aria-disabled keeps a button focusable (a view that must not drop the keyboard focus, STU-014 C-2). */
+.button:disabled,
+.button[aria-disabled='true'] {
   cursor: not-allowed;
   opacity: 0.55;
 }

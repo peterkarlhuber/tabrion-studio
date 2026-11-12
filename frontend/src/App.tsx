@@ -9,6 +9,7 @@ import { AppShell, type ServerState } from './shell/AppShell';
 import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView } from './views/connections/ConnectionsView';
+import { DiagnosticsView } from './views/diagnostics/DiagnosticsView';
 import { MigrationsView } from './views/migrations/MigrationsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
 import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
@@ -49,6 +50,8 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
       );
     case '/migrations':
       return <MigrationsView fetcher={fetcher} />;
+    case '/diagnostics':
+      return <DiagnosticsView fetcher={fetcher} />;
     case '/settings':
       return <SettingsView fetcher={fetcher} />;
     default:
@@ -60,6 +63,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/connections': 'connections.title',
   '/sql': 'editor.title',
   '/migrations': 'migrations.title',
+  '/diagnostics': 'diagnostics.title',
   '/settings': 'settings.title',
 };
 

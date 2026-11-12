@@ -65,26 +65,28 @@ describe('command palette', () => {
     await user.keyboard('{Control>}k{/Control}');
     const dialog = palette() as HTMLElement;
     const input = within(dialog).getByRole('combobox');
-    expect(within(dialog).getAllByRole('option')).toHaveLength(13);
-    expect(within(dialog).getByRole('status')).toHaveTextContent('13 commands');
+    expect(within(dialog).getAllByRole('option')).toHaveLength(14);
+    expect(within(dialog).getByRole('status')).toHaveTextContent('14 commands');
     await user.type(input, 'go to');
     const options = within(dialog).getAllByRole('option');
-    // Every page of the activity bar is offered, in its order, the SQL editor and the migrations page included.
+    // Every page of the activity bar is offered, in its order, the SQL editor, migrations and diagnostics pages
+    // included.
     expect(options.map((o) => o.textContent)).toEqual([
       'Go to Startcurrent',
       'Go to Connections',
       'Go to SQL editor',
       'Go to Migrations',
+      'Go to Diagnostics',
       'Go to Settings',
     ]);
     expect(options[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', options[0]?.id);
-    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
-    expect(input).toHaveAttribute('aria-activedescendant', options[4]?.id);
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
+    expect(input).toHaveAttribute('aria-activedescendant', options[5]?.id);
     await user.keyboard('{ArrowDown}'); // wraps around
     expect(input).toHaveAttribute('aria-activedescendant', options[0]?.id);
     await user.keyboard('{ArrowUp}'); // and back
-    expect(input).toHaveAttribute('aria-activedescendant', options[4]?.id);
+    expect(input).toHaveAttribute('aria-activedescendant', options[5]?.id);
     await user.keyboard('{Enter}');
     expect(palette()).toBeNull();
     expect(window.location.pathname).toBe('/settings');

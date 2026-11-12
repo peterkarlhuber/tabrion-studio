@@ -262,15 +262,17 @@ describe('EditorView', () => {
 
   it('a cancel while connecting starts no query (M-2)', async () => {
     const user = userEvent.setup();
-    const { log } = setup({ sql: 'select pg_sleep(60)' }, { connectDelayMs: 300 });
+    const { log } = setup({ sql: 'select pg_sleep(60)' }, { connectDelayMs: 1_500 });
     await editor();
     await user.click(screen.getByTestId('editor-run'));
     await waitFor(() => expect(screen.getByTestId('editor-cancel')).toBeEnabled());
     await user.click(screen.getByTestId('editor-cancel'));
-    await waitFor(() =>
-      expect(screen.getByTestId('editor-notice')).toHaveTextContent(
-        'Canceled before the query started.',
-      ),
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('editor-notice')).toHaveTextContent(
+          'Canceled before the query started.',
+        ),
+      { timeout: 3_000 },
     );
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
@@ -282,7 +284,7 @@ describe('EditorView', () => {
 
   it('closing the tab while connecting starts no query (M-2)', async () => {
     const user = userEvent.setup();
-    const { log } = setup({ sql: 'select pg_sleep(60)' }, { connectDelayMs: 300 });
+    const { log } = setup({ sql: 'select pg_sleep(60)' }, { connectDelayMs: 1_500 });
     await editor();
     await user.click(screen.getByTestId('editor-run'));
     await user.click(screen.getByRole('button', { name: 'Close Query 1' }));
@@ -291,8 +293,9 @@ describe('EditorView', () => {
         name: 'Discard',
       }),
     );
+    // Past the end of the connection's delay.
     await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      await new Promise((resolve) => setTimeout(resolve, 1_800));
     });
     expect(log.connections).toHaveLength(1);
     expect(log.starts).toEqual([]);
