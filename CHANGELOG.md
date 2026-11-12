@@ -18,6 +18,9 @@ All notable changes to this project are documented here. The format follows
   CI build, with the build backend pinned exactly (`hatchling==1.33.0`, hashed in `build-constraints.txt`); the QA-8
   evidence (audits, SBOMs, hashes) is in `docs/development/ci.md`. A fixed `SOURCE_DATE_EPOCH` build is tested too, and
   `scripts/check_frontend_reproducible.py` checks by hand that two frontend builds match.
+- Conventions audit (TABRION QA-22): `docs/development/conventions.md`, `tests/security/test_conventions.py` (license,
+  security policy, community files, Dependabot policy, CI manifest), and the missing `CODE_OF_CONDUCT.md` and
+  `SUPPORT.md`.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).
