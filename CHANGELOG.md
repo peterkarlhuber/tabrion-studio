@@ -7,6 +7,27 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-013 backend (on tabrion 0.1 like STU-011):
+  `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
+  token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary
+  key, by `rowid` or `ctid` without one, and by `OFFSET` for views (`hint: unstable_order`). Column names must be
+  reflected columns, filter values are bound parameters, and key values stay in the backend. Past the profile's
+  timeout the answer is `db.timeout`.
+  - Review `stu-013-review.md`: PostgreSQL pages without a primary key go by `(tableoid, ctid)`, so partitioned
+    tables and inheritance parents lose no rows; keys are compared in the column's own type (a `real`, `jsonb` or
+    array sort no longer loops or fails on page 2), and `json`, `xml` and geometric columns are refused for sorting
+    (`studio.viewer_sort_unsupported`); NULLs in a SQLite primary key are ordered by the row id; the cell detail by
+    `ctid` or `rowid` answers `studio.viewer_row_gone` when another row took the id; lengths are measured on the
+    server before values are fetched (64 KB per cell, `max_result_mb` per page with `truncated: "bytes"`, 10 MB of
+    bytes for the cell detail, fetches of about 2 MB); tokens are bound to the session, at most 64 per session and
+    connection, and dropped with their connection; reflection is cached for 10 s; at most 4 viewer statements at a
+    time, 2 per connection.
+  - Delta re-review of `stu-013-review.md`: a primary key column whose name starts with `@` is a quoted column like
+    any other (the row identity is typed, not marked by a prefix); every PostgreSQL session starts with
+    `extra_float_digits=3`, and a keyset walk that makes no progress goes on by `OFFSET` instead of repeating pages;
+    the fetch batch is capped by the widest row the byte caps allow, so a small first row cannot inflate it; a
+    decoded `json`, `jsonb` or array value counts toward the batch and the page cap at the memory its Python objects
+    take, not at its text bytes.
 - STU-010 backend (reflection through `tabrion_compat.inspector` until tabrion 0.2):
   `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),

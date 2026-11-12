@@ -138,13 +138,13 @@ def _columns(cursor: Any, dbapi: Any, postgres: bool) -> tuple[Column, ...]:
 def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
     """A connection that got a cancel never goes back to the pool (H-1 of ``tab-033-review.md``, L-2 of
     ``stu-011-review.md``): PostgreSQL may act on a cancel packet after the statement ended and abort the next user's
-    statement; SQLite's interrupt flag is cleared only when no statement runs. If SQLAlchemy cannot invalidate it,
-    the driver connection is closed, so the pool can only throw it away."""
-    try:
+    statement; SQLite's interrupt flag is cleared only when no statement runs. The driver connection is closed in
+    any case (after ``invalidate()`` too), so a traceback that keeps it alive cannot keep it open until garbage
+    collection (the ResourceWarning lead of ``stu-013-review.md``)."""
+    with contextlib.suppress(Exception):
         connection.invalidate()
-    except Exception:
-        with contextlib.suppress(Exception):
-            dbapi.close()
+    with contextlib.suppress(Exception):
+        dbapi.close()
 
 
 #: ``RESET ALL`` leaves ``role`` and ``session_authorization`` alone (both are ``GUC_NO_RESET_ALL``), so a ``SET ROLE``
@@ -214,19 +214,22 @@ def stream(
         if sent:
             _discard(connection, dbapi)  # first: a cancel packet still on its way cannot reach the CLOSE either
         if cursor is not None:
-            _close_cursor(cursor, connection, dbapi)
+            _close_cursor(cursor, connection, dbapi, discarded=sent)
     if sent:
         raise Cancelled
 
 
-def _close_cursor(cursor: Any, connection: sqlalchemy.Connection, dbapi: Any) -> None:
+def _close_cursor(cursor: Any, connection: sqlalchemy.Connection, dbapi: Any, *, discarded: bool = False) -> None:
     """Close ``cursor``; one whose close fails (a broken connection) is closed without the database: the
     connection leaves the pool (:func:`_discard`), and on a closed driver connection psycopg marks a server-side
-    cursor closed without sending ``CLOSE``."""
+    cursor closed without sending ``CLOSE``. ``discarded``: the connection already left the pool after a cancel
+    (:func:`_discard` also closes the driver connection, so SQLite's ``cursor.close()`` raises); it is not
+    discarded a second time."""
     try:
         cursor.close()
     except Exception:
-        _discard(connection, dbapi)
+        if not discarded:
+            _discard(connection, dbapi)
         with contextlib.suppress(Exception):
             cursor.close()
 

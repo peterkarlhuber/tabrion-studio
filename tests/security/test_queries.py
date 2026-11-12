@@ -632,12 +632,22 @@ def test_l2_m7_a_connection_that_got_a_cancel_is_invalidated(engine: str) -> Non
         with pytest.raises(Cancelled), fake_stream(transaction, hook, server_side=False):
             hook.cancel()
     assert transaction.invalidated == 1
+    # The driver connection is closed after invalidate() too, so nothing can keep it open until GC.
+    if engine == "postgresql":
+        assert dbapi.closed
+    else:
+        with pytest.raises(sqlite3.ProgrammingError):
+            dbapi.execute("SELECT 1")
+    dbapi = FakePsycopg() if engine == "postgresql" else sqlite3.connect(":memory:", factory=CountingSqlite)
     quiet = FakeTransaction(dbapi)
     with fake_stream(quiet, Cancel(), server_side=False):
         pass
     assert quiet.invalidated == 0  # no cancel, no invalidation
     if engine == "sqlite":
+        assert dbapi.execute("SELECT 1").fetchone() == (1,)  # not closed
         dbapi.close()
+    else:
+        assert not dbapi.closed
 
 
 def test_l2_a_connection_that_cannot_be_invalidated_is_closed() -> None:
@@ -972,6 +982,8 @@ def test_m2_startup_options_carry_studios_session_settings() -> None:
     assert options.split(" -c ")[0] == "-c default_transaction_read_only=on"
     assert "-c statement_timeout=30000" in options and "-c lock_timeout=5000" in options
     assert "-c TimeZone=UTC" in options
+    # H-2 residual of stu-013-review.md: exact float text whatever the role sets (the viewer's keys are text).
+    assert "-c extra_float_digits=3" in options
 
 
 def test_r_i1_settings_the_startup_options_cannot_match_are_refused() -> None:

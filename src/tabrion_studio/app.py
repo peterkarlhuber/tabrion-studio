@@ -41,6 +41,7 @@ from tabrion_studio.api.config import Configuration, add_config_routes
 from tabrion_studio.api.connections import add_connection_routes
 from tabrion_studio.api.explorer import add_explorer_routes
 from tabrion_studio.api.queries import add_query_routes
+from tabrion_studio.api.viewer import add_viewer_routes
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
 from tabrion_studio.logs import register_secret
@@ -52,6 +53,7 @@ from tabrion_studio.security.sessions import Sessions, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.viewer import Viewer
 
 _logger = logging.getLogger("tabrion_studio.app")
 
@@ -90,6 +92,8 @@ class Runtime:
     queries: QueryEngine | None = None
     #: Catalog and table detail on those connections (STU-010); None serves no explorer routes.
     explorer: Explorer | None = None
+    #: The data viewer on the explorer's objects (STU-013); None serves no viewer routes.
+    viewer: Viewer | None = None
 
 
 def _problem(code: str) -> Response:
@@ -230,6 +234,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_query_routes(app, runtime.queries)
     if runtime.explorer is not None:
         add_explorer_routes(app, runtime.explorer)
+    if runtime.viewer is not None:
+        add_viewer_routes(app, runtime.viewer)
 
     index = static_dir / "index.html"
     if index.is_file():

@@ -347,7 +347,8 @@ merge after OA-004.
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
-| TABRION STU-012..STU-015 | SQL editor, data viewer, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Done (PR #24), on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). The `ViewerTimeout` of `test_m4_a_small_first_row_does_not_size_the_next_batch` on Python 3.12 in CI is fixed in the test: tracemalloc plus coverage's line tracer on 3.12 made the statement check take about 2 s, past the `lite` profile's 800 ms, so the test now gives its statement a timeout it cannot reach (its assertions are unchanged; delta check `stu-013-delta-v010-review.md` accepted). Its condition C-1 is fixed the same way: `test_pg_r1_decoded_json_counts_toward_the_page_cap` timed out under the `pg` fixture's 1.5 s on 3.12 with coverage and now gets the same 300 s statement timeout, as do the two other tracemalloc tests, `test_bytes_are_capped_on_the_server` and `test_pg_bytes_are_capped_on_the_server`, which timed out the same way on a loaded machine. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
+| TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
@@ -548,6 +549,37 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
     `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
 
+### STU-013 viewer: review items kept open
+
+- **Priority:** P3 · **Status:** Open · **Refs:** `stu-013-review.md`, `docs/architecture/viewer.md`
+- **L-2 (OFFSET pages of a view are not in a stable order without a sort):** not done on purpose. Ordering every
+  page of a view by all its columns makes each page evaluate and sort the whole view, so a large or endless view
+  would only reach the timeout (the SQLite test with an endless view shows it). The page keeps `hint:
+  "unstable_order"`; a sort column gives a stable order for distinct sort values. Revisit with the grid tab
+  (STU-012): it could offer "sort by all columns" for small views.
+- **L-5 (one budget with the query engine):** the viewer now has its own limit with the same numbers (4 statements
+  in Studio, 2 per connection, `studio.query_limit`), but it does not share the query engine's count, so 4 queries
+  and 4 viewer statements can run at once. One shared budget needs a small slot API on `QueryEngine`; do it when the
+  grid tab and the SQL editor run side by side (STU-012).
+- **I-3 (filter type mismatches):** `id eq "abc"` on PostgreSQL stays a classified database problem (`db.data`,
+  `db.undefined_object`), which is safe (no SQL, no values). Mapping it to `studio.viewer_filter_invalid` needs the
+  column types in the filter check; with the grid tab.
+- **SQLite text in another encoding:** the byte caps cut text as UTF-8; a database in UTF-16 is cut at the same
+  number of bytes but decoded as UTF-8. No reference app uses UTF-16; check with STU-016.
+- **Progress guard of the viewer (finding 3 of the re-review of `974b958`):** the guard only makes a walk end. With a
+  sort key whose text does not read back as its value (float text without the `extra_float_digits=3` pin), rows can
+  repeat before it trips (page 2 ends on a new lossy key) or be skipped silently (a descending page after a lossy
+  anchor comes back empty, and the guard does not look at an empty page). The pin is the real fix and holds on every
+  supported server; revisit if another type's text turns out lossy (compare the anchor on the server, or refuse).
+- **Decoded size (R-1 of the re-review of `974b958`):** a page's first row and the cell detail are not bounded by the
+  decoded size: one row of many large `json`/`jsonb`/array columns, or a 10 MB `jsonb` value in the cell detail, can
+  take about 20 times its text in Python. The cell detail could return such values as text; with the grid tab.
+- **Info items of the delta re-review of `4ad445a`:** a domain over a domain resolves one level only in
+  `_PG_COLUMN_TYPES_SQL` (a `json` domain two levels deep is not refused up front, it fails on page 1 as a database
+  problem; a `bytea` domain shows as hex text); `xid` and `cid` have no ordering, so a sort by them is a database
+  error on page 1 (add them to the unordered types); `(tableoid, ctid)` is used for plain tables too, which rules out
+  a TID range scan (use `tableoid` only for relkind `p` or tables with children). With the grid tab (STU-012).
+
 ### TD-012 · STU-009 integration: what remains before it can merge
 
 - **Priority:** P1 High · **Status:** Done (PR #15: tabrion v0.1.0 pinned, master merged; the CI workflow commit
@@ -626,11 +658,16 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
-  its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell (10 MB, 03
-  §5.3) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost warning for prod profiles come with STU-012/013.
+  its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell of a query
+  result (10 MB, 03 §5.3; the data viewer has it since STU-013) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost
+  warning for prod profiles come with STU-012.
 - **Explorer (STU-010) with tabrion 0.2:** replace `tabrion_compat.inspector` with `Database.inspector()`, the
   extensions query with `tabrion.postgres.extension_status` and the SQLite facts with `tabrion.sqlite.diagnose`
   (03 §6; I-4 of `stu-010-review.md`); keep `test_explorer.py` unchanged as the acceptance.
+- **STU-013 data viewer:** it uses the same `tabrion_compat.stream` and `Cancel` (one statement per page, with the
+  profile's timeout), so the swap covers it; keep `test_viewer.py` (the `LIMIT` spy) unchanged as its acceptance.
+  The viewer's statements are SQLAlchemy Core compiled for the psycopg and pysqlite (named) dialects; check that
+  0.2's `stream` takes such text and its parameters as they are.
 - **Connections and running queries:** closing a connection (`DELETE /api/connections`, a stale profile) does not
   cancel its running queries; they end at their timeout or with the connection's error. A connection's pool has 2
   connections, shared by its queries (at most 2), the explorer and the health check; a third user waits up to the

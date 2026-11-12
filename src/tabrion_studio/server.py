@@ -58,6 +58,7 @@ from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.viewer import Viewer
 
 
 class PortUnavailableError(RuntimeError):
@@ -260,11 +261,13 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         user=UserConfig(config_dir),
     )
     registry = ConnectionRegistry(configuration)
+    explorer = Explorer(registry)
     runtime = Runtime(
         config=configuration,
         connections=registry,
         queries=QueryEngine(registry, configuration.limits),
-        explorer=Explorer(registry),
+        explorer=explorer,
+        viewer=Viewer(explorer, configuration.limits),
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),
