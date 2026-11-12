@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-025 backend: `POST /api/connections/{id}/diagnostics/report` with
+  `{"format": "markdown" | "json"}` runs a diagnosis with its backup hints and answers it as a file
+  (`Content-Disposition: attachment`). The report is built from an allowlist: no password, token, connection URL or
+  DSN, host, port, user or database name, file path, SQL text or parameter value. Every text also passes the log
+  redaction, and the Markdown escapes text from the database. Canary tests cover both formats and the log
+  (`studio.report_invalid` is new). Every diagnosis now carries backup hints (`backup: {hints, facts}`,
+  `STU-BK-001..014`): SQLite backups next to the database (none found, older than the data, readable by others), and
+  PostgreSQL's `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, a standby). In such a run
+  tabrion's `TAB-PG-020` is replaced by `STU-BK-010`.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most

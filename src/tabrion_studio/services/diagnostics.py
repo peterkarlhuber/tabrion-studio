@@ -31,6 +31,10 @@ the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`,
 * ``010`` (warning if ``idle_in_transaction_session_timeout`` is missing, else info): no ``lock_timeout``,
   ``idle_in_transaction_session_timeout`` or ``application_name`` for the role or the database.
 
+**Backup hints** (``STU-BK-*``, STU-025): ``run(..., backup=True)`` adds ``backup: {hints, facts}`` from
+:mod:`.backup_hints`, under the same time limit and cancel. They are not findings and not in ``counts``. In such a
+run tabrion's ``TAB-PG-020`` (archiving off) is left out of the findings: ``STU-BK-010`` says it (:data:`BACKUP_CODES`).
+
 **Time limit (M-1):** a diagnosis runs at most the connection's statement timeout; then every statement is canceled
 like a query (:class:`.tabrion_compat.Cancel`: SQLite interrupt, psycopg cancel), and the checks that did not
 run are named in ``STU-DX-008``. :meth:`Diagnostics.cancel` stops a running diagnosis the same way. On SQLite,
@@ -54,11 +58,12 @@ from tabrion import TabrionError
 from tabrion.check import Finding
 
 from tabrion_studio.config.schema import is_loopback
+from tabrion_studio.services import backup_hints
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tabrion_studio.services.queries import CANCEL_ATTEMPTS, CANCEL_INTERVAL_S
 from tabrion_studio.services.tabrion_compat import Cancel
 
-__all__ = ["REPLACED_CODES", "SESSION_CODES", "Diagnostics"]
+__all__ = ["BACKUP_CODES", "REPLACED_CODES", "SESSION_CODES", "Diagnostics"]
 
 _T = TypeVar("_T")
 
@@ -78,6 +83,9 @@ SESSION_CODES = frozenset(
 )
 #: tabrion findings that a Studio check replaces: TAB-PG-003 counts only the current schema (STU-DX-006).
 REPLACED_CODES = frozenset({"TAB-PG-003"})
+#: tabrion findings that the backup hints replace in a run with them (STU-025): TAB-PG-020 ("WAL archiving is off")
+#: is STU-BK-010, which reads ``archive_mode`` together with ``pg_stat_archiver``.
+BACKUP_CODES = frozenset({"TAB-PG-020"})
 _TABRION_TLS_CODES = frozenset({"TAB-PG-010", "TAB-PG-011"})
 _ORDER = {"error": 0, "warning": 1, "info": 2}
 #: The SQLite errors of ``PRAGMA foreign_key_check`` that mean a broken foreign key definition (L-5).
@@ -212,7 +220,8 @@ class Diagnostics:
             threading.Thread(target=_expire, args=(run.hook, run.finished), daemon=True).start()
         return bool(runs)
 
-    def run(self, connection_id: object) -> dict[str, Any]:
+    def run(self, connection_id: object, *, backup: bool = False) -> dict[str, Any]:
+        """The diagnosis of an open connection; with ``backup``, also its backup hints (STU-025)."""
         connection = self.registry.get(connection_id)
         profile = self.registry.source.entry(connection.profile_id).profile
         prod = connection.environment == "prod"
@@ -232,16 +241,18 @@ class Diagnostics:
             )
             if sqlite and run.hook.requested and any(_not_checked(finding, "TAB-SQ-006") for finding in tabrion):
                 run.skipped.append("tabrion's integrity check (TAB-SQ-006)")
+            left_out = REPLACED_CODES | BACKUP_CODES if backup else REPLACED_CODES
             findings = [
                 _from_tabrion(finding)
                 for finding in tabrion
-                if finding.code not in SESSION_CODES and finding.code not in REPLACED_CODES
+                if finding.code not in SESSION_CODES and finding.code not in left_out
             ]
             tabrion_tls = any(finding.code in _TABRION_TLS_CODES for finding in tabrion)
             if connection.engine == "postgresql":
                 findings += self._postgres(connection, profile, run, prod=prod, tabrion_tls=tabrion_tls)
             else:
                 findings += self._sqlite(connection, run)
+            hints = self._backup(connection, run, prod=prod) if backup else None
         finally:
             run.finished.set()
             timer.cancel()
@@ -260,7 +271,7 @@ class Diagnostics:
             ))  # fmt: skip
         findings.sort(key=lambda item: (_ORDER.get(item["severity"], 3), item["code"]))
         counts = {name: sum(item["severity"] == name for item in findings) for name in _ORDER}
-        return {
+        doc: dict[str, Any] = {
             "connection_id": connection.id,
             "engine": connection.engine,
             "environment": connection.environment,
@@ -268,6 +279,33 @@ class Diagnostics:
             "findings": findings,
             "counts": counts,
         }
+        if hints is not None:
+            hints["hints"].sort(key=lambda item: (_ORDER.get(item["severity"], 3), item["code"]))
+            doc["backup"] = hints
+        return doc
+
+    def _backup(self, connection: OpenConnection, run: _Run, *, prod: bool) -> dict[str, Any]:
+        """The backup hints (:mod:`.backup_hints`); a check the limit stopped is named in ``STU-DX-008``."""
+        if connection.engine != "postgresql":
+            empty: dict[str, Any] = {"hints": [], "facts": {"engine": connection.engine, "searched": False}}
+            return run.step(
+                "backup hints", lambda: backup_hints.sqlite_hints(connection.database_file, clock=self.clock), empty
+            )
+
+        def archiver() -> tuple[Any, ...] | None:
+            try:
+                rows = connection.fetch(backup_hints.ARCHIVER_SQL, cancel=run.hook)
+            except TabrionError:
+                if run.hook.requested:
+                    raise
+                return None  # a role that may not read it, a server without the view: a hint, not a failure
+            return tuple(rows[0]) if rows else None
+
+        missing = object()
+        row = run.step("backup hints", archiver, missing)
+        if row is missing:
+            return {"hints": [], "facts": {"engine": "postgresql", "archive_mode": None}}
+        return backup_hints.postgres_hints(row if isinstance(row, tuple) else None, prod=prod)
 
     @staticmethod
     def _postgres(
