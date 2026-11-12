@@ -93,7 +93,7 @@ function session() {
     },
     beginConnect: () => ++connects,
     isLatestConnect: (request) => request === connects,
-    latestConnect: () => connects,
+    headerVersion: () => connects,
   };
   return { value, state };
 }
