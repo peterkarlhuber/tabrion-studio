@@ -67,7 +67,40 @@ const ISSUES = new Set([
   'encoding',
 ]);
 
+/**
+ * The `db.<kind>` problems of opening or testing a connection with a text that says what to check (08 section 4.2:
+ * "the error shows the remedy"); other kinds get the general database text with their kind.
+ */
+const DB_KINDS = new Set([
+  'connection',
+  'timeout',
+  'canceled',
+  'locked',
+  'permission',
+  'read_only',
+  'corrupt',
+  'disk_full',
+  'resource',
+]);
+
+/**
+ * SQLSTATE class 28 (invalid authorization): the server refused the sign-in. The text never says whether the user
+ * exists (08 section 4.2).
+ */
+const AUTH_STATES = /^28/;
+
 export function problemText(t: TFunction, problem: Problem): string {
+  if (problem.code.startsWith('db.')) {
+    const kind = problem.code.slice(3);
+    if (problem.sqlstate !== undefined && AUTH_STATES.test(problem.sqlstate)) {
+      return t('problems.db.auth');
+    }
+    if (DB_KINDS.has(kind)) return t(`problems.db.${kind}`);
+    return t('problems.db.other', {
+      kind: /^[a-z_]{1,32}$/.test(kind) ? kind : 'unknown',
+      interpolation: { escapeValue: false },
+    });
+  }
   const name = problem.code.replace(/^studio\./, '');
   return PROBLEMS.has(name)
     ? t(`problems.${name}`)

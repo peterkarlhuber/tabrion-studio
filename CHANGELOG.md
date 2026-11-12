@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-008 connection test and Connect (the parts that waited for STU-009): in the connection manager, **Test
+  connection** shows the time, the server version and, for PostgreSQL, the role, superuser, TLS, encoding and time
+  zone (for SQLite foreign keys, journal mode and encoding), with a warning for a superuser role or one that bypasses
+  row-level security. `POST /api/connection-tests` answers these `facts` and the profile's `environment`. **Connect**
+  opens the read-only connection and the header, the PROD frame and the window title show it; the first PROD
+  connection of a profile in a page session asks D-02 (shared with the migration status view); **Disconnect** closes
+  it. A missing password opens the password dialog and the action runs again. Failures name the remedy (host, port
+  and firewall; sign-in refused; TLS mode; a file that is no SQLite database), never the server's text. The
+  assistant takes a pasted `postgresql://` URL apart (its password goes to the next step, never into the file) and
+  tests the profile after saving. English and German.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most

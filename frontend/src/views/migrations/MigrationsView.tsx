@@ -6,7 +6,8 @@
  *   their code. The server does it only after the user trusted exactly these files; this view shows the state and
  *   opens the trust dialog (default "Don't trust"), or takes the trust back.
  * - **Status:** "Show status" opens the profile's read-only connection (`POST /api/connections`; D-02 first for a
- *   PROD profile) and reads `GET /api/connections/{id}/migrations`.
+ *   PROD profile the user has not confirmed in this page session, STU-008) and reads
+ *   `GET /api/connections/{id}/migrations`. The opened connection becomes the header's connection.
  *
  * Every value from the project or the database (names, paths, revision ids) is escaped (`lib/visible.ts`, U-1).
  */
@@ -32,13 +33,12 @@ import { ProdConnectDialog, TrustCodeDialog } from '../../components/dialogs/Stu
 import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import { capped, visible } from '../../lib/visible';
+import { useConnectionSession } from '../../workspace';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
+import { prodTimeoutSeconds } from '../connections/useConnect';
 import viewStyles from '../Views.module.css';
 import styles from './Migrations.module.css';
-
-/** 03 section 5.3: production profiles get a 15 s statement timeout (D-02 names it). */
-const PROD_TIMEOUT_S = 15;
 
 /** The fixed issue codes of an Alembic layout Studio cannot trust (`config/code_trust.py`); others show their code. */
 const ISSUES = new Set([
@@ -321,7 +321,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
   const [status, setStatus] = useState<MigrationStatus | null>(null);
-  /** The environment of the profile whose status is shown (PROD is marked there until TD-011 fills the shell). */
+  /** The environment of the profile whose status is shown (marked next to it, and in the header). */
   const [statusEnv, setStatusEnv] = useState<ProfileItem['environment'] | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
@@ -330,6 +330,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   const [message, setMessage] = useState('');
   /** Counts status requests; a result is shown only if no newer request or profile switch came since (review L-9). */
   const request = useRef(0);
+  const connections = useConnectionSession();
 
   const loadTrust = useCallback(async () => {
     const next = await fetchCodeTrust(fetcher);
@@ -362,6 +363,15 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     setProblem(null);
     setStatus(null);
     const opened = await openConnection(fetcher, profile.id);
+    if (opened.ok) {
+      connections.setActive({
+        name: visible(profile.name),
+        environment: profile.environment,
+        status: 'connected',
+        connectionId: opened.value,
+        profileId: profile.id,
+      });
+    }
     const result = opened.ok ? await fetchMigrations(fetcher, opened.value) : opened;
     if (mine !== request.current) return;
     setBusy(false);
@@ -472,7 +482,11 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
             <Button
               variant="primary"
               disabled={profile === null || busy}
-              onClick={() => (profile?.environment === 'prod' ? setDialog('prod') : void show())}
+              onClick={() =>
+                profile?.environment === 'prod' && !connections.prodConfirmed(profile.id)
+                  ? setDialog('prod')
+                  : void show()
+              }
             >
               {busy ? t('migrations.status.reading') : t('migrations.status.show')}
             </Button>
@@ -511,9 +525,10 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
         <ProdConnectDialog
           open
           name={visible(profile.name)}
-          timeoutSeconds={PROD_TIMEOUT_S}
+          timeoutSeconds={prodTimeoutSeconds(profile)}
           onCancel={() => setDialog(null)}
           onConnect={() => {
+            connections.confirmProd(profile.id);
             setDialog(null);
             void show();
           }}

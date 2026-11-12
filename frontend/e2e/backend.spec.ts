@@ -195,6 +195,92 @@ test('STU-008: a profile created in the page is written to profiles.toml and del
   expect(violations).toEqual([]);
 });
 
+test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "Connect")', async ({
+  page,
+}) => {
+  // A real SQLite file, made by the same Python (WAL, so the test shows the journal mode it read).
+  const database = join(root, 'measure.db');
+  execFileSync(python as string, [
+    '-c',
+    'import sqlite3, sys; c = sqlite3.connect(sys.argv[1]); c.execute("PRAGMA journal_mode=WAL");' +
+      ' c.execute("CREATE TABLE m (x)"); c.commit(); c.close()',
+    database,
+  ]);
+  if (process.platform !== 'win32') execFileSync('chmod', ['600', database]);
+  links.push(newLink());
+  const violations = await signIn(page);
+  await page.getByRole('link', { name: 'Connections' }).click();
+  for (const [name, environment] of [
+    ['e2e-dev', 'DEV'],
+    ['e2e-prod', 'PROD'],
+  ] as const) {
+    await page.getByRole('button', { name: 'New connection' }).click();
+    const dialog = page.getByRole('dialog', { name: 'New connection' });
+    await dialog.getByRole('textbox', { name: 'File' }).fill(database);
+    await dialog.getByRole('button', { name: 'Next' }).click();
+    await dialog.getByRole('button', { name: 'Next' }).click();
+    await dialog.getByLabel('Name').fill(name);
+    await dialog.getByRole('radio', { name: environment }).check();
+    await expect(
+      dialog.getByRole('checkbox', { name: 'Test the connection after saving' }),
+    ).toBeChecked();
+    await dialog.getByRole('button', { name: 'Save' }).click();
+    await expect(page.getByTestId('connections-status')).toHaveText(`${name} saved.`);
+    // The test ran on the saved profile: the facts the server read from the file.
+    await expect(page.getByTestId('connection-outcome')).toContainText(
+      /Connection works: [\d.]+ ms · SQLite 3\.\d+\.\d+ · foreign keys on · journal wal · encoding UTF-8/,
+    );
+  }
+  expect(await seriousViolations(page)).toEqual([]);
+  const detail = page.getByTestId('connection-detail');
+  await page.getByTestId('connection-item').filter({ hasText: 'e2e-dev' }).click();
+  await detail.getByRole('button', { name: 'Connect', exact: true }).click();
+  await expect(page.getByTestId('connection-switcher')).toContainText('e2e-dev');
+  await expect(page).toHaveTitle('[DEV] e2e-dev – Tabrion Studio');
+  // PROD: D-02 first (default Cancel), then the header, the frame and the title.
+  await page.getByTestId('connection-item').filter({ hasText: 'e2e-prod' }).click();
+  await detail.getByRole('button', { name: 'Connect', exact: true }).click();
+  const prod = page.getByRole('dialog', { name: 'Production database' });
+  await expect(prod).toContainText('e2e-prod is marked as PROD');
+  await expect(prod.getByRole('button', { name: 'Cancel' })).toBeFocused();
+  expect(await seriousViolations(page)).toEqual([]);
+  await prod.getByRole('button', { name: 'Connect' }).click();
+  await expect(page).toHaveTitle('[PROD] e2e-prod – Tabrion Studio');
+  await expect(page.getByTestId('access-mode')).toHaveText(/Writing locked/);
+  await expect(detail.getByTestId('connection-state')).toHaveText('open (read-only)');
+  expect(await seriousViolations(page)).toEqual([]);
+  // The server has both connections open, read-only; Disconnect closes the PROD one.
+  const open = async () =>
+    page.evaluate(async () => {
+      const csrf = sessionStorage.getItem('tabrion-studio.csrf') ?? '';
+      const response = await fetch('/api/connections', { headers: { 'X-Tabrion-CSRF': csrf } });
+      const doc = (await response.json()) as {
+        connections: { profile_id: string; read_only: boolean }[];
+      };
+      return doc.connections.map((c) => `${c.profile_id} ${c.read_only}`).sort();
+    });
+  expect(await open()).toEqual(['user:e2e-dev true', 'user:e2e-prod true']);
+  await detail.getByRole('button', { name: 'Disconnect' }).click();
+  await expect(page.getByRole('button', { name: /No connection/ })).toBeVisible();
+  expect(await open()).toEqual(['user:e2e-dev true']);
+  // A file that is no database: the test fails with the page's own text.
+  writeFileSync(join(root, 'not-a.db'), 'this is not a SQLite file '.repeat(64), { mode: 0o600 });
+  await page.getByRole('button', { name: 'New connection' }).click();
+  const dialog = page.getByRole('dialog', { name: 'New connection' });
+  await dialog.getByRole('textbox', { name: 'File' }).fill(join(root, 'not-a.db'));
+  await dialog.getByRole('button', { name: 'Next' }).click();
+  await dialog.getByRole('button', { name: 'Next' }).click();
+  await dialog.getByLabel('Name').fill('e2e-broken');
+  await dialog.getByRole('radio', { name: 'TEST' }).check();
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('connection-outcome')).toHaveText(
+    'Test failed: The file is not a SQLite database, or the database is damaged.',
+  );
+  // Clean up for the later tests: the user's profiles go, the connection with them.
+  rmSync(join(root, 'state', 'config', 'profiles.toml'), { force: true });
+  expect(violations).toEqual([]);
+});
+
 test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
   const foreign = foreignRequests(page, () => base);
   const seen: string[] = [];

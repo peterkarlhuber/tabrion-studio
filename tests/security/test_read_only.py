@@ -622,6 +622,55 @@ def test_a_connection_test_shares_the_limit(sqlite_file: Path) -> None:
         registry.close_all()
 
 
+def test_stu_008_the_connection_test_reports_the_sqlite_facts(sqlite_file: Path) -> None:
+    """STU-008 (03 section 2 A): the test answers the health check and the file's facts, and keeps nothing open."""
+    with sqlite3.connect(sqlite_file) as raw:
+        raw.execute("PRAGMA journal_mode=WAL")
+    raw.close()
+    before = _sha(sqlite_file)
+    source = Source(profiles={"user:p": Profile("p", "sqlite", "test", path="p.db")}, files={"user:p": sqlite_file})
+    registry = ConnectionRegistry(source)
+    result = registry.test("user:p")
+    assert result["ok"] is True and result["read_only"] is True
+    assert (result["engine"], result["environment"]) == ("sqlite", "test")
+    assert result["server_version"] == sqlite3.sqlite_version
+    assert result["facts"] == {"foreign_keys": True, "journal_mode": "wal", "encoding": "UTF-8"}
+    assert registry.list() == [] and _sha(sqlite_file) == before
+
+
+def test_stu_008_facts_that_cannot_be_read_leave_the_test_answer(
+    sqlite_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A database error while reading the facts is no failed test: the health check is the answer, the facts are
+    left out (and the error is not shown)."""
+
+    def refuse(self: OpenConnection, sql: str, *args: Any, **kwargs: Any) -> list[tuple[Any, ...]]:
+        raise TabrionError("no facts")
+
+    monkeypatch.setattr(OpenConnection, "fetch", refuse)
+    source = Source(profiles={"user:p": Profile("p", "sqlite", "dev", path="p.db")}, files={"user:p": sqlite_file})
+    result = ConnectionRegistry(source).test("user:p")
+    assert result["ok"] is True and result["facts"] == {}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("UTF8", "UTF8"),
+        ("Europe/Vienna", "Europe/Vienna"),
+        ("x" * 64, "x" * 64),
+        ("x" * 65, None),
+        ("a\nb", None),
+        ("\u202e", None),
+        (None, None),
+        (3, None),
+    ],
+)
+def test_stu_008_a_fact_is_short_printable_text(value: object, expected: str | None) -> None:
+    """Facts come from the server: only short printable ASCII reaches the page, anything else is "unknown"."""
+    assert connections_module._fact_text(value) == expected
+
+
 def test_a_missing_sqlite_file_is_never_created(tmp_path: Path) -> None:
     missing = tmp_path / "missing.db"
     source = Source(profiles={"user:m": Profile("m", "sqlite", "dev", path=str(missing))}, files={"user:m": missing})
@@ -752,6 +801,39 @@ def test_the_known_gap_of_multiple_statements_is_closed_by_the_text_check(
         with pytest.raises(StatementRefused):
             connection.fetch(sql)
     assert _rows(admin) == 1
+
+
+@pytest.mark.postgres
+@postgres
+def test_stu_008_the_connection_test_reports_the_postgres_facts(pg: tuple[OpenConnection, sqlalchemy.Engine]) -> None:
+    """STU-008 (03 section 2 A): role, superuser, encoding, time zone and TLS of Studio's own session."""
+    _, admin = pg
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    profile = Profile(
+        "pg",
+        "postgresql",
+        "test",
+        host=url.host,
+        port=url.port,
+        database=url.database,
+        user=url.username,
+        password=SecretRef("keyring", ""),
+    )
+    registry = ConnectionRegistry(Source(profiles={"user:t": profile}, passwords={"user:t": url.password or ""}))
+    result = registry.test("user:t")
+    with admin.connect() as c:
+        expected = c.exec_driver_sql(
+            "SELECT rolsuper, rolbypassrls, current_setting('server_encoding') FROM pg_roles"
+            " WHERE rolname = current_user"
+        ).one()
+    assert result["ok"] is True and result["engine"] == "postgresql" and result["environment"] == "test"
+    facts = result["facts"]
+    assert facts["role"] == url.username
+    assert (facts["superuser"], facts["bypass_rls"], facts["encoding"]) == tuple(expected)
+    assert isinstance(facts["timezone"], str) and facts["timezone"]
+    assert isinstance(facts["tls"], bool)
+    assert registry.list() == []
 
 
 @pytest.mark.postgres

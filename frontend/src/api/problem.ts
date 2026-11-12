@@ -9,6 +9,8 @@ export interface Problem {
   logId: string | null;
   /** The fields of a refused form (STU-008): fixed key names (`profile.host`) and `config.*` codes. */
   issues?: ProblemIssue[];
+  /** The SQLSTATE of a `db.<kind>` problem (five characters), when the database gave one. */
+  sqlstate?: string;
 }
 
 export interface ProblemIssue {
@@ -49,6 +51,9 @@ export async function readProblem(response: Response): Promise<Problem> {
     status: response.status,
     logId: typeof doc.log_id === 'string' && /^[0-9a-f]{12}$/.test(doc.log_id) ? doc.log_id : null,
     issues: issues(doc.issues),
+    ...(typeof doc.sqlstate === 'string' && /^[0-9A-Z]{5}$/.test(doc.sqlstate)
+      ? { sqlstate: doc.sqlstate }
+      : {}),
   };
 }
 

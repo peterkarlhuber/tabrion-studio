@@ -59,6 +59,7 @@ __all__ = [
     "OpenConnection",
     "ProfileSource",
     "RegistryError",
+    "connection_facts",
     "connection_url",
     "read_only_database",
     "studio_profile",
@@ -569,7 +570,8 @@ class ConnectionRegistry:
             self._closed(connection.id)
 
     def test(self, profile_id: str) -> dict[str, Any]:
-        """The connection test (TD-011): open, check, close; never keeps the connection."""
+        """The connection test (STU-008, TD-011): open, check, read the facts of :func:`connection_facts`, close;
+        never keeps the connection."""
         with self._lock:
             # A test shares the limit of open connections (review I-4).
             if len(self._open) >= self.max_open:
@@ -580,12 +582,67 @@ class ConnectionRegistry:
             return {
                 "ok": health.ok,
                 "engine": connection.engine,
+                "environment": connection.environment,
                 "server_version": health.server_version,
                 "latency_ms": None if health.latency_ms is None else round(health.latency_ms, 1),
                 "read_only": True,
+                "facts": connection_facts(connection),
             }
         finally:
             connection.close()
+
+
+#: What the connection test reads besides ``Database.health()`` (03 section 2 A: role, superuser, encoding, time zone,
+#: TLS). Fixed catalog queries of Studio's own, each one statement through ``OpenConnection.fetch`` (read-only, the
+#: statement check, a prepared statement on PostgreSQL); none reads a table of the user.
+_POSTGRES_FACTS = (
+    "SELECT current_user::text, r.rolsuper, r.rolbypassrls, current_setting('server_encoding'),"
+    " current_setting('TimeZone'), (SELECT s.ssl FROM pg_catalog.pg_stat_ssl s WHERE s.pid = pg_backend_pid())"
+    " FROM pg_catalog.pg_roles r WHERE r.rolname = current_user"
+)
+_SQLITE_FACTS = (
+    ("foreign_keys", "PRAGMA foreign_keys"),
+    ("journal_mode", "PRAGMA journal_mode"),
+    ("encoding", "PRAGMA encoding"),
+)
+_FACT_TEXT = re.compile(r"[\x20-\x7e]{0,64}")
+
+
+def _fact_text(value: object) -> str | None:
+    """A short printable text of a server setting, else None (the page shows its own text for a missing fact)."""
+    text = value if isinstance(value, str) else None
+    return text if text is not None and _FACT_TEXT.fullmatch(text) else None
+
+
+def connection_facts(connection: OpenConnection) -> dict[str, Any]:
+    """The facts of the connection test: on PostgreSQL ``role``, ``superuser``, ``bypass_rls``, ``encoding``,
+    ``timezone`` and ``tls`` (``pg_stat_ssl`` of Studio's own session); on SQLite ``foreign_keys``, ``journal_mode``
+    and ``encoding``. A fact Studio could not read is ``None``: the test's answer is the health check, the facts are
+    what the page shows next to it. A database error while reading them is logged with its kind only."""
+    try:
+        if connection.engine == "sqlite":
+            facts: dict[str, Any] = {}
+            for name, statement in _SQLITE_FACTS:
+                rows = connection.fetch(statement)
+                value = rows[0][0] if rows and rows[0] else None
+                facts[name] = bool(value) if name == "foreign_keys" and isinstance(value, int) else _fact_text(value)
+            return facts
+        rows = connection.fetch(_POSTGRES_FACTS)
+    except (tabrion.TabrionError, StatementRefused) as exc:
+        logger.info(
+            "connection facts not read", extra={"event": "studio.connection_facts", "error": type(exc).__name__}
+        )
+        return {}
+    row = rows[0] if rows else (None,) * 6
+    role, superuser, bypass_rls, encoding, timezone, tls = row
+    return {
+        "role": _fact_text(role),
+        "superuser": superuser if isinstance(superuser, bool) else None,
+        "bypass_rls": bypass_rls if isinstance(bypass_rls, bool) else None,
+        "encoding": _fact_text(encoding),
+        "timezone": _fact_text(timezone),
+        "tls": tls if isinstance(tls, bool) else None,
+    }
 
 
 class HealthError(Exception):
