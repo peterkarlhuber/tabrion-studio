@@ -47,7 +47,7 @@
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 | TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
-| TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; needs a green Windows CI run) | P2 | In progress (STU-015 draft) |
+| TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; `backend test (windows-latest)` green on `23fd8a6`, run 43201304911) | P2 | Done (PR #29) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
@@ -650,7 +650,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-024 · STU-015 migration worker on Windows: children of trusted project code
 
-- **Priority:** P2 Medium · **Status:** In progress (STU-015 draft PR, M-2 of `stu-015-review.md`; by 2026-12-15) ·
+- **Priority:** P2 Medium · **Status:** Done (PR #29, M-2 of `stu-015-review.md`) ·
   **Refs:** T-16, `docs/architecture/migrations.md`
 - **Done:**
   - POSIX: Studio kills the migration worker's process group after the answer or after 30 s, reads the answer up to
@@ -665,12 +665,16 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     (at most 5 s) after the worker and its job are gone. `test_the_worker_pipes_are_closed_on_every_platform` runs
     the Windows exchange on every platform (`migrations._POSIX`) and checks that both pipes are closed, the worker
     is reaped and no `ResourceWarning` is left for a finalizer.
-- **Open:**
-  - Get `backend test (windows-latest)` of `ci.yml` green on the STU-015 branch with the fix above; the job object
-    has run there, but that job was red until now. On STU-024 (same `migrations.py`) it passed with only the RC-8
-    failure; on STU-015 head `425194e` it hit the job's time limit and left no log, so pytest now dumps every
-    thread's stack after 300 s in one test (`faulthandler_timeout`).
-  - If Windows cannot make the job (nested jobs before Windows 8), only the worker is killed.
+  - `backend test (windows-latest)` of `ci.yml` is green on the STU-015 branch: CI run 43201304911 on `23fd8a6`,
+    all 18 jobs green, 1500 passed on Windows, no faulthandler dump. Before that, on STU-015 head `425194e`, the job
+    hit its time limit and left no log, so pytest dumps every thread's stack after 300 s in one test
+    (`faulthandler_timeout`) and then ends the run (`faulthandler_exit_on_timeout`, I-1 of
+    `stu-29-30-windows-delta-review.md`), so the step ends before the job's limit and its log is kept.
+  - Tests for L-1 and L-2 of `stu-29-30-windows-delta-review.md`: every "windows" case asserts that the Windows
+    exchange ran (`_POSIX` is not ignored), and `test_an_escaped_child_does_not_hold_the_windows_exchange` checks
+    that `run_worker` returns within its bounds while a child that left its session holds the answer pipe.
+- **Limit kept:** if Windows cannot make the job (nested jobs before Windows 8), only the worker is killed; a child
+  that escaped then holds the reader thread (not `run_worker`) until it ends.
 - **Also from the review (Info, accepted):** I-2 the answer can be forged by trusted code (`_revisions()` validates
   it); I-3 the digest is computed on every code-trust and status request (cache by mtime, size and inode if it
   shows up in profiles); I-5 the untrusted path reads at most 100 `version_num` rows without a length cap.

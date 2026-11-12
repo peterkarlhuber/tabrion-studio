@@ -106,8 +106,10 @@ markers = [
     "postgres_superuser: needs TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER (a superuser of the same server; makes and drops its own roles)",
 ]
 filterwarnings = ["error"]
-# A test that runs this long hangs: dump every thread's stack, so a CI job that times out says where (TD-024).
+# A test that runs this long hangs: dump every thread's stack, so a CI job that times out says where (TD-024), and
+# end the run, so the step fails before the job's time limit and its log is kept (I-1 of the Windows delta review).
 faulthandler_timeout = 300
+faulthandler_exit_on_timeout = true
 
 [tool.coverage.run]
 source = ["tabrion_studio"]
