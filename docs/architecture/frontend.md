@@ -30,8 +30,11 @@ settings.
 - `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations`, `/diagnostics` and `/settings`.
   The backend serves `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists
   equal); every other path stays 404.
-- `src/workspace.ts`: the active connection, its environment and the open tabs. Nothing fills it until the connection
-  registry and manager arrive (STU-008, STU-009); the shell shows "No connection".
+- `src/workspace.ts`: the active connection, its environment and the open tabs. The connection manager and the
+  migration status view fill the active connection when they open one (`ConnectionSession`, provided by `App`); it
+  also remembers the PROD profiles confirmed with D-02 in this page session (a reload asks again). Editor tabs arrive
+  with STU-012. `src/views/connections/useConnect.tsx` is the "Connect" flow (D-02, `POST /api/connections`, the
+  header's "connecting" state).
 
 ## Design system
 
