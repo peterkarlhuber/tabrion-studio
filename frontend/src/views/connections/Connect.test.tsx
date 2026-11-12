@@ -756,6 +756,125 @@ describe('review fixes of the connect review (#42)', () => {
     },
   );
 
+  /** The two profiles and a third one (TEST, no D-02), for three connects at once. */
+  const THREE = {
+    ...PROFILES,
+    profiles: [
+      ...PROFILES.profiles,
+      {
+        id: 'project:parts-test',
+        source: 'project',
+        name: 'parts-test',
+        engine: 'sqlite',
+        environment: 'test',
+        path: 'data/parts-test.db',
+        password: null,
+        secret: { source: null, has_secret: null },
+      },
+    ],
+  };
+  const FAILED = () => json({ code: 'db.connection', kind: 'connection', status: 502 }, 502);
+  const openedOf = (id: string, environment: string) => ({
+    connection_id: `c-${id}`,
+    profile_id: id,
+    engine: 'sqlite',
+    environment,
+    read_only: true,
+    url: 'sqlite:///x',
+    opened_at: 1,
+  });
+
+  it('R-2 (#44 delta review): an older connect that fails, then a newer one, gives the open connection back', async () => {
+    const slow = deferred();
+    const slower = deferred();
+    const { fetcher } = server({
+      'GET /api/profiles': () => json(THREE),
+      'POST /api/connections': [() => null, slow.answer, slower.answer],
+    });
+    await manager(fetcher);
+    await userEvent.click(
+      within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+    );
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+    // measure (slow), then parts-test (slower) while it opens.
+    await userEvent.click(within(await select('measure')).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    const detail = await select('parts-test');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-test, connecting',
+      ),
+    );
+    // measure fails first, while parts-test owns the header ...
+    slow.resolve(FAILED());
+    await slow.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+      'parts-test, connecting',
+    );
+    // ... then parts-test fails: parts-dev, open all along, is the header's connection again.
+    slower.resolve(FAILED());
+    await within(detail).findByText(/Not connected/);
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+  });
+
+  it('R-2 (#44 delta review): a new connect forgets how an earlier connect of the same profile ended', async () => {
+    const first = deferred();
+    const again = deferred();
+    const third = deferred();
+    const { fetcher, open } = server({
+      'GET /api/profiles': () => json(THREE),
+      'POST /api/connections': [first.answer, () => null, again.answer, third.answer],
+    });
+    await manager(fetcher);
+    // Round 1: measure (slow) is overtaken by parts-dev, then fails.
+    await userEvent.click(within(await select('measure')).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    await userEvent.click(
+      within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+    );
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+    first.resolve(FAILED());
+    await first.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Round 2: measure again (slow), then parts-test, which fails while measure still opens.
+    await userEvent.click(within(await select('measure')).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'measure, connecting',
+      ),
+    );
+    const detail = await select('parts-test');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    third.resolve(FAILED());
+    await within(detail).findByText(/Not connected/);
+    // The header shows measure opening, not how round 1 ended.
+    expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+      'measure, connecting',
+    );
+    const opened = openedOf('user:measure', 'prod');
+    open.set(opened.connection_id, opened);
+    again.resolve(json(opened, 201));
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'measure, connected',
+      ),
+    );
+  });
+
   it('the manager reads the open connections once per Connect, not on every header change', async () => {
     const { fetcher, calls } = server();
     await manager(fetcher);

@@ -51,7 +51,10 @@ export function useConnect(fetcher: typeof fetch): {
   /**
    * How the requests that were no longer the newest ended, by profile: the connection one opened, or null if it
    * failed (R-1 of the #44 review). A newest request that fails gives the header back to what it showed before; if
-   * that was an older request's "connecting" and that request has answered already, its outcome goes in instead.
+   * that was an older request's "connecting" and that request has answered already, its outcome goes in instead. A
+   * failed older request stores what the header showed before it (R-2 of the #44 delta review): the connection that
+   * was open then stays the header's connection when every newer request fails too. A new request for the same
+   * profile forgets what an earlier one ended with.
    */
   const settled = useRef(new Map<string, ActiveConnection | null>());
 
@@ -91,7 +94,7 @@ export function useConnect(fetcher: typeof fetch): {
         opened !== null ? opened : ownConnecting(current, item) ? back : current,
       );
     } else {
-      settled.current.set(item.id, opened);
+      settled.current.set(item.id, opened ?? before);
       // L-10 of the connect review: a newer request may have given the header back to this one's "connecting" (it
       // failed, or was dropped). Then this answer still decides; otherwise the newer request owns the header.
       session.setActive((current) => (ownConnecting(current, item) ? (opened ?? before) : current));
