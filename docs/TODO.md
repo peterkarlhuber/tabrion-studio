@@ -978,10 +978,12 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - Done after #42: the page uses the shared D-02 confirmation of the page session (`useConnectionSession`, bound to the
     profile's target) and makes the opened connection the header's connection; a connection gone on Refresh leaves the
     header too. Open reads the profile list again before its PROD check, so a profile changed to `prod` on disk after
-    the list loaded gets D-02 (the stale-list case of TD-038, for this page; a profile that is gone is
-    `profile_not_found`, and an unreadable list leaves the decision to the loaded profile). Open: the page does not take
-    over a connection the header already shows (it opens its own, which the registry returns for the same profile), nor
-    does it follow a header switch (TD-034).
+    the list loaded gets D-02, and so does a PROD profile whose target (host, database, path) changed (the stale-list
+    case of TD-038, for this page). It fails closed: if the list cannot be read, Open shows the offline problem and
+    opens nothing. A profile that is gone is `profile_not_found`; the picker moves to the first remaining profile and
+    takes the focus (with none left, the problem does). Open: the page does not take over a connection the header
+    already shows (it opens its own, which the registry returns for the same profile), nor does it follow a header
+    switch (TD-034).
   - The route `/c/:conn/t/:schema/:name` (08 section 2) instead of `/explorer` with a picker: with the workspace
     routes (TD-011). The explorer as the always-present left bar of a connection workspace belongs there too.
   - A virtualized tree (08: TanStack Virtual; `@tanstack/react-virtual` arrives with #41). Until then a group renders
