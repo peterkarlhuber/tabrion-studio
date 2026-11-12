@@ -1095,6 +1095,50 @@ describe('D-02 on the server (TD-038)', () => {
     expect(within(header()).getByRole('button', { name: /No connection/ })).toBeInTheDocument();
   });
 
+  it.each(['Connect', 'Test connection'])(
+    'C-2 (#48 review): %s retries at most once after a refusal, even when the server keeps refusing',
+    async (button) => {
+      const live = liveProfiles([...PROFILES.profiles]);
+      const refuse = problem(409, {
+        code: 'studio.prod_confirmation_required',
+        kind: 'database',
+        status: 409,
+      });
+      const { fetcher, calls } = server({
+        'GET /api/profiles': live.answer,
+        'POST /api/connections': refuse,
+        'POST /api/connection-tests': refuse,
+      });
+      await manager(fetcher);
+      const detail = await select('parts-dev');
+      live.state.profiles = [
+        { ...(PROFILES.profiles[0] as Record<string, unknown>), environment: 'prod' },
+        MEASURE,
+      ];
+      await userEvent.click(within(detail).getByRole('button', { name: button }));
+      await confirmProd();
+      const url = button === 'Connect' ? '/api/connections' : '/api/connection-tests';
+      const sent = () => writes(calls).filter((call) => call.url === url);
+      await waitFor(() => expect(sent()).toHaveLength(2));
+      await waitFor(() =>
+        expect(within(detail).getByTestId('connection-outcome')).toHaveTextContent(
+          'This profile is marked as PROD now.',
+        ),
+      );
+      // Let every pending read and answer run: no third request, no second D-02.
+      for (let tick = 0; tick < 5; tick += 1) {
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        });
+      }
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(sent().map((call) => call.body)).toEqual([
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+        { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+      ]);
+    },
+  );
+
   it('a refusal for a profile the page already shows as PROD is shown, not asked again', async () => {
     const { fetcher, calls } = server({
       'POST /api/connections': problem(409, {

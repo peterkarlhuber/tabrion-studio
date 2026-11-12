@@ -133,18 +133,21 @@ class Configuration:
         """The secret of ``entry`` as read once: the registry connects to this entry's target with it (STU-009)."""
         return self.secrets.resolve(entry.secret)
 
-    def database_file(self, profile_id: str) -> Path:
-        """The real path of a SQLite profile's file, checked now (STU-009 opens exactly this path).
+    def database_file(self, entry: ProfileEntry) -> Path:
+        """The real path of the SQLite profile ``entry``'s file, checked now (STU-009 opens exactly this path).
 
-        A project profile goes through ``ProjectConfig.database_file`` (trust and containment again, review T-1;
-        :class:`TrustError`). A relative path of the user's own profile is relative to the configuration folder,
-        like its ``file:`` references; a link to a network or device path is refused (``studio.database_unsafe``).
+        ``entry`` is the read of the profile that the caller checked (the environment for D-02, the target): the path
+        comes from it, never from a second read of the file, so a file rewritten in between cannot put another
+        database behind a check that passed (C-1 of the #48 review). A project profile goes through
+        ``ProjectConfig.database_file`` (trust and containment again, review T-1; :class:`TrustError`), which must
+        find the same profile as ``entry`` or refuses. A relative path of the user's own profile is relative to the
+        configuration folder, like its ``file:`` references; a link to a network or device path is refused
+        (``studio.database_unsafe``).
         """
-        entry = self.entry(profile_id)
         if entry.profile.path is None:
             raise SecretError("studio.profile_not_found")
         if entry.source == "project":
-            return self.project.database_file(entry.profile.name)
+            return self.project.database_file(entry.profile.name, expected=entry.profile)
         target = lexical_target(entry.profile.path, PurePath(os.path.abspath(self.user.config_dir)))
         real = None if target is None else safe_realpath(Path(target))
         if real is None:

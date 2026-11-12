@@ -17,7 +17,7 @@ import uuid
 import pytest
 
 from tabrion_studio.api.config import Configuration
-from tabrion_studio.config.project import ProjectConfig
+from tabrion_studio.config.project import ProjectConfig, TrustError
 from tabrion_studio.config.secrets import KeyringStore, Secrets, SessionSecrets
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
@@ -220,6 +220,62 @@ def test_td_038_a_profile_changed_to_prod_elsewhere_needs_d02(env: Env) -> None:
     # The open PROD connection is not handed to a request that did not confirm PROD.
     again = env.send("POST", "/api/connections", {"profile_id": "user:parts"})
     assert again.status_code == 409 and again.json()["code"] == "studio.prod_confirmation_required"
+
+
+def test_c1_a_sqlite_file_comes_from_the_read_that_passed_the_check(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C-1 of the #48 review, against the real ProfileSource (``Configuration``): profiles.toml is rewritten between
+    the read that passed the D-02 check (DEV) and the open, to a PROD profile with another file. The connection opens
+    the DEV file of the checked read, never the PROD file of a second read."""
+    prod_db = env.db.with_name("prod.db")
+    _database(prod_db)
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    file = env.config_dir / "profiles.toml"
+    dev_bytes = file.read_bytes()
+    digest = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    prod = {"name": "parts", "engine": "sqlite", "path": str(prod_db), "environment": "prod"}
+    assert env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": prod, "digest": digest}).status_code == 200
+    prod_bytes = file.read_bytes()
+    file.write_bytes(dev_bytes)
+    read = env.config.entry
+    reads: list[str] = []
+
+    def entry_then_rewrite(profile_id: str) -> Any:
+        found = read(profile_id)
+        reads.append(found.profile.environment)
+        file.write_bytes(prod_bytes)  # another tab or an editor saves the file right after this read
+        return found
+
+    monkeypatch.setattr(env.config, "entry", entry_then_rewrite)
+    connection = env.registry.open("user:parts", "dev")
+    assert reads == ["dev"]
+    assert connection.environment == "dev"
+    assert connection.database_file == env.db.resolve() != prod_db.resolve()
+    monkeypatch.undo()
+    # The file is PROD now: the DEV connection is stale, and a new open needs D-02.
+    assert env.registry.list() == []
+    refused = env.send("POST", "/api/connections", {"profile_id": "user:parts", "confirmed_environment": "dev"})
+    assert refused.status_code == 409 and refused.json()["code"] == "studio.prod_confirmation_required"
+
+
+def test_c1_a_project_file_refuses_when_the_trusted_profile_is_not_the_checked_read(env: Env) -> None:
+    """C-1 for a project profile: ``ProjectConfig.database_file`` reads the trusted file again; when that profile is
+    not the read the caller checked (here re-trusted as DEV with another file), the open fails closed."""
+    (env.project / ".tabrion" / "studio.toml").write_text(PROJECT, encoding="utf-8")
+    _database(env.project / "data" / "p.db")
+    _database(env.project / "data" / "q.db")
+    digest = env.send("GET", "/api/project").json()["digest"]
+    assert env.send("POST", "/api/project/trust", {"digest": digest}).status_code == 204
+    checked = env.config.entry("project:proj")
+    assert env.config.database_file(checked) == (env.project / "data" / "p.db").resolve()
+    changed = PROJECT.replace("p.db", "q.db").replace('"prod"', '"dev"')
+    (env.project / ".tabrion" / "studio.toml").write_text(changed, encoding="utf-8")
+    digest = env.send("GET", "/api/project").json()["digest"]
+    assert env.send("POST", "/api/project/trust", {"digest": digest}).status_code == 204
+    with pytest.raises(TrustError) as refused:
+        env.config.database_file(checked)
+    assert refused.value.code == "studio.project_untrusted"
+    # A fresh read is the trusted profile and opens its own file.
+    assert env.config.database_file(env.config.entry("project:proj")) == (env.project / "data" / "q.db").resolve()
 
 
 @pytest.mark.parametrize("value", ["PROD", "production", "", 3, True, ["prod"], {"prod": True}])

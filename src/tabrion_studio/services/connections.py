@@ -134,7 +134,7 @@ class ProfileSource(Protocol):
 
     def entry(self, profile_id: str) -> ProfileEntryLike: ...
     def resolve_entry_secret(self, entry: Any) -> str: ...
-    def database_file(self, profile_id: str) -> Path: ...
+    def database_file(self, entry: Any) -> Path: ...
     def limits(self) -> Settings: ...
 
 
@@ -433,7 +433,8 @@ class ConnectionRegistry:
         password: str | None = None
         if profile.engine == "sqlite":
             # T-1: a project file only through database_file, which re-checks the trust and the containment now.
-            database_file = self.source.database_file(profile_id)
+            # C-1 of the #48 review: the path of this very entry, the read that passed the D-02 check.
+            database_file = self.source.database_file(entry)
         else:
             try:
                 # L-1 of stu-009-review.md: the secret of this very entry, so the URL and the password come from
@@ -550,13 +551,14 @@ class ConnectionRegistry:
 
     def _still_valid(self, connection: OpenConnection) -> bool:
         try:
-            profile = self.source.entry(connection.profile_id).profile
+            entry = self.source.entry(connection.profile_id)
+            profile = entry.profile
             if target_fingerprint(profile.to_dict()) != connection.fingerprint:
                 return False
             if profile.environment != connection.environment:
                 return False
             if connection.database_file is not None:
-                return self.source.database_file(connection.profile_id) == connection.database_file
+                return self.source.database_file(entry) == connection.database_file
         except Exception:  # gone, no longer trusted, damaged: the connection must not be used
             return False
         return True

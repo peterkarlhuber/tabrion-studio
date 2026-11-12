@@ -107,24 +107,25 @@ export function parseOpenList(body: unknown): OpenedConnection[] | null {
 /** The refusal of a PROD open or test the page did not confirm for PROD (D-02 on the server, TD-038). */
 export const PROD_CONFIRMATION_REQUIRED = 'studio.prod_confirmation_required';
 
-/** The request body of an open or a test: the environment is sent when the caller names one. */
+/**
+ * The request body of an open or a test. `confirmedEnvironment` is required in every function that connects (C-2 of
+ * the #48 review): a caller that does not name the environment it confirmed does not build.
+ */
 export function connectBody(
   profileId: string,
-  confirmedEnvironment?: EnvironmentTag,
+  confirmedEnvironment: EnvironmentTag,
 ): Record<string, string> {
-  return confirmedEnvironment === undefined
-    ? { profile_id: profileId }
-    : { profile_id: profileId, confirmed_environment: confirmedEnvironment };
+  return { profile_id: profileId, confirmed_environment: confirmedEnvironment };
 }
 
 /**
  * Open (or get back) the read-only connection of `profileId`. `confirmedEnvironment` is the profile's environment as
- * the page showed it, after D-02 for PROD; without it the server takes a PROD profile as not confirmed.
+ * the page showed it, after D-02 for PROD; the server refuses a PROD profile confirmed for anything else.
  */
 export async function openConnection(
   fetcher: typeof fetch,
   profileId: string,
-  confirmedEnvironment?: EnvironmentTag,
+  confirmedEnvironment: EnvironmentTag,
 ): Promise<Result<OpenedConnection>> {
   const result = await send<unknown>(
     fetcher,
@@ -140,7 +141,7 @@ export async function openConnection(
 export async function testConnection(
   fetcher: typeof fetch,
   profileId: string,
-  confirmedEnvironment?: EnvironmentTag,
+  confirmedEnvironment: EnvironmentTag,
 ): Promise<Result<ConnectionTest>> {
   const result = await send<unknown>(
     fetcher,

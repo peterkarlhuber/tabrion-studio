@@ -82,9 +82,9 @@ class Source:
             raise SecretError("studio.secret_missing")
         return self.passwords[entry.id]
 
-    def database_file(self, profile_id: str) -> Path:
-        self.calls.append(("database_file", profile_id))
-        return self.files[profile_id]
+    def database_file(self, entry: Entry) -> Path:
+        self.calls.append(("database_file", entry.id))
+        return self.files[entry.id]
 
     def limits(self) -> Settings:
         return self.settings

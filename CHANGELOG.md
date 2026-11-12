@@ -11,8 +11,10 @@ All notable changes to this project are documented here. The format follows
   the environment the page confirmed for. A profile that is PROD now opens, is tested or has its open connection
   returned only with `"prod"`; otherwise 409 `studio.prod_confirmation_required` (a missing value counts as not
   confirmed). So a page with a stale profile list (the profile became PROD in another tab or in `profiles.toml`) no
-  longer opens PROD without D-02: the connection manager reads the profile again and asks D-02, and the migration
-  status, diagnostics and explorer views read their list again and ask on the next try. English and German.
+  longer opens PROD without D-02: the connection manager reads the profile again and asks D-02 (at most once), and
+  the migration status, diagnostics and explorer views and the SQL editor read their list again and ask on the next
+  try. The page's `openConnection` and `testConnection` require the environment, so no caller can leave it out. A
+  SQLite file is opened from the same read of the profile that passed the check. English and German.
 - STU-012 SQL editor (MVP, read-only): the page `/sql` with CodeMirror 6 (PostgreSQL or SQLite highlighting and
   completion), editor tabs whose drafts are kept in the browser, run (the selection or the statement at the cursor), run
   script (statement by statement, stopping at the first error), cancel within a second, `:name` parameters (text,

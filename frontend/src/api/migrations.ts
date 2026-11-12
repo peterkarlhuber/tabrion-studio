@@ -225,13 +225,13 @@ export function revokeCodeTrust(fetcher: typeof fetch): Promise<Result<null>> {
 
 /**
  * Open (or get back) the read-only connection of a profile; its id. `confirmedEnvironment`: the profile's environment
- * as the page showed it, after D-02 for PROD (see `connectBody` in `./connections`; without it a PROD profile is
- * refused with `studio.prod_confirmation_required`).
+ * as the page showed it, after D-02 for PROD (see `connectBody` in `./connections`; required, C-2 of the #48 review: a
+ * PROD profile confirmed for anything else is refused with `studio.prod_confirmation_required`).
  */
 export async function openConnection(
   fetcher: typeof fetch,
   profileId: string,
-  confirmedEnvironment?: EnvironmentTag,
+  confirmedEnvironment: EnvironmentTag,
 ): Promise<Result<string>> {
   const result = await send<{ connection_id?: unknown }>(
     fetcher,

@@ -33,7 +33,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { closeConnection, openConnection } from '../../api/connections';
+import { closeConnection, openConnection, PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { OFFLINE, type Problem } from '../../api/problem';
 import { fetchProfiles, fetchSettings, type ProfileItem } from '../../api/profiles';
 import { fetchProject } from '../../api/project';
@@ -409,9 +409,17 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         );
         return null;
       }
-      const opened = await openConnection(fetcher, fresh.id);
+      // The environment that passed D-02 (D-02 on the server, TD-038).
+      const opened = await openConnection(fetcher, fresh.id, item.environment);
       if (!opened.ok) {
         setConnectProblem(opened.problem);
+        if (opened.problem.code === PROD_CONFIRMATION_REQUIRED) {
+          // The profile became PROD between the page's read and the open: take it as it is now, so the next run asks
+          // D-02.
+          forgetProfile(item.id);
+          const again = await fetchProfiles(fetcher);
+          if (again !== null) setProfiles(again.profiles);
+        }
         return null;
       }
       const environment = opened.value.environment;
