@@ -9,6 +9,7 @@
     "label": "Hauptnavigation",
     "start": "Start",
     "connections": "Verbindungen",
+    "migrations": "Migrationen",
     "settings": "Einstellungen"
   },
   "header": {
@@ -180,6 +181,80 @@
     "deletedSecretKept": "{{name}} gelöscht, aber der Schlüsselbund hat das gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App.",
     "savedSecretKept": "{{name}} gespeichert, aber der Schlüsselbund hat das alte gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App."
   },
+  "migrations": {
+    "title": "Migrationen",
+    "lead": "Der Migrationsstand der Datenbank einer Verbindung. Studio liest ihn nur und führt nie eine Migration aus.",
+    "code": {
+      "title": "Migrationscode",
+      "unavailable": "Studio konnte den Vertrauensstatus des Migrationscodes nicht lesen.",
+      "none": "Das Projekt hat keine Alembic-Konfiguration (alembic.ini mit script_location). Die user_version von SQLite liest Studio auch ohne sie.",
+      "untrusted": "Den Alembic-Dateien des Projekts wird nicht vertraut. Studio zeigt die Version in der Datenbank, die Revisionen aber erst, wenn du ihnen vertraust.",
+      "changed": "Die Alembic-Dateien des Projekts haben sich geändert, seit du ihnen vertraut hast. Prüfe sie erneut, um die Revisionen zu lesen.",
+      "trusted_one": "Du vertraust den Alembic-Dateien des Projekts ({{count}} Revisionsdatei).",
+      "trusted_other": "Du vertraust den Alembic-Dateien des Projekts ({{count}} Revisionsdateien).",
+      "invalid": "Studio kann den Alembic-Dateien des Projekts nicht vertrauen: {{reason}}",
+      "review": "Dateien prüfen",
+      "revoke": "Nicht mehr vertrauen",
+      "trustedNow": "Dem Migrationscode wird vertraut.",
+      "revokedNow": "Dem Migrationscode wird nicht mehr vertraut."
+    },
+    "issue": {
+      "config_invalid": "alembic.ini ist nicht lesbar.",
+      "location_outside": "script_location liegt außerhalb des Projektordners.",
+      "location_missing": "der versions-Ordner von script_location existiert nicht.",
+      "too_many_files": "der versions-Ordner enthält mehr Revisionsdateien, als Studio prüft.",
+      "file_name": "eine Revisionsdatei hat einen Namen, den Studio nicht annimmt.",
+      "unreadable": "die Dateien konnten nicht gelesen werden.",
+      "changed": "die Dateien haben sich geändert, während Studio sie las.",
+      "other": "die Prüfung ist fehlgeschlagen ({{code}})."
+    },
+    "status": {
+      "title": "Migrationsstand",
+      "profile": "Verbindungsprofil",
+      "show": "Stand anzeigen",
+      "reading": "Wird gelesen…",
+      "noProfiles": "Es gibt noch keine Verbindungsprofile. Lege eines unter „Verbindungen“ an.",
+      "noFormats": "Studio hat für diese Datenbank kein Migrationsformat gefunden.",
+      "sqlite": "SQLite-user_version",
+      "alembic": "Alembic",
+      "current": "Version in der Datenbank",
+      "heads": "Neueste Revisionen (Heads)",
+      "pendingLabel": "Noch nicht angewendet",
+      "none": "keine",
+      "noTable": "keine Tabelle alembic_version",
+      "unknown": "unbekannt",
+      "unknownRevisions": "Die Datenbank nennt Revisionen, die in den Dateien des Projekts fehlen:",
+      "notTrusted": "Die Revisionen sind unbekannt, weil dem Migrationscode des Projekts nicht vertraut wird.",
+      "invalidFolder": "Die Revisionen sind unbekannt, weil der Migrationsordner des Projekts nicht gültig ist.",
+      "upToDate": "Die Datenbank ist auf dem neuesten Stand.",
+      "pending_one": "{{count}} Revision ist noch nicht angewendet.",
+      "pending_other": "{{count}} Revisionen sind noch nicht angewendet.",
+      "others_one": "{{count}} weiteres Migrationsformat wurde gefunden, wird hier aber noch nicht angezeigt.",
+      "others_other": "{{count}} weitere Migrationsformate wurden gefunden, werden hier aber noch nicht angezeigt."
+    },
+    "levuvo": {
+      "current": "Die Datenbank ist auf dem Stand der Dateien.",
+      "pending": "Die Dateien enthalten Schritte, die die Datenbank noch nicht ausgeführt hat.",
+      "newer": "Die Datenbank hat Versionen, die die Dateien nicht kennen.",
+      "changed": "Eine ausgeführte Datei wurde danach geändert.",
+      "no_files": "Studio hat zu dieser Tabelle keine Dateien gefunden; es zeigt, was die Datenbank verzeichnet hat.",
+      "unreadable": "Studio konnte diese Versionstabelle nicht lesen.",
+      "reason": {
+        "permission": "Die Rolle der Verbindung darf sie nicht lesen (kein USAGE auf ihrem Schema oder kein SELECT auf der Tabelle).",
+        "table": "Eine Spalte, die Studio liest, fehlt oder hat einen unerwarteten Typ; prüfe, ob der Migrationsrunner der Plattform die Tabelle angelegt hat.",
+        "refused": "Studio hat das eigene Lesen der Tabelle im Nur-Lese-Modus abgelehnt.",
+        "timeout": "Das Lesen hat länger gedauert als das Timeout je Abfrage."
+      },
+      "moreSteps_one": "und {{count}} weiterer Schritt",
+      "moreSteps_other": "und {{count}} weitere Schritte",
+      "steps": {
+        "pending": "noch nicht ausgeführt",
+        "unknown": "nicht in den Dateien",
+        "changed": "nach dem Ausführen geändert",
+        "other": "{{status}}"
+      }
+    }
+  },
   "settings": {
     "title": "Einstellungen",
     "general": "Allgemein",
@@ -303,6 +378,15 @@
       "title_other": "{{count}} Abfragen laufen",
       "body": "Beim Beenden werden sie abgebrochen.",
       "quit": "Beenden"
+    },
+    "trustCode": {
+      "title": "Migrationscode des Projekts ausführen?",
+      "body": "Um die Revisionen zu lesen, importiert Studio die Alembic-Dateien des Projekts und führt damit ihren Code auf diesem Computer aus, in einem eigenen Prozess, der nach 30 Sekunden beendet wird. Der Code läuft unter deinem Benutzer, wie bei alembic heads: Er erhält Adresse und Passwort der offenen Verbindung, kann also die Datenbank ändern, und er kann deine Dateien und die Einstellungen von Studio lesen. Vertraue ihm nur, wenn du ihn selbst ausführen würdest. Studio fragt erneut, wenn sich alembic.ini oder eine Revisionsdatei ändert; Projektmodule, die Revisionsdateien importieren, gelten als mitvertraut, werden aber nicht auf Änderungen geprüft.",
+      "stale": "Die Dateien haben sich geändert, nachdem sie angezeigt wurden. Das ist die neue Liste: Prüfe sie erneut, bevor du ihr vertraust.",
+      "config": "Alembic-Konfiguration",
+      "files": "Revisionsdateien",
+      "reject": "Nicht vertrauen",
+      "trust": "Vertrauen und ausführen"
     }
   },
   "issues": {
@@ -339,7 +423,34 @@
     "offline": "Der lokale Server antwortet nicht.",
     "other": "Die Anfrage ist fehlgeschlagen ({{code}}).",
     "config_too_large": "Die Datei würde größer, als Studio liest (256 KB). Entferne Profile, die du nicht mehr brauchst.",
-    "config_not_storable": "Studio konnte diese Werte nicht unverändert speichern (zum Beispiel wegen eines ungewöhnlichen Zeichens). Es wurde nichts geschrieben."
+    "config_not_storable": "Studio konnte diese Werte nicht unverändert speichern (zum Beispiel wegen eines ungewöhnlichen Zeichens). Es wurde nichts geschrieben.",
+    "project_untrusted": "Den Projektprofilen wird in ihrer aktuellen Form nicht vertraut. Prüfe sie zuerst.",
+    "trust_stale": "Die Dateien haben sich geändert, nachdem sie angezeigt wurden. Prüfe sie erneut.",
+    "trust_unavailable": "Studio konnte die Vertrauensentscheidung nicht speichern.",
+    "no_migrations": "Der Projektordner hat keine alembic.ini mit script_location.",
+    "migrations_invalid": "Die Alembic-Dateien des Projekts lassen sich nicht prüfen, daher kann ihrem Code nicht vertraut werden.",
+    "migrations_changed": "Die Alembic-Dateien des Projekts haben sich geändert, seit ihnen vertraut wurde, daher lief ihr Code nicht. Prüfe sie erneut.",
+    "migrations_revisions": "Alembic konnte die Revisionen im Migrationsordner des Projekts nicht lesen. Führe alembic heads im Projekt aus, um den Fehler zu sehen.",
+    "migrations_database": "Die Datenbank hat nicht geantwortet, während Studio die Versionstabelle las.",
+    "migrations_timeout": "Das Lesen der Revisionen hat zu lange gedauert und wurde abgebrochen.",
+    "migrations_busy": "Studio liest bereits die Revisionen für einen anderen Migrationsstatus. Versuche es erneut, wenn das abgeschlossen ist.",
+    "migrations_failed": "Das Lesen der Revisionen ist fehlgeschlagen. Führe alembic heads im Projekt aus, um zu sehen, ob sich die Revisionsdateien laden lassen.",
+    "connection_failed": "Studio konnte die Datenbank nicht erreichen.",
+    "connection_config": "Der Treiber hat die Einstellungen des Profils nicht angenommen.",
+    "connection_tls": "Der TLS-Modus des Profils ist schwächer, als der Host verlangt.",
+    "connection_limit": "Studio hält höchstens 8 Verbindungen offen. Schließe zuerst eine.",
+    "connection_busy": "Die Verbindung ist beschäftigt. Versuche es gleich noch einmal.",
+    "connection_stale": "Die Verbindung wurde geschlossen, weil sich ihr Profil geändert hat. Versuche es erneut.",
+    "connection_not_found": "Die Verbindung ist nicht mehr offen. Versuche es erneut.",
+    "database_missing": "Die SQLite-Datei des Profils existiert nicht.",
+    "database_unsafe": "Die SQLite-Datei des Profils ist ein Link oder hat sich beim Öffnen geändert.",
+    "database_outside": "Die Datenbankdatei des Profils liegt außerhalb des Projektordners. Prüfe die Projektprofile erneut.",
+    "secret_missing": "Für dieses Profil gibt es kein Passwort. Speichere es unter „Verbindungen“.",
+    "secret_env_missing": "Die Umgebungsvariable, aus der dieses Profil sein Passwort liest, ist nicht gesetzt.",
+    "secret_file_outside": "Die Passwortdatei liegt außerhalb des Projektordners und des Konfigurationsordners.",
+    "secret_file_unsafe": "Die Passwortdatei ist ein Link, keine normale Datei, hat mehr als einen Namen oder gehört einem anderen Benutzer.",
+    "secret_file_not_private": "Andere Benutzer können die Passwortdatei lesen. Mache sie nur für dich lesbar (chmod 600).",
+    "secret_file_unreadable": "Die Passwortdatei fehlt, ist leer, größer als 4 KB oder nicht UTF-8."
   },
   "keyboard": {
     "palette": {

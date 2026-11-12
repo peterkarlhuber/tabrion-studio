@@ -36,6 +36,7 @@ export interface CommandContext {
 const PAGES: { path: Route; key: string }[] = [
   { path: '/', key: 'nav.start' },
   { path: '/connections', key: 'nav.connections' },
+  { path: '/migrations', key: 'nav.migrations' },
   { path: '/settings', key: 'nav.settings' },
 ];
 

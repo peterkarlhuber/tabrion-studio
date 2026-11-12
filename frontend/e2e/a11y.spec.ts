@@ -10,6 +10,7 @@ import { openHarness, seriousViolations, type Theme } from './support';
 const PAGES: [string, { scenario?: string; path?: string }][] = [
   ['start page', {}],
   ['connections', { path: '/connections' }],
+  ['migrations', { path: '/migrations' }],
   ['settings', { path: '/settings' }],
   ['not found', { path: '/nowhere' }],
   ['PROD workspace', { scenario: 'prod' }],
@@ -19,6 +20,7 @@ const PAGES: [string, { scenario?: string; path?: string }][] = [
   ['D-01 stale, keys removed (I-2)', { scenario: 'dialog-d01-stale' }],
   ['invalid project file notice (I-2)', { scenario: 'project-invalid' }],
   ['D-02 PROD connect', { scenario: 'dialog-d02' }],
+  ['STU-015 trust migration code', { scenario: 'dialog-trust-code' }],
   ['D-06 unsaved script', { scenario: 'dialog-d06' }],
   ['D-08 quit', { scenario: 'dialog-d08' }],
   ['sign-in link used', { scenario: 'used' }],
