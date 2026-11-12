@@ -15,6 +15,12 @@
  * - the answer to `POST /api/connections` names the profile's environment like the server's: `environmentOf` when
  *   given (a test that changes profiles), else that of the harness profiles.
  *
+ * - `POST /api/exports` (STU-021, TD-043) answers the statement's rows as CSV or JSON like the real route: up to
+ *   `max_rows`, the file name in `Content-Disposition`, CSV formulas escaped unless `escape_formulas` is false; a
+ *   statement with `export_slow` streams until the request is aborted, `export_broken` sends the first rows and then
+ *   breaks the stream (a server error midway), `export_busy` answers `studio.export_busy`, a statement that is not a
+ *   reading one `studio.statement_refused`.
+ *
  * `requests` records what the page sent (no parameter value is ever logged by the real server; this is a test fake).
  */
 import type { ParamValue } from '../api/queries';
@@ -38,6 +44,15 @@ export interface QueryLog {
   rows: { offset: number; limit: number }[];
   cancels: string[];
   connections: string[];
+  exports: {
+    connectionId: string;
+    format: string;
+    sql: string;
+    params: Record<string, ParamValue>;
+    maxRows: number | null;
+    escapeFormulas: boolean | null;
+    aborted: boolean;
+  }[];
 }
 
 const COLUMNS = [
@@ -71,7 +86,7 @@ export function createQueryServer(
   log: QueryLog;
 } {
   const queries = new Map<string, FakeQuery>();
-  const log: QueryLog = { starts: [], rows: [], cancels: [], connections: [] };
+  const log: QueryLog = { starts: [], rows: [], cancels: [], connections: [], exports: [] };
   let next = 1;
 
   const status = (query: FakeQuery) => ({
@@ -134,17 +149,115 @@ export function createQueryServer(
     return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
   };
 
+  /** The export route: the statement's rows as a streamed file (see the module text). */
+  const exportAnswer = (init?: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as {
+      connection_id: string;
+      format: string;
+      sql: string;
+      params?: Record<string, ParamValue>;
+      max_rows?: number;
+      escape_formulas?: boolean;
+    };
+    const entry = {
+      connectionId: body.connection_id,
+      format: body.format,
+      sql: body.sql,
+      params: body.params ?? {},
+      maxRows: body.max_rows ?? null,
+      escapeFormulas: body.escape_formulas ?? null,
+      aborted: false,
+    };
+    log.exports.push(entry);
+    if (/export_busy/i.test(body.sql)) return Promise.resolve(problem('studio.export_busy', 429));
+    if (!READING.test(body.sql.replace(/^\s*(--[^\n]*\n|\/\*[\s\S]*?\*\/)*/g, ''))) {
+      return Promise.resolve(problem('studio.statement_refused', 400));
+    }
+    const series = /generate_series\(\s*1\s*,\s*(\d+)\s*\)/i.exec(body.sql);
+    const total = series ? Number(series[1]) : 3;
+    const count = Math.min(total, body.max_rows ?? 1_000_000);
+    const param = Object.values(body.params ?? {})[0];
+    const encoder = new TextEncoder();
+    const signal = init?.signal ?? null;
+    const csv = body.format === 'csv';
+    const escape = body.escape_formulas !== false;
+    const cell = (value: unknown): string => {
+      let text = value === null || value === undefined ? '' : String(value);
+      if (csv && escape && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+      return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const line = (n: number): string => {
+      const values: unknown[] = [n, `row ${n}`, n === 1 ? '=SUM(A1:A2)' : `note ${n}`];
+      if (param !== undefined) values.push(param);
+      return csv ? `${values.map(cell).join(',')}\r\n` : JSON.stringify(values);
+    };
+    const names = ['n', 'label', 'note', ...(param === undefined ? [] : ['param'])];
+    const slow = /export_slow/i.test(body.sql);
+    const broken = /export_broken/i.test(body.sql);
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          encoder.encode(
+            csv ? `${names.join(',')}\r\n` : `{"columns":${JSON.stringify(names)},"rows":[`,
+          ),
+        );
+        if (slow) {
+          // Streams until the page aborts the request (the real server closes the export then).
+          signal?.addEventListener('abort', () => {
+            entry.aborted = true;
+            controller.error(new DOMException('aborted', 'AbortError'));
+          });
+          return;
+        }
+        if (broken) {
+          // The first row; the stream breaks once the page has read it (`pull`), like the real server, which ends a
+          // chunked answer early on an error.
+          controller.enqueue(encoder.encode(csv ? line(1) : `\n${line(1)}`));
+          return;
+        }
+        for (let n = 1; n <= count; n += 1) {
+          controller.enqueue(encoder.encode(csv ? line(n) : `${n > 1 ? ',' : ''}\n${line(n)}`));
+        }
+        if (!csv) {
+          controller.enqueue(
+            encoder.encode(`\n],"truncated":${total > count ? '"rows"' : 'null'}}\n`),
+          );
+        }
+        controller.close();
+      },
+      pull(controller) {
+        if (broken) controller.error(new TypeError('network error'));
+      },
+    });
+    return Promise.resolve(
+      new Response(stream, {
+        status: 200,
+        headers: {
+          'Content-Type': csv ? 'text/csv; charset=utf-8' : 'application/json',
+          'Content-Disposition': `attachment; filename="export.${csv ? 'csv' : 'json'}"`,
+        },
+      }),
+    );
+  };
+
   const handle = (url: string, init?: RequestInit): Promise<Response> | null => {
     const method = init?.method ?? 'GET';
     if (url === '/api/connections' && method === 'POST') {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { profile_id?: string };
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        profile_id?: string;
+        confirmed_environment?: string;
+      };
       log.connections.push(body.profile_id ?? '');
       // Like the server, the answer names the profile's environment (the editor's backstop checks it, C-5 and L-9).
       const id = body.profile_id ?? '';
       const environment =
         options.environmentOf?.(id) ??
         PROFILES.profiles.find((item) => item.id === id)?.environment;
-      const answer = json({ connection_id: `c-${id}`, profile_id: id, environment }, 201);
+      // D-02 on the server (TD-038): a PROD profile needs a request that confirmed PROD.
+      const answer =
+        environment === 'prod' && body.confirmed_environment !== 'prod'
+          ? json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409)
+          : json({ connection_id: `c-${id}`, profile_id: id, environment }, 201);
       const delay = options.connectDelayMs ?? 0;
       if (delay === 0) return Promise.resolve(answer);
       return new Promise((resolve) => setTimeout(() => resolve(answer), delay));
@@ -194,6 +307,7 @@ export function createQueryServer(
       }
       return Promise.resolve(answer);
     }
+    if (url === '/api/exports' && method === 'POST') return exportAnswer(init);
     const match = /^\/api\/queries\/([^/?]+)(\/events|\/rows|\/cancel)?(?:\?(.*))?$/.exec(url);
     if (match === null) return null;
     const query = queries.get(decodeURIComponent(match[1] ?? ''));

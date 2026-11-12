@@ -14,6 +14,23 @@ All notable changes to this project are documented here. The format follows
   past the server's timeout says so). Read-only on the explorer's open connection; every text escaped (line breaks in
   the DDL kept), the DDL cut after 100,000 characters with a note; answers for another object or connection refused.
   New user-guide page "Explorer".
+- D-02 on the server (TD-038): `POST /api/connections` and `POST /api/connection-tests` take `confirmed_environment`,
+  the environment the page confirmed for. A profile that is PROD now opens, is tested or has its open connection
+  returned only with `"prod"`; otherwise 409 `studio.prod_confirmation_required` (a missing value counts as not
+  confirmed). So a page with a stale profile list (the profile became PROD in another tab or in `profiles.toml`) no
+  longer opens PROD without D-02: the connection manager reads the profile again and asks D-02 (at most once), and
+  the migration status, diagnostics and explorer views and the SQL editor read their list again and ask on the next
+  try. The page's `openConnection` and `testConnection` require the environment, so no caller can leave it out. A
+  SQLite file is opened from the same read of the profile that passed the check. English and German.
+- TD-043 (STU-021 in the page): the export dialog. **Export…** on a finished result of the SQL editor saves it as
+  CSV or JSON: the fetched rows or up to 1 000 000 rows, with the CSV formula protection on by default. The statement
+  runs again with its parameters on the result's connection (D-02 through the shared guard; no new connection). The
+  dialog shows the bytes received, Cancel or Esc aborts the request and saves nothing, a file is saved only when it
+  arrived whole and of the asked type, under the server's file name only when that has the expected form, and a JSON
+  export the server cut says so. The page holds the file until it is saved, at most 1 GiB: past it the export is
+  aborted, nothing is saved, and the dialog says to export fewer rows or columns; a stream that breaks after some
+  bytes says the file did not arrive whole (not that the server does not answer). en/de; the data viewer (STU-013)
+  can mount the same dialog with a table.
 - STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
   `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
   sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.
@@ -409,6 +426,12 @@ All notable changes to this project are documented here. The format follows
 
 - Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
   review). User SQL, the viewer and the exports keep the session's `search_path`.
+- Opening a PostgreSQL connection now runs the driver's and SQLAlchemy's setup queries under a fixed search_path;
+  hardening against object resolution through user schemas (TD-039). The session's own `search_path` is restored
+  before the connection is used, so user SQL, the viewer and the exports see the path the user configured.
+- `hstore` values now come back as the server's text (`"a"=>"1"`) in query results, the data viewer and the exports,
+  not as a mapping: the driver's native hstore adaptation is off, so no type lookup runs when a connection is opened
+  (TD-039).
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
   secret's source, `host:port` and the TLS mode, marked for a host outside loopback, TLS weaker than `verify-full`, a
   variable that looks like another service's credential and a password file outside the project. Projects trusted

@@ -139,7 +139,10 @@ describe('opening and the tree', () => {
       `GET ${SQLITE}/catalog`,
       `GET ${SQLITE}/sqlite-info`,
     ]);
-    expect(JSON.parse(calls[2]?.body ?? '')).toEqual({ profile_id: 'project:parts-dev' });
+    expect(JSON.parse(calls[2]?.body ?? '')).toEqual({
+      profile_id: 'project:parts-dev',
+      confirmed_environment: 'dev',
+    });
     expect(calls[2]?.headers['Content-Type']).toBe('application/json');
     // SQLite: the database file instead of schemas, then the groups of `main` (08 section 4.3).
     expect(rows().map((r) => r.getAttribute('aria-level'))).toEqual([
@@ -214,6 +217,11 @@ describe('opening and the tree', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
     await screen.findByRole('tree');
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    // D-02 on the server (TD-038): the open says that PROD was confirmed.
+    expect(JSON.parse(calls.find((c) => c.method === 'POST')?.body ?? '')).toEqual({
+      profile_id: 'user:measure',
+      confirmed_environment: 'prod',
+    });
     const heading = screen.getByRole('heading', { level: 2, name: /measure/ });
     expect(within(heading).getByTestId('env-badge')).toHaveAttribute('data-env', 'prod');
     expect(heading).toHaveTextContent('measure\\u202E');
@@ -241,6 +249,28 @@ describe('opening and the tree', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
     expect(screen.getByTestId('explorer-open')).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('TD-038: the server refuses a PROD open the page did not confirm; the page reads the profiles again', async () => {
+    const dev = PROFILES.profiles[0] as Record<string, unknown>;
+    const nowProd = {
+      ...PROFILES,
+      profiles: [{ ...dev, environment: 'prod' }, PROFILES.profiles[1]],
+    };
+    const { fetcher } = server({
+      // The profile turns PROD after the page's last read, just before the open.
+      'GET /api/profiles': [() => json(PROFILES), () => json(PROFILES), () => json(nowProd)],
+      'POST /api/connections': () =>
+        json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409),
+    });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(await screen.findByTestId('explorer-problem')).toHaveTextContent(
+      'This profile is marked as PROD now.',
+    );
+    expect(await screen.findByRole('option', { name: 'parts-dev (PROD)' })).toBeInTheDocument();
   });
 
   it('Open on a profile that is gone: the picker moves to a remaining profile and takes the focus', async () => {

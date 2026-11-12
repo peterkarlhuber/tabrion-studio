@@ -284,7 +284,7 @@ def test_pg_no_timeout_writable_read_only_role_and_prod_rules() -> None:
         registry.close_all()
         prod_registry, _ = _pg_registry(PG_URL, environment="prod", read_only_role=True)
         try:
-            prod = codes(Diagnostics(prod_registry).run(prod_registry.open("user:pg").id))
+            prod = codes(Diagnostics(prod_registry).run(prod_registry.open("user:pg", "prod").id))
         finally:
             prod_registry.close_all()
         assert prod["STU-DX-001"] == "error"  # prefer on prod
@@ -352,9 +352,11 @@ def pg_roles() -> Iterator[tuple[sqlalchemy.Engine, str, str]]:
 def _run_as(user: str, password: str, **profile: Any) -> dict[str, str]:
     assert PG_URL is not None
     url = sqlalchemy.make_url(PG_URL).set(username=user, password=password)
-    registry, _ = _pg_registry(url.render_as_string(hide_password=False), **profile)
+    registry, source = _pg_registry(url.render_as_string(hide_password=False), **profile)
     try:
-        return codes(Diagnostics(registry).run(registry.open("user:pg").id))
+        # The test confirms the environment the profile has (D-02 on the server, TD-038).
+        environment = source.profiles["user:pg"].environment
+        return codes(Diagnostics(registry).run(registry.open("user:pg", environment).id))
     finally:
         registry.close_all()
 

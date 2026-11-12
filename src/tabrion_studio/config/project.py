@@ -316,14 +316,16 @@ class ProjectConfig:
             return ProjectState("changed", digest, review, changes, parsed.issues)
         return ProjectState("untrusted", digest, review, issues=parsed.issues)
 
-    def database_file(self, name: str) -> Path:
+    def database_file(self, name: str, expected: Profile | None = None) -> Path:
         """The real path of the trusted project profile ``name``'s database file, re-checked now (review T-1).
 
         STU-009 calls this right before it opens a SQLite file, and opens the path it returns: the trust state is
         computed again from the file on disk (the bytes and the review, so a folder that became a link out of the
         project since the confirmation means ``changed``), and the containment the user confirmed is checked again
         on the file system. A file confirmed as inside the project must still resolve inside it; one the user
-        confirmed as outside must not be a link to a network or device path. Raises :class:`TrustError`.
+        confirmed as outside must not be a link to a network or device path. With ``expected`` (the read of the
+        profile the caller checked, C-1 of the #48 review), the profile read now must equal it, or the call refuses
+        with ``studio.project_untrusted`` (fail closed). Raises :class:`TrustError`.
         """
         state = self.load()
         if state.state != "trusted" or state.review is None:
@@ -331,6 +333,8 @@ class ProjectConfig:
         profile = next((p for p in state.profiles if p.name == name and p.path is not None), None)
         if profile is None or profile.path is None:
             raise TrustError("studio.profile_not_found")
+        if expected is not None and profile.to_dict() != expected.to_dict():
+            raise TrustError("studio.project_untrusted")
         confirmed = next((f for f in state.review.files if f["kind"] == "database" and f["path"] == profile.path), None)
         if confirmed is None:
             raise TrustError("studio.project_untrusted")

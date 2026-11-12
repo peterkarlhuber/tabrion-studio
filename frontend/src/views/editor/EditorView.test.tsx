@@ -11,6 +11,7 @@ import { vi } from 'vitest';
 import { createQueryServer, type QueryLog } from '../../harness/queries';
 import { PROFILES, SETTINGS } from '../../harness/profiles';
 import { editorActions } from '../../keyboard/editorActions';
+import type { SaveFile } from '../../lib/download';
 import { DRAFTS_KEY, draftsKey } from './drafts';
 import { EditorView, queryProblemText, scriptFileName } from './EditorView';
 import type { SqlEditorHandle, SqlEditorProps } from './SqlEditor';
@@ -55,6 +56,8 @@ interface Options {
   profileTimeoutMs?: number;
   /** Answers before the fake server (a changed profile, a stale connection, the connection's environment). */
   before?: (url: string, init?: RequestInit) => Response | null;
+  /** Where an export goes (TD-043). */
+  saveExport?: SaveFile;
 }
 
 function setup(draft?: { sql: string; profile?: string }, options: Options = {}) {
@@ -108,7 +111,7 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
     if (url === '/api/settings') return new Response(JSON.stringify(SETTINGS));
     return (await server.handle(url, init)) ?? new Response(null, { status: 404 });
   };
-  render(<EditorView fetcher={fetcher} />);
+  render(<EditorView fetcher={fetcher} saveExport={options.saveExport} />);
   return { log: server.log as QueryLog, requests };
 }
 
@@ -426,6 +429,53 @@ describe('EditorView', () => {
       expect(await screen.findByRole('dialog', { name: 'Production database' })).toBeVisible();
     });
 
+    it('TD-038: the server refuses a PROD open the page did not confirm; the page takes the profile as it is and the next run asks D-02', async () => {
+      const user = userEvent.setup();
+      let refused = false;
+      const bodies: unknown[] = [];
+      const { log } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url, init) => {
+            if (url === '/api/connections' && init?.method === 'POST') {
+              bodies.push(JSON.parse(String(init.body)));
+              if (!refused) {
+                // The profile became PROD after the editor's last read, just before the open.
+                refused = true;
+                return new Response(
+                  JSON.stringify({
+                    code: 'studio.prod_confirmation_required',
+                    kind: 'database',
+                    status: 409,
+                  }),
+                  { status: 409 },
+                );
+              }
+            }
+            if (url === '/api/profiles' && refused) return asProd();
+            return null;
+          },
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      expect(await screen.findByTestId('editor-connect-problem')).toHaveTextContent(
+        'This profile is marked as PROD now.',
+      );
+      expect(log.starts).toEqual([]);
+      await waitFor(() =>
+        expect(screen.getAllByTestId('env-badge').at(-1)).toHaveTextContent('PROD'),
+      );
+      await user.click(screen.getByTestId('editor-run'));
+      const dialog = await screen.findByRole('dialog', { name: 'Production database' });
+      await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+      await waitFor(() => expect(log.starts).toHaveLength(1));
+      expect(bodies).toEqual([
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+        { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+      ]);
+    });
+
     it('backstop: a connection whose environment differs from the guarded profile is closed, and nothing runs', async () => {
       const user = userEvent.setup();
       const { log, requests } = setup(
@@ -563,5 +613,161 @@ describe('texts', () => {
   it('make a file name of a tab title', () => {
     expect(scriptFileName('a/b:c?')).toBe('a_b_c_.sql');
     expect(scriptFileName('  ')).toBe('query.sql');
+  });
+});
+
+describe('EditorView: export (TD-043)', () => {
+  it('exports a finished result: its statement and parameters, on its connection; the focus comes back', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const { log } = setup(
+      { sql: 'select * from generate_series(1, 4) where n > :min' },
+      { saveExport: save },
+    );
+    await editor();
+    // No result yet: no export.
+    expect(screen.queryByTestId('export-open')).toBeNull();
+    await user.click(screen.getByTestId('editor-run'));
+    const min = screen.getByRole('textbox', { name: ':min' });
+    await waitFor(() => expect(min).toHaveFocus());
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Type of :min' }), 'number');
+    fireEvent.change(min, { target: { value: '0' } });
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('4 rows · 25 ms'),
+    );
+    const open = screen.getByRole('button', { name: 'Export…' });
+    await user.click(open);
+    const dialog = screen.getByRole('dialog', { name: 'Export' });
+    expect(dialog).toHaveAccessibleDescription(
+      'Export result 1 of Query 1 as a file. The export only reads.',
+    );
+    expect(
+      within(dialog).getByRole('radio', { name: 'The fetched rows of the result (4)' }),
+    ).toBeChecked();
+    await user.click(within(dialog).getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(log.exports).toEqual([
+      {
+        connectionId: 'c-project:parts-dev',
+        format: 'csv',
+        sql: 'select * from generate_series(1, 4) where n > :min',
+        params: { min: 0 },
+        maxRows: 4,
+        escapeFormulas: true,
+        aborted: false,
+      },
+    ]);
+    // No new connection for the export.
+    expect(log.connections).toEqual(['project:parts-dev']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByTestId('editor-notice')).toHaveTextContent(/^Export saved: export\.csv \(/);
+    expect(open).toHaveFocus();
+  });
+
+  it('exports the statement and parameter as they ran, not the editor text or field typed since (C-1)', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const ran = 'select * from generate_series(1, 4) where n > :min';
+    const { log } = setup({ sql: ran }, { saveExport: save });
+    const text = (await editor()) as HTMLTextAreaElement;
+    await user.click(screen.getByTestId('editor-run'));
+    const min = screen.getByRole('textbox', { name: ':min' });
+    await waitFor(() => expect(min).toHaveFocus());
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Type of :min' }), 'number');
+    fireEvent.change(min, { target: { value: '0' } });
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('4 rows · 25 ms'),
+    );
+    // After the run: another statement in the editor (a different table, a write after it) and another value.
+    const typed =
+      "select * from generate_series(1, 9) where n > :min; update parts set material = 'X'";
+    fireEvent.change(text, { target: { value: typed } });
+    expect(text).toHaveValue(typed);
+    fireEvent.change(screen.getByRole('textbox', { name: ':min' }), { target: { value: '7' } });
+    expect(screen.getByRole('textbox', { name: ':min' })).toHaveValue('7');
+    await user.click(screen.getByRole('button', { name: 'Export…' }));
+    const dialog = screen.getByRole('dialog', { name: 'Export' });
+    await user.click(within(dialog).getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(log.exports).toHaveLength(1);
+    expect(log.exports[0]?.sql).toBe(ran);
+    expect(log.exports[0]?.params).toEqual({ min: 0 });
+    expect(log.exports[0]?.maxRows).toBe(4);
+    // The file holds the ran statement's rows (4, not 9).
+    const csv = await (save.mock.calls[0]?.[0] as Blob).text();
+    expect(csv.split('\r\n').filter((line) => line !== '')).toHaveLength(5);
+  });
+
+  it('offers no export on the messages, for a failed statement, or while a statement runs', async () => {
+    const user = userEvent.setup();
+    setup({ sql: 'select missing_table;\nselect pg_sleep(60)' });
+    const text = (await editor()) as HTMLTextAreaElement;
+    text.setSelectionRange(0, 0);
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(screen.getByTestId('result-status')).toHaveTextContent(/./));
+    await waitFor(() => expect(screen.getByTestId('editor-run')).not.toBeDisabled());
+    expect(screen.queryByTestId('export-open')).toBeNull();
+    text.setSelectionRange(text.value.length, text.value.length);
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(screen.getByTestId('editor-cancel')).not.toBeDisabled());
+    expect(screen.queryByTestId('export-open')).toBeNull();
+    await user.click(screen.getByTestId('editor-cancel'));
+    await waitFor(() => expect(screen.getByTestId('editor-run')).not.toBeDisabled());
+    expect(screen.queryByTestId('export-open')).toBeNull();
+  });
+
+  it('PROD: the export goes through the shared D-02 guard, confirmed by the run, so it asks nothing new', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const { log } = setup(
+      { sql: 'select * from generate_series(1, 2)', profile: 'user:measure-central' },
+      { saveExport: save },
+    );
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    const prod = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(prod).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('2 rows · 25 ms'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Export…' }));
+    // This test renders the page without the shell's page session, so D-02 is asked again before the export.
+    const again = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(again).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog', { name: 'Export' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Export…' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Production database' })).getByRole('button', {
+        name: 'Connect',
+      }),
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Export' });
+    await user.click(within(dialog).getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(log.exports[0]?.connectionId).toBe('c-user:measure-central');
+    expect(log.connections).toEqual(['user:measure-central']);
+  });
+
+  it("shows an export refusal in the dialog in the page's words", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    setup({ sql: 'select export_busy' }, { saveExport: save });
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('3 rows · 25 ms'),
+    );
+    await user.click(screen.getByRole('button', { name: 'Export…' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Export' })).getByRole('button', {
+        name: 'Export',
+      }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Another export is running on this connection, or two are running already.',
+    );
+    expect(save).not.toHaveBeenCalled();
   });
 });
