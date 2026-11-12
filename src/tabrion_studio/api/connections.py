@@ -1,0 +1,113 @@
+"""Connection routes (03 section 6, STU-009). Every connection is read-only; Studio 1.0 never writes to a database.
+
+* ``POST /api/connections`` with ``{"profile_id": "user:<name>" | "project:<name>"}``: 201 ``{connection_id,
+  profile_id, engine, environment, read_only: true, url, opened_at}``. ``url`` comes from ``tabrion.safe_url`` (no
+  password). The connection is checked before the answer, so a wrong password or an unreachable host is a
+  ``db.<kind>`` problem here. An open connection of the same profile is returned again.
+* ``GET /api/connections``: the open connections (each checked against its profile; a stale one is closed).
+* ``DELETE /api/connections`` with ``{"connection_id"}``: 204 (the id is in the body, like the profile routes).
+* ``POST /api/connection-tests`` with ``{"profile_id"}``: the connection test (TD-011): ``{ok, engine,
+  server_version, latency_ms, read_only}``; the connection is closed again.
+
+Refusals are problems with fixed texts: ``studio.secret_*`` (no password), ``studio.project_untrusted`` and
+``studio.database_outside`` (review T-1), ``studio.database_*``, ``studio.connection_*`` and ``db.<kind>`` built from
+``tabrion.errors.classify`` (never the server's message). Opening and closing run in a worker thread.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import Any
+
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from tabrion.errors import TabrionError
+
+from tabrion_studio.config.project import TrustError
+from tabrion_studio.config.secrets import SecretError
+from tabrion_studio.problems import db_problem_response, is_problem_code, problem_response
+from tabrion_studio.services.connections import ConnectionRegistry, HealthError, RegistryError
+from tabrion_studio.services.readonly import StatementRefused
+
+logger = logging.getLogger("tabrion_studio.connections")
+_MAX_BODY = 4096
+
+
+def _body(raw: bytes) -> dict[str, Any] | None:
+    try:
+        doc = json.loads(raw) if len(raw) <= _MAX_BODY else None
+    except (ValueError, RecursionError):
+        doc = None
+    return doc if isinstance(doc, dict) else None
+
+
+def connection_problem(exc: BaseException) -> Response | None:
+    """The problem answer for an error of opening or using a connection; None for an unexpected one."""
+    if isinstance(exc, SecretError | TrustError | RegistryError | StatementRefused):
+        code = exc.code
+        if is_problem_code(code):
+            logger.info("connection refused", extra={"event": "studio.connection_refused", "code": code})
+            return problem_response(code)
+        return None
+    if isinstance(exc, HealthError):
+        logger.info(
+            "connection failed", extra={"event": "studio.connection_failed", "error_kind": str(exc.classification.kind)}
+        )
+        return db_problem_response(exc.classification)
+    if isinstance(exc, TabrionError):
+        # DbErrorRedactionFilter (logs.py) rewrites the exception to tabrion's safe message in the log record.
+        logger.info("database error", exc_info=exc, extra={"event": "studio.db_error", "code": exc.code})
+        if exc.classification is not None:
+            return db_problem_response(exc)
+        return problem_response("studio.connection_config")
+    return None
+
+
+def add_connection_routes(app: FastAPI, registry: ConnectionRegistry) -> None:
+    async def run(call: Any, *args: Any) -> Any:
+        return await asyncio.to_thread(call, *args)
+
+    async def guarded(call: Any, *args: Any) -> Any:
+        try:
+            return await run(call, *args)
+        except Exception as exc:
+            answer = connection_problem(exc)
+            if answer is None:
+                raise
+            return answer
+
+    @app.post("/api/connections", status_code=201)
+    async def post_connection(request: Request) -> Response:
+        doc = _body(await request.body())
+        if doc is None or not isinstance(doc.get("profile_id"), str):
+            return problem_response("access.bad_request")
+        result = await guarded(registry.open, doc["profile_id"])
+        if isinstance(result, Response):
+            return result
+        return JSONResponse(result.to_dict(), status_code=201)
+
+    @app.get("/api/connections")
+    async def get_connections() -> Response:
+        connections = await run(registry.list)
+        return JSONResponse({"connections": [c.to_dict() for c in connections]})
+
+    @app.delete("/api/connections", status_code=204)
+    async def delete_connection(request: Request) -> Response:
+        doc = _body(await request.body())
+        if doc is None or not isinstance(doc.get("connection_id"), str):
+            return problem_response("access.bad_request")
+        if not await run(registry.close, doc["connection_id"]):
+            return problem_response("studio.connection_not_found")
+        return Response(status_code=204)
+
+    @app.post("/api/connection-tests")
+    async def post_connection_test(request: Request) -> Response:
+        doc = _body(await request.body())
+        if doc is None or not isinstance(doc.get("profile_id"), str):
+            return problem_response("access.bad_request")
+        result = await guarded(registry.test, doc["profile_id"])
+        if isinstance(result, Response):
+            return result
+        return JSONResponse(result)

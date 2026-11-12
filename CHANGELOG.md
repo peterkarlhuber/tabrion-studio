@@ -7,6 +7,41 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-009 (tabrion v0.1.0 pinned by full SHA):
+  - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
+  - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no
+    VACUUM INTO, no `load_extension`, no write or schema change). PostgreSQL: a read-only session, `Database.read()`,
+    one statement per transaction and no transaction control.
+  - URLs only through `tabrion.safe_url`; the driver gets only the fingerprinted fields.
+  - `db.<kind>` problems from `tabrion.errors.classify`, and tabrion's `DbErrorRedactionFilter` in the log handlers.
+  - Engines are disposed on shutdown.
+  - Review `stu-009-review.md`:
+    - H-1: every PostgreSQL statement is a prepared statement (`prepare_threshold=0`), so the server refuses several
+      commands, whatever a text split thinks (the `standard_conforming_strings = off` escape no longer writes).
+      `SET standard_conforming_strings`, `SET backslash_quote` and `set_config(` are refused.
+    - M-1: without a password, libpq gets none of its own (no `PGPASSWORD`, `.pgpass` or service-file password).
+    - L-1: the password is resolved from the same entry as the URL.
+    - Info items: a connection test shares the connection limit.
+  - Delta re-review of `stu-009-review.md`:
+    - R-L1: the function check reads the statement's tokens (comments and literals left out, quoted identifiers
+      unquoted, `'...'` lexed with and without backslash escapes), so `"set_config"(` and `set_config/**/(` are
+      refused; so are `U&"..."` identifiers.
+    - I-R1: `pg_notify()` and the session-level advisory lock functions are refused like `NOTIFY` and `LOCK`.
+    - R-L2: a requirements or constraints file, at any depth, holds only plain requirements and the full-SHA tabrion
+      pin: pip options (`-e`, `-r`, `-c`, `-f`, index and host options), paths, wheel files, other URLs and
+      fragments are refused.
+    - I-R2: a test that fails when the secret comes from a second read of the profile.
+  - Re-review 2 of `stu-009-review.md`:
+    - R2-L1: `DO` and the functions that run a query given as text (`query_to_xml`, `cursor_to_xml` and their schema
+      forms, `ts_stat`, `ts_rewrite`, `crosstab`, `dblink`) are refused.
+    - R2-I2: tests for both ways of lexing `'...'` and for `E'...'` escapes.
+    - R2-I1: a requirement's marker cannot carry a pip option (`--config-settings`, `--global-option`, `-e`).
+    - CI: the PostgreSQL service port is published on `127.0.0.1` only.
+  - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
+    constraints file, and `pyproject.toml` keeps the final range with no direct reference.
+  - tabrion v0.1.0 (`d5821faa8742dea012abda3b663549c038d76543`, the merge commit of tabrion PR #56) is pinned in
+    `constraints/tabrion-integration.txt`, and `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`.
+    CONTRIBUTING and the guide's installation page install with `-c constraints/tabrion-integration.txt`.
 - TABRION QA-21 (AC-7): `scripts/check_tabrion_api.py` is now the check shared with axentra, orkexa and
   nodestro-runtime. Besides private Tabrion modules it refuses `_` attributes on Tabrion names, `getattr` and
   `import_module` with a private constant and star imports. Every used name must be in its module's `__all__` in the

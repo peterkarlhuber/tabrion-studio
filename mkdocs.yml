@@ -67,6 +67,7 @@ nav:
       - Errors and logging: architecture/errors-and-logging.md
       - Configuration and project trust: architecture/configuration.md
       - Secret management: architecture/secrets.md
+      - Connections and read-only enforcement: architecture/connections.md
       - App shell and design system: architecture/frontend.md
       - Accessibility audit: architecture/accessibility.md
   - Development:

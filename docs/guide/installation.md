@@ -21,15 +21,26 @@ cd tabrion-studio
 git checkout <commit SHA>
 python scripts/build_frontend.py      # npm ci + npm run build; copies the frontend into the package
 python -m venv ~/.venvs/tabrion-studio
-~/.venvs/tabrion-studio/bin/python -m pip install .   # Windows: %USERPROFILE%\.venvs\tabrion-studio\Scripts\python
+# Windows: %USERPROFILE%\.venvs\tabrion-studio\Scripts\python
+~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
+~/.venvs/tabrion-studio/bin/python -m pip install . -c constraints/tabrion-integration.txt
 ```
+
+Tabrion is not on PyPI either. `constraints/tabrion-integration.txt` pins the Tabrion commit this Studio commit is
+built and tested against (Tabrion v0.1.0), so always install with `-c constraints/tabrion-integration.txt`. A plain
+`pip install .` fails, because pip cannot find Tabrion.
+
+The install needs pip 26.1 or later. Older pip versions (24.0 to 26.0, for example the pip 24.0 of a fresh
+Ubuntu 24.04 virtual environment) stop with `AssertionError: Candidate is not for this requirement`, because they
+cannot combine the constraint with the `tabrion[postgres,sqlalchemy]` extras. The upgrade step above avoids that.
 
 The wheel contains the built frontend. A build without it stops with a message that names
 `scripts/build_frontend.py`. For the same reason, `pip install git+https://…@<SHA>` does not work: the built frontend
 is not in Git.
 
-A tool such as `pipx` works too (`pipx install .` after the frontend build). Put the command on your `PATH`, or call
-it with the full path of the virtual environment. Check the installation:
+A tool such as `pipx` works too (`pipx install . --pip-args "-c constraints/tabrion-integration.txt"` after the
+frontend build). Put the command on your `PATH`, or call it with the full path of the virtual environment. Check the
+installation:
 
 ```bash
 ~/.venvs/tabrion-studio/bin/tabrion-studio --version   # or just tabrion-studio --version once it is on your PATH
@@ -42,8 +53,10 @@ Check out the new commit, build the frontend again and reinstall:
 ```bash
 git fetch && git checkout <new commit SHA>
 python scripts/build_frontend.py
-~/.venvs/tabrion-studio/bin/python -m pip install --force-reinstall --no-deps .
+~/.venvs/tabrion-studio/bin/python -m pip install --force-reinstall . -c constraints/tabrion-integration.txt
 ```
+
+Do not add `--no-deps`: a newer Studio commit can move the Tabrion pin, and `--no-deps` would keep the old Tabrion.
 
 Stop a running Studio first (`tabrion-studio --stop` in the project folder); a running server keeps the old code.
 

@@ -30,11 +30,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 import logging
+import os
+from pathlib import Path, PurePath
 from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
+from tabrion_studio.config.locations import lexical_target, safe_realpath
 from tabrion_studio.config.project import ProjectConfig, ProjectState, TrustError
 from tabrion_studio.config.schema import SCHEMA_VERSION, Issue, Profile, Settings, validate_profiles, validate_settings
 from tabrion_studio.config.secrets import SecretError, Secrets, SecretTarget, keyring_key
@@ -125,6 +128,32 @@ class Configuration:
     def resolve_secret(self, profile_id: str) -> str:
         """The secret of a profile, resolved now (STU-009 calls this when it connects); raises :class:`SecretError`."""
         return self.secrets.resolve(self.entry(profile_id).secret)
+
+    def resolve_entry_secret(self, entry: ProfileEntry) -> str:
+        """The secret of ``entry`` as read once: the registry connects to this entry's target with it (STU-009)."""
+        return self.secrets.resolve(entry.secret)
+
+    def database_file(self, profile_id: str) -> Path:
+        """The real path of a SQLite profile's file, checked now (STU-009 opens exactly this path).
+
+        A project profile goes through ``ProjectConfig.database_file`` (trust and containment again, review T-1;
+        :class:`TrustError`). A relative path of the user's own profile is relative to the configuration folder,
+        like its ``file:`` references; a link to a network or device path is refused (``studio.database_unsafe``).
+        """
+        entry = self.entry(profile_id)
+        if entry.profile.path is None:
+            raise SecretError("studio.profile_not_found")
+        if entry.source == "project":
+            return self.project.database_file(entry.profile.name)
+        target = lexical_target(entry.profile.path, PurePath(os.path.abspath(self.user.config_dir)))
+        real = None if target is None else safe_realpath(Path(target))
+        if real is None:
+            raise TrustError("studio.database_unsafe")
+        return real
+
+    def limits(self) -> Settings:
+        """The effective settings (the defaults where ``settings.toml`` is missing or not valid)."""
+        return self.user.settings()[0]
 
 
 def _json_body(raw: bytes, limit: int = _MAX_BODY) -> dict[str, Any] | None:

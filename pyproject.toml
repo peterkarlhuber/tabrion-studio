@@ -26,9 +26,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # tabrion is not a dependency yet: nothing uses its API so far. The first work package that does (STU-009) adds
-    # "tabrion[postgres,sqlalchemy,migrations]>=0.1,<0.2" after tabrion v0.1.0 (RC-8: no git pin and no
-    # pre-release specifier on master; docs/TODO.md TS-001, tests/security/test_dependencies.py).
+    # tabrion is not on PyPI: the range is here, the v0.1.0 commit is pinned by its full SHA in
+    # constraints/tabrion-integration.txt (RC-8, ADR 0009 amendment, docs/TODO.md TS-001).
+    "tabrion[postgres,sqlalchemy]>=0.1,<0.2",
     "psycopg[binary]>=3.2,<4",
     "fastapi>=0.115,<1",
     # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).
@@ -101,6 +101,7 @@ markers = [
     "process: starts real tabrion-studio processes (STU-002)",
     "security: workflow pins, supply chain and other security regressions",
     "packaging: needs a built wheel (TABRION_STUDIO_DIST)",
+    "postgres: needs a PostgreSQL server (TABRION_STUDIO_TEST_POSTGRES, a libpq URL of a database it may change)",
 ]
 filterwarnings = ["error"]
 
@@ -190,9 +191,25 @@ forbidden_modules = [
 
 [[tool.importlinter.contracts]]
 id = "config-below-api"
-name = "Configuration and trust (STU-006) never import the API, the app, the server, the CLI or security"
+name = "Configuration and trust (STU-006) never import the services, the API, the app, the server, the CLI or security"
 type = "forbidden"
 source_modules = ["tabrion_studio.config"]
+forbidden_modules = [
+    "tabrion_studio.services",
+    "tabrion_studio.api",
+    "tabrion_studio.app",
+    "tabrion_studio.server",
+    "tabrion_studio.instance",
+    "tabrion_studio.cli",
+    "tabrion_studio.security",
+    "tabrion_studio.request_log",
+]
+
+[[tool.importlinter.contracts]]
+id = "services-below-api"
+name = "The services (STU-009 connection registry) never import the API, the app, the server, the CLI or security"
+type = "forbidden"
+source_modules = ["tabrion_studio.services"]
 forbidden_modules = [
     "tabrion_studio.api",
     "tabrion_studio.app",
@@ -202,6 +219,14 @@ forbidden_modules = [
     "tabrion_studio.security",
     "tabrion_studio.request_log",
 ]
+
+[[tool.importlinter.contracts]]
+id = "engines-only-in-services"
+name = "Only the services open database engines: SQLAlchemy and psycopg stay out of the API, the app and the config"
+type = "forbidden"
+source_modules = ["tabrion_studio.api", "tabrion_studio.app", "tabrion_studio.server", "tabrion_studio.config"]
+forbidden_modules = ["sqlalchemy", "psycopg"]
+allow_indirect_imports = true
 
 [[tool.importlinter.contracts]]
 id = "security-below-app"

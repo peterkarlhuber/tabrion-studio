@@ -42,7 +42,7 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - name: Collect the test IDs (test-ids.txt)
         run: python -m pytest --collect-only -q -p no:cacheprovider > "$GITHUB_WORKSPACE/test-ids.txt" || true
       - name: Count the test IDs and write the job summary

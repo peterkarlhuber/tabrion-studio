@@ -55,6 +55,7 @@ from tabrion_studio.logs import configure_logging
 from tabrion_studio.paths import UnsafePathError, default_config_dir, remove_file
 from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
+from tabrion_studio.services.connections import ConnectionRegistry
 
 
 class PortUnavailableError(RuntimeError):
@@ -258,6 +259,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     )
     runtime = Runtime(
         config=configuration,
+        connections=ConnectionRegistry(configuration),
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),

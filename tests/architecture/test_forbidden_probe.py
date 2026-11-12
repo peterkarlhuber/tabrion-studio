@@ -30,7 +30,9 @@ LEVUVO_PREFIXES = ("orkexa", "axentra", "nodestro", "levuvo")
 NO_LEVUVO = "Tabrion Studio depends on no Levuvo platform (K-33)"
 NO_CLI = "The process model and the app never import the CLI"
 PROBLEMS = "Problem documents and logging (STU-004) import no other Studio layer"
-CONFIG = "Configuration and trust (STU-006) never import the API, the app, the server, the CLI or security"
+CONFIG = (
+    "Configuration and trust (STU-006) never import the services, the API, the app, the server, the CLI or security"
+)
 SECURITY = "The security package never imports the app, the server, the process model or the CLI"
 
 

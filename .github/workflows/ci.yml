@@ -3,9 +3,11 @@ name: CI
 # STU-018 (05 section 3.5, 07 section 4.1): every job name below is a mandatory check in .github/ci-manifest.json;
 # ci-ok.yml aggregates them and posts the commit status "ci-ok" on the pull request head. Actions are pinned by full
 # commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
-# them: "backend integration (PostgreSQL 17)" (STU-009) and "openapi in sync" (STU-008). The "e2e" job (Chromium
+# them: "openapi in sync" (STU-008, TD-011). The "e2e" job (Chromium
 # and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke, Firefox and WebKit.
 # Nothing here releases or publishes anything (G-R).
+# tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): every install of Studio takes the tabrion
+# commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py).
 on:
   push:
     branches: [master]
@@ -39,7 +41,7 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy --strict src tests scripts hatch_build.py
@@ -74,7 +76,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       # STU-001: the editable install on every OS (without the built frontend).
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip list
       # Unit, process-model (STU-002: start < 2 s, reuse, idle exit, shutdown), security and supply-chain tests.
       - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing
@@ -91,11 +93,69 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
       - run: pytest -m security -v -p no:cacheprovider
       # ruff's flake8-bandit rules (S) over the package and the scripts.
       - run: ruff check --select S src scripts hatch_build.py
+
+  backend-integration:
+    name: backend integration (PostgreSQL 17)
+    # STU-009 (03 section 8, TD-012): the PostgreSQL tests (marker "postgres") against a real server, as a role that
+    # owns its database but is no superuser, so only Studio's read-only settings stop the writes. Password
+    # authentication (SCRAM), so the M-1 tests (no libpq password fallback) mean something.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+        env:
+          # A throwaway server of this job only; the values are not secrets.
+          POSTGRES_PASSWORD: ci-admin-pw
+          POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+          POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+        ports:
+          # Published on the loopback address only (re-review 2, Info).
+          - 127.0.0.1:5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      TABRION_STUDIO_TEST_POSTGRES: postgresql://studio_owner:ci-owner-pw@127.0.0.1:5432/studio_test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - name: Create the test role and its database
+        run: |
+          python -I - <<'PY'
+          import psycopg
+          with psycopg.connect("postgresql://postgres:ci-admin-pw@127.0.0.1:5432/postgres", autocommit=True) as admin:
+              admin.execute("CREATE ROLE studio_owner LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD 'ci-owner-pw'")
+              admin.execute("CREATE DATABASE studio_test OWNER studio_owner")
+              print(admin.execute("SELECT version()").fetchone()[0])
+          PY
+      - run: pytest -m postgres -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/postgres.xml"
+      - name: Every PostgreSQL test ran and none was skipped
+        env:
+          JUNIT: ${{ runner.temp }}/postgres.xml
+        run: |
+          python -I - <<'PY'
+          import os, xml.etree.ElementTree as ET
+          root = ET.parse(os.environ["JUNIT"]).getroot()
+          suites = [root] if root.tag == "testsuite" else list(root)
+          tests = sum(int(s.get("tests", 0)) for s in suites)
+          skipped = sum(int(s.get("skipped", 0)) for s in suites)
+          bad = sum(int(s.get("failures", 0)) + int(s.get("errors", 0)) for s in suites)
+          print(f"{tests} tests, {skipped} skipped, {bad} failed")
+          assert tests >= 10 and skipped == 0 and bad == 0, (tests, skipped, bad)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"### PostgreSQL 17\n\n{tests} tests passed, none skipped\n")
+          PY
 
   frontend-lint:
     name: frontend lint and typecheck
@@ -167,7 +227,7 @@ jobs:
       - name: Install the wheel into a fresh environment
         run: |
           python -m venv "$RUNNER_TEMP/studio"
-          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
       # The Chromium build that the locked @playwright/test expects (U-5), with its system libraries.
       - run: npm run e2e:install
         working-directory: frontend
@@ -243,8 +303,11 @@ jobs:
       - run: pytest -m packaging tests/packaging -v -p no:cacheprovider
         env:
           TABRION_STUDIO_DIST: dist
-      # Fresh venv from the wheel, then run with every Node folder removed from PATH.
+      # Fresh venv from the wheel, then run with every Node folder removed from PATH. The script's pip reads the
+      # tabrion pin from PIP_CONSTRAINT (tabrion is not on PyPI, ADR 0009 amendment).
       - run: python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
+        env:
+          PIP_CONSTRAINT: ${{ github.workspace }}/constraints/tabrion-integration.txt
       - if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -274,7 +337,7 @@ jobs:
       - name: Install the wheel into a fresh environment
         run: |
           python -m venv "$RUNNER_TEMP/runtime"
-          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
           "$RUNNER_TEMP/runtime/bin/python" -m pip check
       - run: mkdir -p sbom && "$RUNNER_TEMP/runtime/bin/python" -I scripts/collect_licenses.py > sbom/licenses-python.json
       - name: License policy (Python runtime closure and npm lockfile)
@@ -335,7 +398,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: python -m pip install --upgrade pip
       # The runtime dependencies and the development toolchain.
-      - run: pip install "pip-audit==2.10.1" -e ".[dev]"
+      - run: pip install "pip-audit==2.10.1" -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip-audit --skip-editable --progress-spinner off
       - run: npm ci --no-audit --no-fund
         working-directory: frontend
@@ -354,5 +417,5 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-      - run: pip install -e ".[dev]"
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: mkdocs build --strict

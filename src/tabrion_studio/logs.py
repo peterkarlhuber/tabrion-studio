@@ -52,6 +52,8 @@ import traceback
 from types import TracebackType
 from typing import Any, TextIO
 
+from tabrion.errors import DbErrorRedactionFilter
+
 from tabrion_studio.paths import UnsafePathError, ensure_private_dir
 
 REDACTED = "[redacted]"
@@ -314,6 +316,7 @@ class RedactionFilter(logging.Filter):
         record.args = None
         if record.exc_info and record.exc_info[1] is not None:
             record.exc_text = safe_traceback(record.exc_info[1])
+            record.studio_safe_traceback = True
         elif record.exc_text:
             record.exc_text = _cap(scrub(record.exc_text), MAX_TRACEBACK)
         record.exc_info = None
@@ -404,6 +407,22 @@ class LogSetup:
         self.handlers.clear()
 
 
+class _DbMessageFilter(DbErrorRedactionFilter):
+    """tabrion's database-error filter for arguments and messages, after :class:`RedactionFilter` (TS-001).
+
+    Where :class:`RedactionFilter` replaced the exception with its types and frames (no message at all), that text is
+    kept as it is: tabrion's filter would cut it at the first source line that names ``DETAIL``. A traceback that
+    arrived as text (``exc_text``) goes through tabrion's filter as well.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        safe_traceback_text = record.exc_text if getattr(record, "studio_safe_traceback", False) else None
+        super().filter(record)
+        if safe_traceback_text is not None:
+            record.exc_text = safe_traceback_text
+        return True
+
+
 def configure_logging(
     log_dir: Path | None,
     name: str,
@@ -419,10 +438,16 @@ def configure_logging(
     root = logging.getLogger()
     setup = LogSetup(file=None, previous_level=root.level)
     redaction = RedactionFilter()
+    # Studio's filter first: it replaces an exception with its types and frames only (no message at all), stricter
+    # than tabrion's safe messages. tabrion's then rewrites database errors in the arguments and strips DETAIL,
+    # HINT, CONTEXT and parameter parts of the message (TS-001, STU-009). The other order leaves exception messages
+    # in exc_text (test_canary).
+    db_redaction = _DbMessageFilter()
     stream = sys.stderr if console is None else console
     console_handler = logging.StreamHandler(stream)
     console_handler.setLevel(console_level)
     console_handler.addFilter(redaction)
+    console_handler.addFilter(db_redaction)
     console_handler.setFormatter(TextFormatter())
     handlers: list[logging.Handler] = [console_handler]
     failure: str | None = None
@@ -438,6 +463,7 @@ def configure_logging(
         else:
             file_handler.setLevel(level)
             file_handler.addFilter(redaction)
+            file_handler.addFilter(db_redaction)
             file_handler.setFormatter(JsonFormatter())
             handlers.append(file_handler)
             setup.file = path
