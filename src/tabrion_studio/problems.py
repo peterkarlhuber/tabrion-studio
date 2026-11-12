@@ -551,6 +551,20 @@ CATALOG: dict[str, Entry] = {
         "The export took longer than 10 minutes and was stopped.",
         "Export fewer rows, or filter the query.",
     ),
+    # Diagnosis report (STU-025).
+    "studio.report_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Report not valid",
+        "A diagnosis report needs a format: markdown or json.",
+    ),
+    "studio.report_unavailable": Entry(
+        503,
+        ProblemKind.DATABASE,
+        "Report not made",
+        "Studio could not ask the server for the names the report hides, so it made no report.",
+        "Try again when the connection is free, or reconnect.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,
