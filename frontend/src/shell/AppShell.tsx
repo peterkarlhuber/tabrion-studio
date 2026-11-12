@@ -10,6 +10,7 @@ import {
   GitBranch,
   House,
   Settings,
+  Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +38,7 @@ const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/', key: 'nav.start', icon: <House /> },
   { path: '/connections', key: 'nav.connections', icon: <Database /> },
   { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
+  { path: '/diagnostics', key: 'nav.diagnostics', icon: <Stethoscope /> },
 ];
 
 /** The window title: `[PROD] name – Tabrion Studio` with a connection, else the page title. */
