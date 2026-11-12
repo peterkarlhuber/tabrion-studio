@@ -1080,7 +1080,7 @@ describe('the shared connection state of STU-008 (#42)', () => {
       },
       beginConnect: () => ++connects,
       isLatestConnect: (request) => request === connects,
-      latestConnect: () => connects,
+      headerVersion: () => connects,
     };
     return { value, state, confirmed };
   }
