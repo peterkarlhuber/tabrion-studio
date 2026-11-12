@@ -56,6 +56,7 @@ from tabrion_studio.paths import UnsafePathError, default_config_dir, remove_fil
 from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.services.queries import QueryEngine
 
 
 class PortUnavailableError(RuntimeError):
@@ -257,9 +258,11 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         project=ProjectConfig(options.project, options.state_dir, project_key(options.project), config_dir),
         user=UserConfig(config_dir),
     )
+    registry = ConnectionRegistry(configuration)
     runtime = Runtime(
         config=configuration,
-        connections=ConnectionRegistry(configuration),
+        connections=registry,
+        queries=QueryEngine(registry, configuration.limits),
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),

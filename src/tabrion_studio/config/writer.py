@@ -124,7 +124,7 @@ def dump_settings(settings: Settings) -> bytes:
             lines.append(f"{key} = {_value(value)}\n")
     limits = [
         (key, getattr(settings, key))
-        for key in ("max_rows", "statement_timeout_ms")
+        for key in ("max_rows", "statement_timeout_ms", "max_result_mb")
         if getattr(settings, key) != getattr(defaults, key)
     ]
     if limits:

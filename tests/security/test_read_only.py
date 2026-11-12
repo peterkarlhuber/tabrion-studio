@@ -10,10 +10,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 import hashlib
+import itertools
 import os
 from pathlib import Path
 import shutil
 import sqlite3
+import time
 from typing import Any
 
 import pytest
@@ -25,6 +27,8 @@ from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Sett
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import scrub
 from tabrion_studio.services import connections as connections_module
+from tabrion_studio.services import readonly as readonly_module
+from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.connections import (
     ConnectionRegistry,
     HealthError,
@@ -34,7 +38,8 @@ from tabrion_studio.services.connections import (
     driver_options,
     studio_profile,
 )
-from tabrion_studio.services.readonly import StatementRefused, check_statement, sqlite_authorizer
+from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
+from tabrion_studio.services.sqltext import placeholders
 
 pytestmark = pytest.mark.security
 
@@ -80,6 +85,16 @@ class Source:
 
     def limits(self) -> Settings:
         return self.settings
+
+
+def below_the_check(connection: OpenConnection, sql: str) -> None:
+    """``sql`` in one ``Database.read()`` of ``connection``, past Studio's text check: STU-T-010 shows that the
+    database, not the check, is the boundary."""
+    with (
+        connection._read() as transaction,
+        tabrion_compat.stream(transaction, sql, {}, cancel=tabrion_compat.Cancel(), server_side=False) as cursor,
+    ):
+        cursor.fetch(1)
 
 
 def _sha(path: Path) -> str:
@@ -144,12 +159,14 @@ WRITES = [
 def test_stu_t_010_a_sqlite_write_fails_in_the_database(
     sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source], sqlite_file: Path, sql: str
 ) -> None:
-    """The statement passes Studio's text check and is refused by SQLite itself (not by a text filter)."""
+    """SQLite itself refuses the statement, sent below Studio's text check (which refuses all but the pragmas too)."""
     connection, _, _ = sqlite_connection
     before = _sha(sqlite_file)
-    assert check_statement(sql)
+    if not sql.startswith("PRAGMA"):
+        with pytest.raises(StatementRefused):
+            check_statement(sql)
     with pytest.raises(TabrionError) as raised:
-        connection.fetch(sql)
+        below_the_check(connection, sql)
     assert raised.value.classification is not None
     assert raised.value.classification.kind.value in ("read_only", "permission")
     assert _sha(sqlite_file) == before
@@ -225,7 +242,8 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("COMMIT; INSERT INTO t VALUES (1)", "studio.statement_multiple"),
         ("BEGIN", "studio.statement_transaction"),
         ("start transaction read write", "studio.statement_transaction"),
-        ("/* a /* nested */ comment */ COMMIT", "studio.statement_transaction"),
+        ("/* a /* nested */ comment */ COMMIT", "studio.statement_refused"),  # SQLite does not nest: no agreement
+        ("/* a /* nested */ comment */ SELECT 1", "studio.statement_refused"),
         ("-- x\n  ROLLBACK", "studio.statement_transaction"),
         ("END", "studio.statement_transaction"),
         ("SAVEPOINT a", "studio.statement_transaction"),
@@ -277,6 +295,24 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("SELECT pg_notify('channel', 'x')", "studio.statement_refused"),
         ("SELECT pg_advisory_lock(1)", "studio.statement_refused"),
         ("SELECT pg_try_advisory_lock_shared(1, 2)", "studio.statement_refused"),
+        # M-1, M-2 and I-2 of stu-011-review.md: first words outside the allowlist.
+        ("DECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(5)", "studio.statement_refused"),
+        ("declare c binary no scroll cursor for select 1", "studio.statement_refused"),
+        ("FETCH ALL FROM c", "studio.statement_refused"),
+        ("MOVE FORWARD 1 IN c", "studio.statement_refused"),
+        ("CLOSE ALL", "studio.statement_refused"),
+        ("SET statement_timeout = 0", "studio.statement_refused"),
+        ("SET LOCAL lock_timeout = 0", "studio.statement_refused"),
+        ("set search_path to public, pg_catalog", "studio.statement_refused"),
+        ("DEALLOCATE ALL", "studio.statement_refused"),
+        ("INSERT INTO part VALUES (1)", "studio.statement_refused"),
+        ("CREATE TEMP TABLE t (x int)", "studio.statement_refused"),
+        ("CALL p()", "studio.statement_refused"),
+        ("GRANT SELECT ON part TO public", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE DELETE FROM part", "studio.statement_refused"),
+        ("EXPLAIN (ANALYZE, BUFFERS) INSERT INTO part VALUES (1)", "studio.statement_refused"),
+        ("EXPLAIN DECLARE c CURSOR FOR SELECT 1", "studio.statement_refused"),
+        ("EXPLAIN", "studio.statement_refused"),
     ],
 )
 def test_statements_studio_refuses(sql: str, code: str) -> None:
@@ -291,8 +327,15 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
         "SELECT 1",
         "select ';' as semicolon;",
         "WITH x AS (SELECT 1) SELECT * FROM x",
-        "SET search_path TO app",
         "EXPLAIN SELECT 1",
+        "EXPLAIN (ANALYZE, FORMAT JSON) SELECT 1",
+        "EXPLAIN QUERY PLAN SELECT 1",
+        "explain analyze verbose with x as (select 1) select * from x",
+        "(SELECT 1) UNION (SELECT 2)",
+        "TABLE part",
+        "VALUES (1), (2)",
+        "SHOW statement_timeout",
+        "PRAGMA table_list",
         "/* BEGIN */ SELECT 'COMMIT'",
         # Not a call: a literal, a comment, a column and the transaction-level advisory lock.
         "SELECT 'set_config(' AS text",
@@ -306,6 +349,74 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
 )
 def test_statements_studio_passes_on(sql: str) -> None:
     assert check_statement(sql)
+
+
+# R-H1 of the delta re-review (stu-011-review.md): the first word comes from the lexer, in every reading.
+
+#: The reviewer's probes: PostgreSQL ends ``--`` at ``\r`` too, so the server runs the statement before ``/*`` and
+#: a line-based scan saw ``show``; SQLite does not nest block comments, so it runs the ``DELETE``.
+R_H1_PROBES = [
+    "-- x\rDECLARE c CURSOR WITH HOLD FOR SELECT pg_sleep(6) /*\nshow */",
+    "-- x\rDECLARE heldc CURSOR WITH HOLD FOR SELECT 1 /*\nshow */",
+    "-- x\rDO $$BEGIN PERFORM pg_advisory_lock(4242); END$$ /*\nshow */",
+    "-- x\rCOPY (SELECT 'rr18d') TO '/tmp/rr18d_copy.txt' /*\nshow */",
+    "-- x\rCOMMIT /*\nshow */",
+    "-- x\rSET statement_timeout = 0 /*\nshow */",
+    "-- x\rDELETE FROM part /*\nselect */",
+    "/* /* */ DELETE FROM part -- */ select\n",
+    "/* /* */ VACUUM -- */ select\n",
+    "-- x\r\nSELECT 1 -- ok\n".replace("SELECT 1", "DELETE FROM part"),
+    "\u00a0DELETE FROM part",  # a non-ASCII space is not white space to either server
+    '"select" 1',
+    "[select] 1",
+    "`select` 1",
+]
+
+
+@pytest.mark.parametrize("sql", R_H1_PROBES)
+def test_r_h1_the_first_word_cannot_hide_behind_a_comment(sql: str) -> None:
+    with pytest.raises(StatementRefused) as raised:
+        check_statement(sql)
+    assert raised.value.code in ("studio.statement_refused", "studio.statement_transaction", "studio.statement_empty")
+    assert first_word(sql) not in readonly_module._FIRST_WORDS
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "-- a comment\r\nSELECT 1",
+        "-- a comment\nSELECT 1 -- and one at the end",
+        "/* one */ /* two */ (SELECT 1)",
+        "\t\f\vSELECT 1",
+        "EXPLAIN /* plan */ SELECT 1",
+    ],
+)
+def test_r_h1_comments_that_all_readings_agree_on_still_pass(sql: str) -> None:
+    assert check_statement(sql)
+
+
+#: Pieces whose concatenations cover the lexers' corners: both line ends, nested and open comments, quotes.
+_PIECES = ("--", "/*", "*/", "\r", "\n", " ", "select", "delete", "'", '"', "$$", "(", "[", "x")
+
+
+def test_r_h1_the_checked_first_word_is_the_lexers_in_every_reading() -> None:
+    """Property: whatever text passes the check starts, in every reading, with the same allowed word."""
+    passed = 0
+    for size in range(1, 6):
+        for parts in itertools.product(_PIECES, repeat=size):
+            sql = "".join(parts)
+            try:
+                check_statement(sql)
+            except StatementRefused:
+                continue
+            passed += 1
+            starts = set()
+            for backslash, sqlite in readonly_module._READINGS:
+                tokens = readonly_module._tokens(sql, backslash_strings=backslash, sqlite=sqlite)
+                tokens = list(itertools.dropwhile(lambda token: token == "(", tokens))
+                starts.add(tokens[0] if tokens else "")
+            assert starts == {"select"}, sql
+    assert passed > 100  # the property was exercised
 
 
 #: R2-I2 of re-review 2: each text hides the call under one way of lexing '...' and shows it under the other.
@@ -325,6 +436,46 @@ def test_r2_i2_a_literal_cannot_hide_a_call_from_either_lexing(sql: str) -> None
     assert raised.value.code == "studio.statement_refused"
 
 
+#: R2-L1 of delta re-review 2: texts at the API's size cap (512 k characters) that made the lexer quadratic.
+LONG_COMMENT_TEXTS = {
+    "line comments": "select 1" + "--\n" * 174_000,
+    "carriage returns": "select 1" + "-- \r" * 131_000,
+    "comment lines": "-- a comment line\n" * 29_000 + "select 1",
+}
+
+
+@pytest.mark.parametrize("name", list(LONG_COMMENT_TEXTS))
+def test_r2_l1_line_comments_are_lexed_in_linear_time(name: str) -> None:
+    sql = LONG_COMMENT_TEXTS[name]
+    assert len(sql) <= 512 * 1024
+    started = time.perf_counter()
+    assert check_statement(sql) == sql.strip()
+    placeholders(sql, "postgresql")
+    placeholders(sql, "sqlite")
+    assert time.perf_counter() - started < 2.0  # about 0.3 s; it was 10 s before the fix
+
+
+@pytest.mark.parametrize(
+    ("sql", "postgresql", "sqlite"),
+    [
+        ("select 1 -- a\r\nfrom t", ["select", "1", "from", "t"], ["select", "1", "from", "t"]),
+        ("select --\n--\r 1", ["select", "1"], ["select"]),
+        ("select -- a\rb\n1", ["select", "b", "1"], ["select", "1"]),
+        ("select 1 --", ["select", "1"], ["select", "1"]),
+    ],
+)
+def test_r2_l1_where_line_comments_end(sql: str, postgresql: list[str], sqlite: list[str]) -> None:
+    """PostgreSQL ends ``--`` at a line feed or a carriage return, SQLite only at a line feed."""
+    assert readonly_module._tokens(sql, backslash_strings=False) == postgresql
+    assert readonly_module._tokens(sql, backslash_strings=False, sqlite=True) == sqlite
+
+
+def test_r2_i2_a_nul_character_is_refused() -> None:
+    with pytest.raises(StatementRefused) as raised:
+        check_statement("select\0 1")
+    assert raised.value.code == "studio.statement_refused"
+
+
 def test_stu_t_011_every_environment_gets_a_read_only_profile() -> None:
     """Studio 1.0 cannot write: no environment, prod included, gets a writable tabrion profile."""
     for environment in ("dev", "test", "prod"):
@@ -339,7 +490,7 @@ def test_stu_t_011_every_environment_gets_a_read_only_profile() -> None:
 
 def test_stu_t_012_a_handle_offers_no_way_to_write() -> None:
     public = {name for name in dir(OpenConnection) if not name.startswith("_")}
-    assert public == {"close", "fetch", "health", "read_only", "to_dict"}
+    assert public == {"close", "fetch", "health", "prepare", "read_only", "stream", "to_dict"}
     assert not any(hasattr(module, "transaction") for module in (connections_module,))
 
 
@@ -548,9 +699,10 @@ def test_stu_t_010_a_postgres_write_fails_in_the_database(
     pg: tuple[OpenConnection, sqlalchemy.Engine], sql: str
 ) -> None:
     connection, admin = pg
-    assert check_statement(sql)
+    with pytest.raises(StatementRefused):
+        check_statement(sql)
     with pytest.raises(TabrionError):
-        connection.fetch(sql)
+        below_the_check(connection, sql)
     assert _rows(admin) == 1
 
 

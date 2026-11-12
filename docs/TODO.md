@@ -42,6 +42,7 @@
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
+| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
@@ -344,7 +345,8 @@ merge after OA-004.
 | TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
-| TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
+| TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
+| TABRION STU-010, STU-012..STU-015 | Explorer, SQL editor, data viewer, diagnostics, migration status | P1 | STU-009, STU-011, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
@@ -568,7 +570,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **The CI job `backend integration (PostgreSQL 17)`** (same workflow commit, added to `.github/ci-manifest.json`):
   a `postgres:17.10` service pinned by digest, a non-superuser role that owns its database, `pytest -m postgres`
   with `TABRION_STUDIO_TEST_POSTGRES`, and a check that every PostgreSQL test ran and none was skipped.
-- **Binding for STU-011:** user SQL goes through `services.readonly.check_statement` and `OpenConnection.fetch`
+- **Binding for STU-011 (kept in the STU-011 draft, `docs/architecture/queries.md`):** user SQL goes through `services.readonly.check_statement` and `OpenConnection.fetch`
   (prepared statements: the server refuses several commands, H-1), with one `Database.read()` per statement, and
   always through `ConnectionRegistry.get` (`fetch` does not check the handle again by itself; review I-5). SQLAlchemy
   `text()` treats `:name` as a bind parameter, also inside string literals: send user SQL with `exec_driver_sql` or
@@ -580,6 +582,58 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   Studio connection (M-1). Other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`,
   `PGSSLROOTCERT`, ...) still apply to what the URL leaves out; a project file cannot set them. Decide whether
   Studio should clear them too.
+
+### TD-013 · STU-011 query engine on tabrion 0.1: what changes with tabrion 0.2
+
+- **Priority:** P1 High · **Status:** Open (STU-011 done in PR #18) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to
+  §5.6, backlog TAB-033/TAB-042, `docs/architecture/queries.md`
+- **Built on tabrion 0.1:** STU-011 (and STU-010) depend on TAB-042, tabrion 0.2 with `Transaction.stream`,
+  `Transaction.cancel`, `tabrion.Result`/`Column` and `Database.inspector()`. Until then
+  `services/tabrion_compat.py` builds stream, cancel and column metadata from `Database.read()` and
+  `Transaction.connection` (a psycopg server-side cursor, `cancel_safe()`, `sqlite3` `interrupt()`, the type name by
+  OID). It is the only module that touches the driver (`tests/architecture/test_compat_boundary.py`).
+- **With tabrion 0.2:** replace `tabrion_compat.stream` with `Transaction.stream`, `Cancel` with
+  `Transaction.cancel`, `Column` with `tabrion.Column`; keep the STU-011 tests (STU-T-018..020) unchanged as the
+  acceptance of the swap. Check that 0.2's `stream` takes the driver's text without `text()` (I-2), or keep Studio's
+  `sqltext.bind` in front of it, and that a canceled connection leaves the pool on both engines (H-1 of
+  `tab-033-review.md`; Studio's `_discard` and its tests `test_l2_*`, `test_*h1_*` are the acceptance). Replace
+  `tabrion_compat.reset_session` (check-in `RESET ALL` with Studio's settings as startup options, M-2 of
+  `stu-011-review.md`) with tabrion's own session reset if 0.2 has one, and keep `test_pg_m2_*`.
+- **Fix round of `stu-011-review.md` (done in the STU-011 draft):** M-1/M-2/I-2 allowlist of first words in
+  `check_statement` and the check-in reset; M-3 fetches within a 2 MB budget (a single value still loads in full:
+  only the database's limit bounds it; the data viewer's "load in full" is the way to large values); L-1
+  `sqltext.is_bound` in `stream`; L-2 tests of both cancel guards; L-3 one cancel worker per query, which keeps
+  asking once a second after 3 s (closing a running connection from another thread is safe in neither driver, so a
+  statement that ignores the cancel still holds its slot until the driver returns); I-3 `max_result_mb` (1 to 200).
+  Open from the review: I-1 (bind a query to its session if Studio ever has several sessions) and I-4 (the SSE
+  generator polls every 50 ms; a condition would avoid it), both for STU-012, by 2026-12-15.
+- **Delta re-review of `stu-011-review.md` (head 170aeaa, done in the STU-011 draft):** R-H1 the first word, the
+  control checks and the cursor choice come from the lexer (`readonly._lex`) in three readings (PostgreSQL with and
+  without backslash escapes, SQLite), which must agree; `--` ends at `\r` in PostgreSQL, SQLite block comments do not
+  nest. The check-in reset also runs `CLOSE ALL` and `pg_advisory_unlock_all()`. R-M1 the fetch budget follows the
+  largest row so far, grows at most twice per fetch and counts nested values. R-I1 a `search_path` or
+  `transaction_timeout` in the session settings is refused by `startup_options` until it can quote the one and check
+  the server version for the other like tabrion (with tabrion 0.2's session reset, TD-013). Open: R-I2 (`_expire`
+  may report a user cancel shortly before the timeout as `db.timeout`; cosmetic, STU-012 by 2026-12-15).
+- **Delta re-review 2 of `stu-011-review.md` (head 70ca2f9, accepted):** R2-L1 done (the lexer and the placeholder
+  scan skip white space and `--` comments with one possessive regular expression; a timing test at the API cap),
+  R2-I2 done (NUL refused), R2-I1 done (the check-in reset also runs `SET SESSION AUTHORIZATION DEFAULT` and
+  `RESET ROLE`, which `RESET ALL` leaves alone; `test_pg_r2_i1_*`). R2-I3 and R2-I4 need nothing (the server rejects
+  those texts).
+- **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
+  cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
+  by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
+  its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell (10 MB, 03
+  §5.3) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost warning for prod profiles come with STU-012/013.
+- **Connections and running queries:** closing a connection (`DELETE /api/connections`, a stale profile) does not
+  cancel its running queries; they end at their timeout or with the connection's error. A connection's pool has 2
+  connections, shared by its queries (at most 2), the explorer and the health check; a third user waits up to the
+  pool timeout (10 s). Decide with STU-012 whether closing should cancel first and whether the pool should grow.
+  Such a query's session is closed when it comes back, not pooled (the unclosed-database ResourceWarning of
+  `stu-011-leak-delta-review.md`; tabrion 0.2's close semantics close the last race of its F-5).
+- **The page's heartbeat:** the earlier plan let STU-011 replace the polling heartbeat with SSE. The STU-011 stream
+  is per query (behind the session, CSRF and Origin checks like every API route); moving the heartbeat onto a
+  long-lived stream is for STU-012, when the page reads streams.
 
 ### TD-011 · STU-008 parts that wait for STU-009 or a later package
 

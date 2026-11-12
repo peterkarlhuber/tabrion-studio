@@ -7,6 +7,49 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-011 (on tabrion 0.1 behind `services/tabrion_compat.py` until tabrion 0.2):
+  - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
+    (server-sent events), `GET /api/queries/{id}/rows` and `POST /api/queries/{id}/cancel`.
+  - One checked statement per `Database.read()`, through `ConnectionRegistry.get`; `:name` parameters are bound by
+    the driver (psycopg `%(name)s`, sqlite3 `:name`), never through SQLAlchemy `text()`, so a colon inside a literal
+    stays text.
+  - Limits of 03 section 5.3: 1 000 rows by default up to the `max_rows` setting, 20 MB per result, 64 KB per cell,
+    the profile's timeout for the whole query, 4 queries at a time (2 per connection), the last 16 results kept.
+    PostgreSQL queries are read through a server-side cursor.
+  - Cancel within a second (PostgreSQL `cancel_safe()`, SQLite `interrupt()`); a canceled PostgreSQL connection
+    leaves the pool.
+  - No SQL text, parameter value or row in the log.
+  - Review `stu-011-review.md` (and H-1 of `tab-033-review.md`):
+    - M-1, M-2, I-2: `check_statement` allows a statement only by its first word (`SELECT`, `WITH`, `VALUES`,
+      `TABLE`, `EXPLAIN` of a query, `SHOW`, `PRAGMA`), so `DECLARE ... WITH HOLD`, `FETCH`, `MOVE`, `CLOSE`, `SET`
+      and every write are refused before the database. PostgreSQL connections get Studio's session settings as
+      startup options and run `RESET ALL` on check-in.
+    - M-3: a fetch loads about 2 MB at most (one row first, then as many as fit).
+    - L-1: `OpenConnection.stream` checks the driver text it executes.
+    - L-2, H-1: a connection that got a cancel is invalidated on both engines (closed if that fails), with tests of
+      both cancel guards.
+    - L-3: one cancel worker per query. I-3: the byte cap is the new `max_result_mb` setting (20 MB, up to 200 MB).
+  - Delta re-review of `stu-011-review.md`:
+    - R-H1: the first word of a statement comes from the lexer, read the way PostgreSQL (with and without backslash
+      escapes) and SQLite lex it; the readings must agree. `-- x\r<statement> /*\nshow */` and a SQLite nested
+      comment can no longer hide a statement. The check-in reset also closes held cursors and session-level advisory
+      locks.
+    - R-M1: the fetch budget follows the largest row so far, grows at most twice per fetch and counts arrays and json
+      in full.
+    - R-I1: a `search_path` or `transaction_timeout` session setting is refused at startup (Studio sets neither).
+  - Delta re-review 2 of `stu-011-review.md` (head 70ca2f9):
+    - R2-L1: white space and `--` comments are skipped with one regular expression, so checking a text with many line
+      comments is linear (512 k characters of `--\n`: 10 s before, about 0.2 s now); the same for the placeholder
+      scan.
+    - R2-I2: a text with a NUL character is refused.
+    - R2-I1: the check-in reset also takes back a role change (`SET SESSION AUTHORIZATION DEFAULT`, `RESET ROLE`),
+      which `RESET ALL` keeps.
+  - Delta review `stu-011-leak-delta-review.md`:
+    - A session that a running statement returns after its connection was closed is closed at check-in, not left
+      open in the disposed pool (the unclosed-database ResourceWarning); the listener holds its Database weakly.
+    - F-4: the cancel hook is detached before the cursor closes, so a late cancel can no longer hit the server
+      cursor's `CLOSE` and leave it open (the flaky `ServerCursor ... deleted while still open` warning); a cursor
+      that cannot close is closed with its connection.
 - STU-009 (tabrion v0.1.0 pinned by full SHA):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no

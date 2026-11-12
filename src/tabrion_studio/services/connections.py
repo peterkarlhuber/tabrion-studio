@@ -30,14 +30,16 @@ import contextlib
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
+import re
 import secrets
 import sqlite3
 import threading
 import time
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
+import weakref
 
 import sqlalchemy
-from sqlalchemy import event, text
+from sqlalchemy import event
 import tabrion
 from tabrion.errors import ConfigurationError, UnsafePath
 from tabrion.postgres import SessionSettings
@@ -45,7 +47,10 @@ from tabrion.postgres import SessionSettings
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, target_fingerprint
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import register_secret
-from tabrion_studio.services.readonly import check_statement, sqlite_authorizer
+from tabrion_studio.services import tabrion_compat
+from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
+from tabrion_studio.services.sqltext import BoundStatement, Dialect, bind, is_bound
+from tabrion_studio.services.tabrion_compat import Cancel, ResultCursor
 
 __all__ = [
     "MAX_OPEN",
@@ -58,6 +63,15 @@ __all__ = [
 ]
 
 logger = logging.getLogger("tabrion_studio.connections")
+_T = TypeVar("_T")
+#: Statements a PostgreSQL cursor (``DECLARE ... CURSOR FOR``) can hold; others (``EXPLAIN``, ``SHOW``, ...) use a
+#: plain cursor. The first word comes from the same lexer as in ``check_statement`` (R-H1 of the delta re-review).
+_CURSOR_WORDS = frozenset({"select", "with", "values", "table"})
+
+
+def _cursor_query(statement: str) -> bool:
+    return first_word(statement) in _CURSOR_WORDS
+
 
 MAX_OPEN = 8
 APPLICATION_NAME = "tabrion-studio"
@@ -127,7 +141,42 @@ def connection_url(profile: Profile, password: str | None, database_file: Path |
 _NO_PASSFILE = str(Path(__file__) / "no-passfile")
 
 
-def driver_options(password: str | None) -> dict[str, Any]:
+#: The session settings tabrion sets on a new connection (``SessionSettings`` field -> setting), also given to the
+#: server as startup options, so that ``RESET ALL`` on check-in restores them (M-2 of ``stu-011-review.md``).
+_STARTUP_SETTINGS = {
+    "statement_timeout_ms": "statement_timeout",
+    "lock_timeout_ms": "lock_timeout",
+    "idle_in_transaction_timeout_ms": "idle_in_transaction_session_timeout",
+    "timezone": "TimeZone",
+}
+#: Settings that cannot go into startup options as they are (R-I1 of the delta re-review): tabrion quotes
+#: ``search_path`` as identifiers, and sets ``transaction_timeout`` only on servers that know it (PostgreSQL 17),
+#: while a server refuses an unknown startup parameter. Studio sets neither; a session with one is refused until the
+#: startup options can match tabrion (TD-013).
+_NOT_AT_STARTUP = ("search_path", "transaction_timeout_ms")
+_STARTUP_VALUE = re.compile(r"[A-Za-z0-9_/+-]{1,64}")
+
+
+def startup_options(session: SessionSettings) -> str:
+    """libpq ``options`` for ``session`` and ``default_transaction_read_only=on``: the values ``RESET ALL`` gives back.
+
+    Only plain values (numbers, names like ``UTC``): anything else would need libpq's escaping, so it is refused.
+    """
+    if any(getattr(session, name) is not None for name in _NOT_AT_STARTUP):
+        raise RegistryError("studio.connection_config")
+    pairs = [("default_transaction_read_only", "on")]
+    for name, setting in _STARTUP_SETTINGS.items():
+        value = getattr(session, name)
+        if value is None:
+            continue
+        text = str(value)
+        if _STARTUP_VALUE.fullmatch(text) is None:
+            raise RegistryError("studio.connection_config")
+        pairs.append((setting, text))
+    return " ".join(f"-c {setting}={value}" for setting, value in pairs)
+
+
+def driver_options(password: str | None, session: SessionSettings | None = None) -> dict[str, Any]:
     """psycopg connection options of every Studio PostgreSQL connection; constants, not connection targets.
 
     * ``prepare_threshold=0``: every statement goes through the extended query protocol (a prepared statement), so the
@@ -135,8 +184,13 @@ def driver_options(password: str | None) -> dict[str, Any]:
       ``stu-009-review.md``, ``standard_conforming_strings = off``).
     * ``passfile`` points to a path that cannot exist, and without a password ``password`` is the empty string, which
       keeps libpq from reading ``PGPASSWORD``, ``PGPASSFILE``, ``~/.pgpass`` or a service file's password (M-1).
+    * ``options`` and ``application_name``: Studio's session settings as startup values (:func:`startup_options`),
+      which the check-in reset (``tabrion_compat.reset_session``) restores.
     """
     options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
+    if session is not None:
+        options["options"] = startup_options(session)
+        options["application_name"] = APPLICATION_NAME
     if password is None:
         options["password"] = ""
     return options
@@ -164,6 +218,28 @@ def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
 def _install_authorizer(dbapi_connection: Any, _record: Any) -> None:
     if isinstance(dbapi_connection, sqlite3.Connection):
         dbapi_connection.set_authorizer(sqlite_authorizer)
+
+
+def _close_after_dispose(db: tabrion.Database) -> Callable[[Any, Any], None]:
+    """Pool ``checkin`` listener: a session that comes back after ``db.close()`` is closed, not pooled.
+
+    ``Database.close()`` is ``engine.dispose()``, which closes only the idle sessions. One that a running statement
+    still holds goes back, at check-in, into the disposed pool, which nothing closes: its driver connection stays
+    open until garbage collection (``ResourceWarning: unclosed database`` in whichever test happens to collect it).
+    Closing it at check-in releases it as soon as the statement ends.
+
+    A weak reference (F-2 of ``stu-011-leak-delta-review.md``): the engine's pool holds this listener, so a strong
+    one would make ``db -> engine -> pool -> listener -> db`` a cycle that only the cyclic garbage collector frees. A
+    Database that is gone counts as closed.
+    """
+    database = weakref.ref(db)
+
+    def close_if_disposed(dbapi_connection: Any, connection_record: Any) -> None:
+        current = database()
+        if dbapi_connection is not None and (current is None or current.closed):
+            connection_record.invalidate()
+
+    return close_if_disposed
 
 
 @dataclass
@@ -199,12 +275,55 @@ class OpenConnection:
         with self._db.read(timeout=self.timeout_s) as transaction:
             yield transaction
 
-    def fetch(self, sql: str, params: Mapping[str, Any] | None = None) -> list[tuple[Any, ...]]:
-        """The rows of one read-only statement; a refused one raises ``StatementRefused``."""
+    def prepare(self, sql: str, params: Mapping[str, object] | None = None) -> BoundStatement:
+        """The one checked statement of ``sql`` with its parameters in the driver's style.
+
+        Raises ``StatementRefused`` (``check_statement``) or ``ParameterError`` (``sqltext.bind``). Never through
+        SQLAlchemy ``text()``, which reads ``:name`` inside literals too (I-2 of ``stu-009-review.md``).
+        """
         statement = check_statement(sql)
-        with self._read() as transaction:
-            rows = transaction.fetch_all(text(statement), params)
-        return [tuple(row) for row in rows]
+        return bind(statement, params, self._dialect)
+
+    @property
+    def _dialect(self) -> Dialect:
+        return "sqlite" if self.engine == "sqlite" else "postgresql"
+
+    def stream(
+        self,
+        statement: BoundStatement,
+        consume: Callable[[ResultCursor], _T],
+        *,
+        cancel: Cancel | None = None,
+    ) -> _T:
+        """Run ``statement`` in its own ``Database.read()`` and return ``consume(cursor)`` (STU-011).
+
+        One statement per transaction (03 section 5.1); the text is checked again here, so no caller can skip
+        :meth:`prepare`'s check. ``cancel`` stops it from another thread (:mod:`.tabrion_compat`).
+        """
+        # L-1 of stu-011-review.md: check what is executed, the driver text, not only the text it came from.
+        if not is_bound(statement, check_statement(statement.sql), self._dialect):
+            raise StatementRefused("studio.statement_refused")
+        hook = cancel if cancel is not None else Cancel()
+        server_side = self.engine != "sqlite" and _cursor_query(statement.sql)
+        with (
+            self._read() as transaction,
+            tabrion_compat.stream(
+                transaction, statement.driver_sql, statement.values, cancel=hook, server_side=server_side
+            ) as cursor,
+        ):
+            return consume(cursor)
+
+    def fetch(self, sql: str, params: Mapping[str, object] | None = None) -> list[tuple[Any, ...]]:
+        """All rows of one read-only statement, for Studio's own small queries; a refused one raises
+        ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps)."""
+
+        def every_row(cursor: ResultCursor) -> list[tuple[Any, ...]]:
+            rows: list[tuple[Any, ...]] = []
+            while batch := cursor.fetch(500):
+                rows += batch
+            return rows
+
+        return self.stream(self.prepare(sql, params), every_row)
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))
@@ -246,9 +365,10 @@ class ConnectionRegistry:
             if password is not None:
                 register_secret(password)
         url = connection_url(profile, password, database_file)
-        options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password)}
+        settings = studio_profile(profile, limits)
+        options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password, settings.postgres)}
         try:
-            db = tabrion.Database.from_url(url, profile=studio_profile(profile, limits), engine_options=options)
+            db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
         except FileNotFoundError:
             raise RegistryError("studio.database_missing") from None
         except UnsafePath:
@@ -259,6 +379,12 @@ class ConnectionRegistry:
             ) from None
         if db.dialect == "sqlite":
             event.listen(db.engine, "connect", _install_authorizer)
+        else:
+            # M-2 of stu-011-review.md: no session setting outlives the statement that made it (after tabrion's own
+            # check-in listener, which gives psycopg's read_only back to the session default).
+            event.listen(db.engine, "checkin", tabrion_compat.reset_session)
+        # Last of the check-in listeners: a session that a statement returns after close() leaves with the pool.
+        event.listen(db.engine, "checkin", _close_after_dispose(db))
         timeout = profile.statement_timeout_ms or (
             PROD_STATEMENT_TIMEOUT_MS if profile.environment == "prod" else limits.statement_timeout_ms
         )

@@ -39,6 +39,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from tabrion_studio._version import __version__
 from tabrion_studio.api.config import Configuration, add_config_routes
 from tabrion_studio.api.connections import add_connection_routes
+from tabrion_studio.api.queries import add_query_routes
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
 from tabrion_studio.logs import register_secret
@@ -48,6 +49,7 @@ from tabrion_studio.security.access import AccessMiddleware
 from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.services.queries import QueryEngine
 
 _logger = logging.getLogger("tabrion_studio.app")
 
@@ -82,6 +84,8 @@ class Runtime:
     config: Configuration | None = None
     #: The open, read-only database connections (STU-009); None serves no connection routes.
     connections: ConnectionRegistry | None = None
+    #: The query engine on those connections (STU-011); None serves no query routes.
+    queries: QueryEngine | None = None
 
 
 def _problem(code: str) -> Response:
@@ -134,6 +138,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+                if runtime.queries is not None:
+                    # Running queries are canceled first (STU-011).
+                    await asyncio.to_thread(runtime.queries.close_all)
                 if runtime.connections is not None:
                     # Engines are disposed on shutdown (STU-009).
                     await asyncio.to_thread(runtime.connections.close_all)
@@ -215,6 +222,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_config_routes(app, runtime.config)
     if runtime.connections is not None:
         add_connection_routes(app, runtime.connections)
+    if runtime.queries is not None:
+        add_query_routes(app, runtime.queries)
 
     index = static_dir / "index.html"
     if index.is_file():

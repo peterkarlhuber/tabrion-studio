@@ -6,7 +6,7 @@ is used.
 
 | Name | Used in |
 |---|---|
-| `tabrion` | `src/tabrion_studio/services/connections.py`, `tests/security/test_read_only.py` |
+| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_read_only.py` |
 | `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `tests/security/test_read_only.py` |
 | `tabrion.Database.from_url` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.Health` | `src/tabrion_studio/services/connections.py` |
@@ -15,11 +15,13 @@ is used.
 | `tabrion.TLSMode.INSECURE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.REQUIRE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.VERIFY_FULL` | `src/tabrion_studio/services/connections.py` |
+| `tabrion.Transaction` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
-| `tabrion.errors.Kind` | `src/tabrion_studio/problems.py`, `tests/unit/test_problems.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/problems.py`, `tests/security/test_read_only.py` |
+| `tabrion.errors.Kind` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/queries.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/services/queries.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/unit/test_problems.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py` |

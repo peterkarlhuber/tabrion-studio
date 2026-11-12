@@ -372,6 +372,45 @@ CATALOG: dict[str, Entry] = {
         "Statement not allowed",
         "Studio does not run this kind of statement in read-only mode.",
     ),
+    # Queries (STU-011).
+    "studio.query_not_found": Entry(
+        404,
+        ProblemKind.NOT_FOUND,
+        "Query not found",
+        "There is no query with this ID. Studio keeps only the most recent results.",
+        "Run the query again.",
+    ),
+    "studio.query_limit": Entry(
+        429,
+        ProblemKind.DATABASE,
+        "Too many queries",
+        "Studio runs at most 4 queries at a time, and 2 per connection.",
+        "Wait for a query to finish or cancel one.",
+    ),
+    "studio.query_canceled": Entry(409, ProblemKind.DATABASE, "Query canceled", "The query was canceled."),
+    "studio.query_param_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Parameter missing",
+        "The statement has a :name placeholder without a value.",
+        "Give every placeholder a value, or write a colon inside a literal.",
+    ),
+    "studio.query_params_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Parameters not valid",
+        "A parameter value must be text, a number, true, false or null; at most 100 parameters.",
+        "Send JSON as text and cast it in the statement, for example :doc::jsonb.",
+    ),
+    "studio.query_write_unsupported": Entry(
+        403,
+        ProblemKind.DATABASE,
+        "Read-only",
+        "Studio 1.0 runs queries only in read-only mode.",
+    ),
+    "studio.query_too_large": Entry(
+        413, ProblemKind.REQUEST, "Query too large", "The statement or its parameters are too large."
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,
@@ -447,6 +486,13 @@ def db_problem(error: BaseException | Classification, *, log_id: str | None = No
     if log_id is not None and _LOG_ID.fullmatch(log_id) is None:
         raise ValueError("malformed log ID")
     return Problem(f"db.{kind}", kind, entry.status, entry.title, entry.detail, entry.hint, log_id, sqlstate)
+
+
+def db_kind_problem(kind: Kind) -> Problem:
+    """The ``db.<kind>`` problem for a kind Studio itself found (a query it stopped at its deadline: ``timeout``)."""
+    name = kind.value if kind.value in DB_CATALOG else "unknown"
+    entry = DB_CATALOG[name]
+    return Problem(f"db.{name}", name, entry.status, entry.title, entry.detail, entry.hint)
 
 
 def db_problem_response(error: BaseException | Classification, *, log_id: str | None = None) -> Response:

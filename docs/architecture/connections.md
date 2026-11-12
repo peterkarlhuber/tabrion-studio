@@ -91,6 +91,9 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 - These `SET` forms are refused: `SET TRANSACTION`, `SET SESSION CHARACTERISTICS`, `SET [SESSION|LOCAL]
   default_transaction_read_only | transaction_read_only | ROLE | SESSION AUTHORIZATION`.
 - So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT`, `CLUSTER` and `DO`.
+- Since the STU-011 fix round, every other first word too: only `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a
+  query, `SHOW` and `PRAGMA` pass (an allowlist; see [Query engine](queries.md), "Statements and session state").
+  PostgreSQL connections also get Studio's session settings as startup options and run `RESET ALL` on check-in.
 
 **One statement, enforced by the server (H-1 of `stu-009-review.md`):** every PostgreSQL connection uses
 `prepare_threshold=0` (`driver_options`). So every statement is a prepared statement on the extended query protocol,
@@ -110,9 +113,10 @@ re-review 2). This is still a best-effort check, not the boundary: a database fu
 a function of an extension Studio does not know that runs a query from text, is invisible in the text. SQLite's
 `execute` runs one statement only.
 
-**Binding for STU-011:** user SQL goes through `check_statement` and `OpenConnection.fetch`, with one `read()` per
-statement, and always through `ConnectionRegistry.get`: `fetch` does not check the handle again by itself. Send user
-SQL so that `:name` is not read as a bind parameter (`exec_driver_sql`, or escaped colons; review I-2).
+**Binding for STU-011 (kept by the [query engine](queries.md)):** user SQL goes through `check_statement`
+(`OpenConnection.prepare`, and again in `OpenConnection.stream`), with one `read()` per statement, and always through
+`ConnectionRegistry.get`: a handle does not check itself again. User SQL never goes through SQLAlchemy `text()`, so
+`:name` inside a literal stays text (review I-2): `OpenConnection.fetch` uses the same path.
 
 **Known limits** (documented in 03 section 5.1 and ADR R-S3):
 - `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function).
