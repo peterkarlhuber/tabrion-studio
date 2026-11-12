@@ -17,6 +17,19 @@ All notable changes to this project are documented here. The format follows
   reference apps parts and measurements, the DDL equals pg_dump's statement by statement, in their own schemas and in
   `public`. The DDL includes rules, column statistics, storage and compression settings, replica identity,
   `CLUSTER ON` and a view's column defaults.
+- STU-012 SQL editor (MVP, read-only): the page `/sql` with CodeMirror 6 (PostgreSQL or SQLite highlighting and
+  completion), editor tabs whose drafts are kept in the browser, run (the selection or the statement at the cursor), run
+  script (statement by statement, stopping at the first error), cancel within a second, `:name` parameters (text,
+  number, boolean, null, JSON), and a virtualized result grid (WAI-ARIA grid, keyboard, copy, a detail panel that shows
+  the whole value as plain text). D-02 before the first PROD connection, D-06 before closing a changed tab, "Save"
+  downloads a `.sql` file. At most 10 000 rows and about 64 MB are in the browser at a time, so 100 000 rows, and wide
+  rows at the largest result size, stay far below the 300 MB limit. After the review: a profile change clears the tab's
+  results, a run cannot be started twice while it connects and can be canceled then, the durations show (they read as 0
+  before), D-02 names the profile's own timeout, drafts are kept per project, and a failed row page is asked for again.
+  Before a new connection the editor reads the profile again, so a profile changed to PROD elsewhere is never connected
+  to without D-02, and an open answer that does not name that profile's environment is closed again. New shortcuts in
+  the help and the palette. CodeMirror runs in a shadow root, so the strict CSP stays unchanged. Open items are TD-033
+  and TD-037. The migrations and diagnostics pages now have their own window titles.
 - STU-010 page: the explorer (`/explorer`). Open a profile's read-only connection (D-02 first for PROD, once per
   page session as in STU-008; it becomes the header's connection) and browse its catalog as a WAI-ARIA tree
   (PostgreSQL schemas, type groups and objects plus the extensions; SQLite's file facts and type groups), filter it

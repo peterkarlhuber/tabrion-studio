@@ -23,5 +23,7 @@ format setup. STU-005 added i18next/react-i18next, lucide-react, Playwright and 
 versions of axentra-studio, and copied Button, IconButton, EmptyState and Dialog from
 `axentra-studio/src/components/ui/` at `caa52b5`, each with a provenance note. **Deviation:** the dialog uses the
 native modal `<dialog>` instead of Radix Dialog, because Radix's scroll lock injects a `<style>` element that the
-strict CSP of STU-003 (`style-src 'self'`) refuses (`docs/architecture/frontend.md`). The other libraries arrive with
-the work packages that need them. The license check is in place (`scripts/check_licenses.py`).
+strict CSP of STU-003 (`style-src 'self'`) refuses (`docs/architecture/frontend.md`). STU-012 added CodeMirror 6
+(`@codemirror/view`, `state`, `language`, `lang-sql`, `autocomplete`), `@uiw/react-codemirror` and
+`@tanstack/react-virtual`, all approved in doc 05; CodeMirror is mounted in a shadow root for the same CSP reason.
+The other libraries arrive with the work packages that need them. The license check is in place (`scripts/check_licenses.py`).
