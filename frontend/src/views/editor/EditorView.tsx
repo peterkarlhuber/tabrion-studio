@@ -618,6 +618,9 @@ export function EditorView({
           continue;
         }
         controller.queryId = started.value.queryId;
+        // A cancel (or a closed tab) while the start request was on its way found no query id to cancel: the server
+        // has the query now, so cancel it here, or it runs on until its timeout and the page shows it running.
+        if (controller.stopped) void cancelQuery(fetcher, started.value.queryId);
         patchResult(tabId, key, { status: started.value });
         const final = await followQuery(
           fetcher,

@@ -225,14 +225,42 @@ test('cancel stops an endless query within a second (STU-T-020)', async ({ page 
     page,
     'with recursive c(n) as (select 1 union all select n + 1 from c) select count(*) from c',
   );
+  // The query runs on the server once its start is answered (the progress bar shows from the request on).
+  const started = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/queries',
+  );
   await page.locator('.cm-content').press('Control+Enter');
+  expect((await started).status()).toBe(202);
   await expect(page.getByRole('progressbar', { name: 'Query running' })).toBeVisible();
   await page.waitForTimeout(500);
-  const started = Date.now();
+  // The time from the key to the shown "Canceled" is taken in the page: the wall time of the test would add the CDP
+  // round trips and the retry schedule of `expect` (100, 250, 500, 1000 ms), so a cancel that took 0.9 s was seen
+  // only after about 1.9 s.
+  await page.evaluate(() => {
+    const probe = { key: NaN, shown: NaN };
+    (window as unknown as { cancelProbe: typeof probe }).cancelProbe = probe;
+    document.addEventListener(
+      'keydown',
+      (event) => {
+        if (event.key === '.' && Number.isNaN(probe.key)) probe.key = performance.now();
+      },
+      true,
+    );
+    const status = document.querySelector('[data-testid="result-status"]') as Node;
+    new MutationObserver(() => {
+      if (Number.isNaN(probe.shown) && /^Canceled after/.test(status.textContent ?? '')) {
+        probe.shown = performance.now();
+      }
+    }).observe(status, { childList: true, subtree: true, characterData: true });
+  });
   await page.keyboard.press('Control+.');
   const status = page.getByTestId('result-status');
   await expect(status).toHaveText(/^Canceled after \d+\.\d s\.$/, { timeout: 5_000 });
-  expect(Date.now() - started).toBeLessThan(1_500);
+  const probe = await page.evaluate(
+    () => (window as unknown as { cancelProbe: { key: number; shown: number } }).cancelProbe,
+  );
+  expect(probe.shown - probe.key).toBeLessThan(1_000);
   // The query ran for at least the 500 ms waited above.
   const seconds = Number(/after (\d+\.\d) s/.exec((await status.textContent()) ?? '')?.[1]);
   expect(seconds).toBeGreaterThanOrEqual(0.4);

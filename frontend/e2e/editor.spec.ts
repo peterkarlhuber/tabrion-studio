@@ -25,12 +25,14 @@ async function openEditor(
     profile?: string;
     maxRows?: number;
     connectDelay?: number;
+    startDelay?: number;
   } = {},
 ): Promise<void> {
   const params = new URLSearchParams({ sql });
   if (options.profile) params.set('profile', options.profile);
   if (options.maxRows) params.set('maxRows', String(options.maxRows));
   if (options.connectDelay) params.set('connectDelay', String(options.connectDelay));
+  if (options.startDelay) params.set('startDelay', String(options.startDelay));
   await page.emulateMedia({ colorScheme: options.theme ?? 'light', reducedMotion: 'reduce' });
   await page.goto(
     `/harness.html?scenario=editor&path=/sql&theme=${options.theme ?? 'light'}&lang=${options.lang ?? 'en'}&${params.toString()}`,
@@ -255,6 +257,24 @@ test('cancel: Ctrl+. stops a running query and says after how long', async ({ pa
   await expect(page.getByTestId('result-status')).toHaveText(/Running statement 1 of 1… \d+\.\d s/);
   await expect(page.getByTestId('editor-cancel')).toBeEnabled();
   await page.keyboard.press('Control+.');
+  await expect(page.getByTestId('result-status')).toHaveText(/^Canceled after \d+\.\d s\.$/);
+  expect((await log(page)).cancels).toHaveLength(1);
+  await expect(page.getByRole('progressbar')).toHaveCount(0);
+  await expect(page.getByTestId('editor-cancel')).toBeDisabled();
+});
+
+test('Ctrl+. while the start request is on its way cancels the query once the server answers', async ({
+  page,
+}) => {
+  // The server has the query, the page has no id yet: the cancel must not be lost (the endless query of
+  // editor-backend.spec.ts ran on when its start answered late under load).
+  await openEditor(page, 'select pg_sleep(60)', { startDelay: 1_000 });
+  await focusEditor(page);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByRole('progressbar', { name: 'Query running' })).toBeVisible();
+  expect((await log(page)).starts).toHaveLength(1);
+  await page.keyboard.press('Control+.');
+  expect((await log(page)).cancels).toEqual([]);
   await expect(page.getByTestId('result-status')).toHaveText(/^Canceled after \d+\.\d s\.$/);
   expect((await log(page)).cancels).toHaveLength(1);
   await expect(page.getByRole('progressbar')).toHaveCount(0);

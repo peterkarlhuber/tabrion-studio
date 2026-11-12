@@ -12,6 +12,8 @@
  *   memory bound in bytes (M-4 of stu-012-review.md).
  * - `connectDelayMs` delays every answer to `POST /api/connections` (the races while connecting, M-2 of
  *   stu-012-review.md).
+ * - `startDelayMs` delays every answer to `POST /api/queries` (a cancel while the start request is on its way: the
+ *   server has the query, the page has no id yet; the race behind a slow `editor-backend.spec.ts` cancel).
  * - the answer to `POST /api/connections` names the profile's environment like the server's: `environmentOf` when
  *   given (a test that changes profiles), else that of the harness profiles.
  *
@@ -79,6 +81,7 @@ function problem(code: string, status: number): Response {
 export function createQueryServer(
   options: {
     connectDelayMs?: number;
+    startDelayMs?: number;
     environmentOf?: (profileId: string) => string | undefined;
   } = {},
 ): {
@@ -305,7 +308,9 @@ export function createQueryServer(
           }
         }, 30);
       }
-      return Promise.resolve(answer);
+      const delay = options.startDelayMs ?? 0;
+      if (delay === 0) return Promise.resolve(answer);
+      return new Promise((resolve) => setTimeout(() => resolve(answer), delay));
     }
     if (url === '/api/exports' && method === 'POST') return exportAnswer(init);
     const match = /^\/api\/queries\/([^/?]+)(\/events|\/rows|\/cancel)?(?:\?(.*))?$/.exec(url);

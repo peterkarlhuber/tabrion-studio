@@ -494,6 +494,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still
+  on its way was lost: the page had no query id yet, so it sent no cancel, and the query ran on until its timeout
+  while the page showed it running. The page now cancels the query as soon as the server answers with its id. This
+  was the cause of `editor-backend.spec.ts` › "cancel stops an endless query within a second" failing under load. That
+  test now waits for the start to be answered and takes the cancel time in the page (key to "Canceled"), not as the
+  test's wall time, which included the retry schedule of `expect`.
 - TABRION QA-21: `scripts/check_tabrion_api.py --surface` no longer reports enum members and dataclass fields as
   missing. Tabrion's `docs/api/surface.json` lists them in the parent entry (`members`, `fields`), not as names of
   their own, so `tabrion.TLSMode.AUTO` failed against tabrion v0.1.0; such a name is now checked against its parent's
