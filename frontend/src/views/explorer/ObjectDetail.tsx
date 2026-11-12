@@ -1,13 +1,13 @@
 /**
  * The detail of the selected tree row (STU-010, 08 section 4.3): an object's header and its tabs (columns,
- * constraints, indexes, relationships and, on SQLite, the table's SQLite facts), the PostgreSQL extensions, or the
- * SQLite file. Everything only reads; there is no action that changes the database (STU-026 stays locked).
+ * constraints, indexes, relationships, the data of a table or view (STU-013 page, `views/viewer/DataTab.tsx`) and,
+ * on SQLite, the table's SQLite facts), the PostgreSQL extensions, or the SQLite file. Everything only reads; there is no action that changes the database (STU-026 stays locked).
  *
  * Every value from the database (names, types, defaults, check texts, comments, versions) is escaped and capped with a
  * visible "…" (`lib/visible.ts`, U-1); lists are cut after MAX_DETAIL_ROWS with "and N more".
  */
 import type { TFunction } from 'i18next';
-import { useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type {
@@ -18,7 +18,9 @@ import type {
   SqliteInfo,
   TableDetail,
 } from '../../api/explorer';
+import type { Problem } from '../../api/problem';
 import { capped } from '../../lib/visible';
+import { DataTab } from '../viewer/DataTab';
 import connectionStyles from '../connections/Connections.module.css';
 import styles from './Explorer.module.css';
 
@@ -422,7 +424,15 @@ function SqliteTab({ name, info }: { name: string; info: SqliteInfo | null }) {
   );
 }
 
-type TabId = 'columns' | 'constraints' | 'indexes' | 'relationships' | 'sqlite';
+type TabId = 'columns' | 'constraints' | 'indexes' | 'relationships' | 'data' | 'sqlite';
+
+/** The kinds whose rows the data viewer reads (STU-013): not sequences, not kinds the page does not know. */
+export const DATA_KINDS: readonly ObjectKind[] = [
+  'table',
+  'view',
+  'materialized_view',
+  'foreign_table',
+];
 
 /** WAI-ARIA tabs with automatic activation: ← → Home End move between them. */
 function Tabs({
@@ -473,6 +483,7 @@ function Tabs({
             type="button"
             role="tab"
             id={`${base}-${tab.id}`}
+            data-tab={tab.id}
             aria-selected={tab.id === current}
             aria-controls={`${base}-panel`}
             tabIndex={tab.id === current ? 0 : -1}
@@ -519,6 +530,9 @@ export function TableView({
   onTab,
   find,
   onFollow,
+  fetcher,
+  connectionId,
+  onGone,
 }: {
   detail: TableDetail;
   engine: Engine;
@@ -527,8 +541,16 @@ export function TableView({
   onTab: (tab: TabId) => void;
   find: (schema: string, name: string) => CatalogObject | null;
   onFollow: Follow;
+  fetcher: typeof fetch;
+  /** The explorer's open connection: the data tab reads on it and never opens one. */
+  connectionId: string;
+  onGone: (problem: Problem) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const columns = useMemo(
+    () => detail.columns.map((column) => ({ name: column.name, type: column.type })),
+    [detail.columns],
+  );
   if (detail.kind === 'sequence') {
     return <p className={connectionStyles.hint}>{t('explorer.detail.sequence')}</p>;
   }
@@ -537,6 +559,9 @@ export function TableView({
     { id: 'constraints', label: t('explorer.tabs.constraints') },
     { id: 'indexes', label: t('explorer.tabs.indexes') },
     { id: 'relationships', label: t('explorer.tabs.relationships') },
+    ...(DATA_KINDS.includes(detail.kind)
+      ? [{ id: 'data' as const, label: t('explorer.tabs.data') }]
+      : []),
     ...(engine === 'sqlite' ? [{ id: 'sqlite' as const, label: t('explorer.tabs.sqlite') }] : []),
   ];
   const current = tabs.some((item) => item.id === tab) ? tab : 'columns';
@@ -550,6 +575,20 @@ export function TableView({
       break;
     case 'relationships':
       panel = <RelationshipsTab detail={detail} find={find} onFollow={onFollow} />;
+      break;
+    case 'data':
+      panel = (
+        <DataTab
+          key={`${connectionId}|${detail.schema}|${detail.name}`}
+          fetcher={fetcher}
+          connectionId={connectionId}
+          engine={engine}
+          schema={detail.schema}
+          name={detail.name}
+          columns={columns}
+          onGone={onGone}
+        />
+      );
       break;
     case 'sqlite':
       panel = <SqliteTab name={detail.name} info={sqliteInfo} />;

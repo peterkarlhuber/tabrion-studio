@@ -1,0 +1,90 @@
+/* The data viewer (STU-013 page, 08 section 4.5): controls, filters, status and the grid of one page. */
+.viewer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-3);
+  min-width: 0;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--tb-space-3);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-1);
+  min-width: 0;
+}
+.field select,
+.field input {
+  min-width: 8rem;
+  max-width: 100%;
+}
+.filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  padding: var(--tb-space-3);
+  border: 1px solid var(--tb-color-border);
+  border-radius: var(--tb-radius-md);
+}
+.filtersTitle {
+  font-size: var(--tb-text-sm);
+  font-weight: 600;
+}
+.applied {
+  font-weight: 400;
+  color: var(--tb-color-text-muted);
+}
+.filterRows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.filterRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.filterRow select,
+.filterRow input {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+.filterActions,
+.nav,
+.full {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.statusRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--tb-space-3);
+}
+.status {
+  font-size: var(--tb-text-sm);
+}
+.problem {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-3);
+}
+.gridArea {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-space-3);
+  align-items: stretch;
+  min-width: 0;
+}

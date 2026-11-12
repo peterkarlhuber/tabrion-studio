@@ -1,7 +1,8 @@
 /**
- * The result grid (03 section 2 C, 08 sections 4.4 and 9): column names and types, the rows of one result,
+ * The result grid (03 section 2 C, 08 sections 4.4, 4.5 and 9): column names and types, the rows of one result,
  * virtualized in both directions with TanStack Virtual, so a result of 100 000 rows renders only what is visible and
- * holds only the chunks of `RowCache` (at most 10 000 rows and 64 MB) in the browser.
+ * holds only the chunks of `RowCache` (at most 10 000 rows and 64 MB) in the browser. The data viewer (STU-013) shows
+ * one page of a table in it through the same `GridRows` interface (`views/viewer/pageRows.ts`).
  *
  * Accessibility (WAI-ARIA grid pattern with `aria-activedescendant`, 08 section 9): `role="grid"` with
  * `aria-rowcount`/`aria-colcount`, every rendered row and cell with `aria-rowindex`/`aria-colindex`. The grid is one
@@ -26,7 +27,7 @@ import type { QueryColumn } from '../../api/queries';
 import clsx from '../../lib/clsx';
 import { useTheme } from '../../theme';
 import { cellKind, fullText, previewText } from './format';
-import type { RowCache } from './rowCache';
+import type { GridRows } from './rowCache';
 import styles from './Editor.module.css';
 
 export interface ActiveCell {
@@ -49,7 +50,7 @@ export function ResultGrid({
   onOpen,
   onCopy,
 }: {
-  cache: RowCache;
+  cache: GridRows;
   columns: QueryColumn[];
   label: string;
   /** Enter (`focus` true: the panel takes the focus) or a click (the grid keeps it): show it in the detail panel. */

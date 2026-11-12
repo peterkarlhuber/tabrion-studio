@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-013 page: the data viewer as the explorer's **Data** tab (08 section 4.5), read-only. Pages of 50 to 1,000 rows
+  through the server's keyset tokens (Next, Previous, Reload), sort by a column, up to 20 filters the server binds as
+  parameters, a search in the current page, and the SQL editor's grid and cell detail with "Load in full" (10 MB). A
+  page asks for no more rows than fit in 64 MB at its column types' widest values, and says so; the paging hint
+  shows without a primary key. The tab reads on the explorer's connection (D-02 through the shared confirmation),
+  is bound to its connection and object, drops stale answers and hands a connection that is gone back to the
+  explorer. The explorer gets "Show data", "SELECT … LIMIT 100 in the SQL editor" (a new editor tab; nothing runs by
+  itself) and "Copy name". User guide page "Data viewer". Open items are TD-042.
 - STU-012 SQL editor (MVP, read-only): the page `/sql` with CodeMirror 6 (PostgreSQL or SQLite highlighting and
   completion), editor tabs whose drafts are kept in the browser, run (the selection or the statement at the cursor), run
   script (statement by statement, stopping at the first error), cancel within a second, `:name` parameters (text,

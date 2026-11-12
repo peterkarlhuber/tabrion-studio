@@ -1,8 +1,9 @@
 /**
  * The explorer page (STU-010, 03 section 2 B, 08 section 4.3): the object tree of a connection's database, its filter
  * and the details of the selected object. Studio only reads here: there is no action that changes the database
- * (STU-026 stays locked), and no request but `POST /api/connections` (the read-only connection) and the explorer's
- * GET routes.
+ * (STU-026 stays locked), and no request but `POST /api/connections` (the read-only connection), the explorer's
+ * GET routes and the data viewer's (the "Data" tab, STU-013). "SELECT … LIMIT 100 in the SQL editor" hands the
+ * statement to the editor (`editor/handoff.ts`), which runs nothing by itself.
  *
  * - **Connecting:** like the migration and diagnostics pages, the page has its own profile picker until the
  *   connection workspace exists (TD-011, TD-041). "Open" opens the profile's read-only connection; a PROD profile
@@ -16,6 +17,7 @@
  * - **U-1:** every database name and text is escaped and capped (`lib/visible.ts`).
  */
 import {
+  Copy,
   Database,
   Eye,
   FileText,
@@ -25,7 +27,9 @@ import {
   Layers,
   Puzzle,
   RefreshCw,
+  Rows3,
   Shapes,
+  SquareTerminal,
   Table2,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -53,6 +57,8 @@ import { Button } from '../../components/ui/Button';
 import { useKeyboardPlatform } from '../../keyboard/platform';
 import { matches as matchesShortcut, SHORTCUTS } from '../../keyboard/shortcuts';
 import { visible } from '../../lib/visible';
+import { navigate } from '../../router';
+import { handToEditor, selectStatement } from '../editor/handoff';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { prodTimeoutSeconds } from '../connections/useConnect';
@@ -61,6 +67,7 @@ import viewStyles from '../Views.module.css';
 import styles from './Explorer.module.css';
 import {
   cutText,
+  DATA_KINDS,
   ExtensionsView,
   FileView,
   kindName,
@@ -86,6 +93,8 @@ import {
 /** The connection whose catalog is shown; name and environment are kept (the profile list may change). */
 interface Opened {
   connectionId: string;
+  /** The profile the connection was opened for (the SQL editor gets it with "SELECT … LIMIT 100"). */
+  profileId: string;
   name: string;
   environment: ProfileItem['environment'];
 }
@@ -256,6 +265,31 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setDetail(result);
   };
 
+  /** The connection `target` is gone: the page drops it (and the header too, if it shows it). */
+  const forget = (target: Opened) => {
+    request.current += 1;
+    detailRequest.current += 1;
+    setPhase('idle');
+    setOpened(null);
+    setCatalog(null);
+    setSelection(null);
+    setDetail(null);
+    // The workspace (and the focused Refresh button) goes away: the focus moves to Open, which stays mounted
+    // (L-2 of stu-010-ui-review.md).
+    openButton.current?.focus();
+    connections.setActive((current) =>
+      current?.connectionId === target.connectionId ? null : current,
+    );
+  };
+
+  /** The data tab found the connection gone (STU-013): the page drops it and says why. */
+  const dataGone = (problem: Problem) => {
+    if (opened === null) return;
+    setProblem(problem);
+    setMessage('');
+    forget(opened);
+  };
+
   /** Read the catalog of `target` for the request `mine`; `refresh` reads it again on the server too. */
   const loadCatalog = async (mine: number, target: Opened, refresh: boolean) => {
     setPhase('loading');
@@ -266,19 +300,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       setPhase('idle');
       setProblem(result.problem);
       setMessage('');
-      if (GONE.has(result.problem.code)) {
-        detailRequest.current += 1;
-        setOpened(null);
-        setCatalog(null);
-        setSelection(null);
-        setDetail(null);
-        // The workspace (and the focused Refresh button) goes away: the focus moves to Open, which stays mounted
-        // (L-2 of stu-010-ui-review.md).
-        openButton.current?.focus();
-        connections.setActive((current) =>
-          current?.connectionId === target.connectionId ? null : current,
-        );
-      }
+      if (GONE.has(result.problem.code)) forget(target);
       return;
     }
     const next = result.value;
@@ -356,7 +378,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   };
 
   const open = async (profile: ProfileItem) => {
-    const target = { name: profile.name, environment: profile.environment };
+    const target = { profileId: profile.id, name: profile.name, environment: profile.environment };
     const mine = ++request.current;
     detailRequest.current += 1;
     setPhase('opening');
@@ -507,6 +529,45 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     else if (row.type === 'file') select({ type: 'file' });
   };
 
+  /** "Show data": the data tab of the selected object, with the focus on it (08 section 4.3 "Show data"). */
+  const showData = () => {
+    setTab('data');
+    window.setTimeout(
+      () =>
+        document
+          .querySelector<HTMLElement>(
+            '[data-testid="explorer-detail"] [role="tab"][data-tab="data"]',
+          )
+          ?.focus(),
+      0,
+    );
+  };
+
+  /** "SELECT … LIMIT 100 in the SQL editor" (08 section 4.3): a new editor tab on this profile; nothing runs. */
+  const toEditor = (object: CatalogObject) => {
+    if (opened === null || catalog === null) return;
+    handToEditor({
+      profileId: opened.profileId,
+      title: cutText(object.name),
+      sql: selectStatement(catalog.engine, object.schema, object.name),
+    });
+    navigate('/sql');
+  };
+
+  /** "Copy name": the qualified name as the database spells it (not escaped: it goes to the clipboard as text). */
+  const copyName = async (object: CatalogObject) => {
+    const qualified =
+      catalog?.engine === 'sqlite' && object.schema === 'main'
+        ? object.name
+        : `${object.schema}.${object.name}`;
+    try {
+      await navigator.clipboard.writeText(qualified);
+      setMessage(t('explorer.actions.copied'));
+    } catch {
+      setMessage(t('explorer.actions.copyFailed'));
+    }
+  };
+
   const kinds: ObjectKind[] =
     catalog === null ? [] : catalog.engine === 'sqlite' ? ['table', 'view'] : [...OBJECT_KINDS];
   if (catalog?.objects.some((item) => item.kind === 'other')) kinds.push('other');
@@ -536,6 +597,9 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         onTab={setTab}
         find={find}
         onFollow={follow}
+        fetcher={fetcher}
+        connectionId={opened?.connectionId ?? ''}
+        onGone={dataGone}
       />
     );
   } else if (detail?.status === 'extensions') {
@@ -749,6 +813,35 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
                 <span className={styles.kind}>{kindName(t, selection.object.kind)}</span>
               ) : null}
             </div>
+            {selection?.type === 'object' && DATA_KINDS.includes(selection.object.kind) ? (
+              <div className={styles.objectActions} data-testid="explorer-object-actions">
+                <Button
+                  size="sm"
+                  icon={<Rows3 />}
+                  onClick={showData}
+                  disabled={detail?.status !== 'table'}
+                  data-testid="explorer-show-data"
+                >
+                  {t('explorer.actions.data')}
+                </Button>
+                <Button
+                  size="sm"
+                  icon={<SquareTerminal />}
+                  onClick={() => toEditor(selection.object)}
+                  data-testid="explorer-to-editor"
+                >
+                  {t('explorer.actions.select')}
+                </Button>
+                <Button
+                  size="sm"
+                  icon={<Copy />}
+                  onClick={() => void copyName(selection.object)}
+                  data-testid="explorer-copy-name"
+                >
+                  {t('explorer.actions.copy')}
+                </Button>
+              </div>
+            ) : null}
             {selection === null ? (
               <p className={connectionStyles.hint}>{t('explorer.detail.choose')}</p>
             ) : (
