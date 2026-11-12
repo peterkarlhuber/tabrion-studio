@@ -15,14 +15,14 @@ is used.
 | `tabrion.TLSMode.INSECURE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.REQUIRE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.VERIFY_FULL` | `src/tabrion_studio/services/connections.py` |
-| `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.Transaction` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.check.Finding` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.check.Severity` | `tests/security/test_diagnostics.py` |
+| `tabrion.check.Finding` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.Severity.ERROR` | `tests/security/test_diagnostics.py` |
-| `tabrion.check.Severity.INFO` | `tests/security/test_diagnostics.py` |
-| `tabrion.check.Severity.WARNING` | `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity.INFO` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity.WARNING` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py` |

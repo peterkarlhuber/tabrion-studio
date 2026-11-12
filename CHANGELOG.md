@@ -7,6 +7,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-025 backend: `POST /api/connections/{id}/diagnostics/report` with
+  `{"format": "markdown" | "json"}` runs a diagnosis with its backup hints and answers it as a file
+  (`Content-Disposition: attachment`). The report is built from an allowlist: no password, token, connection URL or
+  DSN, host, port, user or database name, file path, SQL text or parameter value. Every text also passes the log
+  redaction, and the Markdown escapes text from the database. Canary tests cover both formats and the log
+  (`studio.report_invalid` is new). Every diagnosis now carries backup hints (`backup: {hints, facts}`,
+  `STU-BK-001..014`): SQLite backups next to the database (none found, older than the data, readable by others), and
+  PostgreSQL's `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, a standby). tabrion's
+  `TAB-PG-020` gives way to `STU-BK-010` only when that hint is given. After the review, the report shows the login
+  role and the database as `[role]` and `[database]`, also where tabrion names them as schemas; Markdown escapes `@`;
+  a linked `backups` folder is not followed; the file scan stops at a cancel or the time limit; a cut search is the
+  hint `STU-BK-005`; "readable by others" means the read bits. After the delta review: a report whose names cannot
+  be read from the server is refused (`studio.report_unavailable`, new), and the diagnostics page route keeps
+  `TAB-PG-020` until the page shows the backup hints.
 - STU-008 connection test and Connect (the parts that waited for STU-009): in the connection manager, **Test
   connection** shows the time, the server version and, for PostgreSQL, the role, superuser, TLS, encoding and time
   zone (for SQLite foreign keys, journal mode and encoding), with a warning for a superuser role or one that bypasses
