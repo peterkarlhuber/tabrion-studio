@@ -72,7 +72,7 @@ catalog and SQLAlchemy's SQLite dialect quotes it as an identifier.
 Owner and privileges are left out, as with pg_dump's options (the answer has `owner`), and so are functions (03:
 release S): a trigger's function is not part of the table's DDL. Expressions are printed under the connection's
 `search_path`, which Studio does not change, so a name on it is not schema-qualified where pg_dump qualifies every
-name. The other gaps are TD-034.
+name. The other gaps are TD-035.
 
 **SQLite DDL** is the stored text of `sqlite_master` (exactly the statement that created the object), followed by the
 object's indexes and triggers. An index SQLite made itself (for `UNIQUE` or a primary key) has no text and is not
