@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
+  exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
+  statement and object checks run before the first byte, so refusals are problem documents. Limits: at most
+  1 000 000 rows, 10 minutes, one export per connection and 2 at a time. CSV escapes formula-like text and base64
+  with a leading `'` (`escape_formulas`); JSON keeps rows as arrays and marks a cut export (`truncated`).
+  After the review: an export fetches at most 32 rows at a time, so wide rows stay under 100 MB too. The fullwidth
+  formula starts are escaped. Non-finite numbers are spelled `NaN`/`Infinity`. Large integers are text in JSON, and
+  intervals are ISO 8601 durations.
 - STU-024 backend: `GET /api/connections/{id}/migrations` also reports the
   Levuvo formats on PostgreSQL. It compares Nodestro's and Axentra's version tables with the project's SQL migration
   files (checksums as their runners record them; pending steps with an SQL preview), and Orkexa's version table with

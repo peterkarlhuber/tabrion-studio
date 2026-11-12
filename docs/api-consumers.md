@@ -30,7 +30,7 @@ is used.
 | `tabrion.errors.Kind` | `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.Kind.PERMISSION` | `src/tabrion_studio/services/levuvo_migrations.py` |
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/unit/test_problems.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
