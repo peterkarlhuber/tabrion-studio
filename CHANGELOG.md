@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
+- STU-009 (tabrion v0.1.0 pinned by full SHA):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no
     VACUUM INTO, no `load_extension`, no write or schema change). PostgreSQL: a read-only session, `Database.read()`,
@@ -39,6 +39,9 @@ All notable changes to this project are documented here. The format follows
     - CI: the PostgreSQL service port is published on `127.0.0.1` only.
   - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
     constraints file, and `pyproject.toml` keeps the final range with no direct reference.
+  - tabrion v0.1.0 (`d5821faa8742dea012abda3b663549c038d76543`, the merge commit of tabrion PR #56) is pinned in
+    `constraints/tabrion-integration.txt`, and `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`.
+    CONTRIBUTING and the guide's installation page install with `-c constraints/tabrion-integration.txt`.
 - TABRION QA-21 (AC-7): `scripts/check_tabrion_api.py` is now the check shared with axentra, orkexa and
   nodestro-runtime. Besides private Tabrion modules it refuses `_` attributes on Tabrion names, `getattr` and
   `import_module` with a private constant and star imports. Every used name must be in its module's `__all__` in the

@@ -16,7 +16,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Integration branch only (STU-009 draft PR, tabrion 546d254 pinned by SHA); master gets the final range plus the v0.1.0 commit SHA pin (no PyPI) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -41,7 +41,7 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
-| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
+| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
@@ -62,31 +62,25 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### TS-001 · Add the tabrion dependency with the first API use (TABRION STU-009, RC-8)
 
-- **Priority:** P1 High · **Status:** Integration branch only (STU-009 draft PR; master blocked until tabrion v0.1.0,
-  TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
-- **What:** on master nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency.
+- **Priority:** P1 High · **Status:** Done (STU-009, PR #15: tabrion v0.1.0 pinned by full SHA) · **Refs:** RC-8,
+  E-VER, 05 §3.2, TABRION TAB-040
+- **What:** STU-009 is the first Studio code that uses the Tabrion API, so it adds the tabrion dependency.
 - **Rule (RC-8, amended by ADR 0009 in tabrion PR #20: tabrion is not published on PyPI, it is used through Git SHA
   pins):** `project.dependencies` carries only the final range, with no git or URL reference and no pre-release
   specifier. The commit is pinned by its **full SHA** in a constraints file
   (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`; no branch, tag or short SHA). Both are
-  enforced by `tests/security/test_dependencies.py` on the STU-009 branch (`test_pyproject_follows_rc8`,
-  `test_pin_files_pin_only_full_commits`).
-- **Next step:** with tabrion v0.1.0, `tabrion[postgres,sqlalchemy]>=0.1,<0.2` in `pyproject.toml` and the v0.1.0
-  commit in `constraints/tabrion-integration.txt` (STU-009).
+  enforced by `tests/security/test_dependencies.py` (`test_pyproject_follows_rc8`,
+  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_v0_1_0`).
+- **Done:** `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, and
+  `constraints/tabrion-integration.txt` pins tabrion v0.1.0, the merge commit of tabrion PR #56
+  (`d5821faa8742dea012abda3b663549c038d76543`). Every install reads the constraints file (`-c`, or
+  `PIP_CONSTRAINT` for the wheel smoke test in CI); a later tabrion version moves the pin in that one file.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
   every connection (`services.connections.driver_options`: `prepare_threshold=0`, `passfile`) are not targets.
-- **STU-009 integration branch (`claude/project-thread-rdo6g3-stu009`, draft, never merged before v0.1.0):**
-  `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2`, and
-  `constraints/tabrion-integration.txt` pins tabrion master `546d254a27df9f6b539d57c307ad3022d0ee3a4a`
-  (0.1.0a2.dev0). The a1 commit `a463422` has only `tabrion.errors`, `sql` and `config`; STU-009 needs
-  `Database`, `Profile`, `Database.read()` and `health()` (layer B, TAB-018), which arrived later.
-  `tests/security/test_dependencies.py::test_pyproject_follows_rc8` fails on that branch on purpose (pre-release
-  range). With v0.1.0: final range `>=0.1,<0.2`, the constraints file pinning the v0.1.0 commit by SHA, a merge of
-  master, then the PR is ready for review.
-  Done there: URLs only through `tabrion.safe_url()`; passwords only through the configuration's secrets when
-  connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
+- **Done in STU-009 (PR #15):** URLs only through `tabrion.safe_url()`; passwords only through the configuration's
+  secrets when connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
   project SQLite files only through `database_file`, every driver parameter in the fingerprint, `DB_KINDS` from
   `tabrion.errors.Kind`, `db.<kind>` problems from `classify`, `DbErrorRedactionFilter` in the log handlers
   (`docs/architecture/connections.md`).
@@ -348,7 +342,7 @@ merge after OA-004.
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
 | TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
-| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Draft PR on the integration branch (tabrion 546d254 pinned, RC-8; not before v0.1.0): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`. Open: the `backend integration (PostgreSQL 17)` job (OA-003), the page (TD-011, TD-012) |
+| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-010..STU-015 | Explorer, query engine, SQL editor, data viewer, diagnostics, migration status | P1/P0 | STU-009, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011; STU-011 replaces the polling heartbeat with SSE and applies the Origin check to it |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
@@ -394,7 +388,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** 05 §3.2, AC-1
 - **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages. STU-006 adds `api`
   and `config` (the profiles layer; `config` never imports `api`, the app, the server, the CLI or `security`).
-  STU-009 (integration branch) adds `services` (the connection registry): it never imports `api`, the app, the
+  STU-009 adds `services` (the connection registry): it never imports `api`, the app, the
   server, the CLI or `security`, `config` never imports it, and only it imports SQLAlchemy and psycopg. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
@@ -552,23 +546,24 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-012 · STU-009 integration: what remains before it can merge
 
-- **Priority:** P1 High · **Status:** Open (`stu-009-review.md`, delta re-review: accepted with conditions; R-L1,
-  R-L2, I-R1 and I-R2 done, the CI condition is a separate `.github/workflows` commit for the workflow-change review)
-  · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **Priority:** P1 High · **Status:** Done (PR #15: tabrion v0.1.0 pinned, master merged; the CI workflow commit
+  was reviewed and labeled; the STU-011 binding below stays a rule) · **Refs:** RC-8, 03 §5.1, §8,
+  `docs/architecture/connections.md`
 - **Re-review 2 (accepted with conditions; workflow change approved for the label):** R2-L1 (`DO` and the
   query-in-text functions refused), R2-I2 (tests that kill T1 and T6) and R2-I1 (no pip option after a marker) are
   done; the Info on the service port is done in a separate `.github` commit, which needs the workflow-change review
-  again before the label. Left: tabrion v0.1.0 (RC-8), then CI fully green including the RC-8 guard.
+  again before the label. The tabrion v0.1.0 pin is done; CI fully green, including the RC-8 guard, is the merge
+  condition.
 - **Conditions to leave draft (re-review):** 1. CI installs the pinned tabrion and runs the `postgres` tests (L-2,
   below); 2. R-L2, the strict pin rule (done: `tests/security/test_dependencies.py` allows only plain requirements
   and the full-SHA pin, in every requirements or constraints file at any depth); 3. R-L1 (done: token-based function
   check); 4. I-R2 (done: `test_i_r2_one_profile_read_per_connect` kills mutant N5).
-- **tabrion v0.1.0 (TS-001):** switch to the final range, pin the v0.1.0 commit by SHA in
-  `constraints/tabrion-integration.txt`, merge master, run every check, then mark the PR ready.
+- **tabrion v0.1.0 (TS-001):** done. The final range is in `pyproject.toml`, the v0.1.0 commit is pinned by SHA in
+  `constraints/tabrion-integration.txt`, and master is merged in.
 - **CI installs tabrion from the pin (L-2 of `stu-009-review.md`):** pip reads a constraints file only from `-c`,
   `PIP_CONSTRAINT` or a pip configuration file outside the repository. The workflow commit on this branch adds
   `-c constraints/tabrion-integration.txt` to every `pip install -e ".[dev]"` and sets `PIP_CONSTRAINT` for the wheel
-  installs (e2e, `build and install`, the SBOM job). It waits for the independent workflow-change review and the
+  installs (e2e, `build and install`, the SBOM job). It passed the independent workflow-change review and carries the
   `workflow-change-reviewed` label (OA-003).
 - **The CI job `backend integration (PostgreSQL 17)`** (same workflow commit, added to `.github/ci-manifest.json`):
   a `postgres:17.10` service pinned by digest, a non-superuser role that owns its database, `pytest -m postgres`
