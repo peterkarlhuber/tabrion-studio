@@ -6,8 +6,9 @@
  *
  * - **Connecting:** like the migration and diagnostics pages, the page has its own profile picker until the
  *   connection workspace exists (TD-011, TD-041). "Open" opens the profile's read-only connection; a PROD profile
- *   gets D-02 first. "Refresh" reads the catalog again on the open connection and never opens one, so D-02 cannot be
- *   skipped.
+ *   gets D-02 first unless the user confirmed it in this page session (the shared confirmation of STU-008,
+ *   `useConnectionSession`, bound to the profile's target). The opened connection becomes the header's connection.
+ *   "Refresh" reads the catalog again on the open connection and never opens one.
  * - **Stale answers:** a profile switch, a new open or a refresh counts up `request`, a new selection counts up
  *   `detailRequest`; an answer is shown only for the latest of each (review L-9 and F-1 of #32).
  * - **Focus** never falls back to the document: the buttons stay mounted while they work (`aria-disabled`), and
@@ -54,6 +55,8 @@ import { matches as matchesShortcut, SHORTCUTS } from '../../keyboard/shortcuts'
 import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
+import { prodTimeoutSeconds } from '../connections/useConnect';
+import { useConnectionSession } from '../../workspace';
 import viewStyles from '../Views.module.css';
 import styles from './Explorer.module.css';
 import {
@@ -80,9 +83,6 @@ import {
   type TreeRow,
 } from './tree';
 
-/** 03 section 5.3: production profiles get a 15 s statement timeout (D-02 names it). */
-const PROD_TIMEOUT_S = 15;
-
 /** The connection whose catalog is shown; name and environment are kept (the profile list may change). */
 interface Opened {
   connectionId: string;
@@ -102,7 +102,7 @@ type Detail =
 
 type Phase = 'idle' | 'opening' | 'loading';
 
-/** A connection that is gone: the page forgets it, so the next "Open" goes through D-02 again. */
+/** A connection that is gone: the page forgets it (and the header too, if it shows it); "Open" opens a new one. */
 const GONE = new Set(['studio.connection_not_found', 'studio.connection_stale']);
 
 const KIND_ICONS: Record<ObjectKind, ReactNode> = {
@@ -165,6 +165,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const profileSelect = useRef<HTMLSelectElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
+  const connections = useConnectionSession();
 
   useEffect(() => {
     let active = true;
@@ -261,6 +262,9 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         // The workspace (and the focused Refresh button) goes away: the focus moves to Open, which stays mounted
         // (L-2 of stu-010-ui-review.md).
         openButton.current?.focus();
+        connections.setActive((current) =>
+          current?.connectionId === target.connectionId ? null : current,
+        );
       }
       return;
     }
@@ -314,8 +318,19 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setSelection(null);
     setDetail(null);
     setMessage(t('explorer.opening'));
+    const connecting = connections.beginConnect();
     const result = await openConnection(fetcher, profile.id);
     if (mine !== request.current) return;
+    // Only the newest connect request of the page sets the header (L-4 of stu-008-connect-review.md).
+    if (result.ok && connections.isLatestConnect(connecting)) {
+      connections.setActive({
+        name: visible(profile.name),
+        environment: profile.environment,
+        status: 'connected',
+        connectionId: result.value,
+        profileId: profile.id,
+      });
+    }
     if (!result.ok) {
       setPhase('idle');
       setProblem(result.problem);
@@ -527,8 +542,9 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
               aria-disabled={busy || undefined}
               onClick={() => {
                 if (busy) return;
-                if (profile?.environment === 'prod') setDialog(true);
-                else void open();
+                if (profile?.environment === 'prod' && !connections.prodConfirmed(profile)) {
+                  setDialog(true);
+                } else void open();
               }}
               data-testid="explorer-open"
             >
@@ -694,9 +710,10 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         <ProdConnectDialog
           open
           name={visible(profile.name)}
-          timeoutSeconds={PROD_TIMEOUT_S}
+          timeoutSeconds={prodTimeoutSeconds(profile)}
           onCancel={() => setDialog(false)}
           onConnect={() => {
+            connections.confirmProd(profile);
             setDialog(false);
             void open();
           }}

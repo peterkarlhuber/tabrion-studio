@@ -17,6 +17,13 @@ import {
   SQLITE_INFO,
   SQLITE_TABLES,
 } from '../../harness/explorer';
+import {
+  ConnectionSessionContext,
+  NO_CONNECTION_SESSION,
+  prodKey,
+  type ActiveConnection,
+  type ConnectionSession,
+} from '../../workspace';
 import { ExplorerView } from './ExplorerView';
 import { MAX_GROUP_ITEMS } from './tree';
 
@@ -964,5 +971,104 @@ describe('no write affordance (STU-026 stays locked)', () => {
     for (const word of [/edit/i, /delete/i, /drop/i, /insert/i, /update(?! to)/i, /save/i]) {
       expect(buttons.filter((label) => word.test(label))).toEqual([]);
     }
+  });
+});
+
+describe('the shared connection state of STU-008 (#42)', () => {
+  /** A page session as App keeps it: the confirmed PROD targets and the header's connection. */
+  function session() {
+    const confirmed = new Set<string>();
+    const state: { active: ActiveConnection | null } = { active: null };
+    let connects = 0;
+    const value: ConnectionSession = {
+      ...NO_CONNECTION_SESSION,
+      prodConfirmed: (target) => confirmed.has(prodKey(target)),
+      confirmProd: (target) => {
+        confirmed.add(prodKey(target));
+      },
+      setActive: (next) => {
+        state.active = typeof next === 'function' ? next(state.active) : next;
+      },
+      beginConnect: () => ++connects,
+      isLatestConnect: (request) => request === connects,
+      latestConnect: () => connects,
+    };
+    return { value, state, confirmed };
+  }
+
+  it('D-02 once per page session; the opened connection becomes the header connection', async () => {
+    const { fetcher, calls } = server();
+    const shared = session();
+    const user = userEvent.setup();
+    render(
+      <ConnectionSessionContext.Provider value={shared.value}>
+        <ExplorerView fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    const dialog = screen.getByRole('dialog');
+    // D-02 names the profile's statement timeout (15 s for PROD by default).
+    expect(dialog).toHaveTextContent('15');
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await screen.findByRole('tree');
+    expect(shared.confirmed.size).toBe(1);
+    expect(shared.state.active).toMatchObject({
+      environment: 'prod',
+      status: 'connected',
+      connectionId: 'c-pg',
+      profileId: 'user:measure',
+    });
+    // Confirmed in this page session: a second open does not ask again.
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'project:parts-dev');
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await screen.findByRole('tree');
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2);
+  });
+
+  it('a connection gone on Refresh leaves the header too', async () => {
+    const { fetcher } = server({
+      [`GET ${PG}/catalog?refresh=true`]: () => problem('studio.connection_not_found', 404),
+    });
+    const shared = session();
+    const user = userEvent.setup();
+    render(
+      <ConnectionSessionContext.Provider value={shared.value}>
+        <ExplorerView fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }));
+    await screen.findByRole('tree');
+    expect(shared.state.active?.connectionId).toBe('c-pg');
+    await user.click(screen.getByTestId('explorer-refresh'));
+    await screen.findByTestId('explorer-problem');
+    expect(shared.state.active).toBeNull();
+  });
+
+  it('an open overtaken by a newer connect elsewhere does not set the header', async () => {
+    const post = later();
+    const { fetcher } = server({ ['POST /api/connections']: post.answer });
+    const shared = session();
+    const user = userEvent.setup();
+    render(
+      <ConnectionSessionContext.Provider value={shared.value}>
+        <ExplorerView fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    shared.value.beginConnect(); // the connection manager connects meanwhile
+    await act(async () => {
+      post.send(json({ connection_id: 'c-sqlite' }, 201));
+      await Promise.resolve();
+    });
+    await screen.findByRole('tree');
+    expect(shared.state.active).toBeNull();
   });
 });

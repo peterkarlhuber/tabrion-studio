@@ -58,9 +58,10 @@ None of this is logged.
 `/explorer` (`frontend/src/views/explorer/`) shows the catalog as a tree and the selected object's details. Until
 the connection workspace (`/c/:conn/...`, 08 section 2) exists, the page has its own profile picker, like the
 migration and diagnostics pages (TD-041). "Open" opens the profile's read-only connection (`POST /api/connections`;
-D-02 first for a PROD profile) and reads the catalog; "Refresh" reads it again with `refresh=true` on the same
-connection and never opens one, so D-02 cannot be skipped. A connection that is gone (`connection_not_found`,
-`connection_stale`) is forgotten, and the next "Open" asks D-02 again.
+D-02 first for a PROD profile the user has not confirmed in this page session, the confirmation STU-008 shares
+between the pages) and reads the catalog; the opened connection becomes the header's connection. "Refresh" reads
+the catalog again with `refresh=true` on the same connection and never opens one. A connection that is gone
+(`connection_not_found`, `connection_stale`) is forgotten, by the page and by the header.
 
 - **Tree:** a WAI-ARIA tree (`role="tree"`, flat rows with `aria-level`, `aria-posinset`, `aria-setsize`,
   `aria-expanded`; one tab stop). PostgreSQL: schema → type group → object, then the extensions. SQLite: the
@@ -89,8 +90,7 @@ connection and never opens one, so D-02 cannot be skipped. A connection that is 
   only the latest answer of each is shown. A refresh keeps the selection of the moment it answers.
 
 Open: "Open in editor" and "SELECT … LIMIT 100" (with the SQL editor, #41), the DDL and policies tab (with STU-022,
-#38), the data tab (STU-013 page), the virtualized tree and the header connection state (D-02 sharing, #42); see
-TD-041.
+#38), the data tab (STU-013 page), the virtualized tree and following the header's connection; see TD-041.
 
 ## Tests
 
