@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-010 page: the explorer (`/explorer`). Open a profile's read-only connection (D-02 first for PROD) and browse
+  its catalog as a WAI-ARIA tree (PostgreSQL schemas, type groups and objects plus the extensions; SQLite's file
+  facts and type groups), filter it by name prefix and type (⌘P / Ctrl+P), and read an object's columns,
+  constraints, indexes, relationships (a related table is one click or Enter away) and, on SQLite, `STRICT` and
+  `WITHOUT ROWID`. Refresh reads the catalog again on the open connection. The page only reads; every database text
+  is escaped and capped, the answers are parsed fail-closed, and stale answers after a profile switch are dropped.
+  E2E against the parts and measurements reference apps (`e2e/backend.spec.ts`). Open parts: TD-041.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most

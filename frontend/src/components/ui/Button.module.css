@@ -29,6 +29,10 @@
   cursor: not-allowed;
   opacity: 0.55;
 }
+/* Busy, but kept focusable so that the focus stays on it (STU-010, C-2 of stu-014-ui-review.md). */
+.button[aria-disabled='true'] {
+  cursor: progress;
+}
 .primary {
   --btn-bg: var(--tb-color-primary);
   --btn-fg: var(--tb-color-on-primary);

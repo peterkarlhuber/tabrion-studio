@@ -36,6 +36,7 @@ export interface CommandContext {
 const PAGES: { path: Route; key: string }[] = [
   { path: '/', key: 'nav.start' },
   { path: '/connections', key: 'nav.connections' },
+  { path: '/explorer', key: 'nav.explorer' },
   { path: '/migrations', key: 'nav.migrations' },
   { path: '/settings', key: 'nav.settings' },
 ];
@@ -87,6 +88,25 @@ export function buildCommands({ t, path, theme, density, openHelp }: CommandCont
       current: locale === value,
       run: () => chooseLanguage(value),
     })),
+    ...(path === '/explorer'
+      ? [
+          {
+            id: 'explorer:filter',
+            group: 'navigate' as const,
+            label: t('keyboard.commands.explorerFilter'),
+            shortcut: SHORTCUTS.explorerFilter,
+            // After the palette has returned the focus to its opener: the filter, or the profile picker before a
+            // catalog is open (STU-010).
+            run: () =>
+              window.setTimeout(() => {
+                const target =
+                  document.querySelector<HTMLElement>('[data-explorer-filter]') ??
+                  document.querySelector<HTMLElement>('[data-explorer-profile]');
+                target?.focus();
+              }, 0),
+          },
+        ]
+      : []),
     {
       id: 'help:shortcuts',
       group: 'help',
