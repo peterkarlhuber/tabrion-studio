@@ -242,7 +242,11 @@ def read_only_database(
     migration worker's (STU-015). Not connected yet. Raises :class:`RegistryError`."""
     url = connection_url(profile, password, database_file)
     settings = studio_profile(profile, limits)
-    options = {} if profile.engine == "sqlite" else {"connect_args": driver_options(password, settings.postgres)}
+    options: dict[str, Any] = {}
+    if profile.engine != "sqlite":
+        # use_native_hstore=False: no type lookup of the driver's when a connection is opened (TD-039); hstore values
+        # are the server's text, as for every type the driver does not know.
+        options = {"connect_args": driver_options(password, settings.postgres), "use_native_hstore": False}
     try:
         db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
     except FileNotFoundError:
@@ -259,6 +263,10 @@ def read_only_database(
         # M-2 of stu-011-review.md: no session setting outlives the statement that made it (after tabrion's own
         # check-in listener, which gives psycopg's read_only back to the session default).
         event.listen(db.engine, "checkin", tabrion_compat.reset_session)
+        # TD-039: the connection's setup (the dialect's first-connect queries, tabrion's session settings) runs
+        # under a fixed search_path; the session's own path is back before Studio uses the connection.
+        event.listen(db.engine, "connect", tabrion_compat.pin_setup_path, insert=True)
+        event.listen(db.engine, "connect", tabrion_compat.restore_setup_path(db.engine.dialect))
     return db
 
 

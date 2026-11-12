@@ -815,7 +815,8 @@
       "cancel": "Cancel query",
       "newTab": "New editor tab",
       "closeTab": "Close editor tab",
-      "save": "Save as .sql"
+      "save": "Save as .sql",
+      "export": "Export…"
     },
     "params": {
       "title": "Parameters",
@@ -904,7 +905,8 @@
     "canceledBeforeStart": "Canceled before the query started.",
     "profileChanged": "The profile {{name}} changed since this page read it (now {{environment}}). Nothing was run on it; run again to use it as it is now.",
     "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
-    "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run."
+    "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run.",
+    "exportSubject": "result {{number}} of {{tab}}"
   },
   "viewer": {
     "loading": "Loading the page…",
@@ -983,6 +985,42 @@
       "viewer_cell_unavailable": "The whole value cannot be loaded for this row. Open it with a query in the SQL editor.",
       "viewer_row_gone": "The row is no longer there, or it changed. Reload the page.",
       "query_limit": "Studio is already running as many queries as it allows, in all or on this connection. Wait for one to finish."
+    }
+  },
+  "export": {
+    "title": "Export",
+    "description": "Export {{subject}} as a file. The export only reads.",
+    "format": "Format",
+    "formats": {
+      "csv": "CSV (for spreadsheets)",
+      "json": "JSON (for programs)"
+    },
+    "rows": "Rows",
+    "fetched_one": "The fetched row of the result ({{rows}})",
+    "fetched_other": "The fetched rows of the result ({{rows}})",
+    "upTo": "Up to",
+    "limitLabel": "Row limit",
+    "limitHint": "At most {{max}} rows.",
+    "limitInvalid": "Enter a whole number from 1 to {{max}}.",
+    "escape": "Protect against spreadsheet formulas (a text that starts with =, +, - or @ gets a leading ')",
+    "again": "Studio runs the statement again for the export, read-only, so the file holds the rows as they are now.",
+    "cappedFetched": "The result was cut, so this export stops at the same number of rows. Choose \"Up to\" to export more.",
+    "csvCut": "If there are more rows than the limit, the file stops there; a CSV file does not say so.",
+    "jsonCut": "If there are more rows than the limit, the file stops there and says so.",
+    "starting": "Exporting…",
+    "received": "Exporting… {{size}} received",
+    "canceled": "The export was canceled; nothing was saved.",
+    "cancel": "Cancel export",
+    "start": "Export",
+    "done": "Export saved: {{filename}} ({{size}}).",
+    "doneCut": "Export saved: {{filename}} ({{size}}). It stops at {{rows}} rows; more rows exist.",
+    "problems": {
+      "invalid": "The export settings are not valid: a format and 1 to 1 000 000 rows.",
+      "busy": "Another export is running on this connection, or two are running already. Wait until one has finished.",
+      "stopped": "The export took longer than 10 minutes and was stopped. Export fewer rows, or filter the query.",
+      "incomplete": "The file did not arrive whole, so nothing was saved. Try again.",
+      "tooLarge": "The file is larger than {{size}}, too large to assemble in the browser, so the export was stopped and nothing was saved. Export fewer rows or columns.",
+      "connectionGone": "The connection is no longer open. Run the statement again, then export."
     }
   }
 }

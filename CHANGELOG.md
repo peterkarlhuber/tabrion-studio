@@ -18,6 +18,15 @@ All notable changes to this project are documented here. The format follows
   for one request (12 KB, below the server's 16 KB head limit) are refused in the form; the memory estimate counts 4
   bytes a character (code points above U+FFFF); the first page is read 150 ms after the tab opens, so passing
   through it reads nothing; "Load in full" is aborted when its cell is left.
+- TD-043 (STU-021 in the page): the export dialog. **Export…** on a finished result of the SQL editor saves it as
+  CSV or JSON: the fetched rows or up to 1 000 000 rows, with the CSV formula protection on by default. The statement
+  runs again with its parameters on the result's connection (D-02 through the shared guard; no new connection). The
+  dialog shows the bytes received, Cancel or Esc aborts the request and saves nothing, a file is saved only when it
+  arrived whole and of the asked type, under the server's file name only when that has the expected form, and a JSON
+  export the server cut says so. The page holds the file until it is saved, at most 1 GiB: past it the export is
+  aborted, nothing is saved, and the dialog says to export fewer rows or columns; a stream that breaks after some
+  bytes says the file did not arrive whole (not that the server does not answer). en/de; the data viewer (STU-013)
+  can mount the same dialog with a table.
 - STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
   `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
   sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.
@@ -413,6 +422,12 @@ All notable changes to this project are documented here. The format follows
 
 - Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
   review). User SQL, the viewer and the exports keep the session's `search_path`.
+- Opening a PostgreSQL connection now runs the driver's and SQLAlchemy's setup queries under a fixed search_path;
+  hardening against object resolution through user schemas (TD-039). The session's own `search_path` is restored
+  before the connection is used, so user SQL, the viewer and the exports see the path the user configured.
+- `hstore` values now come back as the server's text (`"a"=>"1"`) in query results, the data viewer and the exports,
+  not as a mapping: the driver's native hstore adaptation is off, so no type lookup runs when a connection is opened
+  (TD-039).
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
   secret's source, `host:port` and the TLS mode, marked for a host outside loopback, TLS weaker than `verify-full`, a
   variable that looks like another service's credential and a password file outside the project. Projects trusted
