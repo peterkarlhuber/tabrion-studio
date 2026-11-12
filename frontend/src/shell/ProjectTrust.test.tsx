@@ -8,6 +8,7 @@ import { parseProject } from '../api/project';
 import { readProblem } from '../api/problem';
 import { DIFF, REVIEW } from '../harness/trust';
 import { CSRF_HEADER, CSRF_KEY } from '../session';
+import { ConnectionSessionContext, NO_CONNECTION_SESSION } from '../workspace';
 import { ProjectTrust } from './ProjectTrust';
 
 const DIGEST = 'a'.repeat(64);
@@ -172,3 +173,34 @@ it('reads problems', async () => {
   expect((await readProblem(new Response('x', { status: 502 }))).code).toBe('studio.unknown');
   expect((await readProblem(new Response('{"log_id":"<b>"}', { status: 500 }))).logId).toBeNull();
 });
+
+it.each([
+  [204, true],
+  [409, false],
+])(
+  'C-1 of the connect review: a trust (status %i) forgets the D-02 confirmations of project profiles: %s',
+  async (status, forgets) => {
+    const user = userEvent.setup();
+    const forgetProd = vi.fn();
+    const { fetcher } = server([project('changed', { diff: DIFF }), project('trusted')], {
+      status,
+      code: 'studio.trust_stale',
+    });
+    render(
+      <ConnectionSessionContext.Provider value={{ ...NO_CONNECTION_SESSION, forgetProd }}>
+        <ProjectTrust fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Trust' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    if (!forgets) {
+      expect(forgetProd).not.toHaveBeenCalled();
+      return;
+    }
+    expect(forgetProd).toHaveBeenCalledTimes(1);
+    const matches = forgetProd.mock.calls[0]?.[0] as (id: string) => boolean;
+    expect(matches('project:central')).toBe(true);
+    expect(matches('user:central')).toBe(false);
+  },
+);
