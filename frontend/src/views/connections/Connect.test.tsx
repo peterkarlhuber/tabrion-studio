@@ -706,6 +706,76 @@ describe('review fixes of the connect review (#42)', () => {
     },
   );
 
+  it.each([
+    ['opens', 'parts-dev, connected'],
+    ['fails', 'No connection'],
+  ])(
+    'R-1 (#44 review): a slow connect that %s before a slower, newer one fails does not leave "connecting"',
+    async (outcome, shown) => {
+      const slow = deferred();
+      const slower = deferred();
+      const { fetcher, open } = server({ 'POST /api/connections': [slow.answer, slower.answer] });
+      await manager(fetcher);
+      await userEvent.click(
+        within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+      );
+      const detail = await select('measure');
+      await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+      await confirmProd();
+      await waitFor(() =>
+        expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+          'measure, connecting',
+        ),
+      );
+      // The older request answers first: measure is the newest, so the header stays with it.
+      const opened = {
+        connection_id: 'c-project:parts-dev',
+        profile_id: 'project:parts-dev',
+        engine: 'sqlite',
+        environment: 'dev',
+        read_only: true,
+        url: 'sqlite:///x',
+        opened_at: 1,
+      };
+      if (outcome === 'opens') open.set(opened.connection_id, opened);
+      slow.resolve(
+        outcome === 'opens'
+          ? json(opened, 201)
+          : json({ code: 'db.connection', kind: 'connection', status: 502 }, 502),
+      );
+      await slow.promise;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'measure, connecting',
+      );
+      // Then the newer one fails: the header takes what the older request ended with, not its "connecting".
+      slower.resolve(json({ code: 'db.connection', kind: 'connection', status: 502 }, 502));
+      await within(detail).findByText(/Not connected/);
+      await waitFor(() => expect(header()).toHaveTextContent(shown));
+      expect(header()).not.toHaveTextContent('connecting');
+    },
+  );
+
+  it('the manager reads the open connections once per Connect, not on every header change', async () => {
+    const { fetcher, calls } = server();
+    await manager(fetcher);
+    const lists = () =>
+      calls.filter((call) => call.method === 'GET' && call.url === '/api/connections').length;
+    await waitFor(() => expect(lists()).toBeGreaterThan(0));
+    const before = lists();
+    await userEvent.click(
+      within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+    );
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // "connecting" and "connected" are two header changes; only the read after the connect follows.
+    expect(lists() - before).toBe(1);
+  });
+
   it('L-1 (delta review): a click on a button marked busy starts nothing', async () => {
     const slow = deferred();
     const { fetcher, calls } = server({ 'POST /api/connection-tests': slow.answer });

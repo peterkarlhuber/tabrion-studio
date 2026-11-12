@@ -69,7 +69,8 @@ export function parsePostgresUrl(text: string): PostgresUrl | UrlRefusal {
  * - the password of the user part (`postgresql://user:secret@host` -> `postgresql://user@host`). The user part ends at
  *   the last `@` before the path, as the URL parser reads it. When the user part cannot be found that way (a `/` in
  *   the password) but the text still looks like it holds `user:password@`, the whole text goes;
- * - every `password` parameter of the query (`?password=secret`), its name read as the URL parser decodes it.
+ * - every `password` and `sslpassword` parameter of the query (`?password=secret`), its name read as the URL parser
+ *   decodes it.
  */
 export function withoutPassword(text: string): string {
   return withoutPasswordParameter(withoutUserPassword(text));
@@ -84,6 +85,9 @@ function withoutUserPassword(text: string): string {
   return `${match[1]}${userinfo.slice(0, colon)}@${text.slice(match[0].length)}`;
 }
 
+/** Query parameters that hold a secret: the password, and libpq's passphrase of the client key. */
+const SECRET_PARAMETERS = new Set(['password', 'sslpassword']);
+
 function parameterName(part: string): string {
   const name = part.split('=', 1)[0] ?? '';
   return (decode(name.replace(/\+/g, ' ')) ?? name).trim().toLowerCase();
@@ -95,7 +99,7 @@ function withoutPasswordParameter(text: string): string {
   const hash = text.indexOf('#', start);
   const end = hash < 0 ? text.length : hash;
   const parts = text.slice(start + 1, end).split('&');
-  const kept = parts.filter((part) => parameterName(part) !== 'password');
+  const kept = parts.filter((part) => !SECRET_PARAMETERS.has(parameterName(part)));
   if (kept.length === parts.length) return text;
   const query = kept.filter((part) => part !== '').join('&');
   return `${text.slice(0, start)}${query === '' ? '' : `?${query}`}${text.slice(end)}`;
