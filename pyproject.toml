@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling>=1.26"]
+requires = ["hatchling==1.33.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -91,6 +91,7 @@ include = [
     "TRADEMARKS.md",
     "mkdocs.yml",
     "pyproject.toml",
+    "build-constraints.txt",
 ]
 exclude = ["frontend/node_modules", "frontend/dist"]
 artifacts = ["src/tabrion_studio/static/**"]

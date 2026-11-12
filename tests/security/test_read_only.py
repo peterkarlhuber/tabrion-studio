@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import shutil
 import sqlite3
+import time
 from typing import Any
 
 import pytest
@@ -38,6 +39,7 @@ from tabrion_studio.services.connections import (
     studio_profile,
 )
 from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
+from tabrion_studio.services.sqltext import placeholders
 
 pytestmark = pytest.mark.security
 
@@ -431,6 +433,46 @@ def test_r2_i2_a_literal_cannot_hide_a_call_from_either_lexing(sql: str) -> None
     """Kills mutants T1 (one reading only) and T6 (E'...' without escapes) of re-review 2."""
     with pytest.raises(StatementRefused) as raised:
         check_statement(sql)
+    assert raised.value.code == "studio.statement_refused"
+
+
+#: R2-L1 of delta re-review 2: texts at the API's size cap (512 k characters) that made the lexer quadratic.
+LONG_COMMENT_TEXTS = {
+    "line comments": "select 1" + "--\n" * 174_000,
+    "carriage returns": "select 1" + "-- \r" * 131_000,
+    "comment lines": "-- a comment line\n" * 29_000 + "select 1",
+}
+
+
+@pytest.mark.parametrize("name", list(LONG_COMMENT_TEXTS))
+def test_r2_l1_line_comments_are_lexed_in_linear_time(name: str) -> None:
+    sql = LONG_COMMENT_TEXTS[name]
+    assert len(sql) <= 512 * 1024
+    started = time.perf_counter()
+    assert check_statement(sql) == sql.strip()
+    placeholders(sql, "postgresql")
+    placeholders(sql, "sqlite")
+    assert time.perf_counter() - started < 2.0  # about 0.3 s; it was 10 s before the fix
+
+
+@pytest.mark.parametrize(
+    ("sql", "postgresql", "sqlite"),
+    [
+        ("select 1 -- a\r\nfrom t", ["select", "1", "from", "t"], ["select", "1", "from", "t"]),
+        ("select --\n--\r 1", ["select", "1"], ["select"]),
+        ("select -- a\rb\n1", ["select", "b", "1"], ["select", "1"]),
+        ("select 1 --", ["select", "1"], ["select", "1"]),
+    ],
+)
+def test_r2_l1_where_line_comments_end(sql: str, postgresql: list[str], sqlite: list[str]) -> None:
+    """PostgreSQL ends ``--`` at a line feed or a carriage return, SQLite only at a line feed."""
+    assert readonly_module._tokens(sql, backslash_strings=False) == postgresql
+    assert readonly_module._tokens(sql, backslash_strings=False, sqlite=True) == sqlite
+
+
+def test_r2_i2_a_nul_character_is_refused() -> None:
+    with pytest.raises(StatementRefused) as raised:
+        check_statement("select\0 1")
     assert raised.value.code == "studio.statement_refused"
 
 

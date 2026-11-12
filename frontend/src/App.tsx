@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { startAppearanceSync } from './appearance';
 import { fetchHealth, startHeartbeat } from './heartbeat';
 import { usePath } from './router';
 import type { SessionState } from './session';
@@ -80,6 +81,12 @@ export function App({
     // refreshServer only bumps a counter; it does not need to restart the heartbeat.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetcher, session, heartbeat]);
+
+  // Language, theme and density from settings.toml (TD-021): the browser forgets them, the port changes per start.
+  useEffect(
+    () => (session === 'ok' ? startAppearanceSync(fetcher) : undefined),
+    [fetcher, session],
+  );
 
   const state: AppSession = ended ? 'ended' : session;
   if (state !== 'ok') {

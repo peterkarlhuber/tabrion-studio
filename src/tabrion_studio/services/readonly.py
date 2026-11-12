@@ -155,6 +155,11 @@ _REFUSED_FUNCTIONS = frozenset(
         "dblink_send_query",
     }
 )
+#: A run of white space (:data:`_SPACE`) and ``--`` comments; such a comment ends at ``\n`` or ``\r`` in PostgreSQL,
+#: only at ``\n`` in SQLite.
+#: Possessive, so the match never backtracks.
+_BLANK = re.compile(r"[ \t\n\r\f\v]*+(?:--[^\n\r]*+[ \t\n\r\f\v]*+)*+")
+_SQLITE_BLANK = re.compile(r"[ \t\n\r\f\v]*+(?:--[^\n]*+[ \t\n\r\f\v]*+)*+")
 _DOLLAR_TAG = re.compile(r"\$(?:[A-Za-z_\u0080-\U0010ffff][A-Za-z0-9_\u0080-\U0010ffff]*)?\$")
 #: A Unicode-escaped quoted identifier (``U&"\0073et_config"``): Studio does not decode them, so it refuses them.
 _UNICODE_IDENTIFIER = "\x00u&"
@@ -201,12 +206,11 @@ def _lex(sql: str, *, backslash_strings: bool, sqlite: bool = False) -> list[tup
     index, size = 0, len(sql)
     while index < size:
         char = sql[index]
-        if char in _SPACE:
-            index += 1
-        elif sql.startswith("--", index):
-            ends = [sql.find("\n", index)] if sqlite else [sql.find("\n", index), sql.find("\r", index)]
-            ends = [position for position in ends if position >= 0]
-            index = min(ends) if ends else size
+        if char in _SPACE or sql.startswith("--", index):
+            # White space and line comments in one match (R2-L1 of delta re-review 2: two finds per comment that
+            # scanned to the end made the lexer quadratic).
+            skipped = (_SQLITE_BLANK if sqlite else _BLANK).match(sql, index)
+            index = max(skipped.end(), index + 1) if skipped is not None else index + 1
         elif sql.startswith("/*", index):
             if sqlite:
                 close = sql.find("*/", index + 2)
@@ -384,6 +388,8 @@ def _explains_a_query_or_is_none(tokens: list[str]) -> bool:
 def check_statement(sql: str) -> str:
     """The one statement of ``sql``; :class:`StatementRefused` for none, several, a transaction-control statement or
     one whose first word is not in the allowlist (:data:`_FIRST_WORDS`)."""
+    if "\0" in sql:  # libpq ends the text at NUL, so the server would run less than was checked (R2-I2)
+        raise StatementRefused("studio.statement_refused")
     statements = split_statements(sql)
     if not statements:
         raise StatementRefused("studio.statement_empty")

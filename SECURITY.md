@@ -12,8 +12,8 @@ Tabrion Studio is pre-alpha and has no release. Security fixes are made on the d
 
 Please do not report vulnerabilities in public issues, pull requests or discussions.
 
-1. Use **Report a vulnerability** in the repository's **Security** tab (GitHub private vulnerability reporting).
-   Only the maintainers can see the report.
+1. Use **Report a vulnerability** in the repository's **Security** tab (GitHub private vulnerability reporting), if
+   it is enabled (it is optional for this repository). Only the maintainers can see the report.
 2. If that option is not available, open an issue titled "Security contact request" **without any details**, so
    that a private channel can be arranged.
 
