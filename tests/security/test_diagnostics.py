@@ -552,20 +552,21 @@ def test_the_cancel_route_and_the_csrf_check(
 
 
 def _wait_for_the_limit(diagnostics: Diagnostics, monkeypatch: pytest.MonkeyPatch) -> None:
-    """tabrion's file checks (just before quick_check) wait until the run's limit or cancel has hit, so the cancel is
-    requested when quick_check starts, however fast the machine is."""
-    real = tabrion_check_module._file_findings
+    """tabrion's check (the public ``tabrion.check.check``, which Studio calls with its cancel hooks in place) waits
+    until the run's limit or cancel has hit, so the cancel is requested before quick_check starts, however fast the
+    machine is. Every one of tabrion's statements then runs after the cancel: only quick_check may stop."""
+    real = tabrion_check_module.check
 
-    def after_the_limit(files: Any) -> Any:
+    def after_the_limit(dbapi: Any, **kwargs: Any) -> list[Finding]:
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             runs = [run for runs in diagnostics._running.values() for run in runs]
             if runs and all(run.hook.requested for run in runs):
                 break
             time.sleep(0.002)
-        return real(files)
+        return real(dbapi, **kwargs)
 
-    monkeypatch.setattr(tabrion_check_module, "_file_findings", after_the_limit)
+    monkeypatch.setattr(tabrion_check_module, "check", after_the_limit)
 
 
 @posix
