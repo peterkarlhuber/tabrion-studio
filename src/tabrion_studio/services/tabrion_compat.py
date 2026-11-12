@@ -214,19 +214,22 @@ def stream(
         if sent:
             _discard(connection, dbapi)  # first: a cancel packet still on its way cannot reach the CLOSE either
         if cursor is not None:
-            _close_cursor(cursor, connection, dbapi)
+            _close_cursor(cursor, connection, dbapi, discarded=sent)
     if sent:
         raise Cancelled
 
 
-def _close_cursor(cursor: Any, connection: sqlalchemy.Connection, dbapi: Any) -> None:
+def _close_cursor(cursor: Any, connection: sqlalchemy.Connection, dbapi: Any, *, discarded: bool = False) -> None:
     """Close ``cursor``; one whose close fails (a broken connection) is closed without the database: the
     connection leaves the pool (:func:`_discard`), and on a closed driver connection psycopg marks a server-side
-    cursor closed without sending ``CLOSE``."""
+    cursor closed without sending ``CLOSE``. ``discarded``: the connection already left the pool after a cancel
+    (:func:`_discard` also closes the driver connection, so SQLite's ``cursor.close()`` raises); it is not
+    discarded a second time."""
     try:
         cursor.close()
     except Exception:
-        _discard(connection, dbapi)
+        if not discarded:
+            _discard(connection, dbapi)
         with contextlib.suppress(Exception):
             cursor.close()
 
