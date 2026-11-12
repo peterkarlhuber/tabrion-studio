@@ -10,7 +10,7 @@
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -492,4 +492,65 @@ test('a profile list that cannot be read again opens no connection (L-9)', async
   await page.unroute('**/api/profiles');
   expect(await openProfiles(page, 'e2e-dev5')).toEqual([]);
   expect(violations).toEqual([]);
+});
+
+test('TD-043: exports a result through the real export route, as CSV and as JSON cut at a limit', async ({
+  page,
+}) => {
+  const foreign = foreignRequests(page, () => base);
+  const violations = await signIn(page);
+  await openEditor(page);
+  await type(
+    page,
+    'select id, material, weight, note from parts where material = :material order by id',
+  );
+  await page.getByTestId('editor-run').click();
+  await expect(
+    page.getByTestId('param-panel').getByRole('textbox', { name: ':material' }),
+  ).toBeFocused();
+  await page.keyboard.type('Aluminium');
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('result-status')).toHaveText(new RegExp(`^25 rows · ${MS}$`));
+
+  // CSV of the fetched rows: the statement runs again on the server with its parameter.
+  const open = page.getByRole('button', { name: 'Export…' });
+  await open.click();
+  const dialog = page.getByRole('dialog', { name: 'Export' });
+  await expect(
+    dialog.getByRole('radio', { name: 'The fetched rows of the result (25)' }),
+  ).toBeChecked();
+  expect(await seriousViolations(page)).toEqual([]);
+  let saved = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+  let file = await saved;
+  expect(file.suggestedFilename()).toBe('export.csv');
+  const lines = readFileSync(await file.path(), 'utf8')
+    .trimEnd()
+    .split(/\r?\n/);
+  expect(lines[0]).toBe('id,material,weight,note');
+  expect(lines).toHaveLength(26);
+  expect(lines[1]).toBe('1,Aluminium,0.5,n1');
+  await expect(page.getByTestId('editor-notice')).toContainText('Export saved: export.csv');
+  await expect(open).toBeFocused();
+
+  // JSON up to 10 rows: the server cuts it and the page says so.
+  await open.click();
+  await dialog.getByRole('radio', { name: 'JSON (for programs)' }).check();
+  await dialog.getByTestId('export-limit').fill('10');
+  saved = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+  file = await saved;
+  expect(file.suggestedFilename()).toBe('export.json');
+  const doc = JSON.parse(readFileSync(await file.path(), 'utf8')) as {
+    columns: string[];
+    rows: unknown[][];
+    truncated: string | null;
+  };
+  expect(doc.columns).toEqual(['id', 'material', 'weight', 'note']);
+  expect(doc.rows).toHaveLength(10);
+  expect(doc.truncated).toBe('rows');
+  await expect(page.getByTestId('editor-notice')).toContainText('It stops at 10 rows');
+  expect(violations).toEqual([]);
+  expect(foreign).toEqual([]);
 });

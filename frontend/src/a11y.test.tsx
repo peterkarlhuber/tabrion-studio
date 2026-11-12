@@ -16,6 +16,7 @@ import {
   TrustProjectDialog,
   UnsavedScriptDialog,
 } from './components/dialogs/StudioDialogs';
+import { ExportDialog } from './components/export/ExportDialog';
 import { codeTrust } from './harness/migrations';
 import { createQueryServer } from './harness/queries';
 import { PROFILES, SETTINGS } from './harness/profiles';
@@ -147,6 +148,22 @@ const PAGES: [string, string, () => ReactElement][] = [
     ),
   ],
   ['D-08', '/', () => <QuitDialog open running={2} onQuit={noop} onCancel={noop} />],
+  [
+    'export dialog (TD-043)',
+    '/',
+    () => (
+      <ExportDialog
+        fetcher={health}
+        connectionId="c1"
+        source={{ kind: 'sql', sql: 'select 1', params: {} }}
+        subject="result 1 of Query 1"
+        fetchedRows={3}
+        capped
+        onDone={noop}
+        onClose={noop}
+      />
+    ),
+  ],
   ['migrations (STU-015)', '/migrations', () => <App fetcher={migrations} heartbeat={false} />],
   ['explorer (STU-010)', '/explorer', () => <App fetcher={profiles} heartbeat={false} />],
   ['SQL editor (STU-012)', '/sql', () => <EditorView fetcher={editor} />],

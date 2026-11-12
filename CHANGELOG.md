@@ -15,6 +15,15 @@ All notable changes to this project are documented here. The format follows
   the migration status, diagnostics and explorer views and the SQL editor read their list again and ask on the next
   try. The page's `openConnection` and `testConnection` require the environment, so no caller can leave it out. A
   SQLite file is opened from the same read of the profile that passed the check. English and German.
+- TD-043 (STU-021 in the page): the export dialog. **Export…** on a finished result of the SQL editor saves it as
+  CSV or JSON: the fetched rows or up to 1 000 000 rows, with the CSV formula protection on by default. The statement
+  runs again with its parameters on the result's connection (D-02 through the shared guard; no new connection). The
+  dialog shows the bytes received, Cancel or Esc aborts the request and saves nothing, a file is saved only when it
+  arrived whole and of the asked type, under the server's file name only when that has the expected form, and a JSON
+  export the server cut says so. The page holds the file until it is saved, at most 1 GiB: past it the export is
+  aborted, nothing is saved, and the dialog says to export fewer rows or columns; a stream that breaks after some
+  bytes says the file did not arrive whole (not that the server does not answer). en/de; the data viewer (STU-013)
+  can mount the same dialog with a table.
 - STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
   `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
   sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.
