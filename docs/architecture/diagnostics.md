@@ -69,6 +69,47 @@ In their place, Studio checks what the application actually gets (`STU-DX-004`, 
 | `STU-DX-009` | warning | SQLite: `PRAGMA foreign_key_check` failed. Only "foreign key mismatch" (parent columns without a primary key or unique index) and "no such table" (a missing parent on old SQLite) are called a broken definition; a busy, locked or unreadable file gets a neutral text (L-5). Errors that are not database errors are not findings. The other findings stay. |
 | `STU-DX-010` | warning (info when only `lock_timeout` or `application_name` is missing) | No `lock_timeout`, `idle_in_transaction_session_timeout` or `application_name` for the login role in this database, with the precedence of `STU-DX-004` (L-1). |
 
+## The page
+
+The view **Diagnostics** (`/diagnostics`, `frontend/src/views/diagnostics/DiagnosticsView.tsx`, API client
+`frontend/src/api/diagnostics.ts`) runs the diagnosis for a chosen profile and lists the findings (08 section 4.9).
+It only reads; nothing on the page writes to a database.
+
+- **Run.** The user picks a profile and chooses "Run diagnosis". The diagnosis starts only on that click, since
+  SQLite's `quick_check` can take a while. The page opens the profile's read-only connection
+  (`POST /api/connections`; for a PROD profile D-02 first, and Cancel opens nothing) and posts
+  `POST /api/connections/{id}/diagnostics` with `{}` as JSON. "Run again" posts it again on the shown connection
+  and never opens one, so D-02 cannot be skipped.
+- **Cancel.** While the connection opens, Cancel drops the request and no diagnosis starts. While the diagnosis
+  runs, Cancel posts `POST .../diagnostics/cancel`; the answer then carries `STU-DX-008`, and the page says above the
+  list that the result is incomplete. A profile switch or leaving the page cancels a running diagnosis the same
+  way. A request counter drops every answer that arrives after a newer run or a profile switch.
+- **Findings.** A summary counts the findings per severity ("1 error · 2 warnings · 1 note", or "No findings").
+  Each finding shows its severity as an icon and a word (never colour alone; the left border repeats it), its code,
+  title, detail, remedy and source (tabrion or Studio). The titles of Studio's own codes `STU-DX-001..010` are the
+  page's en/de text (a test keeps the English ones equal to the backend's). Every other text is the server's
+  English text: it is marked `lang="en"`, and a hint above the list says so. The result names the profile, its
+  environment badge (PROD if the profile or the server says so) and the time of the run. The finished summary is
+  announced in a status region.
+- **Untrusted text (U-1).** tabrion's details and remedies name schemas and extensions, so every server text is
+  escaped (`lib/visible.ts`: control, separator and bidi characters as `\uXXXX`) and cut with a visible "…": codes
+  at 32, titles at 160, details and remedies at 1000 characters. At most 100 findings are listed, then "And N more
+  findings"; the summary counts all of them. Nothing is rendered as HTML.
+- **Fail closed.** An answer without a `findings` list shows nothing of it (`studio.answer_invalid`). A finding
+  without a code is left out. An unknown severity is shown with the errors as "Unknown severity" and counted on its
+  own, never as a lesser one. The page counts the findings itself and does not use `counts`.
+
+Not in the page yet: the report export (STU-025), a documentation link per finding and the "OK" rows of passed
+checks that 08 section 4.9 sketches (the route sends findings only), and German details and remedies (TD-032).
+
+Page tests: `DiagnosticsView.test.tsx` (run, D-02, run again, escaping and caps, the fail-closed parser, cancel
+before and during the run, profile switch and unmount, problems, German),
+`tests/unit/test_diagnostics_page.py` (the page's titles against the backend's), axe in jsdom (`a11y.test.tsx`) and
+in Chromium in light and dark, English and German, with the findings shown and while a run is canceled
+(`e2e/diagnostics.spec.ts`, `e2e/a11y.spec.ts`). Against a real `tabrion-studio` (`e2e/backend.spec.ts`, with
+`TABRION_STUDIO_E2E_PYTHON`), a profile made in the page for an SQLite file with rows written with foreign keys off
+and mode 0644 shows `STU-DX-005` and `TAB-SQ-003`, no session finding, not the file name, and passes axe.
+
 ## Tests
 
 | Test | Covers |

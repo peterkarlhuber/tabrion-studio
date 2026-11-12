@@ -48,6 +48,8 @@ const PROBLEMS = new Set([
   'secret_file_unsafe',
   'secret_file_not_private',
   'secret_file_unreadable',
+  // An answer the page cannot read (STU-014 diagnostics).
+  'answer_invalid',
   'offline',
 ]);
 
