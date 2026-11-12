@@ -11,7 +11,8 @@ Python 3.11 or later with pip (uv works as well, but is not required), Node.js 2
 ```bash
 python -m venv .venv
 . .venv/bin/activate            # Windows: .venv\Scripts\activate
-# STU-009 integration branch (RC-8): tabrion is not on PyPI yet, so the constraints file pins its commit.
+pip install --upgrade "pip>=26.1"   # older pip fails on the constraint plus extras
+# tabrion is not on PyPI; the constraints file pins the tabrion v0.1.0 commit.
 pip install -e ".[dev]" -c constraints/tabrion-integration.txt
 (cd frontend && npm ci)
 ```

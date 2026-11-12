@@ -21,6 +21,7 @@ import {
 import { setLocale } from '../i18n';
 import type { SessionState } from '../session';
 import '../styles/global.css';
+import { installTooltipDismiss } from '../lib/tooltips';
 import { initTheme, setThemePreference } from '../theme';
 import { EMPTY_WORKSPACE, type Workspace } from '../workspace';
 import styles from './harness.module.css';
@@ -34,6 +35,7 @@ const lang = params.get('lang');
 
 window.history.replaceState(null, '', params.get('path') ?? '/');
 initTheme();
+installTooltipDismiss();
 if (theme === 'light' || theme === 'dark') setThemePreference(theme);
 if (lang === 'en' || lang === 'de') void setLocale(lang);
 

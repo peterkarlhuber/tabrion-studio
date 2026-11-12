@@ -1,9 +1,7 @@
-# STU-009 integration branch (RC-8): the tabrion commit Studio is built and tested against.
-# tabrion master 546d254 (0.1.0a2.dev0): the a1 commit a463422 has only tabrion.errors, sql and config;
-# Database, Profile and Database.read() (layer B, TAB-018) arrived after it.
+# The tabrion commit Studio is built and tested against: tabrion v0.1.0 (merge commit of tabrion PR #56).
+# tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): a constraints file with a full commit SHA is
+# how Studio pins it. pyproject.toml carries the range >=0.1,<0.2 with no direct reference
+# (tests/security/test_dependencies.py, docs/TODO.md TS-001).
 # pip constraints take no extras; the extras come from pyproject.toml.
 # Install: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
-# tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): a constraints file with a full commit SHA is
-# how Studio pins it, also on master. With tabrion v0.1.0 this line pins the v0.1.0 commit, and pyproject.toml
-# carries the final range >=0.1,<0.2 (tests/security/test_dependencies.py).
-tabrion @ git+https://github.com/peterkarlhuber/tabrion@546d254a27df9f6b539d57c307ad3022d0ee3a4a
+tabrion @ git+https://github.com/peterkarlhuber/tabrion@d5821faa8742dea012abda3b663549c038d76543

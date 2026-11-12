@@ -16,7 +16,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Integration branch only (STU-009 draft PR, tabrion 546d254 pinned by SHA); master gets the final range plus the v0.1.0 commit SHA pin (no PyPI) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -41,9 +41,15 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
-| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
-| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 draft) |
+| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
+| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
+| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
+| TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
+| TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
+| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
 | TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; needs a green Windows CI run) | P2 | In progress (STU-015 draft) |
+| TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -58,31 +64,26 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### TS-001 · Add the tabrion dependency with the first API use (TABRION STU-009, RC-8)
 
-- **Priority:** P1 High · **Status:** Integration branch only (STU-009 draft PR; master blocked until tabrion v0.1.0,
-  TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
-- **What:** on master nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency.
+- **Priority:** P1 High · **Status:** Done (STU-009, PR #15: tabrion v0.1.0 pinned by full SHA) · **Refs:** RC-8,
+  E-VER, 05 §3.2, TABRION TAB-040
+- **What:** STU-009 is the first Studio code that uses the Tabrion API, so it adds the tabrion dependency.
 - **Rule (RC-8, amended by ADR 0009 in tabrion PR #20: tabrion is not published on PyPI, it is used through Git SHA
   pins):** `project.dependencies` carries only the final range, with no git or URL reference and no pre-release
   specifier. The commit is pinned by its **full SHA** in a constraints file
   (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`; no branch, tag or short SHA). Both are
-  enforced by `tests/security/test_dependencies.py` on the STU-009 branch (`test_pyproject_follows_rc8`,
-  `test_pin_files_pin_only_full_commits`).
-- **Next step:** with tabrion v0.1.0, `tabrion[postgres,sqlalchemy]>=0.1,<0.2` in `pyproject.toml` and the v0.1.0
-  commit in `constraints/tabrion-integration.txt` (STU-009).
+  enforced by `tests/security/test_dependencies.py` (`test_pyproject_follows_rc8`,
+  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_v0_1_0`).
+- **Done:** `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, and
+  `constraints/tabrion-integration.txt` pins tabrion v0.1.0, the merge commit of tabrion PR #56
+  (`d5821faa8742dea012abda3b663549c038d76543`). Every install reads the constraints file (`-c`, or
+  `PIP_CONSTRAINT` for the wheel smoke test in CI); a later tabrion version moves the pin in that one file. STU-015
+  (PR #29) adds the `migrations` extra: `tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2`.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
   every connection (`services.connections.driver_options`: `prepare_threshold=0`, `passfile`) are not targets.
-- **STU-009 integration branch (`claude/project-thread-rdo6g3-stu009`, draft, never merged before v0.1.0):**
-  `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2`, and
-  `constraints/tabrion-integration.txt` pins tabrion master `546d254a27df9f6b539d57c307ad3022d0ee3a4a`
-  (0.1.0a2.dev0). The a1 commit `a463422` has only `tabrion.errors`, `sql` and `config`; STU-009 needs
-  `Database`, `Profile`, `Database.read()` and `health()` (layer B, TAB-018), which arrived later.
-  `tests/security/test_dependencies.py::test_pyproject_follows_rc8` fails on that branch on purpose (pre-release
-  range). With v0.1.0: final range `>=0.1,<0.2`, the constraints file pinning the v0.1.0 commit by SHA, a merge of
-  master, then the PR is ready for review.
-  Done there: URLs only through `tabrion.safe_url()`; passwords only through the configuration's secrets when
-  connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
+- **Done in STU-009 (PR #15):** URLs only through `tabrion.safe_url()`; passwords only through the configuration's
+  secrets when connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
   project SQLite files only through `database_file`, every driver parameter in the fingerprint, `DB_KINDS` from
   `tabrion.errors.Kind`, `db.<kind>` problems from `classify`, `DbErrorRedactionFilter` in the log handlers
   (`docs/architecture/connections.md`).
@@ -344,18 +345,20 @@ merge after OA-004.
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
 | TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
-| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Draft PR on the integration branch (tabrion 546d254 pinned, RC-8; not before v0.1.0): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`. Open: the `backend integration (PostgreSQL 17)` job (OA-003), the page (TD-011, TD-012) |
+| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
-| TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
-| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
-| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Draft PR stacked on the STU-010 draft, on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). Open: the grid tab in the page (frontend lane), editing stays STU-026 |
-| TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Draft PR stacked on the STU-013 draft, on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..010` (prod TLS, T-10 / STU-T-021, read-only role that can write in any way or through any role it can become, owner in any schema, default privileges, role settings with their precedence, SQLite rows written with foreign keys off or a broken foreign key, the time limit); `POST .../diagnostics/cancel`; the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout, the write paths of M-2). Review `stu-014-review.md` fix round done (M-1..M-3, L-1..L-6, I-1..I-3); delta review of `a11c8bb` fixed (N-1 the cancel stops SQLite's `quick_check` alone, CI-1 role-making tests under the `postgres_superuser` marker plus owner-level tests, T-1 tests for the 7 surviving mutants, L-5 narrowed); the CI workflow change for CI-1 is in this PR (accepted by the workflow-change review). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
-| TABRION STU-015 | Migration status (Alembic, SQLite `user_version`) | P1 | STU-009 | Draft PR stacked on the STU-014 draft: `GET /api/connections/{id}/migrations`, the per-project code trust (`/api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the revision files) and the worker process for `tabrion.migrations.status` (only the connection's target, minimal environment, 30 s timeout); threat-model entry T-16 in `docs/architecture/migrations.md`. Review fix round (`stu-015-review.md`): H-1 the worker runs the hashed bytes and reads no bytecode of the project, M-1 the driver loads before the project's folders are on `sys.path`, M-2 bounded read and kill without waiting for the pipe (Windows: TD-024), M-3 tests for `-I`, the closed streams, the answer cap and `os._exit`, L-1 the T-16 wording, L-2 cap while reading, L-3 one worker at a time (`studio.migrations_busy`). Open: the trust dialog and the status view in the page (frontend lane, after STU-012); the T-16 row and the changed T-08 text in doc 03 section 7.3 (coordinating thread); tests against `examples/parts` of the tabrion repository once it has an Alembic project (the tests use their own fixture); the Levuvo formats (STU-024) |
+| TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
+| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
+| TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Done (PR #24), on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). The `ViewerTimeout` of `test_m4_a_small_first_row_does_not_size_the_next_batch` on Python 3.12 in CI is fixed in the test: tracemalloc plus coverage's line tracer on 3.12 made the statement check take about 2 s, past the `lite` profile's 800 ms, so the test now gives its statement a timeout it cannot reach (its assertions are unchanged; delta check pending). Open: the grid tab in the page (frontend lane), editing stays STU-026 |
+| TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Done (PR #25), on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..010` (prod TLS, T-10 / STU-T-021, read-only role that can write in any way or through any role it can become, owner in any schema, default privileges, role settings with their precedence, SQLite rows written with foreign keys off or a broken foreign key, the time limit); `POST .../diagnostics/cancel`; the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout, the write paths of M-2). Review `stu-014-review.md` fix round done (M-1..M-3, L-1..L-6, I-1..I-3); delta review of `a11c8bb` fixed (N-1 the cancel stops SQLite's `quick_check` alone, CI-1 role-making tests under the `postgres_superuser` marker plus owner-level tests, T-1 tests for the 7 surviving mutants, L-5 narrowed); the CI workflow change for CI-1 is in this PR (accepted by the workflow-change review). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
+| TABRION STU-015 | Migration status (Alembic, SQLite `user_version`) | P1 | STU-009 | Done (PR #29): `GET /api/connections/{id}/migrations`, the per-project code trust (`/api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the revision files) and the worker process for `tabrion.migrations.status` (only the connection's target, minimal environment, 30 s timeout); threat-model entry T-16 in `docs/architecture/migrations.md`. Review fix round (`stu-015-review.md`): H-1 the worker runs the hashed bytes and reads no bytecode of the project, M-1 the driver loads before the project's folders are on `sys.path`, M-2 bounded read and kill without waiting for the pipe (Windows: TD-024), M-3 tests for `-I`, the closed streams, the answer cap and `os._exit`, L-1 the T-16 wording, L-2 cap while reading, L-3 one worker at a time (`studio.migrations_busy`). Open: the trust dialog and the status view in the page (frontend lane, after STU-012); the T-16 row and the changed T-08 text in doc 03 section 7.3 (coordinating thread); tests against `examples/parts` of the tabrion repository once it has an Alembic project (the tests use their own fixture); the Levuvo formats (STU-024) |
 | TABRION STU-024 | Migration status of the Levuvo formats (Nodestro, Axentra, Orkexa) | P2 | STU-015 (STU-017 by the plan) | Early draft PR stacked on the STU-015 draft, kept a draft until STU-017 lands: version tables in every schema compared with the project's migration files (also in a project `.venv`), checksums as the runners record them, states current/pending/newer/changed/no_files with an SQL preview of pending steps; nothing is imported or run; fixtures copied from the three repositories (`tests/security/levuvo_fixtures`). Review `stu-024-review.md`: ACCEPTED with conditions; F-1 (a version table the role may not read, with unexpected columns or types, or a failed read is reported as `state: unreadable` with its problem, `studio.migrations_table` is new; only Orkexa's own table names count) and F-2 (tests for the preview and file caps, identifier quoting, glob characters in the project path, the order of the states, a database without version tables) are fixed. Windows (`backend test (windows-latest)` at `281258a`, 2 failures): the preview is now the text the runner reads and the checksum covers (every line end `\n`), so a file written with `\r\n` has the same preview on every platform; the glob test uses `a[b]c` everywhere and `a[b]*c?` only where `*` and `?` are valid file name characters (not Windows). Open: the view in the page (frontend lane); Axentra product namespaces have no files (registered in code); the review's minor findings M-1 (duplicate versions dropped silently), M-2 (Orkexa file problems show as `no_files`), M-3 (`LIMIT 100` tables and 10 000 rows cut without a flag), M-4 (files read on every request), M-5 (`config.not_utf8` vs `config.encoding`), M-6 (`python3.10` sorts before `python3.9`), M-7 (`os.scandir` without `with`) |
 | TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
-| TABRION STU-050, STU-052, STU-053 | UX acceptance, keyboard, accessibility audit | P1/P2 | | |
+| TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
+| TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
+| TABRION STU-050 | UX acceptance | P1 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
-| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
+| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part in the user-guide PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R);
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
@@ -384,8 +387,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 | Ref | What | Priority |
 |---|---|---|
 | TABRION QA-18 | `tests/packaging/test_independent.py`: import every tabrion module while orkexa, axentra, nodestro_* and tabrion_studio are blocked (05 §3.2) | P2 |
-| TABRION QA-21 | full AC-7 check against tabrion's `__all__`/API contract and export of the used names to `tabrion/docs/api-consumers.md` (the AST check for private names is in place) | P2 |
-| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, branch protection, English, license, SECURITY.md) | P2 |
+| TABRION QA-21 | Done in this repository: `scripts/check_tabrion_api.py` (the same file as in axentra, orkexa and nodestro-runtime) also checks used names against the installed Tabrion's `__all__` (a used name without an installed Tabrion fails; a module whose extra is missing is reported with its import error) and, with `--surface`, Tabrion's `docs/api/surface.json` (stable `S` names only: experimental `X` names are refused, 02 §14 S-2), and exports them to `docs/api-consumers.md`, enforced by `tests/architecture/test_tabrion_api_export.py` (stale or missing export, a fake installed Tabrion for the `__all__` part, the script's SHA-256 so the four copies stay identical). The `__all__` and `--surface` parts first have a name to check with the first Tabrion pin (STU-009). Open: `--check-export docs/api-consumers.md` on the existing CI step (a `.github` change), and Tabrion collecting the consumer lists into `tabrion/docs/api-consumers.md` | P3 |
+| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, English, license, SECURITY.md; branch protection, private vulnerability reporting and the social preview are optional, owner decision 2026-11-08): done in review, `docs/development/conventions.md`, `tests/security/test_conventions.py`; `CODE_OF_CONDUCT.md` and `SUPPORT.md` added | P2 |
 
 ## Technical debt
 
@@ -394,10 +397,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** 05 §3.2, AC-1
 - **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages. STU-006 adds `api`
   and `config` (the profiles layer; `config` never imports `api`, the app, the server, the CLI or `security`).
-  STU-009 (integration branch) adds `services` (the connection registry): it never imports `api`, the app, the
+  STU-009 adds `services` (the connection registry): it never imports `api`, the app, the
   server, the CLI or `security`, `config` never imports it, and only it imports SQLAlchemy and psycopg. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
+- **Status note:** every contract has a mutation probe in `tests/architecture/test_forbidden_probe.py` (TABRION
+  QA-16); the layer contract, and any new contract, needs its own probe there. The dependency policy (QA-17, AC-2):
+  `dependency-policy.json` and the vendored `scripts/check_dependency_policy.py` (a new Levuvo dependency needs a K-33
+  edge in nodestro-studio first, then a new copy here).
 
 ### TD-002 · Sandboxed browsers cannot open the redirect file (TABRION STU-003)
 
@@ -607,23 +614,24 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-012 · STU-009 integration: what remains before it can merge
 
-- **Priority:** P1 High · **Status:** Open (`stu-009-review.md`, delta re-review: accepted with conditions; R-L1,
-  R-L2, I-R1 and I-R2 done, the CI condition is a separate `.github/workflows` commit for the workflow-change review)
-  · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **Priority:** P1 High · **Status:** Done (PR #15: tabrion v0.1.0 pinned, master merged; the CI workflow commit
+  was reviewed and labeled; the STU-011 binding below stays a rule) · **Refs:** RC-8, 03 §5.1, §8,
+  `docs/architecture/connections.md`
 - **Re-review 2 (accepted with conditions; workflow change approved for the label):** R2-L1 (`DO` and the
   query-in-text functions refused), R2-I2 (tests that kill T1 and T6) and R2-I1 (no pip option after a marker) are
   done; the Info on the service port is done in a separate `.github` commit, which needs the workflow-change review
-  again before the label. Left: tabrion v0.1.0 (RC-8), then CI fully green including the RC-8 guard.
+  again before the label. The tabrion v0.1.0 pin is done; CI fully green, including the RC-8 guard, is the merge
+  condition.
 - **Conditions to leave draft (re-review):** 1. CI installs the pinned tabrion and runs the `postgres` tests (L-2,
   below); 2. R-L2, the strict pin rule (done: `tests/security/test_dependencies.py` allows only plain requirements
   and the full-SHA pin, in every requirements or constraints file at any depth); 3. R-L1 (done: token-based function
   check); 4. I-R2 (done: `test_i_r2_one_profile_read_per_connect` kills mutant N5).
-- **tabrion v0.1.0 (TS-001):** switch to the final range, pin the v0.1.0 commit by SHA in
-  `constraints/tabrion-integration.txt`, merge master, run every check, then mark the PR ready.
+- **tabrion v0.1.0 (TS-001):** done. The final range is in `pyproject.toml`, the v0.1.0 commit is pinned by SHA in
+  `constraints/tabrion-integration.txt`, and master is merged in.
 - **CI installs tabrion from the pin (L-2 of `stu-009-review.md`):** pip reads a constraints file only from `-c`,
   `PIP_CONSTRAINT` or a pip configuration file outside the repository. The workflow commit on this branch adds
   `-c constraints/tabrion-integration.txt` to every `pip install -e ".[dev]"` and sets `PIP_CONSTRAINT` for the wheel
-  installs (e2e, `build and install`, the SBOM job). It waits for the independent workflow-change review and the
+  installs (e2e, `build and install`, the SBOM job). It passed the independent workflow-change review and carries the
   `workflow-change-reviewed` label (OA-003).
 - **The CI job `backend integration (PostgreSQL 17)`** (same workflow commit, added to `.github/ci-manifest.json`):
   a `postgres:17.10` service pinned by digest, a non-superuser role that owns its database, `pytest -m postgres`
@@ -670,9 +678,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-013 · STU-011 query engine on tabrion 0.1: what changes with tabrion 0.2
 
-- **Priority:** P1 High · **Status:** Open (STU-011 draft PR, stacked on the STU-009 draft; not merged before
-  tabrion v0.1.0) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to §5.6, backlog TAB-033/TAB-042,
-  `docs/architecture/queries.md`
+- **Priority:** P1 High · **Status:** Open (STU-011 done in PR #18) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to
+  §5.6, backlog TAB-033/TAB-042, `docs/architecture/queries.md`
 - **Built on tabrion 0.1:** STU-011 (and STU-010) depend on TAB-042, tabrion 0.2 with `Transaction.stream`,
   `Transaction.cancel`, `tabrion.Result`/`Column` and `Database.inspector()`. Until then
   `services/tabrion_compat.py` builds stream, cancel and column metadata from `Database.read()` and
@@ -702,6 +709,11 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `transaction_timeout` in the session settings is refused by `startup_options` until it can quote the one and check
   the server version for the other like tabrion (with tabrion 0.2's session reset, TD-013). Open: R-I2 (`_expire`
   may report a user cancel shortly before the timeout as `db.timeout`; cosmetic, STU-012 by 2026-12-15).
+- **Delta re-review 2 of `stu-011-review.md` (head 70ca2f9, accepted):** R2-L1 done (the lexer and the placeholder
+  scan skip white space and `--` comments with one possessive regular expression; a timing test at the API cap),
+  R2-I2 done (NUL refused), R2-I1 done (the check-in reset also runs `SET SESSION AUTHORIZATION DEFAULT` and
+  `RESET ROLE`, which `RESET ALL` leaves alone; `test_pg_r2_i1_*`). R2-I3 and R2-I4 need nothing (the server rejects
+  those texts).
 - **Follow-ups:** the error position in `db.<kind>` problems (`position`, for the editor's marker; the server
   cursor's `DECLARE` and the `%(name)s` rewrite shift it, so it needs a mapping back); the `max_rows` setting is 10 000
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
@@ -741,8 +753,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Favorites and recently opened** are a 1.0 feature (03 §2 A).
 - **The `openapi in sync` CI job** (the first API types for the frontend) changes `.github/` and needs a
   workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
-- **Language and theme in `settings.toml`:** the page keeps them as browser preferences (STU-005); `PUT /api/settings`
-  accepts them, but the page does not send them yet.
+- **Language and theme in `settings.toml`:** done in the appearance PR (TD-021).
 - **PR #13 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
   - **L-1:** in the assistant, `secretKept` hides `secretProblem`. When a retarget could neither remove the old
     keyring entry nor store the new password, the page only says the old one was kept. Show both.
@@ -754,3 +765,124 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     handed out.
 - **Concurrent edits (I-3 of `stu-008-review.md`):** a save re-reads the file just before `os.replace`, but takes no
   lock; an edit within the replace itself is lost. A lock file would close it, if hand edits during a save matter.
+
+### TD-020 · STU-052 parts that wait for the SQL editor and the explorer
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 sections 7 and 11 (STU-052, depends on STU-012),
+  `docs/architecture/frontend.md` ("Keyboard")
+- **Done in the STU-052 PR:** the shortcut table with platform keys, the command palette, the shortcut help and
+  F6/Shift+F6 over the shell's areas; Vitest and keyboard-only Playwright tests for the views that exist.
+- **Editor shortcuts** (08 section 7): run (⌘↵ / Ctrl+Enter), run script, cancel (⌘. / Ctrl+.; Esc in the result),
+  new editor tab (⌘T is the browser's: Alt+T, the palette shows the shortcut that works), close tab, save script,
+  format (1.0), explorer filter (⌘P / Ctrl+P), history (1.0). Add them to `SHORTCUTS`, the help and the palette with
+  STU-011, STU-012 and STU-020; F6 then also cycles explorer, editor and result.
+- **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); it is
+  met with STU-012.
+- **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
+  skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
+  `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
+- **Review of #16 (`stu-052-td021-review.md`, accepted):** L-1 (German palette says "Darstellung" like the settings
+  view), L-2 (README: "no PyPI release is needed for now; a later publication needs a new decision and G-R") and L-3
+  (tests for IME composition, a shortcut another handler took, Escape not reaching the page; mutants K9, K12, K19) are
+  done in the STU-052 follow-up PR. Open Info items: I-1 (F6 replaces the browser's F6 inside Studio; Ctrl+L still
+  works), I-2 (move the focus to `#main` after "Go to …", with STU-053), I-3 (the docs sentence on F6's "first
+  control" applies to header and navigation only), I-4 ("Umschalt" instead of "Shift" in German, optional).
+
+### TD-021 · Language, theme and density in `settings.toml` (from TD-011)
+
+- **Priority:** P2 Medium · **Status:** Open (#17 merged as `061db9d`; only I-5 and I-6 left) · **Refs:** 03 section 4.3 (`settings.toml`: UI
+  settings, language), 08 section 4.10, `docs/architecture/configuration.md`
+- **Problem:** Studio listens on a free port, and a browser keeps localStorage per origin (port included). The
+  language, theme and density chosen in the settings were therefore forgotten at the next start.
+- **Done in the appearance PR:** `settings.toml` gains `density` (`compact`, `normal`; schema, writer and
+  `PUT /api/settings`). The page saves each choice at once (only that key, a fresh digest, one retry when stale), never
+  changes a file with issues or a hand-written one from there (the choice then stays in this browser and the view
+  says why), and applies the file's non-default values when it opens. Tests: `frontend/src/appearance.test.tsx`, the
+  real-server test in `frontend/e2e/backend.spec.ts`, and the schema, writer and API tests.
+- **Done after the review (`stu-052-td021-review.md`):** C-1, the palette's theme, density and language commands go
+  through `chooseTheme`, `chooseDensity` and `chooseLanguage`, so they are saved too (pinned by a Vitest); M-1, the
+  settings form reads the new digest itself when an appearance choice was saved since it read the file, and keeps
+  what was typed on `config_stale`; L-4, the note for a hand-written file says what to do; L-5, a fake server that
+  checks the digest pins the save queue; L-6, the real-server test removes its `settings.toml` again.
+- **D-1 (Low, `stu-052-td021-review.md`), done in the STU-053 PR:** the palette test ran only "density normal", so a
+  theme command that skipped `chooseTheme` passed; it now runs the theme, density and language commands and checks
+  each saved key.
+- **Open (Info):** I-5 (a warnings-only file is refused by the server, so the note says "could not be saved"), I-6 (an
+  older build reports `density` as an unknown key; a release-notes line).
+
+### TD-022 · STU-053 parts that wait for later packages or a person
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 08 section 9, 09 STU-053 (depends on STU-050),
+  `docs/architecture/accessibility.md`
+- **Done in the STU-053 PR:** the WCAG 2.2 AA checklist for the current shell (no open violation), the fixes F-1
+  (reflow at 320 px of the PROD header and the tabs), F-2 (24 px targets in D-01), F-3 (the connection switcher at
+  320 px, with titles for names cut with "…"), F-4 (tooltips hoverable and dismissible with Escape, and no click
+  through a tooltip shown for the keyboard focus) and F-5 (the logo link's name below 720 px), the focus on the main area after "Go to …" in the
+  palette (I-2 of `stu-052-td021-review.md`), and `frontend/e2e/a11y-audit.spec.ts` (target size, reflow in en and de, text spacing, focus visible and not
+  obscured, reduced motion, landmarks, tooltips).
+- **Review of the STU-053 PR (`stu-053-review.md`):** L-1 (a click beside a focused link followed it through its
+  tooltip), L-2 (header wrap, mark size and switcher name pinned at 320 px), L-3 (the header icon-button tooltip's
+  Escape and no-gap rules tested) and L-4 (`title` on cut names; the text-spacing comment replaced by a check) are
+  done. The redundant rules `.brand { flex: none }` and `.switcher > * { min-width: 0 }` were removed, since no test
+  could tell them apart (the header wraps before it would shrink the brand). I-1: refresh the report's
+  "Chromium 1243" line when CI's Chromium runs it.
+- **Screen-reader sample** (VoiceOver on macOS, NVDA on Windows): needs a person on those desktops (owner or QA-S1).
+- **With STU-010..STU-013:** the explorer tree (WAI-ARIA tree), the result grid (`role="grid"`, `aria-rowcount`,
+  `aria-rowindex`), the live region for the query status, the SQL editor (CodeMirror, leaving it with Escape); with
+  STU-023 the ER diagram's table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
+- **Required e2e suite:** `a11y-audit.spec.ts` runs in the CI job `e2e`, but is not in the list of suites that must
+  pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
+- **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
+  every MVP flow.
+
+### TD-023 · User guide parts that wait for later packages (STU-017)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 03 section 10 (STU-017: installation, start, security model,
+  troubleshooting), 09 STU-017 (depends on STU-016), `docs/guide/`
+- **Done in the user-guide PR:** `docs/guide/` for the features that exist: installation from a Git commit (no PyPI,
+  owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
+  connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
+- **With STU-009..STU-015:** connecting and the connection test, the explorer, the SQL editor and its shortcuts, the
+  data viewer, diagnostics and migration status; update the "Development version" note on `guide/index.md`.
+- **Troubleshooting:** the tables grow with the problem codes those packages add; the guide's command lines are
+  checked by the STU-017 clean-install test.
+- **With STU-017:** the documentation checklist, the clean-install test on Linux, macOS and Windows, the tag `v0.1.0`
+  (no publication, G-R) and the install section then names that tag instead of a commit.
+- **Done after the review (`stu-27-review.md`):** L-1, `--print-url` also opens the browser unless `--no-browser` is
+  given, so the guide and the troubleshooting row say `--no-browser --print-url`; L-2, the README status names only
+  what is on master and takes the PyPI sentence of the publication-policy PR (#22); L-3, the security page lists every
+  file Studio writes (settings, profiles, trust records, instance files, sign-in files, logs); L-4, the test wants a
+  row in the options table for every option and a real `nav` line (not a comment) for every guide page; I-2, I-4 and
+  I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
+- **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
+  binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
+
+### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
+
+- **Priority:** P3 Low · **Status:** Open (watch) · **Refs:** TABRION QA-8, `docs/development/ci.md` (QA-8 evidence)
+- **What:** `npm audit` over the whole tree reports GHSA-g3hv-75wg-m249 (moderate, a denial of service through
+  glob patterns) in `minimatch` 7.0.0..11.0.0, used only by eslint, `@eslint/config-array` and typescript-eslint.
+  Nothing of it ships: `npm audit --omit=dev --audit-level=high` finds nothing, and the wheel contains only the
+  built frontend. The fix npm offers (`npm audit fix --force`) downgrades eslint to 9.39.5 and typescript-eslint
+  to 8.36.0 (semver-major). `npm audit` lists **10** moderate entries: the one advisory through its dependency
+  cascade. `eslint-plugin-jsx-a11y` uses `minimatch` 3.1.5, outside the range.
+- **Next step:** take the eslint/typescript-eslint update that moves to a fixed `minimatch` when Dependabot proposes
+  it; no forced downgrade. A `package.json` `overrides` of `minimatch` to `^11.0.1` is an alternative, but a major
+  version for eslint's dependency: check eslint with it before using it.
+
+### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
+  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
+  `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
+  `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
+  The CI jobs still build with the unhashed `pyproject.toml` pin.
+- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
+  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
+  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
+  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
+  (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
+  `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.
