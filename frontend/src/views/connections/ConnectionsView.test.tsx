@@ -106,8 +106,9 @@ describe('connection manager', () => {
     // A project profile: no edit or delete (Studio never writes the project file).
     const detail = screen.getByTestId('connection-detail');
     expect(within(detail).queryByRole('button', { name: 'Edit' })).toBeNull();
-    expect(within(detail).getByRole('button', { name: 'Connect' })).toBeDisabled();
-    expect(within(detail).getByRole('button', { name: 'Test connection' })).toBeDisabled();
+    // STU-009 is there: testing and connecting work for every profile, project profiles included.
+    expect(within(detail).getByRole('button', { name: 'Connect' })).toBeEnabled();
+    expect(within(detail).getByRole('button', { name: 'Test connection' })).toBeEnabled();
     await userEvent.click(items[1] as HTMLElement);
     expect(
       within(screen.getByTestId('connection-detail')).getByRole('button', { name: 'Edit' }),
@@ -131,6 +132,33 @@ describe('connection manager', () => {
           status: 201,
         }),
       'PUT /api/profiles/user%3Ameasure/secret': () => new Response(null, { status: 204 }),
+      'POST /api/connection-tests': () =>
+        new Response(
+          JSON.stringify({ ok: true, engine: 'postgresql', server_version: '17.6', facts: {} }),
+          { status: 200 },
+        ),
+      'GET /api/profiles': () =>
+        new Response(
+          JSON.stringify(
+            listing({
+              profiles: [
+                ...listing().profiles,
+                {
+                  id: 'user:measure',
+                  source: 'user',
+                  name: 'measure',
+                  engine: 'postgresql',
+                  environment: 'prod',
+                  host: 'db.internal',
+                  database: 'm',
+                  password: { source: 'keyring', target: '' },
+                  secret: { source: 'keyring', has_secret: null },
+                },
+              ],
+            }),
+          ),
+          { status: 200 },
+        ),
     });
     render(<ConnectionsView fetcher={fetcher} />);
     await userEvent.click(await screen.findByRole('button', { name: 'New connection' }));
@@ -149,10 +177,20 @@ describe('connection manager', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
     await userEvent.type(within(dialog).getByLabelText('Name'), 'measure');
     await userEvent.click(within(dialog).getByRole('radio', { name: 'PROD' }));
-    expect(within(dialog).getByRole('button', { name: 'Test connection' })).toBeDisabled();
+    // The test runs on the saved profile (the typed password goes only to the secret route, OA-010).
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Test the connection after saving' }),
+    ).toBeChecked();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    const [create, secret] = writes(calls);
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'New connection' })).toBeNull(),
+    );
+    // C-2: the test after saving connects to a PROD profile, so D-02 asks first.
+    const prod = await screen.findByRole('dialog', { name: 'Production database' });
+    expect(writes(calls)).toHaveLength(2);
+    await userEvent.click(within(prod).getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(writes(calls)).toHaveLength(3));
+    const [create, secret, test] = writes(calls);
     expect(create?.body).toEqual({
       profile: {
         name: 'measure',
@@ -167,10 +205,88 @@ describe('connection manager', () => {
     });
     expect(JSON.stringify(create?.body)).not.toContain('pw-canary');
     expect(secret?.body).toEqual({ secret: 'pw-canary', store: 'keyring' });
+    expect(test?.url).toBe('/api/connection-tests');
+    expect(test?.body).toEqual({ profile_id: 'user:measure' });
+    expect(
+      await within(screen.getByTestId('connection-detail')).findByText(/Connection works/),
+    ).toHaveTextContent('PostgreSQL 17.6');
     for (const call of writes(calls)) {
       expect(call.headers['Content-Type']).toBe('application/json');
     }
     expect(screen.getByTestId('connections-status')).toHaveTextContent('measure saved.');
+  });
+
+  it('takes a pasted URL apart: the fields fill, the password goes to step 2, never into the file', async () => {
+    const { fetcher, calls } = server({
+      'POST /api/profiles': () =>
+        new Response(JSON.stringify({ id: 'user:pasted', digest: 'c'.repeat(64) }), {
+          status: 201,
+        }),
+      'PUT /api/profiles/user%3Apasted/secret': () => new Response(null, { status: 204 }),
+    });
+    render(<ConnectionsView fetcher={fetcher} />);
+    await userEvent.click(await screen.findByRole('button', { name: 'New connection' }));
+    const dialog = screen.getByRole('dialog', { name: 'New connection' });
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'PostgreSQL' }));
+    const url = within(dialog).getByLabelText('Or paste a URL');
+    await userEvent.type(url, 'mysql://h/d');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Use URL' }));
+    expect(within(dialog).getByTestId('wizard-url-state')).toHaveTextContent(
+      'must start with postgresql://',
+    );
+    expect(within(dialog).getByLabelText('Host')).toHaveValue('');
+    // L-2 of the connect review: a refused URL keeps no password in the field.
+    await userEvent.clear(url);
+    await userEvent.type(url, 'postgresql://ro:pw-canary@h1,h2/m');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Use URL' }));
+    expect(url).toHaveValue('postgresql://ro@h1,h2/m');
+    expect(within(dialog).getByTestId('wizard-url-state')).toHaveTextContent(
+      'Its password was removed from the field; enter it again in the next step.',
+    );
+    expect(within(dialog).getByLabelText('Host')).toHaveValue('');
+    expect(dialog.innerHTML).not.toContain('pw-canary');
+    await userEvent.clear(url);
+    await userEvent.type(
+      url,
+      'postgresql://ro:pw-canary@db.internal:6432/m?sslmode=verify-full{Enter}',
+    );
+    expect(url).toHaveValue('');
+    expect(within(dialog).getByTestId('wizard-url-state')).toHaveTextContent(
+      'Its password is in the next step',
+    );
+    expect(within(dialog).getByLabelText('Host')).toHaveValue('db.internal');
+    expect(within(dialog).getByLabelText('Port')).toHaveValue('6432');
+    expect(within(dialog).getByLabelText('Database')).toHaveValue('m');
+    expect(within(dialog).getByLabelText('User')).toHaveValue('ro');
+    expect(within(dialog).getByLabelText('TLS mode')).toHaveValue('verify-full');
+    expect(dialog.textContent).not.toContain('pw-canary');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
+    expect(within(dialog).getByRole('radio', { name: 'System keyring' })).toBeChecked();
+    expect(within(dialog).getByLabelText('Password')).toHaveValue('pw-canary');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Next' }));
+    await userEvent.type(within(dialog).getByLabelText('Name'), 'pasted');
+    await userEvent.click(within(dialog).getByRole('radio', { name: 'TEST' }));
+    await userEvent.click(
+      within(dialog).getByRole('checkbox', { name: 'Test the connection after saving' }),
+    );
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(writes(calls)).toHaveLength(2));
+    const [create, secret] = writes(calls);
+    expect(create?.body).toMatchObject({
+      profile: {
+        host: 'db.internal',
+        port: 6432,
+        database: 'm',
+        user: 'ro',
+        sslmode: 'verify-full',
+        password: 'keyring:',
+      },
+    });
+    expect(JSON.stringify(create?.body)).not.toContain('pw-canary');
+    expect(secret?.body).toEqual({ secret: 'pw-canary', store: 'keyring' });
+    // Unchecked: no connection test after saving.
+    expect(calls.some((call) => call.url === '/api/connection-tests')).toBe(false);
   });
 
   it('shows the server issues at their fields and goes back to their step', async () => {

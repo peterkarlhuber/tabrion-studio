@@ -18,6 +18,19 @@ All notable changes to this project are documented here. The format follows
   durations show (they read as 0 before), D-02 names the profile's own timeout, drafts are kept per project, and a
   failed row page is asked for again. New shortcuts in the help and the palette. CodeMirror runs in a shadow root,
   so the strict CSP stays unchanged. Open items are TD-033 and TD-037. The migrations and diagnostics pages now have their own window titles.
+- STU-008 connection test and Connect (the parts that waited for STU-009): in the connection manager, **Test
+  connection** shows the time, the server version and, for PostgreSQL, the role, superuser, TLS, encoding and time
+  zone (for SQLite foreign keys, journal mode and encoding), with a warning for a superuser role or one that bypasses
+  row-level security. `POST /api/connection-tests` answers these `facts` and the profile's `environment`. **Connect**
+  opens the read-only connection and the header, the PROD frame and the window title show it; the first PROD
+  connection of a profile in a page session asks D-02, the connection test of a PROD profile included (shared with
+  the migration status view; it belongs to the profile's target and is forgotten when the profile is saved or deleted
+  or the project is trusted again); **Disconnect** closes it. Only the newest connect request sets the header. A
+  missing password opens the password dialog and the action runs again. Failures name the remedy (host, port, user,
+  password and TLS mode; a file that is no SQLite database), never the server's text; the separate class-28 and TLS
+  texts are reached only by mocks with tabrion 0.1 (TD-038). The server version is the one people read (`16.15`).
+  The assistant takes a pasted `postgresql://` URL apart (its password goes to the next step, never into the file;
+  a refused URL loses its password from the field) and tests the profile after saving. English and German.
 - STU-014 page: the view Diagnostics (`/diagnostics`) runs the diagnosis of a chosen profile on a click and lists the
   findings by severity, each with an icon and a word for its severity, its code, title, detail, remedy and source.
   A PROD profile asks D-02 before its connection opens; "Run again" uses the shown connection. Cancel stops a

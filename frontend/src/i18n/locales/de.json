@@ -100,7 +100,11 @@
       "forgetPassword": "Gespeichertes Passwort entfernen",
       "test": "Verbindung testen",
       "connect": "Verbinden",
-      "needsRegistry": "Testen und Verbinden kommen mit der Datenbankverbindung in der nächsten Version."
+      "state": "Verbindung",
+      "open": "offen (schreibgeschützt)",
+      "closed": "nicht offen",
+      "disconnect": "Trennen",
+      "use": "Diese Verbindung verwenden"
     },
     "secret": {
       "keyring": "Schlüsselbund des Systems",
@@ -156,10 +160,21 @@
       "environment": "Umgebung (Pflicht)",
       "readOnlyRole": "Die Rolle sollte keine Schreibrechte haben (die Diagnose prüft das)",
       "savedIn": "Gespeichert in deinen Profilen (profiles.toml). Studio ändert die Projektdatei nicht.",
-      "test": "Verbindung testen",
-      "testLater": "Der Verbindungstest kommt mit der Datenbankverbindung in der nächsten Version.",
       "required": "Fülle die Pflichtfelder aus.",
-      "handWritten": "Deine profiles.toml wurde von Hand geschrieben. Speichern schreibt sie neu; Kommentare und Formatierung bleiben nicht erhalten."
+      "handWritten": "Deine profiles.toml wurde von Hand geschrieben. Speichern schreibt sie neu; Kommentare und Formatierung bleiben nicht erhalten.",
+      "url": "Oder URL einfügen",
+      "urlHint": "Eine postgresql://-URL füllt die Felder aus. Ihr Passwort wandert in den nächsten Schritt und wird im Schlüsselbund (oder für diese Sitzung) gespeichert, nie in der Datei.",
+      "urlTake": "URL übernehmen",
+      "urlState": {
+        "taken": "Die Felder wurden aus der URL übernommen.",
+        "takenPassword": "Die Felder wurden aus der URL übernommen. Ihr Passwort steht im nächsten Schritt und wird nicht wieder angezeigt.",
+        "scheme": "Die URL muss mit postgresql:// oder postgres:// beginnen.",
+        "invalid": "Das ist keine gültige URL.",
+        "host": "Die URL muss genau einen Host nennen. Mehrere Hosts und Socket-Ordner werden nicht unterstützt.",
+        "parameters": "Die URL hat Parameter, die ein Profil nicht aufnehmen kann. Nur sslmode wird übernommen; gib das Profil von Hand ein."
+      },
+      "testAfterSave": "Verbindung nach dem Speichern testen",
+      "urlPasswordRemoved": "Ihr Passwort wurde aus dem Feld entfernt; gib es im nächsten Schritt erneut ein."
     },
     "delete": {
       "title": "{{name}} löschen?",
@@ -181,7 +196,35 @@
     "secretRemoved": "Gespeichertes Passwort für {{name}} entfernt.",
     "secretNotSaved": "{{name}} gespeichert, das Passwort aber nicht: {{reason}}",
     "deletedSecretKept": "{{name}} gelöscht, aber der Schlüsselbund hat das gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App.",
-    "savedSecretKept": "{{name}} gespeichert, aber der Schlüsselbund hat das alte gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App."
+    "savedSecretKept": "{{name}} gespeichert, aber der Schlüsselbund hat das alte gespeicherte Passwort nicht entfernt. Entferne es in der Schlüsselbund-App.",
+    "connecting": "Verbinde …",
+    "connected": "Verbunden (schreibgeschützt). Die Kopfzeile zeigt die Verbindung.",
+    "connectedTo": "Mit {{name}} verbunden (schreibgeschützt).",
+    "connectFailed": "Nicht verbunden: {{reason}}",
+    "disconnected": "Verbindung zu {{name}} geschlossen.",
+    "test": {
+      "running": "Verbindung wird getestet …",
+      "ok": "Verbindung funktioniert:",
+      "notOk": "Die Datenbank hat geantwortet, aber ihre Zustandsprüfung ist fehlgeschlagen:",
+      "failed": "Test fehlgeschlagen: {{reason}}",
+      "latency": "{{ms}} ms Antwortzeit",
+      "version": {
+        "sqlite": "SQLite-Version {{version}}",
+        "postgresql": "PostgreSQL-Version {{version}}",
+        "other": "Version {{version}}"
+      },
+      "role": "Rolle {{role}}",
+      "superuser": "Superuser",
+      "noSuperuser": "kein Superuser",
+      "tlsOn": "TLS an",
+      "tlsOff": "TLS aus",
+      "foreignKeysOn": "Fremdschlüssel an",
+      "foreignKeysOff": "Fremdschlüssel aus",
+      "journal": "Journal {{mode}}",
+      "encoding": "Kodierung {{encoding}}",
+      "timezone": "Zeitzone {{zone}}",
+      "privileged": "Die Rolle ist Superuser oder umgeht die Zeilensicherheit. Studio bleibt schreibgeschützt, eine harte Grenze ist aber nur eine Rolle ohne Schreibrechte. Verwende eine Nur-Lese-Rolle, vor allem für PROD."
+    }
   },
   "migrations": {
     "title": "Migrationen",
@@ -513,7 +556,20 @@
     "secret_file_outside": "Die Passwortdatei liegt außerhalb des Projektordners und des Konfigurationsordners.",
     "secret_file_unsafe": "Die Passwortdatei ist ein Link, keine normale Datei, hat mehr als einen Namen oder gehört einem anderen Benutzer.",
     "secret_file_not_private": "Andere Benutzer können die Passwortdatei lesen. Mache sie nur für dich lesbar (chmod 600).",
-    "secret_file_unreadable": "Die Passwortdatei fehlt, ist leer, größer als 4 KB oder nicht UTF-8."
+    "secret_file_unreadable": "Die Passwortdatei fehlt, ist leer, größer als 4 KB oder nicht UTF-8.",
+    "db": {
+      "connection": "Studio konnte keine Verbindung herstellen. Prüfe Host und Port (eine Firewall kann sie blockieren), Benutzer und Passwort und den TLS-Modus (verify-full verlangt ein vertrauenswürdiges Serverzertifikat; verify-ca oder eine CA-Datei kann helfen).",
+      "auth": "Die Datenbank hat die Anmeldung abgelehnt. Prüfe Benutzer und Passwort.",
+      "timeout": "Die Datenbank hat nicht rechtzeitig geantwortet.",
+      "canceled": "Die Anfrage wurde abgebrochen.",
+      "locked": "Die Datenbank ist beschäftigt. Versuche es später noch einmal.",
+      "permission": "Die Datenbankrolle hat dafür keine Berechtigung. Frage den Eigentümer der Datenbank.",
+      "read_only": "Die Datenbank hat eine Änderung abgelehnt: Studio-Verbindungen sind schreibgeschützt.",
+      "corrupt": "Die Datei ist keine SQLite-Datenbank, oder die Datenbank ist beschädigt.",
+      "disk_full": "Der Datenbank ist der Speicherplatz ausgegangen.",
+      "resource": "Der Datenbank ist der Arbeitsspeicher oder eine andere Ressource ausgegangen. Versuche es später noch einmal.",
+      "other": "Die Datenbank hat einen Fehler gemeldet ({{kind}})."
+    }
   },
   "keyboard": {
     "palette": {

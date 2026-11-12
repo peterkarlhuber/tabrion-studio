@@ -5,7 +5,8 @@
  * produce yet: a PROD connection with tabs (STU-051), each dialog, the sign-in notices and the ended session
  * (review S-1), and the notices of project trust (review I-2 of stu-006-review.md). Query parameters: `scenario`
  * (start, prod, test, dialog-d01, dialog-d01-hostile, dialog-d01-stale, dialog-d02, dialog-d06, dialog-d08, ended,
- * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, STU-008;
+ * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, a connection
+ * test and opening a connection answered (STU-008; parts-pg's test fails with `db.connection`);
  * migrations: the code trust and migration status of STU-015; dialog-trust-code; diagnostics: the findings of
  * STU-014, `?slow=1` keeps a run open until it is canceled; editor: the profiles and a fake query engine for the
  * SQL editor of STU-012, with `sql` as the first tab's draft, `profile` its profile, `maxRows` the row limit
@@ -28,12 +29,13 @@ import type { SessionState } from '../session';
 import '../styles/global.css';
 import { installTooltipDismiss } from '../lib/tooltips';
 import { initTheme, setThemePreference } from '../theme';
-import { EMPTY_WORKSPACE, type Workspace } from '../workspace';
+import type { Workspace } from '../workspace';
 import styles from './harness.module.css';
 import { diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
+import { draftsKey } from '../views/editor/drafts';
 import { createQueryServer } from './queries';
-import { PROFILES, SETTINGS } from './profiles';
+import { PROFILES, SETTINGS, TEST_RESULTS } from './profiles';
 import { DIFF, HOSTILE_REVIEW, INVALID_PROJECT, REVIEW } from './trust';
 
 const params = new URLSearchParams(window.location.search);
@@ -62,9 +64,11 @@ sent.writes = [];
 const queryServer = createQueryServer({ connectDelayMs: Number(params.get('connectDelay') ?? 0) });
 (window as unknown as { queryLog: unknown }).queryLog = queryServer.log;
 const draft = params.get('sql');
+/** The project folder of the editor scenario: its drafts are stored under that project's key (L-5). */
+const EDITOR_PROJECT = '/home/demo/parts';
 if (scenario === 'editor' && draft !== null) {
   window.localStorage.setItem(
-    'tabrion-studio.editor-drafts',
+    draftsKey(EDITOR_PROJECT),
     JSON.stringify({
       tabs: [
         {
@@ -79,6 +83,40 @@ if (scenario === 'editor' && draft !== null) {
     }),
   );
 }
+/** The connections the connections scenario opened, by id. */
+const openConnections = new Map<string, Record<string, unknown>>();
+
+/** The connection test and "Connect" of the connections scenario (STU-008). */
+function connectionAnswer(method: string, url: string, body: string): Response {
+  const doc = JSON.parse(body) as { profile_id?: string; connection_id?: string };
+  if (method === 'DELETE') {
+    openConnections.delete(doc.connection_id ?? '');
+    return new Response(null, { status: 204 });
+  }
+  const profile = PROFILES.profiles.find((item) => item.id === doc.profile_id);
+  if (profile === undefined || profile.id === 'project:parts-pg') {
+    return new Response(
+      JSON.stringify({ code: 'db.connection', kind: 'connection', status: 502, sqlstate: '08001' }),
+      { status: 502 },
+    );
+  }
+  if (url === '/api/connection-tests') {
+    return new Response(JSON.stringify(TEST_RESULTS[profile.engine]), { status: 200 });
+  }
+  const id = `c-${profile.name}`;
+  const opened = {
+    connection_id: id,
+    profile_id: profile.id,
+    engine: profile.engine,
+    environment: profile.environment,
+    read_only: true,
+    url: 'postgresql://studio_ro:***@measure.example.internal/measurements',
+    opened_at: 1,
+  };
+  openConnections.set(id, opened);
+  return new Response(JSON.stringify(opened), { status: 201 });
+}
+
 /** The diagnostics scenario with `slow=1`: a run answers only after the page canceled it (e2e/diagnostics.spec.ts). */
 const slow = params.get('slow') === '1';
 let cancelRun: (() => void) | null = null;
@@ -94,11 +132,19 @@ const fakeServer: typeof fetch = async (input, init) => {
       const headers = (init?.headers ?? {}) as Record<string, string>;
       sent.writes.push({ method, url, contentType: headers['Content-Type'] ?? '' });
       if (url.endsWith('/secret')) return new Response(null, { status: 204 });
+      if (url === '/api/connection-tests' || url === '/api/connections') {
+        return connectionAnswer(method, url, String(init?.body ?? '{}'));
+      }
       return new Response(JSON.stringify({ id: 'user:new', digest: 'c'.repeat(64) }), {
         status: method === 'POST' ? 201 : 200,
       });
     }
     if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    if (url === '/api/connections') {
+      return new Response(JSON.stringify({ connections: [...openConnections.values()] }), {
+        status: 200,
+      });
+    }
     if (url === '/api/secrets') {
       return new Response(JSON.stringify({ keyring: { available: true } }), { status: 200 });
     }
@@ -128,6 +174,9 @@ const fakeServer: typeof fetch = async (input, init) => {
   if (scenario === 'editor') {
     const url = String(input);
     if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    if (url === '/api/project') {
+      return new Response(JSON.stringify({ path: EDITOR_PROJECT, state: 'none' }), { status: 200 });
+    }
     if (url === '/api/settings') {
       // `maxRows` sets the max_rows setting (the 100 000-row test of e2e/editor.spec.ts).
       const maxRows = Number(params.get('maxRows') ?? SETTINGS.settings.limits.max_rows);
@@ -290,7 +339,7 @@ createRoot(root).render(
     <App
       fetcher={fakeServer}
       session={session}
-      workspace={WORKSPACES[scenario === 'dialog-d02' ? 'prod' : scenario] ?? EMPTY_WORKSPACE}
+      workspace={WORKSPACES[scenario === 'dialog-d02' ? 'prod' : scenario]}
     />
     {scenario.startsWith('dialog-') ? <HarnessDialog id={scenario} /> : null}
   </StrictMode>,

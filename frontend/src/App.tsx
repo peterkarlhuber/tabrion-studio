@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { startAppearanceSync } from './appearance';
@@ -12,7 +12,14 @@ import { ConnectionsView } from './views/connections/ConnectionsView';
 import { DiagnosticsView } from './views/diagnostics/DiagnosticsView';
 import { MigrationsView } from './views/migrations/MigrationsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
-import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
+import {
+  ConnectionSessionContext,
+  WorkspaceContext,
+  type ActiveConnection,
+  prodKey,
+  type ConnectionSession,
+  type Workspace,
+} from './workspace';
 
 export type AppSession = SessionState | 'ended';
 
@@ -74,11 +81,12 @@ const PAGE_TITLES: Record<string, string> = {
 export function App({
   fetcher = fetch,
   session = 'ok',
-  workspace = EMPTY_WORKSPACE,
+  workspace,
   heartbeat = true,
 }: {
   fetcher?: typeof fetch;
   session?: SessionState;
+  /** A fixed workspace (tests, e2e harness); without one the views fill it when they open a connection. */
   workspace?: Workspace;
   heartbeat?: boolean;
 }) {
@@ -88,6 +96,31 @@ export function App({
   const [ended, setEnded] = useState(false);
   const [offline, setOffline] = useState(false);
   const wasOffline = useRef(false);
+  const [active, setActive] = useState<ActiveConnection | null>(null);
+  /** D-02 confirmations: `prodKey` -> profile id. */
+  const [confirmed] = useState(() => new Map<string, string>());
+  const requests = useRef(0);
+  const connections = useMemo<ConnectionSession>(
+    () => ({
+      active,
+      setActive,
+      prodConfirmed: (target) => confirmed.has(prodKey(target)),
+      confirmProd: (target) => {
+        confirmed.set(prodKey(target), target.id);
+      },
+      forgetProd: (matches) => {
+        for (const [key, id] of [...confirmed]) if (matches(id)) confirmed.delete(key);
+      },
+      beginConnect: () => ++requests.current,
+      isLatestConnect: (request) => request === requests.current,
+      latestConnect: () => requests.current,
+    }),
+    [active, confirmed],
+  );
+  const shown = useMemo<Workspace>(
+    () => workspace ?? { connection: active, tabs: [], activeTab: null },
+    [workspace, active],
+  );
 
   useEffect(() => {
     if (session !== 'ok' || !heartbeat) return undefined;
@@ -116,11 +149,13 @@ export function App({
   const notFound = !['/', ...Object.keys(PAGE_TITLES)].includes(path);
   const pageTitle = notFound ? t('notFound.title') : pageKey ? t(pageKey) : null;
   return (
-    <WorkspaceContext.Provider value={workspace}>
-      <AppShell path={path} pageTitle={pageTitle} server={offline ? { kind: 'offline' } : server}>
-        <View path={path} fetcher={fetcher} />
-      </AppShell>
-      <ProjectTrust fetcher={fetcher} />
+    <WorkspaceContext.Provider value={shown}>
+      <ConnectionSessionContext.Provider value={connections}>
+        <AppShell path={path} pageTitle={pageTitle} server={offline ? { kind: 'offline' } : server}>
+          <View path={path} fetcher={fetcher} />
+        </AppShell>
+        <ProjectTrust fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>
     </WorkspaceContext.Provider>
   );
 }

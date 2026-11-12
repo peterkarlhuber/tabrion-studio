@@ -33,7 +33,7 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { openConnection } from '../../api/migrations';
+import { openConnection } from '../../api/connections';
 import type { Problem } from '../../api/problem';
 import { fetchProfiles, fetchSettings, type ProfileItem } from '../../api/profiles';
 import { fetchProject } from '../../api/project';
@@ -44,7 +44,7 @@ import {
   type ParamValue,
   type QueryStatus,
 } from '../../api/queries';
-import { ProdConnectDialog, UnsavedScriptDialog } from '../../components/dialogs/StudioDialogs';
+import { UnsavedScriptDialog } from '../../components/dialogs/StudioDialogs';
 import { AccessModeChip, EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import { IconButton } from '../../components/ui/IconButton';
@@ -56,6 +56,7 @@ import clsx from '../../lib/clsx';
 import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
+import { useConnect } from '../connections/useConnect';
 import { CellDetail, type OpenCell } from './CellDetail';
 import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
 import { formatCount, formatMs, formatSeconds } from './format';
@@ -73,8 +74,6 @@ import {
 } from './sqlScan';
 import styles from './Editor.module.css';
 
-/** 03 section 5.3: production profiles get a 15 s statement timeout unless the profile sets its own (D-02 names it). */
-const PROD_TIMEOUT_MS = 15_000;
 /** The query engine's default row limit (03 section 5.3: "1 000 preview"). */
 export const DEFAULT_MAX_ROWS = 1_000;
 /** The `max_rows` setting when the settings cannot be read (the server's default). */
@@ -264,13 +263,14 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   );
   const [connectProblem, setConnectProblem] = useState<Problem | null>(null);
   const [notice, setNotice] = useState('');
-  const [prodAsk, setProdAsk] = useState<{ profile: ProfileItem; then: () => void } | null>(null);
   const [closing, setClosing] = useState<DraftTab | null>(null);
   const [detail, setDetail] = useState<OpenCell | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [focusTab, setFocusTab] = useState<string | null>(null);
   const controllers = useRef(new Map<string, Controller>());
-  const prodConfirmed = useRef(new Set<string>());
+  // D-02 through the page's shared confirmations (STU-008 `useConnect`): a PROD database confirmed in the connection
+  // manager is not asked again here, and a profile whose target changed asks again.
+  const { guard: prodGuard, dialog: prodDialog } = useConnect(fetcher);
   /** The open connection of each profile used in this page (profile id to connection id). */
   const connections = useRef(new Map<string, string>());
 
@@ -358,7 +358,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     [patchRun],
   );
 
-  /** The tab's connection: opened once per profile; a PROD profile asks D-02 first (once per page). */
+  /** The tab's connection: opened once per profile (D-02 is asked before, in `start`). */
   const connect = useCallback(
     async (item: ProfileItem): Promise<string | null> => {
       const known = connections.current.get(item.id);
@@ -369,8 +369,8 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         setConnectProblem(opened.problem);
         return null;
       }
-      connections.current.set(item.id, opened.value);
-      return opened.value;
+      connections.current.set(item.id, opened.value.connectionId);
+      return opened.value.connectionId;
     },
     [fetcher],
   );
@@ -612,17 +612,9 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       setNotice('');
       const go = () =>
         void execute(tab.id, profile, statements, values, options.maxRows, options.replaceKey);
-      if (
-        profile.environment === 'prod' &&
-        !connections.current.has(profile.id) &&
-        !prodConfirmed.current.has(profile.id)
-      ) {
-        setProdAsk({ profile, then: go });
-        return;
-      }
-      go();
+      prodGuard(profile, go);
     },
-    [execute, prefix, profile, running, t, tab, tabParams],
+    [execute, prefix, prodGuard, profile, running, t, tab, tabParams],
   );
 
   const runCurrent = useCallback(() => {
@@ -1159,20 +1151,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         )}
       </section>
 
-      {prodAsk !== null ? (
-        <ProdConnectDialog
-          open
-          name={visible(prodAsk.profile.name)}
-          timeoutSeconds={(prodAsk.profile.statement_timeout_ms ?? PROD_TIMEOUT_MS) / 1000}
-          onCancel={() => setProdAsk(null)}
-          onConnect={() => {
-            prodConfirmed.current.add(prodAsk.profile.id);
-            const then = prodAsk.then;
-            setProdAsk(null);
-            then();
-          }}
-        />
-      ) : null}
+      {prodDialog}
       {closing !== null ? (
         <UnsavedScriptDialog
           open

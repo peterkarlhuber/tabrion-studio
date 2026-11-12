@@ -332,11 +332,15 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
   const file = await downloading;
   expect(file.suggestedFilename()).toBe('Query 2.sql');
   await expect(page.getByTestId('editor-tab')).toHaveCount(1);
-  // Parameter values are never part of a draft.
-  const stored = await page.evaluate(
-    () => localStorage.getItem('tabrion-studio.editor-drafts') ?? '',
+  // The drafts are stored under the project's key, never the shared one; parameter values are never part of them.
+  const stored = await page.evaluate(() =>
+    Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
   );
-  expect(stored).not.toContain('params');
+  expect(stored).toHaveLength(1);
+  expect(stored[0]).toMatch(/^tabrion-studio\.editor-drafts\.[0-9a-z]+$/);
+  const text = await page.evaluate((key) => localStorage.getItem(key) ?? '', stored[0] ?? '');
+  expect(text).toContain('select 1');
+  expect(text).not.toContain('params');
 });
 
 test('D-02 asks before the first PROD connection; Cancel connects nothing', async ({ page }) => {

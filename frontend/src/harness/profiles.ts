@@ -45,6 +45,35 @@ export const PROFILES = {
   user_file: { digest: 'b'.repeat(64), hand_written: false },
 };
 
+/** Answers of `POST /api/connection-tests` by engine (the facts of 03 section 2 A). */
+export const TEST_RESULTS: Record<string, unknown> = {
+  sqlite: {
+    ok: true,
+    engine: 'sqlite',
+    environment: 'dev',
+    server_version: '3.45.1',
+    latency_ms: 0.8,
+    read_only: true,
+    facts: { foreign_keys: true, journal_mode: 'wal', encoding: 'UTF-8' },
+  },
+  postgresql: {
+    ok: true,
+    engine: 'postgresql',
+    environment: 'prod',
+    server_version: '17.6',
+    latency_ms: 12.4,
+    read_only: true,
+    facts: {
+      role: 'studio_ro',
+      superuser: false,
+      bypass_rls: false,
+      encoding: 'UTF8',
+      timezone: 'Europe/Vienna',
+      tls: true,
+    },
+  },
+};
+
 export const SETTINGS = {
   settings: {
     language: 'system',

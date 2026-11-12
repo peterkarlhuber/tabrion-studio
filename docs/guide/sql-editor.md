@@ -6,9 +6,10 @@ read-only transaction, and there is no write mode.
 
 ## Running statements
 
-1. Choose the **Connection** of the tab. A PROD profile asks once per page before Studio connects to it ("Production
-   database"); queries on it are limited to 15 seconds, or to the profile's own statement timeout when it has one
-   (the question names the limit). Changing a tab's connection clears its results.
+1. Choose the **Connection** of the tab. A PROD profile asks before Studio first connects to it in this page session
+   ("Production database"; a confirmation in **Connections** counts too, and a reload asks again). Queries on it are
+   limited to 15 seconds, or to the profile's own statement timeout when it has one (the question names the limit).
+   Changing a tab's connection clears its results.
 2. Write SQL. The editor highlights PostgreSQL or SQLite, depending on the profile.
 3. Press **Run** (⌘↵ / Ctrl+Enter): Studio runs the selection, or the statement the cursor is in. **Run script**
    (⇧⌘↵ / Shift+Ctrl+Enter) runs every statement of the tab, one after the other, and stops at the first error.

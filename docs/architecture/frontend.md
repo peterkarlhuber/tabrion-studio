@@ -31,8 +31,12 @@ settings.
 - `src/router.ts`: a minimal history router for `/`, `/connections`, `/sql`, `/migrations`, `/diagnostics` and
   `/settings`. The backend serves `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps
   both lists equal); every other path stays 404.
-- `src/workspace.ts`: the active connection, its environment and the open tabs. Nothing fills it until the connection
-  registry and manager arrive (STU-008, STU-009); the shell shows "No connection".
+- `src/workspace.ts`: the active connection, its environment and the open tabs. The connection manager and the
+  migration status view fill the active connection when they open one (`ConnectionSession`, provided by `App`); it
+  also remembers the PROD profiles confirmed with D-02 in this page session (a reload asks again). The SQL editor
+  asks D-02 through the same confirmations (`useConnect().guard`); it does not fill the header or the tabs yet
+  (TD-033). `src/views/connections/useConnect.tsx` is the "Connect" flow (D-02, `POST /api/connections`, the
+  header's "connecting" state).
 
 ## Design system
 
@@ -138,7 +142,7 @@ the editor's write mode (STU-026, D-03..D-05) stay locked behind G-S2.
 | Editor | `SqlEditor.tsx` | CodeMirror 6 with `@codemirror/lang-sql` (PostgreSQL or SQLite by the profile's engine) through `@uiw/react-codemirror`; syntax colors from the `--tb-` tokens; Tab leaves the editor (no tab trap) |
 | Statements | `sqlScan.ts` | splits at `;` outside literals, quoted identifiers, dollar quotes and comments, and finds `:name` placeholders (`::` is a cast), with the backend's rules; the server checks every statement again |
 | Parameters | `ParamPanel.tsx`, `params.ts` | text, number, boolean, null, JSON (sent as text, cast in the SQL); a missing or invalid value stops the run and gets the focus |
-| Run | `EditorView.tsx` | the selection or the statement at the cursor; a script runs statement by statement and stops at the first error or a cancel; D-02 before the first PROD connection of the page; the run reopens a connection the server closed once |
+| Run | `EditorView.tsx` | the selection or the statement at the cursor; a script runs statement by statement and stops at the first error or a cancel; D-02 through the page's shared confirmations (`useConnect().guard` of STU-008: a PROD database confirmed in the connection manager is not asked again, a changed target asks again); the run reopens a connection the server closed once |
 | Events | `api/queries.ts` | `POST /api/queries`, the SSE stream read with `fetch` (the CSRF header), `GET /api/queries/{id}` every 250 ms when the stream breaks, row pages, cancel |
 | Grid | `ResultGrid.tsx`, `rowCache.ts` | TanStack Virtual in both directions; rows in chunks of 50, at most 10 000 rows and 64 MB (estimated) in the browser, least recently used dropped; a failed or wrong page is asked for again (3 times); WAI-ARIA grid with `aria-activedescendant` |
 | Detail | `CellDetail.tsx`, `format.ts` | the whole value as plain text, JSON indented, bytes as hex; invisible and bidi characters shown as marks |
