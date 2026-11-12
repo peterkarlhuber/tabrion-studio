@@ -547,6 +547,9 @@ def test_bytes_are_capped_on_the_server(lite: tuple[Viewer, str, Path], monkeypa
     connection.commit()
     connection.close()
     viewer.explorer.catalog(connection_id, refresh=True)
+    # A memory test, not a clock test: under tracemalloc (and coverage's line tracer) the statement check can take
+    # longer than the fixture's short profile timeout, so the statement gets a timeout it cannot reach.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "main", "big", limit=1)
@@ -777,7 +780,7 @@ def test_pg_a_reused_ctid_is_not_another_rows_cell(pg: tuple[Viewer, str]) -> No
 
 @pytest.mark.postgres
 @postgres
-def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str]) -> None:
+def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str], monkeypatch: pytest.MonkeyPatch) -> None:
     """M-4: a 30 MB bytea and a 12 MB text stay in the database for a page; the cell loads 10 MB of their bytes."""
     import tracemalloc
 
@@ -792,6 +795,9 @@ def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str]) -> None:
             )
     finally:
         engine.dispose()
+    # A memory test, not a clock test: under tracemalloc (and coverage's line tracer) the statement check can take
+    # longer than the fixture's short profile timeout, so the statement gets a timeout it cannot reach.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "Studio Viewer", "typed", limit=2)
@@ -939,8 +945,9 @@ def test_pg_h2_a_keyset_without_progress_goes_on_by_offset(
     low_float_digits: tuple[Viewer, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """H-2 residual, the progress guard: without the pin, "0.3" < 0.30000000000000004, so every keyset page would
-    start again from the first row. The walk sees that its anchor did not advance and goes on by OFFSET: every row
-    exactly once, and the walk ends."""
+    start again from the first row. The walk sees that its anchor did not advance and goes on by OFFSET, and it ends.
+    Here (all values equal) every row comes exactly once; in general the guard only makes the walk end (docs/TODO.md).
+    """
     viewer, connection_id = low_float_digits
     real = connections_module.startup_options
     monkeypatch.setattr(
@@ -982,6 +989,12 @@ def test_m4_a_small_first_row_does_not_size_the_next_batch(
         return real(self, size)
 
     monkeypatch.setattr(tabrion_compat.ResultCursor, "fetch", fetch)
+    # This test is about batch sizes and memory, not the clock, so the statement gets a timeout it cannot reach.
+    # The 800 ms of the `lite` profile also covers the statement check, which lexes the 11-column SELECT
+    # character by character. tracemalloc records every allocation, and Python 3.12's sys.settrace (coverage's
+    # tracer in CI) allocates on each traced line. Together they made that check take about 2 s on 3.12, so the
+    # timer cancelled the statement (ViewerTimeout) before a row was read.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "main", "wide10", limit=1000)
@@ -993,3 +1006,44 @@ def test_m4_a_small_first_row_does_not_size_the_next_batch(
     # (here all 79, about 47 MB).
     assert max(sizes) <= 2, sizes
     assert peak < 8 * 1024 * 1024, peak
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r1_decoded_json_counts_toward_the_page_cap(pg: tuple[Viewer, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """R-1 of the re-review of 974b958: 60 KB of jsonb text like "[[], [], ...]" decode into about 1.3 MB of Python
+    lists. The page cap counts that memory, and the fetch batch is sized for it, so a page stays near max_result_mb."""
+    import tracemalloc
+
+    viewer, connection_id = pg
+    assert PG_URL is not None
+    engine = sqlalchemy.create_engine(sqlalchemy.make_url(PG_URL).set(drivername="postgresql+psycopg"))
+    columns = ", ".join(f"j{i} jsonb" for i in range(4))
+    nested = "(SELECT jsonb_agg('[]'::jsonb) FROM generate_series(1, 15000))"
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE TABLE "Studio Viewer".nested (id int PRIMARY KEY, {columns})')
+            connection.exec_driver_sql('INSERT INTO "Studio Viewer".nested (id) VALUES (1)')  # the first row is tiny
+            connection.exec_driver_sql(
+                f'INSERT INTO "Studio Viewer".nested SELECT g, {nested}, {nested}, {nested}, {nested} '  # noqa: S608
+                "FROM generate_series(2, 13) g"
+            )
+    finally:
+        engine.dispose()
+    viewer.explorer.catalog(connection_id, refresh=True)
+    monkeypatch.setattr(viewer, "limits", lambda: Settings(max_result_mb=1))
+    # As in the M-4 test: this test is about memory, not the clock. Under tracemalloc and Python 3.12's line tracer
+    # (coverage) the statement check alone can take longer than the `pg` fixture's 1.5 s timeout (ViewerTimeout).
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
+    tracemalloc.start()
+    try:
+        page = viewer.rows(connection_id, "Studio Viewer", "nested", limit=1000)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 16 * 1024 * 1024, peak  # before: 8 rows of 5 MB decoded in one fetch
+    assert page["truncated"] == "bytes" and len(page["rows"]) == 1  # the next row alone is more than 1 MB decoded
+    assert page["truncated_cells"] == []  # the values are whole JSON, not cut
+    rows, _ = walk(viewer, connection_id, "Studio Viewer", "nested", limit=1000)
+    assert [row[0] for row in rows] == list(range(1, 14))
+    assert all(len(row[1]) == 15000 for row in rows[1:])

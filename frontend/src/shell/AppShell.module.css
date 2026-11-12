@@ -1,6 +1,10 @@
 .shell {
   display: grid;
-  grid-template-rows: var(--tb-header-height) minmax(0, 1fr) var(--tb-statusbar-height);
+  /* The header grows when its status displays wrap on a narrow window (WCAG 1.4.10 reflow, STU-053). */
+  grid-template-rows:
+    minmax(var(--tb-header-height), auto)
+    minmax(0, 1fr)
+    var(--tb-statusbar-height);
   height: 100%;
   min-height: 0;
 }
@@ -10,10 +14,11 @@
 }
 .header {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--tb-space-4);
+  gap: var(--tb-space-1) var(--tb-space-4);
   min-width: 0;
-  padding: 0 var(--tb-space-3);
+  padding: var(--tb-space-2) var(--tb-space-3);
   border-bottom: 1px solid var(--tb-color-border);
   background: var(--tb-color-chrome);
 }
@@ -42,6 +47,12 @@
   flex-wrap: wrap;
   gap: var(--tb-space-2);
   min-width: 0;
+}
+.tools {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-space-1);
+  margin-left: auto;
 }
 .body {
   display: grid;
@@ -102,8 +113,11 @@
 .navLink:focus-visible::after {
   content: attr(data-tooltip);
   position: absolute;
-  left: calc(100% + 8px);
+  /* No gap to the link: the pointer can move onto the tooltip (WCAG 1.4.13); the transparent border is the gap. */
+  left: 100%;
   top: 50%;
+  border-left: 8px solid transparent;
+  background-clip: padding-box;
   z-index: var(--tb-z-tooltip);
   padding: var(--tb-space-1) var(--tb-space-2);
   border-radius: var(--tb-radius-sm);
@@ -113,7 +127,18 @@
   font-weight: var(--tb-weight-medium);
   white-space: nowrap;
   transform: translateY(-50%);
+  /* A tooltip shown only for the keyboard focus takes no clicks: a click beside the focused link must reach the
+     content below and not follow the link (STU-053 review L-1). */
   pointer-events: none;
+}
+/* Hoverable (WCAG 1.4.13): only while the pointer is on the link does its tooltip take the pointer, so the pointer
+   can move onto it without losing it. */
+.navLink:hover::after {
+  pointer-events: auto;
+}
+/* Escape hides every tooltip until the pointer moves or the focus changes (src/lib/tooltips.ts). */
+:global(:root[data-tooltips-hidden]) .navLink::after {
+  display: none;
 }
 .workarea {
   display: flex;
@@ -121,7 +146,10 @@
   min-width: 0;
   min-height: 0;
 }
+/* position: the screen-reader texts in the tabs are absolutely positioned; they must stay inside the scrolling list
+   instead of widening the page (WCAG 1.4.10, STU-053). */
 .tabs {
+  position: relative;
   display: flex;
   gap: 1px;
   padding: var(--tb-space-1) var(--tb-space-2) 0;
@@ -196,8 +224,16 @@
   background: var(--tb-color-danger);
 }
 
+/* On narrow windows only the mark is shown; the name stays the link's accessible name (the mark's alt is empty),
+   so it is hidden visually like .tb-sr-only, not with display: none (WCAG 4.1.2, STU-053). */
 @media (max-width: 720px) {
   .brandName {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
   }
 }

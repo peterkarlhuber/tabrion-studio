@@ -58,10 +58,12 @@ keys go back as the driver returned them.
 **Float text and the progress guard (H-2 residual).** The text of a `float4`/`float8` key is exact only with
 `extra_float_digits` above 0 (`0.30000000000000004` reads as `0.3` with 0, the default up to PostgreSQL 11 and a
 common role or database setting). Every Studio session starts with `extra_float_digits=3` in its startup options
-(`connections.startup_options`), which `RESET ALL` keeps and which wins over a role or database setting. As a guard
-for any key text that does not read back as its value, a keyset page whose last key equals an anchor of the walk
-(the last 32 are kept as digests) is not shown: the page is read again by `OFFSET` after the previous page's own
-anchor, and the walk stays on `OFFSET` to its end. Every row then comes exactly once, and `next` always ends.
+(`connections.startup_options`), which `RESET ALL` keeps and which wins over a role or database setting. That pin is
+the fix. The progress guard is only a backstop against an endless walk: a keyset page whose last key equals an
+anchor of the walk (the last 32 are kept as digests) is read again by `OFFSET` after the previous page's own anchor,
+and the walk stays on `OFFSET` to its end, so `next` always ends. It does not promise every row exactly once: with a
+key whose text does not read back as its value, rows can repeat before the guard trips, or be skipped when a page
+after a lossy anchor comes back empty (finding 3 of the re-review of `974b958`; `docs/TODO.md`).
 
 **Row identity (N-1).** The identity of a row for the cell detail is a list of typed parts: `("column", name)` for
 each primary key column, then the physical ids (`rowid`, `tableoid`, `ctid`, `xmin`). A key column is always a quoted
@@ -93,6 +95,13 @@ first, then in batches of about 2 MB at the size so far (the query engine's fetc
 holds of the widest row the caps allow (every capped value at its cap, M-4 residual): a small first row cannot make
 the next batch large. With 11 text columns that is 2 rows per fetch; a row wider than 2 MB is fetched alone.
 
+**Decoded values (R-1 of the re-review of `974b958`).** psycopg decodes a `json`, `jsonb` or array value into Python
+lists and dicts, which take far more memory than the text: 64 KB of `[[], [], ...]` become about 1.3 MB. So the
+batch counts such a column at 32 times its 64 KB cap (a table with one is fetched about a row at a time), and the
+page cap counts a decoded value at the memory its objects take (`sys.getsizeof` over the tree) when that is more than
+its JSON size. A page then stays near `max_result_mb`, apart from its first row, which is always shown: one row of
+many large container columns can take up to about 20 times their text.
+
 The cell detail loads at most 10 MB of the value's bytes (text as UTF-8; a character cut at the end is left out;
 bytes as base64 of up to 10 MB); `truncated` says whether it was cut, and `size` is the whole value's size in bytes.
 
@@ -123,3 +132,4 @@ and problem codes; never a value.
 | `tests/security/test_viewer.py` (PostgreSQL) | keyset pages over `numeric` with `NULL`s in both directions, a composite primary key, `ctid` paging of a table and a materialized view, `offset` for a view, filters with a quoted schema and a hostile column name, the statement timeout |
 | `tests/security/test_viewer.py` (fix round of `stu-013-review.md`) | the reviewer's probes: a partitioned table and an inheritance parent without a primary key walk all 20 rows (H-1); `real`, `jsonb` and `int[]` sorts with repeated values walk to the end, `json`, `xml` and `point` are refused (H-2, M-1); NULLs in a SQLite `TEXT PRIMARY KEY` (M-2); a reused `rowid` and a reused `ctid` after `VACUUM` answer `viewer_row_gone` (M-3); a 30 MB blob or `bytea` and a 12 MB text stay in the database for a page (tracemalloc), the cell detail loads 10 MB of bytes, a page stops at `max_result_mb` (M-4); long sort keys (L-1); tokens per session and connection (L-4); the reflection cache and the statement limit (L-5); every route form without a session or from a foreign origin (I-1) |
 | `tests/security/test_viewer.py` (delta re-review of `4ad445a`) | N-1: primary keys with columns named `@1=1 OR 1`, `@a` and `@rowid` on SQLite and PostgreSQL: the statements quote them, the cell of a deleted row whose key came back with another `@a` value is `viewer_row_gone`; H-2 residual: with `extra_float_digits = 0` on the database, a `float8` sort over 30 equal `0.1 + 0.2` walks 30 rows in both directions, and without the startup pin the progress guard still walks every row exactly once; M-4 residual: 10 text columns of 60 KB after a tiny first row fetch at most 2 rows at a time, under 8 MB peak |
+| `tests/security/test_viewer.py` (re-review of `974b958`) | R-1: 4 `jsonb` columns of 60 KB `[[], [], ...]` after a tiny first row, with `max_result_mb = 1`: the page stops after the first row (the next is about 5 MB decoded), the peak stays under 16 MB (27.5 MB before, 341 MB in the review's 20 MB probe), and the walk returns all 13 rows whole |

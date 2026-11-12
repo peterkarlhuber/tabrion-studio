@@ -43,6 +43,7 @@ Dialect = Literal["postgresql", "sqlite"]
 MAX_PARAMETERS = 100
 MAX_VALUE_CHARS = 1_000_000
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,62}")
+_LINE_END = re.compile(r"[\n\r]")
 _DOLLAR_TAG = re.compile(r"\$(?:[A-Za-z_\u0080-\U0010ffff][A-Za-z0-9_\u0080-\U0010ffff]*)?\$")
 
 
@@ -90,8 +91,8 @@ def _quoted_end(sql: str, start: int, quote: str, *, backslash: bool = False) ->
 
 def _comment_end(sql: str, start: int) -> int:
     if sql.startswith("--", start):
-        ends = [position for position in (sql.find("\n", start), sql.find("\r", start)) if position >= 0]
-        return min(ends) if ends else len(sql)
+        end = _LINE_END.search(sql, start)  # one search (R2-L1 of STU-011 delta re-review 2)
+        return len(sql) if end is None else end.start()
     depth, index, size = 1, start + 2, len(sql)
     while index < size and depth:
         if sql.startswith("/*", index):

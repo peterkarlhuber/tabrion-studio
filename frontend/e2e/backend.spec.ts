@@ -7,7 +7,7 @@
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel).
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -212,4 +212,43 @@ test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
   expect(seen.some((path) => path.startsWith('/assets/'))).toBe(true);
   expect(foreign).toEqual([]);
   expect(violations).toEqual([]);
+});
+
+test('TD-021: language, theme and density are kept in settings.toml for the next browser', async ({
+  page,
+  browser,
+}) => {
+  links.push(newLink());
+  const violations = await signIn(page);
+  await page.getByRole('link', { name: 'Settings' }).click();
+  await page.getByRole('radio', { name: 'Normal' }).check();
+  await expect(page.getByTestId('appearance-sync')).toHaveText(/Saved in settings.toml/);
+  await page.getByRole('radio', { name: 'Dark' }).check();
+  await page.getByRole('radio', { name: 'Deutsch' }).check();
+  await expect(page.getByRole('heading', { level: 1, name: 'Einstellungen' })).toBeVisible();
+  const file = join(root, 'state', 'config', 'settings.toml');
+  await expect
+    .poll(() => {
+      try {
+        return readFileSync(file, 'utf-8');
+      } catch {
+        return '';
+      }
+    })
+    .toMatch(/language = "de"\ntheme = "dark"\ndensity = "normal"\n/);
+  if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
+  expect(violations).toEqual([]);
+
+  // A browser without any stored preference (as after a restart on another port) gets them from the file.
+  const fresh = await browser.newContext({ colorScheme: 'light', locale: 'en-US' });
+  const other = await fresh.newPage();
+  links.push(newLink());
+  await other.goto(links.shift() as string);
+  await expect(other.getByRole('heading', { level: 1, name: 'Willkommen' })).toBeVisible();
+  await expect(other.locator('html')).toHaveAttribute('lang', 'de');
+  await expect(other.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(other.locator('html')).toHaveAttribute('data-density', 'normal');
+  await fresh.close();
+  // L-6 of stu-052-td021-review.md: later tests sign in to an English page with the default look.
+  rmSync(file, { force: true });
 });

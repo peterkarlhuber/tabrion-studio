@@ -213,12 +213,10 @@ def test_final_range_passes() -> None:
 CONSTRAINTS = PYPROJECT.parent / "constraints" / "tabrion-integration.txt"
 
 
-def test_the_integration_branch_pins_one_full_commit() -> None:
-    """STU-009 integration branch (RC-8): the pre-release range in pyproject.toml, the commit in the constraints
-    file. test_pyproject_follows_rc8 fails on this branch on purpose (it refuses a pre-release range): the branch
-    must not merge before tabrion v0.1.0. Then the final range goes into pyproject.toml and the constraints file
-    pins the v0.1.0 commit by its full SHA, which the RC-8 tests allow."""
+def test_the_constraints_file_pins_tabrion_v0_1_0() -> None:
+    """RC-8 (ADR 0009 amendment, no PyPI publication): pyproject.toml carries the final range with no direct
+    reference, and the constraints file pins tabrion v0.1.0 (the merge commit of tabrion PR #56) by its full SHA."""
     lines = [line for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
-    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@546d254a27df9f6b539d57c307ad3022d0ee3a4a"]
+    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@d5821faa8742dea012abda3b663549c038d76543"]
     deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
-    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2"]
+    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[postgres,sqlalchemy]>=0.1,<0.2"]
