@@ -53,7 +53,7 @@
 | TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Open (2026-11-12) |
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
 | TD-035 STU-022 DDL: what pg_dump writes and Studio's DDL does not (owner, privileges, tablespace, access method, functions, types and domains, foreign-table column options, security labels; PostgreSQL 18 forms) | P3 | Open (STU-022 draft PR #38) |
-| TD-039 STU-022 review: the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) run under the session's `search_path` | P1 | Open (before the next release) |
+| TD-039 STU-022 review: the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (PR #45) |
 | TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the header learns of a connection the server closed only when the manager reloads, no reconnect banner, the status bar's role and database) | P2 | Open (STU-008 connect PR) |
 | TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 is enforced only in the page: `POST /api/connections` and `POST /api/connection-tests` do not check the environment, and the page decides from its loaded list, so a profile changed to `prod` on disk after the list loaded is connected without D-02 until the list is read again. The diagnostics view (STU-014) asks D-02 on every run and does not share the page session's confirmation. The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time. The delta review's leftovers are fixed in the STU-008 follow-up PR: L-10 (the header could stay "connecting…" after a slow connect and a newer one that failed), a refused URL's `password` query parameter staying in the field (and `sslpassword`, from the #44 review), the other order of L-10 (the older request answers first, then the newer one fails; #44 review R-1), a connection that was open before two connects that both failed (#44 delta review R-2), tests for the two surviving mutants (the busy click guard, the open-list read after a failed connect), and the cause of a `backend.spec.ts` failure under load (the switcher did not appear after Connect): a list of the open connections read while the connect ran, and answered after it, cleared the header; the manager also read that list again on every header change. A list now clears only what the header showed when it was read (`headerVersion`), and the session's functions keep their identity | P2 | Open (STU-008 connect PR #42; follow-up PR for the delta review) |
 | TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022, the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI) | P2 | Open (STU-010 page PR) |
@@ -1006,18 +1006,22 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-039 · Queries made when a PostgreSQL connection is opened (TABRION STU-022 review)
 
-- **Priority:** P1 High (before the next release) · **Status:** Open · **Refs:** `stu-022-review.md` (off GitHub,
-  delta review D-1), `services/connections.py`, `services/tabrion_compat.py`, `docs/architecture/explorer.md`
-- **What:** Studio's own catalog reads (DDL, policies, estimates, the explorer, the migration lookups and the
-  reflection) use a fixed search_path in their read transaction (STU-022). The queries made when a connection is
-  opened do not: the SQLAlchemy dialect's first-connect setup (for example `current_schema()`) and the driver's type
-  lookups (psycopg's hstore type information) run under the session's `search_path`. This predates STU-022.
-  Hardening against object resolution through user schemas is needed there too.
-- **Not in scope:** tabrion's diagnostics collectors are fully qualified and must stay on the session's path, since
-  they report it. User SQL, the viewer and the exports keep the session's `search_path` on purpose.
-- **Next step:** set the fixed search_path for the connect-time setup and restore the session's path before tabrion's
-  session setup (or remove the driver's type lookup), with a regression test that opens a connection after objects
-  were placed in a schema ahead of `pg_catalog`, and a test that user SQL still sees the session's path.
+- **Priority:** P1 High · **Status:** Done (PR #45) · **Refs:** `stu-022-review.md` (off GitHub, delta
+  review D-1), `services/connections.py`, `services/tabrion_compat.py`, `docs/architecture/connections.md`
+- **What:** the queries SQLAlchemy's dialect sends when a connection is opened (`current_schema()` among them) and
+  the driver's hstore type lookup ran under the session's `search_path`, before Studio's own catalog reads
+  (STU-022) pin theirs. This predated STU-022.
+- **Done:** hardening against object resolution through user schemas: a first `connect` listener fixes
+  `search_path` to `pg_catalog, pg_temp` for the setup, a last one restores the session's path (`RESET
+  search_path`) and reads the dialect's default schema again; native hstore adaptation is off, so the type lookup is
+  not sent. `tests/security/test_connect_path.py` covers it with a database setting that puts another role's schema
+  ahead of `pg_catalog`, and checks that user SQL still sees the session's path, on two sessions at once (L-1 of
+  `td-039-review.md`); an `hstore` value comes back as the server's text (L-2). Studio's own catalog reads and the
+  connection setup share one path constant (`tabrion_compat.CATALOG_SEARCH_PATH`), and the STU-022 regression test
+  for planted objects now places them before the connection is opened, so it covers the setup too (I-3).
+- **Not in scope:** tabrion's diagnostics collectors are fully qualified and stay on the session's path, since they
+  report it. User SQL, the viewer and the exports keep the session's path on purpose, and so do the statements that
+  Alembic and `tabrion.migrations` send in the migration worker after the setup (I-1), like the viewer's.
 
 ### TD-033 · STU-012 SQL editor MVP: what it leaves for later
 

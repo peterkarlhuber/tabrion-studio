@@ -148,6 +148,18 @@ For Studio's own catalog statements `fetch` (`catalog=True`, the default) also s
 (`pg_catalog, pg_temp`) for its own read transaction, a transaction-local setting and not a write; user SQL, the viewer
 and the exports keep the session's `search_path` (see [explorer](explorer.md)).
 
+**Connection setup (TD-039):** when a PostgreSQL connection is opened, SQLAlchemy's dialect sends setup queries of its
+own (`current_schema()` among them) before Studio or tabrion send anything, and a database or role setting may put a
+user schema ahead of `pg_catalog`. Studio's first `connect` listener (`tabrion_compat.pin_setup_path`) sets
+`search_path` to `tabrion_compat.CATALOG_SEARCH_PATH` (`pg_catalog, pg_temp`, the path of Studio's own catalog reads)
+for the setup (hardening against object resolution through user schemas), and
+its last one (`restore_setup_path`) runs `RESET search_path`, so the session gets back the path of the database, role
+or startup settings before it is used; the dialect's default schema is then read again with a qualified
+`pg_catalog.current_schema()`. Studio sets no `search_path` of its own (`startup_options` refuses one), so tabrion's
+session setup, which runs between the two, sets none either. Neither statement is a write. The driver's native hstore
+adaptation is off (`use_native_hstore=False`), so no type lookup runs at connect time and hstore values are the
+server's text. User SQL, the viewer and the exports run under the session's path.
+
 **Known limits** (documented in 03 section 5.1 and ADR R-S3):
 - `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function).
   Only the role's privileges are a hard boundary, so production profiles should use a role without write
@@ -160,6 +172,7 @@ and the exports keep the session's `search_path` (see [explorer](explorer.md)).
 
 | Test | Covers |
 |---|---|
+| `tests/security/test_connect_path.py` (PostgreSQL superuser) | TD-039: with `ALTER DATABASE ... SET search_path` putting a schema of another role, holding objects that raise when called, ahead of `pg_catalog`, opening a connection calls none of them; the dialect's default schema is the session's; user SQL sees the database's path on two sessions at once and on later queries, and reaches the planted objects (the control); an `hstore` value comes back as the server's text (L-2) |
 | `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
 | `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; a wrong password is `db.connection` without server text; `url` has no password |
 | `tests/security/test_read_only.py` (STU-008) | the connection test's facts on SQLite (WAL, foreign keys, encoding; the file unchanged, nothing left open) and PostgreSQL (role, superuser, bypass RLS and encoding as the catalog says, time zone, TLS); facts that cannot be read leave the answer; only short printable text |
