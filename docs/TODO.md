@@ -50,6 +50,7 @@
 | TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; `backend test (windows-latest)` green on `23fd8a6`, run 43201304911) | P2 | Done (PR #29) |
 | TD-025 STU-015/STU-024 page: the Levuvo view shows state, version, open steps and the reason a table is unreadable, not the SQL preview or the files folder; formats the page does not know are only counted | P3 | Open (STU-015 page draft; C-1 of `stu-015-ui-review.md` done, delta items L-6..L-9 and I-6 done) |
 | TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Open (2026-11-12) |
+| TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (branch `claude/project-thread-rdo6g3-win-explorer`) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
@@ -720,6 +721,27 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Next step:** after `_connect`, look again under the lock for a connection of the same profile; if one exists,
   close the new one and return the existing one. Test with two threads opening one profile against a slow connect.
   Not fixed in #32, which is a frontend PR.
+
+### TD-028 · Windows CI: the explorer tests' fixture committed 505 times
+
+- **Priority:** P2 Medium · **Status:** Done (recorded 2026-11-12; branch `claude/project-thread-rdo6g3-win-explorer`)
+  · **Refs:** STU-010, `tests/security/test_explorer.py` (fixture `lite`), CI job `backend test (windows-latest)`
+- **What:** run 43225035767 (head `0c0d143`, #32, a frontend-only diff) hit the job's 20-minute timeout:
+  `test_explorer.py` alone ran from 13:25:15Z to 13:37:42Z (12.5 minutes). On master and PR runs 43224526741,
+  43224287302, 43222787553, 43222180402 and 43220996495 the same file took 2 to 5 minutes on Windows, seconds on
+  Linux. `faulthandler_timeout` (300 s) never fired: no single test was slow, every test's setup was.
+- **Cause:** the `lite` fixture built its 503 tables, an index and a view with one `executescript()` call. Python's
+  `sqlite3` runs such a script in autocommit, so each of the 505 statements was its own transaction: a rollback
+  journal created, written, flushed and deleted each time, about 2,000 `fsync` calls per fixture (`strace -c`:
+  2,020 `fsync`, 506 `unlink`). The fixture runs for 14 of the file's 17 tests. On Linux that is under a second per
+  fixture; on the Windows runner each `FlushFileBuffers` and journal create/delete costs tens of milliseconds, so
+  the file took 2 to 12.5 minutes depending on the runner's disk. Locally, with an `LD_PRELOAD` shim that adds 20 ms
+  to each `fsync`, the file took 620 s on master, 43 s of setup per test.
+- **Fix:** the fixture wraps the script in `BEGIN; ... COMMIT;`: one transaction, 6 `fsync` calls. The same shim
+  run takes 4.9 s; without the shim the file went from 14 s to 2.6 s. No test, assertion or timeout changed; the
+  explorer code was not the cause (the 500-table catalog read stays well under its one-second bound).
+- **Next step:** confirm on the next `backend test (windows-latest)` run that `test_explorer.py` takes seconds.
+  Test fixtures that write many statements to a SQLite file use one transaction.
 
 ### TD-013 · STU-011 query engine on tabrion 0.1: what changes with tabrion 0.2
 

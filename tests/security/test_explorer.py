@@ -55,8 +55,15 @@ CREATE VIEW heavy AS SELECT * FROM part WHERE weight > 10;
 def lite(tmp_path: Path) -> Iterator[tuple[Explorer, str, Source]]:
     path = tmp_path / "parts.db"
     connection = sqlite3.connect(path)
+    # One transaction (TD-028): executescript() runs each statement in autocommit, so the 505 statements were 505
+    # commits, each a rollback journal created, flushed and deleted (about 2,000 fsync calls per fixture). Seconds
+    # on Linux, but on the Windows runner a flush costs tens of milliseconds and the fixture ran 14 times: 2 to 12
+    # minutes for this file. The test reads the schema; how it was written is not what it checks.
     connection.executescript(
-        SCHEMA + "".join(f"CREATE TABLE bulk_{i:03d} (id INTEGER PRIMARY KEY, v TEXT);" for i in range(500))
+        "BEGIN;"
+        + SCHEMA
+        + "".join(f"CREATE TABLE bulk_{i:03d} (id INTEGER PRIMARY KEY, v TEXT);" for i in range(500))
+        + "COMMIT;"
     )
     connection.close()
     path.chmod(0o600)
