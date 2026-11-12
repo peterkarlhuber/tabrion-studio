@@ -25,6 +25,7 @@ describe('buildCommands', () => {
     expect(labels(buildCommands(context()))).toEqual([
       'Go to Start',
       'Go to Connections',
+      'Go to Explorer',
       'Go to Migrations',
       'Go to Diagnostics',
       'Go to Settings',
@@ -53,9 +54,10 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 6)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 7)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
+      'Gehe zu Explorer',
       'Gehe zu Migrationen',
       'Gehe zu Diagnose',
       'Gehe zu Einstellungen',
@@ -65,6 +67,31 @@ describe('buildCommands', () => {
     expect(labels(filterCommands(buildCommands(context()), 'darstellung dunkel'))).toEqual([
       'Darstellung: Dunkel',
     ]);
+  });
+
+  it('offers the explorer filter on the explorer page only, and it focuses the filter (STU-010)', () => {
+    vi.useFakeTimers();
+    try {
+      expect(buildCommands(context()).some((c) => c.id === 'explorer:filter')).toBe(false);
+      const command = buildCommands({ ...context(), path: '/explorer' }).find(
+        (c) => c.id === 'explorer:filter',
+      );
+      expect(command?.label).toBe('Focus the explorer filter');
+      expect(command?.shortcut).toEqual({ key: 'p', mod: true });
+      document.body.innerHTML =
+        '<select data-explorer-profile></select><input data-explorer-filter />';
+      command?.run();
+      vi.runAllTimers();
+      expect(document.activeElement).toBe(document.querySelector('[data-explorer-filter]'));
+      // Before a catalog is open there is no filter: the profile picker gets the focus.
+      document.body.innerHTML = '<select data-explorer-profile></select>';
+      command?.run();
+      vi.runAllTimers();
+      expect(document.activeElement).toBe(document.querySelector('[data-explorer-profile]'));
+    } finally {
+      document.body.innerHTML = '';
+      vi.useRealTimers();
+    }
   });
 
   it('the help command opens the help and shows its shortcut', () => {

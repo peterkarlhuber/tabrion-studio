@@ -92,9 +92,9 @@ a restart ends every session.
 | 7 | Every `/api/*` route except `/api/health`, `/api/session` and the control endpoints (bearer token) needs the session cookie and its CSRF header | 401 `access.session_required`, 403 `access.csrf_invalid` | T-03, SQ-03, F-09 |
 
 A request that passes check 7 counts as activity for the idle timeout (review F-06, R-5). Navigations to `/`,
-`/launch` and the frontend's own view paths (`/connections`, `/migrations`, `/settings`; `CLIENT_ROUTES` in
-`app.py`) from other
-sites are allowed: these pages hold no data, and the redirect file is such a navigation. Every other unknown path is
+`/launch` and the frontend's own view paths (`/connections`, `/explorer`, `/migrations`, `/settings`;
+`CLIENT_ROUTES` in `app.py`) from other sites are allowed: these pages hold no data, and the redirect file is such a
+navigation. Every other unknown path is
 404.
 
 Every refusal is a problem document (`application/problem+json`) with the code of the table and fixed texts; it never

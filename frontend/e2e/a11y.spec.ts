@@ -11,6 +11,7 @@ const PAGES: [string, { scenario?: string; path?: string }][] = [
   ['start page', {}],
   ['connections', { path: '/connections' }],
   ['migrations', { path: '/migrations' }],
+  ['explorer', { scenario: 'explorer', path: '/explorer' }],
   ['diagnostics', { path: '/diagnostics' }],
   ['settings', { path: '/settings' }],
   ['not found', { path: '/nowhere' }],
