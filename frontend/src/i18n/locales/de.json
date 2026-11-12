@@ -268,6 +268,7 @@
     "cancel": "Abbrechen",
     "canceling": "Wird abgebrochen…",
     "canceledBeforeStart": "Abgebrochen, bevor die Diagnose begann.",
+    "cancelFailed": "Studio konnte die Diagnose nicht abbrechen. Sie endet am Zeitlimit der Verbindung; du kannst den Abbruch erneut versuchen.",
     "rerun": "Erneut prüfen",
     "noProfiles": "Es gibt noch keine Verbindungsprofile. Lege eines unter „Verbindungen“ an.",
     "finished": "Diagnose fertig: {{summary}}",

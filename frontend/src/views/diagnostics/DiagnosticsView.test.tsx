@@ -356,7 +356,10 @@ describe('diagnostics view: problems', () => {
       'Studio could not reach the database.',
     );
     expect(calls.some((call) => call.url.endsWith('/diagnostics'))).toBe(false);
-    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
   });
 
   it("shows a refused diagnosis in the page's words, never the server's detail", async () => {
@@ -416,7 +419,10 @@ describe('diagnostics view: cancel and stale answers', () => {
     render(<DiagnosticsView fetcher={fetcher} />);
     await ready();
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
-    expect(await screen.findByRole('button', { name: 'Running…' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Running…' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     expect(screen.getByTestId('diagnostics-message')).toHaveTextContent(
       "The diagnosis is running. It stops at the connection's time limit, or when you cancel it.",
     );
@@ -436,8 +442,11 @@ describe('diagnostics view: cancel and stale answers', () => {
     );
     expect(cancel?.headers['Content-Type']).toBe('application/json');
     expect(screen.getByTestId('diagnostics-summary')).toHaveTextContent('1 error · 1 note');
-    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
-    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
   });
 
   it('Cancel while the connection opens drops the request; no diagnosis runs', async () => {
@@ -447,7 +456,10 @@ describe('diagnostics view: cancel and stale answers', () => {
     render(<DiagnosticsView fetcher={fetcher} />);
     await ready();
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
-    expect(await screen.findByRole('button', { name: 'Opening the connection…' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Opening the connection…' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.getByTestId('diagnostics-message')).toHaveTextContent(
       'Canceled before the diagnosis started.',
@@ -457,7 +469,10 @@ describe('diagnostics view: cancel and stale answers', () => {
     await settle();
     expect(calls.some((call) => call.url.includes('/diagnostics'))).toBe(false);
     expect(screen.getByTestId('diagnostics-result')).toBeEmptyDOMElement();
-    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
   });
 
   it('a profile switch cancels the running diagnosis and drops its answer', async () => {
@@ -469,7 +484,10 @@ describe('diagnostics view: cancel and stale answers', () => {
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
     await screen.findByRole('button', { name: 'Running…' });
     await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
-    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Run diagnosis' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
     await waitFor(() =>
       expect(writes(calls).at(-1)?.url).toBe('/api/connections/c1/diagnostics/cancel'),
     );
@@ -719,5 +737,181 @@ describe('diagnostics API parsing', () => {
       ],
     });
     expect(parsed?.findings.map((item) => item.code)).toEqual(['X-0', 'X-1', 'X-3', 'X-2']);
+  });
+});
+
+describe('diagnostics view: review fixes of #39 (stu-014-ui-review.md)', () => {
+  it('C-1: an out-of-range ran_at shows the findings without a time instead of crashing', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER], { ran_at: 1e15 })),
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    expect(await screen.findByTestId('diagnostics-findings')).toBeInTheDocument();
+    expect(screen.getByTestId('diagnostics-diagnosis').querySelector('time')).toBeNull();
+    expect(parseDiagnosis({ findings: [], ran_at: 1e15 })?.ranAt).toBeNull();
+    // The largest time a Date holds is 8.64e15 ms; one second more is refused.
+    expect(parseDiagnosis({ findings: [], ran_at: 8.64e12 })?.ranAt).toBe(8.64e15);
+    expect(parseDiagnosis({ findings: [], ran_at: 8.64e12 + 1 })?.ranAt).toBeNull();
+  });
+
+  it('C-2: "Run again" keeps the keyboard focus while it runs and after it ends', async () => {
+    const user = userEvent.setup();
+    const second = deferred();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': [() => json(diagnosis([OWNER])), second.answer],
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    await screen.findByTestId('diagnostics-findings');
+    const again = screen.getByRole('button', { name: 'Run again' });
+    again.focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('button', { name: 'Running…' });
+    expect(again).toHaveAttribute('aria-disabled', 'true');
+    expect(document.activeElement).toBe(again);
+    second.resolve(json(diagnosis([])));
+    expect(await screen.findByTestId('diagnostics-summary')).toHaveTextContent('No findings');
+    expect(document.activeElement).toBe(again);
+    expect(again).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  it('C-2, L-3: a keyboard cancel keeps the focus on Cancel through "Canceling…" and the end of the run', async () => {
+    const user = userEvent.setup();
+    const run = deferred();
+    const cancel = deferred();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': run.answer,
+      'POST /api/connections/c1/diagnostics/cancel': cancel.answer,
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    await screen.findByRole('button', { name: 'Running…' });
+    const button = screen.getByRole('button', { name: 'Cancel' });
+    button.focus();
+    await user.keyboard('{Enter}');
+    // L-3: between the click and the answer the page says "Canceling…" and Cancel cannot be pressed twice.
+    expect(await screen.findByRole('button', { name: 'Canceling…' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByTestId('diagnostics-message')).toHaveTextContent('Canceling…');
+    await user.keyboard('{Enter}');
+    cancel.resolve(json({ canceled: true }, 202));
+    run.resolve(json(diagnosis([OWNER, INCOMPLETE])));
+    expect(await screen.findByTestId('diagnostics-incomplete')).toBeInTheDocument();
+    expect(document.activeElement).toBe(button);
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+  });
+
+  it('C-2: an aria-disabled button does nothing when pressed', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server();
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run again' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await settle();
+    expect(writes(calls)).toEqual([]);
+  });
+
+  it.each([
+    ['answers canceled: false', () => json({ canceled: false }, 202)],
+    [
+      'fails',
+      () => {
+        throw new TypeError('network');
+      },
+    ],
+  ])('L-1: a cancel that %s says so and can be tried again', async (_name, refused) => {
+    const user = userEvent.setup();
+    const run = deferred();
+    const { fetcher, calls } = server({
+      'POST /api/connections/c1/diagnostics': run.answer,
+      'POST /api/connections/c1/diagnostics/cancel': [
+        refused as Answer,
+        () => {
+          run.resolve(json(diagnosis([OWNER, INCOMPLETE])));
+          return json({ canceled: true }, 202);
+        },
+      ],
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    await screen.findByRole('button', { name: 'Running…' });
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByTestId('diagnostics-message')).toHaveTextContent(
+      'Studio could not cancel the diagnosis.',
+    );
+    expect(screen.getByRole('button', { name: 'Running…' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(await screen.findByTestId('diagnostics-incomplete')).toBeInTheDocument();
+    expect(calls.filter((call) => call.url.endsWith('/cancel'))).toHaveLength(2);
+  });
+
+  it('L-2: the status region is in the accessibility tree while it is empty', async () => {
+    const { fetcher } = server();
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    const region = screen.getByRole('status');
+    expect(region).toBe(screen.getByTestId('diagnostics-message'));
+    expect(region).toBeEmptyDOMElement();
+    expect(region).toHaveClass('tb-sr-only');
+  });
+
+  it('L-3: the result head shows the PROD profile name escaped', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER])),
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    const dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    const result = await screen.findByTestId('diagnostics-diagnosis');
+    expect(result).toHaveTextContent('measure\\u202E');
+    expect(result.textContent).not.toContain(BIDI);
+  });
+
+  it('L-3: the summary of exactly one finding counts it', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER])),
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    expect(await screen.findByTestId('diagnostics-summary')).toHaveTextContent(/^1 error$/);
+    expect(findings()).toHaveLength(1);
+  });
+
+  it('#40: an answer with a backup field (STU-025) is read; the hints are not shown yet', async () => {
+    const user = userEvent.setup();
+    const backup = {
+      hints: [{ code: 'STU-BK-010', severity: 'warning', title: 'Backup hint text' }],
+      facts: { archive_mode: 'off' },
+    };
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER, NOTE], { backup })),
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    expect(await screen.findByTestId('diagnostics-summary')).toHaveTextContent('1 error · 1 note');
+    expect(findings()).toHaveLength(2);
+    expect(screen.getByTestId('diagnostics-card')).not.toHaveTextContent('Backup hint text');
+    expect(screen.getByTestId('diagnostics-card')).not.toHaveTextContent('STU-BK-010');
   });
 });

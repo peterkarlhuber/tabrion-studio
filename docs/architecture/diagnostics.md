@@ -83,7 +83,12 @@ It only reads; nothing on the page writes to a database.
 - **Cancel.** While the connection opens, Cancel drops the request and no diagnosis starts. While the diagnosis
   runs, Cancel posts `POST .../diagnostics/cancel`; the answer then carries `STU-DX-008`, and the page says above the
   list that the result is incomplete. A profile switch or leaving the page cancels a running diagnosis the same
-  way. A request counter drops every answer that arrives after a newer run or a profile switch.
+  way. A request counter drops every answer that arrives after a newer run or a profile switch. A cancel that
+  does not take (`{"canceled": false}` or a failed request) says so and can be tried again (L-1 of
+  `stu-014-ui-review.md`).
+- **Keyboard.** "Run diagnosis", "Cancel" and "Run again" stay mounted and use `aria-disabled`, so the focus never
+  drops to the page when a run starts, ends or is canceled (C-2). The status region stays in the accessibility tree
+  while it is empty (L-2).
 - **Findings.** A summary counts the findings per severity ("1 error · 2 warnings · 1 note", or "No findings").
   Each finding shows its severity as an icon and a word (never colour alone; the left border repeats it), its code,
   title, detail, remedy and source (tabrion or Studio). The titles of Studio's own codes `STU-DX-001..010` are the
@@ -95,12 +100,16 @@ It only reads; nothing on the page writes to a database.
   escaped (`lib/visible.ts`: control, separator and bidi characters as `\uXXXX`) and cut with a visible "…": codes
   at 32, titles at 160, details and remedies at 1000 characters. At most 100 findings are listed, then "And N more
   findings"; the summary counts all of them. Nothing is rendered as HTML.
-- **Fail closed.** An answer without a `findings` list shows nothing of it (`studio.answer_invalid`). A finding
+- **Fail closed.** An answer without a `findings` list shows nothing of it (`studio.answer_invalid`). A `ran_at`
+  that a `Date` cannot hold is no time (C-1); fields the page does not know, such as STU-025's `backup`, are
+  ignored until the page shows them. A finding
   without a code is left out. An unknown severity is shown with the errors as "Unknown severity" and counted on its
   own, never as a lesser one. The page counts the findings itself and does not use `counts`.
 
-Not in the page yet: the report export (STU-025), a documentation link per finding and the "OK" rows of passed
-checks that 08 section 4.9 sketches (the route sends findings only), and German details and remedies (TD-032).
+Deviations from 08 section 4.9 (TD-032): the route `/diagnostics` with a profile picker instead of
+`/c/:conn/diagnostics` (no connection workspace yet, TD-011; like `/migrations`), English details and remedies, no
+progress display (the backend reports none), no documentation link per finding and no "OK" rows. The report export
+and the backup hints are STU-025.
 
 Page tests: `DiagnosticsView.test.tsx` (run, D-02, run again, escaping and caps, the fail-closed parser, cancel
 before and during the run, profile switch and unmount, problems, German),

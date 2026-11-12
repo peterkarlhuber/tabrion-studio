@@ -8,7 +8,7 @@
  * - `POST /api/connections/{id}/diagnostics/cancel {}` stops the running diagnoses of that connection; their answers
  *   then carry `STU-DX-008` ("Not every check ran").
  *
- * The parser fails closed: an answer without a findings list is no answer (`studio.answer_invalid`), an unknown
+ * Fields the page does not know (such as `backup` of STU-025) are ignored. The parser fails closed: an answer without a findings list is no answer (`studio.answer_invalid`), an unknown
  * severity stays visible as `unknown` and is never counted as a lesser one, and the page counts the findings itself
  * instead of trusting `counts`. Titles, details and remedies are the server's English text and may name database
  * objects (tabrion names schemas and extensions), so the page shows them escaped and capped (`lib/visible.ts`, U-1).
@@ -86,10 +86,12 @@ export function parseDiagnosis(body: unknown): Diagnosis | null {
   const findings = doc.findings.flatMap(parseFinding);
   // A stable sort keeps the server's order within one rank.
   findings.sort((a, b) => RANK[a.severity] - RANK[b.severity]);
-  const ranAt =
+  // Only a time a Date can hold (at most 8.64e15 ms): a larger one would throw when it is formatted (C-1).
+  const ms =
     typeof doc.ran_at === 'number' && Number.isFinite(doc.ran_at) && doc.ran_at > 0
       ? Math.round(doc.ran_at * 1000)
-      : null;
+      : NaN;
+  const ranAt = Number.isFinite(new Date(ms).getTime()) ? ms : null;
   return {
     connectionId: text(doc.connection_id),
     engine: text(doc.engine),

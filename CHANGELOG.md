@@ -14,7 +14,9 @@ All notable changes to this project are documented here. The format follows
   switch or leaving the page cancels too, and an answer that arrives after a profile switch is dropped. The titles of
   Studio's own findings are in English and German; the server's text is shown escaped and capped (U-1), at most 100
   findings, and an answer the page cannot read shows nothing (`studio.answer_invalid`). The activity bar and the
-  command palette offer "Diagnostics".
+  command palette offer "Diagnostics". After the review: an out-of-range `ran_at` no longer blanks the page, the
+  buttons stay focusable while a run starts and ends (`aria-disabled`), and a cancel that does not take says so
+  and can be tried again.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most

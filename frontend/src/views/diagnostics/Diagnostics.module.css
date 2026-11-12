@@ -11,9 +11,6 @@
 .message {
   margin: 0;
 }
-.message:empty {
-  display: none;
-}
 .result {
   display: flex;
   flex-direction: column;

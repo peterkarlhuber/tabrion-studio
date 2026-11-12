@@ -268,6 +268,7 @@
     "cancel": "Cancel",
     "canceling": "Canceling…",
     "canceledBeforeStart": "Canceled before the diagnosis started.",
+    "cancelFailed": "Studio could not cancel the diagnosis. It stops at the connection's time limit; you can try to cancel it again.",
     "rerun": "Run again",
     "noProfiles": "There are no connection profiles yet. Add one under Connections.",
     "finished": "Diagnosis finished: {{summary}}",

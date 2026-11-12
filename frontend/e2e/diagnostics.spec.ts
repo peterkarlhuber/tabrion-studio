@@ -29,7 +29,10 @@ for (const theme of ['light', 'dark'] as Theme[]) {
     test(`${theme}, ${lang}: view and findings pass axe`, async ({ page }) => {
       const text = TEXT[lang];
       await openHarness(page, { scenario: 'diagnostics', path: '/diagnostics', theme, lang });
-      await expect(page.getByRole('button', { name: text.run })).toBeEnabled();
+      await expect(page.getByRole('button', { name: text.run })).toHaveAttribute(
+        'aria-disabled',
+        'false',
+      );
       expect(await seriousViolations(page)).toEqual([]);
       await page.getByRole('button', { name: text.run }).click();
       await expect(page.getByTestId('diagnostics-summary')).toHaveText(text.summary);
@@ -68,7 +71,10 @@ test('Cancel stops a running diagnosis; the result says it is incomplete', async
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   await page.goto('/harness.html?scenario=diagnostics&path=/diagnostics&slow=1');
   await page.getByRole('button', { name: 'Run diagnosis' }).click();
-  await expect(page.getByRole('button', { name: 'Running…' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Running…' })).toHaveAttribute(
+    'aria-disabled',
+    'true',
+  );
   expect(await seriousViolations(page)).toEqual([]);
   await page.getByRole('button', { name: 'Cancel' }).click();
   await expect(page.getByTestId('diagnostics-incomplete')).toBeVisible();

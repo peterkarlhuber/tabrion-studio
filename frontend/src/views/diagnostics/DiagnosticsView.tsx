@@ -200,7 +200,13 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
   const [selected, setSelected] = useState('');
   const [shown, setShown] = useState<Shown | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
-  const [phase, setPhase] = useState<Phase>('idle');
+  const [phase, setPhaseState] = useState<Phase>('idle');
+  /** The phase as of now, for a click that lands before the next render (review I-5). */
+  const phaseNow = useRef<Phase>('idle');
+  const setPhase = (next: Phase) => {
+    phaseNow.current = next;
+    setPhaseState(next);
+  };
   const [dialog, setDialog] = useState(false);
   const [message, setMessage] = useState('');
   /** The finished message repeats the summary below it: then it is only announced, not shown twice. */
@@ -299,7 +305,7 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
   };
 
   const cancel = async () => {
-    if (phase === 'opening') {
+    if (phaseNow.current === 'opening') {
       // The diagnosis has not started: drop the request; the connection stays open for later.
       request.current += 1;
       setPhase('idle');
@@ -307,11 +313,17 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
       return;
     }
     const connection = running.current;
-    if (phase !== 'running' || connection === null) return;
+    if (phaseNow.current !== 'running' || connection === null) return;
+    const mine = request.current;
     setPhase('canceling');
     setMessage(t('diagnostics.canceling'));
     // The running diagnosis answers with what it found so far and STU-DX-008.
-    await cancelDiagnostics(fetcher, connection);
+    const canceled = await cancelDiagnostics(fetcher, connection);
+    // L-1: a cancel that did not take (refused, failed, or no run registered yet) says so and can be tried again.
+    if (!canceled && mine === request.current && running.current === connection) {
+      setPhase('running');
+      setMessage(t('diagnostics.cancelFailed'));
+    }
   };
 
   const switchProfile = (id: string) => {
@@ -327,6 +339,9 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
     setMessage('');
   };
 
+  const canRun = profile !== null && !busy;
+  const canCancel = phase === 'opening' || phase === 'running';
+  const canRerun = !busy && shown !== null;
   let runLabel = t('diagnostics.run');
   if (phase === 'opening') runLabel = t('diagnostics.opening');
   else if (phase === 'running') runLabel = t('diagnostics.running');
@@ -366,26 +381,30 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
                 </option>
               ))}
             </select>
+            {/* C-2: the buttons stay mounted and focusable (aria-disabled), so the keyboard focus never drops to
+                the page when a run starts, ends or is canceled. */}
             <Button
               variant="primary"
-              disabled={profile === null || busy}
-              onClick={() => (profile?.environment === 'prod' ? setDialog(true) : void run())}
+              aria-disabled={!canRun}
+              onClick={() => {
+                if (!canRun) return;
+                if (profile?.environment === 'prod') setDialog(true);
+                else void run();
+              }}
             >
               {runLabel}
             </Button>
-            {busy ? (
-              <Button disabled={phase === 'canceling'} onClick={() => void cancel()}>
-                {t('diagnostics.cancel')}
-              </Button>
-            ) : null}
-            {!busy && shown !== null ? (
-              <Button onClick={() => void rerun()}>{t('diagnostics.rerun')}</Button>
-            ) : null}
+            <Button aria-disabled={!canCancel} onClick={() => canCancel && void cancel()}>
+              {t('diagnostics.cancel')}
+            </Button>
+            <Button aria-disabled={!canRerun} onClick={() => canRerun && void rerun()}>
+              {t('diagnostics.rerun')}
+            </Button>
           </div>
         )}
         <p
           role="status"
-          className={quiet ? 'tb-sr-only' : styles.message}
+          className={quiet || message === '' ? 'tb-sr-only' : styles.message}
           data-testid="diagnostics-message"
         >
           {message}
