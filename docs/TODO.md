@@ -43,7 +43,7 @@
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 draft) |
-| TD-024 STU-015 migration worker on Windows: children of trusted project code (job object done; needs a Windows run) | P2 | In progress (STU-015 draft) |
+| TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; needs a green Windows CI run) | P2 | In progress (STU-015 draft) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -650,9 +650,16 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - Windows: the worker goes into a job object with `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before it gets its request
     (`migrations._windows_job`, through `ctypes`). Closing the job ends every process in it.
   - `test_children_end_with_the_worker_on_every_platform` checks the result with a heartbeat file.
+  - Both pipes are closed on every platform. The first Windows run (`backend test (windows-latest)` of `ci.yml`, head
+    `48cf346`) failed 15 tests in `test_migrations.py` with `ResourceWarning: unclosed file`: on Windows,
+    `run_worker` closed only stdin, because closing the answer pipe while the reader thread reads it waits for that
+    read. Now the reader thread owns the answer pipe and closes it when its read ends, and `run_worker` joins it
+    (at most 5 s) after the worker and its job are gone. `test_the_worker_pipes_are_closed_on_every_platform` runs
+    the Windows exchange on every platform (`migrations._POSIX`) and checks that both pipes are closed, the worker
+    is reaped and no `ResourceWarning` is left for a finalizer.
 - **Open:**
-  - Run `platforms.yml` (windows-latest) on the STU-015 branch, because the job object has run only on mypy's
-    `--platform win32` so far.
+  - Get `backend test (windows-latest)` of `ci.yml` green on the STU-015 branch with the fix above; the job object
+    has run there, but that job was red until now.
   - If Windows cannot make the job (nested jobs before Windows 8), only the worker is killed.
 - **Also from the review (Info, accepted):** I-2 the answer can be forged by trusted code (`_revisions()` validates
   it); I-3 the digest is computed on every code-trust and status request (cache by mtime, size and inode if it

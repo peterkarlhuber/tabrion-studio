@@ -30,7 +30,7 @@ import subprocess
 import sys
 import threading
 import time
-from typing import Any, cast
+from typing import IO, Any, cast
 
 import tabrion_studio
 from tabrion_studio.config.code_trust import CodeTrust, CodeTrustState
@@ -48,6 +48,9 @@ _REAP_S = 5.0
 _PIPE_CHUNK = 65536
 _JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000
 _JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 9
+#: Process groups and ``select`` on pipes (POSIX), or a job object and a reader thread (Windows). A module constant so
+#: that the tests run the Windows exchange, pipe handling included, on every platform.
+_POSIX = os.name == "posix"
 NOT_TRUSTED = "unknown (project not trusted)"
 _REVISIONS_TEXT = {
     "untrusted": NOT_TRUSTED,
@@ -97,7 +100,7 @@ def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_
     :data:`MAX_ANSWER_BYTES`, never until the pipe closes (a child that left the process group may keep it open), and
     after ``timeout_s`` the worker's process group is killed and nothing more is waited for."""
     package_root = str(Path(tabrion_studio.__file__).resolve().parent.parent)
-    posix = os.name == "posix"
+    posix = _POSIX
     deadline = time.monotonic() + timeout_s
     process = subprocess.Popen(  # noqa: S603 - a fixed command: this interpreter and the worker module
         [sys.executable, "-I", "-B", "-c", _BOOT, package_root],
@@ -112,21 +115,29 @@ def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_
     # before the worker gets its request, so no project code has run yet.
     close_job = _windows_job(process)
     data = json.dumps(request).encode("utf-8")
+    output: bytes | None = None
+    reader: threading.Thread | None = None
     try:
-        output = _exchange_posix(process, data, deadline) if posix else _exchange_threads(process, data, deadline)
+        output, reader = (_exchange_posix if posix else _exchange_threads)(process, data, deadline)
     finally:
         close_job()
         # The answer is in (the worker only exits after it), or the time is up: the worker's process group goes, with
         # any child the project's code left in it. Killed before it is waited for, so the group id is still its own.
         if posix or process.poll() is None:
             _kill(process, posix)
-        # On Windows a reader thread may still be blocked on the answer pipe; closing it there could wait for it.
-        for pipe in (process.stdin, process.stdout) if posix else (process.stdin,):
-            if pipe is not None:
-                with contextlib.suppress(OSError):
-                    pipe.close()
+        # Both pipes are closed on every platform. The answer pipe has one owner: this thread, or the reader thread
+        # when there is one, which closes it when its read ends (on Windows, closing a pipe while another thread
+        # reads it waits for that read, so this thread never does).
+        _close(process.stdin)
+        if reader is None:
+            _close(process.stdout)
         with contextlib.suppress(subprocess.TimeoutExpired):
             process.wait(_REAP_S)  # killed: it ends at once; never an unbounded wait
+        if reader is not None:
+            # The worker and its job are gone, so nothing holds the pipe's other end any more: the reader reads its
+            # end and closes the pipe. Bounded: a child that escaped without a job keeps it open (TD-024), and then
+            # the reader closes the pipe when that child ends.
+            reader.join(_REAP_S)
     if output is None:
         return {"error": "studio.migrations_timeout"}
     if len(output) > MAX_ANSWER_BYTES or not output.endswith(b"\n"):
@@ -138,8 +149,11 @@ def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_
     return doc if isinstance(doc, dict) else {"error": "studio.migrations_failed"}
 
 
-def _exchange_posix(process: subprocess.Popen[bytes], data: bytes, deadline: float) -> bytes | None:
-    """Write ``data``, read up to the first line end (at most ``MAX_ANSWER_BYTES + 1`` bytes); None at the deadline."""
+def _exchange_posix(
+    process: subprocess.Popen[bytes], data: bytes, deadline: float
+) -> tuple[bytes | None, threading.Thread | None]:
+    """Write ``data``, read up to the first line end (at most ``MAX_ANSWER_BYTES + 1`` bytes); None at the deadline.
+    No thread reads the pipes, so the caller closes both (the second item is always None)."""
     if process.stdin is None or process.stdout is None:
         raise ValueError("the worker's pipes are missing")
     stdin, stdout = process.stdin.fileno(), process.stdout.fileno()
@@ -152,7 +166,7 @@ def _exchange_posix(process: subprocess.Popen[bytes], data: bytes, deadline: flo
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                return None
+                return None, None
             for key, _ in selector.select(remaining):
                 if key.fd == stdin:
                     try:
@@ -171,21 +185,26 @@ def _exchange_posix(process: subprocess.Popen[bytes], data: bytes, deadline: flo
                     continue
                 output += chunk
                 if not chunk or b"\n" in chunk or len(output) > MAX_ANSWER_BYTES:
-                    return bytes(output[: MAX_ANSWER_BYTES + 1])
+                    return bytes(output[: MAX_ANSWER_BYTES + 1]), None
 
 
-def _exchange_threads(process: subprocess.Popen[bytes], data: bytes, deadline: float) -> bytes | None:
-    """Like :func:`_exchange_posix` with a reader thread (Windows: no ``select`` on pipes). After a timeout the
-    thread may stay blocked while a child of the worker that survived its kill holds the pipe (see docs/TODO.md)."""
+def _exchange_threads(
+    process: subprocess.Popen[bytes], data: bytes, deadline: float
+) -> tuple[bytes | None, threading.Thread | None]:
+    """Like :func:`_exchange_posix` with a reader thread (Windows: no ``select`` on pipes), which is returned with the
+    answer. The thread owns the answer pipe and closes it when its read ends: at the line end, at the cap, or at the
+    pipe's end once the worker is killed. After a timeout it may stay blocked while a child of the worker that
+    survived its kill holds the pipe (no job object; see docs/TODO.md)."""
     if process.stdin is None or process.stdout is None:
         raise ValueError("the worker's pipes are missing")
-    stdout = process.stdout.fileno()
+    pipe = process.stdout
+    stdout = pipe.fileno()
     output = bytearray()
     done = threading.Event()
 
     def read() -> None:
         try:
-            while not done.is_set():
+            while True:
                 chunk = os.read(stdout, _PIPE_CHUNK)
                 output.extend(chunk)
                 if not chunk or b"\n" in chunk or len(output) > MAX_ANSWER_BYTES:
@@ -193,6 +212,7 @@ def _exchange_threads(process: subprocess.Popen[bytes], data: bytes, deadline: f
         except (OSError, ValueError):
             pass
         finally:
+            _close(pipe)
             done.set()
 
     reader = threading.Thread(target=read, name="tabrion-studio-migration-worker", daemon=True)
@@ -203,8 +223,8 @@ def _exchange_threads(process: subprocess.Popen[bytes], data: bytes, deadline: f
     except OSError:
         pass
     if not done.wait(max(deadline - time.monotonic(), 0.0)):
-        return None
-    return bytes(output[: MAX_ANSWER_BYTES + 1])
+        return None, reader
+    return bytes(output[: MAX_ANSWER_BYTES + 1]), reader
 
 
 def _windows_job(process: subprocess.Popen[bytes]) -> Callable[[], None]:
@@ -265,6 +285,12 @@ def _windows_job(process: subprocess.Popen[bytes]) -> Callable[[], None]:
         kernel32.CloseHandle(job)
         return lambda: None
     return lambda: kernel32.CloseHandle(job) and None
+
+
+def _close(pipe: IO[bytes] | None) -> None:
+    if pipe is not None:
+        with contextlib.suppress(OSError):
+            pipe.close()
 
 
 def _kill(process: subprocess.Popen[bytes], posix: bool) -> None:
