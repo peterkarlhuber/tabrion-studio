@@ -102,3 +102,19 @@
 .remedyLabel {
   font-weight: var(--tb-weight-semibold);
 }
+.note {
+  flex-basis: 100%;
+  margin: 0;
+}
+/* The backup hints (STU-025): their own block below the findings. */
+.backup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-3);
+  padding-top: var(--tb-space-3);
+  border-top: 1px solid var(--tb-color-border);
+}
+.backupTitle {
+  font-size: var(--tb-text-md);
+  margin: 0;
+}

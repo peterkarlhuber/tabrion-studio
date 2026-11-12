@@ -6,8 +6,8 @@
   the database (``PRAGMA quick_check`` on SQLite can take a while), never because it changes anything; the access
   middleware asks for the CSRF header. A diagnosis stops at the connection's statement timeout; the checks it could
   not run are named in ``STU-DX-008``. ``backup`` holds the backup hints (``STU-BK-*``, STU-025), which are not
-  findings and not in ``counts``; tabrion's ``TAB-PG-020`` stays in ``findings`` here until the page shows the hints
-  (D-2, TD-036).
+  findings and not in ``counts``. The page shows the hints (TD-036), so tabrion's ``TAB-PG-020`` gives way to
+  ``STU-BK-010`` here as in the report (D-2 of the delta review of STU-025).
 * ``POST /api/connections/{id}/diagnostics/cancel``: 202 ``{"canceled": true|false}``; stops the running diagnoses
   of that connection within a second (M-1 of ``stu-014-review.md``). Their answers then carry ``STU-DX-008``.
 * ``POST /api/connections/{id}/diagnostics/report`` with ``{"format": "markdown" | "json"}`` (STU-025): runs a
@@ -45,8 +45,8 @@ def add_diagnostics_routes(app: FastAPI, diagnostics: Diagnostics) -> None:
     @app.post("/api/connections/{connection_id}/diagnostics")
     async def run_diagnostics(connection_id: str) -> Response:
         try:
-            # D-2 of the delta review: the view does not show backup.hints yet (TD-036), so it keeps TAB-PG-020.
-            doc = await asyncio.to_thread(diagnostics.run, connection_id, backup=True, replace=False)
+            # TD-036: the view shows backup.hints, so TAB-PG-020 gives way to STU-BK-010 as in the report (D-2).
+            doc = await asyncio.to_thread(diagnostics.run, connection_id, backup=True, replace=True)
         except Exception as exc:
             refused = connection_problem(exc)
             if refused is None:

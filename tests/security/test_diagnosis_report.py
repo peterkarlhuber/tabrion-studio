@@ -524,15 +524,15 @@ def test_n1_studios_own_sentences_are_left_readable() -> None:
     assert "[role]" not in hint["detail"] and " a " in f" {hint['detail']} "
 
 
-def test_d2_the_page_keeps_tabrions_archive_finding_and_the_report_replaces_it(tmp_path: Path) -> None:
-    """D-2 of the delta review: the view does not show backup.hints yet (TD-036), so the page route keeps TAB-PG-020;
-    the report, which shows the hints, replaces it with STU-BK-010."""
+def test_d2_the_page_and_the_report_replace_tabrions_archive_finding(tmp_path: Path) -> None:
+    """D-2 of the delta review, switched by TD-036: the view shows backup.hints, so the page route, like the report,
+    gives TAB-PG-020 way to STU-BK-010 (one cause, one entry)."""
     archive = [Finding("TAB-PG-020", Severity.INFO, "WAL archiving is off", "d", "r")]
     diagnostics, connection = _named(("app", "app", "appdb"), findings=archive)
     studio = make_studio(tmp_path / "static", diagnostics=diagnostics)
     headers = {**studio.sign_in(), "Origin": ORIGIN}
     view = studio.client.post(f"/api/connections/{connection.id}/diagnostics", json={}, headers=headers).json()
-    assert "TAB-PG-020" in {item["code"] for item in view["findings"]}
+    assert "TAB-PG-020" not in {item["code"] for item in view["findings"]}
     assert "STU-BK-010" in hint_codes(view["backup"])
     route = f"/api/connections/{connection.id}/diagnostics/report"
     report = studio.client.post(route, json={"format": "json"}, headers=headers).json()
