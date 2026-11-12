@@ -10,6 +10,7 @@ import {
   GitBranch,
   House,
   Settings,
+  SquareTerminal,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -36,6 +37,7 @@ export type ServerState =
 const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/', key: 'nav.start', icon: <House /> },
   { path: '/connections', key: 'nav.connections', icon: <Database /> },
+  { path: '/sql', key: 'nav.sql', icon: <SquareTerminal /> },
   { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
 ];
 

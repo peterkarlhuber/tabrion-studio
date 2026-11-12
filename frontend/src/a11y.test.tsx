@@ -17,6 +17,7 @@ import {
   UnsavedScriptDialog,
 } from './components/dialogs/StudioDialogs';
 import { codeTrust } from './harness/migrations';
+import { createQueryServer } from './harness/queries';
 import { PROFILES, SETTINGS } from './harness/profiles';
 import { DIFF, HOSTILE_REVIEW, REVIEW } from './harness/trust';
 import i18n from './i18n';
@@ -26,6 +27,7 @@ import { ShortcutHelp } from './keyboard/ShortcutHelp';
 import type { SessionState } from './session';
 import { DeleteProfileDialog, PasswordDialog } from './views/connections/ConnectionDialogs';
 import { ConnectionWizard } from './views/connections/ConnectionWizard';
+import { EditorView } from './views/editor/EditorView';
 import type { Workspace } from './workspace';
 
 const health: typeof fetch = async () =>
@@ -60,6 +62,11 @@ const migrations: typeof fetch = async (input) => {
   }
   return profiles(input);
 };
+
+/** STU-012: the SQL editor with its profiles and the fake query engine of the harness. */
+const queryServer = createQueryServer();
+const editor: typeof fetch = async (input, init) =>
+  (await queryServer.handle(String(input), init)) ?? profiles(input);
 
 const PAGES: [string, string, () => ReactElement][] = [
   [
@@ -141,6 +148,7 @@ const PAGES: [string, string, () => ReactElement][] = [
   ],
   ['D-08', '/', () => <QuitDialog open running={2} onQuit={noop} onCancel={noop} />],
   ['migrations (STU-015)', '/migrations', () => <App fetcher={migrations} heartbeat={false} />],
+  ['SQL editor (STU-012)', '/sql', () => <EditorView fetcher={editor} />],
   [
     'trust the migration code (STU-015)',
     '/',

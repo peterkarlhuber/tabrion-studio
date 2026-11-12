@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { startAppearanceSync } from './appearance';
@@ -14,6 +14,11 @@ import { NotFoundView, SettingsView, StartView } from './views/Views';
 import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
 
 export type AppSession = SessionState | 'ended';
+
+/** The SQL editor (STU-012) and CodeMirror load only when the page is opened: the other views stay small. */
+const EditorView = lazy(() =>
+  import('./views/editor/EditorView').then((module) => ({ default: module.EditorView })),
+);
 
 function useServer(fetcher: typeof fetch): [ServerState, () => void] {
   const [server, setServer] = useState<ServerState>({ kind: 'loading' });
@@ -36,6 +41,12 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
       return <StartView />;
     case '/connections':
       return <ConnectionsView fetcher={fetcher} />;
+    case '/sql':
+      return (
+        <Suspense fallback={null}>
+          <EditorView fetcher={fetcher} />
+        </Suspense>
+      );
     case '/migrations':
       return <MigrationsView fetcher={fetcher} />;
     case '/settings':
@@ -47,6 +58,8 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
 
 const PAGE_TITLES: Record<string, string> = {
   '/connections': 'connections.title',
+  '/sql': 'editor.title',
+  '/migrations': 'migrations.title',
   '/settings': 'settings.title',
 };
 

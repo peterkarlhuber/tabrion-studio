@@ -94,3 +94,34 @@ describe('display', () => {
     }
   });
 });
+
+describe('SQL editor shortcuts (STU-012)', () => {
+  it('match Ctrl+Enter, Shift+Ctrl+Enter and Ctrl+. without mixing them up', () => {
+    const enter = { key: 'Enter', ctrlKey: true, metaKey: false, shiftKey: false, altKey: false };
+    expect(matches(enter, SHORTCUTS.run, 'other')).toBe(true);
+    expect(matches(enter, SHORTCUTS.runScript, 'other')).toBe(false);
+    expect(matches({ ...enter, shiftKey: true }, SHORTCUTS.runScript, 'other')).toBe(true);
+    expect(matches({ ...enter, shiftKey: true }, SHORTCUTS.run, 'other')).toBe(false);
+    expect(matches({ ...enter, key: '.' }, SHORTCUTS.cancel, 'other')).toBe(true);
+  });
+
+  it('match ⌥T by the physical key on macOS, where it types "†"', () => {
+    const optionT = {
+      key: '†',
+      code: 'KeyT',
+      ctrlKey: false,
+      metaKey: false,
+      shiftKey: false,
+      altKey: true,
+    };
+    expect(matches(optionT, SHORTCUTS.newTab, 'mac')).toBe(true);
+    expect(matches({ ...optionT, code: 'KeyW' }, SHORTCUTS.newTab, 'mac')).toBe(false);
+    expect(matches({ ...optionT, code: 'KeyW' }, SHORTCUTS.closeTab, 'mac')).toBe(true);
+  });
+
+  it('show Enter as ↵ on macOS and as Enter elsewhere, and in aria-keyshortcuts as Enter', () => {
+    expect(shortcutText(SHORTCUTS.runScript, 'mac')).toBe('⇧⌘↵');
+    expect(shortcutText(SHORTCUTS.runScript, 'other')).toBe('Ctrl+Shift+Enter');
+    expect(ariaShortcut(SHORTCUTS.run, 'mac')).toBe('Meta+Enter');
+  });
+});

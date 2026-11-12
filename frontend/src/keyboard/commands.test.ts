@@ -3,6 +3,7 @@ import { act } from '@testing-library/react';
 
 import i18n from '../i18n';
 import { buildCommands, filterCommands, type Command } from './commands';
+import { setEditorActions } from './editorActions';
 
 const context = (openHelp = () => undefined) => ({
   t: i18n.t.bind(i18n),
@@ -25,6 +26,7 @@ describe('buildCommands', () => {
     expect(labels(buildCommands(context()))).toEqual([
       'Go to Start',
       'Go to Connections',
+      'Go to SQL editor',
       'Go to Migrations',
       'Go to Settings',
       'Theme: System',
@@ -52,9 +54,10 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 5)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 6)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
+      'Gehe zu SQL-Editor',
       'Gehe zu Migrationen',
       'Gehe zu Einstellungen',
       'Darstellung: System',
@@ -96,5 +99,39 @@ describe('filterCommands', () => {
 
   it('finds nothing for an unknown word', () => {
     expect(filterCommands(commands, 'drop table')).toEqual([]);
+  });
+});
+
+describe('SQL editor commands (STU-012)', () => {
+  afterEach(() => setEditorActions(null));
+
+  it('are offered on the editor page while it is shown; Cancel only while a query runs', () => {
+    const ran: string[] = [];
+    let running = false;
+    setEditorActions({
+      run: () => ran.push('run'),
+      runScript: () => ran.push('runScript'),
+      cancel: () => ran.push('cancel'),
+      newTab: () => ran.push('newTab'),
+      closeTab: () => ran.push('closeTab'),
+      save: () => ran.push('save'),
+      running: () => running,
+    });
+    const onEditor = { ...context(), path: '/sql' };
+    expect(labels(buildCommands(context())).filter((l) => l.startsWith('Run'))).toEqual([]);
+    expect(labels(buildCommands(onEditor)).slice(0, 5)).toEqual([
+      'Run',
+      'Run script',
+      'New editor tab',
+      'Close editor tab',
+      'Save as .sql',
+    ]);
+    running = true;
+    const commands = buildCommands(onEditor);
+    expect(labels(commands)).toContain('Cancel query');
+    for (const command of commands.filter((c) => c.group === 'editor')) command.run();
+    expect(ran).toEqual(['run', 'runScript', 'cancel', 'newTab', 'closeTab', 'save']);
+    setEditorActions(null);
+    expect(labels(buildCommands(onEditor))).not.toContain('Run');
   });
 });

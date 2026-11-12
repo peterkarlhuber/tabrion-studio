@@ -3,7 +3,8 @@
 The frontend in `frontend/` is a React 19 / TypeScript / Vite single-page app that the wheel serves from
 `tabrion_studio/static/`. This page describes the shell, the design system, the languages, the status displays and
 the dialogs, and how they are tested. The connection manager and the server settings are STU-008
-(`docs/architecture/configuration.md`); the explorer and the SQL editor arrive later. Studio has **no write UI for
+(`docs/architecture/configuration.md`); the SQL editor (STU-012) is described [below](#sql-editor-stu-012); the
+explorer arrives later. Studio has **no write UI for
 databases** (the Data Editor, STU-026, stays locked behind G-S2); the only files it writes are its own profiles and
 settings.
 
@@ -13,7 +14,7 @@ settings.
 ┌ header: mark · "Tabrion Studio" · connection switcher · [PROD] · Writing locked · No transaction ┐
 ├──┬────────────────────────────────────────────────────────────────────────────────────────────────┤
 │⌂ │ [Query 1 PROD] [parts-dev DEV] [parts-pg TEST]      ← tabs, only with a workspace               │
-│🗄│ main view: Start · Connections · Migrations · Settings · Not found                               │
+│🗄│ main view: Start · Connections · SQL editor · Migrations · Settings · Not found                              │
 │  │                                                                                                 │
 │⚙ │                                                                                                 │
 ├──┴────────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -25,9 +26,9 @@ settings.
   With a session it sends the heartbeat; when the server answers 401 (or 403 `access.csrf_invalid`), the heartbeat
   stops and the page says "Your session has ended. Run `tabrion-studio` again to open Studio." (review S-1).
 - `src/shell/AppShell.tsx`: skip link, header with the status displays and the buttons for the command palette and
-  the keyboard shortcuts, activity bar (Start, Connections, Migrations, Settings), tabs, main area, status bar (server
+  the keyboard shortcuts, activity bar (Start, Connections, SQL editor, Migrations, Settings), tabs, main area, status bar (server
   version or "does not answer", language).
-- `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations` and `/settings`. The backend serves
+- `src/router.ts`: a minimal history router for `/`, `/connections`, `/sql`, `/migrations` and `/settings`. The backend serves
   `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists equal); every other path
   stays 404.
 - `src/workspace.ts`: the active connection, its environment and the open tabs. Nothing fills it until the connection
@@ -102,6 +103,11 @@ for matching and for display, so the palette, the help and the header buttons al
 | Command palette | ⌘K | Ctrl+K | opens the palette (also the header button) |
 | Keyboard shortcuts | ⌘/ | Ctrl+/ | opens the help with this table (also the header button and the palette) |
 | Next / previous area | F6 / ⇧F6 | F6 / Shift+F6 | header, activity bar, tabs, main area, status bar, wrapping around |
+| Run (SQL editor) | ⌘↵ | Ctrl+Enter | the selection, or the statement at the cursor |
+| Run script (SQL editor) | ⇧⌘↵ | Shift+Ctrl+Enter | every statement of the tab, in turn |
+| Cancel query (SQL editor) | ⌘. | Ctrl+. | also Escape in the results |
+| New / close editor tab | ⌥T / ⌥W | Alt+T / Alt+W | ⌘T and ⌘W are the browser's; ⌥⌘W (08 section 7) closes other tabs in Safari |
+| Save as .sql (SQL editor) | ⌘S | Ctrl+S | downloads the tab's text |
 
 - **Command palette** (`CommandPalette.tsx`): a modal native `<dialog>` like the other dialogs, with the WAI-ARIA
   combobox pattern: the focus stays in the search, `aria-activedescendant` names the active command, ↑ ↓ Home End
@@ -115,8 +121,49 @@ for matching and for display, so the palette, the help and the header buttons al
   the selected tab), else its first control, else the area itself, which then shows the focus ring
   (`data-region-focus`, WCAG 2.4.7).
 - While any modal dialog is open, the page shortcuts do nothing: the dialog owns the keyboard.
-- The SQL editor's shortcuts (run, run script, cancel, editor tabs, save, explorer filter, history) arrive with
-  STU-011 and STU-012, and the help lists them then (`docs/TODO.md`, TD-020).
+- The SQL editor's shortcuts work on its page; the help lists them in a group of their own and the palette offers
+  its commands (`src/keyboard/editorActions.ts`) while the page is shown. A shortcut with ⌥ matches the physical key
+  too, because ⌥T types "†" on a Mac. The explorer filter, the history and F6 between the editor's own areas are
+  still open (`docs/TODO.md`, TD-020, TD-033).
+
+## SQL editor (STU-012)
+
+`src/views/editor/` (03 section 2 C, 08 sections 4.4, 5 and 7) is the page `/sql`. It is loaded on demand
+(`React.lazy`), so CodeMirror is not part of the other views' bundle. It is read-only like the query engine it calls
+(STU-011, [Query engine](queries.md)): the page never sends `mode`, and there is no write control. The Data Editor and
+the editor's write mode (STU-026, D-03..D-05) stay locked behind G-S2.
+
+| Part | File | What |
+|---|---|---|
+| Editor | `SqlEditor.tsx` | CodeMirror 6 with `@codemirror/lang-sql` (PostgreSQL or SQLite by the profile's engine) through `@uiw/react-codemirror`; syntax colors from the `--tb-` tokens; Tab leaves the editor (no tab trap) |
+| Statements | `sqlScan.ts` | splits at `;` outside literals, quoted identifiers, dollar quotes and comments, and finds `:name` placeholders (`::` is a cast), with the backend's rules; the server checks every statement again |
+| Parameters | `ParamPanel.tsx`, `params.ts` | text, number, boolean, null, JSON (sent as text, cast in the SQL); a missing or invalid value stops the run and gets the focus |
+| Run | `EditorView.tsx` | the selection or the statement at the cursor; a script runs statement by statement and stops at the first error or a cancel; D-02 before the first PROD connection of the page; the run reopens a connection the server closed once |
+| Events | `api/queries.ts` | `POST /api/queries`, the SSE stream read with `fetch` (the CSRF header), `GET /api/queries/{id}` every 250 ms when the stream breaks, row pages, cancel |
+| Grid | `ResultGrid.tsx`, `rowCache.ts` | TanStack Virtual in both directions; at most 20 pages of 500 rows in the browser, least recently used dropped; WAI-ARIA grid with `aria-activedescendant` |
+| Detail | `CellDetail.tsx`, `format.ts` | the whole value as plain text, JSON indented, bytes as hex; invisible and bidi characters shown as marks |
+| Drafts | `drafts.ts` | title, profile and text of every tab in `localStorage` (never parameter values or results); D-06 before closing a changed tab, "Save" downloads a `.sql` file |
+
+**CSP and CodeMirror.** CodeMirror writes its styles through `style-mod`, which adds a `<style>` element to the
+document; the CSP of STU-003 (`style-src 'self'`) refuses that, and Studio keeps its CSP. In a shadow root
+`style-mod` uses a constructed style sheet (`adoptedStyleSheets`), which `style-src` does not govern, so the editor is
+mounted in a shadow root of its own; its look comes from the `--tb-` tokens, which inherit into it. CodeMirror sets
+inline styles only through the CSSOM (`element.style`), which the CSP allows. `e2e/editor-backend.spec.ts` runs the
+built page in a real `tabrion-studio` and records no CSP violation.
+
+**Memory (acceptance "100k rows within the memory limit").** A result stays in the backend (03 section 6); the grid
+asks for the 500-row page of a visible row and keeps 20 pages. The limit of 03 section 10 is 300 MB of browser memory
+for 100 000 rows; after scrolling a 100 000-row result from the first to the last row, the JS heap is about 10 MB
+against the real server and 27 MB in the harness (both tests fail above 300 MB of heap and above 100 MB used), with
+fewer than 120 rows in the DOM. `src/views/editor/rowCache.test.ts` checks the bound of 10 000 held rows.
+
+**Accessibility.** Editor tabs are a list of buttons (`aria-current`) with their close buttons, the result tabs a
+WAI-ARIA tablist (arrows, Home, End). The grid is one tab stop: `role="grid"` with `aria-rowcount`/`aria-colcount`
+and `aria-rowindex`/`aria-colindex` on every rendered row and cell (08 section 9); arrows, Home/End, Ctrl+Home/End,
+Page Up/Down, Enter for the detail panel, Ctrl+C to copy. A status line shows the running time; a polite live region
+reads out the final state once ("3 rows · 24 ms"). The environment badge and the access chip ("Read-only", "Writing
+locked") are in the toolbar; a PROD tab gets a red top border on the page until the shell shows the tab's connection
+(TD-011, TD-033).
 
 ## Tests
 
@@ -134,6 +181,9 @@ for matching and for display, so the palette, the help and the header buttons al
 | Keyboard only in Chromium: palette to Settings, F6 through every area with a visible ring, help and back; the palette is modal; axe for palette and help in light/dark, en/de | `e2e/keyboard.spec.ts` | Playwright, Chromium (CI `e2e`) |
 | Accessibility audit (STU-053): target size, reflow at 320 px, text spacing, focus visible, reduced motion, landmarks | `e2e/a11y-audit.spec.ts`; report in `docs/architecture/accessibility.md` | Playwright, Chromium (CI `e2e`) |
 | The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| SQL editor (STU-012): statements and placeholders, parameter values, drafts, cell text, the event stream and its fallback, the row cache bound with 100 000 rows, the page with a fake engine (run, selection, parameters, script, cancel, D-02, D-06, Alt+T), the palette's editor commands, axe in jsdom | `src/views/editor/*.test.ts(x)`, `src/api/queries.test.ts`, `src/keyboard/*.test.ts`, `src/a11y.test.tsx` | `npm test` (CI) |
+| SQL editor in Chromium with the harness's fake engine: run, grid keyboard, detail panel, parameters, script and messages, cancel (Ctrl+. and Escape), refused write, load more, tabs and drafts, D-06, D-02, 100 000 rows under the memory limit, axe light/dark x en/de | `e2e/editor.spec.ts`, `e2e/a11y.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| SQL editor in a real `tabrion-studio` with SQLite: no CSP violation, parameters, grid, detail, axe light/dark, a refused write, cancel of an endless query within a second, 100 000 rows under the memory limit | `e2e/editor-backend.spec.ts` | Playwright, Chromium (CI `e2e`, not yet in the required list: TD-037) |
 | No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 
 The Playwright tests run against the Vite development server and the e2e harness `frontend/harness.html`
