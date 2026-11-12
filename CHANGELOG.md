@@ -7,8 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- STU-014 backend (integration branch only, stacked on STU-013; `tabrion.check` on the driver connection until
-  tabrion 0.2): `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
+- STU-014 backend (`tabrion.check` on the driver connection until tabrion 0.2):
+  `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host
   (T-10), a read-only role that can write, no statement timeout for the role or database, SQLite rows written with
   foreign keys off. Review fix round (`stu-014-review.md`): the diagnosis stops at the connection's statement
