@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- STU-015 backend (integration branch only, stacked on STU-014): `GET /api/connections/{id}/migrations` with SQLite's
+- STU-015 backend: `GET /api/connections/{id}/migrations` with SQLite's
   `user_version` and the Alembic status. The Alembic `current` comes from the version table; `heads` and `pending`
   need the project's revision files to be imported, so they are read only after the user trusted the project's code
   (`GET`/`POST`/`DELETE /api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the
