@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
+  `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
+  sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.
+  `.../policies` lists PostgreSQL's policies, whether RLS is on and forced, and whether it applies to the connection's
+  role. `.../row-count` counts a SQLite table or view on request, stopped after 10 seconds (`db.timeout`), and
+  `GET /api/connections/{id}/row-estimates` gives PostgreSQL's `reltuples` per table; a partitioned table's estimate
+  is the sum of its partitions' (also in the table detail). Each route also takes `?schema=&name=`. For the
+  reference apps parts and measurements, the DDL equals pg_dump's statement by statement.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most
