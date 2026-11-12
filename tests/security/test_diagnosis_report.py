@@ -36,7 +36,7 @@ from tabrion_studio.config.schema import Profile, SecretRef
 from tabrion_studio.logs import forget_secrets, register_secret
 from tabrion_studio.services import backup_hints
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
-from tabrion_studio.services.diagnosis_report import DiagnosisReports, ReportError, hide_names, markdown_text
+from tabrion_studio.services.diagnosis_report import NAMES_SQL, DiagnosisReports, ReportError, hide_names, markdown_text
 from tabrion_studio.services.diagnostics import BACKUP_CODES, Diagnostics
 from tests.security.test_read_only import Source
 from tests.support.access import ORIGIN, TOKEN, make_studio
@@ -275,6 +275,45 @@ def test_l4_a_separator_follows_the_name(tmp_path: Path, name: str, counted: boo
     assert backup_hints.sqlite_backups(database)["found"] == int(counted)
 
 
+@posix
+def test_n3_a_folder_swapped_for_a_link_after_the_check_is_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """N-3: the race L-2 guards. ``_folders`` is made to return a link (as if swapped in after its ``lstat``); the
+    folder is opened with ``O_NOFOLLOW`` and fails, so nothing outside is read."""
+    project, elsewhere = tmp_path / "project", tmp_path / "elsewhere"
+    database = sqlite_file(project / "shop.db")
+    copy_of(database, elsewhere / "shop-1.db", mode=0o644)
+    (project / "backups").symlink_to(elsewhere, target_is_directory=True)
+    monkeypatch.setattr(backup_hints, "_folders", lambda folder: [folder, folder / "backups"])
+    seen = backup_hints.sqlite_backups(database)
+    assert (seen["found"], seen["exposed"], seen["unreadable"]) == (0, 0, True)
+
+
+@pytest.mark.parametrize(
+    ("database", "name", "counted"),
+    [("shop.v2.db", "shop.v2-old.db", True), ("shop.v2.db", "shop.v3.db", False), ("shop.v2.db", "shop-1.db", False)],
+)
+def test_n4_the_stem_is_the_name_without_its_last_suffix(
+    tmp_path: Path, database: str, name: str, counted: bool
+) -> None:
+    path = sqlite_file(tmp_path / database)
+    copy_of(path, tmp_path / name)
+    assert backup_hints.sqlite_backups(path)["found"] == int(counted)
+
+
+def test_n5_the_entry_cap_is_exact(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    folder = tmp_path / "data"
+    database = sqlite_file(folder / "shop.db")
+    for number in range(4):
+        (folder / f"note{number}.txt").write_text("x")
+    entries = len(os.listdir(folder))
+    monkeypatch.setattr(backup_hints, "MAX_ENTRIES", entries)
+    assert backup_hints.sqlite_backups(database)["truncated"] is False
+    monkeypatch.setattr(backup_hints, "MAX_ENTRIES", entries - 1)
+    assert backup_hints.sqlite_backups(database)["truncated"] is True
+
+
 def test_l3_the_scan_stops_between_entries(tmp_path: Path) -> None:
     database = sqlite_file(tmp_path / "shop.db")
     for number in range(3):
@@ -408,6 +447,100 @@ def _fake_run(environment: str, row: tuple[Any, ...] | None, *, backup: bool) ->
             return connection
 
     return Diagnostics(Registry(), clock=lambda: NOW).run("c_fake", backup=backup)  # type: ignore[arg-type]
+
+
+OS_ROLE = "jdoe_os_login"  # what libpq connects as when the profile has no user (D-1)
+
+
+class NamedPostgres(FakePostgres):
+    """Answers NAMES_SQL with ``names`` (or raises when it is None), as the server would."""
+
+    def __init__(self, findings: list[Finding], row: tuple[Any, ...] | None, names: tuple[Any, ...] | None) -> None:
+        super().__init__("dev", findings, row)
+        self.names = names
+
+    def fetch(self, sql: str, params: Any = None, *, cancel: Any = None) -> list[tuple[Any, ...]]:
+        if sql == NAMES_SQL:
+            if self.names is None:
+                raise TabrionError("db.connection")
+            return [self.names] if self.names else []
+        return super().fetch(sql, params, cancel=cancel)
+
+
+def _named(
+    names: tuple[Any, ...] | None, *, findings: list[Finding] | None = None, profile_name: str = "pg"
+) -> tuple[Diagnostics, NamedPostgres]:
+    connection = NamedPostgres(findings or [], _row("off", archived=0), names)
+    profile = Profile(profile_name, "postgresql", "dev", host="db.example.internal", database="appdb", user=None)
+
+    class Registry:
+        source = Source(profiles={"user:pg": profile})
+
+        def get(self, _connection_id: object) -> NamedPostgres:
+            return connection
+
+    return Diagnostics(Registry(), clock=lambda: NOW), connection  # type: ignore[arg-type]
+
+
+def _report(diagnostics: Diagnostics, report_format: str = "json") -> str:
+    reports = DiagnosisReports(diagnostics.registry, diagnostics, clock=lambda: NOW)
+    return reports.build("c_fake", report_format).body.decode("utf-8")
+
+
+@pytest.mark.parametrize("names", [None, (), (OS_ROLE, OS_ROLE, None), (OS_ROLE,)])
+def test_d1_no_names_no_report(names: tuple[Any, ...] | None) -> None:
+    """D-1: the profile has no user (libpq uses the OS login name); when the server cannot say who that is, the
+    report is refused instead of naming the role through a schema."""
+    leak = [Finding("TAB-PG-009", Severity.WARNING, "t", f"CREATE on the search_path schema(s) {OS_ROLE}", "r")]
+    diagnostics, _ = _named(names, findings=leak)
+    with pytest.raises(ReportError) as refused:
+        _report(diagnostics)
+    assert refused.value.code == "studio.report_unavailable"
+
+
+def test_d1_the_servers_names_hide_the_os_login_role() -> None:
+    leak = [Finding("TAB-PG-009", Severity.WARNING, "t", f"CREATE on the search_path schema(s) {OS_ROLE}", "r")]
+    diagnostics, _ = _named((OS_ROLE, OS_ROLE, "appdb"), findings=leak, profile_name=OS_ROLE)
+    for report_format in ("json", "markdown"):
+        text = _report(diagnostics, report_format)
+        _assert_absent(text, OS_ROLE)
+        assert "schema(s) [role]" in text.replace("\\", "")
+    as_json = json.loads(_report(diagnostics))
+    assert as_json["connection"]["profile"] == "[role]"  # N-2: the profile name, often named after the role
+
+
+def test_n2_string_facts_are_hidden(monkeypatch: pytest.MonkeyPatch) -> None:
+    facts = {"engine": "postgresql", "archive_mode": f"{OS_ROLE} appdb"}
+    monkeypatch.setattr(backup_hints, "postgres_hints", lambda *args, **kwargs: {"hints": [], "facts": facts})
+    diagnostics, _ = _named((OS_ROLE, OS_ROLE, "appdb"))
+    assert json.loads(_report(diagnostics))["backup"]["facts"]["archive_mode"] == "[role] [database]"
+
+
+def test_n1_studios_own_sentences_are_left_readable() -> None:
+    """N-1: a role named like a common word (``a``) is not replaced in Studio's fixed texts."""
+    diagnostics, _ = _named(("a", "a", "appdb"))
+    doc = json.loads(_report(diagnostics))
+    hint = next(item for item in doc["backup"]["hints"] if item["code"] == "STU-BK-010")
+    assert "[role]" not in hint["detail"] and " a " in f" {hint['detail']} "
+
+
+def test_d2_the_page_keeps_tabrions_archive_finding_and_the_report_replaces_it(tmp_path: Path) -> None:
+    """D-2 of the delta review: the view does not show backup.hints yet (TD-036), so the page route keeps TAB-PG-020;
+    the report, which shows the hints, replaces it with STU-BK-010."""
+    archive = [Finding("TAB-PG-020", Severity.INFO, "WAL archiving is off", "d", "r")]
+    diagnostics, connection = _named(("app", "app", "appdb"), findings=archive)
+    studio = make_studio(tmp_path / "static", diagnostics=diagnostics)
+    headers = {**studio.sign_in(), "Origin": ORIGIN}
+    view = studio.client.post(f"/api/connections/{connection.id}/diagnostics", json={}, headers=headers).json()
+    assert "TAB-PG-020" in {item["code"] for item in view["findings"]}
+    assert "STU-BK-010" in hint_codes(view["backup"])
+    route = f"/api/connections/{connection.id}/diagnostics/report"
+    report = studio.client.post(route, json={"format": "json"}, headers=headers).json()
+    assert "TAB-PG-020" not in {item["code"] for item in report["diagnosis"]["findings"]}
+    assert "STU-BK-010" in {item["code"] for item in report["backup"]["hints"]}
+    connection.names = None
+    refused = studio.client.post(route, json={"format": "json"}, headers=headers)
+    assert (refused.status_code, refused.json()["code"]) == (503, "studio.report_unavailable")
 
 
 def test_backup_hints_replace_tabrions_archive_finding() -> None:
@@ -564,6 +697,13 @@ def test_markdown_text_scrubs_on_its_own() -> None:
     register_secret(CANARY)
     _assert_no_canary(markdown_text(f"a {CANARY} b"))
     _assert_no_canary(markdown_text(f"postgresql://u:{CANARY}@h/db"))
+
+
+def test_n2_hide_names_longest_first() -> None:
+    """N-2: ``app-admin`` (role) contains ``app`` (database) across a boundary character; the longer name wins."""
+    names = {"app": "[database]", "app-admin": "[role]"}
+    assert hide_names("schemas app-admin, app", names) == "schemas [role], [database]"
+    assert hide_names("schemas app-admin, app", dict(reversed(list(names.items())))) == "schemas [role], [database]"
 
 
 def test_hide_names_whole_identifiers_only() -> None:

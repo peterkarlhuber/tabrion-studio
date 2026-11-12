@@ -18,7 +18,9 @@ All notable changes to this project are documented here. The format follows
   `TAB-PG-020` gives way to `STU-BK-010` only when that hint is given. After the review, the report shows the login
   role and the database as `[role]` and `[database]`, also where tabrion names them as schemas; Markdown escapes `@`;
   a linked `backups` folder is not followed; the file scan stops at a cancel or the time limit; a cut search is the
-  hint `STU-BK-005`; "readable by others" means the read bits.
+  hint `STU-BK-005`; "readable by others" means the read bits. After the delta review: a report whose names cannot
+  be read from the server is refused (`studio.report_unavailable`, new), and the diagnostics page route keeps
+  `TAB-PG-020` until the page shows the backup hints.
 - STU-014 page: the view Diagnostics (`/diagnostics`) runs the diagnosis of a chosen profile on a click and lists the
   findings by severity, each with an icon and a word for its severity, its code, title, detail, remedy and source.
   A PROD profile asks D-02 before its connection opens; "Run again" uses the shown connection. Cancel stops a

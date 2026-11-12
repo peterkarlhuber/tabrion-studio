@@ -6,13 +6,15 @@
   the database (``PRAGMA quick_check`` on SQLite can take a while), never because it changes anything; the access
   middleware asks for the CSRF header. A diagnosis stops at the connection's statement timeout; the checks it could
   not run are named in ``STU-DX-008``. ``backup`` holds the backup hints (``STU-BK-*``, STU-025), which are not
-  findings and not in ``counts``.
+  findings and not in ``counts``; tabrion's ``TAB-PG-020`` stays in ``findings`` here until the page shows the hints
+  (D-2, TD-036).
 * ``POST /api/connections/{id}/diagnostics/cancel``: 202 ``{"canceled": true|false}``; stops the running diagnoses
   of that connection within a second (M-1 of ``stu-014-review.md``). Their answers then carry ``STU-DX-008``.
 * ``POST /api/connections/{id}/diagnostics/report`` with ``{"format": "markdown" | "json"}`` (STU-025): runs a
   diagnosis with its backup hints and answers the report as a file (``Content-Disposition: attachment``), built
   without secrets (:mod:`tabrion_studio.services.diagnosis_report`). ``studio.report_invalid`` for another format or
-  body; the cancel route stops it like a diagnosis.
+  body, ``studio.report_unavailable`` when the names it hides cannot be read; the cancel route stops it like a
+  diagnosis.
 
 Errors are the problems of the connection routes. The work runs in a worker thread.
 """
@@ -43,7 +45,8 @@ def add_diagnostics_routes(app: FastAPI, diagnostics: Diagnostics) -> None:
     @app.post("/api/connections/{connection_id}/diagnostics")
     async def run_diagnostics(connection_id: str) -> Response:
         try:
-            doc = await asyncio.to_thread(diagnostics.run, connection_id, backup=True)
+            # D-2 of the delta review: the view does not show backup.hints yet (TD-036), so it keeps TAB-PG-020.
+            doc = await asyncio.to_thread(diagnostics.run, connection_id, backup=True, replace=False)
         except Exception as exc:
             refused = connection_problem(exc)
             if refused is None:

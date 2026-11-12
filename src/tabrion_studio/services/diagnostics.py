@@ -34,7 +34,8 @@ the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`,
 **Backup hints** (``STU-BK-*``, STU-025): ``run(..., backup=True)`` adds ``backup: {hints, facts}`` from
 :mod:`.backup_hints`, under the same time limit and cancel. They are not findings and not in ``counts``. When the
 hints hold ``STU-BK-010`` (archiving off, read with the archiver's state), tabrion's ``TAB-PG-020`` is left out of the
-findings (:data:`BACKUP_CODES`); after a cancel, the time limit or ``STU-BK-014`` it stays (C-2 of the review).
+findings (:data:`BACKUP_CODES`); after a cancel, the time limit or ``STU-BK-014`` it stays (C-2 of the review). The page
+route passes ``replace=False`` and keeps it until its view shows the hints (D-2, TD-036); the report replaces it.
 
 **Time limit (M-1):** a diagnosis runs at most the connection's statement timeout; then every statement is canceled
 like a query (:class:`.tabrion_compat.Cancel`: SQLite interrupt, psycopg cancel), and the checks that did not
@@ -221,8 +222,10 @@ class Diagnostics:
             threading.Thread(target=_expire, args=(run.hook, run.finished), daemon=True).start()
         return bool(runs)
 
-    def run(self, connection_id: object, *, backup: bool = False) -> dict[str, Any]:
-        """The diagnosis of an open connection; with ``backup``, also its backup hints (STU-025)."""
+    def run(self, connection_id: object, *, backup: bool = False, replace: bool = True) -> dict[str, Any]:
+        """The diagnosis of an open connection; with ``backup``, also its backup hints (STU-025). ``replace=False``
+        keeps the tabrion findings that a given hint would replace (:data:`BACKUP_CODES`): the page route, whose view
+        does not show the hints yet (D-2 of the delta review, TD-036)."""
         connection = self.registry.get(connection_id)
         profile = self.registry.source.entry(connection.profile_id).profile
         prod = connection.environment == "prod"
@@ -253,7 +256,7 @@ class Diagnostics:
             else:
                 findings += self._sqlite(connection, run)
             hints = self._backup(connection, run, prod=prod) if backup else None
-            if hints is not None:
+            if hints is not None and replace:
                 given = {item["code"] for item in hints["hints"]}
                 replaced = {code for code, hint in BACKUP_CODES.items() if hint in given}
                 findings = [item for item in findings if item["code"] not in replaced]

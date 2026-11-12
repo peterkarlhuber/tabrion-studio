@@ -178,7 +178,9 @@ not read: it may hold a secret, and only a superuser may read it. Backups made w
 archive WAL are not visible. When the hints hold `STU-BK-010`, tabrion's `TAB-PG-020` ("WAL archiving is off") is
 left out of the findings, since `STU-BK-010` says the same with the archiver's state (one cause, one entry). It is
 decided after the backup step (C-2 of the review): after a cancel, the time limit or `STU-BK-014`, and whenever the
-archiver read gives no `STU-BK-010`, `TAB-PG-020` stays.
+archiver read gives no `STU-BK-010`, `TAB-PG-020` stays. The page route keeps `TAB-PG-020` in any case
+(`run(..., replace=False)`, D-2 of the delta review) until the view shows `backup.hints` (TD-036); only the report,
+which shows the hints, replaces it.
 
 | Code | Severity | Hint |
 |---|---|---|
@@ -205,7 +207,8 @@ what is true when it is made; the cancel route stops it like any diagnosis) and 
 formats of 03 section 2 G. The report is small, so it is one response body, not a stream like an export; the
 `Content-Disposition` header is the export's (`attachment; filename="..."`). The page downloads it with `fetch`
 behind the session and the CSRF check, like an export. `studio.report_invalid` (400) answers another format, a body
-that is not a JSON object or one over 1 KiB; an unknown connection is `studio.connection_not_found`.
+that is not a JSON object or one over 1 KiB; `studio.report_unavailable` (503) a PostgreSQL connection that cannot
+tell the names the report hides; an unknown connection is `studio.connection_not_found`.
 Code: `services/diagnosis_report.py`, route in `api/diagnostics.py`.
 
 | Format | Media type | Content |
@@ -225,9 +228,13 @@ profile or the connection as a whole:
   (`TAB-PG-009`, `TAB-PG-030`), and a schema is often named exactly like the login role (the `"$user"` default of
   `search_path`) or the database. So on PostgreSQL the report asks the server `SELECT session_user, current_user,
   current_database()` and adds the profile's `user` and `database`, and replaces each of these names with `[role]`
-  or `[database]` in every text of the report (titles, details, remedies, facts, the profile name) where it stands as
-  a whole identifier (`app` stays inside `application_name`). Names of other database objects stay; the report's
-  closing line says so.
+  or `[database]` in tabrion's texts (titles, details, remedies), the string facts and the profile name, where it
+  stands as a whole identifier (`app` stays inside `application_name`), longest name first. Studio's own sentences
+  never name them and stay as written, so a role named `a` does not mangle them (N-1). The names are read before the
+  diagnosis runs, and if the server cannot be asked (a busy or dropped connection, an odd answer), there is no report:
+  `studio.report_unavailable` (503). Without that, a profile without `user` (libpq then uses the OS login name) would
+  go out with nothing to hide (D-1 of the delta review). Names of other database objects stay; the report's closing
+  line says so.
 - Second line of defense: every text of the report, keys included, passes `logs.scrub`, the log redaction. It
   replaces the process's registered secrets (resolved passwords, keyring/`env:`/`file:` values, the tokens) and
   anything shaped like a URL password, a `password=`-style pair, a bearer token, an `Authorization` header or the
@@ -247,3 +254,4 @@ the report is rendered. The JSON report is plain JSON.
 | `tests/security/test_diagnosis_report.py` (report) | Both formats (media type, file name, JSON keys and times, Markdown headings), the hostile Markdown text, the route (`Content-Disposition`, `no-store`, the view's `backup`, `studio.report_invalid` for other formats and bodies, an unknown connection, the CSRF and session checks). |
 | `tests/security/test_diagnosis_report.py` (canaries) | `tabrion-canary-<uuid>` as the SQLite file's folder and name, a backup's name, a stored value and a parameter value, with the session, CSRF, launch and control tokens and secret-shaped finding texts (URL passwords, DSN `password=`, bearer, API key, cookie) over HTTP; on PostgreSQL as the role's password, its `application_name` setting, a stored value and a parameter value, with DSN-shaped texts (marker `postgres_superuser`). Neither format nor the log holds the canary; the PostgreSQL report holds no host, port, user or database name. A registered secret in any finding text is redacted. |
 | `tests/security/test_diagnosis_report.py` (review `stu-025-review.md`) | C-1: the PostgreSQL canary role has a schema named exactly like it (`"$user"`) and may create in one named exactly like the database; the plain diagnosis names both (the control), and neither report holds either name, raw or Markdown-escaped, but `[role]` and `[database]`; whole-identifier replacement. C-2: `TAB-PG-020` stays for `STU-BK-014`, a disagreeing archiver read, and a cancel or the time limit during the archiver query (which is `STU-DX-008`, never `STU-BK-014`). L-1 `@`. L-2 a linked `backups`/`backup` folder. L-3 the scan stops between entries, and a cancel during it is `STU-DX-008`. L-4 the separator rule and `STU-BK-005`. L-5 and L-6: modes `0o640`, `0o604` count, `0o620`, `0o602`, `0o611` do not; the `lstat` check and `O_NOFOLLOW` each alone; a valid JSON body over 1 KiB; JSON key redaction; the hint order; the Markdown side's own redaction. 16 targeted mutations (the review's survivors and each fix) are all killed. |
+| `tests/security/test_diagnosis_report.py` (delta review) | D-1: no names from the server (an error, no row, a short or empty row) is `studio.report_unavailable`; the server's names hide the OS login role of a profile without `user`, also as the profile name. D-2: the page route keeps `TAB-PG-020` next to `STU-BK-010`, the report replaces it, and the route answers 503 when the names cannot be read. N-1 Studio's sentences stay readable; N-2 longest name first and the string facts; N-3 a folder swapped for a link after the check is not read; N-4 multi-dot names; N-5 the exact entry cap. 15 targeted mutations killed (the two real fall-back mutants of D-1 among them). |

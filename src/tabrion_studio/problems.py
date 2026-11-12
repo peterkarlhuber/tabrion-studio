@@ -558,6 +558,13 @@ CATALOG: dict[str, Entry] = {
         "Report not valid",
         "A diagnosis report needs a format: markdown or json.",
     ),
+    "studio.report_unavailable": Entry(
+        503,
+        ProblemKind.DATABASE,
+        "Report not made",
+        "Studio could not ask the server for the names the report hides, so it made no report.",
+        "Try again when the connection is free, or reconnect.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,

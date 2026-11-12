@@ -12,8 +12,10 @@ in an issue. 09's acceptance is "report without secrets (canary test)", so the r
   findings and hints name none of these. tabrion's may name schemas and extensions, and a schema is often named after
   the login role (the ``"$user"`` default of ``search_path``) or the database (C-1 of ``stu-025-review.md``); so on
   PostgreSQL the session user, the current user and the current database (asked from the server, plus the profile's
-  ``user`` and ``database``) are replaced by ``[role]`` and ``[database]`` in every text of the report, as whole
-  names (not inside a longer identifier). Names of other database objects stay; the report says so.
+  ``user`` and ``database``) are replaced by ``[role]`` and ``[database]`` in tabrion's texts, the profile name and
+  the facts, as whole names (not inside a longer identifier), longest first. Studio's own sentences never name them
+  and are left as they are (N-1). When the server cannot be asked for the names, there is no report
+  (``studio.report_unavailable``, D-1). Names of other database objects stay; the report says so.
 * **Second line of defense:** every text of the report passes :func:`tabrion_studio.logs.scrub`, the log redaction:
   the process's registered secrets (the passwords of open connections, the tokens) and anything shaped like a URL
   password, a ``password=`` pair, a bearer token or the session cookie are replaced by ``[REDACTED]``.
@@ -151,6 +153,8 @@ class DiagnosisReports:
             raise ReportError("studio.report_invalid")
         connection = self.registry.get(connection_id)
         profile = self.registry.source.entry(connection.profile_id).profile
+        # D-1 of the delta review: the names to hide are read first, and a report that cannot hide them is not made.
+        names = self._names(connection, profile) if connection.engine == "postgresql" else {}
         doc = self.diagnostics.run(connection.id, backup=True)
         generated = self.clock()
         connection_part: dict[str, Any] = {
@@ -181,9 +185,10 @@ class DiagnosisReports:
             "backup": {"hints": [_item(entry) for entry in backup.get("hints", [])], "facts": facts},
             "left_out": LEFT_OUT,
         }
-        names = self._names(connection, profile) if connection.engine == "postgresql" else {}
         connection_part["profile"] = hide_names(str(profile.name), names)
         for entry in (*report["diagnosis"]["findings"], *report["backup"]["hints"]):
+            if entry["source"] == "studio":
+                continue  # N-1: Studio's own sentences never name the role or the database; keep them readable
             for key in _TEXT_FIELDS:
                 entry[key] = hide_names(entry[key], names)
         for key, value in facts.items():
@@ -203,16 +208,22 @@ class DiagnosisReports:
 
     @staticmethod
     def _names(connection: Any, profile: Any) -> dict[str, str]:
-        """The login role's and the database's names (C-1): asked from the server, plus the profile's."""
+        """The login role's and the database's names (C-1): asked from the server, plus the profile's.
+
+        Fails closed (D-1 of the delta review): without ``user`` the profile connects as the OS login name, which only
+        the server can tell, so when the server cannot be asked the report is refused (``studio.report_unavailable``)
+        instead of going out with nothing to hide."""
         roles = {str(profile.user)} if profile.user else set()
         databases = {str(profile.database)} if profile.database else set()
         try:
             rows = connection.fetch(NAMES_SQL)
-        except Exception:  # the profile's names still apply; the diagnosis already ran
-            rows = []
-        for row in rows[:1]:
-            roles |= {str(row[0]), str(row[1])}
-            databases.add(str(row[2]))
+        except Exception as exc:
+            raise ReportError("studio.report_unavailable") from exc
+        if not rows or len(rows[0]) != 3 or not all(rows[0]):
+            raise ReportError("studio.report_unavailable")
+        row = rows[0]
+        roles |= {str(row[0]), str(row[1])}
+        databases.add(str(row[2]))
         return {**{name: DATABASE for name in databases}, **{name: ROLE for name in roles}}
 
 
