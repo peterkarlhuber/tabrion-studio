@@ -348,7 +348,8 @@ merge after OA-004.
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Done (PR #24), on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). The `ViewerTimeout` of `test_m4_a_small_first_row_does_not_size_the_next_batch` on Python 3.12 in CI is fixed in the test: tracemalloc plus coverage's line tracer on 3.12 made the statement check take about 2 s, past the `lite` profile's 800 ms, so the test now gives its statement a timeout it cannot reach (its assertions are unchanged; delta check `stu-013-delta-v010-review.md` accepted). Its condition C-1 is fixed the same way: `test_pg_r1_decoded_json_counts_toward_the_page_cap` timed out under the `pg` fixture's 1.5 s on 3.12 with coverage and now gets the same 300 s statement timeout, as do the two other tracemalloc tests, `test_bytes_are_capped_on_the_server` and `test_pg_bytes_are_capped_on_the_server`, which timed out the same way on a loaded machine. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
-| TABRION STU-012, STU-014, STU-015 | SQL editor, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Done (PR #25), on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..010` (prod TLS, T-10 / STU-T-021, read-only role that can write in any way or through any role it can become, owner in any schema, default privileges, role settings with their precedence, SQLite rows written with foreign keys off or a broken foreign key, the time limit); `POST .../diagnostics/cancel`; the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout, the write paths of M-2). Review `stu-014-review.md` fix round done (M-1..M-3, L-1..L-6, I-1..I-3); delta review of `a11c8bb` fixed (N-1 the cancel stops SQLite's `quick_check` alone, CI-1 role-making tests under the `postgres_superuser` marker plus owner-level tests, T-1 tests for the 7 surviving mutants, L-5 narrowed); the CI workflow change for CI-1 is in this PR (accepted by the workflow-change review). Open: the diagnostics view in the page (frontend lane), the report export (STU-025) |
+| TABRION STU-012, STU-015 | SQL editor, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
@@ -510,8 +511,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
   so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
 - **T-4 (rest), done:** D-01 shows each connection's TLS mode and marks `weak_tls` (weaker than `verify-full` on a
-  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` moves to STU-014 (diagnostics; I-5 of
-  `stu-010-review.md`).
+  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` is `STU-DX-002` of STU-014 (I-5 of
+  `stu-010-review.md`; STU-T-021 in `test_diagnostics.py`).
 - **T-5, done:** D-01 shows one line per PostgreSQL connection with the secret's source, `host:port` and the TLS mode,
   and marks `remote_host`.
 - **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
@@ -548,6 +549,36 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     users do not learn to click through a changed D-01.
   - **I-3:** pin the prefix list itself with a name like `AWS_REGION` (mutant P12 survives, because
     `AWS_SECRET_ACCESS_KEY` also matches `SECRET`).
+
+### STU-014 diagnostics: review items and limits kept open
+
+- **Priority:** P3 · **Status:** Open · **Refs:** `stu-014-review.md`, `docs/architecture/diagnostics.md`
+- **TAB-PG-003 in tabrion (M-3):** tabrion's owner finding counts only tables in `current_schema()`, which hides an
+  owner role from every tabrion user whose tables live elsewhere. Studio leaves `TAB-PG-003` out and uses its own
+  `STU-DX-006` (any schema). Raise it as a tabrion issue (a `role_info(owner_scope="database")` or a wider default)
+  through the coordinator; Studio takes it with tabrion 0.2 (TD-013).
+- **Sequence `USAGE` (M-2):** `STU-DX-003` counts `UPDATE` on a sequence (`setval`), not `USAGE` (`nextval`): a
+  read-only role often has `USAGE` for `currval`, and flagging it would be noise.
+- **Schema `USAGE` (I-3):** `has_table_privilege` ignores `USAGE` on the schema, so a grant in a schema the role
+  cannot enter still counts as writable. Conservative on purpose.
+- **Server-wide settings:** `STU-DX-004` and `-010` read `pg_db_role_setting` only; `postgresql.conf` and
+  `ALTER SYSTEM` values need `pg_read_all_settings`, which a runtime role should not have. The detail says so.
+- **One time limit for the whole diagnosis:** the connection's statement timeout (30 s, 15 s on prod) bounds the
+  sum of the checks, not each. A very large SQLite file can therefore stop in `quick_check` every time; the finding
+  `STU-DX-008` says to give the profile a longer statement timeout. tabrion's other SQLite findings stay (N-1 of the
+  delta review). On PostgreSQL a limit during tabrion's step skips the later Studio checks too (I-3, by design).
+- **CI-1, the role-making tests in CI (workflow change, done in the STU-014 PR):** the 10 tests with the marker
+  `postgres_superuser` (M-2 write paths, default privileges, owner outside the search path and through a group role,
+  role-in-database precedence, superuser) need `TABRION_STUDIO_TEST_POSTGRES_SUPERUSER`. The PostgreSQL 17 job now
+  runs `-m "postgres or postgres_superuser"` with the throwaway server's superuser URL in the pytest step's env only,
+  and its "none skipped" check expects at least 50 tests (workflow-change review in `stu-014-review.md`: accepted;
+  the label `workflow-change-reviewed` is set by the coordinating thread). The plain-owner checks stay
+  (`test_pg_owner_settings_and_schemas_as_a_plain_owner`).
+- **Finding 3 of `stu-014-delta-v010-review.md` (done):** `test_n1_a_stop_before_tabrions_step_still_runs_it_on_sqlite`
+  requests the limit or the cancel before the step "tabrion's checks" starts, so turning `always=sqlite` into
+  `always=False` fails it every time (10 of 10 runs; the race-based tests caught it only by chance).
+- **Cancel scope (I-1 of the delta review):** a second signed-in session can cancel another session's diagnosis,
+  as with `/api/queries/{id}/cancel` (single user).
 
 ### STU-013 viewer: review items kept open
 
@@ -664,6 +695,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Explorer (STU-010) with tabrion 0.2:** replace `tabrion_compat.inspector` with `Database.inspector()`, the
   extensions query with `tabrion.postgres.extension_status` and the SQLite facts with `tabrion.sqlite.diagnose`
   (03 §6; I-4 of `stu-010-review.md`); keep `test_explorer.py` unchanged as the acceptance.
+- **STU-014 diagnostics:** replace `tabrion_compat.check` (the 0.1 collectors on the driver connection) with
+  `tabrion.check(db)`; keep `test_diagnostics.py` and the list of session findings Studio leaves out.
 - **STU-013 data viewer:** it uses the same `tabrion_compat.stream` and `Cancel` (one statement per page, with the
   profile's timeout), so the swap covers it; keep `test_viewer.py` (the `LIMIT` spy) unchanged as its acceptance.
   The viewer's statements are SQLAlchemy Core compiled for the psycopg and pysqlite (named) dialects; check that
