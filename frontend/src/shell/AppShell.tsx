@@ -9,6 +9,7 @@ import {
   Database,
   GitBranch,
   House,
+  ListTree,
   Settings,
   Stethoscope,
 } from 'lucide-react';
@@ -37,6 +38,7 @@ export type ServerState =
 const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/', key: 'nav.start', icon: <House /> },
   { path: '/connections', key: 'nav.connections', icon: <Database /> },
+  { path: '/explorer', key: 'nav.explorer', icon: <ListTree /> },
   { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
   { path: '/diagnostics', key: 'nav.diagnostics', icon: <Stethoscope /> },
 ];

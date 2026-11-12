@@ -28,6 +28,15 @@ const STATES: [string, HarnessOptions, ((page: Page) => Promise<void>)?][] = [
     },
   ],
   ['settings', { scenario: 'connections', path: '/settings' }],
+  [
+    'explorer with a table open (STU-010)',
+    { scenario: 'explorer', path: '/explorer' },
+    async (page) => {
+      await page.getByTestId('explorer-open').click();
+      await page.getByRole('treeitem', { name: 'part', exact: true }).click();
+      await expect(page.getByTestId('detail-column')).toHaveCount(8);
+    },
+  ],
   ['not found', { path: '/nowhere' }],
   [
     'command palette (STU-052)',
