@@ -4,11 +4,12 @@
  *
  * The viewer's pages arrive whole, so the bound is set before the request: `pageLimit` asks for no more rows than fit
  * in `MAX_BYTES` (64 MB, the editor's bound) if every value were as large as its column's declared type lets it be in
- * a page. The server cuts each value at 64 KB of text (65 536 characters, 128 KB as a JavaScript string) or 32 KB of
- * bytes; a JSON or array value arrives decoded, and its objects take far more memory than its text (R-1 of the
- * STU-013 re-review), so it counts 16 times; a column whose type holds only short values (numbers, dates, UUIDs,
- * `VARCHAR(n)`) counts by that size. A table of narrow columns gets the page size the user chose; a table of many
- * text columns gets fewer rows per page, and the page says so.
+ * a page. The server cuts each value at 64 K characters of text (65 536 code points; one above U+FFFF is two UTF-16
+ * units, so a cut text takes up to 256 KB as a JavaScript string: 4 bytes a character, L-2 of
+ * stu-013-page-review.md) or 32 KB of bytes; a JSON or array value arrives decoded, and its objects take far more
+ * memory than its text (R-1 of the STU-013 re-review), so it counts 16 bytes a character; a column whose type holds
+ * only short values (numbers, dates, UUIDs, `VARCHAR(n)`) counts by that size. A table of narrow columns gets the
+ * page size the user chose; a table of many text columns gets fewer rows per page, and the page says so.
  *
  * SQLite does not enforce declared types (outside `STRICT` tables), so a column declared `INTEGER` may still hold a
  * long text. A walk (first page, then "Next") keeps the rows per page of its first page, as the server's `next` token
@@ -27,6 +28,8 @@ export const CELL_CHARS = 64 * 1024;
 /** The most a page of rows may take in the browser, estimated: the editor's bound. */
 export const PAGE_BYTES = MAX_BYTES;
 const VALUE_OVERHEAD = 16;
+/** Bytes of one character in the worst case: a code point above U+FFFF is two UTF-16 units of 2 bytes each. */
+const CHAR_BYTES = 4;
 const ROW_OVERHEAD = 64;
 /** A decoded JSON or array value takes this many times its text. */
 const DECODED_FACTOR = 16;
@@ -45,7 +48,7 @@ const DECODED = /(\[\]$|^ARRAY|^JSONB?$)/;
 
 /** The most memory one value of a column of this type can take in a page (estimated, in bytes). */
 export function worstValueBytes(engine: Engine, type: string | null): number {
-  const long = VALUE_OVERHEAD + 2 * CELL_CHARS;
+  const long = VALUE_OVERHEAD + CHAR_BYTES * CELL_CHARS;
   if (type === null) return long;
   const declared = type.trim().toUpperCase();
   // SQLite's affinities without a size: NUMERIC, DECIMAL and DATETIME hold numbers or short texts.
@@ -55,7 +58,7 @@ export function worstValueBytes(engine: Engine, type: string | null): number {
   const sized = SIZED_TEXT.exec(declared) ?? SIZED_NUMERIC.exec(declared);
   if (sized !== null) {
     const chars = Math.min(Number(sized[1]) + 2, CELL_CHARS);
-    return VALUE_OVERHEAD + 2 * chars;
+    return VALUE_OVERHEAD + CHAR_BYTES * chars;
   }
   return long;
 }

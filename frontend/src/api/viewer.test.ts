@@ -1,5 +1,15 @@
 /** STU-013 page: the viewer's requests and its fail-closed parsers. */
-import { fetchCell, fetchPage, parseCell, parsePage } from './viewer';
+import {
+  fetchCell,
+  fetchPage,
+  FILTER_TOO_LONG,
+  MAX_QUERY_BYTES,
+  pageQuery,
+  parseCell,
+  parsePage,
+  queryFits,
+  type ViewerRequest,
+} from './viewer';
 
 const ASKED = { schema: 'main', name: 'part', limit: 100, sort: null, desc: false };
 
@@ -84,6 +94,12 @@ describe('parsePage', () => {
   ])('refuses %s', (_, body) => {
     expect(parsePage(body, ASKED)).toBeNull();
   });
+
+  // The server always echoes what it answered for; an answer that leaves it out is not the one asked for (I-2).
+  it.each(['schema', 'name', 'limit', 'sort', 'desc'])('refuses a page without %s', (field) => {
+    const body = Object.fromEntries(Object.entries(PAGE).filter(([key]) => key !== field));
+    expect(parsePage(body, ASKED)).toBeNull();
+  });
 });
 
 describe('parseCell', () => {
@@ -162,6 +178,23 @@ describe('fetchPage and fetchCell', () => {
     });
   });
 
+  it('a page without its connection is refused', async () => {
+    const body: Record<string, unknown> = { ...PAGE };
+    delete body.connection_id;
+    const { fetcher } = recording(body);
+    const result = await fetchPage(fetcher, 'c1', 'main', 'part', {
+      limit: 100,
+      sort: null,
+      desc: false,
+      filters: [],
+      after: null,
+    });
+    expect(result).toEqual({
+      ok: false,
+      problem: expect.objectContaining({ code: 'studio.answer_invalid' }),
+    });
+  });
+
   it('passes the server problem on, and asks for one cell', async () => {
     const refused = recording(
       { code: 'studio.viewer_sort_unsupported', kind: 'request', status: 400 },
@@ -186,5 +219,63 @@ describe('fetchPage and fetchCell', () => {
     expect(urls[0]).toBe(
       '/api/connections/c1/cell?schema=main&name=part&page=tok1&row=3&column=note',
     );
+  });
+});
+
+// M-1 of stu-013-page-review.md: the server refuses a request head over 16 KB with a plain 400, so a rows request
+// whose query string is longer than 12 KB is refused before it is sent.
+describe('the query string bound', () => {
+  const request = (values: string[]): ViewerRequest => ({
+    limit: 1000,
+    sort: 'note',
+    desc: true,
+    filters: values.map((value) => ({ column: 'note', op: 'contains', value })),
+    after: null,
+  });
+
+  it('counts the encoded bytes: three bytes of UTF-8 take nine', () => {
+    const ascii = pageQuery('main', 'part', request(['a'.repeat(1000)])).length;
+    const euro = pageQuery('main', 'part', request(['€'.repeat(1000)])).length;
+    expect(euro - ascii).toBe(8 * 1000);
+  });
+
+  it.each([
+    [
+      'four ASCII values of 4,096 characters',
+      ['a'.repeat(4096), 'b'.repeat(4096), 'c'.repeat(4096), 'd'.repeat(4096)],
+    ],
+    ['one value of 1,400 three-byte characters', ['€'.repeat(1400)]],
+    ['one value of 1,100 four-byte characters', ['😀'.repeat(1100)]],
+  ])('refuses %s without a request', async (_, values) => {
+    expect(queryFits('main', 'part', request(values))).toBe(false);
+    const urls: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify(PAGE));
+    }) as typeof fetch;
+    const result = await fetchPage(fetcher, 'c1', 'main', 'part', request(values));
+    expect(result).toEqual({
+      ok: false,
+      problem: expect.objectContaining({ code: FILTER_TOO_LONG }),
+    });
+    expect(urls).toEqual([]);
+  });
+
+  it('sends a query string up to the bound', async () => {
+    // Fill one ASCII value up to the bound exactly.
+    const empty = pageQuery('main', 'part', request([''])).length;
+    const fitting = request(['a'.repeat(MAX_QUERY_BYTES - empty)]);
+    expect(pageQuery('main', 'part', fitting).length).toBe(MAX_QUERY_BYTES);
+    expect(queryFits('main', 'part', fitting)).toBe(true);
+    expect(queryFits('main', 'part', request(['a'.repeat(MAX_QUERY_BYTES - empty + 1)]))).toBe(
+      false,
+    );
+    const urls: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      return new Response(JSON.stringify({ ...PAGE, sort: 'note', desc: true, limit: 1000 }));
+    }) as typeof fetch;
+    expect((await fetchPage(fetcher, 'c1', 'main', 'part', fitting)).ok).toBe(true);
+    expect(urls).toHaveLength(1);
   });
 });

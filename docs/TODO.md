@@ -1151,8 +1151,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     confirmation. The server-side check of `confirmed_environment` on `POST /api/connections` comes with #48 and is
     adopted at the next master merge.
   - **CI:** `e2e/viewer.spec.ts` and `e2e/viewer-backend.spec.ts` run in the job `e2e` (every spec runs), but the
-    step "Every suite ran and none was skipped" does not list them; adding them needs a `.github/` pull request with
-    a workflow-change review (like TD-037).
+    step "Every suite ran and none was skipped" does not list them; the coordinator's planned workflow-change pull
+    request adds them (like TD-037).
+  - **Filters in the query string:** the request-size bound (12 KB, M-1 of `stu-013-page-review.md`) keeps a rows
+    request below h11's 16 KB head limit, so up to about 1,000 characters outside ASCII fit in all filters together.
+    Longer values would need the filters in a body (a `POST` read route, or a server-side filter token).
+- **Review:** `stu-013-page-review.md` (accepted with conditions) fix round: M-1, M-2, L-1, L-2 and L-3 fixed (L-3 by
+  a 150 ms delay of the first read); I-1 to I-6 done.
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 

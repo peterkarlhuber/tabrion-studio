@@ -1,5 +1,5 @@
 /** STU-013 page: the byte bound of a page (`pageLimit`, `observedLimit`) and the page's rows with the search. */
-import { rowBytes } from '../editor/rowCache';
+import { rowBytes, valueBytes } from '../editor/rowCache';
 import {
   CELL_CHARS,
   observedLimit,
@@ -10,12 +10,12 @@ import {
 } from './pageRows';
 
 describe('worstValueBytes', () => {
-  it('counts text without a size at the server cap, as UTF-16', () => {
-    expect(worstValueBytes('postgresql', 'TEXT')).toBe(16 + 2 * CELL_CHARS);
-    expect(worstValueBytes('sqlite', 'TEXT')).toBe(16 + 2 * CELL_CHARS);
-    expect(worstValueBytes('postgresql', 'BYTEA')).toBe(16 + 2 * CELL_CHARS);
-    expect(worstValueBytes('postgresql', null)).toBe(16 + 2 * CELL_CHARS);
-    expect(worstValueBytes('postgresql', 'NUMERIC')).toBe(16 + 2 * CELL_CHARS);
+  it('counts text without a size at the server cap, 4 bytes a character (L-2)', () => {
+    expect(worstValueBytes('postgresql', 'TEXT')).toBe(16 + 4 * CELL_CHARS);
+    expect(worstValueBytes('sqlite', 'TEXT')).toBe(16 + 4 * CELL_CHARS);
+    expect(worstValueBytes('postgresql', 'BYTEA')).toBe(16 + 4 * CELL_CHARS);
+    expect(worstValueBytes('postgresql', null)).toBe(16 + 4 * CELL_CHARS);
+    expect(worstValueBytes('postgresql', 'NUMERIC')).toBe(16 + 4 * CELL_CHARS);
   });
 
   it('counts decoded JSON and arrays 16 times (R-1)', () => {
@@ -36,11 +36,27 @@ describe('worstValueBytes', () => {
     ]) {
       expect(worstValueBytes('postgresql', type)).toBe(96);
     }
-    expect(worstValueBytes('postgresql', 'VARCHAR(40)')).toBe(16 + 2 * 42);
-    expect(worstValueBytes('postgresql', 'NUMERIC(18, 6)')).toBe(16 + 2 * 20);
-    expect(worstValueBytes('postgresql', 'VARCHAR(100000)')).toBe(16 + 2 * CELL_CHARS);
+    expect(worstValueBytes('postgresql', 'VARCHAR(40)')).toBe(16 + 4 * 42);
+    expect(worstValueBytes('postgresql', 'NUMERIC(18, 6)')).toBe(16 + 4 * 20);
+    expect(worstValueBytes('postgresql', 'VARCHAR(100000)')).toBe(16 + 4 * CELL_CHARS);
     expect(worstValueBytes('sqlite', 'NUMERIC')).toBe(96);
     expect(worstValueBytes('sqlite', 'INTEGER')).toBe(96);
+  });
+
+  // The server cuts text at 65 536 code points; one above U+FFFF is two UTF-16 units in the browser (L-2 of
+  // stu-013-page-review.md).
+  it('a cut text of characters above U+FFFF stays within the worst case of its column', () => {
+    const emoji = '\u{1F600}';
+    const cut = emoji.repeat(CELL_CHARS);
+    expect(cut.length).toBe(2 * CELL_CHARS);
+    expect(valueBytes(cut)).toBeLessThanOrEqual(worstValueBytes('postgresql', 'TEXT'));
+    expect(valueBytes(cut)).toBeLessThanOrEqual(worstValueBytes('sqlite', null));
+    expect(valueBytes(emoji.repeat(40))).toBeLessThanOrEqual(
+      worstValueBytes('postgresql', 'VARCHAR(40)'),
+    );
+    expect(valueBytes(emoji.repeat(200))).toBeLessThanOrEqual(
+      worstValueBytes('sqlite', 'VARCHAR(200)'),
+    );
   });
 });
 
@@ -51,11 +67,11 @@ describe('pageLimit', () => {
   });
 
   it('asks for fewer rows when the widest page would pass 64 MB', () => {
-    // 20 text columns: one row can take 20 * 128 KB, so 25 rows fill 64 MB.
+    // 20 text columns: one row can take 20 * 256 KB, so 12 rows fill 64 MB.
     const types = Array.from({ length: 20 }, () => 'TEXT');
     const limit = pageLimit('postgresql', types, 1000);
-    expect(limit).toBe(25);
-    const row = 64 + 20 * (16 + 2 * CELL_CHARS);
+    expect(limit).toBe(12);
+    const row = 64 + 20 * (16 + 4 * CELL_CHARS);
     expect(limit * row).toBeLessThanOrEqual(PAGE_BYTES);
     expect((limit + 1) * row).toBeGreaterThan(PAGE_BYTES);
     expect(pageLimit('postgresql', ['BIGINT', 'JSONB'], 100)).toBe(63);

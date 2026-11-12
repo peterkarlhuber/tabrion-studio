@@ -25,8 +25,11 @@ same profile. Nothing runs until you press **Run**. **Copy name** copies the obj
 - **Filters:** **Add filter**, choose a column, an operator (=, ≠, <, ≤, >, ≥, contains, starts with, is NULL, is not
   NULL) and a value, then **Apply**. All filters must hold. The value is sent as a parameter, never as SQL, and the
   database compares it by the column's own type. `%` and `_` in a value are plain characters. On SQLite "contains"
-  and "starts with" ignore the case of ASCII letters; on PostgreSQL they respect case.
-- Changing the sort, the filters or the page size starts again at the first page.
+  and "starts with" ignore the case of ASCII letters; on PostgreSQL they respect case. There can be up to 20 filters,
+  and all of them together must fit in one request (about 12 KB once encoded; a character outside ASCII takes up to
+  12 bytes): the form says when they do not.
+- Changing the sort, the filters or the page size starts again at the first page. The tab reads its first page a
+  moment after it opens, so moving across it with the arrow keys reads nothing.
 - **Search this page** finds rows of the current page that contain a text (any column, ignoring case). It does not ask
   the database; use a filter for that.
 

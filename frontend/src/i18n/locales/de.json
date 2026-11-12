@@ -914,7 +914,7 @@
     "next": "Weiter",
     "refresh": "Seite neu laden",
     "firstPage": "Zurück zur ersten Seite",
-    "limited": "Seiten dieser Tabelle enthalten höchstens {{rows}} Zeilen, damit eine Seite mit ihren breitesten Werten im Speicherlimit des Browsers bleibt.",
+    "limited": "Seiten hier enthalten höchstens {{rows}} Zeilen, damit eine Seite mit den breitesten Werten im Speicherlimit des Browsers bleibt.",
     "cutByBytes": "Diese Seite endet an der Größengrenze für Ergebnisse; „Weiter“ zeigt den Rest.",
     "sort": {
       "label": "Sortieren nach",
@@ -931,7 +931,7 @@
     "status": {
       "rows": "Zeilen {{first}}–{{last}}; weitere Zeilen folgen.",
       "rowsLast": "Zeilen {{first}}–{{last}}; dies ist die letzte Seite.",
-      "empty": "Die Tabelle hat keine Zeilen.",
+      "empty": "Es gibt keine Zeilen.",
       "noMatch": "Keine Zeile passt zu den Filtern."
     },
     "hint": {
@@ -950,6 +950,8 @@
       "value": "Wert von Filter {{number}}",
       "remove": "Filter {{number}} entfernen",
       "chooseColumn": "Wählen Sie für jeden Filter eine Spalte.",
+      "tooLong": "Diese Filter sind zu lang für eine Anfrage. Kürzen Sie ihre Werte oder verwenden Sie weniger Filter.",
+      "most": "Höchstens {{count}} Filter.",
       "caseSqlite": "Alle Filter müssen zutreffen. „enthält“ und „beginnt mit“ ignorieren unter SQLite die Groß- und Kleinschreibung von ASCII-Buchstaben.",
       "casePostgres": "Alle Filter müssen zutreffen. „enthält“ und „beginnt mit“ beachten unter PostgreSQL die Groß- und Kleinschreibung."
     },
@@ -973,13 +975,14 @@
       "unavailable": "Zeilen einer View ohne Primärschlüssel lassen sich nicht wiederfinden; der ganze Wert kann hier nicht geladen werden. Öffnen Sie ihn mit einer Abfrage im SQL-Editor."
     },
     "problems": {
-      "viewer_column_unknown": "Die Tabelle hat keine Spalte mit diesem Namen mehr. Aktualisieren Sie den Katalog.",
+      "viewer_column_unknown": "Das Objekt hat keine Spalte mit diesem Namen mehr. Aktualisieren Sie den Katalog.",
       "viewer_filter_invalid": "Ein Filter ist ungültig.",
+      "viewer_filter_too_long": "Diese Filter sind zu lang für eine Anfrage. Kürzen Sie ihre Werte oder verwenden Sie weniger Filter.",
       "viewer_sort_unsupported": "Nach dieser Spalte kann nicht sortiert werden (ihr Typ hat keine Ordnung, etwa json, xml oder ein geometrischer Typ). Sortieren Sie nach einer anderen Spalte.",
       "viewer_page_unknown": "Studio hält diese Seite nicht mehr vor. Beginnen Sie wieder mit der ersten Seite.",
       "viewer_cell_unavailable": "Der ganze Wert kann für diese Zeile nicht geladen werden. Öffnen Sie ihn mit einer Abfrage im SQL-Editor.",
-      "viewer_row_gone": "Die Zeile ist nicht mehr in der Tabelle oder hat sich geändert. Laden Sie die Seite neu.",
-      "query_limit": "Studio führt höchstens 4 Abfragen gleichzeitig aus, 2 je Verbindung. Warten Sie, bis eine fertig ist."
+      "viewer_row_gone": "Die Zeile ist nicht mehr vorhanden oder hat sich geändert. Laden Sie die Seite neu.",
+      "query_limit": "Studio führt bereits so viele Abfragen aus, wie es zulässt, insgesamt oder auf dieser Verbindung. Warten Sie, bis eine fertig ist."
     }
   }
 }

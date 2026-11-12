@@ -1,7 +1,8 @@
 /**
  * The detail of the selected tree row (STU-010, 08 section 4.3): an object's header and its tabs (columns,
  * constraints, indexes, relationships, the data of a table or view (STU-013 page, `views/viewer/DataTab.tsx`) and,
- * on SQLite, the table's SQLite facts), the PostgreSQL extensions, or the SQLite file. Everything only reads; there is no action that changes the database (STU-026 stays locked).
+ * on SQLite, the table's SQLite facts), the PostgreSQL extensions, or the SQLite file. Everything only reads; there
+ * is no action that changes the database (STU-026 stays locked).
  *
  * Every value from the database (names, types, defaults, check texts, comments, versions) is escaped and capped with a
  * visible "…" (`lib/visible.ts`, U-1); lists are cut after MAX_DETAIL_ROWS with "and N more".
@@ -578,8 +579,9 @@ export function TableView({
       break;
     case 'data':
       panel = (
+        // Bound to the connection and object: a JSON key keeps `"a|b"."c"` and `"a"."b|c"` apart (I-1).
         <DataTab
-          key={`${connectionId}|${detail.schema}|${detail.name}`}
+          key={JSON.stringify([connectionId, detail.schema, detail.name])}
           fetcher={fetcher}
           connectionId={connectionId}
           engine={engine}

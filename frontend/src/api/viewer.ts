@@ -7,8 +7,13 @@
  * - `GET /api/connections/{id}/cell?schema=&name=&page=&row=&column=`: one value of a page in full (up to 10 MB).
  *
  * The parsers fail closed (like `api/explorer.ts`): a page whose rows do not have one value per column, whose cut
- * cells point outside the page, or that answers for another object, sort or limit than the one asked for is
- * `studio.answer_invalid`, never shown. Every value is database content, shown as plain text (threat T-07).
+ * cells point outside the page, that answers for another connection, object, sort or limit than the one asked for,
+ * or that leaves out one of these fields, is `studio.answer_invalid`, never shown. Every value is database content,
+ * shown as plain text (threat T-07).
+ *
+ * The filters travel in the query string, and the server (Uvicorn on h11) refuses a request line and headers over
+ * 16 KB with a plain 400 that names no problem. A rows request whose query string is longer than `MAX_QUERY_BYTES`
+ * is therefore refused here, before it is sent, as `studio.viewer_filter_too_long` (the page's form says so first).
  */
 import { ANSWER_INVALID, base, read } from './explorer';
 import type { Result } from './profiles';
@@ -36,6 +41,13 @@ export const NO_VALUE_OPS: readonly FilterOp[] = ['is_null', 'not_null'];
 export const MAX_FILTERS = 20;
 /** The server's page sizes: 1 to 1000 rows. */
 export const MAX_LIMIT = 1000;
+/**
+ * The longest query string of a rows request, in bytes: below h11's 16 KB for the request line and headers, with room
+ * for the path, a `next` token and the headers.
+ */
+export const MAX_QUERY_BYTES = 12 * 1024;
+/** A rows request whose query string would be longer than `MAX_QUERY_BYTES`: it is not sent. */
+export const FILTER_TOO_LONG = 'studio.viewer_filter_too_long';
 
 export interface ViewerFilter {
   column: string;
@@ -98,11 +110,10 @@ export function parsePage(
 ): ViewerPage | null {
   const page = doc(body);
   if (page === null) return null;
-  if (page.schema !== undefined && page.schema !== asked.schema) return null;
-  if (page.name !== undefined && page.name !== asked.name) return null;
-  if (page.limit !== undefined && page.limit !== asked.limit) return null;
-  if (page.sort !== undefined && page.sort !== asked.sort) return null;
-  if (page.desc !== undefined && page.desc !== asked.desc) return null;
+  // The server always echoes what it answered for (services/viewer.py); an answer without it is refused (I-2).
+  if (page.schema !== asked.schema || page.name !== asked.name) return null;
+  if (page.limit !== asked.limit || page.sort !== asked.sort || page.desc !== asked.desc)
+    return null;
   if (!Array.isArray(page.columns) || !Array.isArray(page.rows)) return null;
   const columns: QueryColumn[] = [];
   for (const entry of page.columns) {
@@ -149,14 +160,8 @@ export function parseCell(body: unknown): ViewerCell | null {
   return { value: cell.value, size: cell.size, truncated: cell.truncated };
 }
 
-export function fetchPage(
-  fetcher: typeof fetch,
-  connectionId: string,
-  schema: string,
-  name: string,
-  request: ViewerRequest,
-  signal?: AbortSignal,
-): Promise<Result<ViewerPage>> {
+/** The query string of a rows request (without `?`), as `fetchPage` sends it. */
+export function pageQuery(schema: string, name: string, request: ViewerRequest): string {
   const query = new URLSearchParams({ schema, name, limit: String(request.limit) });
   if (request.sort !== null) query.set('sort', request.sort);
   if (request.desc) query.set('desc', 'true');
@@ -173,14 +178,36 @@ export function fetchPage(
     );
   }
   if (request.after !== null) query.set('after', request.after);
+  return query.toString();
+}
+
+/** Whether a rows request's query string fits the server's request-head limit (it is ASCII once encoded). */
+export function queryFits(schema: string, name: string, request: ViewerRequest): boolean {
+  return pageQuery(schema, name, request).length <= MAX_QUERY_BYTES;
+}
+
+export async function fetchPage(
+  fetcher: typeof fetch,
+  connectionId: string,
+  schema: string,
+  name: string,
+  request: ViewerRequest,
+  signal?: AbortSignal,
+): Promise<Result<ViewerPage>> {
+  const query = pageQuery(schema, name, request);
+  if (query.length > MAX_QUERY_BYTES) {
+    return {
+      ok: false,
+      problem: { code: FILTER_TOO_LONG, kind: 'request', status: 0, logId: null },
+    };
+  }
   const asked = { schema, name, limit: request.limit, sort: request.sort, desc: request.desc };
   return read(
     fetcher,
-    `${base(connectionId)}/rows?${query.toString()}`,
+    `${base(connectionId)}/rows?${query}`,
     (body) => {
       // The page of another connection is refused like the explorer's answers (I-1 of stu-010-review.md).
-      const answer = doc(body);
-      if (answer?.connection_id !== undefined && answer.connection_id !== connectionId) return null;
+      if (doc(body)?.connection_id !== connectionId) return null;
       return parsePage(body, asked);
     },
     signal,

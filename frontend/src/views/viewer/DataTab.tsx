@@ -12,8 +12,12 @@
  * - **Bound to the connection and object:** the explorer renders the tab with a key of connection, schema and name,
  *   so a profile switch, a new connection or another object starts with nothing (the C-1 pattern of the editor).
  * - **Stale answers:** every load counts up `request` and aborts the one before; an answer is shown only for the
- *   latest, and "Load in full" only for the cell it was asked for.
+ *   latest, and "Load in full" only for the cell it was asked for (and is aborted when the cell is left).
  * - **Memory:** a page asks for no more rows than fit in 64 MB at the server's largest values (`pageRows.ts`).
+ * - **No read in passing:** the first page is asked for `FIRST_READ_DELAY` after the tab opens, so arrowing across
+ *   the Data tab, or through objects while it is the open tab, starts no query (L-3 of stu-013-page-review.md).
+ * - **Request size:** filters that would make the request longer than the server takes are refused in the form
+ *   (`queryFits`, M-1 of stu-013-page-review.md).
  */
 import { ChevronLeft, ChevronRight, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -28,7 +32,9 @@ import {
   fetchPage,
   FILTER_OPS,
   MAX_FILTERS,
+  MAX_LIMIT,
   NO_VALUE_OPS,
+  queryFits,
   type FilterOp,
   type ViewerCell,
   type ViewerFilter,
@@ -52,6 +58,7 @@ export const GONE = new Set(['studio.connection_not_found', 'studio.connection_s
 const VIEWER_PROBLEMS = new Set([
   'viewer_column_unknown',
   'viewer_filter_invalid',
+  'viewer_filter_too_long',
   'viewer_sort_unsupported',
   'viewer_page_unknown',
   'viewer_cell_unavailable',
@@ -93,6 +100,9 @@ type Full =
 
 const INITIAL: Settings = { sort: null, desc: false, filters: [], pageSize: DEFAULT_PAGE_SIZE };
 
+/** Milliseconds between opening the tab and asking for its first page (a tab only passed through asks nothing). */
+export const FIRST_READ_DELAY = 150;
+
 export function DataTab({
   fetcher,
   connectionId,
@@ -129,6 +139,7 @@ export function DataTab({
   const request = useRef(0);
   const abort = useRef<AbortController | null>(null);
   const cellRequest = useRef(0);
+  const cellAbort = useRef<AbortController | null>(null);
   const nextKey = useRef(1);
   const gridArea = useRef<HTMLDivElement>(null);
 
@@ -144,10 +155,18 @@ export function DataTab({
     ),
   );
 
+  /** Drops "Load in full" that is still on its way. */
+  const dropCell = () => {
+    cellRequest.current += 1;
+    cellAbort.current?.abort();
+    cellAbort.current = null;
+  };
+
   const read = useCallback(
     async (next: Settings, after: string | null) => {
       const mine = ++request.current;
       cellRequest.current += 1;
+      cellAbort.current?.abort();
       abort.current?.abort();
       const controller = new AbortController();
       abort.current = controller;
@@ -186,18 +205,20 @@ export function DataTab({
     [columns, connectionId, engine, fetcher, name, onGone, schema],
   );
 
-  // The first page when the tab opens (once: the tab is keyed by connection and object); leaving the tab drops what
-  // is still on its way.
+  // The first page when the tab has been open for `FIRST_READ_DELAY` (once: the tab is keyed by connection and
+  // object); leaving the tab before asks nothing, and leaving it after drops what is still on its way.
   const latestRead = useRef(read);
   useEffect(() => {
     latestRead.current = read;
   }, [read]);
   useEffect(() => {
-    void latestRead.current(INITIAL, null);
+    const timer = window.setTimeout(() => void latestRead.current(INITIAL, null), FIRST_READ_DELAY);
     return () => {
+      window.clearTimeout(timer);
       request.current += 1;
       cellRequest.current += 1;
       abort.current?.abort();
+      cellAbort.current?.abort();
     };
   }, []);
 
@@ -246,15 +267,18 @@ export function DataTab({
       setFormProblem(t('viewer.filter.chooseColumn'));
       return;
     }
+    const filters = drafts.map((draft) => ({
+      column: draft.column,
+      op: draft.op,
+      value: NO_VALUE_OPS.includes(draft.op) ? null : draft.value,
+    }));
+    // The longest request these filters can make: the largest page and a `next` token later on (M-1).
+    if (!queryFits(schema, name, { ...settings, limit: MAX_LIMIT, filters, after: null })) {
+      setFormProblem(t('viewer.filter.tooLong'));
+      return;
+    }
     setFormProblem('');
-    apply({
-      ...settings,
-      filters: drafts.map((draft) => ({
-        column: draft.column,
-        op: draft.op,
-        value: NO_VALUE_OPS.includes(draft.op) ? null : draft.value,
-      })),
-    });
+    apply({ ...settings, filters });
   };
 
   const addFilter = () => {
@@ -285,7 +309,10 @@ export function DataTab({
     const column = page.columns[cell.column];
     if (pageRow === undefined || column === undefined) return;
     const key = `${page.page}:${pageRow}:${cell.column}`;
-    const mine = ++cellRequest.current;
+    dropCell();
+    const mine = cellRequest.current;
+    const controller = new AbortController();
+    cellAbort.current = controller;
     setFull({ key, status: 'loading' });
     const result = await fetchCell(
       fetcher,
@@ -295,8 +322,10 @@ export function DataTab({
       page.page,
       pageRow,
       column.name,
+      controller.signal,
     );
     if (mine !== cellRequest.current) return;
+    cellAbort.current = null;
     if (!result.ok) {
       setFull({ key, status: 'problem', problem: result.problem });
       if (GONE.has(result.problem.code)) onGone(result.problem);
@@ -349,7 +378,11 @@ export function DataTab({
             className={connectionStyles.input}
             value={settings.sort ?? ''}
             data-testid="viewer-sort"
-            onChange={(event) => apply({ ...settings, sort: event.target.value || null })}
+            onChange={(event) => {
+              const sort = event.target.value || null;
+              // "Table order" has no direction: it goes back to ascending (I-3).
+              apply({ ...settings, sort, desc: sort === null ? false : settings.desc });
+            }}
           >
             <option value="">{t('viewer.sort.none')}</option>
             {columnOptions.map((column) => (
@@ -408,6 +441,7 @@ export function DataTab({
             data-testid="viewer-search"
             onChange={(event) => {
               setSearch(event.target.value);
+              dropCell();
               setDetail(null);
             }}
           />
@@ -500,6 +534,7 @@ export function DataTab({
             size="sm"
             icon={<Plus />}
             aria-disabled={drafts.length >= MAX_FILTERS || undefined}
+            aria-describedby={drafts.length >= MAX_FILTERS ? `${base}-most` : undefined}
             onClick={addFilter}
             data-testid="viewer-add-filter"
           >
@@ -514,6 +549,11 @@ export function DataTab({
             </Button>
           ) : null}
         </div>
+        {drafts.length >= MAX_FILTERS ? (
+          <p id={`${base}-most`} className={connectionStyles.hint} data-testid="viewer-filter-most">
+            {t('viewer.filter.most', { count: MAX_FILTERS })}
+          </p>
+        ) : null}
         {formProblem !== '' ? (
           <p role="alert" className={connectionStyles.problem}>
             {formProblem}
@@ -613,7 +653,7 @@ export function DataTab({
               interpolation: { escapeValue: false },
             })}
             onOpen={(cell, value, cut, focus) => {
-              cellRequest.current += 1;
+              dropCell();
               setFull(null);
               setDetail({ ...cell, value, cut, focus });
             }}
@@ -625,7 +665,7 @@ export function DataTab({
               column={detailColumn}
               locale={locale}
               onClose={() => {
-                cellRequest.current += 1;
+                dropCell();
                 setDetail(null);
                 setFull(null);
                 gridArea.current?.querySelector<HTMLElement>('[role="grid"]')?.focus();

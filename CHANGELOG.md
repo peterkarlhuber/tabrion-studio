@@ -14,7 +14,10 @@ All notable changes to this project are documented here. The format follows
   shows without a primary key. The tab reads on the explorer's connection (D-02 through the shared confirmation),
   is bound to its connection and object, drops stale answers and hands a connection that is gone back to the
   explorer. The explorer gets "Show data", "SELECT … LIMIT 100 in the SQL editor" (a new editor tab; nothing runs by
-  itself) and "Copy name". User guide page "Data viewer". Open items are TD-042.
+  itself) and "Copy name". User guide page "Data viewer". Open items are TD-042. After the review: filters too long
+  for one request (12 KB, below the server's 16 KB head limit) are refused in the form; the memory estimate counts 4
+  bytes a character (code points above U+FFFF); the first page is read 150 ms after the tab opens, so passing
+  through it reads nothing; "Load in full" is aborted when its cell is left.
 - STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
   `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
   sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.

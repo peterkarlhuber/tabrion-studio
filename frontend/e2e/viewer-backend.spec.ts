@@ -311,15 +311,16 @@ test('wide rows at max_result_mb = 200 stay within the memory limit', async ({ p
   await expect(status(page)).toHaveText(/^Rows 1–/, { timeout: 60_000 });
   await page.getByTestId('viewer-page-size').selectOption('1000');
   await expect(page.getByTestId('viewer-limited')).toBeVisible();
-  await expect(status(page)).toHaveText(/^Rows 1–39; more rows follow\.$/, { timeout: 60_000 });
+  await expect(status(page)).toHaveText(/^Rows 1–19; more rows follow\.$/, { timeout: 60_000 });
   for (let i = 0; i < 3; i += 1) {
     await page.getByTestId('viewer-next').click();
-    await expect(status(page)).toHaveText(new RegExp(`^Rows ${39 * (i + 1) + 1}–`), {
+    await expect(status(page)).toHaveText(new RegExp(`^Rows ${19 * (i + 1) + 1}–`), {
       timeout: 60_000,
     });
   }
-  // 13 columns of a view with no declared type: each value can be 64 K characters, so 64 MB hold 39 rows.
-  expect(limits.at(-1)).toBe(39);
+  // 13 columns of a view with no declared type: each value can be 64 K characters of 4 bytes (above U+FFFF), so
+  // 64 MB hold 19 rows.
+  expect(limits.at(-1)).toBe(19);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('HeapProfiler.collectGarbage');
   await cdp.send('Performance.enable');
