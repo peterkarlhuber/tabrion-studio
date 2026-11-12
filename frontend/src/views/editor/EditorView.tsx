@@ -18,9 +18,12 @@
  *   visible rows and holds at most 10 000 rows and 64 MB (`rowCache.ts`). A result cut at its row limit offers to
  *   load up to the `max_rows` setting. A profile change clears the tab's results (they belong to their profile).
  * - **Cancel:** ⌘./Ctrl+. or Escape in the results, or the button; "Canceled after 4.2 s".
+ * - **Export (STU-021, TD-043):** "Export…" on a finished result opens the export dialog (`ExportDialog`) for that
+ *   statement with the parameters it ran with, on the connection the result came from (D-02 through the shared guard
+ *   first; the dialog never opens a connection). The server runs the statement again, read-only.
  */
 import type { TFunction } from 'i18next';
-import { Download, Play, Plus, Square, SquareTerminal, X } from 'lucide-react';
+import { Download, FileDown, Play, Plus, Square, SquareTerminal, X } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -45,6 +48,7 @@ import {
   type QueryStatus,
 } from '../../api/queries';
 import { UnsavedScriptDialog } from '../../components/dialogs/StudioDialogs';
+import { ExportDialog, exportProblemText } from '../../components/export/ExportDialog';
 import { AccessModeChip, EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import { IconButton } from '../../components/ui/IconButton';
@@ -53,6 +57,7 @@ import { setEditorActions } from '../../keyboard/editorActions';
 import { useKeyboardPlatform, useKeyNames } from '../../keyboard/platform';
 import { ariaShortcut, matches, SHORTCUTS, shortcutText } from '../../keyboard/shortcuts';
 import clsx from '../../lib/clsx';
+import type { SaveFile } from '../../lib/download';
 import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
@@ -95,6 +100,8 @@ export interface StatementResult {
   problem: Problem | null;
   cache: RowCache | null;
   startedAt: number;
+  /** The parameter values the statement ran with (the export runs it again with them). */
+  params: Record<string, ParamValue>;
 }
 
 interface RunState {
@@ -159,6 +166,15 @@ function download(name: string, text: string): void {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
+/** The text of an export's problem: the export's own codes, else a statement's (the export checks it again). */
+function exportOrQueryProblemText(t: TFunction, problem: Problem): string {
+  return problem.code.startsWith('studio.export_') ||
+    problem.code === 'studio.connection_not_found' ||
+    problem.code === 'studio.connection_stale'
+    ? exportProblemText(t, problem)
+    : queryProblemText(t, problem);
 }
 
 /** The text of a statement's problem: the read-only refusals get the wording of 08 section 4.4. */
@@ -240,7 +256,14 @@ function summary(t: TFunction, result: StatementResult, locale: string): string 
   }
 }
 
-export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
+export function EditorView({
+  fetcher = fetch,
+  saveExport,
+}: {
+  fetcher?: typeof fetch;
+  /** Where an exported file goes (the browser's download; tests pass their own). */
+  saveExport?: SaveFile;
+}) {
   const { t, i18n } = useTranslation();
   const locale = i18n.language || currentLocale();
   const platform = useKeyboardPlatform();
@@ -266,6 +289,8 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [notice, setNotice] = useState('');
   const [closing, setClosing] = useState<DraftTab | null>(null);
   const [detail, setDetail] = useState<OpenCell | null>(null);
+  /** The result whose export dialog is open (TD-043). */
+  const [exporting, setExporting] = useState<StatementResult | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [focusTab, setFocusTab] = useState<string | null>(null);
   const controllers = useRef(new Map<string, Controller>());
@@ -493,6 +518,9 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         problem: null,
         cache: null,
         startedAt: stamp,
+        params: Object.fromEntries(
+          statement.params.filter((name) => name in values).map((name) => [name, values[name]]),
+        ) as Record<string, ParamValue>,
       }));
       setDetail(null);
       setRuns((all) => {
@@ -1114,6 +1142,24 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
               {t('editor.result.loadMore', { rows: formatCount(maxRowsSetting, locale) })}
             </Button>
           ) : null}
+          {shown !== null &&
+          view !== 'messages' &&
+          shown.state === 'done' &&
+          run?.connectionId != null &&
+          run.profileId === tab.profileId &&
+          profile !== null &&
+          !running ? (
+            <Button
+              size="sm"
+              icon={<FileDown />}
+              // D-02 through the shared guard: confirmed when the result's connection was opened, so it passes at
+              // once; the seam for a source whose connection was not opened in this page (the data viewer).
+              onClick={() => prodGuard(profile, () => setExporting(shown))}
+              data-testid="export-open"
+            >
+              {t('editor.actions.export')}
+            </Button>
+          ) : null}
         </div>
         {/* The final state of a run, read out once (08 section 9). */}
         <p className="tb-sr-only" role="status" aria-live="polite" data-testid="result-announce">
@@ -1214,6 +1260,23 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       </section>
 
       {prodDialog}
+      {exporting !== null && run?.connectionId != null ? (
+        <ExportDialog
+          fetcher={fetcher}
+          connectionId={run.connectionId}
+          source={{ kind: 'sql', sql: exporting.sql, params: exporting.params }}
+          subject={t('editor.exportSubject', { number: exporting.number, tab: tab.title })}
+          fetchedRows={exporting.status?.rowCount ?? null}
+          capped={(exporting.status?.truncatedBy ?? null) !== null}
+          describeProblem={exportOrQueryProblemText}
+          save={saveExport}
+          onDone={(message) => {
+            setNotice(message);
+            setExporting(null);
+          }}
+          onClose={() => setExporting(null)}
+        />
+      ) : null}
       {closing !== null ? (
         <UnsavedScriptDialog
           open

@@ -1,0 +1,38 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-3);
+}
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.legend {
+  padding: 0;
+  margin-bottom: var(--tb-space-1);
+  font-weight: var(--tb-weight-semibold);
+}
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.limitRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2) var(--tb-space-3);
+}
+.limitRow input[type='text'] {
+  width: 10rem;
+  max-width: 100%;
+}
+.progress {
+  margin: 0;
+  min-height: 1.5em;
+}
