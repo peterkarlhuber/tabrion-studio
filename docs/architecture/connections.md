@@ -1,8 +1,5 @@
 # Connections and read-only enforcement (STU-009)
 
-**Integration branch only.** This page describes the STU-009 draft. It is built on a pinned tabrion commit and must
-not merge to master before tabrion v0.1.0 (RC-8, `docs/TODO.md` TS-001).
-
 Studio 1.0 never writes to a database. Every connection is read-only, for every environment. Production has no
 write path at all: no backend route, no UI path. The boundary is in the database, not in a text filter
 (03 section 5.1, threats T-06 and T-13).

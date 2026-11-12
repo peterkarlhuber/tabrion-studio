@@ -15,7 +15,8 @@ migration states and Tabrion profiles.
 > **Status: pre-alpha skeleton.** This repository currently contains the project skeleton, the command-line
 > process model, CI, the access protection, Problem JSON errors and redacted, rotating logs, configuration files,
 > profiles and project trust, and the empty app shell with the design system, German and English, and the status
-> displays and dialogs (work packages STU-001 to STU-006, STU-018, STU-031, STU-051). Studio does not connect to
+> displays and dialogs, saved passwords, the connection manager and the settings, and the command palette (work
+> packages STU-001 to STU-008, STU-018, STU-031, STU-051 and the first part of STU-052). Studio does not connect to
 > databases yet.
 > There is no release; nothing is published to PyPI, and no PyPI release is needed for now: distribution is by Git
 > SHA pin (owner decision 2026-11-08). A later publication would need a new decision and the owner's approval G-R.
@@ -36,6 +37,8 @@ python -m pip install .                 # the wheel contains the built frontend
 ```
 
 ## Usage
+
+The [user guide](docs/guide/index.md) explains installing, starting, connections, settings and troubleshooting.
 
 ```bash
 tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES] [--log-dir DIR]

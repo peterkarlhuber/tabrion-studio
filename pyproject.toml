@@ -26,12 +26,9 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # INTEGRATION BRANCH ONLY (STU-009, RC-8): a pre-release range, with the commit pinned in
-    # constraints/tabrion-integration.txt. This branch must not merge to master before tabrion v0.1.0; then this
-    # becomes "tabrion[postgres,sqlalchemy]>=0.1,<0.2" and the constraints file pins the v0.1.0 commit by its full
-    # SHA (no PyPI publication, ADR 0009 amendment; docs/TODO.md TS-001).
-    # tests/security/test_dependencies.py::test_pyproject_follows_rc8 fails on purpose until then.
-    "tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2",
+    # tabrion is not on PyPI: the range is here, the v0.1.0 commit is pinned by its full SHA in
+    # constraints/tabrion-integration.txt (RC-8, ADR 0009 amendment, docs/TODO.md TS-001).
+    "tabrion[postgres,sqlalchemy]>=0.1,<0.2",
     "psycopg[binary]>=3.2,<4",
     "fastapi>=0.115,<1",
     # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).
@@ -91,6 +88,7 @@ include = [
     "TRADEMARKS.md",
     "mkdocs.yml",
     "pyproject.toml",
+    "dependency-policy.json",  # TABRION QA-17: tests/architecture/test_dependency_policy.py
     "build-constraints.txt",
 ]
 exclude = ["frontend/node_modules", "frontend/dist"]
@@ -117,7 +115,8 @@ show_missing = true
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["frontend"]
+# scripts/check_dependency_policy.py is an unchanged, checksummed copy from nodestro-studio (TABRION QA-17), linted there.
+extend-exclude = ["frontend", "scripts/check_dependency_policy.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]

@@ -16,7 +16,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Integration branch only (STU-009 draft PR, tabrion 546d254 pinned by SHA); master gets the final range plus the v0.1.0 commit SHA pin (no PyPI) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -41,11 +41,12 @@
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
-| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Open |
-| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 draft) |
+| TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
+| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
+| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
@@ -62,31 +63,25 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
 
 ### TS-001 · Add the tabrion dependency with the first API use (TABRION STU-009, RC-8)
 
-- **Priority:** P1 High · **Status:** Integration branch only (STU-009 draft PR; master blocked until tabrion v0.1.0,
-  TABRION TAB-040) · **Refs:** RC-8, E-VER, 05 §3.2
-- **What:** on master nothing in Studio uses the Tabrion API yet, so `pyproject.toml` has no tabrion dependency.
+- **Priority:** P1 High · **Status:** Done (STU-009, PR #15: tabrion v0.1.0 pinned by full SHA) · **Refs:** RC-8,
+  E-VER, 05 §3.2, TABRION TAB-040
+- **What:** STU-009 is the first Studio code that uses the Tabrion API, so it adds the tabrion dependency.
 - **Rule (RC-8, amended by ADR 0009 in tabrion PR #20: tabrion is not published on PyPI, it is used through Git SHA
   pins):** `project.dependencies` carries only the final range, with no git or URL reference and no pre-release
   specifier. The commit is pinned by its **full SHA** in a constraints file
   (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`; no branch, tag or short SHA). Both are
-  enforced by `tests/security/test_dependencies.py` on the STU-009 branch (`test_pyproject_follows_rc8`,
-  `test_pin_files_pin_only_full_commits`).
-- **Next step:** with tabrion v0.1.0, `tabrion[postgres,sqlalchemy]>=0.1,<0.2` in `pyproject.toml` and the v0.1.0
-  commit in `constraints/tabrion-integration.txt` (STU-009).
+  enforced by `tests/security/test_dependencies.py` (`test_pyproject_follows_rc8`,
+  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_v0_1_0`).
+- **Done:** `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, and
+  `constraints/tabrion-integration.txt` pins tabrion v0.1.0, the merge commit of tabrion PR #56
+  (`d5821faa8742dea012abda3b663549c038d76543`). Every install reads the constraints file (`-c`, or
+  `PIP_CONSTRAINT` for the wheel smoke test in CI); a later tabrion version moves the pin in that one file.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
   every connection (`services.connections.driver_options`: `prepare_threshold=0`, `passfile`) are not targets.
-- **STU-009 integration branch (`claude/project-thread-rdo6g3-stu009`, draft, never merged before v0.1.0):**
-  `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1.0a1,<0.2`, and
-  `constraints/tabrion-integration.txt` pins tabrion master `546d254a27df9f6b539d57c307ad3022d0ee3a4a`
-  (0.1.0a2.dev0). The a1 commit `a463422` has only `tabrion.errors`, `sql` and `config`; STU-009 needs
-  `Database`, `Profile`, `Database.read()` and `health()` (layer B, TAB-018), which arrived later.
-  `tests/security/test_dependencies.py::test_pyproject_follows_rc8` fails on that branch on purpose (pre-release
-  range). With v0.1.0: final range `>=0.1,<0.2`, the constraints file pinning the v0.1.0 commit by SHA, a merge of
-  master, then the PR is ready for review.
-  Done there: URLs only through `tabrion.safe_url()`; passwords only through the configuration's secrets when
-  connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
+- **Done in STU-009 (PR #15):** URLs only through `tabrion.safe_url()`; passwords only through the configuration's
+  secrets when connecting (`Configuration.resolve_entry_secret`, the same entry as the URL: L-1 of `stu-009-review.md`);
   project SQLite files only through `database_file`, every driver parameter in the fingerprint, `DB_KINDS` from
   `tabrion.errors.Kind`, `db.<kind>` problems from `classify`, `DbErrorRedactionFilter` in the log handlers
   (`docs/architecture/connections.md`).
@@ -348,16 +343,16 @@ merge after OA-004.
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
 | TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
-| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Draft PR on the integration branch (tabrion 546d254 pinned, RC-8; not before v0.1.0): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`. Open: the `backend integration (PostgreSQL 17)` job (OA-003), the page (TD-011, TD-012) |
+| TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
-| TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Draft PR stacked on the STU-009 draft, built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
+| TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
 | TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Draft PR stacked on the STU-011 draft, reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
 | TABRION STU-012..STU-015 | SQL editor, data viewer, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
-| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | adds the manual, build-only release workflow |
+| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part in the user-guide PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R);
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
@@ -386,8 +381,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 | Ref | What | Priority |
 |---|---|---|
 | TABRION QA-18 | `tests/packaging/test_independent.py`: import every tabrion module while orkexa, axentra, nodestro_* and tabrion_studio are blocked (05 §3.2) | P2 |
-| TABRION QA-21 | full AC-7 check against tabrion's `__all__`/API contract and export of the used names to `tabrion/docs/api-consumers.md` (the AST check for private names is in place) | P2 |
-| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, English, license, SECURITY.md; branch protection, private vulnerability reporting and the social preview are optional, owner decision 2026-11-08) | P2 |
+| TABRION QA-21 | Done in this repository: `scripts/check_tabrion_api.py` (the same file as in axentra, orkexa and nodestro-runtime) also checks used names against the installed Tabrion's `__all__` (a used name without an installed Tabrion fails; a module whose extra is missing is reported with its import error) and, with `--surface`, Tabrion's `docs/api/surface.json` (stable `S` names only: experimental `X` names are refused, 02 §14 S-2), and exports them to `docs/api-consumers.md`, enforced by `tests/architecture/test_tabrion_api_export.py` (stale or missing export, a fake installed Tabrion for the `__all__` part, the script's SHA-256 so the four copies stay identical). The `__all__` and `--surface` parts first have a name to check with the first Tabrion pin (STU-009). Open: `--check-export docs/api-consumers.md` on the existing CI step (a `.github` change), and Tabrion collecting the consumer lists into `tabrion/docs/api-consumers.md` | P3 |
+| TABRION QA-22 | convention audit against orkexa/axentra (pins, manifest, Dependabot, English, license, SECURITY.md; branch protection, private vulnerability reporting and the social preview are optional, owner decision 2026-11-08): done in review, `docs/development/conventions.md`, `tests/security/test_conventions.py`; `CODE_OF_CONDUCT.md` and `SUPPORT.md` added | P2 |
 
 ## Technical debt
 
@@ -396,10 +391,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Priority:** P3 Low · **Status:** Open · **Refs:** 05 §3.2, AC-1
 - **What:** the import-linter layer contract needs the `api`, `services` and `profiles` packages. STU-006 adds `api`
   and `config` (the profiles layer; `config` never imports `api`, the app, the server, the CLI or `security`).
-  STU-009 (integration branch) adds `services` (the connection registry): it never imports `api`, the app, the
+  STU-009 adds `services` (the connection registry): it never imports `api`, the app, the
   server, the CLI or `security`, `config` never imports it, and only it imports SQLAlchemy and psycopg. Today the contracts forbid every Levuvo platform, keep the process model from importing the CLI,
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
+- **Status note:** every contract has a mutation probe in `tests/architecture/test_forbidden_probe.py` (TABRION
+  QA-16); the layer contract, and any new contract, needs its own probe there. The dependency policy (QA-17, AC-2):
+  `dependency-policy.json` and the vendored `scripts/check_dependency_policy.py` (a new Levuvo dependency needs a K-33
+  edge in nodestro-studio first, then a new copy here).
 
 ### TD-002 · Sandboxed browsers cannot open the redirect file (TABRION STU-003)
 
@@ -551,23 +550,24 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-012 · STU-009 integration: what remains before it can merge
 
-- **Priority:** P1 High · **Status:** Open (`stu-009-review.md`, delta re-review: accepted with conditions; R-L1,
-  R-L2, I-R1 and I-R2 done, the CI condition is a separate `.github/workflows` commit for the workflow-change review)
-  · **Refs:** RC-8, 03 §5.1, §8, `docs/architecture/connections.md`
+- **Priority:** P1 High · **Status:** Done (PR #15: tabrion v0.1.0 pinned, master merged; the CI workflow commit
+  was reviewed and labeled; the STU-011 binding below stays a rule) · **Refs:** RC-8, 03 §5.1, §8,
+  `docs/architecture/connections.md`
 - **Re-review 2 (accepted with conditions; workflow change approved for the label):** R2-L1 (`DO` and the
   query-in-text functions refused), R2-I2 (tests that kill T1 and T6) and R2-I1 (no pip option after a marker) are
   done; the Info on the service port is done in a separate `.github` commit, which needs the workflow-change review
-  again before the label. Left: tabrion v0.1.0 (RC-8), then CI fully green including the RC-8 guard.
+  again before the label. The tabrion v0.1.0 pin is done; CI fully green, including the RC-8 guard, is the merge
+  condition.
 - **Conditions to leave draft (re-review):** 1. CI installs the pinned tabrion and runs the `postgres` tests (L-2,
   below); 2. R-L2, the strict pin rule (done: `tests/security/test_dependencies.py` allows only plain requirements
   and the full-SHA pin, in every requirements or constraints file at any depth); 3. R-L1 (done: token-based function
   check); 4. I-R2 (done: `test_i_r2_one_profile_read_per_connect` kills mutant N5).
-- **tabrion v0.1.0 (TS-001):** switch to the final range, pin the v0.1.0 commit by SHA in
-  `constraints/tabrion-integration.txt`, merge master, run every check, then mark the PR ready.
+- **tabrion v0.1.0 (TS-001):** done. The final range is in `pyproject.toml`, the v0.1.0 commit is pinned by SHA in
+  `constraints/tabrion-integration.txt`, and master is merged in.
 - **CI installs tabrion from the pin (L-2 of `stu-009-review.md`):** pip reads a constraints file only from `-c`,
   `PIP_CONSTRAINT` or a pip configuration file outside the repository. The workflow commit on this branch adds
   `-c constraints/tabrion-integration.txt` to every `pip install -e ".[dev]"` and sets `PIP_CONSTRAINT` for the wheel
-  installs (e2e, `build and install`, the SBOM job). It waits for the independent workflow-change review and the
+  installs (e2e, `build and install`, the SBOM job). It passed the independent workflow-change review and carries the
   `workflow-change-reviewed` label (OA-003).
 - **The CI job `backend integration (PostgreSQL 17)`** (same workflow commit, added to `.github/ci-manifest.json`):
   a `postgres:17.10` service pinned by digest, a non-superuser role that owns its database, `pytest -m postgres`
@@ -587,9 +587,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-013 · STU-011 query engine on tabrion 0.1: what changes with tabrion 0.2
 
-- **Priority:** P1 High · **Status:** Open (STU-011 draft PR, stacked on the STU-009 draft; not merged before
-  tabrion v0.1.0) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to §5.6, backlog TAB-033/TAB-042,
-  `docs/architecture/queries.md`
+- **Priority:** P1 High · **Status:** Open (STU-011 done in PR #18) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to
+  §5.6, backlog TAB-033/TAB-042, `docs/architecture/queries.md`
 - **Built on tabrion 0.1:** STU-011 (and STU-010) depend on TAB-042, tabrion 0.2 with `Transaction.stream`,
   `Transaction.cancel`, `tabrion.Result`/`Column` and `Database.inspector()`. Until then
   `services/tabrion_compat.py` builds stream, cancel and column metadata from `Database.read()` and
@@ -738,6 +737,28 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
   every MVP flow.
+
+### TD-023 · User guide parts that wait for later packages (STU-017)
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** 03 section 10 (STU-017: installation, start, security model,
+  troubleshooting), 09 STU-017 (depends on STU-016), `docs/guide/`
+- **Done in the user-guide PR:** `docs/guide/` for the features that exist: installation from a Git commit (no PyPI,
+  owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
+  connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
+- **With STU-009..STU-015:** connecting and the connection test, the explorer, the SQL editor and its shortcuts, the
+  data viewer, diagnostics and migration status; update the "Development version" note on `guide/index.md`.
+- **Troubleshooting:** the tables grow with the problem codes those packages add; the guide's command lines are
+  checked by the STU-017 clean-install test.
+- **With STU-017:** the documentation checklist, the clean-install test on Linux, macOS and Windows, the tag `v0.1.0`
+  (no publication, G-R) and the install section then names that tag instead of a commit.
+- **Done after the review (`stu-27-review.md`):** L-1, `--print-url` also opens the browser unless `--no-browser` is
+  given, so the guide and the troubleshooting row say `--no-browser --print-url`; L-2, the README status names only
+  what is on master and takes the PyPI sentence of the publication-policy PR (#22); L-3, the security page lists every
+  file Studio writes (settings, profiles, trust records, instance files, sign-in files, logs); L-4, the test wants a
+  row in the options table for every option and a real `nav` line (not a comment) for every guide page; I-2, I-4 and
+  I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
+- **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
+  binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 
