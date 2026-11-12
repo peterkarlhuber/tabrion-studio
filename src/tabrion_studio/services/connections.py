@@ -260,6 +260,22 @@ def read_only_database(
     return db
 
 
+def _close_after_dispose(db: tabrion.Database) -> Callable[[Any, Any], None]:
+    """Pool ``checkin`` listener: a session that comes back after ``db.close()`` is closed, not pooled.
+
+    ``Database.close()`` is ``engine.dispose()``, which closes only the idle sessions. One that a running statement
+    still holds goes back, at check-in, into the disposed pool, which nothing closes: its driver connection stays
+    open until garbage collection (``ResourceWarning: unclosed database`` in whichever test happens to collect it).
+    Closing it at check-in releases it as soon as the statement ends.
+    """
+
+    def close_if_disposed(dbapi_connection: Any, connection_record: Any) -> None:
+        if dbapi_connection is not None and db.closed:
+            connection_record.invalidate()
+
+    return close_if_disposed
+
+
 @dataclass
 class OpenConnection:
     """One open, read-only connection. The engine is private; only reading is offered."""
@@ -439,6 +455,8 @@ class ConnectionRegistry:
         limits = self.source.limits()
         database_file, password = self._credentials(profile_id, entry)
         db = read_only_database(profile, limits, password, database_file)
+        # Last of the check-in listeners: a session that a statement returns after close() leaves with the pool.
+        event.listen(db.engine, "checkin", _close_after_dispose(db))
         timeout = profile.statement_timeout_ms or (
             PROD_STATEMENT_TIMEOUT_MS if profile.environment == "prod" else limits.statement_timeout_ms
         )

@@ -16,8 +16,8 @@ All notable changes to this project are documented here. The format follows
   `tabrion[migrations]` (Alembic). After the security review, the worker runs exactly the revision bytes it hashed
   and reads no bytecode of the project, loads the database driver before the project's folders are on `sys.path`,
   reads its answer with a size and time bound, and only one worker runs at a time (`studio.migrations_busy`).
-- STU-014 backend (integration branch only, stacked on STU-013; `tabrion.check` on the driver connection until
-  tabrion 0.2): `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
+- STU-014 backend (`tabrion.check` on the driver connection until tabrion 0.2):
+  `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host
   (T-10), a read-only role that can write, no statement timeout for the role or database, SQLite rows written with
   foreign keys off. Review fix round (`stu-014-review.md`): the diagnosis stops at the connection's statement
@@ -30,7 +30,7 @@ All notable changes to this project are documented here. The format follows
   Delta review: on SQLite a time limit or cancel stops tabrion's `quick_check` alone, so tabrion's other findings
   (a 0644 file's `TAB-SQ-003`, say) stay and `TAB-SQ-006` says "not checked"; `STU-DX-009` calls only "foreign key
   mismatch" and "no such table" a broken definition (a lock or I/O error gets a neutral text).
-- STU-013 backend (integration branch only, stacked on STU-010; on tabrion 0.1 like STU-011):
+- STU-013 backend (on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary
   key, by `rowid` or `ctid` without one, and by `OFFSET` for views (`hint: unstable_order`). Column names must be
@@ -51,8 +51,8 @@ All notable changes to this project are documented here. The format follows
     the fetch batch is capped by the widest row the byte caps allow, so a small first row cannot inflate it; a
     decoded `json`, `jsonb` or array value counts toward the batch and the page cap at the memory its Python objects
     take, not at its text bytes.
-- STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
-  until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
+- STU-010 backend (reflection through `tabrion_compat.inspector` until tabrion 0.2):
+  `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
   `GET /api/connections/{id}/extensions` (PostgreSQL) and `GET /api/connections/{id}/sqlite-info` (pragmas, file
   size and mode, `STRICT`, `WITHOUT ROWID`). 500 tables in under a second.
@@ -64,8 +64,7 @@ All notable changes to this project are documented here. The format follows
   - Delta re-review of `stu-010-review.md`: a partitioned table's foreign key is shown once, without its
     partitions' copies (N-1); a query that finds no free session is `studio.connection_busy` too (I-9); SQLite
     before 3.37 still reports `without_rowid` as true or false.
-- STU-011 (integration branch only, stacked on STU-009; on tabrion 0.1 behind `services/tabrion_compat.py` until
-  tabrion 0.2):
+- STU-011 (on tabrion 0.1 behind `services/tabrion_compat.py` until tabrion 0.2):
   - The query engine and the routes `POST /api/queries`, `GET /api/queries/{id}`, `GET /api/queries/{id}/events`
     (server-sent events), `GET /api/queries/{id}/rows` and `POST /api/queries/{id}/cancel`.
   - One checked statement per `Database.read()`, through `ConnectionRegistry.get`; `:name` parameters are bound by
@@ -95,7 +94,14 @@ All notable changes to this project are documented here. The format follows
     - R-M1: the fetch budget follows the largest row so far, grows at most twice per fetch and counts arrays and json
       in full.
     - R-I1: a `search_path` or `transaction_timeout` session setting is refused at startup (Studio sets neither).
-- STU-009 (integration branch only, tabrion master 546d254 pinned under RC-8; not merged before tabrion v0.1.0):
+  - Delta re-review 2 of `stu-011-review.md` (head 70ca2f9):
+    - R2-L1: white space and `--` comments are skipped with one regular expression, so checking a text with many line
+      comments is linear (512 k characters of `--\n`: 10 s before, about 0.2 s now); the same for the placeholder
+      scan.
+    - R2-I2: a text with a NUL character is refused.
+    - R2-I1: the check-in reset also takes back a role change (`SET SESSION AUTHORIZATION DEFAULT`, `RESET ROLE`),
+      which `RESET ALL` keeps.
+- STU-009 (tabrion v0.1.0 pinned by full SHA):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no
     VACUUM INTO, no `load_extension`, no write or schema change). PostgreSQL: a read-only session, `Database.read()`,
@@ -127,6 +133,23 @@ All notable changes to this project are documented here. The format follows
     - CI: the PostgreSQL service port is published on `127.0.0.1` only.
   - The dependency rule follows the ADR 0009 amendment (no PyPI publication): a full-SHA tabrion pin is allowed in a
     constraints file, and `pyproject.toml` keeps the final range with no direct reference.
+  - tabrion v0.1.0 (`d5821faa8742dea012abda3b663549c038d76543`, the merge commit of tabrion PR #56) is pinned in
+    `constraints/tabrion-integration.txt`, and `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`.
+    CONTRIBUTING and the guide's installation page install with `-c constraints/tabrion-integration.txt`.
+- TABRION QA-21 (AC-7): `scripts/check_tabrion_api.py` is now the check shared with axentra, orkexa and
+  nodestro-runtime. Besides private Tabrion modules it refuses `_` attributes on Tabrion names, `getattr` and
+  `import_module` with a private constant and star imports. Every used name must be in its module's `__all__` in the
+  installed Tabrion (a used name without an installed Tabrion fails), and `--surface` compares with Tabrion's frozen
+  API snapshot and refuses experimental (`X`) names. `--export` writes the used names to `docs/api-consumers.md` (in
+  the docs under Development), and `tests/architecture/test_tabrion_api_export.py` fails when that file is stale or
+  missing.
+- Reproducible-wheel check (QA-8): the packaging tests build the wheel twice more and require the same SHA-256 as the
+  CI build, with the build backend pinned exactly (`hatchling==1.33.0`, hashed in `build-constraints.txt`); the QA-8
+  evidence (audits, SBOMs, hashes) is in `docs/development/ci.md`. A fixed `SOURCE_DATE_EPOCH` build is tested too, and
+  `scripts/check_frontend_reproducible.py` checks by hand that two frontend builds match.
+- Conventions audit (TABRION QA-22): `docs/development/conventions.md`, `tests/security/test_conventions.py` (license,
+  security policy, community files, Dependabot policy, CI manifest), and the missing `CODE_OF_CONDUCT.md` and
+  `SUPPORT.md`.
 - Project skeleton: Python package `tabrion_studio` (hatchling, ruff, mypy strict, import-linter) and the React 19 /
   TypeScript 5.9 / Vite 8 frontend in `frontend/` (eslint, prettier, strict `tsc`, vitest) with a placeholder page
   (STU-001).
@@ -156,6 +179,24 @@ All notable changes to this project are documented here. The format follows
 - Brand assets (`assets/branding/`): the Tabrion Studio lockup, marks and favicons derived from Peter Karlhuber's logo
   master with the shared brand kit (no redraw, no CSS filters), the social preview, and `TRADEMARKS.md` (the names and
   logos are not MIT). The committed masters carry no C2PA or eXIf metadata; a test proves the pixels unchanged.
+- Keyboard and command palette (STU-052, first part; `docs/architecture/frontend.md`, "Keyboard"): ⌘K / Ctrl+K opens
+  a command palette (go to a view, theme, density, language, help) with the combobox pattern; ⌘/ / Ctrl+/ shows the
+  keyboard shortcuts; F6 and Shift+F6 move between header, activity bar, tabs, main area and status bar. Shortcuts are
+  shown with the keys of the platform (⌘ on macOS, Ctrl or Strg elsewhere); the header has buttons for both dialogs.
+  In German the theme commands read "Darstellung", like the settings view.
+- Language, theme and density are saved in Studio's `settings.toml` as soon as they are chosen, and applied from it
+  when the page opens. They were browser preferences only, which a browser keeps per port, so they were lost at every
+  start (TD-021). `settings.toml` accepts `density = "compact" | "normal"`. A file with issues or one written by hand
+  is not changed from the general settings; the choice then stays in the browser and the view says so. The command
+  palette's theme, density and language commands are saved the same way.
+- Accessibility audit of the shell (STU-053, first part; `docs/architecture/accessibility.md`): WCAG 2.2 AA
+  checklist, and `e2e/a11y-audit.spec.ts` checks target size, reflow at 320 px, text spacing, focus visible and not
+  obscured, reduced motion and the landmarks. Fixed on the way: a PROD workspace no longer scrolls sideways at 320 px
+  (the header wraps; the tabs' screen-reader texts stay inside the tab list), the D-01 "Show full value" and "and N
+  more" buttons are 24 px high, the tooltips can be hovered and hidden with Escape, and a click beside a focused
+  link no longer follows it through its tooltip (WCAG 1.4.10, 2.5.8, 1.4.13). A long connection name or tab title
+  is cut with "…" and shown in full as a title; below 720 px the logo link keeps its accessible name (4.1.2). After "Go to …" in the
+  command palette the focus moves to the new page's main area.
 - The command prints a hint when the default browser on Linux is a snap or a Flatpak, which cannot open the sign-in
   file in a hidden state directory (TD-002, review S-4 of `stu-003-review.md`).
 - CI job `e2e` (mandatory check): the Playwright suites in Chromium on every pull request, namely axe with color
@@ -219,6 +260,24 @@ All notable changes to this project are documented here. The format follows
 - Network log check (QA-9, SQ-08): `e2e/network.spec.ts` visits every view, dialog and notice of the e2e harness, and
   `e2e/backend.spec.ts` the real server, and fails if the page requests any other host (no CDN font, telemetry,
   external image or script). It listens on the browser context, so popups, new pages and workers count too.
+- User guide (STU-017, first part; `docs/guide/`): installation from a Git commit, starting and stopping with every
+  option, connections and the trust dialog, passwords, settings and keyboard, how Studio protects your data, and
+  troubleshooting with the messages of the page and the command. A test checks that every command-line option has a
+  row in the guide's options table and that every guide page has an entry in the site navigation.
+
+- Dependency policy (QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy K-33
+  from nodestro-studio (only its outgoing edges: `tabrion[postgres,sqlalchemy,migrations]` in the core), and
+  `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`
+  records their origin and SHA-256. `python scripts/check_dependency_policy.py` checks `pyproject.toml` (core, every
+  extra and dependency group) against the copy. `tests/architecture/test_dependency_policy.py` checks the checksums,
+  runs the checker and probes forbidden requirements (Axentra, a platform, extras beyond the edge). Ruff skips the
+  vendored script (it is linted in nodestro-studio). The sdist ships the policy copy.
+
+- Import-contract mutation probe (QA-16, AC-1): `tests/architecture/test_forbidden_probe.py` runs `lint-imports` on
+  the repository and on a copy of the package, and on copies with one forbidden import each, which must fail and name
+  the broken contract (every contract has at least one probe). It also checks that the edge to `tabrion` stays
+  allowed (K-33), that the K-33 contract names every known Levuvo platform, and scans for imports of any `orkexa*`,
+  `axentra*`, `nodestro*` or `levuvo*` package by prefix.
 
 ### Security
 

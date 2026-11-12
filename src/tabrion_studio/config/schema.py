@@ -347,6 +347,7 @@ def validate_profiles(doc: dict[str, Any]) -> ProfileFile:
 
 LANGUAGES = ("system", "en", "de")
 THEMES = ("system", "light", "dark")
+DENSITIES = ("compact", "normal")
 
 
 @dataclass(frozen=True)
@@ -355,6 +356,7 @@ class Settings:
 
     language: str = "system"
     theme: str = "system"
+    density: str = "compact"
     log_sql: bool = False
     max_rows: int = 10_000
     statement_timeout_ms: int = 30_000
@@ -365,6 +367,7 @@ class Settings:
         return {
             "language": self.language,
             "theme": self.theme,
+            "density": self.density,
             "log_sql": self.log_sql,
             "telemetry": False,
             "limits": {
@@ -382,8 +385,8 @@ def validate_settings(doc: dict[str, Any]) -> tuple[Settings, list[Issue]]:
     if type(version) is not int or version != SCHEMA_VERSION:
         return Settings(), [Issue("version", "config.unsupported_version")]
     values: dict[str, Any] = {}
-    for key in ("language", "theme"):
-        value = _choice(doc, key, "settings", LANGUAGES if key == "language" else THEMES, issues)
+    for key, choices in (("language", LANGUAGES), ("theme", THEMES), ("density", DENSITIES)):
+        value = _choice(doc, key, "settings", choices, issues)
         if value is not None:
             values[key] = value
     if "log_sql" in doc:
@@ -410,6 +413,6 @@ def validate_settings(doc: dict[str, Any]) -> tuple[Settings, list[Issue]]:
     else:
         issues.append(Issue("settings.limits", "config.type"))
     for key in doc:
-        if key not in ("version", "language", "theme", "log_sql", "telemetry", "limits"):
+        if key not in ("version", "language", "theme", "density", "log_sql", "telemetry", "limits"):
             issues.append(Issue(f"settings.{_key(str(key))}", "config.unknown_key", "warning"))
     return Settings(**values), issues

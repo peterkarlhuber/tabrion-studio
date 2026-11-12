@@ -1,0 +1,91 @@
+.palette {
+  width: min(560px, calc(100vw - 32px));
+  max-height: min(480px, calc(100dvh - 32px));
+  margin: 12vh auto auto;
+  padding: 0;
+  border: 1px solid var(--tb-color-border-strong);
+  border-radius: var(--tb-radius-lg);
+  background: var(--tb-color-surface);
+  color: var(--tb-color-text);
+  box-shadow: var(--tb-shadow-lg);
+}
+.palette[open] {
+  display: flex;
+  flex-direction: column;
+}
+.palette::backdrop {
+  background: var(--tb-color-overlay);
+}
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-space-2);
+  padding: var(--tb-space-3) var(--tb-space-4);
+  border-bottom: 1px solid var(--tb-color-border);
+}
+.icon {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  color: var(--tb-color-text-muted);
+}
+.input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 var(--tb-space-2);
+  border: 1px solid var(--tb-color-control-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-surface);
+  color: var(--tb-color-text);
+  font: inherit;
+  font-size: var(--tb-text-md);
+}
+.input::placeholder {
+  color: var(--tb-color-text-subtle);
+}
+.list {
+  flex: 1;
+  margin: 0;
+  padding: var(--tb-space-1);
+  overflow-y: auto;
+  list-style: none;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-space-2);
+  min-height: 32px;
+  padding: var(--tb-space-1) var(--tb-space-3);
+  border-radius: var(--tb-radius-md);
+  cursor: pointer;
+}
+.active {
+  background: var(--tb-color-selected);
+  outline: 2px solid var(--tb-color-focus);
+  outline-offset: -2px;
+}
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.current {
+  flex: none;
+  color: var(--tb-color-text-muted);
+  font-size: var(--tb-text-xs);
+}
+.empty {
+  margin: 0;
+  padding: var(--tb-space-4);
+  color: var(--tb-color-text-muted);
+}
+.hint {
+  margin: 0;
+  padding: var(--tb-space-2) var(--tb-space-4);
+  border-top: 1px solid var(--tb-color-border);
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-text-muted);
+  font-size: var(--tb-text-xs);
+  border-radius: 0 0 var(--tb-radius-lg) var(--tb-radius-lg);
+}
