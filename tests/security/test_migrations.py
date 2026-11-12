@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 import contextlib
 from dataclasses import dataclass
+import gc
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,7 @@ import sys
 import threading
 import time
 from typing import Any
+import warnings
 
 import pytest
 import sqlalchemy
@@ -239,6 +241,38 @@ def test_a_slow_revision_file_is_killed_with_its_children(shop: Shop) -> None:
     while time.monotonic() < deadline and any(_alive(pid) for pid in pids):
         time.sleep(0.1)
     assert not any(_alive(pid) for pid in pids)
+
+
+#: A child that writes the time to a file every 0.1 s for a minute: it is alive while the file changes.
+HEARTBEAT = (
+    "import os, pathlib, subprocess, sys, time\n"
+    "beat = pathlib.Path(__file__).resolve().parents[2] / 'beat'\n"
+    "code = 'import pathlib, sys, time\\nfor _ in range(600):\\n'\n"
+    "code += '    pathlib.Path(sys.argv[1]).write_text(repr(time.time()))\\n    time.sleep(0.1)\\n'\n"
+    "subprocess.Popen([sys.executable, '-c', code, str(beat)])\n"
+    "time.sleep(60)\n"
+)
+
+
+def test_children_end_with_the_worker_on_every_platform(shop: Shop) -> None:
+    """POSIX: the process group; Windows: the job object (TD-024). Checked by a heartbeat file, not by pid."""
+    (shop.project / "migrations" / "versions" / "0002_suppliers.py").write_text(revision("0002", "0001", HEARTBEAT))
+    trust(shop)
+    shop.migrations.runner = lambda request, cwd: run_worker(request, cwd=cwd, timeout_s=4.0)
+    found = alembic(shop.migrations.status(shop.connection_id))
+    assert found["problem"]["code"] == "studio.migrations_timeout"
+    beat = shop.project / "beat"
+    assert beat.exists()  # the child ran
+    time.sleep(1.0)
+    last = beat.read_text()
+    time.sleep(1.0)
+    assert beat.read_text() == last  # it stopped beating
+
+
+def test_no_job_object_outside_windows(shop: Shop) -> None:
+    if sys.platform == "win32":
+        pytest.skip("Windows makes a job object")
+    assert migrations_module._windows_job(None)() is None  # type: ignore[arg-type]
 
 
 def _alive(pid: int) -> bool:
@@ -522,7 +556,7 @@ def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.M
     }[worker]
     boot = "import os, sys, time\nrequest = sys.stdin.buffer.read()\n" + write
     monkeypatch.setattr(migrations_module, "_BOOT", boot)
-    monkeypatch.setattr(migrations_module, "_exchange_posix", migrations_module._exchange_threads)
+    monkeypatch.setattr(migrations_module, "_POSIX", False)  # the Windows exchange, also on POSIX
     request = {"padding": "x" * 300_000}
     started = time.monotonic()
     answer = run_worker(request, cwd=tmp_path, timeout_s=3.0)
@@ -533,6 +567,48 @@ def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.M
         "too_big": {"error": "studio.migrations_failed"},
     }
     assert answer == expected[worker]
+
+
+@pytest.mark.parametrize("exchange", ["native", "windows"])
+@pytest.mark.parametrize("worker", ["answers", "hangs", "too_big"])
+def test_the_worker_pipes_are_closed_on_every_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exchange: str, worker: str
+) -> None:
+    """TD-024: both pipes are closed and the worker is reaped when ``run_worker`` returns, also on the Windows path
+    (the reader thread's pipe). Nothing is left for a finalizer: no ``ResourceWarning`` when it is collected."""
+    write = {
+        "answers": "os.write(1, b'{}\\n')\n",
+        "hangs": "time.sleep(60)\n",
+        "too_big": "os.write(1, b'x' * 3_000_000)\ntime.sleep(60)\n",
+    }[worker]
+    monkeypatch.setattr(migrations_module, "_BOOT", "import os, sys, time\nsys.stdin.buffer.read()\n" + write)
+    if exchange == "windows":
+        monkeypatch.setattr(migrations_module, "_POSIX", False)
+    started: list[subprocess.Popen[bytes]] = []
+
+    class Recorded(subprocess.Popen[bytes]):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            started.append(self)
+
+    monkeypatch.setattr(subprocess, "Popen", Recorded)
+    expected = {
+        "answers": {},
+        "hangs": {"error": "studio.migrations_timeout"},
+        "too_big": {"error": "studio.migrations_failed"},
+    }
+    assert run_worker({}, cwd=tmp_path, timeout_s=2.0) == expected[worker]
+    [process] = started
+    assert process.stdin is not None and process.stdin.closed
+    assert process.stdout is not None and process.stdout.closed
+    assert process.returncode is not None
+    assert not [thread for thread in threading.enumerate() if thread.name == "tabrion-studio-migration-worker"]
+    del process
+    started.clear()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        gc.collect()
+    assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
 
 
 @posix

@@ -28,6 +28,7 @@ import pytest
 import sqlalchemy
 
 from tabrion_studio.config.schema import Profile, SecretRef, Settings
+from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services import viewer as viewer_module
 from tabrion_studio.services.connections import ConnectionRegistry
@@ -807,3 +808,233 @@ def test_pg_bytes_are_capped_on_the_server(pg: tuple[Viewer, str]) -> None:
     assert 10 * 1024 * 1024 - 2 <= len(text["value"].encode("utf-8")) <= 10 * 1024 * 1024
     small = viewer.cell(connection_id, "Studio Viewer", "typed", page["page"], 1, "j")
     assert small == {"value": {"k": 2}, "size": len('{"k": 2}'), "truncated": False}
+
+
+# The delta re-review of 4ad445a (stu-013-review.md, FINAL): N-1, H-2 residual and M-4 residual.
+
+AT_SQL = "@1=1 OR 1"  # a primary key column whose name starts with "@" and reads as SQL
+
+
+def test_n1_at_columns_in_a_sqlite_primary_key_are_columns(
+    lite: tuple[Viewer, str, Path], statements: list[str]
+) -> None:
+    """N-1: a key column called "@..." is a quoted column, never a physical id or raw SQL."""
+    viewer, connection_id, path = lite
+    quoted_hostile = '"' + HOSTILE.replace('"', '""') + '"'
+    _sqlite(
+        path,
+        f'CREATE TABLE inj ("{AT_SQL}" TEXT, k TEXT, {quoted_hostile} TEXT, PRIMARY KEY ("{AT_SQL}", k))',
+        """INSERT INTO inj VALUES ('a', NULL, 'one'), ('b', NULL, 'two'), ('c', 'k', 'three')""",
+        'CREATE TABLE at_pair ("@a" TEXT, b INT, v TEXT, PRIMARY KEY ("@a", b))',
+        """INSERT INTO at_pair VALUES ('x', 1, 'mine'), ('y', 2, 'other')""",
+        'CREATE TABLE at_only ("@a" TEXT NOT NULL, "@rowid" INT NOT NULL, v TEXT, PRIMARY KEY ("@a", "@rowid"))',
+        """INSERT INTO at_only VALUES ('x', 1, 'mine'), ('x', 2, 'other')""",
+    )
+    viewer.explorer.catalog(connection_id, refresh=True)
+    # NULLs in k: the cell is found by the full identity (key columns and the row id).
+    page = viewer.rows(connection_id, "main", "inj")
+    assert [row[2] for row in page["rows"]] == ["one", "two", "three"]
+    statements.clear()
+    assert viewer.cell(connection_id, "main", "inj", page["page"], 1, HOSTILE)["value"] == "two"
+    assert viewer.cell(connection_id, "main", "inj", page["page"], 2, HOSTILE)["value"] == "three"
+    for sql in statements:
+        flat = sql.replace("\n", " ")
+        assert f'"{AT_SQL}" = ' in flat and f"WHERE {AT_SQL[1:]}" not in flat and f" {AT_SQL[1:]} =" not in flat
+        assert f".{quoted_hostile}" in flat or f" {quoted_hostile}" in flat
+    # A deleted row whose key comes back with another "@a" value is not the old row's cell.
+    page = viewer.rows(connection_id, "main", "at_pair")
+    _sqlite(path, """DELETE FROM at_pair WHERE "@a" = 'x'""", """INSERT INTO at_pair VALUES ('z', 1, 'OTHER ROW')""")
+    with pytest.raises(ViewerError) as gone:
+        viewer.cell(connection_id, "main", "at_pair", page["page"], 0, "v")
+    assert gone.value.code == "studio.viewer_row_gone"
+    assert viewer.cell(connection_id, "main", "at_pair", page["page"], 1, "v")["value"] == "other"
+    # Every key column starts with "@" (one even reads like the row id marker): the WHERE still has all of them.
+    page = viewer.rows(connection_id, "main", "at_only", sort="v")
+    assert [viewer.cell(connection_id, "main", "at_only", page["page"], i, "v")["value"] for i in (0, 1)] == [
+        "mine",
+        "other",
+    ]
+    rows, _ = walk(viewer, connection_id, "main", "at_only", limit=1, sort="@rowid", desc=True)
+    assert [row[1] for row in rows] == [2, 1]
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_n1_at_columns_in_a_primary_key_are_columns(pg: tuple[Viewer, str], statements: list[str]) -> None:
+    """N-1 on PostgreSQL: the by-key cell uses every key column, "@..." ones included, and quotes them."""
+    viewer, connection_id = pg
+    assert PG_URL is not None
+    engine = sqlalchemy.create_engine(sqlalchemy.make_url(PG_URL).set(drivername="postgresql+psycopg"))
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                f'CREATE TABLE "Studio Viewer".at_pair ("@a" text, "{AT_SQL}" int, v text, '
+                f'PRIMARY KEY ("@a", "{AT_SQL}"))'
+            )
+            connection.exec_driver_sql("""INSERT INTO "Studio Viewer".at_pair VALUES ('x', 1, 'mine'), ('y', 2, 'b')""")
+        viewer.explorer.catalog(connection_id, refresh=True)
+        page = viewer.rows(connection_id, "Studio Viewer", "at_pair")
+        assert page["paging"] == "primary_key"
+        statements.clear()
+        assert viewer.cell(connection_id, "Studio Viewer", "at_pair", page["page"], 0, "v")["value"] == "mine"
+        flat = statements[-1].replace("\n", " ")
+        assert '"@a" = ' in flat and f'"{AT_SQL}" = ' in flat
+        with engine.begin() as connection:
+            connection.exec_driver_sql("""DELETE FROM "Studio Viewer".at_pair WHERE "@a" = 'x'""")
+            connection.exec_driver_sql("""INSERT INTO "Studio Viewer".at_pair VALUES ('z', 1, 'OTHER ROW')""")
+        with pytest.raises(ViewerError) as gone:
+            viewer.cell(connection_id, "Studio Viewer", "at_pair", page["page"], 0, "v")
+        assert gone.value.code == "studio.viewer_row_gone"
+        rows, _ = walk(viewer, connection_id, "Studio Viewer", "at_pair", limit=1, sort=AT_SQL, desc=True)
+        assert [row[1] for row in rows] == [2, 1]
+    finally:
+        engine.dispose()
+
+
+@pytest.fixture
+def low_float_digits(pg: tuple[Viewer, str]) -> Iterator[tuple[Viewer, str]]:
+    """The database sets extra_float_digits = 0 (PostgreSQL 11's default; a role or database may set it), and a
+    float8 sort column holds 30 equal values 0.1 + 0.2, whose text at 0 digits is "0.3"."""
+    viewer, connection_id = pg
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    engine = sqlalchemy.create_engine(url.set(drivername="postgresql+psycopg"))
+    try:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.exec_driver_sql(f'ALTER DATABASE "{url.database}" SET extra_float_digits = 0')
+            connection.exec_driver_sql('CREATE TABLE "Studio Viewer".floats (id int PRIMARY KEY, f float8)')
+            connection.exec_driver_sql(
+                'INSERT INTO "Studio Viewer".floats SELECT g, 0.1::float8 + 0.2::float8 FROM generate_series(1, 30) g'
+            )
+            # The precondition of the probe: a new session of the role does see 0 digits.
+            with engine.connect() as fresh:
+                assert fresh.exec_driver_sql("SHOW extra_float_digits").scalar() == "0"
+        viewer.explorer.catalog(connection_id, refresh=True)
+        yield viewer, connection_id
+    finally:
+        with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as connection:
+            connection.exec_driver_sql(f'ALTER DATABASE "{url.database}" RESET extra_float_digits')
+        engine.dispose()
+
+
+@pytest.mark.postgres
+@postgres
+@pytest.mark.parametrize("desc", [False, True])
+def test_pg_h2_float_keys_page_whatever_extra_float_digits_says(
+    low_float_digits: tuple[Viewer, str], desc: bool
+) -> None:
+    """H-2 residual: Studio's sessions start with extra_float_digits=3, so the kept key text is the exact value."""
+    viewer, connection_id = low_float_digits
+    registry = viewer.explorer.registry
+    registry.close(connection_id)  # a new session, after the database setting
+    connection_id = registry.open("user:pg").id
+    rows, _ = walk(viewer, connection_id, "Studio Viewer", "floats", limit=5, sort="f", desc=desc)
+    assert sorted(row[0] for row in rows) == list(range(1, 31))
+    assert len(rows) == 30
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_h2_a_keyset_without_progress_goes_on_by_offset(
+    low_float_digits: tuple[Viewer, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """H-2 residual, the progress guard: without the pin, "0.3" < 0.30000000000000004, so every keyset page would
+    start again from the first row. The walk sees that its anchor did not advance and goes on by OFFSET, and it ends.
+    Here (all values equal) every row comes exactly once; in general the guard only makes the walk end (docs/TODO.md).
+    """
+    viewer, connection_id = low_float_digits
+    real = connections_module.startup_options
+    monkeypatch.setattr(
+        connections_module, "startup_options", lambda session: real(session).replace(" -c extra_float_digits=3", "")
+    )
+    registry = viewer.explorer.registry
+    registry.close(connection_id)
+    connection_id = registry.open("user:pg").id
+    for limit in (5, 7):
+        rows, _ = walk(viewer, connection_id, "Studio Viewer", "floats", limit=limit, sort="f")
+        assert [row[0] for row in rows] == list(range(1, 31)), limit
+
+
+def test_m4_a_small_first_row_does_not_size_the_next_batch(
+    lite: tuple[Viewer, str, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """M-4 residual: the batch after a tiny first row is sized by the columns' byte caps, not by that row: the fetch
+    stays near FETCH_BUDGET_BYTES (2 MB), and a page near max_result_mb (1 MB here)."""
+    import tracemalloc
+
+    viewer, connection_id, path = lite
+    columns = ", ".join(f"c{i} TEXT" for i in range(10))
+    _sqlite(path, f"CREATE TABLE wide10 (id INTEGER PRIMARY KEY, {columns})")
+    connection = sqlite3.connect(path)
+    connection.execute("INSERT INTO wide10 (id) VALUES (1)")  # the first row is tiny
+    connection.executemany(
+        "INSERT INTO wide10 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [(i, *(chr(97 + j) * 60_000 for j in range(10))) for i in range(2, 80)],
+    )
+    connection.commit()
+    connection.close()
+    viewer.explorer.catalog(connection_id, refresh=True)
+    monkeypatch.setattr(viewer, "limits", lambda: Settings(max_result_mb=1))
+    sizes: list[int] = []
+    real = tabrion_compat.ResultCursor.fetch
+
+    def fetch(self: Any, size: int) -> Any:
+        sizes.append(size)
+        return real(self, size)
+
+    monkeypatch.setattr(tabrion_compat.ResultCursor, "fetch", fetch)
+    # This test is about batch sizes and memory, not the clock, so the statement gets a timeout it cannot reach.
+    # The 800 ms of the `lite` profile also covers the statement check, which lexes the 11-column SELECT
+    # character by character. tracemalloc records every allocation, and Python 3.12's sys.settrace (coverage's
+    # tracer in CI) allocates on each traced line. Together they made that check take about 2 s on 3.12, so the
+    # timer cancelled the statement (ViewerTimeout) before a row was read.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
+    tracemalloc.start()
+    try:
+        page = viewer.rows(connection_id, "main", "wide10", limit=1000)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert page["truncated"] == "bytes" and page["next"] is not None
+    # 11 columns at 64 KB each: 2 MB holds 2 such rows. Before the fix the batch after the first row was 500 rows
+    # (here all 79, about 47 MB).
+    assert max(sizes) <= 2, sizes
+    assert peak < 8 * 1024 * 1024, peak
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r1_decoded_json_counts_toward_the_page_cap(pg: tuple[Viewer, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    """R-1 of the re-review of 974b958: 60 KB of jsonb text like "[[], [], ...]" decode into about 1.3 MB of Python
+    lists. The page cap counts that memory, and the fetch batch is sized for it, so a page stays near max_result_mb."""
+    import tracemalloc
+
+    viewer, connection_id = pg
+    assert PG_URL is not None
+    engine = sqlalchemy.create_engine(sqlalchemy.make_url(PG_URL).set(drivername="postgresql+psycopg"))
+    columns = ", ".join(f"j{i} jsonb" for i in range(4))
+    nested = "(SELECT jsonb_agg('[]'::jsonb) FROM generate_series(1, 15000))"
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(f'CREATE TABLE "Studio Viewer".nested (id int PRIMARY KEY, {columns})')
+            connection.exec_driver_sql('INSERT INTO "Studio Viewer".nested (id) VALUES (1)')  # the first row is tiny
+            connection.exec_driver_sql(
+                f'INSERT INTO "Studio Viewer".nested SELECT g, {nested}, {nested}, {nested}, {nested} '  # noqa: S608
+                "FROM generate_series(2, 13) g"
+            )
+    finally:
+        engine.dispose()
+    viewer.explorer.catalog(connection_id, refresh=True)
+    monkeypatch.setattr(viewer, "limits", lambda: Settings(max_result_mb=1))
+    tracemalloc.start()
+    try:
+        page = viewer.rows(connection_id, "Studio Viewer", "nested", limit=1000)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < 16 * 1024 * 1024, peak  # before: 8 rows of 5 MB decoded in one fetch
+    assert page["truncated"] == "bytes" and len(page["rows"]) == 1  # the next row alone is more than 1 MB decoded
+    assert page["truncated_cells"] == []  # the values are whole JSON, not cut
+    rows, _ = walk(viewer, connection_id, "Studio Viewer", "nested", limit=1000)
+    assert [row[0] for row in rows] == list(range(1, 14))
+    assert all(len(row[1]) == 15000 for row in rows[1:])

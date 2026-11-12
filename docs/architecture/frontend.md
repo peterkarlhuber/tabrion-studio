@@ -24,11 +24,12 @@ settings.
 - `src/App.tsx` chooses between the shell (with a session) and the sign-in notice (`src/shell/SessionNotice.tsx`).
   With a session it sends the heartbeat; when the server answers 401 (or 403 `access.csrf_invalid`), the heartbeat
   stops and the page says "Your session has ended. Run `tabrion-studio` again to open Studio." (review S-1).
-- `src/shell/AppShell.tsx`: skip link, header with the status displays, activity bar (Start, Connections, Migrations,
-  Settings),
-  tabs, main area, status bar (server version or "does not answer", language).
-- `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations` and `/settings`. The backend serves `index.html`
-  for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists equal); every other path stays 404.
+- `src/shell/AppShell.tsx`: skip link, header with the status displays and the buttons for the command palette and
+  the keyboard shortcuts, activity bar (Start, Connections, Migrations, Settings), tabs, main area, status bar (server
+  version or "does not answer", language).
+- `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations` and `/settings`. The backend serves
+  `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists equal); every other path
+  stays 404.
 - `src/workspace.ts`: the active connection, its environment and the open tabs. Nothing fills it until the connection
   registry and manager arrive (STU-008, STU-009); the shell shows "No connection".
 
@@ -40,7 +41,8 @@ settings.
   neutral grey, TEST amber, PROD red and filled), `--tb-null`, `--tb-diff-added/changed/removed`.
 - **Themes:** light and dark, both complete. `src/theme.ts` writes the resolved theme to `<html data-theme>`: the
   system setting unless the user picks one in the settings. **Density:** compact (28 px rows, default) or normal
-  (36 px), `<html data-density>`.
+  (36 px), `<html data-density>`. Both, and the language, are saved to Studio's `settings.toml` when chosen and read
+  from it when the page opens (`src/appearance.ts`, TD-021; `docs/architecture/configuration.md`).
 - **Typography:** system UI stack; monospace for code and values (`ui-monospace, SFMono-Regular, Menlo, Consolas`).
 - **Focus:** one 2 px focus ring for everything, at least 3:1 against every surface.
 - **Components** (`src/components/ui/`): Button, IconButton, EmptyState and Dialog are copied from
@@ -59,7 +61,8 @@ popovers, menus and tooltips, which do not inject styles.
 ## Languages
 
 English is the source language, German is complete (`src/i18n/locales/en.json`, `de.json`; i18next and
-react-i18next). The language follows the stored choice, then the browser's languages, then English, and sets
+react-i18next). The language follows the choice in `settings.toml`, then the one stored in this browser, then the
+browser's languages, then English, and sets
 `<html lang>`. `src/i18n/i18n.test.ts` checks that both files have the same keys, the same placeholders and inline
 tags, no empty strings and no untranslated text apart from names. German texts address the user informally ("du"),
 like the planning documents. es, fr, it and pt-BR are a later extension (STU-027).
@@ -87,6 +90,34 @@ D-03..D-05 belong to the Data Editor and are not built. Every dialog follows the
 4. Escape and the close button cancel; a click outside does nothing;
 5. the focus returns to the element that opened the dialog.
 
+## Keyboard (STU-052, 08 section 7)
+
+Studio is keyboard first (08 section 1). `src/keyboard/` holds one table of shortcuts (`shortcuts.ts`) that is used
+for matching and for display, so the palette, the help and the header buttons always show the keys that really work:
+⌘ on macOS, Ctrl elsewhere ("Strg" in German), detected from the browser (08 section 10). Browser-reserved shortcuts
+(⌘W, ⌘T, ⌘N) are never taken.
+
+| Shortcut | macOS | Windows/Linux | What |
+|---|---|---|---|
+| Command palette | ⌘K | Ctrl+K | opens the palette (also the header button) |
+| Keyboard shortcuts | ⌘/ | Ctrl+/ | opens the help with this table (also the header button and the palette) |
+| Next / previous area | F6 / ⇧F6 | F6 / Shift+F6 | header, activity bar, tabs, main area, status bar, wrapping around |
+
+- **Command palette** (`CommandPalette.tsx`): a modal native `<dialog>` like the other dialogs, with the WAI-ARIA
+  combobox pattern: the focus stays in the search, `aria-activedescendant` names the active command, ↑ ↓ Home End
+  move, Enter or a click runs, Escape closes, Tab stays in the search, and the focus returns to the opener. A status
+  region announces the number of matches. The commands (`commands.ts`) go to the views and change the theme, the
+  density and the language, and open the help; the current page, theme, density and language are marked. The filter
+  matches every word, without case and accents. No command writes to a database; theme, density and language are
+  saved to `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The explorer, the SQL
+  editor and the history add their commands when they arrive.
+- **Areas** (`regions.ts`): each area carries `data-region`; F6 focuses its current item (the active navigation link,
+  the selected tab), else its first control, else the area itself, which then shows the focus ring
+  (`data-region-focus`, WCAG 2.4.7).
+- While any modal dialog is open, the page shortcuts do nothing: the dialog owns the keyboard.
+- The SQL editor's shortcuts (run, run script, cancel, editor tabs, save, explorer filter, history) arrive with
+  STU-011 and STU-012, and the help lists them then (`docs/TODO.md`, TD-020).
+
 ## Tests
 
 | What | Where | Runs |
@@ -99,6 +130,9 @@ D-03..D-05 belong to the Data Editor and are not built. Every dialog follows the
 | Focus rules of D-01, D-02, D-06, D-08 | `src/components/dialogs/StudioDialogs.test.tsx`, `e2e/dialogs.spec.ts` (modality, inert page, focus trap in a real browser); `src/components/ui/Dialog.test.tsx` (initial focus with any action ID, U-2) | CI (`frontend unit`, `e2e`) |
 | Session ended (S-1), heartbeat stops | `src/App.test.tsx`, `e2e/status.spec.ts` | CI (`frontend unit`, `e2e`) |
 | Languages complete | `src/i18n/i18n.test.ts` | CI |
+| Keyboard (STU-052): shortcut matching and display per platform, the palette's commands and filter, the palette (combobox, arrows, Enter, Escape, focus return, Tab, no match), the help, F6 order, no page shortcut while a dialog is open | `src/keyboard/*.test.ts(x)` | `npm test` (CI) |
+| Keyboard only in Chromium: palette to Settings, F6 through every area with a visible ring, help and back; the palette is modal; axe for palette and help in light/dark, en/de | `e2e/keyboard.spec.ts` | Playwright, Chromium (CI `e2e`) |
+| Accessibility audit (STU-053): target size, reflow at 320 px, text spacing, focus visible, reduced motion, landmarks | `e2e/a11y-audit.spec.ts`; report in `docs/architecture/accessibility.md` | Playwright, Chromium (CI `e2e`) |
 | The built wheel in a real `tabrion-studio`: sign-in, no CSP violation, view path reload, axe light and dark | `e2e/backend.spec.ts` | Playwright, Chromium (CI `e2e`) |
 | No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 

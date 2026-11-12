@@ -628,12 +628,22 @@ def test_l2_m7_a_connection_that_got_a_cancel_is_invalidated(engine: str) -> Non
         with pytest.raises(Cancelled), fake_stream(transaction, hook, server_side=False):
             hook.cancel()
     assert transaction.invalidated == 1
+    # The driver connection is closed after invalidate() too, so nothing can keep it open until GC.
+    if engine == "postgresql":
+        assert dbapi.closed
+    else:
+        with pytest.raises(sqlite3.ProgrammingError):
+            dbapi.execute("SELECT 1")
+    dbapi = FakePsycopg() if engine == "postgresql" else sqlite3.connect(":memory:", factory=CountingSqlite)
     quiet = FakeTransaction(dbapi)
     with fake_stream(quiet, Cancel(), server_side=False):
         pass
     assert quiet.invalidated == 0  # no cancel, no invalidation
     if engine == "sqlite":
+        assert dbapi.execute("SELECT 1").fetchone() == (1,)  # not closed
         dbapi.close()
+    else:
+        assert not dbapi.closed
 
 
 def test_l2_a_connection_that_cannot_be_invalidated_is_closed() -> None:
@@ -831,12 +841,40 @@ def test_i3_the_byte_cap_is_the_max_result_mb_setting(sqlite_file: Any) -> None:
         connection_id = registry.open("project:parts").id
         query = wait(engine.start(connection_id, "SELECT name, data FROM part", max_rows=5000))
         assert query.max_bytes == 1024 * 1024 and query.truncated in ("bytes", None)
-        assert QueryEngine(registry).start(connection_id, "SELECT 1").max_bytes == 20 * 1024 * 1024
+        # Waited for, so no statement of this test still holds a session when the registry closes.
+        assert wait(QueryEngine(registry).start(connection_id, "SELECT 1")).max_bytes == 20 * 1024 * 1024
     finally:
         engine.close_all()
         registry.close_all()
     assert validate_settings({"limits": {"max_result_mb": 200}})[0].max_result_mb == 200
     assert [issue.code for issue in validate_settings({"limits": {"max_result_mb": 201}})[1]] == ["config.range"]
+
+
+def test_a_session_returned_after_close_is_closed(sqlite_file: Path) -> None:
+    """``Database.close()`` (``engine.dispose()``) closes only the idle sessions. One that a running statement holds
+    is closed when it comes back, not left open in the disposed pool until garbage collection (the
+    ``ResourceWarning: unclosed database`` that surfaced in an unrelated test's teardown)."""
+    registry = ConnectionRegistry(sqlite_source(sqlite_file))
+    connection = registry.get(registry.open("project:parts").id)
+    held: list[sqlite3.Connection] = []
+    inside, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with connection._read() as transaction:  # a running statement's session
+            held.append(transaction.connection.connection.dbapi_connection)
+            inside.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    try:
+        assert inside.wait(10)
+        registry.close_all()  # while the session is checked out
+    finally:
+        release.set()
+        holder.join()
+    with pytest.raises(sqlite3.ProgrammingError):  # closed at check-in, still referenced here
+        held[0].execute("SELECT 1")
 
 
 # M-2: startup options and the check-in reset.
@@ -848,6 +886,8 @@ def test_m2_startup_options_carry_studios_session_settings() -> None:
     assert options.split(" -c ")[0] == "-c default_transaction_read_only=on"
     assert "-c statement_timeout=30000" in options and "-c lock_timeout=5000" in options
     assert "-c TimeZone=UTC" in options
+    # H-2 residual of stu-013-review.md: exact float text whatever the role sets (the viewer's keys are text).
+    assert "-c extra_float_digits=3" in options
 
 
 def test_r_i1_settings_the_startup_options_cannot_match_are_refused() -> None:
@@ -889,6 +929,18 @@ def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Sou
     assert shown["search_path"] == {'"$user", public'}
     assert shown["default_transaction_read_only"] == {"on"}
     assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_r2_i1_a_role_change_does_not_outlive_its_statement(pg: tuple[QueryEngine, str, Source]) -> None:
+    engine, connection_id, _ = pg
+    connection = engine.registry.get(connection_id)
+    login = connection.fetch("SELECT session_user")[0][0]
+    # Past the text check (what a function of the database could do); RESET ALL alone keeps the role.
+    for _ in range(3):  # whichever of the pool's connections it lands on
+        _below_the_check(connection, f'SET ROLE "{login}"')
+    assert {connection.fetch("SELECT pg_catalog.current_setting('role')")[0][0] for _ in range(4)} == {"none"}
 
 
 def test_r_h1_the_sqlite_nested_comment_probe_is_refused(lite: tuple[QueryEngine, str, Source]) -> None:

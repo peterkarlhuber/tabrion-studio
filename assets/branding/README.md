@@ -41,7 +41,7 @@ the faint ghost of old letters right of the top wordmark. The test checks this a
 | `tabrion-studio-mark-on-dark-128.png` | 128 × 128 | symbol with the lifted black layer: the Studio header (dark theme), docs header (dark slate in both schemes) |
 | `favicon.ico` | 16, 32, 48 | browser favicon (symbol on a rounded white tile, readable on light and dark tabs) |
 | `favicon-32.png` | 32 × 32 | PNG favicon (Studio and docs site) |
-| `social-preview.png` | 1280 × 640 | GitHub social preview: the on-dark lockup on the shared dark brand template (uploaded manually in the repository settings) |
+| `social-preview.png` | 1280 × 640 | GitHub social preview: the on-dark lockup on the shared dark brand template (optional; uploaded manually in the repository settings if wanted) |
 
 `build.py` copies the web assets into `docs/assets/branding/` (MkDocs serves only files below `docs/`) and into
 `frontend/public/branding/` (Vite copies `public/` into the build, which goes into the wheel). The test checks that

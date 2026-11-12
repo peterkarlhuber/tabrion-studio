@@ -20,6 +20,9 @@ import { codeTrust } from './harness/migrations';
 import { PROFILES, SETTINGS } from './harness/profiles';
 import { DIFF, HOSTILE_REVIEW, REVIEW } from './harness/trust';
 import i18n from './i18n';
+import { buildCommands } from './keyboard/commands';
+import { CommandPalette } from './keyboard/CommandPalette';
+import { ShortcutHelp } from './keyboard/ShortcutHelp';
 import type { SessionState } from './session';
 import { DeleteProfileDialog, PasswordDialog } from './views/connections/ConnectionDialogs';
 import { ConnectionWizard } from './views/connections/ConnectionWizard';
@@ -59,6 +62,24 @@ const migrations: typeof fetch = async (input) => {
 };
 
 const PAGES: [string, string, () => ReactElement][] = [
+  [
+    'command palette (STU-052)',
+    '/',
+    () => (
+      <CommandPalette
+        open
+        commands={buildCommands({
+          t: i18n.t.bind(i18n),
+          path: '/',
+          theme: 'system',
+          density: 'compact',
+          openHelp: noop,
+        })}
+        onClose={noop}
+      />
+    ),
+  ],
+  ['shortcut help (STU-052)', '/', () => <ShortcutHelp open onClose={noop} />],
   ['start page', '/', () => <App fetcher={health} heartbeat={false} />],
   ['connections', '/connections', () => <App fetcher={health} heartbeat={false} />],
   ['settings', '/settings', () => <App fetcher={health} heartbeat={false} />],

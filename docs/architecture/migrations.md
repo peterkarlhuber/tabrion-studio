@@ -83,9 +83,13 @@ worker runs), so no file of the project is imported while the worker starts.
   group (POSIX), which also ends the children the project's code started in it. Studio then waits at most 5 seconds
   for the killed worker and never for the pipe, so a child that left the process group (its own session) cannot hold
   the request. Such a child itself keeps running until it ends.
-- **Windows.** There is no process group: Studio kills only the worker, and children of the project's code are not
-  bounded. The answer is read by a thread; after a timeout that thread can stay blocked while such a child holds the
-  pipe (docs/TODO.md, TD-024).
+- **Windows.** There is no process group. Instead, the worker goes into a job object with
+  `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before it gets its request. Closing the job after the answer or the timeout
+  ends the worker and every process it started, and they cannot leave the job. If the job cannot be made (an old
+  Windows that does not allow nested jobs), only the worker is killed. The answer is read by a thread, which owns the
+  answer pipe and closes it when its read ends; Studio waits at most 5 seconds for it after the worker is gone.
+  `test_children_end_with_the_worker_on_every_platform` checks this on every platform; on Windows it runs in the
+  `backend test (windows-latest)` job of `ci.yml` (TD-024).
 
 ## Threat model entry
 
@@ -107,7 +111,8 @@ What the measure does not cover. Trusting the code means trusting it as you woul
 - **Modules on `prepend_sys_path` are not covered by the digest.** A revision file can import other modules of the
   project, and those modules are part of the trusted code. A change to them does not ask for trust again; only
   `alembic.ini` and the revision files do.
-- **Windows:** children of the project's code are not bounded (see the worker).
+- **Windows:** children of the project's code are bounded by the job object only when Windows lets Studio make one
+  (see the worker).
 
 The trust is for the project's code as a whole. The dialog's text says so (see [The page](#the-page)). Doc 03 section 7.3 T-08 ("Alembic `env.py`
 is not run: status via `ScriptDirectory`") needs this entry as a new row. The planning documents are kept by the

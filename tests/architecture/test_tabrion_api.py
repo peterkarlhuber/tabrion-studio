@@ -58,4 +58,4 @@ def test_mutation_probe_turns_the_check_red(tmp_path: Path) -> None:
     bad.write_text("from tabrion._sa.database import Database\n", encoding="utf-8")
     result = subprocess.run([sys.executable, "-I", str(SCRIPT), str(bad)], capture_output=True, text=True, check=False)
     assert result.returncode == 1
-    assert "private Tabrion module tabrion._sa.database" in result.stdout
+    assert "private Tabrion name tabrion._sa.database" in result.stdout

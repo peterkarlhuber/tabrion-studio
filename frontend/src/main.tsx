@@ -5,6 +5,7 @@ import { App } from './App';
 import './i18n';
 import { startSession } from './session';
 import './styles/global.css';
+import { installTooltipDismiss } from './lib/tooltips';
 import { initTheme } from './theme';
 
 const root = document.getElementById('root');
@@ -13,6 +14,7 @@ if (root === null) {
 }
 
 initTheme();
+installTooltipDismiss();
 
 // Redeem the one-time launch token first (it is removed from the address bar at once), then render. With a session
 // the App sends the heartbeat that keeps the local server alive while this tab is open (idle exit, 03 section 4.1).
