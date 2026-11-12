@@ -472,6 +472,24 @@
       "more_one": "Und {{count}} weiterer Befund, nicht angezeigt.",
       "more_other": "Und {{count}} weitere Befunde, nicht angezeigt."
     },
+    "download": {
+      "markdown": "Bericht als Markdown herunterladen",
+      "json": "Bericht als JSON herunterladen",
+      "note": "Für den Bericht läuft die Diagnose auf der angezeigten Verbindung erneut. Er lässt Passwörter, Hosts, Ports, Benutzer- und Datenbanknamen, Dateipfade und Werte weg.",
+      "making": "Der Bericht wird erstellt. Studio führt die Diagnose dafür erneut aus…",
+      "done": "Bericht heruntergeladen: {{filename}}",
+      "canceled": "Der Bericht wurde abgebrochen.",
+      "cancelNotTaken": "Der Bericht wurde verworfen und nichts gespeichert, aber Studio konnte seine Diagnose auf dem Server nicht stoppen. Sie endet am Zeitlimit der Verbindung."
+    },
+    "backup": {
+      "title": "Sicherungen",
+      "lead": "Hinweise zu Sicherungen. Sie sind keine Befunde, die Zusammenfassung oben zählt sie also nicht mit.",
+      "none": "Keine Hinweise zu Sicherungen: Studio hat dazu nichts anzumerken.",
+      "unchecked": "Sicherungen wurden in diesem Lauf nicht geprüft, daher sagt dies nichts über sie aus. Führe die Diagnose erneut aus.",
+      "invalid": "Die Hinweise zu Sicherungen in der Antwort konnten nicht gelesen werden, daher wird keiner angezeigt.",
+      "more_one": "Und {{count}} weiterer Hinweis zu Sicherungen, nicht angezeigt.",
+      "more_other": "Und {{count}} weitere Hinweise zu Sicherungen, nicht angezeigt."
+    },
     "titles": {
       "STU-DX-001": "Produktionsverbindung ohne geprüftes Zertifikat",
       "STU-DX-002": "Schwaches TLS zu einem entfernten Host",
@@ -482,7 +500,17 @@
       "STU-DX-007": "Künftige Tabellen werden beschreibbar sein",
       "STU-DX-008": "Nicht jede Prüfung lief",
       "STU-DX-009": "Fremdschlüssel konnten nicht geprüft werden",
-      "STU-DX-010": "Sitzungseinstellungen fehlen für die Rolle oder die Datenbank"
+      "STU-DX-010": "Sitzungseinstellungen fehlen für die Rolle oder die Datenbank",
+      "STU-BK-001": "Keine Sicherung gefunden",
+      "STU-BK-002": "Die neueste Sicherung ist älter als die Daten",
+      "STU-BK-003": "Sicherungen sind für andere Benutzer lesbar",
+      "STU-BK-004": "Sicherungen konnten nicht gesucht werden",
+      "STU-BK-005": "Suche nach Sicherungen abgebrochen",
+      "STU-BK-010": "WAL-Archivierung ist aus",
+      "STU-BK-011": "WAL-Archivierung schlägt fehl",
+      "STU-BK-012": "Noch nichts archiviert",
+      "STU-BK-013": "Dieser Standby archiviert nicht",
+      "STU-BK-014": "Archivierungsstatus nicht lesbar"
     }
   },
   "settings": {
@@ -696,7 +724,9 @@
       "disk_full": "Der Datenbank ist der Speicherplatz ausgegangen.",
       "resource": "Der Datenbank ist der Arbeitsspeicher oder eine andere Ressource ausgegangen. Versuche es später noch einmal.",
       "other": "Die Datenbank hat einen Fehler gemeldet ({{kind}})."
-    }
+    },
+    "report_invalid": "Studio konnte den Bericht nicht erstellen: Die Anfrage war ungültig.",
+    "report_unavailable": "Studio konnte die Namen, die der Bericht weglässt, nicht vom Server lesen, und hat daher keinen Bericht erstellt. Versuche es erneut, wenn die Verbindung frei ist, oder verbinde neu."
   },
   "keyboard": {
     "palette": {

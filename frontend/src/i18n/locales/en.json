@@ -472,6 +472,24 @@
       "more_one": "And {{count}} more finding, not shown.",
       "more_other": "And {{count}} more findings, not shown."
     },
+    "download": {
+      "markdown": "Download Markdown report",
+      "json": "Download JSON report",
+      "note": "The report runs the diagnosis again on the shown connection. It leaves out passwords, hosts, ports, user and database names, file paths and values.",
+      "making": "Making the report. Studio runs the diagnosis again for it…",
+      "done": "Report downloaded: {{filename}}",
+      "canceled": "The report was canceled.",
+      "cancelNotTaken": "The report was dropped and nothing was saved, but Studio could not stop its diagnosis on the server. It ends at the connection's time limit."
+    },
+    "backup": {
+      "title": "Backups",
+      "lead": "Hints about backups. They are not findings, so the summary above does not count them.",
+      "none": "No backup hints: Studio found nothing to point out about backups.",
+      "unchecked": "Backups were not checked in this run, so this says nothing about them. Run the diagnosis again.",
+      "invalid": "The backup hints in the answer could not be read, so none are shown.",
+      "more_one": "And {{count}} more backup hint, not shown.",
+      "more_other": "And {{count}} more backup hints, not shown."
+    },
     "titles": {
       "STU-DX-001": "Production connection without a verified certificate",
       "STU-DX-002": "Weak TLS to a remote host",
@@ -482,7 +500,17 @@
       "STU-DX-007": "Future tables will be writable",
       "STU-DX-008": "Not every check ran",
       "STU-DX-009": "Foreign keys could not be checked",
-      "STU-DX-010": "Session settings missing for the role or database"
+      "STU-DX-010": "Session settings missing for the role or database",
+      "STU-BK-001": "No backup found",
+      "STU-BK-002": "Newest backup is older than the data",
+      "STU-BK-003": "Backups readable by other users",
+      "STU-BK-004": "Backups could not be searched",
+      "STU-BK-005": "Backup search cut short",
+      "STU-BK-010": "WAL archiving is off",
+      "STU-BK-011": "WAL archiving fails",
+      "STU-BK-012": "Nothing archived yet",
+      "STU-BK-013": "This standby does not archive",
+      "STU-BK-014": "Archiving state not readable"
     }
   },
   "settings": {
@@ -696,7 +724,9 @@
       "disk_full": "The database ran out of disk space.",
       "resource": "The database ran out of memory or another resource. Try again later.",
       "other": "The database reported an error ({{kind}})."
-    }
+    },
+    "report_invalid": "Studio could not make the report: the request was not valid.",
+    "report_unavailable": "Studio could not read from the server the names the report leaves out, so it made no report. Try again when the connection is free, or connect again."
   },
   "keyboard": {
     "palette": {

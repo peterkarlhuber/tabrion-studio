@@ -79,7 +79,9 @@ It only reads; nothing on the page writes to a database.
 
 - **Run.** The user picks a profile and chooses "Run diagnosis". The diagnosis starts only on that click, since
   SQLite's `quick_check` can take a while. The page opens the profile's read-only connection
-  (`POST /api/connections`; for a PROD profile D-02 first, and Cancel opens nothing) and posts
+  (`POST /api/connections`; for a PROD profile D-02 first through the shared gate of the connection manager,
+  `useConnect` of STU-008, so a profile confirmed in this page session is not asked again; Cancel opens nothing) and
+  posts
   `POST /api/connections/{id}/diagnostics` with `{}` as JSON. "Run again" posts it again on the shown connection
   and never opens one, so D-02 cannot be skipped.
 - **Cancel.** While the connection opens, Cancel drops the request and no diagnosis starts. While the diagnosis
@@ -88,7 +90,25 @@ It only reads; nothing on the page writes to a database.
   way. A request counter drops every answer that arrives after a newer run or a profile switch. A cancel that
   does not take (`{"canceled": false}` or a failed request) says so and can be tried again (L-1 of
   `stu-014-ui-review.md`).
-- **Keyboard.** "Run diagnosis", "Cancel" and "Run again" stay mounted and use `aria-disabled`, so the focus never
+- **Backup hints (TD-036).** The answer's `backup.hints` (`STU-BK-*`) are listed under their own heading "Backups"
+  below the findings, shown like findings (severity, code, en/de title of Studio's codes, the server's English detail
+  and remedy, escaped and capped), at most 20, and not counted in the summary. The facts are not shown. A `backup`
+  without a hints list says that the hints could not be read (never "no hints"); an answer without `backup` shows no
+  section. No hints from a run that did not check the backups (`STU-DX-008` among the findings, or the facts
+  `searched: false` / `archive_mode: null`) says "Backups were not checked in this run" (L-1 of the TD-036 review). Since the page shows the hints, the page route passes `replace=True` like the report, so `TAB-PG-020`
+  gives way to `STU-BK-010` there too.
+- **Report (TD-036).** "Download Markdown report" and "Download JSON report" post `.../diagnostics/report` with
+  `{"format"}` on the shown connection (never a new one, so no D-02 and no way past it). The server runs the
+  diagnosis again; the page saves the answer through an object URL under the `Content-Disposition` name when it has
+  the server's form (`tabrion-studio-diagnosis-<letters, digits and ->.md|json`), else under a fixed name, and only
+  when the media type is the one asked for (`studio.answer_invalid` otherwise). A refusal is the page's en/de text
+  (`studio.report_unavailable`, `studio.report_invalid`, the connection problems). Cancel, a profile switch or
+  leaving the page aborts the report request (`AbortController`), posts the cancel route and drops the answer;
+  nothing is saved then. Cancel says "canceled" only when the server confirms it; a cancel that lands before the
+  server registered the report's diagnosis says that the diagnosis runs on to the time limit (N-2 of the review).
+  The download buttons check the phase and the shown diagnosis as of now (refs), so two presses before the next
+  render start one report (N-1).
+- **Keyboard.** "Run diagnosis", "Cancel", "Run again" and the two downloads stay mounted and use `aria-disabled`, so the focus never
   drops to the page when a run starts, ends or is canceled (C-2). The status region stays in the accessibility tree
   while it is empty (L-2).
 - **Findings.** A summary counts the findings per severity ("1 error · 2 warnings · 1 note", or "No findings").
@@ -103,23 +123,28 @@ It only reads; nothing on the page writes to a database.
   at 32, titles at 160, details and remedies at 1000 characters. At most 100 findings are listed, then "And N more
   findings"; the summary counts all of them. Nothing is rendered as HTML.
 - **Fail closed.** An answer without a `findings` list shows nothing of it (`studio.answer_invalid`). A `ran_at`
-  that a `Date` cannot hold is no time (C-1); fields the page does not know, such as STU-025's `backup`, are
-  ignored until the page shows them. A finding
+  that a `Date` cannot hold is no time (C-1); fields the page does not know, such as the backup facts, are
+  ignored. A finding
   without a code is left out. An unknown severity is shown with the errors as "Unknown severity" and counted on its
   own, never as a lesser one. The page counts the findings itself and does not use `counts`.
 
 Deviations from 08 section 4.9 (TD-032): the route `/diagnostics` with a profile picker instead of
 `/c/:conn/diagnostics` (no connection workspace yet, TD-011; like `/migrations`), English details and remedies, no
 progress display (the backend reports none), no documentation link per finding and no "OK" rows. The report export
-and the backup hints are STU-025.
+and the backup hints of STU-025 are on the page since TD-036; the report from the command line is still open (TD-036).
 
 Page tests: `DiagnosticsView.test.tsx` (run, D-02, run again, escaping and caps, the fail-closed parser, cancel
-before and during the run, profile switch and unmount, problems, German),
-`tests/unit/test_diagnostics_page.py` (the page's titles against the backend's), axe in jsdom (`a11y.test.tsx`) and
+before and during the run, profile switch and unmount, problems, German; TD-036: the backup hints, their parser and
+caps, both downloads, the file name rule, refusals and a wrong media type, cancel, switch and unmount during a report,
+the keyboard focus, D-02 through the shared page session),
+`tests/unit/test_diagnostics_page.py` (the page's `STU-DX-*` and `STU-BK-*` titles against the backend's), axe in jsdom (`a11y.test.tsx`) and
 in Chromium in light and dark, English and German, with the findings shown and while a run is canceled
 (`e2e/diagnostics.spec.ts`, `e2e/a11y.spec.ts`). Against a real `tabrion-studio` (`e2e/backend.spec.ts`, with
 `TABRION_STUDIO_E2E_PYTHON`), a profile made in the page for an SQLite file with rows written with foreign keys off
-and mode 0644 shows `STU-DX-005` and `TAB-SQ-003`, no session finding, not the file name, and passes axe.
+and mode 0644 shows `STU-DX-005` and `TAB-SQ-003`, no session finding, not the file name, and passes axe; it also
+shows the backup hint `STU-BK-001` and downloads both reports from the real route under the server's name, without
+the file's name or folder. `e2e/diagnostics.spec.ts` also runs the backup section through axe in light and dark,
+English and German, downloads the Markdown report by keyboard alone, and shows a refused report in light and dark.
 
 ## Tests
 
@@ -178,9 +203,9 @@ not read: it may hold a secret, and only a superuser may read it. Backups made w
 archive WAL are not visible. When the hints hold `STU-BK-010`, tabrion's `TAB-PG-020` ("WAL archiving is off") is
 left out of the findings, since `STU-BK-010` says the same with the archiver's state (one cause, one entry). It is
 decided after the backup step (C-2 of the review): after a cancel, the time limit or `STU-BK-014`, and whenever the
-archiver read gives no `STU-BK-010`, `TAB-PG-020` stays. The page route keeps `TAB-PG-020` in any case
-(`run(..., replace=False)`, D-2 of the delta review) until the view shows `backup.hints` (TD-036); only the report,
-which shows the hints, replaces it.
+archiver read gives no `STU-BK-010`, `TAB-PG-020` stays. The page route kept `TAB-PG-020` in any case
+(`run(..., replace=False)`, D-2 of the delta review) until the view showed `backup.hints`; since TD-036 the page
+shows them, and the page route replaces it like the report.
 
 | Code | Severity | Hint |
 |---|---|---|
@@ -254,4 +279,4 @@ the report is rendered. The JSON report is plain JSON.
 | `tests/security/test_diagnosis_report.py` (report) | Both formats (media type, file name, JSON keys and times, Markdown headings), the hostile Markdown text, the route (`Content-Disposition`, `no-store`, the view's `backup`, `studio.report_invalid` for other formats and bodies, an unknown connection, the CSRF and session checks). |
 | `tests/security/test_diagnosis_report.py` (canaries) | `tabrion-canary-<uuid>` as the SQLite file's folder and name, a backup's name, a stored value and a parameter value, with the session, CSRF, launch and control tokens and secret-shaped finding texts (URL passwords, DSN `password=`, bearer, API key, cookie) over HTTP; on PostgreSQL as the role's password, its `application_name` setting, a stored value and a parameter value, with DSN-shaped texts (marker `postgres_superuser`). Neither format nor the log holds the canary; the PostgreSQL report holds no host, port, user or database name. A registered secret in any finding text is redacted. |
 | `tests/security/test_diagnosis_report.py` (review `stu-025-review.md`) | C-1: the PostgreSQL canary role has a schema named exactly like it (`"$user"`) and may create in one named exactly like the database; the plain diagnosis names both (the control), and neither report holds either name, raw or Markdown-escaped, but `[role]` and `[database]`; whole-identifier replacement. C-2: `TAB-PG-020` stays for `STU-BK-014`, a disagreeing archiver read, and a cancel or the time limit during the archiver query (which is `STU-DX-008`, never `STU-BK-014`). L-1 `@`. L-2 a linked `backups`/`backup` folder. L-3 the scan stops between entries, and a cancel during it is `STU-DX-008`. L-4 the separator rule and `STU-BK-005`. L-5 and L-6: modes `0o640`, `0o604` count, `0o620`, `0o602`, `0o611` do not; the `lstat` check and `O_NOFOLLOW` each alone; a valid JSON body over 1 KiB; JSON key redaction; the hint order; the Markdown side's own redaction. 16 targeted mutations (the review's survivors and each fix) are all killed. |
-| `tests/security/test_diagnosis_report.py` (delta review) | D-1: no names from the server (an error, no row, a short or empty row) is `studio.report_unavailable`; the server's names hide the OS login role of a profile without `user`, also as the profile name. D-2: the page route keeps `TAB-PG-020` next to `STU-BK-010`, the report replaces it, and the route answers 503 when the names cannot be read. N-1 Studio's sentences stay readable; N-2 longest name first and the string facts; N-3 a folder swapped for a link after the check is not read; N-4 multi-dot names; N-5 the exact entry cap. 15 targeted mutations killed (the two real fall-back mutants of D-1 among them). |
+| `tests/security/test_diagnosis_report.py` (delta review) | D-1: no names from the server (an error, no row, a short or empty row) is `studio.report_unavailable`; the server's names hide the OS login role of a profile without `user`, also as the profile name. D-2: the page route keeps `TAB-PG-020` next to `STU-BK-010`, the report replaces it, and the route answers 503 when the names cannot be read (since TD-036, the page route replaces it too: `test_d2_the_page_and_the_report_replace_tabrions_archive_finding`). N-1 Studio's sentences stay readable; N-2 longest name first and the string facts; N-3 a folder swapped for a link after the check is not read; N-4 multi-dot names; N-5 the exact entry cap. 15 targeted mutations killed (the two real fall-back mutants of D-1 among them). |
