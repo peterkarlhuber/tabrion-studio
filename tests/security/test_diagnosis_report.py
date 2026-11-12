@@ -36,7 +36,7 @@ from tabrion_studio.config.schema import Profile, SecretRef
 from tabrion_studio.logs import forget_secrets, register_secret
 from tabrion_studio.services import backup_hints
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
-from tabrion_studio.services.diagnosis_report import DiagnosisReports, ReportError, markdown_text
+from tabrion_studio.services.diagnosis_report import DiagnosisReports, ReportError, hide_names, markdown_text
 from tabrion_studio.services.diagnostics import BACKUP_CODES, Diagnostics
 from tests.security.test_read_only import Source
 from tests.support.access import ORIGIN, TOKEN, make_studio
@@ -182,20 +182,22 @@ def test_the_search_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     for number in range(5):
         (tmp_path / f"a{number}.txt").write_text("x")
     monkeypatch.setattr(backup_hints, "MAX_ENTRIES", 3)
-    assert backup_hints.sqlite_hints(database, clock=lambda: NOW)["facts"]["search_truncated"] is True
+    doc = backup_hints.sqlite_hints(database, clock=lambda: NOW)
+    assert doc["facts"]["search_truncated"] is True
+    assert hint_codes(doc) == {"STU-BK-001": "warning", "STU-BK-005": "info"}  # L-4: a hint, not only a fact
 
 
 def test_an_unreadable_folder_is_a_hint(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     database = sqlite_file(tmp_path / "shop.db")
     (tmp_path / "backups").mkdir()
-    real = os.scandir
+    real = backup_hints._open_folder
 
-    def scandir(path: Any) -> Any:
-        if Path(path).name == "backups":
+    def open_folder(directory: Path) -> int | None:
+        if directory.name == "backups":
             raise PermissionError(13, "denied")
-        return real(path)
+        return real(directory)
 
-    monkeypatch.setattr(os, "scandir", scandir)
+    monkeypatch.setattr(backup_hints, "_open_folder", open_folder)
     found = hint_codes(backup_hints.sqlite_hints(database, clock=lambda: NOW))
     assert found == {"STU-BK-001": "warning", "STU-BK-004": "info"}
 
@@ -209,6 +211,128 @@ def test_no_hint_or_fact_names_a_path_or_file(tmp_path: Path) -> None:
     text = json.dumps(backup_hints.sqlite_hints(database, clock=lambda: NOW))
     _assert_no_canary(text)
     assert str(tmp_path) not in text and "STU-BK-002" in text and "STU-BK-003" in text
+
+
+@posix
+@pytest.mark.parametrize(("mode", "exposed"), [(0o640, 1), (0o604, 1), (0o620, 0), (0o602, 0), (0o611, 0)])
+def test_l5_readable_means_the_read_bits(tmp_path: Path, mode: int, exposed: int) -> None:
+    """L-5 and L-6: group-only and others-only read count; write- or execute-only bits do not."""
+    database = sqlite_file(tmp_path / "shop.db")
+    touch(database, NOW - DAY)
+    copy_of(database, tmp_path / "shop-1.db", mode=mode, at=NOW)
+    doc = backup_hints.sqlite_hints(database, clock=lambda: NOW)
+    assert doc["facts"]["backups_readable_by_others"] == exposed
+    assert ("STU-BK-003" in hint_codes(doc)) is bool(exposed)
+
+
+@posix
+def test_l2_a_linked_backup_folder_is_not_followed(tmp_path: Path) -> None:
+    project, elsewhere = tmp_path / "project", tmp_path / "elsewhere"
+    database = sqlite_file(project / "shop.db")
+    copy_of(database, elsewhere / "shop-1.db", mode=0o644)
+    (project / "backups").symlink_to(elsewhere, target_is_directory=True)
+    (project / "backup").symlink_to(elsewhere, target_is_directory=True)
+    seen = backup_hints.sqlite_backups(database)
+    assert (seen["found"], seen["exposed"], seen["unreadable"]) == (0, 0, False)
+    copy_of(database, project / "backups-real" / "x.db")  # control: a real subfolder of that name is searched
+    (project / "backups").unlink()
+    (project / "backups-real").rename(project / "backups")
+    (project / "backups" / "x.db").rename(project / "backups" / "shop-2.db")
+    assert backup_hints.sqlite_backups(database)["found"] == 1
+
+
+@posix
+def test_l6_the_lstat_check_alone_refuses_a_linked_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    database = sqlite_file(tmp_path / "shop.db")
+    target = copy_of(database, tmp_path / "elsewhere" / "x.db")
+    (tmp_path / "shop-link.db").symlink_to(target)
+    monkeypatch.setattr(backup_hints, "_has_sqlite_header", lambda *args, **kwargs: True)
+    assert backup_hints.sqlite_backups(database)["found"] == 0
+
+
+@posix
+def test_l6_o_nofollow_alone_refuses_a_linked_file(tmp_path: Path) -> None:
+    database = sqlite_file(tmp_path / "shop.db")
+    target = copy_of(database, tmp_path / "elsewhere" / "x.db")
+    (tmp_path / "shop-link.db").symlink_to(target)
+    assert backup_hints._has_sqlite_header(str(target)) is True  # control
+    assert backup_hints._has_sqlite_header(str(tmp_path / "shop-link.db")) is False
+    folder = os.open(tmp_path, os.O_RDONLY)
+    try:
+        assert backup_hints._has_sqlite_header("shop-link.db", folder=folder) is False
+    finally:
+        os.close(folder)
+
+
+@pytest.mark.parametrize(
+    ("name", "counted"),
+    [("shop.1.db", True), ("shop-1.db", True), ("shop_1.db", True), ("shop1.db", False), ("shopping.db", False),
+     ("xshop-1.db", False)],
+)  # fmt: skip
+def test_l4_a_separator_follows_the_name(tmp_path: Path, name: str, counted: bool) -> None:
+    database = sqlite_file(tmp_path / "shop.db")
+    copy_of(database, tmp_path / name)
+    assert backup_hints.sqlite_backups(database)["found"] == int(counted)
+
+
+def test_l3_the_scan_stops_between_entries(tmp_path: Path) -> None:
+    database = sqlite_file(tmp_path / "shop.db")
+    for number in range(3):
+        (tmp_path / f"note{number}.txt").write_text("x")
+    asked: list[int] = []
+
+    def stop() -> bool:
+        asked.append(1)
+        return len(asked) > 1
+
+    with pytest.raises(backup_hints.ScanStopped):
+        backup_hints.sqlite_backups(database, stop=stop)
+    assert len(asked) == 2
+
+
+def test_l3_a_cancel_during_the_scan_is_stu_dx_008(
+    lite: tuple[Diagnostics, ConnectionRegistry, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagnostics, registry, path = lite
+    for number in range(5):
+        (path.parent / f"note{number}.txt").write_text("x")
+    connection_id = registry.open("project:shop").id
+    real = backup_hints._is_backup_name
+
+    def cancel_then_check(name: str, database: str, stem: str) -> bool:
+        if diagnostics.cancel(connection_id):
+            time.sleep(0.05)  # the cancel thread sets the hook
+        return real(name, database, stem)
+
+    monkeypatch.setattr(backup_hints, "_is_backup_name", cancel_then_check)
+    doc = diagnostics.run(connection_id, backup=True)
+    found = {item["code"]: item["detail"] for item in doc["findings"]}
+    assert "you canceled it" in found["STU-DX-008"] and "backup hints" in found["STU-DX-008"]
+    assert doc["backup"]["hints"] == []
+
+
+def test_l6_hints_are_sorted_by_severity_then_code(
+    lite: tuple[Diagnostics, ConnectionRegistry, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagnostics, registry, _ = lite
+    unsorted = [
+        {"code": code, "severity": severity, "title": "t", "detail": "d", "remedy": "r", "source": "studio"}
+        for code, severity in (("STU-BK-004", "info"), ("STU-BK-003", "warning"), ("STU-BK-001", "warning"))
+    ]
+    monkeypatch.setattr(backup_hints, "sqlite_hints", lambda *args, **kwargs: {"hints": unsorted, "facts": {}})
+    doc = diagnostics.run(registry.open("project:shop").id, backup=True)
+    assert [item["code"] for item in doc["backup"]["hints"]] == ["STU-BK-001", "STU-BK-003", "STU-BK-004"]
+
+
+def test_l6_json_keys_are_redacted(
+    lite: tuple[Diagnostics, ConnectionRegistry, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    diagnostics, registry, _ = lite
+    register_secret(CANARY)
+    facts = {"engine": "sqlite", f"key {CANARY}": 1, f"password={CANARY}": "x"}
+    monkeypatch.setattr(backup_hints, "sqlite_hints", lambda *args, **kwargs: {"hints": [], "facts": facts})
+    report = DiagnosisReports(registry, diagnostics).build(registry.open("project:shop").id, "json")
+    _assert_no_canary(report.body.decode("utf-8"))
 
 
 # PostgreSQL backup hints: the rules.
@@ -293,7 +417,52 @@ def test_backup_hints_replace_tabrions_archive_finding() -> None:
     full = _fake_run("prod", _row("off", archived=0), backup=True)
     assert "TAB-PG-020" not in {item["code"] for item in full["findings"]}
     assert hint_codes(full["backup"]) == {"STU-BK-010": "warning"}
-    assert "TAB-PG-020" in BACKUP_CODES
+    assert BACKUP_CODES == {"TAB-PG-020": "STU-BK-010"}
+
+
+@pytest.mark.parametrize("row", [None, _row(archived=0), _row(archived_at=NOW)])
+def test_c2_tabrions_archive_finding_stays_without_stu_bk_010(row: tuple[Any, ...] | None) -> None:
+    """C-2: TAB-PG-020 goes only when STU-BK-010 is given: not for STU-BK-014, nor when tabrion and the archiver
+    disagree (archive_mode changed between the two reads)."""
+    doc = _fake_run("dev", row, backup=True)
+    assert "TAB-PG-020" in {item["code"] for item in doc["findings"]}
+    assert "STU-BK-010" not in hint_codes(doc["backup"])
+
+
+@pytest.mark.parametrize("stop", ["cancel", "limit"])
+def test_c2_a_stopped_archiver_keeps_tabrions_finding_and_says_so(stop: str) -> None:
+    """C-2 and L-6: a cancel (or the time limit) during the archiver query is STU-DX-008 "backup hints", never
+    STU-BK-014, and TAB-PG-020 stays."""
+    holder: dict[str, Diagnostics] = {}
+
+    class Stopping(FakePostgres):
+        def fetch(self, sql: str, params: Any = None, *, cancel: Any = None) -> list[tuple[Any, ...]]:
+            if sql == backup_hints.ARCHIVER_SQL:
+                if stop == "cancel":
+                    assert holder["diagnostics"].cancel("c_fake")
+                deadline = time.monotonic() + 3
+                while not cancel.requested and time.monotonic() < deadline:
+                    time.sleep(0.005)
+                raise TabrionError("db.query_canceled")
+            return super().fetch(sql, params, cancel=cancel)
+
+    connection = Stopping("dev", [Finding("TAB-PG-020", Severity.INFO, "t", "d", "r")], _row("off"))
+    if stop == "limit":
+        connection.timeout_s = 0.2
+    profile = Profile("pg", "postgresql", "dev", host="db.example.internal", database="app", sslmode="verify-full")
+
+    class Registry:
+        source = Source(profiles={"user:pg": profile})
+
+        def get(self, _connection_id: object) -> FakePostgres:
+            return connection
+
+    diagnostics = Diagnostics(Registry(), clock=lambda: NOW)  # type: ignore[arg-type]
+    holder["diagnostics"] = diagnostics
+    doc = diagnostics.run("c_fake", backup=True)
+    found = {item["code"]: item["detail"] for item in doc["findings"]}
+    assert "TAB-PG-020" in found and "backup hints" in found["STU-DX-008"]
+    assert doc["backup"]["hints"] == []
 
 
 def test_an_unreadable_archiver_is_a_hint_not_a_failure() -> None:
@@ -387,6 +556,21 @@ def test_markdown_text_cannot_become_markup() -> None:
         "www\\.evil.example \\&amp;"
     )
     assert markdown_text("a\r\nb\u2028c\u202ed\x00e") == "a b c d e"
+    assert markdown_text("@octocat jdoe@example.com") == "\\@octocat jdoe\\@example.com"  # L-1
+
+
+def test_markdown_text_scrubs_on_its_own() -> None:
+    """L-6: the Markdown side redacts too, without the JSON-side ``_clean`` before it."""
+    register_secret(CANARY)
+    _assert_no_canary(markdown_text(f"a {CANARY} b"))
+    _assert_no_canary(markdown_text(f"postgresql://u:{CANARY}@h/db"))
+
+
+def test_hide_names_whole_identifiers_only() -> None:
+    names = {"app": "[role]", "shop": "[database]", "shop_owner": "[role]"}
+    assert hide_names("schema(s) app, shop; application_name, shop_owner, apps, $app, app.t", names) == (
+        "schema(s) [role], [database]; application_name, [role], apps, $app, [role].t"
+    )
 
 
 def test_the_report_route(lite: tuple[Diagnostics, ConnectionRegistry, Path], tmp_path: Path) -> None:
@@ -412,7 +596,8 @@ def test_the_report_route(lite: tuple[Diagnostics, ConnectionRegistry, Path], tm
     for body in bodies:
         refused = studio.client.post(route, json=body, headers=headers)
         assert (refused.status_code, refused.json()["code"]) == (400, "studio.report_invalid")
-    for raw in (b"{", b"x" * 2000):
+    oversized = json.dumps({"format": "json", "x": "a" * 1100}).encode()  # valid JSON over the 1 KiB cap (L-6)
+    for raw in (b"{", b"x" * 2000, oversized):
         refused = studio.client.post(route, content=raw, headers={**headers, "Content-Type": "application/json"})
         assert refused.json()["code"] == "studio.report_invalid"
     gone = studio.client.post("/api/connections/c_nope/diagnostics/report", json={"format": "json"}, headers=headers)
@@ -489,26 +674,34 @@ def test_canary_sqlite_report_over_http(tmp_path: Path, monkeypatch: pytest.Monk
 
 
 @pytest.fixture
-def canary_role() -> Iterator[tuple[str, sqlalchemy.Engine]]:
-    """A login role whose password and ``application_name`` setting are the canary, with a table holding it."""
+def canary_role() -> Iterator[tuple[str, str, sqlalchemy.Engine]]:
+    """A login role whose password and ``application_name`` setting are the canary, with a table holding it. C-1 of
+    ``stu-025-review.md``: the role has its own ``"$user"`` schema (named exactly like the role) and may create in a
+    schema named exactly like the database, which its ``search_path`` holds, so tabrion's TAB-PG-009 names both."""
     if PG_URL is None or PG_SUPERUSER_URL is None:
         pytest.skip("TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed")
-    role = f"stu025_report_{secrets.token_hex(4)}"
+    token = secrets.token_hex(4)
+    role, data = f"stu025_report_{token}", f"stu025_data_{token}"
     admin = sqlalchemy.create_engine(sqlalchemy.make_url(PG_SUPERUSER_URL).set(drivername="postgresql+psycopg"))
-    database = sqlalchemy.make_url(PG_URL).database
+    database = str(sqlalchemy.make_url(PG_URL).database)
     with admin.begin() as connection:
         connection.exec_driver_sql(f"CREATE ROLE {role} LOGIN PASSWORD '{CANARY}'")
         connection.exec_driver_sql(f"ALTER ROLE {role} SET application_name = '{CANARY}'")
+        connection.exec_driver_sql(f'ALTER ROLE {role} SET search_path = "$user", "{database}", public')
         connection.exec_driver_sql(f'GRANT CONNECT ON DATABASE "{database}" TO {role}')
-        connection.exec_driver_sql(f"CREATE SCHEMA {role}_data AUTHORIZATION {role}")
-        connection.exec_driver_sql(f"CREATE TABLE {role}_data.secret (v text)")
-        connection.exec_driver_sql(f"INSERT INTO {role}_data.secret VALUES ('{CANARY}')")  # noqa: S608 (test names)
-        connection.exec_driver_sql(f"ALTER TABLE {role}_data.secret OWNER TO {role}")
+        connection.exec_driver_sql(f"CREATE SCHEMA {role} AUTHORIZATION {role}")
+        connection.exec_driver_sql(f'CREATE SCHEMA IF NOT EXISTS "{database}"')
+        connection.exec_driver_sql(f'GRANT USAGE, CREATE ON SCHEMA "{database}" TO {role}')
+        connection.exec_driver_sql(f"CREATE SCHEMA {data} AUTHORIZATION {role}")
+        connection.exec_driver_sql(f"CREATE TABLE {data}.secret (v text)")
+        connection.exec_driver_sql(f"INSERT INTO {data}.secret VALUES ('{CANARY}')")  # noqa: S608 (test names)
+        connection.exec_driver_sql(f"ALTER TABLE {data}.secret OWNER TO {role}")
     try:
-        yield role, admin
+        yield role, data, admin
     finally:
         with admin.begin() as connection:
-            connection.exec_driver_sql(f"DROP SCHEMA IF EXISTS {role}_data CASCADE")
+            for schema in (data, role, database):
+                connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
             connection.exec_driver_sql(f"DROP OWNED BY {role}")
             connection.exec_driver_sql(f"DROP ROLE IF EXISTS {role}")
         admin.dispose()
@@ -526,33 +719,38 @@ def _pg_registry(user: str, password: str, **profile: Any) -> ConnectionRegistry
 
 @pytest.mark.postgres_superuser
 def test_canary_postgres_report(
-    canary_role: tuple[str, sqlalchemy.Engine], monkeypatch: pytest.MonkeyPatch, caplog: Any
+    canary_role: tuple[str, str, sqlalchemy.Engine], monkeypatch: pytest.MonkeyPatch, caplog: Any
 ) -> None:
     """The password (also inside a DSN), a parameter value, a setting's value and a stored value; and no host, port,
-    user or database name in the report."""
+    login role or database name in the report, also where tabrion names them as schemas (C-1)."""
     caplog.set_level(logging.DEBUG)
-    role, _ = canary_role
+    role, data, _ = canary_role
     url = sqlalchemy.make_url(PG_URL or "")
+    database = str(url.database)
     registry = _pg_registry(role, CANARY, read_only_role=True)
     try:
         connection = registry.open("user:pg")
-        assert connection.fetch(f"SELECT v FROM {role}_data.secret WHERE v = :v", {"v": CANARY}) == [(CANARY,)]  # noqa: S608
+        assert connection.fetch(f"SELECT v FROM {data}.secret WHERE v = :v", {"v": CANARY}) == [(CANARY,)]  # noqa: S608
+        diagnostics = Diagnostics(registry)
+        # The control: the plain diagnosis does name the role's and the database's schema (TAB-PG-009).
+        plain = json.dumps(diagnostics.run(connection.id))
+        assert re.search(rf"\b{role}\b", plain) and re.search(rf"\b{database}\b", plain), plain
         hostile = _hostile_findings(f"host=db.internal user=app password={CANARY}", f"PGPASSWORD={CANARY}")
         real = OpenConnection.tabrion_findings
         monkeypatch.setattr(
             OpenConnection, "tabrion_findings", lambda self, **kwargs: [*real(self, **kwargs), *hostile]
         )
-        reports = DiagnosisReports(registry, Diagnostics(registry))
+        reports = DiagnosisReports(registry, diagnostics)
         built = [reports.build(connection.id, report_format) for report_format in ("markdown", "json")]
     finally:
         registry.close_all()
     for report in built:
         text = report.body.decode("utf-8") + report.filename
         _assert_no_canary(text)
-        # The schema is named after the role on purpose: tabrion may name schemas (database objects, not secrets).
-        for name in (f"{role} ", f"{role}\n", f"user={role}", str(url.database), str(url.host), f":{url.port}"):
+        for name in (role, database, str(url.host), f":{url.port}"):
             _assert_absent(text, name)
-        for code in ("STU-DX-003", "STU-DX-006", "STU-DX-010", "STU-BK-01"):
+        assert "[role]" in text.replace("\\", "") and "[database]" in text.replace("\\", "")
+        for code in ("STU-DX-003", "STU-DX-006", "STU-DX-010", "STU-BK-01", "TAB-PG-009"):
             assert code in text  # the diagnosis ran: an owner that the profile calls read-only, its settings
     _assert_no_canary(caplog.text)
 

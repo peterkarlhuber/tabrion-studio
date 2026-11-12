@@ -14,8 +14,11 @@ All notable changes to this project are documented here. The format follows
   redaction, and the Markdown escapes text from the database. Canary tests cover both formats and the log
   (`studio.report_invalid` is new). Every diagnosis now carries backup hints (`backup: {hints, facts}`,
   `STU-BK-001..014`): SQLite backups next to the database (none found, older than the data, readable by others), and
-  PostgreSQL's `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, a standby). In such a run
-  tabrion's `TAB-PG-020` is replaced by `STU-BK-010`.
+  PostgreSQL's `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, a standby). tabrion's
+  `TAB-PG-020` gives way to `STU-BK-010` only when that hint is given. After the review, the report shows the login
+  role and the database as `[role]` and `[database]`, also where tabrion names them as schemas; Markdown escapes `@`;
+  a linked `backups` folder is not followed; the file scan stops at a cancel or the time limit; a cut search is the
+  hint `STU-BK-005`; "readable by others" means the read bits.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most

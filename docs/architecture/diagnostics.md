@@ -103,18 +103,32 @@ not counted in `counts`. `backup.facts` holds what they are based on. Code: `ser
 
 **SQLite.** `tabrion.sqlite.backup` has no naming rule, so Studio counts as a backup a regular file (no link, no
 FIFO) in the database's folder or in its `backups` or `backup` subfolder whose name is the database's name without
-its suffix followed by `.`, `-` or `_` (for `shop.db`: `shop-v2.db`, `shop.db.bak`, `shop_2026-11-12.db`). It must
-start with SQLite's 16-byte file header; the database itself, its `-wal`, `-shm` and `-journal` files and tabrion's
-`.tmp` files do not count. At most 10 000 entries of each folder are read (`search_truncated`), and only the
-first 16 bytes of a candidate, opened with `O_NOFOLLOW`. The database's last change is the newer modification time
-of the file and its `-wal` file. A file of another database that happens to start with the same name (`shop-orders.db`)
-counts too; the hint says that Studio looked only there.
+its last suffix followed by a separator `.`, `-` or `_` (for `shop.db`: `shop-v2.db`, `shop.db.bak`,
+`shop_2026-11-12.db`; not `shop1.db` or `shopping.db`). It must start with SQLite's 16-byte file header; the
+database itself, its `-wal`, `-shm` and `-journal` files and tabrion's `.tmp` files do not count. The details, after
+the review (`stu-025-review.md`):
+
+- A `backups` or `backup` subfolder that is a link is not followed (L-2): it is checked with `lstat`, and on POSIX
+  each folder is opened with `O_DIRECTORY | O_NOFOLLOW` and listed through that descriptor, with every candidate
+  opened relative to it. A candidate is refused twice over: `lstat` must say regular file, and it is opened with
+  `O_NOFOLLOW` and `O_NONBLOCK` and checked with `fstat`. Only its first 16 bytes are read.
+- The scan asks the run's cancel hook before every entry and stops at the time limit or a cancel (L-3); the step is
+  then named "backup hints" in `STU-DX-008`.
+- At most 10 000 entries of each folder are read, in no particular order; a cut search is the hint `STU-BK-005`
+  as well as the fact `search_truncated` (L-4).
+- "Readable by others" means the read bits `0o044` (L-5); a write- or execute-only bit does not count.
+- Accepted (L-4): another database whose name starts with the same name and a separator (`shop-orders.db`, or any
+  `a_*` file next to `a.db`) counts too; the hint says where Studio looked.
+
+The database's last change is the newer modification time of the file and its `-wal` file.
 
 **PostgreSQL.** One query reads `current_setting('archive_mode')`, `pg_is_in_recovery()` and `pg_stat_archiver`
 (counts and times), which every role may read, through Studio's read-only statement path. `archive_command` is
 not read: it may hold a secret, and only a superuser may read it. Backups made with `pg_dump` or a tool that does not
-archive WAL are not visible. In a run with backup hints, tabrion's `TAB-PG-020` ("WAL archiving is off") is left out
-of the findings, since `STU-BK-010` says the same with the archiver's state (one cause, one entry).
+archive WAL are not visible. When the hints hold `STU-BK-010`, tabrion's `TAB-PG-020` ("WAL archiving is off") is
+left out of the findings, since `STU-BK-010` says the same with the archiver's state (one cause, one entry). It is
+decided after the backup step (C-2 of the review): after a cancel, the time limit or `STU-BK-014`, and whenever the
+archiver read gives no `STU-BK-010`, `TAB-PG-020` stays.
 
 | Code | Severity | Hint |
 |---|---|---|
@@ -122,6 +136,7 @@ of the findings, since `STU-BK-010` says the same with the archiver's state (one
 | `STU-BK-002` | info (warning when more than 7 days) | SQLite: the newest backup is older than the database's last change; the detail says by how much. |
 | `STU-BK-003` | warning | SQLite (POSIX): backup files that the group or others may read (`tabrion.sqlite.backup` makes them 0600, TAB-T-122). |
 | `STU-BK-004` | info | SQLite: the folder or a backup subfolder could not be listed. |
+| `STU-BK-005` | info | SQLite: a folder holds more than 10 000 entries; a backup may not have been seen. |
 | `STU-BK-010` | info (warning on `prod`) | `archive_mode` is off: no point-in-time recovery; `pg_dump` backups are not visible. |
 | `STU-BK-011` | warning (error on `prod`) | The archiver failed, and its last attempt failed (`last_failed_time` not older than `last_archived_time`). |
 | `STU-BK-012` | info | `archive_mode` is on, but nothing was archived since the statistics were reset. |
@@ -154,8 +169,15 @@ profile or the connection as a whole:
 - In it: the report's time, Studio's and tabrion's versions, the profile's name, engine and environment, on
   PostgreSQL whether the profile expects a read-only role and its `sslmode`, the findings, hints and backup facts.
 - Never in it: a password or other secret, a token of the process (control, launch, session, CSRF), the connection
-  URL or a DSN, the host, port, user or database name, a file path or file name, the connection ID, SQL text and
-  parameter values. Findings and hints name none of these already (see above).
+  URL or a DSN, the host, port, a file path or file name, the connection ID, SQL text and parameter values. Studio's
+  findings and hints name none of these.
+- The login role and the database (C-1 of the review): tabrion's details may name schemas and extensions
+  (`TAB-PG-009`, `TAB-PG-030`), and a schema is often named exactly like the login role (the `"$user"` default of
+  `search_path`) or the database. So on PostgreSQL the report asks the server `SELECT session_user, current_user,
+  current_database()` and adds the profile's `user` and `database`, and replaces each of these names with `[role]`
+  or `[database]` in every text of the report (titles, details, remedies, facts, the profile name) where it stands as
+  a whole identifier (`app` stays inside `application_name`). Names of other database objects stay; the report's
+  closing line says so.
 - Second line of defense: every text of the report, keys included, passes `logs.scrub`, the log redaction. It
   replaces the process's registered secrets (resolved passwords, keyring/`env:`/`file:` values, the tokens) and
   anything shaped like a URL password, a `password=`-style pair, a bearer token, an `Authorization` header or the
@@ -163,7 +185,7 @@ profile or the connection as a whole:
 
 **Markdown from database text (T-07).** Some details hold names from the database (tabrion names schemas and
 extensions). In the Markdown report every such text is put on one line (controls and line separators become spaces),
-never starts a line, and has the characters of inline markup escaped with a backslash (`` \ ` * _ [ ] < > ! | ~ & # ``),
+never starts a line, and has the characters of inline markup escaped with a backslash (`` \ ` * _ [ ] < > ! | ~ & # @ ``; `@` for mentions and e-mail autolinks, L-1),
 and `://` and `www.` are broken up, so a name cannot become a link, an image, HTML, a table cell or a heading where
 the report is rendered. The JSON report is plain JSON.
 
@@ -174,3 +196,4 @@ the report is rendered. The JSON report is plain JSON.
 | `tests/security/test_diagnosis_report.py` (backup hints) | SQLite: no backup, a fresh private backup, a backup older than the data by hours and by days, the `-wal` file as a change, a backup readable by others, what does not count (no header, another name, `.tmp`, a link, a folder, a FIFO, a subfolder that is not the database's own), the entry bound, an unreadable subfolder, no path or name in hints or facts. PostgreSQL: every rule of the table with `prod`, the facts, `TAB-PG-020` replaced only in a run with hints, an unreadable archiver; against the server, the archiver query passes the statement check and reads. The time limit skips the hints and names them in `STU-DX-008`. |
 | `tests/security/test_diagnosis_report.py` (report) | Both formats (media type, file name, JSON keys and times, Markdown headings), the hostile Markdown text, the route (`Content-Disposition`, `no-store`, the view's `backup`, `studio.report_invalid` for other formats and bodies, an unknown connection, the CSRF and session checks). |
 | `tests/security/test_diagnosis_report.py` (canaries) | `tabrion-canary-<uuid>` as the SQLite file's folder and name, a backup's name, a stored value and a parameter value, with the session, CSRF, launch and control tokens and secret-shaped finding texts (URL passwords, DSN `password=`, bearer, API key, cookie) over HTTP; on PostgreSQL as the role's password, its `application_name` setting, a stored value and a parameter value, with DSN-shaped texts (marker `postgres_superuser`). Neither format nor the log holds the canary; the PostgreSQL report holds no host, port, user or database name. A registered secret in any finding text is redacted. |
+| `tests/security/test_diagnosis_report.py` (review `stu-025-review.md`) | C-1: the PostgreSQL canary role has a schema named exactly like it (`"$user"`) and may create in one named exactly like the database; the plain diagnosis names both (the control), and neither report holds either name, raw or Markdown-escaped, but `[role]` and `[database]`; whole-identifier replacement. C-2: `TAB-PG-020` stays for `STU-BK-014`, a disagreeing archiver read, and a cancel or the time limit during the archiver query (which is `STU-DX-008`, never `STU-BK-014`). L-1 `@`. L-2 a linked `backups`/`backup` folder. L-3 the scan stops between entries, and a cancel during it is `STU-DX-008`. L-4 the separator rule and `STU-BK-005`. L-5 and L-6: modes `0o640`, `0o604` count, `0o620`, `0o602`, `0o611` do not; the `lstat` check and `O_NOFOLLOW` each alone; a valid JSON body over 1 KiB; JSON key redaction; the hint order; the Markdown side's own redaction. 16 targeted mutations (the review's survivors and each fix) are all killed. |

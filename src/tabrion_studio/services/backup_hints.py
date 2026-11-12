@@ -5,12 +5,15 @@ It only says what it can see of them:
 
 * **SQLite** (the last ``backup`` artifact): the files next to the database that look like its backups.
   :func:`tabrion.sqlite.backup` has no naming rule, so a backup is a regular file (no link) in the database's folder,
-  or in its ``backups`` or ``backup`` subfolder, whose name is the database's name without its suffix followed by
-  ``.``, ``-`` or ``_`` (``shop.db`` → ``shop-v2.db``, ``shop.db.bak``, ``shop_2026-11-12.db``), that is not the
-  database itself, its ``-wal``, ``-shm`` or ``-journal`` file or one of tabrion's ``.tmp`` files, and that starts
-  with SQLite's file header. At most :data:`MAX_ENTRIES` entries of each folder are looked at and only the first 16
-  bytes of a candidate are read. The database's last change is the newer modification time of the file and its
-  ``-wal`` file.
+  or in its ``backups`` or ``backup`` subfolder (a real folder, not a link to one: L-2 of ``stu-025-review.md``),
+  whose name is the database's name without its last suffix followed by a separator ``.``, ``-`` or ``_``
+  (``shop.db`` → ``shop-v2.db``, ``shop.db.bak``, ``shop_2026-11-12.db``; ``shopping.db`` does not count), that is
+  not the database itself, its ``-wal``, ``-shm`` or ``-journal`` file or one of tabrion's ``.tmp`` files, and that
+  starts with SQLite's file header. Another database whose name starts the same way (``shop-orders.db``, or any
+  ``a_*`` file next to ``a.db``) counts too (L-4: accepted, documented). At most :data:`MAX_ENTRIES` entries of each
+  folder are looked at (more give ``STU-BK-005``), only the first 16 bytes of a candidate are read, and the scan
+  stops between entries at the time limit or a cancel (L-3). The database's last change is the newer modification
+  time of the file and its ``-wal`` file.
 * **PostgreSQL** (``archive_mode`` and ``pg_stat_archiver``): whether the server archives WAL and whether the
   archiver fails. Both are readable by every role; ``archive_command`` is not read (it may hold a secret, and only
   a superuser may read it). Backups made with ``pg_dump`` or a tool that does not archive WAL are not visible.
@@ -33,6 +36,7 @@ __all__ = [
     "ARCHIVER_SQL",
     "MAX_ENTRIES",
     "OLD_BACKUP_S",
+    "ScanStopped",
     "postgres_hints",
     "sqlite_backups",
     "sqlite_hints",
@@ -49,7 +53,12 @@ _SEPARATORS = (".", "-", "_")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 _BINARY = getattr(os, "O_BINARY", 0)
 _NONBLOCK = getattr(os, "O_NONBLOCK", 0)
+_DIRECTORY = getattr(os, "O_DIRECTORY", 0)
 _POSIX = sys.platform != "win32"
+#: Scan a folder through a descriptor opened with ``O_NOFOLLOW`` (POSIX); elsewhere by path after an ``lstat``.
+_BY_DESCRIPTOR = _POSIX and os.scandir in os.supports_fd and os.open in os.supports_dir_fd and bool(_NOFOLLOW)
+#: "Readable by the group or by others": the read bits only (L-5 of ``stu-025-review.md``).
+_READABLE_BY_OTHERS = 0o044
 
 #: One row: the archive mode, whether the server is a standby, and the archiver's counts and times (epoch seconds).
 ARCHIVER_SQL = (
@@ -80,9 +89,11 @@ def _is_backup_name(name: str, database: str, stem: str) -> bool:
     return any(name.startswith(stem + separator) for separator in _SEPARATORS)
 
 
-def _has_sqlite_header(path: str) -> bool:
+def _has_sqlite_header(path: str, *, folder: int | None = None) -> bool:
+    """Whether the regular file ``path`` (a name in the folder ``folder`` when given) starts with SQLite's header.
+    Opened with ``O_NOFOLLOW``, so a link swapped in is refused; ``O_NONBLOCK``, so a FIFO does not block."""
     try:
-        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _BINARY | _NONBLOCK)
+        descriptor = os.open(path, os.O_RDONLY | _NOFOLLOW | _BINARY | _NONBLOCK, dir_fd=folder)
     except OSError:
         return False
     try:
@@ -95,20 +106,47 @@ def _has_sqlite_header(path: str) -> bool:
         os.close(descriptor)
 
 
-def sqlite_backups(database_file: Path) -> dict[str, Any]:
+class ScanStopped(Exception):
+    """The time limit or a cancel came during the scan (L-3 of ``stu-025-review.md``)."""
+
+
+def _folders(folder: Path) -> list[Path]:
+    """The database's folder and those of its backup subfolders that are real folders, not links (L-2)."""
+    found = [folder]
+    for name in _SUBFOLDERS:
+        try:
+            info = os.lstat(folder / name)
+        except OSError:
+            continue
+        if stat.S_ISDIR(info.st_mode):  # a link to a folder is S_ISLNK here and is skipped
+            found.append(folder / name)
+    return found
+
+
+def _open_folder(directory: Path) -> int | None:
+    """A descriptor of ``directory`` opened without following a link (POSIX), or None where that is not possible."""
+    if not _BY_DESCRIPTOR:
+        return None
+    return os.open(directory, os.O_RDONLY | _DIRECTORY | _NOFOLLOW)
+
+
+def sqlite_backups(database_file: Path, *, stop: Callable[[], bool] = lambda: False) -> dict[str, Any]:
     """What the folders around ``database_file`` hold: ``{"found", "newest_at", "exposed", "truncated",
-    "unreadable"}``; ``exposed`` counts backups that the group or others may read (POSIX)."""
+    "unreadable"}``; ``exposed`` counts backups that the group or others may read (POSIX, mode ``0o044``).
+    ``stop`` is asked before each entry; when it says yes, :class:`ScanStopped` ends the scan (L-3)."""
     folder = database_file.parent
-    stem = database_file.name.split(".", 1)[0] or database_file.name
+    stem = database_file.stem or database_file.name
     found = exposed = 0
     newest: float | None = None
     truncated = unreadable = False
-    for directory in (folder, *(folder / name for name in _SUBFOLDERS)):
-        if directory != folder and not directory.is_dir():
-            continue
+    for directory in _folders(folder):
+        descriptor: int | None = None
         try:
-            with os.scandir(directory) as entries:
+            descriptor = _open_folder(directory)
+            with os.scandir(directory if descriptor is None else descriptor) as entries:
                 for count, entry in enumerate(entries):
+                    if stop():
+                        raise ScanStopped
                     if count >= MAX_ENTRIES:
                         truncated = True
                         break
@@ -118,14 +156,23 @@ def sqlite_backups(database_file: Path) -> dict[str, Any]:
                         info = entry.stat(follow_symlinks=False)
                     except OSError:
                         continue
-                    if not stat.S_ISREG(info.st_mode) or not _has_sqlite_header(entry.path):
+                    if not stat.S_ISREG(info.st_mode):
+                        continue
+                    if descriptor is None:
+                        header = _has_sqlite_header(entry.path)
+                    else:
+                        header = _has_sqlite_header(entry.name, folder=descriptor)
+                    if not header:
                         continue
                     found += 1
                     newest = info.st_mtime if newest is None else max(newest, info.st_mtime)
-                    if _POSIX and info.st_mode & 0o077:
+                    if _POSIX and info.st_mode & _READABLE_BY_OTHERS:
                         exposed += 1
         except OSError:
             unreadable = True
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
     return {"found": found, "newest_at": newest, "exposed": exposed, "truncated": truncated, "unreadable": unreadable}
 
 
@@ -139,11 +186,13 @@ def _changed_at(database_file: Path) -> float | None:
     return max(times) if times else None
 
 
-def sqlite_hints(database_file: Path | None, *, clock: Callable[[], float]) -> dict[str, Any]:
-    """The backup hints of a SQLite database file (see the module text)."""
+def sqlite_hints(
+    database_file: Path | None, *, clock: Callable[[], float], stop: Callable[[], bool] = lambda: False
+) -> dict[str, Any]:
+    """The backup hints of a SQLite database file (see the module text); ``stop`` as for :func:`sqlite_backups`."""
     if database_file is None:
         return {"hints": [], "facts": {"engine": "sqlite", "searched": False}}
-    seen = sqlite_backups(database_file)
+    seen = sqlite_backups(database_file, stop=stop)
     changed = _changed_at(database_file)
     newest = seen["newest_at"]
     facts: dict[str, Any] = {
@@ -163,6 +212,13 @@ def sqlite_hints(database_file: Path | None, *, clock: Callable[[], float]) -> d
             "STU-BK-004", "info", "Backups could not be searched",
             "Studio could not list the database's folder or one of its backup subfolders.",
             "Check the folder's permissions, or look for backups yourself.",
+        ))  # fmt: skip
+    if seen["truncated"]:
+        hints.append(_hint(
+            "STU-BK-005", "info", "Backup search cut short",
+            f"A folder holds more than {MAX_ENTRIES} entries; Studio looked at the first {MAX_ENTRIES} of each "
+            "(in no particular order), so a backup, even the newest one, may not have been seen.",
+            "Keep backups in a backups subfolder of their own, or fewer files next to the database.",
         ))  # fmt: skip
     if seen["found"] == 0:
         hints.append(_hint(

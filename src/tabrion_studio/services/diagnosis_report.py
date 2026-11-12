@@ -8,8 +8,12 @@ in an issue. 09's acceptance is "report without secrets (canary test)", so the r
   PostgreSQL whether the profile expects a read-only role and its ``sslmode``; every finding and backup hint (code,
   severity, title, detail, remedy, source) with their counts, and the backup facts (counts, times, ``archive_mode``).
 * **Never in it:** a password or other secret, a token of the process, a connection URL or DSN, the host, port, user
-  or database name, a file path or file name, the connection ID and any SQL text or parameter value. Findings and
-  hints name none of these already (``diagnostics.md``).
+  or database name, a file path or file name, the connection ID and any SQL text or parameter value. Studio's own
+  findings and hints name none of these. tabrion's may name schemas and extensions, and a schema is often named after
+  the login role (the ``"$user"`` default of ``search_path``) or the database (C-1 of ``stu-025-review.md``); so on
+  PostgreSQL the session user, the current user and the current database (asked from the server, plus the profile's
+  ``user`` and ``database``) are replaced by ``[role]`` and ``[database]`` in every text of the report, as whole
+  names (not inside a longer identifier). Names of other database objects stay; the report says so.
 * **Second line of defense:** every text of the report passes :func:`tabrion_studio.logs.scrub`, the log redaction:
   the process's registered secrets (the passwords of open connections, the tokens) and anything shaped like a URL
   password, a ``password=`` pair, a bearer token or the session cookie are replaced by ``[REDACTED]``.
@@ -37,18 +41,34 @@ from tabrion_studio.logs import scrub
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 
-__all__ = ["FORMATS", "LEFT_OUT", "DiagnosisReports", "Report", "ReportError", "markdown_text"]
+__all__ = [
+    "FORMATS",
+    "LEFT_OUT",
+    "NAMES_SQL",
+    "DiagnosisReports",
+    "Report",
+    "ReportError",
+    "hide_names",
+    "markdown_text",
+]
 
 #: The formats of 03 section 2 G: their media type and file suffix.
 FORMATS = {"markdown": ("text/markdown; charset=utf-8", "md"), "json": ("application/json", "json")}
 #: What a report never holds; the report says so.
 LEFT_OUT = (
-    "No password, token, connection URL, host, port, user or database name, file path, SQL text or parameter value."
+    "No password, token, connection URL, host, port, file path, SQL text or parameter value. The login role and the "
+    "database are shown as [role] and [database]; names of other database objects (schemas, extensions) may appear."
 )
+ROLE, DATABASE = "[role]", "[database]"
+#: Studio's own question for the names to hide (C-1); it reads and passes the statement check.
+NAMES_SQL = "SELECT session_user, current_user, current_database()"
+#: The fields of a finding or hint that hold text (``code``, ``severity`` and ``source`` are fixed words).
+_TEXT_FIELDS = ("title", "detail", "remedy")
 FORMAT_VERSION = 1
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-\u202e\u2066-\u2069]+")
 #: CommonMark's inline markup (code, emphasis, links, images, HTML, entities), GFM tables and strikethrough, headings.
-_MARKUP = re.compile(r"([\\`*_\[\]<>!|~&#])")
+#: ``@`` too: GitHub mentions and e-mail autolinks (L-1 of ``stu-025-review.md``).
+_MARKUP = re.compile(r"([\\`*_\[\]<>!|~&#@])")
 _AUTOLINK = re.compile(r"(?i)(://|www\.)")
 _FILE_PART = re.compile(r"[^a-z0-9]+")
 _SEVERITY_ORDER = ("error", "warning", "info")
@@ -104,6 +124,15 @@ def markdown_text(value: object) -> str:
     return _AUTOLINK.sub(lambda match: match.group(0).replace("/", "\\/").replace(".", "\\."), text)
 
 
+def hide_names(text: str, names: dict[str, str]) -> str:
+    """``text`` with each name of ``names`` (name to placeholder) replaced where it stands as a whole identifier:
+    not inside a longer one (``app`` stays in ``application_name``). Longer names first."""
+    for name in sorted(names, key=len, reverse=True):
+        if name:
+            text = re.sub(rf"(?<![A-Za-z0-9_$]){re.escape(name)}(?![A-Za-z0-9_$])", names[name], text)
+    return text
+
+
 def _item(entry: dict[str, Any]) -> dict[str, str]:
     keys = ("code", "severity", "title", "detail", "remedy", "source")
     return {key: str(entry.get(key, "")) for key in keys}
@@ -152,6 +181,14 @@ class DiagnosisReports:
             "backup": {"hints": [_item(entry) for entry in backup.get("hints", [])], "facts": facts},
             "left_out": LEFT_OUT,
         }
+        names = self._names(connection, profile) if connection.engine == "postgresql" else {}
+        connection_part["profile"] = hide_names(str(profile.name), names)
+        for entry in (*report["diagnosis"]["findings"], *report["backup"]["hints"]):
+            for key in _TEXT_FIELDS:
+                entry[key] = hide_names(entry[key], names)
+        for key, value in facts.items():
+            if isinstance(value, str) and not key.endswith("_at"):
+                facts[key] = hide_names(value, names)
         report = _clean(report)
         media_type, suffix = FORMATS[report_format]
         if report_format == "json":
@@ -163,6 +200,20 @@ class DiagnosisReports:
                  connection.environment)]  # fmt: skip
         filename = f"tabrion-studio-diagnosis-{parts[0]}-{parts[1]}-{stamp}.{suffix}"
         return Report(filename=filename, media_type=media_type, body=body, counts=dict(doc["counts"]))
+
+    @staticmethod
+    def _names(connection: Any, profile: Any) -> dict[str, str]:
+        """The login role's and the database's names (C-1): asked from the server, plus the profile's."""
+        roles = {str(profile.user)} if profile.user else set()
+        databases = {str(profile.database)} if profile.database else set()
+        try:
+            rows = connection.fetch(NAMES_SQL)
+        except Exception:  # the profile's names still apply; the diagnosis already ran
+            rows = []
+        for row in rows[:1]:
+            roles |= {str(row[0]), str(row[1])}
+            databases.add(str(row[2]))
+        return {**{name: DATABASE for name in databases}, **{name: ROLE for name in roles}}
 
 
 def _plural(count: int, word: str) -> str:

@@ -32,8 +32,9 @@ the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`,
   ``idle_in_transaction_session_timeout`` or ``application_name`` for the role or the database.
 
 **Backup hints** (``STU-BK-*``, STU-025): ``run(..., backup=True)`` adds ``backup: {hints, facts}`` from
-:mod:`.backup_hints`, under the same time limit and cancel. They are not findings and not in ``counts``. In such a
-run tabrion's ``TAB-PG-020`` (archiving off) is left out of the findings: ``STU-BK-010`` says it (:data:`BACKUP_CODES`).
+:mod:`.backup_hints`, under the same time limit and cancel. They are not findings and not in ``counts``. When the
+hints hold ``STU-BK-010`` (archiving off, read with the archiver's state), tabrion's ``TAB-PG-020`` is left out of the
+findings (:data:`BACKUP_CODES`); after a cancel, the time limit or ``STU-BK-014`` it stays (C-2 of the review).
 
 **Time limit (M-1):** a diagnosis runs at most the connection's statement timeout; then every statement is canceled
 like a query (:class:`.tabrion_compat.Cancel`: SQLite interrupt, psycopg cancel), and the checks that did not
@@ -83,9 +84,9 @@ SESSION_CODES = frozenset(
 )
 #: tabrion findings that a Studio check replaces: TAB-PG-003 counts only the current schema (STU-DX-006).
 REPLACED_CODES = frozenset({"TAB-PG-003"})
-#: tabrion findings that the backup hints replace in a run with them (STU-025): TAB-PG-020 ("WAL archiving is off")
-#: is STU-BK-010, which reads ``archive_mode`` together with ``pg_stat_archiver``.
-BACKUP_CODES = frozenset({"TAB-PG-020"})
+#: tabrion findings that a backup hint replaces when that hint is given (STU-025, C-2 of ``stu-025-review.md``):
+#: TAB-PG-020 ("WAL archiving is off") gives way to STU-BK-010, which reads ``archive_mode`` with ``pg_stat_archiver``.
+BACKUP_CODES = {"TAB-PG-020": "STU-BK-010"}
 _TABRION_TLS_CODES = frozenset({"TAB-PG-010", "TAB-PG-011"})
 _ORDER = {"error": 0, "warning": 1, "info": 2}
 #: The SQLite errors of ``PRAGMA foreign_key_check`` that mean a broken foreign key definition (L-5).
@@ -241,11 +242,10 @@ class Diagnostics:
             )
             if sqlite and run.hook.requested and any(_not_checked(finding, "TAB-SQ-006") for finding in tabrion):
                 run.skipped.append("tabrion's integrity check (TAB-SQ-006)")
-            left_out = REPLACED_CODES | BACKUP_CODES if backup else REPLACED_CODES
             findings = [
                 _from_tabrion(finding)
                 for finding in tabrion
-                if finding.code not in SESSION_CODES and finding.code not in left_out
+                if finding.code not in SESSION_CODES and finding.code not in REPLACED_CODES
             ]
             tabrion_tls = any(finding.code in _TABRION_TLS_CODES for finding in tabrion)
             if connection.engine == "postgresql":
@@ -253,6 +253,10 @@ class Diagnostics:
             else:
                 findings += self._sqlite(connection, run)
             hints = self._backup(connection, run, prod=prod) if backup else None
+            if hints is not None:
+                given = {item["code"] for item in hints["hints"]}
+                replaced = {code for code, hint in BACKUP_CODES.items() if hint in given}
+                findings = [item for item in findings if item["code"] not in replaced]
         finally:
             run.finished.set()
             timer.cancel()
@@ -289,7 +293,11 @@ class Diagnostics:
         if connection.engine != "postgresql":
             empty: dict[str, Any] = {"hints": [], "facts": {"engine": connection.engine, "searched": False}}
             return run.step(
-                "backup hints", lambda: backup_hints.sqlite_hints(connection.database_file, clock=self.clock), empty
+                "backup hints",
+                lambda: backup_hints.sqlite_hints(
+                    connection.database_file, clock=self.clock, stop=lambda: run.hook.requested
+                ),
+                empty,
             )
 
         def archiver() -> tuple[Any, ...] | None:
