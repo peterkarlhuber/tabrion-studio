@@ -108,8 +108,14 @@ lines, functions, types and domains left out). The test compares with the
 recorded output in `tests/security/ddl_fixtures/` (pg_dump 16.15 against PostgreSQL 16.15) on every run, and with a live
 `pg_dump` too when one on `PATH` can dump the server. A missing pg_dump or one that refuses the server's version
 skips only the live comparison; any other pg_dump failure fails the test, and `TABRION_STUDIO_TEST_LIVE_PG_DUMP=1`
-makes the live comparison required. pg_dump refuses a server of a newer major version: the CI job
-runs PostgreSQL 17 with the runner's own client, so CI compares with the recorded output.
+makes the live comparison required. pg_dump refuses a server of a newer major version. A newer pg_dump writes some
+objects in a form only its own major version accepts: Studio writes the DDL for the server it reads, as that server's
+pg_dump does, so the test rewrites the one such form in these schemas (pg_dump 18's `NOT NULL col` entry of a child
+table, which PostgreSQL 17 rejects, as `ALTER TABLE ONLY ... SET NOT NULL`) when the dump's header shows a pg_dump
+18 or later against an older server (`server_statements`); everything else is compared as written. The CI job runs
+PostgreSQL 17 with the runner's own client (a pg_dump 18 or later on `ubuntu-26.04`), so CI
+compares with both the recorded output and that live dump. Locally the comparison was also run against PostgreSQL 17.10
+with pg_dump 17.10 (no rewrite) and 18.4.
 
 ## Reflection on tabrion 0.1
 

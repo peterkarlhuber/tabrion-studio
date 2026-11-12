@@ -967,9 +967,11 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   other than `heap`; the per-column `OPTIONS` of a foreign table (a note says so); security labels; publication and
   statistics objects; PostgreSQL 18's virtual generated columns (written without `STORED`, untested) and its named
   `NOT NULL` constraints (contype `n`).
-- **CI:** the PostgreSQL 17 job compares with the recorded pg_dump 16.15 output (`tests/security/ddl_fixtures/`); the
-  runner's own `pg_dump` cannot dump a newer server. A live comparison on PostgreSQL 17 needs a pg_dump 17 client in
-  that job (a `.github/` change, not made here).
+- **CI:** the PostgreSQL 17 job compares with the recorded pg_dump 16.15 output (`tests/security/ddl_fixtures/`) and
+  with the runner's own `pg_dump` (18 or later on `ubuntu-26.04`), whose `NOT NULL col` form for a child table (rejected by
+  PostgreSQL 17) the test rewrites to the server's form. An exact live comparison with a pg_dump of the server's
+  major version in CI needs a pg_dump 17 client in that job (a `.github/` change, not made here); it was run locally
+  against PostgreSQL 17.10 with pg_dump 17.10.
 
 ### TD-039 · Catalog statements Studio does not write itself (TABRION STU-022 review)
 

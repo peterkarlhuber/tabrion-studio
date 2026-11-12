@@ -26,6 +26,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 import os
 from pathlib import Path
+import re
 import secrets
 import shutil
 import sqlite3
@@ -471,6 +472,71 @@ def live_pg_dump(url: str, schema: str) -> str | None:
     return done.stdout
 
 
+_DUMPED_FROM = re.compile(r"^-- Dumped from database version (\d+)", re.MULTILINE)
+_DUMPED_BY = re.compile(r"^-- Dumped by pg_dump version (\d+)", re.MULTILINE)
+_CREATE_TABLE = re.compile(r"^CREATE (?:UNLOGGED )?TABLE (\S+(?: \S+)*?) \(\n")
+_NOT_NULL_ENTRY = re.compile(r"^    NOT NULL (\S+)$")
+
+
+def server_statements(dump: str) -> list[str]:
+    """:func:`statements` of a live dump, in the form a pg_dump of the *server's* major version writes.
+
+    Studio writes the DDL for the server it reads, as that server's pg_dump does. A newer pg_dump writes some objects
+    in a form only its own major version accepts. The one such form in these schemas: pg_dump 18 and later write a
+    ``NOT NULL`` that a child table adds to an inherited column as a table constraint, ``NOT NULL col``, inside its
+    ``CREATE TABLE``; PostgreSQL 17 and older reject that syntax, and their pg_dump writes
+    ``ALTER TABLE ONLY t ALTER COLUMN col SET NOT NULL``. Only that form is rewritten, and only when the dump's
+    header says that pg_dump is newer than the server and the server is older than 18; everything else is compared
+    as written.
+    """
+    found = statements(dump)
+    server, client = _DUMPED_FROM.search(dump), _DUMPED_BY.search(dump)
+    assert server is not None and client is not None, "pg_dump wrote no version header"
+    if not int(server.group(1)) < 18 <= int(client.group(1)):
+        return found
+    rewritten = []
+    for statement in found:
+        table = _CREATE_TABLE.match(statement)
+        if table is None:
+            rewritten.append(statement)
+            continue
+        lines = statement.split("\n")
+        kept = []
+        for line in lines:
+            entry = _NOT_NULL_ENTRY.match(line.rstrip(","))
+            if entry is None:
+                kept.append(line)
+            else:
+                rewritten.append(f"ALTER TABLE ONLY {table.group(1)} ALTER COLUMN {entry.group(1)} SET NOT NULL")
+        if len(kept) < len(lines):
+            closing = next(index for index in range(len(kept) - 1, -1, -1) if kept[index].startswith(")"))
+            kept[closing - 1] = kept[closing - 1].rstrip(",")  # the entry before ")" ends without a comma
+        rewritten.append("\n".join(kept))
+    return sorted(rewritten)
+
+
+def test_server_statements_rewrites_only_a_newer_pg_dumps_forms() -> None:
+    """The rewrite of :func:`server_statements`: only pg_dump 18+ against an older server, only ``NOT NULL col``."""
+    body = (
+        "CREATE TABLE s.chi (\n    NOT NULL id,\n    extra integer\n)\nINHERITS (s.par);\n\n"
+        "CREATE TABLE s.two (\n    a integer,\n    NOT NULL a\n)\nINHERITS (s.par);\n\n"
+        "CREATE TABLE s.par (\n    id integer,\n    note text NOT NULL\n);\n"
+    )
+    newer = "-- Dumped from database version 17.10\n-- Dumped by pg_dump version 18.4\n\n" + body
+    assert server_statements(newer) == [
+        "ALTER TABLE ONLY s.chi ALTER COLUMN id SET NOT NULL",
+        "ALTER TABLE ONLY s.two ALTER COLUMN a SET NOT NULL",
+        "CREATE TABLE s.chi (\n    extra integer\n)\nINHERITS (s.par)",
+        "CREATE TABLE s.par (\n    id integer,\n    note text NOT NULL\n)",
+        "CREATE TABLE s.two (\n    a integer\n)\nINHERITS (s.par)",
+    ]
+    for header in ("17.10\n-- Dumped by pg_dump version 17.10", "18.4\n-- Dumped by pg_dump version 18.4"):
+        same = f"-- Dumped from database version {header}\n\n" + body
+        assert server_statements(same) == statements(same)
+    with pytest.raises(AssertionError, match="version header"):
+        server_statements(body)
+
+
 @pytest.mark.postgres
 @postgres
 @pytest.mark.parametrize(("schema", "fixture"), [(PARTS, "parts"), (MEASUREMENTS, "measurements"), (EXTRAS, "extras")])
@@ -484,7 +550,7 @@ def test_pg_ddl_equals_pg_dump_schema_only(pg: tuple[Definitions, str, str], sch
     assert PG_URL is not None
     live = live_pg_dump(PG_URL, schema)
     if live is not None:
-        assert found == statements(live)
+        assert found == server_statements(live)
 
 
 #: The tables of both reference apps, as they are deployed: in ``public`` (review M-1).
@@ -529,7 +595,7 @@ def test_pg_ddl_of_the_reference_apps_in_public_equals_pg_dump(pg_public: tuple[
     assert PG_URL is not None
     live = live_pg_dump(PG_URL, "public")
     if live is not None:
-        assert found == statements(live)
+        assert found == server_statements(live)
 
 
 @pytest.mark.postgres
