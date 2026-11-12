@@ -130,14 +130,16 @@ describe('opening and the tree', () => {
   it('opens the SQLite profile, reads the catalog and the file facts, and shows them as a tree', async () => {
     const { fetcher, calls } = server();
     await openSqlite(fetcher);
+    // Open reads the profile list again before it decides on D-02 (stale-list variant of TD-038).
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'GET /api/profiles',
       'GET /api/profiles',
       'POST /api/connections',
       `GET ${SQLITE}/catalog`,
       `GET ${SQLITE}/sqlite-info`,
     ]);
-    expect(JSON.parse(calls[1]?.body ?? '')).toEqual({ profile_id: 'project:parts-dev' });
-    expect(calls[1]?.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(calls[2]?.body ?? '')).toEqual({ profile_id: 'project:parts-dev' });
+    expect(calls[2]?.headers['Content-Type']).toBe('application/json');
     // SQLite: the database file instead of schemas, then the groups of `main` (08 section 4.3).
     expect(rows().map((r) => r.getAttribute('aria-level'))).toEqual([
       '1',
@@ -215,6 +217,59 @@ describe('opening and the tree', () => {
     expect(within(heading).getByTestId('env-badge')).toHaveAttribute('data-env', 'prod');
     expect(heading).toHaveTextContent('measure\\u202E');
     expect(heading).not.toHaveTextContent(BIDI);
+  });
+
+  it('Open uses the profile as the server has it now: one changed to PROD asks D-02', async () => {
+    const dev = PROFILES.profiles[0] as Record<string, unknown>;
+    const nowProd = {
+      ...PROFILES,
+      profiles: [{ ...dev, environment: 'prod' }, PROFILES.profiles[1]],
+    };
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => json(nowProd)],
+    });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent('parts-dev');
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    // The picker shows the list as it is now.
+    expect(screen.getByRole('option', { name: 'parts-dev (PROD)' })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+    expect(screen.getByTestId('explorer-open')).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('Open on a profile that is gone says so and opens nothing', async () => {
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [
+        () => json(PROFILES),
+        () => json({ ...PROFILES, profiles: [PROFILES.profiles[1]] }),
+      ],
+    });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(await screen.findByTestId('explorer-problem')).toHaveTextContent(
+      'The profile no longer exists.',
+    );
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+  });
+
+  it('Open when the list cannot be read again: the loaded profile decides (PROD still asks D-02)', async () => {
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => new Response(null, { status: 503 })],
+    });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
   });
 
   it('says so when there are no profiles', async () => {

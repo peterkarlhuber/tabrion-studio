@@ -143,7 +143,8 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [problem, setProblem] = useState<Problem | null>(null);
   const [message, setMessage] = useState('');
-  const [dialog, setDialog] = useState(false);
+  /** The profile D-02 asks about (as the server listed it when Open was pressed), or null. */
+  const [dialog, setDialog] = useState<ProfileItem | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState<Filter>(NO_FILTER);
   const [selection, setSelectionState] = useState<Selection | null>(null);
@@ -165,6 +166,8 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const profileSelect = useRef<HTMLSelectElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
+  /** An Open press whose profile list is still being read; a second press meanwhile does nothing. */
+  const checking = useRef(false);
   const connections = useConnectionSession();
 
   useEffect(() => {
@@ -306,8 +309,34 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     } else if (selection !== null) void loadDetail(target, selection);
   };
 
-  const open = async () => {
-    if (profile === null || busy) return;
+  /**
+   * "Open": read the profile list again first, so that the PROD check and D-02 use the profile as it is now, not as
+   * it was when the page loaded (a profile changed to `prod` on disk since; TD-038). If the list cannot be read, the
+   * loaded profile decides. A profile switch meanwhile drops the press.
+   */
+  const start = async () => {
+    if (profile === null || busy || checking.current) return;
+    checking.current = true;
+    const asked = request.current;
+    const loaded = profile;
+    setPhase('opening');
+    const list = await fetchProfiles(fetcher);
+    checking.current = false;
+    if (asked !== request.current) return;
+    if (list !== null) setProfiles(list.profiles);
+    const item = list === null ? loaded : list.profiles.find((entry) => entry.id === loaded.id);
+    if (item === undefined) {
+      setPhase('idle');
+      setProblem({ code: 'studio.profile_not_found', kind: 'not_found', status: 404, logId: null });
+      return;
+    }
+    if (item.environment === 'prod' && !connections.prodConfirmed(item)) {
+      setPhase('idle');
+      setDialog(item);
+    } else void open(item);
+  };
+
+  const open = async (profile: ProfileItem) => {
     const target = { name: profile.name, environment: profile.environment };
     const mine = ++request.current;
     detailRequest.current += 1;
@@ -541,10 +570,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
               disabled={profile === null}
               aria-disabled={busy || undefined}
               onClick={() => {
-                if (busy) return;
-                if (profile?.environment === 'prod' && !connections.prodConfirmed(profile)) {
-                  setDialog(true);
-                } else void open();
+                void start();
               }}
               data-testid="explorer-open"
             >
@@ -706,16 +732,16 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           </section>
         </div>
       ) : null}
-      {dialog && profile !== null ? (
+      {dialog !== null ? (
         <ProdConnectDialog
           open
-          name={visible(profile.name)}
-          timeoutSeconds={prodTimeoutSeconds(profile)}
-          onCancel={() => setDialog(false)}
+          name={visible(dialog.name)}
+          timeoutSeconds={prodTimeoutSeconds(dialog)}
+          onCancel={() => setDialog(null)}
           onConnect={() => {
-            connections.confirmProd(profile);
-            setDialog(false);
-            void open();
+            connections.confirmProd(dialog);
+            setDialog(null);
+            void open(dialog);
           }}
         />
       ) : null}

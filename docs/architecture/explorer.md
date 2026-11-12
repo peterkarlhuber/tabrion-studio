@@ -55,13 +55,14 @@ None of this is logged.
 
 ## The page
 
-`/explorer` (`frontend/src/views/explorer/`) shows the catalog as a tree and the selected object's details. Until
-the connection workspace (`/c/:conn/...`, 08 section 2) exists, the page has its own profile picker, like the
-migration and diagnostics pages (TD-041). "Open" opens the profile's read-only connection (`POST /api/connections`;
-D-02 first for a PROD profile the user has not confirmed in this page session, the confirmation STU-008 shares
-between the pages) and reads the catalog; the opened connection becomes the header's connection. "Refresh" reads
-the catalog again with `refresh=true` on the same connection and never opens one. A connection that is gone
-(`connection_not_found`, `connection_stale`) is forgotten, by the page and by the header.
+`/explorer` (`frontend/src/views/explorer/`) shows the catalog as a tree and the selected object's details. Until the
+connection workspace (`/c/:conn/...`, 08 section 2) exists, the page has its own profile picker, like the migration and
+diagnostics pages (TD-041). "Open" reads the profile list again (so the PROD check uses the profile as it is now) and
+opens the profile's read-only connection (`POST /api/connections`; D-02 first for a PROD profile the user has not
+confirmed in this page session, the confirmation STU-008 shares between the pages) and reads the catalog; the opened
+connection becomes the header's connection. "Refresh" reads the catalog again with `refresh=true` on the same connection
+and never opens one. A connection that is gone (`connection_not_found`, `connection_stale`) is forgotten, by the page
+and by the header.
 
 - **Tree:** a WAI-ARIA tree (`role="tree"`, flat rows with `aria-level`, `aria-posinset`, `aria-setsize`,
   `aria-expanded`; one tab stop). PostgreSQL: schema → type group → object, then the extensions. SQLite: the
