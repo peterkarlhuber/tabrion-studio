@@ -3,7 +3,14 @@
  * tabs, status bar. With a PROD connection the shell gets a 3 px red frame at the top, every tab and the header show
  * the PROD badge and the window title starts with "[PROD]" (STU-051).
  */
-import { CircleHelp, Command as CommandIcon, Database, GitBranch, House, Settings } from 'lucide-react';
+import {
+  CircleHelp,
+  Command as CommandIcon,
+  Database,
+  GitBranch,
+  House,
+  Settings,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
