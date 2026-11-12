@@ -866,15 +866,17 @@ PLANTED_OPERATORS = (
     ("name", "text", "!~"),
 )
 TRAP = "studio_ddl_trap"
-#: Functions the dialect's setup calls unqualified when a connection is opened (with native hstore off it sends no
-#: operator): planted too, so that a setup without its fixed search_path fails the ``public_before_pg_catalog``
-#: variant (DL-1 of td-039-review.md). Each answers like pg_catalog's until the trap is armed.
+#: Functions planted next to the operators. With native hstore off the dialect's setup sends no operator, and its only
+#: unqualified call is ``current_schema()``, so that plant makes a setup without its fixed search_path fail the
+#: ``public_before_pg_catalog`` variant (DL-1 of td-039-review.md). The dialect asks for ``pg_catalog.version()``
+#: qualified; ``version()`` is planted only as a guard against an unqualified call later. Each answers like
+#: pg_catalog's until the trap is armed.
 PLANTED_FUNCTIONS = (("current_schema", "name"), ("version", "text"))
 
 
 def plant(admin: sqlalchemy.Connection, attacker: str) -> None:
-    """Operators in ``public``, owned by ``attacker``. Each answers like pg_catalog's until the trap is armed (a row
-    in ``public.studio_ddl_trap``), then raises: a call after arming fails its statement."""
+    """Operators and functions in ``public``, owned by ``attacker``. Each answers like pg_catalog's until the trap is
+    armed (a row in ``public.studio_ddl_trap``), then raises: a call after arming fails its statement."""
     admin.exec_driver_sql(f"CREATE TABLE public.{TRAP} (armed boolean)")
     admin.exec_driver_sql(f"ALTER TABLE public.{TRAP} OWNER TO {attacker}")
     admin.exec_driver_sql(f"GRANT SELECT ON public.{TRAP} TO PUBLIC")
