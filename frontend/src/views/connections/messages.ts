@@ -53,6 +53,9 @@ const PROBLEMS = new Set([
   'object_not_found',
   'explorer_engine',
   'answer_invalid',
+  // The diagnosis report (STU-025, TD-036).
+  'report_invalid',
+  'report_unavailable',
   'offline',
 ]);
 

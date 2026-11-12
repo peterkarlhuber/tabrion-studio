@@ -2,15 +2,24 @@
  * The diagnostics view (STU-014, 03 sections 2 G and 6, 08 section 4.9): tabrion's findings and Studio's `STU-DX-*`
  * for a chosen profile. The diagnosis only reads; nothing on this page writes to a database (STU-026 stays locked).
  *
- * - **Run:** "Run diagnosis" opens the profile's read-only connection (`POST /api/connections`; D-02 first for a PROD
- *   profile) and runs `POST /api/connections/{id}/diagnostics`. It starts only on a click, since SQLite's integrity
- *   check can take a while. "Run again" uses the shown connection and never opens one, so D-02 cannot be skipped.
+ * - **Run:** "Run diagnosis" opens the profile's read-only connection (`POST /api/connections`) and runs
+ *   `POST /api/connections/{id}/diagnostics`. A PROD profile asks D-02 first unless it was confirmed in this page
+ *   session: the shared gate of the connection manager (`useConnect`, STU-008), so one confirmation counts
+ *   everywhere. It starts only on a click, since SQLite's integrity check can take a while. "Run again" uses the shown
+ *   connection and never opens one, so D-02 cannot be skipped.
  * - **Cancel:** stops the running diagnosis (`.../diagnostics/cancel`); the answer then names the checks that did not
  *   run (`STU-DX-008`), and the page says that the result is incomplete. A profile switch or leaving the page cancels
  *   a running diagnosis too, and an answer that arrives after a newer request or a profile switch is dropped.
  * - **Findings:** sorted by severity, each with its severity (icon and word, never colour alone), code, title, detail,
  *   remedy and source. Titles of Studio's own codes are the page's en/de text; every other text is the server's
  *   English text, escaped and capped (`lib/visible.ts`, U-1), because tabrion's details name database objects.
+ * - **Backups (STU-025, TD-036):** the answer's backup hints (`STU-BK-*`) in their own list below the findings, shown
+ *   like findings with en/de titles; they are not counted in the summary. With the hints on the page, the route lets
+ *   tabrion's `TAB-PG-020` give way to `STU-BK-010` (one cause, one entry).
+ * - **Report (STU-025, TD-036):** "Download Markdown report" and "Download JSON report" post
+ *   `.../diagnostics/report` on the shown connection (never a new one, so D-02 cannot be skipped). The server runs the
+ *   diagnosis again and answers a file without secrets, which the browser saves under the server's name. Cancel, a
+ *   profile switch or leaving the page stops it like a run; a refusal (`studio.report_unavailable`) is the page's text.
  */
 import { CircleQuestionMark, CircleX, Info, TriangleAlert } from 'lucide-react';
 import type { TFunction } from 'i18next';
@@ -20,38 +29,46 @@ import { useTranslation } from 'react-i18next';
 import {
   cancelDiagnostics,
   countFindings,
+  downloadReport,
   runDiagnostics,
+  type Backup,
   type Diagnosis,
   type Finding,
+  type ReportFormat,
   type Severity,
 } from '../../api/diagnostics';
 import { openConnection } from '../../api/migrations';
 import type { Problem } from '../../api/problem';
 import { PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
-import { ProdConnectDialog } from '../../components/dialogs/StudioDialogs';
 import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import clsx from '../../lib/clsx';
+import { saveFile, type SaveFile } from '../../lib/download';
 import { capped, visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
+import { useConnect } from '../connections/useConnect';
 import viewStyles from '../Views.module.css';
 import styles from './Diagnostics.module.css';
 
-/** 03 section 5.3: production profiles get a 15 s statement timeout (D-02 names it). */
-const PROD_TIMEOUT_S = 15;
 /** How many findings the page lists before "and N more" (a hostile or broken server could send thousands). */
 export const MAX_FINDINGS = 100;
 /** The longest code, title and text shown; a longer one is cut with a visible "…" (U-1c). */
 export const MAX_CODE_LENGTH = 32;
 export const MAX_TITLE_LENGTH = 160;
 export const MAX_TEXT_LENGTH = 1000;
+/** How many backup hints the page lists (the server gives a handful; a broken one could send more). */
+export const MAX_HINTS = 20;
 
-/** Studio's own finding codes: their titles are the page's en/de text (`diagnostics.titles.*`). */
-const STUDIO_CODES = new Set(
-  Array.from({ length: 10 }, (_, index) => `STU-DX-${String(index + 1).padStart(3, '0')}`),
-);
+/** Studio's own codes: their titles are the page's en/de text (`diagnostics.titles.*`). */
+const STUDIO_CODES = new Set([
+  ...Array.from({ length: 10 }, (_, index) => `STU-DX-${String(index + 1).padStart(3, '0')}`),
+  // The backup hints of STU-025.
+  ...['001', '002', '003', '004', '005', '010', '011', '012', '013', '014'].map(
+    (number) => `STU-BK-${number}`,
+  ),
+]);
 /** "Not every check ran": the result is incomplete. */
 const INCOMPLETE = 'STU-DX-008';
 
@@ -62,7 +79,7 @@ const ICONS: Record<Severity, ReactNode> = {
   unknown: <CircleQuestionMark />,
 };
 
-type Phase = 'idle' | 'opening' | 'running' | 'canceling';
+type Phase = 'idle' | 'opening' | 'running' | 'canceling' | 'reporting';
 
 /** `capped(value, limit)` as one string, with "…" when it was cut. */
 function cut(value: string, limit: number): string {
@@ -79,15 +96,25 @@ function summaryText(t: TFunction, findings: Finding[]): string {
     .join(' · ');
 }
 
-function FindingItem({ finding, index }: { finding: Finding; index: number }) {
+function FindingItem({
+  finding,
+  index,
+  hint = false,
+}: {
+  finding: Finding;
+  index: number;
+  /** A backup hint: listed under the "Backups" heading, so its title is one level lower. */
+  hint?: boolean;
+}) {
   const { t } = useTranslation();
   const titleId = useId();
   const own = finding.source === 'studio' && STUDIO_CODES.has(finding.code);
+  const Title = hint ? 'h4' : 'h3';
   return (
     <li
       className={clsx(styles.finding, styles[finding.severity])}
       aria-labelledby={titleId}
-      data-testid="diagnostics-finding"
+      data-testid={hint ? 'diagnostics-hint' : 'diagnostics-finding'}
       data-severity={finding.severity}
       data-index={index}
     >
@@ -103,11 +130,11 @@ function FindingItem({ finding, index }: { finding: Finding; index: number }) {
         </code>
         <span className={styles.source}>{t(`diagnostics.source.${finding.source}`)}</span>
       </p>
-      <h3 id={titleId} className={styles.findingTitle} lang={own ? undefined : 'en'}>
+      <Title id={titleId} className={styles.findingTitle} lang={own ? undefined : 'en'}>
         {own
           ? t(`diagnostics.titles.${finding.code}`)
           : cut(finding.title, MAX_TITLE_LENGTH) || t('diagnostics.result.noTitle')}
-      </h3>
+      </Title>
       {finding.detail !== '' ? (
         <p className={styles.text} lang="en" data-testid="diagnostics-detail">
           {cut(finding.detail, MAX_TEXT_LENGTH)}
@@ -120,6 +147,59 @@ function FindingItem({ finding, index }: { finding: Finding; index: number }) {
         </p>
       ) : null}
     </li>
+  );
+}
+
+/** The backup hints (STU-025): not findings, so they have their own heading and are not in the summary. */
+function BackupHints({ backup, incomplete }: { backup: Backup; incomplete: boolean }) {
+  const { t } = useTranslation();
+  const listed = backup.hints.slice(0, MAX_HINTS);
+  let state: ReactNode = null;
+  if (backup.invalid) {
+    state = (
+      <p className={connectionStyles.warning} data-testid="diagnostics-backup-invalid">
+        {t('diagnostics.backup.invalid')}
+      </p>
+    );
+  } else if (listed.length === 0 && (incomplete || !backup.checked)) {
+    // L-1 of the TD-036 review: no hints after a cancel or the time limit (or without a file to look next to) is no
+    // sign that the backups are fine, so the page says that they were not checked.
+    state = (
+      <p className={connectionStyles.warning} data-testid="diagnostics-backup-unchecked">
+        {t('diagnostics.backup.unchecked')}
+      </p>
+    );
+  } else if (listed.length === 0) {
+    state = (
+      <p className={connectionStyles.status} data-testid="diagnostics-backup-none">
+        {t('diagnostics.backup.none')}
+      </p>
+    );
+  }
+  return (
+    <section
+      className={styles.backup}
+      aria-labelledby="diagnostics-backup"
+      data-testid="diagnostics-backup"
+    >
+      <h3 id="diagnostics-backup" className={styles.backupTitle}>
+        {t('diagnostics.backup.title')}
+      </h3>
+      <p className={connectionStyles.hint}>{t('diagnostics.backup.lead')}</p>
+      {state}
+      {listed.length > 0 ? (
+        <ul className={styles.findings} data-testid="diagnostics-hints">
+          {listed.map((hint, index) => (
+            <FindingItem key={index} finding={hint} index={index} hint />
+          ))}
+        </ul>
+      ) : null}
+      {backup.hints.length > listed.length ? (
+        <p className={connectionStyles.hint} data-testid="diagnostics-hints-more">
+          {t('diagnostics.backup.more', { count: backup.hints.length - listed.length })}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -181,6 +261,9 @@ function DiagnosisResult({
           {t('diagnostics.result.more', { count: diagnosis.findings.length - listed.length })}
         </p>
       ) : null}
+      {diagnosis.backup !== null ? (
+        <BackupHints backup={diagnosis.backup} incomplete={incomplete} />
+      ) : null}
     </div>
   );
 }
@@ -194,12 +277,27 @@ interface Shown {
   environment: ProfileItem['environment'];
 }
 
-export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
+export function DiagnosticsView({
+  fetcher = fetch,
+  save = saveFile,
+}: {
+  fetcher?: typeof fetch;
+  /** Where a downloaded report goes (the browser's download; tests pass their own). */
+  save?: SaveFile;
+}) {
   const { t } = useTranslation();
   const selectId = useId();
+  const noteId = useId();
+  const gate = useConnect(fetcher);
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
-  const [shown, setShown] = useState<Shown | null>(null);
+  const [shown, setShownState] = useState<Shown | null>(null);
+  /** The shown diagnosis as of now, for a click that lands before the next render (N-1 of the TD-036 review). */
+  const shownNow = useRef<Shown | null>(null);
+  const setShown = (next: Shown | null) => {
+    shownNow.current = next;
+    setShownState(next);
+  };
   const [problem, setProblem] = useState<Problem | null>(null);
   const [phase, setPhaseState] = useState<Phase>('idle');
   /** The phase as of now, for a click that lands before the next render (review I-5). */
@@ -208,7 +306,6 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
     phaseNow.current = next;
     setPhaseState(next);
   };
-  const [dialog, setDialog] = useState(false);
   const [message, setMessage] = useState('');
   /** The finished message repeats the summary below it: then it is only announced, not shown twice. */
   const [quiet, setQuiet] = useState(false);
@@ -216,6 +313,12 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
   const request = useRef(0);
   /** The connection whose diagnosis is running, so that a cancel, a profile switch or leaving the page can stop it. */
   const running = useRef<string | null>(null);
+  /** Aborts the report request in flight (N-2 of the TD-036 review): a dropped report is not read to its end. */
+  const reportAbort = useRef<AbortController | null>(null);
+  const abortReport = () => {
+    reportAbort.current?.abort();
+    reportAbort.current = null;
+  };
 
   useEffect(() => {
     let active = true;
@@ -234,6 +337,7 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
   useEffect(
     () => () => {
       request.current += 1;
+      abortReport();
       const connection = running.current;
       running.current = null;
       if (connection !== null) void cancelDiagnostics(fetcher, connection);
@@ -312,7 +416,55 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
     await diagnose(mine, connectionId, target);
   };
 
+  /** The report of the shown diagnosis's connection: never opens one, so D-02 cannot be skipped. */
+  const report = async (format: ReportFormat) => {
+    // The phase and the diagnosis as of now, never the render's: a second press before the next render starts nothing
+    // (N-1 of the TD-036 review, like Cancel in review I-5).
+    const current = shownNow.current;
+    if (current === null || phaseNow.current !== 'idle') return;
+    const mine = ++request.current;
+    const connectionId = current.connectionId;
+    running.current = connectionId;
+    const abort = new AbortController();
+    reportAbort.current = abort;
+    setPhase('reporting');
+    setProblem(null);
+    setMessage(t('diagnostics.download.making'));
+    setQuiet(false);
+    const result = await downloadReport(fetcher, connectionId, format, abort.signal);
+    if (reportAbort.current === abort) reportAbort.current = null;
+    if (running.current === connectionId && mine === request.current) running.current = null;
+    if (mine !== request.current) return;
+    setPhase('idle');
+    if (result.ok) {
+      save(result.value.blob, result.value.filename);
+      setMessage(t('diagnostics.download.done', { filename: result.value.filename }));
+    } else {
+      setProblem(result.problem);
+      setMessage('');
+    }
+  };
+
   const cancel = async () => {
+    if (phaseNow.current === 'reporting') {
+      // The report is dropped, not saved: its answer would be a diagnosis cut short by the cancel. The request is
+      // aborted, and the server's diagnosis is stopped through the cancel route (N-2 of the TD-036 review).
+      const mine = ++request.current;
+      abortReport();
+      const connection = running.current;
+      running.current = null;
+      setPhase('canceling');
+      setMessage(t('diagnostics.canceling'));
+      const canceled = connection !== null && (await cancelDiagnostics(fetcher, connection));
+      if (mine !== request.current) return;
+      setPhase('idle');
+      // Only a cancel the server confirmed is "canceled": one that lands before the server registered the report's
+      // diagnosis (it reads the names first) does not stop it, and the page says so.
+      setMessage(
+        t(canceled ? 'diagnostics.download.canceled' : 'diagnostics.download.cancelNotTaken'),
+      );
+      return;
+    }
     if (phaseNow.current === 'opening') {
       // The diagnosis has not started: drop the request; the connection stays open for later.
       request.current += 1;
@@ -336,6 +488,7 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
 
   const switchProfile = (id: string) => {
     request.current += 1;
+    abortReport();
     const connection = running.current;
     running.current = null;
     if (connection !== null) void cancelDiagnostics(fetcher, connection);
@@ -348,8 +501,9 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
   };
 
   const canRun = profile !== null && !busy;
-  const canCancel = phase === 'opening' || phase === 'running';
+  const canCancel = phase === 'opening' || phase === 'running' || phase === 'reporting';
   const canRerun = !busy && shown !== null;
+  const canReport = canRerun;
   let runLabel = t('diagnostics.run');
   if (phase === 'opening') runLabel = t('diagnostics.opening');
   else if (phase === 'running') runLabel = t('diagnostics.running');
@@ -395,9 +549,8 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
               variant="primary"
               aria-disabled={!canRun}
               onClick={() => {
-                if (!canRun) return;
-                if (profile?.environment === 'prod') setDialog(true);
-                else void run();
+                if (!canRun || profile === null) return;
+                gate.guard(profile, () => void run());
               }}
             >
               {runLabel}
@@ -408,6 +561,27 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
             <Button aria-disabled={!canRerun} onClick={() => canRerun && void rerun()}>
               {t('diagnostics.rerun')}
             </Button>
+          </div>
+        )}
+        {profiles !== null && profiles.length === 0 ? null : (
+          <div className={styles.picker} data-testid="diagnostics-report">
+            <Button
+              aria-disabled={!canReport}
+              aria-describedby={noteId}
+              onClick={() => void report('markdown')}
+            >
+              {t('diagnostics.download.markdown')}
+            </Button>
+            <Button
+              aria-disabled={!canReport}
+              aria-describedby={noteId}
+              onClick={() => void report('json')}
+            >
+              {t('diagnostics.download.json')}
+            </Button>
+            <p id={noteId} className={clsx(connectionStyles.hint, styles.note)}>
+              {t('diagnostics.download.note')}
+            </p>
           </div>
         )}
         <p
@@ -432,18 +606,7 @@ export function DiagnosticsView({ fetcher = fetch }: { fetcher?: typeof fetch })
           ) : null}
         </div>
       </section>
-      {dialog && profile !== null ? (
-        <ProdConnectDialog
-          open
-          name={visible(profile.name)}
-          timeoutSeconds={PROD_TIMEOUT_S}
-          onCancel={() => setDialog(false)}
-          onConnect={() => {
-            setDialog(false);
-            void run();
-          }}
-        />
-      ) : null}
+      {gate.dialog}
     </div>
   );
 }
