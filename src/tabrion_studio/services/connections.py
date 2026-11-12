@@ -36,6 +36,7 @@ import sqlite3
 import threading
 import time
 from typing import Any, Protocol, TypeVar
+import weakref
 
 import sqlalchemy
 from sqlalchemy import event
@@ -235,10 +236,16 @@ def _close_after_dispose(db: tabrion.Database) -> Callable[[Any, Any], None]:
     still holds goes back, at check-in, into the disposed pool, which nothing closes: its driver connection stays
     open until garbage collection (``ResourceWarning: unclosed database`` in whichever test happens to collect it).
     Closing it at check-in releases it as soon as the statement ends.
+
+    A weak reference (F-2 of ``stu-011-leak-delta-review.md``): the engine's pool holds this listener, so a strong
+    one would make ``db -> engine -> pool -> listener -> db`` a cycle that only the cyclic garbage collector frees. A
+    Database that is gone counts as closed.
     """
+    database = weakref.ref(db)
 
     def close_if_disposed(dbapi_connection: Any, connection_record: Any) -> None:
-        if dbapi_connection is not None and db.closed:
+        current = database()
+        if dbapi_connection is not None and (current is None or current.closed):
             connection_record.invalidate()
 
     return close_if_disposed

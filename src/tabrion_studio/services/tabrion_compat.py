@@ -200,21 +200,35 @@ def stream(
     postgres = not isinstance(dbapi, sqlite3.Connection)
     cancel.attach(dbapi)
     sent = False
+    cursor: Any = None
     try:
         # A named psycopg cursor is a server-side cursor (DECLARE ... CURSOR, FETCH).
         cursor = dbapi.cursor(name=f"studio_{secrets.token_hex(8)}") if postgres and server_side else dbapi.cursor()
-        try:
-            cursor.execute(sql, dict(values))
-            yield ResultCursor(cursor, _columns(cursor, dbapi, postgres))
-        finally:
-            with contextlib.suppress(Exception):
-                cursor.close()
+        cursor.execute(sql, dict(values))
+        yield ResultCursor(cursor, _columns(cursor, dbapi, postgres))
     finally:
+        # Detached before the cursor closes (F-4 of stu-011-leak-delta-review.md): a cancel that came while the
+        # cursor's CLOSE ran made psycopg's ServerCursor.close() raise before it marked the cursor closed, and the
+        # cursor warned "deleted while still open" at garbage collection.
         sent = cancel.detach()
         if sent:
-            _discard(connection, dbapi)
+            _discard(connection, dbapi)  # first: a cancel packet still on its way cannot reach the CLOSE either
+        if cursor is not None:
+            _close_cursor(cursor, connection, dbapi)
     if sent:
         raise Cancelled
+
+
+def _close_cursor(cursor: Any, connection: sqlalchemy.Connection, dbapi: Any) -> None:
+    """Close ``cursor``; one whose close fails (a broken connection) is closed without the database: the
+    connection leaves the pool (:func:`_discard`), and on a closed driver connection psycopg marks a server-side
+    cursor closed without sending ``CLOSE``."""
+    try:
+        cursor.close()
+    except Exception:
+        _discard(connection, dbapi)
+        with contextlib.suppress(Exception):
+            cursor.close()
 
 
 @contextlib.contextmanager

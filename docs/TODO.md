@@ -635,6 +635,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   cancel its running queries; they end at their timeout or with the connection's error. A connection's pool has 2
   connections, shared by its queries (at most 2), the explorer and the health check; a third user waits up to the
   pool timeout (10 s). Decide with STU-012 whether closing should cancel first and whether the pool should grow.
+  Such a query's session is closed when it comes back, not pooled (the unclosed-database ResourceWarning of
+  `stu-011-leak-delta-review.md`; tabrion 0.2's close semantics close the last race of its F-5).
 - **The page's heartbeat:** the earlier plan let STU-011 replace the polling heartbeat with SSE. The STU-011 stream
   is per query (behind the session, CSRF and Origin checks like every API route); moving the heartbeat onto a
   long-lived stream is for STU-012, when the page reads streams.
