@@ -1,0 +1,7 @@
+Copied migration files of the Levuvo platforms (STU-024: "fixtures of the three repositories, copied, no
+dependency"). They are test data only: Studio reads them as text and never runs them.
+
+nodestro/  nodestro-runtime 40511eb7abcaaff4db326788787d9481cceacc9d  src/nodestro_runtime/migrations/postgres/0001..0003
+axentra/   axentra da69b55c64dbdf0a09d9bf7322558c2db475568e  src/axentra/data/sql/0006, 0007
+orkexa     orkexa 5bf139e41893a4c1a757ed53351466e43da7fec0  (no files: the version table DDL and SCHEMA_VERSION are quoted in test_levuvo_migrations.py)
+All three are MIT-licensed (Copyright (c) 2026 Peter Karlhuber), like Tabrion Studio.

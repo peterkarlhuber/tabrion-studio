@@ -516,6 +516,13 @@ CATALOG: dict[str, Entry] = {
         "Version table not readable",
         "The database did not answer while Studio read the Alembic version table.",
     ),
+    "studio.migrations_table": Entry(
+        422,
+        ProblemKind.CONFIG,
+        "Version table not as expected",
+        "A migration version table lacks a column Studio reads, or a column has an unexpected type.",
+        "Check that the table was made by the platform's own migration runner.",
+    ),
     "studio.migrations_failed": Entry(
         500,
         ProblemKind.INTERNAL,
