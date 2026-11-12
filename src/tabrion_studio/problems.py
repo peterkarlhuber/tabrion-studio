@@ -530,6 +530,27 @@ CATALOG: dict[str, Entry] = {
         "The process that reads the project's revisions ended without an answer.",
         "Run alembic heads in the project to see whether its revision files load.",
     ),
+    # Export (STU-021).
+    "studio.export_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Export not valid",
+        "An export needs a format (csv or json), either a query or a table, and at most 1 000 000 rows.",
+    ),
+    "studio.export_busy": Entry(
+        429,
+        ProblemKind.DATABASE,
+        "Export running",
+        "Studio runs one export per connection and at most 2 at a time.",
+        "Wait for the running export to finish.",
+    ),
+    "studio.export_stopped": Entry(
+        504,
+        ProblemKind.DATABASE,
+        "Export stopped",
+        "The export took longer than 10 minutes and was stopped.",
+        "Export fewer rows, or filter the query.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,

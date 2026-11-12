@@ -41,6 +41,7 @@ from tabrion_studio.api.config import Configuration, add_config_routes
 from tabrion_studio.api.connections import add_connection_routes
 from tabrion_studio.api.diagnostics import add_diagnostics_routes
 from tabrion_studio.api.explorer import add_explorer_routes
+from tabrion_studio.api.exports import add_export_routes
 from tabrion_studio.api.migrations import add_migration_routes
 from tabrion_studio.api.queries import add_query_routes
 from tabrion_studio.api.viewer import add_viewer_routes
@@ -55,6 +56,7 @@ from tabrion_studio.security.sessions import Sessions, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
+from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.viewer import Viewer
@@ -102,6 +104,8 @@ class Runtime:
     diagnostics: Diagnostics | None = None
     #: Migration status and the project's code trust (STU-015); None serves neither.
     migrations: Migrations | None = None
+    #: Exports of query results and tables (STU-021); None serves no export route.
+    exports: Exports | None = None
 
 
 def _problem(code: str) -> Response:
@@ -248,6 +252,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_diagnostics_routes(app, runtime.diagnostics)
     if runtime.migrations is not None:
         add_migration_routes(app, runtime.migrations)
+    if runtime.exports is not None:
+        add_export_routes(app, runtime.exports)
 
     index = static_dir / "index.html"
     if index.is_file():
