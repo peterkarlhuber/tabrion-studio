@@ -377,7 +377,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   keep `tabrion_studio.security` (TABRION STU-003) below the app, the server, the process model and the CLI, and
   keep `tabrion_studio.problems` and `tabrion_studio.logs` (TABRION STU-004) below every other Studio module.
 - **Status note:** every contract has a mutation probe in `tests/architecture/test_forbidden_probe.py` (TABRION
-  QA-16); the layer contract, and any new contract, needs its own probe there.
+  QA-16); the layer contract, and any new contract, needs its own probe there. The dependency policy (QA-17, AC-2):
+  `dependency-policy.json` and the vendored `scripts/check_dependency_policy.py` (a new Levuvo dependency needs a K-33
+  edge in nodestro-studio first, then a new copy here).
 
 ### TD-002 · Sandboxed browsers cannot open the redirect file (TABRION STU-003)
 

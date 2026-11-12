@@ -136,6 +136,14 @@ All notable changes to this project are documented here. The format follows
   troubleshooting with the messages of the page and the command. A test checks that every command-line option has a
   row in the guide's options table and that every guide page has an entry in the site navigation.
 
+- Dependency policy (QA-17, AC-2): `dependency-policy.json` is this repository's copy of the dependency policy K-33
+  from nodestro-studio (only its outgoing edges: `tabrion[postgres,sqlalchemy,migrations]` in the core), and
+  `scripts/check_dependency_policy.py` is the unchanged checker from there; `scripts/DEPENDENCY_POLICY_SOURCE.md`
+  records their origin and SHA-256. `python scripts/check_dependency_policy.py` checks `pyproject.toml` (core, every
+  extra and dependency group) against the copy. `tests/architecture/test_dependency_policy.py` checks the checksums,
+  runs the checker and probes forbidden requirements (Axentra, a platform, extras beyond the edge). Ruff skips the
+  vendored script (it is linted in nodestro-studio). The sdist ships the policy copy.
+
 - Import-contract mutation probe (QA-16, AC-1): `tests/architecture/test_forbidden_probe.py` runs `lint-imports` on
   the repository and on a copy of the package, and on copies with one forbidden import each, which must fail and name
   the broken contract (every contract has at least one probe). It also checks that the edge to `tabrion` stays

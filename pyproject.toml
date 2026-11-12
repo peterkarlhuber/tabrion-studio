@@ -88,6 +88,7 @@ include = [
     "TRADEMARKS.md",
     "mkdocs.yml",
     "pyproject.toml",
+    "dependency-policy.json",  # TABRION QA-17: tests/architecture/test_dependency_policy.py
     "build-constraints.txt",
 ]
 exclude = ["frontend/node_modules", "frontend/dist"]
@@ -113,7 +114,8 @@ show_missing = true
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-extend-exclude = ["frontend"]
+# scripts/check_dependency_policy.py is an unchanged, checksummed copy from nodestro-studio (TABRION QA-17), linted there.
+extend-exclude = ["frontend", "scripts/check_dependency_policy.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
