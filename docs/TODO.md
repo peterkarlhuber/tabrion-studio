@@ -965,7 +965,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - The route `/c/:conn/t/:schema/:name` (08 section 2) instead of `/explorer` with a picker: with the workspace
     routes (TD-011). The explorer as the always-present left bar of a connection workspace belongs there too.
   - A virtualized tree (08: TanStack Virtual; `@tanstack/react-virtual` arrives with #41). Until then a group renders
-    at most 500 objects and says so; the filter finds the others. The rows are already a flat list for it.
+    at most 500 objects and says so. The page reads the whole catalog, with no cap on the number of objects
+    (C-2 of `stu-010-ui-review.md`), so the filter finds every object, also past the first 5000. The rows are
+    already a flat list for the virtualized tree.
   - The E2E test against the reference apps (`e2e/explorer-reference.spec.ts`, a spec of its own so that
     `backend.spec.ts`, which the CI gate requires to run without a skip, stays complete) runs where
     `TABRION_STUDIO_E2E_PYTHON` and `TABRION_STUDIO_E2E_EXAMPLES` (tabrion's `examples` folder) are set, and its

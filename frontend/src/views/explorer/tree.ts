@@ -34,6 +34,8 @@ export interface TreeRow {
   setsize: number;
   /** undefined: a leaf. */
   expanded?: boolean;
+  /** Open because a filter is active: it cannot be closed, and ← goes to its parent (L-3 of stu-010-ui-review.md). */
+  forced?: boolean;
   /** The schema of a schema, group or object row. */
   schema?: string;
   /** The kind of a group or object row. */
@@ -140,6 +142,7 @@ export function buildRows(catalog: Catalog, expanded: Set<string>, filter: Filte
         posinset: index + 1,
         setsize: kinds.length,
         expanded: open,
+        forced: active,
         schema,
         kind,
         count: items.length,
@@ -185,6 +188,7 @@ export function buildRows(catalog: Catalog, expanded: Set<string>, filter: Filte
       posinset: 0,
       setsize: 0,
       expanded: total > 0 ? open : undefined,
+      forced: active && total > 0,
       schema,
       count: total,
     });

@@ -5,7 +5,6 @@ import {
   epochMs,
   fetchCatalog,
   fetchTable,
-  MAX_LIST,
   parseCatalog,
   parseExtensions,
   parseSqliteInfo,
@@ -46,13 +45,15 @@ describe('parseCatalog', () => {
     expect(catalog?.schemas).toEqual(['main']);
   });
 
-  it('reads at most MAX_LIST objects', () => {
-    const objects = Array.from({ length: MAX_LIST + 10 }, (_, i) => ({
+  it('keeps every object, also past 5000: nothing is cut while reading (C-2)', () => {
+    const objects = Array.from({ length: 6000 }, (_, i) => ({
       schema: 'main',
       name: `t${i}`,
       kind: 'table',
     }));
-    expect(parseCatalog({ ...SQLITE_CATALOG, objects })?.objects).toHaveLength(MAX_LIST);
+    const catalog = parseCatalog({ ...SQLITE_CATALOG, objects });
+    expect(catalog?.objects).toHaveLength(6000);
+    expect(catalog?.objects.at(-1)?.name).toBe('t5999');
   });
 });
 
@@ -178,6 +179,25 @@ describe('requests', () => {
       expect(call.init?.method).toBeUndefined();
       expect(call.init?.credentials).toBe('same-origin');
     }
+  });
+
+  it('an answer for another object or another connection is refused (I-1)', async () => {
+    const answer = (body: unknown) =>
+      (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+    const invalid = { ok: false, problem: { code: 'studio.answer_invalid' } };
+    expect(
+      await fetchTable(answer(PG_TABLES.device), 'c-pg', 'public', 'measurement'),
+    ).toMatchObject(invalid);
+    expect(await fetchTable(answer(PG_TABLES.device), 'c-pg', 'audit', 'device')).toMatchObject(
+      invalid,
+    );
+    expect(await fetchTable(answer(PG_TABLES.device), 'c-pg', 'public', 'device')).toMatchObject({
+      ok: true,
+    });
+    expect(await fetchCatalog(answer(SQLITE_CATALOG), 'c-pg')).toMatchObject(invalid);
+    expect(await fetchCatalog(answer(SQLITE_CATALOG), 'c-sqlite')).toMatchObject({ ok: true });
+    const { connection_id: _, ...anonymous } = SQLITE_CATALOG;
+    expect(await fetchCatalog(answer(anonymous), 'c-pg')).toMatchObject({ ok: true });
   });
 
   it('an answer that is not JSON or not the shape is answer_invalid; a refusal keeps its code', async () => {

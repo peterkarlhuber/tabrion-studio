@@ -164,6 +164,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const filterInput = useRef<HTMLInputElement>(null);
   const profileSelect = useRef<HTMLSelectElement>(null);
   const detailHeading = useRef<HTMLHeadingElement>(null);
+  const openButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -257,6 +258,9 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         setCatalog(null);
         setSelection(null);
         setDetail(null);
+        // The workspace (and the focused Refresh button) goes away: the focus moves to Open, which stays mounted
+        // (L-2 of stu-010-ui-review.md).
+        openButton.current?.focus();
       }
       return;
     }
@@ -518,6 +522,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             </select>
             <Button
               variant="primary"
+              ref={openButton}
               disabled={profile === null}
               aria-disabled={busy || undefined}
               onClick={() => {

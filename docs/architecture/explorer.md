@@ -65,9 +65,10 @@ connection and never opens one, so D-02 cannot be skipped. A connection that is 
 - **Tree:** a WAI-ARIA tree (`role="tree"`, flat rows with `aria-level`, `aria-posinset`, `aria-setsize`,
   `aria-expanded`; one tab stop). PostgreSQL: schema → type group → object, then the extensions. SQLite: the
   database file (its facts), then the type groups of `main`. Keys: ↑ ↓ Home End, → opens or goes to the first child,
-  ← closes or goes to the parent, Enter or Space selects (selection does not follow the focus, so moving through
-  500 tables sends no detail request), a letter jumps to the next row starting with it. A group renders at most
-  500 objects (no virtualized list yet, TD-041); from 2 000 objects on the page says that it loads names only.
+  ← closes or goes to the parent (while a filter keeps the groups open, it goes to the parent), Enter or Space
+  selects (selection does not follow the focus, so moving through 500 tables sends no detail request), a letter
+  jumps to the next row starting with it. A group renders at most 500 objects (no virtualized list yet, TD-041);
+  from 2 000 objects on the page says that it loads names only.
 - **Filter:** a name prefix (case-insensitive; with a dot, a prefix of `schema.name`) and an object type (03 section
   2 B). Matching groups open; a status line counts the matches. ⌘P / Ctrl+P focuses the filter on this page.
 - **Details:** tabs Columns, Constraints, Indexes, Relationships and, on SQLite, the table's `STRICT` and
@@ -81,7 +82,9 @@ connection and never opens one, so D-02 cannot be skipped. A connection that is 
 - **Fail closed:** a catalog without its object list, or with an object without a schema or name, is
   `studio.answer_invalid`, never an empty tree. An unknown object kind is shown under "Other objects". A count
   (row estimate, page size, file size) is used only when it is a safe non-negative integer, a time only when `Date`
-  can show it, the file mode only as four octal digits.
+  can show it, the file mode only as four octal digits. Nothing is cut while reading: the catalog keeps every object,
+  however many, and only the rendering is capped (and says so). A table detail for another schema or name than the
+  one asked for, or a catalog for another connection, is `studio.answer_invalid` too.
 - **Stale answers:** a profile switch, an open or a refresh counts up one request counter, a selection a second one;
   only the latest answer of each is shown. A refresh keeps the selection of the moment it answers.
 

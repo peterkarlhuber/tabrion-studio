@@ -2,7 +2,8 @@
  * The object tree (STU-010, 08 sections 4.3 and 9): a WAI-ARIA tree, single selection, with a roving tab stop.
  *
  * - ↓ / ↑: next / previous row; Home / End: first / last row.
- * - →: open a closed row; on an open one, go to its first child. ←: close an open row; else go to the parent.
+ * - →: open a closed row; on an open one, go to its first child. ←: close an open row; else go to the parent. While
+ *   a filter is active the groups stay open, so ← goes to the parent (L-3 of stu-010-ui-review.md).
  * - Enter or Space: select an object (its details load); on a schema or group row, open or close it.
  * - A letter or digit: the next row whose name starts with it.
  *
@@ -71,7 +72,7 @@ export function ObjectTree({
 
   const activate = (row: TreeRow) => {
     if (row.type === 'schema' || row.type === 'group') {
-      if (row.expanded !== undefined) onToggle(row.id, !row.expanded);
+      if (row.expanded !== undefined && !row.forced) onToggle(row.id, !row.expanded);
     } else {
       onSelect(row);
     }
@@ -103,7 +104,7 @@ export function ObjectTree({
         }
         break;
       case 'ArrowLeft':
-        if (row.expanded === true) onToggle(row.id, false);
+        if (row.expanded === true && !row.forced) onToggle(row.id, false);
         else if (row.parent !== null) move(row.parent);
         break;
       case 'Enter':

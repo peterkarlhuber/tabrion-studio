@@ -14,6 +14,7 @@ import {
   PG_CATALOG,
   PG_TABLES,
   SQLITE_CATALOG,
+  SQLITE_INFO,
   SQLITE_TABLES,
 } from '../../harness/explorer';
 import { ExplorerView } from './ExplorerView';
@@ -143,6 +144,15 @@ describe('opening and the tree', () => {
       '1',
     ]);
     expect(row('Database file')).not.toHaveAttribute('aria-expanded');
+    // The first level is numbered on SQLite too (M17 of stu-010-ui-review.md).
+    const top = rows().filter((r) => r.getAttribute('aria-level') === '1');
+    expect(
+      top.map((r) => [r.getAttribute('aria-posinset'), r.getAttribute('aria-setsize')]),
+    ).toEqual([
+      ['1', '3'],
+      ['2', '3'],
+      ['3', '3'],
+    ]);
     expect(row('Tables (6)')).toHaveAttribute('aria-expanded', 'true');
     expect(row('Views (1)')).toHaveAttribute('aria-expanded', 'false');
     expect(row('part')).toHaveAttribute('aria-posinset', '4');
@@ -310,6 +320,51 @@ describe('the filter', () => {
     expect(row('Views (1)')).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('while filtering, ← on an open group goes to its parent and leaves it open (L-3)', async () => {
+    const { fetcher } = server();
+    const user = await openPg(fetcher);
+    await user.type(screen.getByLabelText('Filter objects'), 'dev');
+    expect(rows().map((r) => r.textContent)).toEqual([
+      'public (2)',
+      'Tables (1)',
+      'device',
+      'Views (1)',
+      'device_overview',
+    ]);
+    row('Views (1)').focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(row('public (2)')).toHaveFocus();
+    expect(row('Views (1)')).toHaveAttribute('aria-expanded', 'true');
+    await user.keyboard('{Enter}'); // a forced-open schema does not close either
+    expect(row('public (2)')).toHaveAttribute('aria-expanded', 'true');
+    await user.click(row('Tables (1)'));
+    expect(row('device')).toBeInTheDocument();
+    // After the filter, the groups are as they were before it: Tables open, Views closed.
+    await user.clear(screen.getByLabelText('Filter objects'));
+    expect(row('Tables (3)')).toHaveAttribute('aria-expanded', 'true');
+    expect(row('Views (1)')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('finds an object past the first 5000: the catalog is never cut (C-2)', async () => {
+    const many = Array.from({ length: 6000 }, (_, index) => ({
+      schema: 'public',
+      name: `t${String(index).padStart(4, '0')}`,
+      kind: 'table',
+    }));
+    const { fetcher } = server({
+      [`GET ${PG}/catalog`]: () => json({ ...PG_CATALOG, objects: many }),
+    });
+    const user = await openPg(fetcher);
+    expect(screen.getByTestId('explorer-message')).toHaveTextContent('Catalog read: 6000 objects.');
+    expect(screen.getByTestId('explorer-large')).toHaveTextContent('6000 objects');
+    fireEvent.change(screen.getByLabelText('Filter objects'), { target: { value: 't55' } });
+    expect(screen.getByTestId('explorer-matches')).toHaveTextContent('100 of 6000 objects match.');
+    fireEvent.change(screen.getByLabelText('Filter objects'), { target: { value: 't5999' } });
+    expect(row('t5999')).toBeInTheDocument();
+    await user.click(row('t5999'));
+    expect(row('t5999')).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('a query with a dot matches schema.name', async () => {
     const { fetcher } = server();
     const user = await openPg(fetcher);
@@ -340,6 +395,24 @@ describe('the filter', () => {
     await screen.findByRole('tree');
     await user.keyboard('{Control>}p{/Control}');
     expect(screen.getByLabelText('Filter objects')).toHaveFocus();
+  });
+
+  it('Ctrl+P does nothing while a dialog is open (M21)', async () => {
+    const { fetcher } = server();
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    const before = document.activeElement;
+    const print = new KeyboardEvent('keydown', { key: 'p', ctrlKey: true, cancelable: true });
+    act(() => {
+      window.dispatchEvent(print);
+    });
+    expect(print.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(before);
+    expect(screen.getByLabelText('Connection profile')).not.toHaveFocus();
   });
 });
 
@@ -461,6 +534,33 @@ describe('the details', () => {
     );
   });
 
+  it('a key to a table that is not in the catalog is text, not a button (M30)', async () => {
+    const part = SQLITE_TABLES.part as Record<string, unknown>;
+    const { fetcher } = server({
+      [table(SQLITE, 'main', 'part')]: () =>
+        json({
+          ...part,
+          foreign_keys: [
+            {
+              name: 'fk_gone',
+              columns: ['material_id'],
+              referred_schema: 'main',
+              referred_table: 'gone',
+              referred_columns: ['id'],
+            },
+          ],
+        }),
+    });
+    const user = await openSqlite(fetcher);
+    await user.click(row('part'));
+    await user.click(await screen.findByRole('tab', { name: 'Constraints' }));
+    expect(screen.getByTestId('detail-fk')).toHaveTextContent(
+      'fk_gone: material_id → main.gone (id)',
+    );
+    expect(screen.queryByRole('button', { name: /Go to main\.gone/ })).toBeNull();
+    expect(within(screen.getByTestId('detail-fk')).queryByRole('button')).toBeNull();
+  });
+
   it('an object gone from the database: the problem in the details', async () => {
     const { fetcher } = server({
       [table(SQLITE, 'main', 'part')]: () => problem('studio.object_not_found', 404),
@@ -555,6 +655,66 @@ describe('stale answers are dropped', () => {
     // No PROD catalog under the DEV profile, and no PROD badge.
     expect(screen.queryByRole('tree')).toBeNull();
     expect(screen.queryByTestId('env-badge')).toBeNull();
+  });
+
+  it('switch while sqlite-info is in flight: the old catalog is not shown (Q1, M02)', async () => {
+    const info = later();
+    const { fetcher } = server({ [`GET ${SQLITE}/sqlite-info`]: info.answer });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    await waitFor(() =>
+      expect(screen.getByTestId('explorer-message')).toHaveTextContent('Reading'),
+    );
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await act(async () => {
+      info.send(json({ journal_mode: 'wal', tables: [] }));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.queryByRole('tree')).toBeNull();
+    expect(screen.queryByTestId('env-badge')).toBeNull();
+  });
+
+  it('switch while the open POST is in flight: the page is not left busy (Q2, M04)', async () => {
+    const post = later();
+    const { fetcher } = server({
+      ['POST /api/connections']: [post.answer, () => json({ connection_id: 'c-pg' }, 201)],
+    });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByTestId('explorer-open'));
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await act(async () => {
+      post.send(json({ connection_id: 'c-sqlite' }, 201));
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    expect(screen.getByTestId('explorer-open')).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByTestId('explorer-message')).toHaveTextContent('');
+    expect(screen.queryByRole('tree')).toBeNull();
+  });
+
+  it('late file facts of an earlier selection do not replace the shown ones (M24)', async () => {
+    const facts = later();
+    const { fetcher } = server({
+      [`GET ${SQLITE}/sqlite-info`]: [() => json(SQLITE_INFO), facts.answer],
+    });
+    const user = await openSqlite(fetcher);
+    await user.click(row('Database file'));
+    await user.click(row('part'));
+    await screen.findAllByTestId('detail-column');
+    await act(async () => {
+      facts.send(
+        json({
+          ...SQLITE_INFO,
+          tables: [{ name: 'part', type: 'table', strict: false, without_rowid: true }],
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+    await user.click(screen.getByRole('tab', { name: 'SQLite' }));
+    expect(screen.getByTestId('detail-sqlite')).toHaveTextContent('STRICTYesWITHOUT ROWIDNo');
   });
 
   it('a detail that answers after the next selection is not shown', async () => {
@@ -666,11 +826,14 @@ describe('refresh', () => {
       [`GET ${PG}/catalog?refresh=true`]: () => problem('studio.connection_not_found', 404),
     });
     const user = await openPg(fetcher);
-    await user.click(screen.getByTestId('explorer-refresh'));
+    await user.click(screen.getByTestId('explorer-refresh')); // the click puts the focus on Refresh
     expect(await screen.findByTestId('explorer-problem')).toHaveTextContent(
       'The connection is no longer open.',
     );
     expect(screen.queryByRole('tree')).toBeNull();
+    // The focused Refresh button is gone with the workspace; the focus moves to Open, never to the body (C-4).
+    expect(screen.getByTestId('explorer-open')).toHaveFocus();
+    expect(document.activeElement).not.toBe(document.body);
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
     await user.click(screen.getByTestId('explorer-open'));
     expect(screen.getByRole('dialog')).toBeInTheDocument();

@@ -8,8 +8,10 @@
  *
  * The parsers fail closed: an answer without the lists the page needs is `studio.answer_invalid`, never an empty
  * catalog; an unknown object kind is kept as `other` and shown, never dropped; numbers and times are used only when
- * they are what they claim to be. Every string here comes from the database and is shown escaped and capped
- * (`lib/visible.ts`, U-1).
+ * they are what they claim to be. No list is cut while it is read: the catalog keeps every object, so that the filter
+ * finds each one (C-2 of stu-010-ui-review.md); only the rendering is capped, and says so. An answer for another
+ * connection or another object than the one asked for is refused too (I-1). Every string here comes from the
+ * database and is shown escaped and capped (`lib/visible.ts`, U-1).
  */
 import { readProblem, OFFLINE, type Problem } from './problem';
 import type { Result } from './profiles';
@@ -133,9 +135,6 @@ export const ANSWER_INVALID: Problem = {
   logId: null,
 };
 
-/** At most this many entries of one list are read from an answer; the server never sends more for a real database. */
-export const MAX_LIST = 5000;
-
 type Doc = Record<string, unknown>;
 
 function doc(value: unknown): Doc | null {
@@ -165,7 +164,7 @@ export function epochMs(value: unknown): number | null {
 }
 
 function list(value: unknown): unknown[] | null {
-  return Array.isArray(value) ? value.slice(0, MAX_LIST) : null;
+  return Array.isArray(value) ? value : null;
 }
 
 function texts(value: unknown): string[] {
@@ -371,11 +370,13 @@ export function fetchCatalog(
   connectionId: string,
   refresh = false,
 ): Promise<Result<Catalog>> {
-  return read(
-    fetcher,
-    `${base(connectionId)}/catalog${refresh ? '?refresh=true' : ''}`,
-    parseCatalog,
-  );
+  return read(fetcher, `${base(connectionId)}/catalog${refresh ? '?refresh=true' : ''}`, (body) => {
+    const catalog = parseCatalog(body);
+    // The catalog of another connection is refused (I-1); an answer without the field is the asked one.
+    return catalog !== null && catalog.connectionId !== '' && catalog.connectionId !== connectionId
+      ? null
+      : catalog;
+  });
 }
 
 export function fetchTable(
@@ -385,7 +386,11 @@ export function fetchTable(
   name: string,
 ): Promise<Result<TableDetail>> {
   const query = new URLSearchParams({ schema, name });
-  return read(fetcher, `${base(connectionId)}/table?${query.toString()}`, parseTable);
+  return read(fetcher, `${base(connectionId)}/table?${query.toString()}`, (body) => {
+    const detail = parseTable(body);
+    // The detail of another object is refused, never shown under the name that was asked for (I-1).
+    return detail !== null && detail.schema === schema && detail.name === name ? detail : null;
+  });
 }
 
 export function fetchExtensions(
