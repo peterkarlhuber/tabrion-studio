@@ -53,9 +53,51 @@ sent through `OpenConnection.fetch`. The SQLite facts are reading pragmas, which
 Database values such as defaults, check texts and comments are the database's own text. The page shows them as text.
 None of this is logged.
 
+## The page
+
+`/explorer` (`frontend/src/views/explorer/`) shows the catalog as a tree and the selected object's details. Until the
+connection workspace (`/c/:conn/...`, 08 section 2) exists, the page has its own profile picker, like the migration and
+diagnostics pages (TD-041). "Open" reads the profile list again (so the PROD check uses the profile as it is now) and
+opens the profile's read-only connection (`POST /api/connections`; D-02 first for a PROD profile the user has not
+confirmed in this page session, the confirmation STU-008 shares between the pages) and reads the catalog; the opened
+connection becomes the header's connection. "Refresh" reads the catalog again with `refresh=true` on the same connection
+and never opens one. A connection that is gone (`connection_not_found`, `connection_stale`) is forgotten, by the page
+and by the header.
+
+- **Tree:** a WAI-ARIA tree (`role="tree"`, flat rows with `aria-level`, `aria-posinset`, `aria-setsize`,
+  `aria-expanded`; one tab stop). PostgreSQL: schema → type group → object, then the extensions. SQLite: the
+  database file (its facts), then the type groups of `main`. Keys: ↑ ↓ Home End, → opens or goes to the first child,
+  ← closes or goes to the parent (while a filter keeps the groups open, it goes to the parent), Enter or Space
+  selects (selection does not follow the focus, so moving through 500 tables sends no detail request), a letter
+  jumps to the next row starting with it. A group renders at most 500 objects (no virtualized list yet, TD-041);
+  from 2 000 objects on the page says that it loads names only.
+- **Filter:** a name prefix (case-insensitive; with a dot, a prefix of `schema.name`) and an object type (03 section
+  2 B). Matching groups open; a status line counts the matches. ⌘P / Ctrl+P focuses the filter on this page.
+- **Details:** tabs Columns, Constraints, Indexes, Relationships and, on SQLite, the table's `STRICT` and
+  `WITHOUT ROWID`. A related table is a button that selects it and moves the focus to its tree row. PostgreSQL
+  shows the row estimate; the extensions node lists versions and updates; the SQLite file node lists the pragmas,
+  the file size and its permission bits.
+- **Safety:** the page sends only GET requests and the connection open; it offers no action that changes the
+  database (STU-026 stays locked). Every database text is escaped (`visible()`: control, separator and bidi
+  characters as `\uXXXX`) and cut with a visible "…" (names 64, types 64, defaults 160, comments and check texts
+  300 characters); lists stop after 500 entries with "and N more".
+- **Fail closed:** a catalog without its object list, or with an object without a schema or name, is
+  `studio.answer_invalid`, never an empty tree. An unknown object kind is shown under "Other objects". A count
+  (row estimate, page size, file size) is used only when it is a safe non-negative integer, a time only when `Date`
+  can show it, the file mode only as four octal digits. Nothing is cut while reading: the catalog keeps every object,
+  however many, and only the rendering is capped (and says so). A table detail for another schema or name than the
+  one asked for, or a catalog for another connection, is `studio.answer_invalid` too.
+- **Stale answers:** a profile switch, an open or a refresh counts up one request counter, a selection a second one;
+  only the latest answer of each is shown. A refresh keeps the selection of the moment it answers.
+
+Open: "Open in editor" and "SELECT … LIMIT 100" (with the SQL editor, #41), the DDL and policies tab (with STU-022,
+#38), the data tab (STU-013 page), the virtualized tree and following the header's connection; see TD-041.
+
 ## Tests
 
 | Test | Covers |
 |---|---|
 | `tests/security/test_explorer.py` (SQLite) | the catalog of 503 tables in under a second (STU-010 acceptance: 500 tables < 1 s), the cache and `refresh`, the table detail (columns, default, PK, FK out and in, check, unique, index), unknown and hostile names refused, the SQLite facts (`STRICT`, `WITHOUT ROWID`, file mode), the registry check with a cached catalog, the routes behind session and CSRF |
 | `tests/security/test_explorer.py` (PostgreSQL) | the catalog of 502 tables in a schema in under a second, materialized views and sequences, no system schemas; comments, FKs in and out, the row estimate, extensions |
+| `frontend/src/views/explorer/ExplorerView.test.tsx`, `tree.test.ts`, `src/api/explorer.test.ts` | the page: D-02, the tree keyboard, the filter, the detail tabs, U-1 escaping and caps, stale answers, focus, fail-closed parsing, no write |
+| `frontend/e2e/explorer.spec.ts` | the page in Chromium with axe (light/dark, en/de) and keyboard-only; `e2e/explorer-reference.spec.ts` against the parts and measurements reference apps (skipped without its variables, TD-041) |

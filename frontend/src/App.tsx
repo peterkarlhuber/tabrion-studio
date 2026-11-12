@@ -9,6 +9,7 @@ import { AppShell, type ServerState } from './shell/AppShell';
 import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView } from './views/connections/ConnectionsView';
+import { ExplorerView } from './views/explorer/ExplorerView';
 import { DiagnosticsView } from './views/diagnostics/DiagnosticsView';
 import { MigrationsView } from './views/migrations/MigrationsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
@@ -44,6 +45,8 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
       return <StartView />;
     case '/connections':
       return <ConnectionsView fetcher={fetcher} />;
+    case '/explorer':
+      return <ExplorerView fetcher={fetcher} />;
     case '/migrations':
       return <MigrationsView fetcher={fetcher} />;
     case '/diagnostics':
@@ -57,6 +60,7 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
 
 const PAGE_TITLES: Record<string, string> = {
   '/connections': 'connections.title',
+  '/explorer': 'explorer.title',
   '/settings': 'settings.title',
 };
 

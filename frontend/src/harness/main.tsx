@@ -8,7 +8,8 @@
  * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, a connection
  * test and opening a connection answered (STU-008; parts-pg's test fails with `db.connection`);
  * migrations: the code trust and migration status of STU-015; dialog-trust-code; diagnostics: the findings of
- * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036), `path` (/, /connections, /migrations, /diagnostics,
+ * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036;
+ * explorer: the catalogs and details of STU-010), `path` (/, /connections, /explorer, /migrations, /diagnostics,
  * /settings), `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
@@ -28,6 +29,7 @@ import '../styles/global.css';
 import { installTooltipDismiss } from '../lib/tooltips';
 import { initTheme, setThemePreference } from '../theme';
 import type { Workspace } from '../workspace';
+import { explorerAnswer } from './explorer';
 import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
@@ -49,7 +51,7 @@ if (lang === 'en' || lang === 'de') void setLocale(lang);
 const counters = window as unknown as { heartbeats: number };
 counters.heartbeats = 0;
 
-/** The writes the page sent in the connections, migrations and diagnostics scenarios (e2e/*.spec.ts check them). */
+/** The writes the page sent in the connections, migrations, diagnostics and explorer scenarios (e2e/*.spec.ts). */
 const sent = window as unknown as {
   writes: { method: string; url: string; contentType: string }[];
 };
@@ -186,6 +188,17 @@ const fakeServer: typeof fetch = async (input, init) => {
       }
       return new Response(JSON.stringify(diagnosis()), { status: 200 });
     }
+  }
+  if (scenario === 'explorer') {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      sent.writes.push({ method, url, contentType: headers['Content-Type'] ?? '' });
+    }
+    if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    const answer = explorerAnswer(url, method, typeof init?.body === 'string' ? init.body : '');
+    if (answer !== null) return answer;
   }
   if (String(input) === '/api/heartbeat') {
     counters.heartbeats += 1;
