@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-015 backend: `GET /api/connections/{id}/migrations` with SQLite's
+  `user_version` and the Alembic status. The Alembic `current` comes from the version table; `heads` and `pending`
+  need the project's revision files to be imported, so they are read only after the user trusted the project's code
+  (`GET`/`POST`/`DELETE /api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the
+  revision files), in a separate process that gets only the connection's target and is killed after 30 seconds.
+  Otherwise they show as `unknown (project not trusted)`. Threat-model entry T-16. New dependency extra
+  `tabrion[migrations]` (Alembic). After the security review, the worker runs exactly the revision bytes it hashed
+  and reads no bytecode of the project, loads the database driver before the project's folders are on `sys.path`,
+  reads its answer with a size and time bound, and only one worker runs at a time (`studio.migrations_busy`).
+  On Windows the worker runs in a job object that ends its children, and the backend tests are green there; a test
+  that hangs for 300 s now ends the pytest run after its stack dump, so the CI log is kept.
 - STU-014 backend (`tabrion.check` on the driver connection until tabrion 0.2):
   `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host

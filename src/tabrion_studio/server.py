@@ -39,6 +39,7 @@ import uvicorn
 from tabrion_studio._version import __version__
 from tabrion_studio.api.config import Configuration
 from tabrion_studio.app import Runtime, create_app
+from tabrion_studio.config.code_trust import CodeTrust
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.idle import IdleMonitor
@@ -58,6 +59,7 @@ from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
+from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.viewer import Viewer
 
@@ -270,6 +272,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         explorer=explorer,
         viewer=Viewer(explorer, configuration.limits),
         diagnostics=Diagnostics(registry),
+        migrations=Migrations(registry, CodeTrust(options.project, options.state_dir, project_key(options.project))),
         instance_id=info.instance_id,
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),

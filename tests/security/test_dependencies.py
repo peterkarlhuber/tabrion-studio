@@ -219,4 +219,4 @@ def test_the_constraints_file_pins_tabrion_v0_1_0() -> None:
     lines = [line for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
     assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@d5821faa8742dea012abda3b663549c038d76543"]
     deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
-    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[postgres,sqlalchemy]>=0.1,<0.2"]
+    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2"]

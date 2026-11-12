@@ -28,7 +28,8 @@ classifiers = [
 dependencies = [
     # tabrion is not on PyPI: the range is here, the v0.1.0 commit is pinned by its full SHA in
     # constraints/tabrion-integration.txt (RC-8, ADR 0009 amendment, docs/TODO.md TS-001).
-    "tabrion[postgres,sqlalchemy]>=0.1,<0.2",
+    # migrations: Alembic read only, for tabrion.migrations.status (STU-015), run in a worker process.
+    "tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2",
     "psycopg[binary]>=3.2,<4",
     "fastapi>=0.115,<1",
     # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).
@@ -105,6 +106,10 @@ markers = [
     "postgres_superuser: needs TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER (a superuser of the same server; makes and drops its own roles)",
 ]
 filterwarnings = ["error"]
+# A test that runs this long hangs: dump every thread's stack, so a CI job that times out says where (TD-024), and
+# end the run, so the step fails before the job's time limit and its log is kept (I-1 of the Windows delta review).
+faulthandler_timeout = 300
+faulthandler_exit_on_timeout = true
 
 [tool.coverage.run]
 source = ["tabrion_studio"]
