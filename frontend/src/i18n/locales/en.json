@@ -9,6 +9,7 @@
     "label": "Main navigation",
     "start": "Start",
     "connections": "Connections",
+    "explorer": "Explorer",
     "migrations": "Migrations",
     "diagnostics": "Diagnostics",
     "settings": "Settings"
@@ -223,6 +224,130 @@
       "encoding": "encoding {{encoding}}",
       "timezone": "time zone {{zone}}",
       "privileged": "The role is a superuser or bypasses row-level security. Studio stays read-only, but only a role without write privileges is a hard boundary. Use a read-only role, above all for PROD."
+    }
+  },
+  "explorer": {
+    "title": "Explorer",
+    "lead": "The tables, views and other objects of a connection's database, with their columns, keys and indexes. Studio only reads them; it never changes the database.",
+    "connection": "Connection",
+    "profile": "Connection profile",
+    "noProfiles": "There are no connection profiles yet. Create one under Connections.",
+    "open": "Open",
+    "openingShort": "Opening…",
+    "opening": "Opening the connection…",
+    "loading": "Reading the catalog…",
+    "loaded_one": "Catalog read: {{count}} object.",
+    "loaded_other": "Catalog read: {{count}} objects.",
+    "selectionGone": "The selected object is no longer in the catalog.",
+    "refresh": "Refresh",
+    "built": "Catalog read at {{time}}.",
+    "builtCached": "Catalog read at {{time}} (kept by the server; Refresh reads it again).",
+    "filter": {
+      "label": "Filter objects",
+      "placeholder": "Filter objects…",
+      "kind": "Object type",
+      "all": "All types",
+      "matches_one": "{{count}} of {{total}} objects matches.",
+      "matches_other": "{{count}} of {{total}} objects match.",
+      "none": "No object matches the filter."
+    },
+    "tree": {
+      "label": "Objects of {{name}}",
+      "extensions": "Extensions",
+      "file": "Database file",
+      "empty": "(empty)",
+      "noObjects": "This database has no tables, views or sequences.",
+      "large": "This catalog has {{count}} objects. Studio loads only their names; the details load when you select an object.",
+      "truncated": "Some groups show only their first 500 objects. Use the filter to find the others."
+    },
+    "groups": {
+      "table": "Tables",
+      "view": "Views",
+      "materialized_view": "Materialized views",
+      "sequence": "Sequences",
+      "foreign_table": "Foreign tables",
+      "other": "Other objects"
+    },
+    "kind": {
+      "table": "Table",
+      "view": "View",
+      "materialized_view": "Materialized view",
+      "sequence": "Sequence",
+      "foreign_table": "Foreign table",
+      "other": "Other object"
+    },
+    "detail": {
+      "title": "Details",
+      "choose": "Select an object in the tree to see its details.",
+      "loading": "Reading the details…",
+      "none": "None",
+      "unknown": "Unknown",
+      "unnamed": "(no name)",
+      "yes": "Yes",
+      "no": "No",
+      "more_one": "and {{count}} more",
+      "more_other": "and {{count}} more",
+      "noColumns": "This object has no columns.",
+      "sequence": "Studio does not show the details of a sequence yet.",
+      "estimate_one": "About {{rows}} row (estimate of the database).",
+      "estimate_other": "About {{rows}} rows (estimate of the database).",
+      "goTo": "Go to {{name}}"
+    },
+    "tabs": {
+      "label": "Details of {{name}}",
+      "columns": "Columns",
+      "constraints": "Constraints",
+      "indexes": "Indexes",
+      "relationships": "Relationships",
+      "sqlite": "SQLite"
+    },
+    "columns": {
+      "name": "Name",
+      "type": "Type",
+      "nullable": "Nullable",
+      "default": "Default",
+      "comment": "Comment",
+      "primaryKey": "Primary key",
+      "foreignKey": "Foreign key"
+    },
+    "constraints": {
+      "primaryKey": "Primary key",
+      "noPrimaryKey": "This object has no primary key.",
+      "foreignKeys": "Foreign keys",
+      "unique": "Unique constraints",
+      "check": "Check constraints"
+    },
+    "indexes": {
+      "name": "Index",
+      "columns": "Columns",
+      "unique": "Unique",
+      "none": "This object has no indexes."
+    },
+    "relationships": {
+      "references": "References",
+      "referencedBy": "Referenced by"
+    },
+    "sqlite": {
+      "noFacts": "Studio could not read the SQLite facts of this table."
+    },
+    "extensions": {
+      "title": "Extensions",
+      "none": "This database has no extensions installed.",
+      "name": "Extension",
+      "version": "Version",
+      "schema": "Schema",
+      "available": "Available",
+      "update": "Update to {{version}} available",
+      "current": "Up to date"
+    },
+    "file": {
+      "title": "Database file",
+      "on": "On",
+      "off": "Off",
+      "size": "File size",
+      "bytes_one": "{{size}} byte",
+      "bytes_other": "{{size}} bytes",
+      "mode": "File permissions"
     }
   },
   "migrations": {
@@ -557,6 +682,8 @@
     "secret_file_unsafe": "The password file is a link, not a regular file, has more than one name, or belongs to another user.",
     "secret_file_not_private": "Other users can read the password file. Make it readable by you only (chmod 600).",
     "secret_file_unreadable": "The password file is missing, empty, larger than 4 KB or not UTF-8.",
+    "object_not_found": "The object is no longer in the database's catalog. Refresh the catalog.",
+    "explorer_engine": "This information exists only for the other database engine.",
     "db": {
       "connection": "Studio could not connect. Check the host and the port (a firewall may block it), the user and the password, and the TLS mode (verify-full needs the server certificate to be trusted; verify-ca or a CA file may help).",
       "auth": "The database refused the sign-in. Check the user and the password.",
@@ -598,14 +725,16 @@
       "palette": "Open the command palette",
       "help": "Show the keyboard shortcuts",
       "nextRegion": "Go to the next area (header, navigation, tabs, main area, status bar)",
-      "previousRegion": "Go to the previous area"
+      "previousRegion": "Go to the previous area",
+      "explorerFilter": "Focus the explorer filter (on the Explorer page)"
     },
     "commands": {
       "goTo": "Go to {{page}}",
       "theme": "Theme: {{theme}}",
       "density": "Density: {{density}}",
       "language": "Language: {{language}}",
-      "shortcuts": "Show keyboard shortcuts"
+      "shortcuts": "Show keyboard shortcuts",
+      "explorerFilter": "Focus the explorer filter"
     },
     "keys": {
       "ctrl": "Ctrl"

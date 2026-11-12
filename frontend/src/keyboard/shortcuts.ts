@@ -15,12 +15,17 @@ export interface Shortcut {
   alt?: boolean;
 }
 
-/** The shortcuts that work now. The editor's (run, cancel, editor tabs, save) arrive with STU-011 and STU-012. */
+/**
+ * The shortcuts that work now. The editor's (run, cancel, editor tabs, save) arrive with STU-011 and STU-012; the
+ * explorer filter (STU-010) works on the explorer page only.
+ */
 export const SHORTCUTS = {
   palette: { key: 'k', mod: true },
   help: { key: '/', mod: true },
   nextRegion: { key: 'F6' },
   previousRegion: { key: 'F6', shift: true },
+  /** On the explorer page (STU-010): the object filter. The browser's print dialog stays on every other page. */
+  explorerFilter: { key: 'p', mod: true },
 } as const satisfies Record<string, Shortcut>;
 
 export type ShortcutId = keyof typeof SHORTCUTS;

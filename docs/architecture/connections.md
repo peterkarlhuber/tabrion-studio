@@ -50,8 +50,9 @@ too.
   PROD profile. A value other than the three is `access.bad_request`.
 - **On 409 `studio.prod_confirmation_required`:** the problem carries no profile data (problems never carry request or
   profile values, T-05). The page reads the profile again (`GET /api/profiles`), asks D-02 for it as it is now, and
-  sends the request again with `"prod"`. The connection manager does this at once. The migration status and
-  diagnostics views show the problem text, read their profile list again, and ask D-02 on the next click.
+  sends the request again with `"prod"`. The connection manager does this at once. The migration status,
+  diagnostics and explorer views show the problem text, read their profile list again, and ask D-02 on the next
+  click.
 - D-02 is still a page dialog; the server only refuses a PROD connection that no page confirmed. It cannot tell which
   person confirmed, so a script with a session can still send `"prod"`.
 
