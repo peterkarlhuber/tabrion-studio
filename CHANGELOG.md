@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- STU-024 backend (early draft, stacked on STU-015): `GET /api/connections/{id}/migrations` also reports the
+- STU-024 backend (early draft): `GET /api/connections/{id}/migrations` also reports the
   Levuvo formats on PostgreSQL. It compares Nodestro's and Axentra's version tables with the project's SQL migration
   files (checksums as their runners record them; pending steps with an SQL preview), and Orkexa's version table with
   `SCHEMA_VERSION`. Studio reads these files as text and runs nothing. A version table the role may not read, or
