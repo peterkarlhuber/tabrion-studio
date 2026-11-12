@@ -50,6 +50,10 @@ statement through `OpenConnection.stream` in its own `Database.read()`, like eve
   - Bytes are `{"base64": "..."}`. Decimals, UUIDs, dates, times and intervals are text. Integers beyond
     JavaScript's safe range (2^53 - 1) are text too, as in the query engine; inside a JSON document numbers stay as
     they are.
+  - That rule is for column values only (R-2 of the `stu-021-review.md` delta check). Integers inside an array column
+    stay numbers, so a `bigint[]` value above 2^53 keeps its digits but a JavaScript reader rounds it. A `json` or
+    `jsonb` value that is a single number above 2^53 is a column value, so it becomes text, and that document's
+    type changes from number to string.
   - The file is strict JSON: there is never a bare `NaN` or `Infinity`.
   - Formula-like text is not changed, because JSON is data.
 
@@ -60,7 +64,7 @@ statement through `OpenConnection.stream` in its own `Database.read()`, like eve
 | Rows | `max_rows`, 1 to 1 000 000 (the default is 1 000 000); a JSON export over it says `"truncated": "rows"` |
 | Time | 10 minutes; then the export is canceled like a query (PostgreSQL cancel, SQLite interrupt) |
 | Parallel | One export per connection and 2 at a time (`studio.export_busy`). Each holds one of the connection's sessions while it runs |
-| Memory | Bounded (see below); the acceptance of STU-021 is 1 million rows with a peak under 100 MB, and so are wide rows after narrow ones |
+| Memory | Bounded (see below); the acceptance of STU-021 is 1 million rows with a peak under 100 MB, and so are wide rows of up to 1 MB after narrow ones (wider rows: see below) |
 
 ## Streaming and memory
 
@@ -70,7 +74,9 @@ statement through `OpenConnection.stream` in its own `Database.read()`, like eve
   n rows at once in libpq and in Python, and an export has no per-value cap. So the row ceiling is what bounds a
   batch of wide rows after a run of narrow ones (F-1 of `stu-021-review.md`). Measured as resident memory: rows of
   400 KB after 1 011 empty rows peak at about 15 MB (they were 388 MB with batches of 500), and rows of 1 MB peak at
-  about 36 MB.
+  about 36 MB. As a rule, a batch of the widest rows can hold about 32 times the widest row, and twice that on
+  PostgreSQL (libpq's copy and Python's), so the bound grows with the row width and is not a fixed 100 MB: rows of
+  4 MB after narrow ones peaked at about 138 MB (R-1 of the `stu-021-review.md` delta check).
 - **One huge value** still costs about three times its size while it is written (the driver's copy, the base64 or
   text form and the encoded bytes). The database's own limit is the only bound for a single value.
 - **Encoding.** Each row is encoded at once. The bytes go into a queue of at most 8 chunks of about 256 KB, which
