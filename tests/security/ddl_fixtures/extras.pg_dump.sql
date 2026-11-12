@@ -2,6 +2,7 @@
 -- --no-privileges -n studio_ddl_extras, PostgreSQL 16.15; the \restrict lines (a random key) removed and the
 -- test role's name replaced with studio_ddl_role. Regenerate from create_schemas() of that test.
 --
+--
 -- PostgreSQL database dump
 --
 
@@ -266,6 +267,7 @@ WITH (fillfactor='50') AS
  SELECT id
    FROM studio_ddl_extras.tuned
   WITH NO DATA;
+ALTER TABLE ONLY studio_ddl_extras.packed ALTER COLUMN id SET STATISTICS 50;
 
 
 --
@@ -485,6 +487,15 @@ CREATE INDEX event_2026_at_idx ON studio_ddl_extras.event_2026 USING btree (at);
 
 
 --
+-- Name: packed_id; Type: INDEX; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE INDEX packed_id ON studio_ddl_extras.packed USING btree (id);
+
+ALTER TABLE studio_ddl_extras.packed CLUSTER ON packed_id;
+
+
+--
 -- Name: tuned_c; Type: INDEX; Schema: studio_ddl_extras; Owner: -
 --
 
@@ -625,3 +636,5 @@ CREATE POLICY gone ON studio_ddl_extras."Order" FOR DELETE USING (false);
 --
 -- PostgreSQL database dump complete
 --
+
+

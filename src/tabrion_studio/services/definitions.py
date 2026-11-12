@@ -534,11 +534,17 @@ class Definitions:
         columns = connection.fetch(_COLUMNS_SQL, values)
         statements = [create, *self._comments(target, keyword, comment, columns)]
         if relkind == "m":
-            for index_definition, index, backs, _, index_comment, *_ in connection.fetch(_INDEXES_SQL, values):
+            # A materialized view keeps per-column settings and a clustering index, as a table does.
+            for row in columns:
+                statements += self._column_alters(target, row, is_partition=False)
+            for row in connection.fetch(_INDEXES_SQL, values):
+                index_definition, index, backs, _, index_comment, index_name, clustered, _ = row
                 if not backs:
                     statements.append(str(index_definition))
                 if index_comment is not None:
                     statements.append(f"COMMENT ON INDEX {index} IS {_literal(index_comment)}")
+                if clustered:
+                    statements.append(f"ALTER TABLE {target} CLUSTER ON {index_name}")
         for trigger_definition, trigger, enabled in connection.fetch(_TRIGGERS_SQL, values):
             statements.append(str(trigger_definition))
             if enabled in _TRIGGER_STATES:
