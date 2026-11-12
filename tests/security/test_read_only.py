@@ -832,7 +832,7 @@ def pg() -> Iterator[tuple[OpenConnection, sqlalchemy.Engine]]:
     source = Source(profiles={"user:pg": profile}, passwords={"user:pg": url.password or ""})
     registry = ConnectionRegistry(source)
     try:
-        yield registry.open("user:pg"), admin
+        yield registry.open("user:pg", "prod"), admin
     finally:
         registry.close_all()
         with admin.begin() as c:
