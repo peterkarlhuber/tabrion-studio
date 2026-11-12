@@ -574,6 +574,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   and its "none skipped" check expects at least 50 tests (workflow-change review in `stu-014-review.md`: accepted;
   the label `workflow-change-reviewed` is set by the coordinating thread). The plain-owner checks stay
   (`test_pg_owner_settings_and_schemas_as_a_plain_owner`).
+- **Finding 3 of `stu-014-delta-v010-review.md` (done):** `test_n1_a_stop_before_tabrions_step_still_runs_it_on_sqlite`
+  requests the limit or the cancel before the step "tabrion's checks" starts, so turning `always=sqlite` into
+  `always=False` fails it every time (10 of 10 runs; the race-based tests caught it only by chance).
 - **Cancel scope (I-1 of the delta review):** a second signed-in session can cancel another session's diagnosis,
   as with `/api/queries/{id}/cancel` (single user).
 
