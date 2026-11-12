@@ -983,6 +983,12 @@ def test_m4_a_small_first_row_does_not_size_the_next_batch(
         return real(self, size)
 
     monkeypatch.setattr(tabrion_compat.ResultCursor, "fetch", fetch)
+    # This test is about batch sizes and memory, not the clock, so the statement gets a timeout it cannot reach.
+    # The 800 ms of the `lite` profile also covers the statement check, which lexes the 11-column SELECT
+    # character by character. tracemalloc records every allocation, and Python 3.12's sys.settrace (coverage's
+    # tracer in CI) allocates on each traced line. Together they made that check take about 2 s on 3.12, so the
+    # timer cancelled the statement (ViewerTimeout) before a row was read.
+    monkeypatch.setattr(viewer.explorer.registry.get(connection_id), "timeout_s", 300.0)
     tracemalloc.start()
     try:
         page = viewer.rows(connection_id, "main", "wide10", limit=1000)

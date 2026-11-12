@@ -232,6 +232,22 @@ def _install_authorizer(dbapi_connection: Any, _record: Any) -> None:
         dbapi_connection.set_authorizer(sqlite_authorizer)
 
 
+def _close_after_dispose(db: tabrion.Database) -> Callable[[Any, Any], None]:
+    """Pool ``checkin`` listener: a session that comes back after ``db.close()`` is closed, not pooled.
+
+    ``Database.close()`` is ``engine.dispose()``, which closes only the idle sessions. One that a running statement
+    still holds goes back, at check-in, into the disposed pool, which nothing closes: its driver connection stays
+    open until garbage collection (``ResourceWarning: unclosed database`` in whichever test happens to collect it).
+    Closing it at check-in releases it as soon as the statement ends.
+    """
+
+    def close_if_disposed(dbapi_connection: Any, connection_record: Any) -> None:
+        if dbapi_connection is not None and db.closed:
+            connection_record.invalidate()
+
+    return close_if_disposed
+
+
 @dataclass
 class OpenConnection:
     """One open, read-only connection. The engine is private; only reading is offered."""
@@ -400,6 +416,8 @@ class ConnectionRegistry:
             # M-2 of stu-011-review.md: no session setting outlives the statement that made it (after tabrion's own
             # check-in listener, which gives psycopg's read_only back to the session default).
             event.listen(db.engine, "checkin", tabrion_compat.reset_session)
+        # Last of the check-in listeners: a session that a statement returns after close() leaves with the pool.
+        event.listen(db.engine, "checkin", _close_after_dispose(db))
         timeout = profile.statement_timeout_ms or (
             PROD_STATEMENT_TIMEOUT_MS if profile.environment == "prod" else limits.statement_timeout_ms
         )
