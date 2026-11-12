@@ -5,8 +5,9 @@
  * produce yet: a PROD connection with tabs (STU-051), each dialog, the sign-in notices and the ended session
  * (review S-1), and the notices of project trust (review I-2 of stu-006-review.md). Query parameters: `scenario`
  * (start, prod, test, dialog-d01, dialog-d01-hostile, dialog-d01-stale, dialog-d02, dialog-d06, dialog-d08, ended,
- * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, STU-008),
- * `path` (/, /connections, /settings), `theme` (light, dark) and `lang` (en, de).
+ * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, STU-008;
+ * migrations: the code trust and migration status of STU-015; dialog-trust-code), `path` (/, /connections,
+ * /migrations, /settings), `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -15,6 +16,7 @@ import { App } from '../App';
 import {
   ProdConnectDialog,
   QuitDialog,
+  TrustCodeDialog,
   TrustProjectDialog,
   UnsavedScriptDialog,
 } from '../components/dialogs/StudioDialogs';
@@ -25,6 +27,7 @@ import { installTooltipDismiss } from '../lib/tooltips';
 import { initTheme, setThemePreference } from '../theme';
 import { EMPTY_WORKSPACE, type Workspace } from '../workspace';
 import styles from './harness.module.css';
+import { codeTrust, migrationStatus } from './migrations';
 import { PROFILES, SETTINGS } from './profiles';
 import { DIFF, HOSTILE_REVIEW, INVALID_PROJECT, REVIEW } from './trust';
 
@@ -43,11 +46,14 @@ if (lang === 'en' || lang === 'de') void setLocale(lang);
 const counters = window as unknown as { heartbeats: number };
 counters.heartbeats = 0;
 
-/** The writes the page sent in the connections scenario (e2e/connections.spec.ts checks them). */
+/** The writes the page sent in the connections and migrations scenarios (e2e/connections.spec.ts, migrations.spec.ts). */
 const sent = window as unknown as {
   writes: { method: string; url: string; contentType: string }[];
 };
 sent.writes = [];
+
+/** Whether the migrations scenario's project code is trusted (the trust dialog and "Stop trusting" change it). */
+let codeTrusted = false;
 
 const fakeServer: typeof fetch = async (input, init) => {
   if (scenario === 'connections') {
@@ -66,6 +72,27 @@ const fakeServer: typeof fetch = async (input, init) => {
       return new Response(JSON.stringify({ keyring: { available: true } }), { status: 200 });
     }
     if (url === '/api/settings') return new Response(JSON.stringify(SETTINGS), { status: 200 });
+  }
+  if (scenario === 'migrations') {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      sent.writes.push({ method, url, contentType: headers['Content-Type'] ?? '' });
+    }
+    if (url === '/api/project/code-trust') {
+      if (method === 'POST') codeTrusted = true;
+      if (method === 'DELETE') codeTrusted = false;
+      if (method !== 'GET') return new Response(null, { status: 204 });
+      return new Response(JSON.stringify(codeTrust(codeTrusted)), { status: 200 });
+    }
+    if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    if (url === '/api/connections' && method === 'POST') {
+      return new Response(JSON.stringify({ connection_id: 'c1' }), { status: 201 });
+    }
+    if (url === '/api/connections/c1/migrations') {
+      return new Response(JSON.stringify(migrationStatus(codeTrusted)), { status: 200 });
+    }
   }
   if (String(input) === '/api/heartbeat') {
     counters.heartbeats += 1;
@@ -146,6 +173,16 @@ function HarnessDialog({ id }: { id: string }) {
         timeoutSeconds={15}
         onConnect={done('connect')}
         onCancel={done('cancel')}
+      />
+    ),
+    'dialog-trust-code': (
+      <TrustCodeDialog
+        open={open}
+        configFile="alembic.ini"
+        scriptLocation="migrations"
+        revisionFiles={['0001_parts.py', '0002_measurements.py', '0003_indexes.py']}
+        onTrust={done('trust')}
+        onReject={done('cancel')}
       />
     ),
     'dialog-d06': (

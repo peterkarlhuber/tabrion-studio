@@ -9,6 +9,7 @@ import { AppShell, type ServerState } from './shell/AppShell';
 import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView } from './views/connections/ConnectionsView';
+import { MigrationsView } from './views/migrations/MigrationsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
 import { EMPTY_WORKSPACE, WorkspaceContext, type Workspace } from './workspace';
 
@@ -35,6 +36,8 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
       return <StartView />;
     case '/connections':
       return <ConnectionsView fetcher={fetcher} />;
+    case '/migrations':
+      return <MigrationsView fetcher={fetcher} />;
     case '/settings':
       return <SettingsView fetcher={fetcher} />;
     default:

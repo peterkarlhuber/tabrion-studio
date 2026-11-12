@@ -286,6 +286,68 @@ export function TrustProjectDialog({
   );
 }
 
+/**
+ * Trusting the project's migration code (STU-015, threat T-16): reading the Alembic revisions imports the project's
+ * revision files, which runs their code. Default: "Don't trust". The file names come from the project, so they are
+ * escaped and capped like D-01's entries (U-1); `stale` says that the files changed after the dialog showed them.
+ */
+export function TrustCodeDialog({
+  open,
+  configFile,
+  scriptLocation,
+  revisionFiles,
+  stale = false,
+  onTrust,
+  onReject,
+}: {
+  open: boolean;
+  configFile: string;
+  scriptLocation: string | null;
+  revisionFiles: string[];
+  stale?: boolean;
+  onTrust: () => void;
+  onReject: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Dialog
+      open={open}
+      testId="dialog-trust-code"
+      title={t('dialogs.trustCode.title')}
+      description={t('dialogs.trustCode.body')}
+      initialFocus="reject"
+      onCancel={onReject}
+      actions={[
+        { id: 'reject', label: t('dialogs.trustCode.reject'), onSelect: onReject },
+        {
+          id: 'trust',
+          label: t('dialogs.trustCode.trust'),
+          variant: 'primary',
+          onSelect: onTrust,
+        },
+      ]}
+    >
+      {stale ? (
+        <p role="alert" className={styles.stale} data-testid="trust-code-stale">
+          {t('dialogs.trustCode.stale')}
+        </p>
+      ) : null}
+      <EntryList
+        testId="trust-code-config"
+        label={t('dialogs.trustCode.config')}
+        items={[configFile, ...(scriptLocation === null ? [] : [scriptLocation])].map((value) => ({
+          value,
+        }))}
+      />
+      <EntryList
+        testId="trust-code-files"
+        label={t('dialogs.trustCode.files')}
+        items={revisionFiles.map((value) => ({ value }))}
+      />
+    </Dialog>
+  );
+}
+
 /** D-02: opening a PROD connection for the first time in a session. Default: "Cancel". */
 export function ProdConnectDialog({
   open,

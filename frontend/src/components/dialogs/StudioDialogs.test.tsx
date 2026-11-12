@@ -1,5 +1,6 @@
 /**
- * STU-051: the focus rules of every dialog (08 section 6). For each of D-01, D-02, D-06 and D-08:
+ * STU-051: the focus rules of every dialog (08 section 6). For each of D-01, D-02, D-06, D-08 and the code trust
+ * dialog of STU-015:
  * the dialog is modal and named by its title and text; the initial focus is the option that changes nothing (never a
  * destructive one); Tab and Shift+Tab stay inside; Escape and the close button cancel; the focus returns to the
  * opener. The same rules are checked in Chromium in e2e/dialogs.spec.ts.
@@ -11,6 +12,7 @@ import { useState, type ReactElement } from 'react';
 import {
   QuitDialog,
   ProdConnectDialog,
+  TrustCodeDialog,
   TrustProjectDialog,
   UnsavedScriptDialog,
 } from './StudioDialogs';
@@ -61,6 +63,24 @@ const CASES: Case[] = [
         timeoutSeconds={15}
         onConnect={() => done('connect')}
         onCancel={() => done('cancel')}
+      />
+    ),
+  },
+  {
+    name: 'STU-015 trust the migration code',
+    title: "Run the project's migration code?",
+    description: /imports the project's Alembic files, which runs their code on this computer/,
+    safe: "Don't trust",
+    destructive: null,
+    buttons: ['Close', "Don't trust", 'Trust and run'],
+    render: (open, done) => (
+      <TrustCodeDialog
+        open={open}
+        configFile="alembic.ini"
+        scriptLocation="migrations"
+        revisionFiles={['0001_init.py']}
+        onTrust={() => done('trust')}
+        onReject={() => done('cancel')}
       />
     ),
   },
@@ -384,4 +404,40 @@ it('D-01 without hosts says none', () => {
   expect(element).toHaveAccessibleDescription(/defines 3 connections/);
   expect(within(within(element).getByTestId('trust-hosts')).getByText('none')).toBeInTheDocument();
   expect(within(element).getByText('./secrets/db')).toBeInTheDocument();
+});
+
+describe('STU-015 trust dialog with project file names (U-1)', () => {
+  it('lists each file once, escaped and capped, and says when the files changed', async () => {
+    const user = userEvent.setup();
+    const names = [`evil${String.fromCodePoint(0x202e)}yp.py`, OVERLONG, ...HOSTILE_NAMES];
+    render(
+      <TrustCodeDialog
+        open
+        configFile="alembic.ini"
+        scriptLocation={null}
+        revisionFiles={names}
+        stale
+        onTrust={() => undefined}
+        onReject={() => undefined}
+      />,
+    );
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByTestId('trust-code-stale')).toHaveTextContent(
+      'The files changed after they were shown.',
+    );
+    expect(
+      within(within(dialog).getByTestId('trust-code-config')).getAllByRole('listitem'),
+    ).toHaveLength(1);
+    const files = within(dialog).getByTestId('trust-code-files');
+    expect(within(files).getByRole('heading')).toHaveTextContent(
+      `Revision files (${names.length})`,
+    );
+    const items = within(files).getAllByRole('listitem');
+    expect(items).toHaveLength(MAX_ENTRIES);
+    expect(items[0]?.querySelector('code')?.textContent).toBe('evil\\u202Eyp.py');
+    expect(items[1]?.querySelector('code')?.textContent).toBe(capped(visible(OVERLONG))[0]);
+    expect(dialog.textContent).not.toContain(String.fromCodePoint(0x202e));
+    await user.click(within(files).getByRole('button', { name: /and \d+ more/ }));
+    expect(within(files).getAllByRole('listitem')).toHaveLength(names.length);
+  });
 });
