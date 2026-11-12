@@ -9,7 +9,13 @@ import userEvent from '@testing-library/user-event';
 
 import { explorerAnswer, HOSTILE_TABLE } from '../../harness/explorer';
 import { createViewer, HOSTILE_VALUE, LONG_CHARS, PAGE_CHARS } from '../../harness/viewer';
-import { MAX_FILTERS } from '../../api/viewer';
+import {
+  MAX_FILTERS,
+  MAX_LIMIT,
+  MAX_QUERY_BYTES,
+  MAX_TOKEN_CHARS,
+  pageQuery,
+} from '../../api/viewer';
 import { rowBytes } from '../editor/rowCache';
 import { FIRST_READ_DELAY } from './DataTab';
 import { PAGE_BYTES } from './pageRows';
@@ -271,6 +277,48 @@ describe('the data tab (STU-013 page)', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
+  // N-1: the form counts the largest page and the longest `next` token, so a walk it lets through can go on.
+  it('filters exactly at the bound are applied and Next still works; one byte more is refused', async () => {
+    const { fetcher, log } = server();
+    const { user } = await open(fetcher);
+    await showData(user, 'part');
+    await waitFor(() => expect(status()).toHaveTextContent('Rows 1–100'));
+    const longest = (value: string) =>
+      pageQuery('main', 'part', {
+        limit: MAX_LIMIT,
+        sort: null,
+        desc: false,
+        filters: [{ column: 'name', op: 'ne', value }],
+        after: 'x'.repeat(MAX_TOKEN_CHARS),
+      }).length;
+    // "€" takes 9 bytes once encoded; ASCII letters fill the rest, so the value stays under the field's 4,096.
+    const room = MAX_QUERY_BYTES - longest('');
+    const value = '€'.repeat(Math.floor(room / 9)) + 'a'.repeat(room % 9);
+    expect(longest(value)).toBe(MAX_QUERY_BYTES);
+    await user.click(screen.getByTestId('viewer-add-filter'));
+    await user.selectOptions(screen.getByLabelText('Column of filter 1'), 'name');
+    await user.selectOptions(screen.getByLabelText('Operator of filter 1'), 'ne');
+    const field = screen.getByLabelText('Value of filter 1');
+    await user.click(field);
+    await user.paste(value);
+    await user.click(screen.getByTestId('viewer-apply'));
+    await waitFor(() =>
+      expect(screen.getByTestId('viewer-filters-applied')).toHaveTextContent('(1 applied)'),
+    );
+    await waitFor(() => expect(status()).toHaveTextContent('Rows 1–100; more rows follow.'));
+    await user.click(screen.getByTestId('viewer-next'));
+    await waitFor(() => expect(status()).toHaveTextContent('Rows 101–200'));
+    expect(log.pages.at(-1)?.after).toMatch(/^vp\d+$/);
+    expect(screen.queryByTestId('viewer-problem')).toBeNull();
+    const asked = log.pages.length;
+    await user.type(field, 'a');
+    await user.click(screen.getByTestId('viewer-apply'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'These filters are too long for one request.',
+    );
+    expect(log.pages).toHaveLength(asked);
+  });
+
   it('at most 20 filters, and the add button says why', async () => {
     const { fetcher } = server();
     const { user } = await open(fetcher);
@@ -388,10 +436,12 @@ describe('the data tab (STU-013 page)', () => {
     const second = later();
     let rows = 0;
     let secondUrl = '';
+    let firstSignal: AbortSignal | undefined;
     const { fetcher } = server((call) => {
       if (!call.url.includes('/rows?')) return null;
       rows += 1;
       if (rows === 1) {
+        firstSignal = call.signal;
         return new Promise<Response>((_, reject) => {
           call.signal?.addEventListener('abort', () =>
             reject(new DOMException('The request was aborted.', 'AbortError')),
@@ -407,8 +457,11 @@ describe('the data tab (STU-013 page)', () => {
     const { user } = await open(fetcher);
     await showData(user, 'part');
     await waitFor(() => expect(rows).toBe(1));
+    expect(firstSignal?.aborted).toBe(false);
     await user.selectOptions(screen.getByTestId('viewer-sort'), 'name');
     await waitFor(() => expect(rows).toBe(2));
+    // The older request is aborted, not only ignored (N-2): its transfer and the server's work stop.
+    expect(firstSignal?.aborted).toBe(true);
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     });

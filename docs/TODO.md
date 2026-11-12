@@ -1197,7 +1197,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     request below h11's 16 KB head limit, so up to about 1,000 characters outside ASCII fit in all filters together.
     Longer values would need the filters in a body (a `POST` read route, or a server-side filter token).
 - **Review:** `stu-013-page-review.md` (accepted with conditions) fix round: M-1, M-2, L-1, L-2 and L-3 fixed (L-3 by
-  a 150 ms delay of the first read); I-1 to I-6 done.
+  a 150 ms delay of the first read); I-1 to I-6 done. Delta review accepted; N-1 (the form counts the longest `next`
+  token) and N-2 (a test pins the abort) fixed.
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 

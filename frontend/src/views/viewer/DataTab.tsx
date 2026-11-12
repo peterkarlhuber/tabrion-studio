@@ -33,6 +33,7 @@ import {
   FILTER_OPS,
   MAX_FILTERS,
   MAX_LIMIT,
+  MAX_TOKEN_CHARS,
   NO_VALUE_OPS,
   queryFits,
   type FilterOp,
@@ -272,8 +273,9 @@ export function DataTab({
       op: draft.op,
       value: NO_VALUE_OPS.includes(draft.op) ? null : draft.value,
     }));
-    // The longest request these filters can make: the largest page and a `next` token later on (M-1).
-    if (!queryFits(schema, name, { ...settings, limit: MAX_LIMIT, filters, after: null })) {
+    // The longest request these filters can make: the largest page and the longest `next` token later on (M-1, N-1).
+    const after = 'x'.repeat(MAX_TOKEN_CHARS);
+    if (!queryFits(schema, name, { ...settings, limit: MAX_LIMIT, filters, after })) {
       setFormProblem(t('viewer.filter.tooLong'));
       return;
     }

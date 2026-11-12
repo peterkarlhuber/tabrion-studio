@@ -46,6 +46,8 @@ export const MAX_LIMIT = 1000;
  * for the path, a `next` token and the headers.
  */
 export const MAX_QUERY_BYTES = 12 * 1024;
+/** The longest `after` token the server takes (`max_length` of `after` in `api/viewer.py`). */
+export const MAX_TOKEN_CHARS = 64;
 /** A rows request whose query string would be longer than `MAX_QUERY_BYTES`: it is not sent. */
 export const FILTER_TOO_LONG = 'studio.viewer_filter_too_long';
 
