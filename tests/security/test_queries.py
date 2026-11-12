@@ -33,6 +33,7 @@ from tabrion.errors import TabrionError
 
 from tabrion_studio.config.schema import Profile, SecretRef, Settings, validate_settings
 from tabrion_studio.logs import LogSetup, configure_logging
+from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services import queries as queries_module
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.connections import ConnectionRegistry, RegistryError, startup_options, studio_profile
@@ -854,6 +855,41 @@ def test_pg_r_m1_wide_arrays_and_a_null_first_row_keep_peak_memory_bounded(
     )
     assert nulls.state == "done", nulls.problem
     assert peak < 40 * 1024 * 1024, peak
+
+
+def test_i9_a_busy_pool_is_connection_busy(sqlite_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """I-9 of the stu-010 delta re-review: a query that finds no free session within the pool's wait is
+    ``studio.connection_busy``, not ``db.resource``."""
+    monkeypatch.setattr(connections_module, "POOL_TIMEOUT_S", 0.3)
+    source = sqlite_source(sqlite_file)
+    source.profiles["project:parts"] = replace(source.profiles["project:parts"], statement_timeout_ms=None)
+    registry = ConnectionRegistry(source)
+    engine = QueryEngine(registry, source.limits)
+    try:
+        connection_id = registry.open("project:parts").id
+        connection = registry.get(connection_id)
+        release, holding = threading.Event(), threading.Barrier(3)
+
+        def hold() -> None:
+            with connection._read():  # one session of the pool, as another running statement would
+                holding.wait()
+                release.wait(10)
+
+        holders = [threading.Thread(target=hold) for _ in range(2)]
+        for holder in holders:
+            holder.start()
+        holding.wait()
+        try:
+            query = wait(engine.start(connection_id, "SELECT 1"), 10.0)
+        finally:
+            release.set()
+            for holder in holders:
+                holder.join()
+        assert query.state == "failed" and query.problem is not None
+        assert query.problem.code == "studio.connection_busy"
+    finally:
+        engine.close_all()
+        registry.close_all()
 
 
 def test_i3_the_byte_cap_is_the_max_result_mb_setting(sqlite_file: Any) -> None:

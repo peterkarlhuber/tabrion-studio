@@ -323,6 +323,13 @@ CATALOG: dict[str, Entry] = {
         "Studio keeps at most 8 connections open.",
         "Close a connection first.",
     ),
+    "studio.connection_busy": Entry(
+        503,
+        ProblemKind.DATABASE,
+        "Connection busy",
+        "The connection's two database sessions are in use, for example by two running queries.",
+        "Try again when a query finishes, or cancel one.",
+    ),
     "studio.connection_failed": Entry(
         502, ProblemKind.DATABASE, "Connection failed", "Studio could not reach the database."
     ),
@@ -371,6 +378,17 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.REQUEST,
         "Statement not allowed",
         "Studio does not run this kind of statement in read-only mode.",
+    ),
+    # Explorer (STU-010).
+    "studio.object_not_found": Entry(
+        404,
+        ProblemKind.NOT_FOUND,
+        "Object not found",
+        "The connection's catalog has no table, view or sequence with this schema and name.",
+        "Refresh the catalog.",
+    ),
+    "studio.explorer_engine": Entry(
+        409, ProblemKind.REQUEST, "Not for this database", "This information exists only for the other engine."
     ),
     # Queries (STU-011).
     "studio.query_not_found": Entry(

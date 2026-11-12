@@ -346,7 +346,8 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
-| TABRION STU-010, STU-012..STU-015 | Explorer, SQL editor, data viewer, diagnostics, migration status | P1 | STU-009, STU-011, TAB-042 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
+| TABRION STU-012..STU-015 | SQL editor, data viewer, diagnostics, migration status | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
@@ -508,7 +509,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   digest of the review as well. The real target of a database path the user confirmed as *outside* is not recorded,
   so a link that later points elsewhere outside keeps it trusted; record the resolved path in the review.
 - **T-4 (rest), done:** D-01 shows each connection's TLS mode and marks `weak_tls` (weaker than `verify-full` on a
-  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` stays with STU-010.
+  non-loopback host). The T-10 diagnostic finding for `disable` and `prefer` moves to STU-014 (diagnostics; I-5 of
+  `stu-010-review.md`).
 - **T-5, done:** D-01 shows one line per PostgreSQL connection with the secret's source, `host:port` and the TLS mode,
   and marks `remote_host`.
 - **I-1:** escape `\p{Default_Ignorable_Code_Point}` (U+200B, U+FEFF, U+00AD, tag characters) in `visible.ts`.
@@ -593,7 +595,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `Transaction.connection` (a psycopg server-side cursor, `cancel_safe()`, `sqlite3` `interrupt()`, the type name by
   OID). It is the only module that touches the driver (`tests/architecture/test_compat_boundary.py`).
 - **With tabrion 0.2:** replace `tabrion_compat.stream` with `Transaction.stream`, `Cancel` with
-  `Transaction.cancel`, `Column` with `tabrion.Column`; keep the STU-011 tests (STU-T-018..020) unchanged as the
+  `Transaction.cancel`, `Column` with `tabrion.Column`, `tabrion_compat.inspector` with `Database.inspector()`
+  (STU-010); keep the STU-011 tests (STU-T-018..020) unchanged as the
   acceptance of the swap. Check that 0.2's `stream` takes the driver's text without `text()` (I-2), or keep Studio's
   `sqltext.bind` in front of it, and that a canceled connection leaves the pool on both engines (H-1 of
   `tab-033-review.md`; Studio's `_discard` and its tests `test_l2_*`, `test_*h1_*` are the acceptance). Replace
@@ -625,6 +628,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   by default while 03 §5.3 names 100 000 as the default ceiling (decide with STU-012, which needs 100 000 rows within
   its memory limit); `log_sql` is not used (the engine never logs SQL); "load in full" for a cut cell (10 MB, 03
   §5.3) and the PostgreSQL `EXPLAIN (FORMAT JSON)` cost warning for prod profiles come with STU-012/013.
+- **Explorer (STU-010) with tabrion 0.2:** replace `tabrion_compat.inspector` with `Database.inspector()`, the
+  extensions query with `tabrion.postgres.extension_status` and the SQLite facts with `tabrion.sqlite.diagnose`
+  (03 §6; I-4 of `stu-010-review.md`); keep `test_explorer.py` unchanged as the acceptance.
 - **Connections and running queries:** closing a connection (`DELETE /api/connections`, a stale profile) does not
   cancel its running queries; they end at their timeout or with the connection's error. A connection's pool has 2
   connections, shared by its queries (at most 2), the explorer and the health check; a third user waits up to the

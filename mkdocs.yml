@@ -69,6 +69,7 @@ nav:
       - Secret management: architecture/secrets.md
       - Connections and read-only enforcement: architecture/connections.md
       - Query engine: architecture/queries.md
+      - Database explorer: architecture/explorer.md
       - App shell and design system: architecture/frontend.md
       - Accessibility audit: architecture/accessibility.md
   - Development:

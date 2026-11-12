@@ -54,7 +54,7 @@ from tabrion.errors import Kind, TabrionError
 
 from tabrion_studio.config.schema import Settings
 from tabrion_studio.problems import Problem, db_kind_problem, db_problem, new_log_id, problem
-from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
+from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection, pool_busy
 from tabrion_studio.services.sqltext import BoundStatement
 from tabrion_studio.services.tabrion_compat import Cancel, Cancelled, Column, ResultCursor
 
@@ -335,6 +335,8 @@ class QueryEngine:
         except TabrionError as exc:
             if query.hook.requested:
                 state, found = self._stopped(query)
+            elif pool_busy(exc):  # I-9 of the stu-010 delta re-review: no free session, the database is fine
+                state, found = State.FAILED, problem("studio.connection_busy")
             else:
                 # DbErrorRedactionFilter (logs.py) rewrites the exception to tabrion's safe message in the record.
                 logger.info("query failed", exc_info=exc, extra={"event": "studio.db_error", "code": exc.code})

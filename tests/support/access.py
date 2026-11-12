@@ -14,6 +14,7 @@ from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens
 from tabrion_studio.security.sessions import CSRF_HEADER
 from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.queries import QueryEngine
 
 TOKEN = "control-token-for-tests"
@@ -59,6 +60,7 @@ def make_studio(
     config: Configuration | None = None,
     connections: ConnectionRegistry | None = None,
     queries: QueryEngine | None = None,
+    explorer: Explorer | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -72,6 +74,7 @@ def make_studio(
         config=config,
         connections=connections,
         queries=queries,
+        explorer=explorer,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

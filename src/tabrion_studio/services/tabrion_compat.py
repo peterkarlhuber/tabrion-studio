@@ -22,6 +22,8 @@ What each part replaces:
 * :func:`reset_session`: ``RESET ALL`` when a PostgreSQL connection goes back to the pool (M-2 of
   ``stu-011-review.md``).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
+* :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
+  ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
 
 Every statement still runs inside ``Database.read()``: PostgreSQL ``BEGIN READ ONLY`` on a read-only session,
 SQLite ``query_only`` and Studio's authorizer, and every PostgreSQL statement is a prepared statement
@@ -41,7 +43,7 @@ from typing import Any
 import sqlalchemy
 import tabrion
 
-__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "reset_session", "stream"]
+__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "inspector", "reset_session", "stream"]
 
 
 @dataclass(frozen=True)
@@ -227,3 +229,9 @@ def _close_cursor(cursor: Any, connection: sqlalchemy.Connection, dbapi: Any) ->
         _discard(connection, dbapi)
         with contextlib.suppress(Exception):
             cursor.close()
+
+
+@contextlib.contextmanager
+def inspector(transaction: tabrion.Transaction) -> Iterator[sqlalchemy.Inspector]:
+    """A SQLAlchemy inspector on ``transaction`` (one ``Database.read()``; tabrion 0.2: ``Database.inspector``)."""
+    yield sqlalchemy.inspect(transaction.connection)
