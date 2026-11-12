@@ -26,9 +26,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 import os
 from pathlib import Path
+import secrets
 import shutil
 import sqlite3
 import subprocess
+import threading
+import time
 from typing import Any
 
 import pytest
@@ -37,8 +40,11 @@ from tabrion.sql import split_statements
 
 from tabrion_studio.config.schema import Profile, SecretRef
 from tabrion_studio.services import connections as connections_module
+from tabrion_studio.services import definitions as definitions_module
+from tabrion_studio.services import levuvo_migrations, migrations
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.definitions import CountTimeout, Definitions
+from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer, ExplorerError
 from tabrion_studio.services.readonly import check_statement
 from tests.security.test_read_only import Source
@@ -105,22 +111,55 @@ CREATE FUNCTION {s}.touch() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RETURN N
 CREATE TRIGGER doc_touch BEFORE UPDATE ON {s}.doc FOR EACH ROW EXECUTE FUNCTION {s}.touch();
 CREATE TRIGGER ticketed_off AFTER INSERT ON {s}.ticketed FOR EACH ROW EXECUTE FUNCTION {s}.touch();
 ALTER TABLE {s}.ticketed DISABLE TRIGGER ticketed_off;
+CREATE RULE base_keep AS ON DELETE TO {s}.base DO INSTEAD NOTHING;
+CREATE RULE base_negative AS ON UPDATE TO {s}.base WHERE new.id < 0 DO ALSO SELECT 1;
+ALTER TABLE {s}.base DISABLE RULE base_negative;
+CREATE RULE titles_insert AS ON INSERT TO {s}.titles DO INSTEAD
+    INSERT INTO {s}.doc (title, body) VALUES (new.title, '');
+CREATE TABLE {s}.par (id int, n text);
+CREATE TABLE {s}.chi (extra int) INHERITS ({s}.par);
+ALTER TABLE ONLY {s}.chi ALTER COLUMN id SET NOT NULL;
+CREATE TABLE {s}.tuned (id int NOT NULL, a text, b text, c int);
+CREATE UNIQUE INDEX tuned_id ON {s}.tuned (id);
+CREATE INDEX tuned_c ON {s}.tuned (c);
+ALTER TABLE {s}.tuned REPLICA IDENTITY USING INDEX tuned_id;
+ALTER TABLE {s}.tuned CLUSTER ON tuned_c;
+ALTER TABLE {s}.tuned ALTER COLUMN c SET STATISTICS 500;
+ALTER TABLE {s}.tuned ALTER COLUMN c SET (n_distinct = 100);
+ALTER TABLE {s}.tuned ALTER COLUMN a SET STORAGE EXTERNAL;
+ALTER TABLE {s}.tuned ALTER COLUMN b SET COMPRESSION pglz;
+ALTER TABLE {s}.scratch REPLICA IDENTITY FULL;
+CREATE MATERIALIZED VIEW {s}.packed WITH (fillfactor = 50) AS SELECT id FROM {s}.tuned;
+CREATE TYPE {s}.mood AS ENUM ('ok', 'bad');
+CREATE DOMAIN {s}.positive AS int CHECK (VALUE > 0);
+CREATE TABLE {s}.typed (m {s}.mood, p {s}.positive);
 """
+
+
+_LEFT_OUT = (
+    "SET ",
+    "SELECT pg_catalog.set_config(",
+    "CREATE SCHEMA ",
+    "COMMENT ON SCHEMA ",
+    "CREATE FUNCTION ",
+    "CREATE TYPE ",
+    "CREATE DOMAIN ",
+)
 
 
 def statements(text: str) -> list[str]:
     """The DDL statements of a ``pg_dump --schema-only`` output, as Studio gives them (no ``;``), sorted.
 
-    Left out: comments, ``\\restrict`` lines, the session settings (``SET``, ``set_config``), ``CREATE SCHEMA`` (not
-    an object of the explorer) and ``CREATE FUNCTION`` (functions are release S of doc 03, not in Studio's DDL).
+    Left out: comments, ``\\restrict`` lines, the session settings (``SET``, ``set_config``), ``CREATE SCHEMA`` and
+    ``COMMENT ON SCHEMA`` (not objects of the explorer), ``CREATE FUNCTION`` (functions are release S of doc 03) and
+    ``CREATE TYPE``/``CREATE DOMAIN`` (types are not explorer objects; TD-035). A table that uses a type shows it by
+    name.
     """
     found = []
     for statement in split_statements(text):
         lines = [line for line in statement.strip().splitlines() if not line.startswith(("--", "\\"))]
         body = "\n".join(lines).strip().rstrip(";").strip()
-        if body and not body.startswith(
-            ("SET ", "SELECT pg_catalog.set_config(", "CREATE SCHEMA ", "CREATE FUNCTION ")
-        ):
+        if body and not body.startswith(_LEFT_OUT):
             found.append(body)
     return sorted(found)
 
@@ -140,6 +179,11 @@ def lite(tmp_path: Path) -> Iterator[tuple[Definitions, str, Path]]:
     )
     writer.execute('CREATE TABLE "odd ""name""" (id INTEGER PRIMARY KEY)')
     writer.execute('CREATE TABLE "x/y" (id INTEGER PRIMARY KEY)')
+    # SQLite keywords SQLAlchemy does not quote by itself (L-1 of the review), and a view that fails when read.
+    writer.execute('CREATE TABLE "nothing" (id INTEGER PRIMARY KEY)')
+    writer.execute('CREATE TABLE "returning" (id INTEGER PRIMARY KEY)')
+    writer.execute('INSERT INTO "returning" VALUES (1)')
+    writer.execute("CREATE VIEW broken AS SELECT * FROM gone")
     writer.execute("CREATE TRIGGER mark_kept AFTER DELETE ON transfer_mark BEGIN SELECT 1; END")
     writer.execute("CREATE VIEW recent AS SELECT * FROM measurement WHERE ts_utc > '2026'")
     # A view that counts for minutes: the row count's timeout must stop it.
@@ -241,6 +285,33 @@ def test_sqlite_row_count_stops_at_its_timeout(lite: tuple[Definitions, str, Pat
     assert definitions.row_count(connection_id, "main", "measurement")["count"] == 42
 
 
+def test_sqlite_row_count_quotes_every_name_and_reports_other_errors(lite: tuple[Definitions, str, Path]) -> None:
+    definitions, connection_id, _ = lite
+    assert definitions.row_count(connection_id, "main", "nothing")["count"] == 0
+    assert definitions.row_count(connection_id, "main", "returning")["count"] == 1
+    with pytest.raises(Exception) as raised:  # a failing count is its own error, not a timeout (L-3, M14)
+        definitions.row_count(connection_id, "main", "broken")
+    assert not isinstance(raised.value, CountTimeout)
+
+
+def test_the_count_timeout_repeats_its_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Until the statement stops, the cancel is sent again every interval, at most ``_CANCEL_ATTEMPTS`` times."""
+    monkeypatch.setattr(definitions_module, "_CANCEL_INTERVAL_S", 0.001)
+    sent: list[int] = []
+
+    class Hook:
+        def cancel(self) -> None:
+            sent.append(1)
+
+    definitions_module._expire(Hook(), threading.Event())  # type: ignore[arg-type]
+    assert len(sent) == definitions_module._CANCEL_ATTEMPTS
+    finished = threading.Event()
+    finished.set()
+    sent.clear()
+    definitions_module._expire(Hook(), finished)  # type: ignore[arg-type]
+    assert sent == [1]
+
+
 def test_only_checked_select_statements_reach_the_database(
     lite: tuple[Definitions, str, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -289,8 +360,10 @@ def test_the_count_route_answers_db_timeout(lite: tuple[Definitions, str, Path],
     definitions.explorer.registry.get(connection_id).timeout_s = 0.3
     studio = make_studio(tmp_path / "static", connections=definitions.explorer.registry, explorer=definitions.explorer)
     headers = {**studio.sign_in(), "Origin": ORIGIN}
+    started = time.monotonic()
     answer = studio.client.get(f"/api/connections/{connection_id}/tables/main/endless/row-count", headers=headers)
     assert (answer.status_code, answer.json()["code"]) == (504, "db.timeout")
+    assert time.monotonic() - started < 5.0  # the profile's 0.3 s, not the route's 10 s (L-3, M4)
 
 
 # PostgreSQL
@@ -372,10 +445,17 @@ def studio_ddl(definitions: Definitions, connection_id: str, schema: str) -> lis
     return sorted(found)
 
 
+#: Set to 1 where a live pg_dump must run: then a missing or refusing pg_dump fails the test (L-2 of the review).
+LIVE_PG_DUMP = os.environ.get("TABRION_STUDIO_TEST_LIVE_PG_DUMP") == "1"
+
+
 def live_pg_dump(url: str, schema: str) -> str | None:
-    """``pg_dump --schema-only`` of ``schema``, or ``None`` where no pg_dump on PATH can dump this server."""
+    """``pg_dump --schema-only`` of ``schema``; ``None`` only where no pg_dump is on PATH or it is older than the
+    server ("server version mismatch"), and only without :data:`LIVE_PG_DUMP`. Any other failure fails the test."""
     program = shutil.which("pg_dump")
     if program is None:
+        if LIVE_PG_DUMP:
+            pytest.fail("TABRION_STUDIO_TEST_LIVE_PG_DUMP=1, but no pg_dump on PATH")
         return None
     parsed = sqlalchemy.make_url(url)
     environment = {**os.environ, "PGPASSWORD": parsed.password or "", "PGSSLMODE": "prefer"}
@@ -384,9 +464,10 @@ def live_pg_dump(url: str, schema: str) -> str | None:
     done = subprocess.run(
         [*command, str(parsed.database)], env=environment, capture_output=True, text=True, timeout=60, check=False
     )
-    if done.returncode != 0:  # most often: pg_dump older than the server ("server version mismatch")
-        print(f"live pg_dump not usable here (exit {done.returncode}); the recorded output is the reference")
-        return None
+    if done.returncode != 0:
+        if "server version mismatch" in done.stderr and not LIVE_PG_DUMP:
+            return None  # pg_dump older than the server: the recorded output is the reference
+        pytest.fail(f"pg_dump failed (exit {done.returncode}): {done.stderr.strip()[:500]}")
     return done.stdout
 
 
@@ -402,6 +483,51 @@ def test_pg_ddl_equals_pg_dump_schema_only(pg: tuple[Definitions, str, str], sch
     assert found == statements(recorded_dump)
     assert PG_URL is not None
     live = live_pg_dump(PG_URL, schema)
+    if live is not None:
+        assert found == statements(live)
+
+
+#: The tables of both reference apps, as they are deployed: in ``public`` (review M-1).
+PUBLIC_TABLES = ("material", "part", "property", "part_relation", "measurement")
+
+
+@pytest.fixture
+def pg_public() -> Iterator[tuple[Definitions, str]]:
+    assert PG_URL is not None
+    admin = _admin(PG_URL)
+    registry = _registry(PG_URL)
+    try:
+        with admin.begin() as connection:
+            others = connection.exec_driver_sql(
+                "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+                "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm', 'S', 'f')"
+            ).scalar()
+            assert others == 0, "the test database's public schema must start without tables"
+            reference_apps.parts("postgresql").create_all(connection)
+            reference_apps.measurements_upstream().create_all(connection)
+        yield Definitions(Explorer(registry)), registry.open("user:pg").id
+    finally:
+        registry.close_all()
+        with admin.begin() as connection:
+            for table in PUBLIC_TABLES:
+                connection.exec_driver_sql(f"DROP TABLE IF EXISTS public.{table} CASCADE")
+        admin.dispose()
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_ddl_of_the_reference_apps_in_public_equals_pg_dump(pg_public: tuple[Definitions, str]) -> None:
+    """STU-022 acceptance as the reference apps are deployed (review M-1): in ``public``, on the role's
+    ``search_path``, every name in Studio's DDL is schema-qualified like pg_dump's (the fixed catalog search_path)."""
+    definitions, connection_id = pg_public
+    found = studio_ddl(definitions, connection_id, "public")
+    assert (
+        "ALTER TABLE ONLY public.part\n    ADD CONSTRAINT fk_part_material FOREIGN KEY (material_id) "
+        "REFERENCES public.material(id)" in found
+    )
+    assert found == statements((FIXTURES / "public.pg_dump.sql").read_text(encoding="utf-8"))
+    assert PG_URL is not None
+    live = live_pg_dump(PG_URL, "public")
     if live is not None:
         assert found == statements(live)
 
@@ -518,6 +644,20 @@ def test_pg_row_estimates(pg: tuple[Definitions, str, str]) -> None:
     everything = definitions.row_estimates(connection_id)["estimates"]
     assert {(MEASUREMENTS, "measurement"), (PARTS, "part")} <= {(i["schema"], i["name"]) for i in everything}
     assert definitions.explorer.table(connection_id, EXTRAS, "event")["row_estimate"] == 30  # the table detail too
+    # A partition without an estimate: the partitioned table has none either (L-3, M6).
+    admin = _admin(PG_URL)
+    try:
+        with admin.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE TABLE studio_ddl_extras.event_2027 PARTITION OF studio_ddl_extras.event "
+                "FOR VALUES FROM ('2027-01-01') TO ('2028-01-01')"
+            )
+    finally:
+        admin.dispose()
+    partly = {item["name"]: item["estimate"] for item in definitions.row_estimates(connection_id, EXTRAS)["estimates"]}
+    assert partly["event"] is None
+    definitions.explorer.catalog(connection_id, refresh=True)
+    assert definitions.explorer.table(connection_id, EXTRAS, "event")["row_estimate"] is None
     assert definitions.explorer.table(connection_id, EXTRAS, "scratch")["row_estimate"] is None
 
 
@@ -581,5 +721,179 @@ def test_pg_superuser_foreign_table_and_policies() -> None:
             connection.exec_driver_sql(f"DROP SCHEMA IF EXISTS {EXTRAS} CASCADE")
             connection.exec_driver_sql(f"DROP SERVER IF EXISTS {server}")
             connection.exec_driver_sql(f"DROP FOREIGN DATA WRAPPER IF EXISTS {wrapper}")
+        admin.dispose()
+        drop_schemas(PG_URL)
+
+
+@pytest.mark.postgres_superuser
+@pytest.mark.skipif(
+    PG_URL is None or PG_SUPERUSER_URL is None,
+    reason="TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed",
+)
+def test_pg_whom_the_policies_bind() -> None:
+    """``rls_applies`` per role (L-3, M3/M7/M13 of the review), on ``Order`` (RLS on, not forced) and ``doc`` (forced):
+    a superuser without BYPASSRLS and a BYPASSRLS role are exempt from both; a member of the owning role is exempt
+    from ``Order`` when it inherits the owner's rights, bound when it does not (NOINHERIT), and bound by ``doc``."""
+    assert PG_URL is not None and PG_SUPERUSER_URL is not None
+    create_schemas(PG_URL)
+    url = sqlalchemy.make_url(PG_URL)
+    admin = _admin(PG_SUPERUSER_URL)
+    password = secrets.token_hex(16)
+    owner = _quote(admin, str(url.username))
+    roles = {
+        # (superuser, bypass_rls, owner, applies to Order, applies to doc)
+        "studio_ddl_su": ("SUPERUSER NOBYPASSRLS", (True, False, True, False, False)),
+        "studio_ddl_bypass": ("NOSUPERUSER BYPASSRLS", (False, True, False, False, False)),
+        "studio_ddl_member": ("NOSUPERUSER INHERIT", (False, False, True, False, True)),
+        "studio_ddl_noinherit": ("NOSUPERUSER NOINHERIT", (False, False, False, True, True)),
+    }
+    try:
+        with admin.begin() as connection:
+            for role, (options, _) in roles.items():
+                connection.exec_driver_sql(f"CREATE ROLE {role} LOGIN {options} PASSWORD '{password}'")
+            for role in ("studio_ddl_member", "studio_ddl_noinherit"):
+                connection.exec_driver_sql(f"GRANT {owner} TO {role}")
+        for role, (_, (superuser, bypass, owner_rights, applies, applies_forced)) in roles.items():
+            registry = _registry(url.set(username=role, password=password).render_as_string(hide_password=False))
+            try:
+                definitions = Definitions(Explorer(registry))
+                connection_id = registry.open("user:pg").id
+                order = definitions.policies(connection_id, EXTRAS, "Order")
+                doc = definitions.policies(connection_id, EXTRAS, "doc")
+            finally:
+                registry.close_all()
+            assert order["current_role"] == {
+                "name": role,
+                "superuser": superuser,
+                "bypass_rls": bypass,
+                "owner": owner_rights,
+            }, role
+            assert (order["rls_enabled"], order["rls_forced"], order["rls_applies"]) == (True, False, applies), role
+            assert (doc["rls_forced"], doc["rls_applies"]) == (True, applies_forced), role
+    finally:
+        with admin.begin() as connection:
+            for role in roles:
+                connection.exec_driver_sql(f"DROP ROLE IF EXISTS {role}")
+        admin.dispose()
+        drop_schemas(PG_URL)
+
+
+# STU-022 review H-1: Studio's own catalog reads resolve no function or operator through a user's schema.
+
+#: Operators another role can create in a schema on the Studio role's search_path. The first four need an implicit
+#: cast in pg_catalog, so they would win even with pg_catalog searched first; the others duplicate pg_catalog's own and
+#: win when a database or role setting puts the user's schema before pg_catalog.
+PLANTED_OPERATORS = (
+    ("real", "integer", ">="),
+    ("oid", "integer", "<>"),
+    ("oid", "integer", "="),
+    ("oid[]", "oid[]", "="),
+    ("name", "name", "="),
+    ("oid", "oid", "="),
+    ('"char"', '"char"', "="),
+    ('"char"', '"char"', "<>"),
+    ("text", "text", "="),
+    ("name", "text", "!~"),
+)
+TRAP = "studio_ddl_trap"
+
+
+def plant(admin: sqlalchemy.Connection, attacker: str) -> None:
+    """Operators in ``public``, owned by ``attacker``. Each answers like pg_catalog's until the trap is armed (a row
+    in ``public.studio_ddl_trap``), then raises: connecting works, and a call after arming fails its statement."""
+    admin.exec_driver_sql(f"CREATE TABLE public.{TRAP} (armed boolean)")
+    admin.exec_driver_sql(f"ALTER TABLE public.{TRAP} OWNER TO {attacker}")
+    admin.exec_driver_sql(f"GRANT SELECT ON public.{TRAP} TO PUBLIC")
+    for number, (left, right, symbol) in enumerate(PLANTED_OPERATORS):
+        function = f"public.{TRAP}_{number}"
+        admin.exec_driver_sql(
+            f"CREATE FUNCTION {function}({left}, {right}) RETURNS boolean LANGUAGE plpgsql "
+            f"AS $$BEGIN IF EXISTS (SELECT FROM public.{TRAP}) THEN RAISE EXCEPTION '{TRAP} called'; END IF; "
+            f"RETURN $1 OPERATOR(pg_catalog.{symbol}) $2; END$$"
+        )
+        admin.exec_driver_sql(f"ALTER FUNCTION {function}({left}, {right}) OWNER TO {attacker}")
+        admin.exec_driver_sql(
+            f"CREATE OPERATOR public.{symbol} (LEFTARG = {left}, RIGHTARG = {right}, FUNCTION = {function})"
+        )
+        admin.exec_driver_sql(f"ALTER OPERATOR public.{symbol} ({left}, {right}) OWNER TO {attacker}")
+
+
+def unplant(admin: sqlalchemy.Connection) -> None:
+    for number, (left, right, symbol) in enumerate(PLANTED_OPERATORS):
+        admin.exec_driver_sql(f"DROP OPERATOR IF EXISTS public.{symbol} ({left}, {right})")
+        admin.exec_driver_sql(f"DROP FUNCTION IF EXISTS public.{TRAP}_{number}({left}, {right})")
+    admin.exec_driver_sql(f"DROP TABLE IF EXISTS public.{TRAP}")
+
+
+def browse(definitions: Definitions, connection_id: str) -> None:
+    """Everything the explorer and STU-022 read: catalog, table detail (SQLAlchemy reflection), the viewer's column
+    facts, extensions, DDL of every object of the test schemas, policies and row estimates."""
+    explorer = definitions.explorer
+    objects = explorer.catalog(connection_id, refresh=True)["objects"]
+    for item in objects:
+        if item["schema"] in (PARTS, EXTRAS):
+            definitions.ddl(connection_id, item["schema"], item["name"])
+            if item["kind"] != "sequence":
+                explorer.table(connection_id, item["schema"], item["name"])
+                explorer.columns(connection_id, item["schema"], item["name"])
+    explorer.extensions(connection_id)
+    definitions.policies(connection_id, EXTRAS, "doc")
+    definitions.row_estimates(connection_id)
+
+
+@pytest.mark.postgres_superuser
+@pytest.mark.skipif(
+    PG_URL is None or PG_SUPERUSER_URL is None,
+    reason="TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed",
+)
+@pytest.mark.parametrize("user_schema_first", [False, True], ids=["pg_catalog_implicit", "public_before_pg_catalog"])
+def test_pg_h1_planted_operators_are_never_called(user_schema_first: bool) -> None:
+    """Another role plants raising operators in ``public``; browsing as the Studio role calls none of them, also
+    when the role's ``search_path`` puts ``public`` before ``pg_catalog``. The control shows they are on the path."""
+    assert PG_URL is not None and PG_SUPERUSER_URL is not None
+    create_schemas(PG_URL)
+    url = sqlalchemy.make_url(PG_URL)
+    victim, database = str(url.username), str(url.database)
+    admin = _admin(PG_SUPERUSER_URL)
+    attacker = "studio_ddl_attacker"
+    registry = _registry(PG_URL)
+    try:
+        with admin.begin() as connection:
+            connection.exec_driver_sql(f"CREATE ROLE {attacker} NOLOGIN")
+            plant(connection, attacker)
+            if user_schema_first:
+                connection.exec_driver_sql(
+                    f"ALTER ROLE {_quote(admin, victim)} IN DATABASE {_quote(admin, database)} "
+                    "SET search_path = public, pg_catalog"
+                )
+        definitions = Definitions(Explorer(registry))
+        connection_id = registry.open("user:pg").id
+        with admin.begin() as connection:
+            connection.exec_driver_sql("INSERT INTO public.studio_ddl_trap VALUES (true)")
+        # Control: the armed operators are reachable from statements under the role's own search_path.
+        controls = ["SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltuples >= 0 LIMIT 1"]
+        if user_schema_first:
+            controls.append("SELECT 1 FROM pg_catalog.pg_class c WHERE c.relname = 'pg_class' LIMIT 1")
+        for control in controls:
+            with pytest.raises(Exception, match="P0001"):  # raise_exception: the planted function ran
+                registry.get(connection_id).fetch(control, catalog=False)
+        browse(definitions, connection_id)
+        # Studio's own diagnosis statements (STU-DX-003/004/006/007) are catalog reads too; tabrion's checks catch their
+        # own errors, so this does not show that they call nothing (TD-039).
+        assert Diagnostics(registry).run(connection_id)["engine"] == "postgresql"
+        # The migration status: the Levuvo version tables (a pinned catalog read) and the Alembic table, which is
+        # looked up on the session's search_path with qualified operators.
+        opened = registry.get(connection_id)
+        opened.fetch(levuvo_migrations._TABLES_SQL)
+        assert opened.fetch(migrations._ALEMBIC_TABLE["postgresql"], catalog=False) == [(0,)]
+    finally:
+        registry.close_all()
+        with admin.begin() as connection:
+            if user_schema_first:
+                connection.exec_driver_sql(
+                    f"ALTER ROLE {_quote(admin, victim)} IN DATABASE {_quote(admin, database)} RESET search_path"
+                )
+            unplant(connection)
+            connection.exec_driver_sql(f"DROP ROLE IF EXISTS {attacker}")
         admin.dispose()
         drop_schemas(PG_URL)

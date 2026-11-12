@@ -14,7 +14,9 @@ All notable changes to this project are documented here. The format follows
   role. `.../row-count` counts a SQLite table or view on request, stopped after 10 seconds (`db.timeout`), and
   `GET /api/connections/{id}/row-estimates` gives PostgreSQL's `reltuples` per table; a partitioned table's estimate
   is the sum of its partitions' (also in the table detail). Each route also takes `?schema=&name=`. For the
-  reference apps parts and measurements, the DDL equals pg_dump's statement by statement.
+  reference apps parts and measurements, the DDL equals pg_dump's statement by statement, in their own schemas and in
+  `public`. The DDL includes rules, column statistics, storage and compression settings, replica identity and
+  `CLUSTER ON`.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most
@@ -324,6 +326,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
+  review). User SQL, the viewer and the exports keep the session's `search_path`.
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
   secret's source, `host:port` and the TLS mode, marked for a host outside loopback, TLS weaker than `verify-full`, a
   variable that looks like another service's credential and a password file outside the project. Projects trusted

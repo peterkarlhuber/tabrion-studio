@@ -71,8 +71,9 @@ _PG_FOREIGN_KEYS_SQL = (
 #: STU-022: ``pg_class.reltuples``, ``-1`` before the first ``VACUUM``/``ANALYZE`` (``None``); a partitioned table
 #: without an estimate of its own gets the sum of its partitions' when each of them has one.
 _ESTIMATE_SQL = (
-    "SELECT CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint "
-    "WHEN c.relkind = 'p' THEN (SELECT CASE WHEN bool_and(l.reltuples >= 0) THEN sum(l.reltuples)::bigint END "
+    "SELECT CASE WHEN c.reltuples OPERATOR(pg_catalog.>=) 0 THEN c.reltuples::pg_catalog.int8 "
+    "WHEN c.relkind OPERATOR(pg_catalog.=) 'p' THEN (SELECT CASE WHEN pg_catalog.bool_and(l.reltuples "
+    "OPERATOR(pg_catalog.>=) 0) THEN pg_catalog.sum(l.reltuples)::pg_catalog.int8 END "
     "FROM pg_catalog.pg_partition_tree(c.oid) t JOIN pg_catalog.pg_class l ON l.oid = t.relid WHERE t.isleaf) END "
     "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE n.nspname = :schema AND c.relname = :name"

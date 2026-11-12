@@ -61,10 +61,12 @@ _RELATION_SQL = (
     "FROM pg_catalog.pg_inherits i JOIN pg_catalog.pg_class p ON p.oid = i.inhparent "
     "JOIN pg_catalog.pg_namespace pn ON pn.oid = p.relnamespace WHERE i.inhrelid = c.oid ORDER BY i.inhseqno), "
     "pg_catalog.pg_has_role(c.relowner, 'USAGE'), "
-    "pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname) "
+    "pg_catalog.quote_ident(n.nspname) || '.' || pg_catalog.quote_ident(c.relname), c.relreplident "
     "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE n.nspname = :schema AND c.relname = :name"
 )
+#: Besides the definition: the statistics target, storage (when not the type's), compression and options of each
+#: column, and whether an inherited column's ``NOT NULL`` comes from a parent (pg_dump's per-column ``ALTER``s).
 _COLUMNS_SQL = (
     "SELECT pg_catalog.quote_ident(a.attname), pg_catalog.format_type(a.atttypid, a.atttypmod), a.attnotnull, "
     "a.attidentity, a.attgenerated, pg_catalog.pg_get_expr(d.adbin, d.adrelid), a.attislocal, "
@@ -72,7 +74,11 @@ _COLUMNS_SQL = (
     "THEN pg_catalog.quote_ident(cn.nspname) || '.' || pg_catalog.quote_ident(co.collname) END, "
     "pg_catalog.col_description(c.oid, a.attnum), "
     "EXISTS (SELECT 1 FROM pg_catalog.pg_depend dep JOIN pg_catalog.pg_class s ON s.oid = dep.refobjid "
-    "WHERE dep.classid = 'pg_catalog.pg_attrdef'::pg_catalog.regclass AND dep.objid = d.oid AND s.relkind = 'S') "
+    "WHERE dep.classid = 'pg_catalog.pg_attrdef'::pg_catalog.regclass AND dep.objid = d.oid AND s.relkind = 'S'), "
+    "a.attstattarget, CASE WHEN a.attstorage <> t.typstorage THEN a.attstorage END, a.attcompression, "
+    "pg_catalog.array_to_string(a.attoptions, ', '), "
+    "EXISTS (SELECT 1 FROM pg_catalog.pg_inherits h JOIN pg_catalog.pg_attribute pa ON pa.attrelid = h.inhparent "
+    "AND pa.attname = a.attname WHERE h.inhrelid = c.oid AND pa.attnotnull) "
     "FROM pg_catalog.pg_attribute a "
     "JOIN pg_catalog.pg_class c ON c.oid = a.attrelid "
     "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
@@ -116,7 +122,8 @@ _SEQUENCE_SQL = (
 )
 _CONSTRAINTS_SQL = (
     "SELECT pg_catalog.quote_ident(con.conname), con.contype, pg_catalog.pg_get_constraintdef(con.oid), "
-    "con.convalidated, con.conislocal, con.conparentid <> 0, pg_catalog.obj_description(con.oid, 'pg_constraint') "
+    "con.convalidated, con.conislocal, con.conparentid OPERATOR(pg_catalog.<>) 0, "
+    "pg_catalog.obj_description(con.oid, 'pg_constraint') "
     "FROM pg_catalog.pg_constraint con "
     "JOIN pg_catalog.pg_class c ON c.oid = con.conrelid "
     "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
@@ -131,7 +138,8 @@ _INDEXES_SQL = (
     "(SELECT pg_catalog.quote_ident(pn.nspname) || '.' || pg_catalog.quote_ident(p.relname) "
     "FROM pg_catalog.pg_inherits h JOIN pg_catalog.pg_class p ON p.oid = h.inhparent "
     "JOIN pg_catalog.pg_namespace pn ON pn.oid = p.relnamespace WHERE h.inhrelid = i.indexrelid LIMIT 1), "
-    "pg_catalog.obj_description(i.indexrelid, 'pg_class') "
+    "pg_catalog.obj_description(i.indexrelid, 'pg_class'), pg_catalog.quote_ident(ic.relname), i.indisclustered, "
+    "i.indisreplident "
     "FROM pg_catalog.pg_index i "
     "JOIN pg_catalog.pg_class ic ON ic.oid = i.indexrelid "
     "JOIN pg_catalog.pg_class c ON c.oid = i.indrelid "
@@ -143,21 +151,29 @@ _TRIGGERS_SQL = (
     "FROM pg_catalog.pg_trigger t "
     "JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid "
     "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-    "WHERE n.nspname = :schema AND c.relname = :name AND NOT t.tgisinternal AND t.tgparentid = 0 "
+    "WHERE n.nspname = :schema AND c.relname = :name AND NOT t.tgisinternal AND t.tgparentid OPERATOR(pg_catalog.=) 0 "
     "ORDER BY t.tgname"
 )
 #: ``roles``: ``NULL`` for ``PUBLIC`` (``{0}``); the names as identifiers (DDL) and as they are (the policy list).
 _POLICIES_SQL = (
     "SELECT pg_catalog.quote_ident(p.polname), p.polname, p.polpermissive, p.polcmd, "
-    "CASE WHEN p.polroles = '{0}' THEN NULL ELSE ARRAY(SELECT pg_catalog.quote_ident(r.rolname) "
-    "FROM pg_catalog.pg_roles r WHERE r.oid = ANY (p.polroles) ORDER BY r.rolname) END, "
-    "CASE WHEN p.polroles = '{0}' THEN NULL ELSE ARRAY(SELECT r.rolname::text "
+    "CASE WHEN p.polroles OPERATOR(pg_catalog.=) '{0}' THEN NULL ELSE ARRAY(SELECT pg_catalog.quote_ident(r.rolname) "
+    "FROM pg_catalog.pg_roles r WHERE r.oid = ANY (p.polroles)) END, "
+    "CASE WHEN p.polroles OPERATOR(pg_catalog.=) '{0}' THEN NULL ELSE ARRAY(SELECT r.rolname::text "
     "FROM pg_catalog.pg_roles r WHERE r.oid = ANY (p.polroles) ORDER BY r.rolname) END, "
     "pg_catalog.pg_get_expr(p.polqual, p.polrelid), pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid) "
     "FROM pg_catalog.pg_policy p "
     "JOIN pg_catalog.pg_class c ON c.oid = p.polrelid "
     "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE n.nspname = :schema AND c.relname = :name ORDER BY p.polname"
+)
+#: Rules other than a view's own ``_RETURN`` rule, with whether each is enabled.
+_RULES_SQL = (
+    "SELECT pg_catalog.pg_get_ruledef(r.oid), pg_catalog.quote_ident(r.rulename), r.ev_enabled "
+    "FROM pg_catalog.pg_rewrite r "
+    "JOIN pg_catalog.pg_class c ON c.oid = r.ev_class "
+    "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+    "WHERE n.nspname = :schema AND c.relname = :name AND r.rulename <> '_RETURN' ORDER BY r.rulename"
 )
 _VIEW_SQL = (
     "SELECT pg_catalog.pg_get_viewdef(c.oid) FROM pg_catalog.pg_class c "
@@ -178,8 +194,10 @@ _ROLE_SQL = (
 #: A partitioned table has no estimate of its own (``-1``) unless it was analyzed itself; it gets the sum of its
 #: partitions' estimates when each of them has one.
 _ESTIMATES_SQL = (
-    "SELECT n.nspname::text, c.relname::text, CASE WHEN c.reltuples >= 0 THEN c.reltuples::bigint "
-    "WHEN c.relkind = 'p' THEN (SELECT CASE WHEN bool_and(l.reltuples >= 0) THEN sum(l.reltuples)::bigint END "
+    "SELECT n.nspname::text, c.relname::text, "
+    "CASE WHEN c.reltuples OPERATOR(pg_catalog.>=) 0 THEN c.reltuples::pg_catalog.int8 "
+    "WHEN c.relkind OPERATOR(pg_catalog.=) 'p' THEN (SELECT CASE WHEN pg_catalog.bool_and(l.reltuples "
+    "OPERATOR(pg_catalog.>=) 0) THEN pg_catalog.sum(l.reltuples)::pg_catalog.int8 END "
     "FROM pg_catalog.pg_partition_tree(c.oid) t JOIN pg_catalog.pg_class l ON l.oid = t.relid WHERE t.isleaf) END "
     "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE c.relkind IN ('r', 'p', 'm') AND NOT c.relispartition AND n.nspname !~ '^pg_' "
@@ -193,6 +211,10 @@ _SQLITE_OBJECTS_SQL = (
 
 _COMMANDS = {"r": "SELECT", "a": "INSERT", "w": "UPDATE", "d": "DELETE", "*": "ALL"}
 _TRIGGER_STATES = {"D": "DISABLE TRIGGER", "R": "ENABLE REPLICA TRIGGER", "A": "ENABLE ALWAYS TRIGGER"}
+_RULE_STATES = {"D": "DISABLE RULE", "R": "ENABLE REPLICA RULE", "A": "ENABLE ALWAYS RULE"}
+_STORAGE = {"p": "PLAIN", "e": "EXTERNAL", "m": "MAIN", "x": "EXTENDED"}
+_COMPRESSION = {"p": "pglz", "l": "lz4"}
+_REPLICA_IDENTITY = {"n": "NOTHING", "f": "FULL"}
 _COMMENT_KINDS = {
     "table": "TABLE",
     "view": "VIEW",
@@ -212,8 +234,10 @@ class CountTimeout(Exception):
 
 
 def _count_sql(name: str) -> str:
-    """``SELECT count(*)`` of a SQLite table or view of the catalog, its name quoted by SQLAlchemy's SQLite dialect."""
-    statement = sqlalchemy.select(sqlalchemy.func.count()).select_from(sqlalchemy.table(name))
+    """``SELECT count(*)`` of a SQLite table or view of the catalog, its name always a quoted identifier (also a name
+    SQLAlchemy does not take for a keyword, such as ``nothing``; L-1 of the review)."""
+    table = sqlalchemy.table(sqlalchemy.sql.quoted_name(name, quote=True))
+    statement = sqlalchemy.select(sqlalchemy.func.count()).select_from(table)
     return str(statement.compile(dialect=_SQLITE))
 
 
@@ -308,6 +332,7 @@ class Definitions:
             parents,
             _mine,
             target,
+            replica_identity,
         ) = relation[0]
         options = dict(zip(option_names or [], option_values or [], strict=False))
         if relkind == "S":
@@ -321,7 +346,10 @@ class Definitions:
         alter = "ALTER FOREIGN TABLE" if foreign else "ALTER TABLE"
         lines: list[str] = []
         separate_defaults: list[tuple[str, str]] = []
-        for column, type_name, not_null, _identity, generated, default, local, collation, _, from_sequence in columns:
+        column_alters: list[str] = []
+        for row in columns:
+            column, type_name, not_null, _identity, generated, default, local, collation, _, from_sequence = row[:10]
+            column_alters += self._column_alters(target, row, is_partition=bool(is_partition))
             if not (local or is_partition):
                 # An inherited column is the parent's (pg_dump leaves it out of the child too); its default is set
                 # on the child after the table, as pg_dump does.
@@ -330,7 +358,8 @@ class Definitions:
                 continue
             line = f"    {column} {type_name}"
             if default is not None and generated:
-                line += f" GENERATED ALWAYS AS ({default}) STORED"
+                # PostgreSQL 18: "v" is a virtual generated column, written without STORED (TD-035: untested).
+                line += f" GENERATED ALWAYS AS ({default})" + (" STORED" if generated == "s" else "")
             elif default is not None and from_sequence:
                 separate_defaults.append((column, str(default)))  # after the sequence, as pg_dump does
             elif default is not None:
@@ -374,6 +403,9 @@ class Definitions:
                 notes.append(f"Column {column} owns the sequence {sequence}; its DDL is the sequence's.")
         for column, default in separate_defaults:
             statements.append(f"ALTER TABLE ONLY {target} ALTER COLUMN {column} SET DEFAULT {default}")
+        statements += column_alters
+        if relkind in ("r", "p") and replica_identity in _REPLICA_IDENTITY:
+            statements.append(f"ALTER TABLE ONLY {target} REPLICA IDENTITY {_REPLICA_IDENTITY[replica_identity]}")
         if is_partition and parents and bound is not None:
             statements.append(f"ALTER TABLE ONLY {parents[0]} ATTACH PARTITION {target} {bound}")
         statements += self._comments(target, _COMMENT_KINDS.get(kind, "TABLE"), comment, columns)
@@ -385,9 +417,14 @@ class Definitions:
             if con_comment is not None and contype != "f":
                 statements.append(f"COMMENT ON CONSTRAINT {con_name} ON {target} IS {_literal(con_comment)}")
         attached: list[str] = []
-        for definition, index, backs_constraint, parent, index_comment in connection.fetch(_INDEXES_SQL, values):
+        for row in connection.fetch(_INDEXES_SQL, values):
+            definition, index, backs_constraint, parent, index_comment, index_name, clustered, replica = row
             if not backs_constraint:
                 statements.append(str(definition))
+            if clustered:
+                statements.append(f"ALTER TABLE {target} CLUSTER ON {index_name}")
+            if replica and replica_identity == "i":
+                statements.append(f"ALTER TABLE ONLY {target} REPLICA IDENTITY USING INDEX {index_name}")
             if parent is not None:
                 attached.append(f"ALTER INDEX {parent} ATTACH PARTITION {index}")
             if index_comment is not None:
@@ -403,11 +440,42 @@ class Definitions:
                 statements.append(f"ALTER TABLE {only}{target}\n    ADD CONSTRAINT {con_name} {definition}")
                 if con_comment is not None:
                     statements.append(f"COMMENT ON CONSTRAINT {con_name} ON {target} IS {_literal(con_comment)}")
+        statements += self._rules(connection, target, values)
         if rls:
             statements.append(f"ALTER TABLE {target} ENABLE ROW LEVEL SECURITY")
         for quoted, _, permissive, command, roles, _, using, check in connection.fetch(_POLICIES_SQL, values):
             statements.append(self._policy(target, quoted, permissive, command, roles, using, check))
         return statements, owner
+
+    @staticmethod
+    def _column_alters(target: str, row: tuple[Any, ...], *, is_partition: bool) -> list[str]:
+        """pg_dump's per-column ``ALTER``s: a child's own ``NOT NULL`` on an inherited column, the statistics target,
+        options, storage and compression."""
+        column, not_null, local = row[0], row[2], row[6]
+        statistics, storage, compression, options, parent_not_null = row[10:15]
+        prefix = f"ALTER TABLE ONLY {target} ALTER COLUMN {column}"
+        alters = []
+        if not local and not is_partition and not_null and not parent_not_null:
+            alters.append(f"{prefix} SET NOT NULL")
+        if isinstance(statistics, int) and statistics >= 0:
+            alters.append(f"{prefix} SET STATISTICS {statistics}")
+        if options:
+            alters.append(f"{prefix} SET ({options})")
+        if storage in _STORAGE:
+            alters.append(f"{prefix} SET STORAGE {_STORAGE[storage]}")
+        if compression in _COMPRESSION:
+            alters.append(f"{prefix} SET COMPRESSION {_COMPRESSION[compression]}")
+        return alters
+
+    @staticmethod
+    def _rules(connection: OpenConnection, target: str, values: dict[str, str]) -> list[str]:
+        """``CREATE RULE`` (they change what DML does) and a rule's state when it is not the default."""
+        statements = []
+        for definition, rule, enabled in connection.fetch(_RULES_SQL, values):
+            statements.append(str(definition).rstrip().rstrip(";"))
+            if enabled in _RULE_STATES:
+                statements.append(f"ALTER TABLE {target} {_RULE_STATES[enabled]} {rule}")
+        return statements
 
     @staticmethod
     def _options(options: dict[str, str]) -> str:
@@ -454,7 +522,9 @@ class Definitions:
         check_option = options.pop("check_option", None)
         with_options = f" WITH ({self._options(options)})" if options else ""
         if relkind == "m":
-            create = f"CREATE MATERIALIZED VIEW {target}{with_options} AS\n{definition}\n  WITH NO DATA"
+            # pg_dump puts a materialized view's options on a line of their own (a view's on the first line).
+            create = f"CREATE MATERIALIZED VIEW {target}{with_options.replace(' WITH', chr(10) + 'WITH', 1)} AS\n"
+            create += f"{definition}\n  WITH NO DATA"
             keyword = "MATERIALIZED VIEW"
         else:
             create = f"CREATE VIEW {target}{with_options} AS\n{definition}"
@@ -464,15 +534,16 @@ class Definitions:
         columns = connection.fetch(_COLUMNS_SQL, values)
         statements = [create, *self._comments(target, keyword, comment, columns)]
         if relkind == "m":
-            for index_definition, index, backs, _, index_comment in connection.fetch(_INDEXES_SQL, values):
+            for index_definition, index, backs, _, index_comment, *_ in connection.fetch(_INDEXES_SQL, values):
                 if not backs:
                     statements.append(str(index_definition))
                 if index_comment is not None:
                     statements.append(f"COMMENT ON INDEX {index} IS {_literal(index_comment)}")
-        for rule_definition, trigger, enabled in connection.fetch(_TRIGGERS_SQL, values):
-            statements.append(str(rule_definition))
+        for trigger_definition, trigger, enabled in connection.fetch(_TRIGGERS_SQL, values):
+            statements.append(str(trigger_definition))
             if enabled in _TRIGGER_STATES:
                 statements.append(f"ALTER TABLE {target} {_TRIGGER_STATES[enabled]} {trigger}")
+        statements += self._rules(connection, target, values)
         return statements
 
     @staticmethod

@@ -28,6 +28,24 @@ CREATE SCHEMA studio_ddl_extras;
 
 
 --
+-- Name: mood; Type: TYPE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE TYPE studio_ddl_extras.mood AS ENUM (
+    'ok',
+    'bad'
+);
+
+
+--
+-- Name: positive; Type: DOMAIN; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE DOMAIN studio_ddl_extras.positive AS integer
+	CONSTRAINT positive_check CHECK ((VALUE > 0));
+
+
+--
 -- Name: touch(); Type: FUNCTION; Schema: studio_ddl_extras; Owner: -
 --
 
@@ -59,6 +77,27 @@ CREATE TABLE studio_ddl_extras.base (
     a text DEFAULT 'x'::text,
     CONSTRAINT base_id_check CHECK ((id > 0))
 );
+
+
+--
+-- Name: par; Type: TABLE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE TABLE studio_ddl_extras.par (
+    id integer,
+    n text
+);
+
+
+--
+-- Name: chi; Type: TABLE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE TABLE studio_ddl_extras.chi (
+    extra integer
+)
+INHERITS (studio_ddl_extras.par);
+ALTER TABLE ONLY studio_ddl_extras.chi ALTER COLUMN id SET NOT NULL;
 
 
 --
@@ -203,6 +242,33 @@ ALTER SEQUENCE studio_ddl_extras.owned_seq OWNED BY studio_ddl_extras.ticketed.c
 
 
 --
+-- Name: tuned; Type: TABLE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE TABLE studio_ddl_extras.tuned (
+    id integer NOT NULL,
+    a text,
+    b text,
+    c integer
+);
+ALTER TABLE ONLY studio_ddl_extras.tuned ALTER COLUMN a SET STORAGE EXTERNAL;
+ALTER TABLE ONLY studio_ddl_extras.tuned ALTER COLUMN b SET COMPRESSION pglz;
+ALTER TABLE ONLY studio_ddl_extras.tuned ALTER COLUMN c SET STATISTICS 500;
+ALTER TABLE ONLY studio_ddl_extras.tuned ALTER COLUMN c SET (n_distinct=100);
+
+
+--
+-- Name: packed; Type: MATERIALIZED VIEW; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE MATERIALIZED VIEW studio_ddl_extras.packed
+WITH (fillfactor='50') AS
+ SELECT id
+   FROM studio_ddl_extras.tuned
+  WITH NO DATA;
+
+
+--
 -- Name: safe; Type: VIEW; Schema: studio_ddl_extras; Owner: -
 --
 
@@ -229,6 +295,8 @@ CREATE UNLOGGED TABLE studio_ddl_extras.scratch (
     v jsonb
 )
 WITH (fillfactor='70');
+
+ALTER TABLE ONLY studio_ddl_extras.scratch REPLICA IDENTITY FULL;
 
 
 --
@@ -285,6 +353,16 @@ CREATE VIEW studio_ddl_extras.titles AS
     title
    FROM studio_ddl_extras.doc
   WHERE (body IS NOT NULL);
+
+
+--
+-- Name: typed; Type: TABLE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE TABLE studio_ddl_extras.typed (
+    m studio_ddl_extras.mood,
+    p studio_ddl_extras.positive
+);
 
 
 --
@@ -407,6 +485,24 @@ CREATE INDEX event_2026_at_idx ON studio_ddl_extras.event_2026 USING btree (at);
 
 
 --
+-- Name: tuned_c; Type: INDEX; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE INDEX tuned_c ON studio_ddl_extras.tuned USING btree (c);
+
+ALTER TABLE studio_ddl_extras.tuned CLUSTER ON tuned_c;
+
+
+--
+-- Name: tuned_id; Type: INDEX; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE UNIQUE INDEX tuned_id ON studio_ddl_extras.tuned USING btree (id);
+
+ALTER TABLE ONLY studio_ddl_extras.tuned REPLICA IDENTITY USING INDEX tuned_id;
+
+
+--
 -- Name: event_2026_at_idx; Type: INDEX ATTACH; Schema: studio_ddl_extras; Owner: -
 --
 
@@ -418,6 +514,33 @@ ALTER INDEX studio_ddl_extras.event_at ATTACH PARTITION studio_ddl_extras.event_
 --
 
 ALTER INDEX studio_ddl_extras.event_pk ATTACH PARTITION studio_ddl_extras.event_2026_pkey;
+
+
+--
+-- Name: base base_keep; Type: RULE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE RULE base_keep AS
+    ON DELETE TO studio_ddl_extras.base DO INSTEAD NOTHING;
+
+
+--
+-- Name: base base_negative; Type: RULE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE RULE base_negative AS
+    ON UPDATE TO studio_ddl_extras.base
+   WHERE (new.id < 0) DO  SELECT 1 AS "?column?";
+ALTER TABLE studio_ddl_extras.base DISABLE RULE base_negative;
+
+
+--
+-- Name: titles titles_insert; Type: RULE; Schema: studio_ddl_extras; Owner: -
+--
+
+CREATE RULE titles_insert AS
+    ON INSERT TO studio_ddl_extras.titles DO INSTEAD  INSERT INTO studio_ddl_extras.doc (title, body)
+  VALUES (new.title, ''::text);
 
 
 --

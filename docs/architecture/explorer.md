@@ -56,7 +56,18 @@ tables from `sqlite_master` without the `STRICT` and `WITHOUT ROWID` flags.
 table detail). Every statement is a fixed catalog query with the schema and name as bound values, sent through
 `OpenConnection.fetch`: the statement check of STU-009 (`check_statement`, only `SELECT` here) and one
 `Database.read()` each. SQLite's `count(*)` is the one statement with a name in its text: the name comes from the
-catalog and SQLAlchemy's SQLite dialect quotes it as an identifier.
+catalog and Studio always quotes it as an identifier (`quoted_name(..., quote=True)`), keywords and lowercase names
+included.
+
+**Fixed catalog search path.** On PostgreSQL every catalog read of Studio's own (`fetch` with `catalog=True`, the
+default, and the reflection of `tabrion_compat.inspector`) first sets `search_path` to `pg_catalog, pg_temp` for its
+own read transaction (`set_config(..., true)`, `tabrion_compat.CATALOG_SEARCH_PATH`). This hardens Studio's fixed
+catalog text against object resolution through user schemas: names in it resolve in `pg_catalog` only, and the
+flagged queries also name `pg_catalog` operators and aggregates explicitly. The setting is transaction-local and is
+not a write; the transaction stays read-only and the statement check is unchanged. User SQL, the viewer and the exports
+never get it: they run under the session's `search_path`, as the user expects. Alembic's version table is looked up
+with `catalog=False`, since it is found through the session's `search_path`. Queries Studio does not write itself
+(driver and SQLAlchemy connect-time queries, tabrion's diagnostics) are TD-039.
 
 **PostgreSQL DDL** is rebuilt from the catalog with the server's own functions (`format_type`, `pg_get_expr`,
 `pg_get_constraintdef`, `pg_get_indexdef`, `pg_get_triggerdef`, `pg_get_viewdef`, `pg_get_partkeydef`), in the form of
@@ -64,15 +75,15 @@ catalog and SQLAlchemy's SQLite dialect quotes it as an identifier.
 
 | Object | Statements |
 |---|---|
-| Table | `CREATE [UNLOGGED] TABLE` with columns (type, default or generated expression, `NOT NULL`, collation) and the valid `CHECK` constraints, `INHERITS`, `PARTITION BY`, storage options; `FORCE ROW LEVEL SECURITY`; the identity column's `ADD GENERATED ... AS IDENTITY`; a default that uses a sequence (`serial`) or an inherited column's default as `SET DEFAULT`; `ATTACH PARTITION`; comments on the table, its columns, constraints and indexes; primary key, unique and exclusion constraints and `NOT VALID` checks; indexes and their `ATTACH PARTITION`; triggers (and `DISABLE TRIGGER`); foreign keys; `ENABLE ROW LEVEL SECURITY`; the policies |
-| View, materialized view | `CREATE VIEW` (options, `WITH ... CHECK OPTION`) or `CREATE MATERIALIZED VIEW ... WITH NO DATA` and its indexes; comments; `INSTEAD OF` triggers |
+| Table | `CREATE [UNLOGGED] TABLE` with columns (type, default or generated expression, `NOT NULL`, collation) and the valid `CHECK` constraints, `INHERITS`, `PARTITION BY`, storage options; `FORCE ROW LEVEL SECURITY`; the identity column's `ADD GENERATED ... AS IDENTITY`; a default that uses a sequence (`serial`) or an inherited column's default as `SET DEFAULT`; `ATTACH PARTITION`; comments on the table, its columns, constraints and indexes; primary key, unique and exclusion constraints and `NOT VALID` checks; indexes and their `ATTACH PARTITION`; triggers (and `DISABLE TRIGGER`); foreign keys; `ENABLE ROW LEVEL SECURITY`; the policies; column settings (`SET NOT NULL` on a child only, `SET STATISTICS`, `SET (n_distinct ...)`, `SET STORAGE`, `SET COMPRESSION`); `REPLICA IDENTITY` (`FULL`, `NOTHING`, `USING INDEX`); `CLUSTER ON`; rules (`CREATE RULE`, and `DISABLE`/`ENABLE ALWAYS`/`ENABLE REPLICA RULE`) |
+| View, materialized view | `CREATE VIEW` (options, `WITH ... CHECK OPTION`) or `CREATE MATERIALIZED VIEW` (its `WITH (...)` on a line of its own) `... WITH NO DATA` and its indexes; comments; `INSTEAD OF` triggers; rules |
 | Sequence | `CREATE SEQUENCE` with its options, `OWNED BY`, comment. An identity sequence has no statements of its own (a note names its column) |
 | Foreign table | `CREATE FOREIGN TABLE` with `SERVER` and the table's `OPTIONS` (a note: column options are not shown) |
 
 Owner and privileges are left out, as with pg_dump's options (the answer has `owner`), and so are functions (03:
-release S): a trigger's function is not part of the table's DDL. Expressions are printed under the connection's
-`search_path`, which Studio does not change, so a name on it is not schema-qualified where pg_dump qualifies every
-name. The other gaps are TD-035.
+release S): a trigger's function is not part of the table's DDL. Types and domains are not objects of the catalog
+page and are not listed. Expressions are printed under the fixed catalog search path, so names outside `pg_catalog`
+are schema-qualified as pg_dump prints them. The other gaps are TD-035.
 
 **SQLite DDL** is the stored text of `sqlite_master` (exactly the statement that created the object), followed by the
 object's indexes and triggers. An index SQLite made itself (for `UNIQUE` or a primary key) has no text and is not
@@ -91,10 +102,13 @@ them has one. The table detail uses the same rule. SQLite keeps no estimate: the
 **Acceptance (09 backlog STU-022):** the DDL equals `pg_dump --schema-only` for the reference apps. The reference apps
 are tabrion's `examples/parts` (Alembic schema) and `examples/measurements` (the device file on SQLite and the
 upstream table on PostgreSQL); `tests/support/reference_apps.py` copies their schemas. Each is created in a schema of
-its own, and the sorted statements of Studio's DDL for every object of the schema must equal the statements of
-pg_dump's output for that schema (`CREATE SCHEMA`, `SET` lines and functions left out). The test compares with the
+its own, and once both together in `public`; the sorted statements (a multiset: duplicates count) of Studio's DDL for
+every object of the schema must equal the statements of pg_dump's output for that schema (`CREATE SCHEMA`, `SET`
+lines, functions, types and domains left out). The test compares with the
 recorded output in `tests/security/ddl_fixtures/` (pg_dump 16.15 against PostgreSQL 16.15) on every run, and with a live
-`pg_dump` too when one on `PATH` can dump the server. pg_dump refuses a server of a newer major version: the CI job
+`pg_dump` too when one on `PATH` can dump the server. A missing pg_dump or one that refuses the server's version
+skips only the live comparison; any other pg_dump failure fails the test, and `TABRION_STUDIO_TEST_LIVE_PG_DUMP=1`
+makes the live comparison required. pg_dump refuses a server of a newer major version: the CI job
 runs PostgreSQL 17 with the runner's own client, so CI compares with the recorded output.
 
 ## Reflection on tabrion 0.1
@@ -113,5 +127,6 @@ None of this is logged.
 |---|---|
 | `tests/security/test_explorer.py` (SQLite) | the catalog of 503 tables in under a second (STU-010 acceptance: 500 tables < 1 s), the cache and `refresh`, the table detail (columns, default, PK, FK out and in, check, unique, index), unknown and hostile names refused, the SQLite facts (`STRICT`, `WITHOUT ROWID`, file mode), the registry check with a cached catalog, the routes behind session and CSRF |
 | `tests/security/test_explorer.py` (PostgreSQL) | the catalog of 502 tables in a schema in under a second, materialized views and sequences, no system schemas; comments, FKs in and out, the row estimate, extensions |
-| `tests/security/test_definitions.py` (SQLite) | the DDL of the measurements device file equals its migrations and `sqlite_master`, the parts schema likewise; `count(*)` on request, a quoted name, unknown names refused, the timeout cancels a count that would run for minutes (`db.timeout`); only checked `SELECT` statements reach the database (spy); the routes with both name forms behind session and CSRF |
-| `tests/security/test_definitions.py` (PostgreSQL) | STU-022 acceptance: the DDL of the parts, measurements and `extras` schemas equals `pg_dump --schema-only` statement by statement (recorded and live); identity and owned sequences, policies and `rls_applies` (forced, not forced, superuser), row estimates with partitions, a foreign table (superuser), the spy, the routes |
+| `tests/security/test_definitions.py` (SQLite) | the DDL of the measurements device file equals its migrations and `sqlite_master`, the parts schema likewise; `count(*)` on request, every name quoted (keywords, a broken view reports `db.*`), unknown names refused, the timeout cancels a count that would run for minutes (`db.timeout`) within seconds and repeats its cancel; only checked `SELECT` statements reach the database (spy); the routes with both name forms behind session and CSRF |
+| `tests/security/test_definitions.py` (PostgreSQL) | STU-022 acceptance: the DDL of the parts, measurements and `extras` schemas, and of both apps in `public`, equals `pg_dump --schema-only` statement by statement (recorded and live); `extras` includes rules, child-only `NOT NULL`, replica identity, `CLUSTER ON`, column statistics, storage and compression, a materialized view with options, a type and a domain; identity and owned sequences, policies and `rls_applies` (forced, not forced, owner, member, `BYPASSRLS`, superuser), row estimates with partitions (an unanalyzed partition gives none), a foreign table (superuser), the spy, the routes |
+| `tests/security/test_definitions.py` (PostgreSQL superuser) | the fixed catalog search path: objects another role plants in `public` are never called by Studio's catalog reads (DDL, policies, estimates, the catalog, table detail, extensions, the migration lookups), with `pg_catalog` implicit and with `public` placed before it in the role's `search_path` |
