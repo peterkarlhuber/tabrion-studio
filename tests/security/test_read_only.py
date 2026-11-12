@@ -882,7 +882,8 @@ def test_stu_t_013_the_session_and_every_transaction_are_read_only(
     assert connection.fetch("SHOW default_transaction_read_only") == [("on",)]
     assert connection.fetch("SHOW transaction_read_only") == [("on",)]
     assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
-    assert connection.fetch("SELECT count(*) FROM studio_ro_probe") == [(1,)]
+    # An unqualified user table is found through the session's search_path (not Studio's catalog path).
+    assert connection.fetch("SELECT count(*) FROM studio_ro_probe", catalog=False) == [(1,)]
     # Even with Studio's text check bypassed, a switch to READ WRITE in the same transaction is caught by tabrion's
     # check before COMMIT, and the write is rolled back (I-56).
     with pytest.raises(TabrionError), connection._read() as transaction:

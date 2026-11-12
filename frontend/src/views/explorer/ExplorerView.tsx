@@ -343,9 +343,9 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setProfiles(list.profiles);
     const item = list.profiles.find((entry) => entry.id === loaded.id);
     if (item === undefined) {
-      // The picker moves to the first remaining profile, so its value matches an option, and takes the focus.
-      setPhase('idle');
-      setSelected(list.profiles[0]?.id ?? '');
+      // The page switches to the first remaining profile, as a pick in the picker would: its value matches an
+      // option, and the catalog of the deleted profile is no longer shown. The picker then takes the focus.
+      switchProfile(list.profiles[0]?.id ?? '');
       setProblem({ code: 'studio.profile_not_found', kind: 'not_found', status: 404, logId: null });
       refocus.current = true;
       return;
