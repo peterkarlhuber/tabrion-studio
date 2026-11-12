@@ -1,12 +1,26 @@
 /** STU-010: the explorer's parsers fail closed, and its requests only read. */
-import { PG_EXTENSIONS, PG_TABLES, SQLITE_CATALOG, SQLITE_INFO } from '../harness/explorer';
+import {
+  PG_DDL,
+  PG_EXTENSIONS,
+  PG_POLICIES,
+  PG_TABLES,
+  SQLITE_CATALOG,
+  SQLITE_COUNTS,
+  SQLITE_INFO,
+} from '../harness/explorer';
 import {
   count,
   epochMs,
   fetchCatalog,
+  fetchDdl,
+  fetchPolicies,
+  fetchRowCount,
   fetchTable,
   parseCatalog,
+  parseDdl,
   parseExtensions,
+  parsePolicies,
+  parseRowCount,
   parseSqliteInfo,
   parseTable,
 } from './explorer';
@@ -221,5 +235,155 @@ describe('requests', () => {
       ok: false,
       problem: { code: 'studio.offline' },
     });
+  });
+});
+
+describe('STU-022: parseDdl, parsePolicies and parseRowCount', () => {
+  const measurement = PG_POLICIES.measurement as {
+    policies: Record<string, unknown>[];
+    current_role: Record<string, unknown>;
+  };
+  /** The measurement policies with the first policy changed. */
+  const withPolicy = (change: Record<string, unknown>) => ({
+    ...measurement,
+    policies: [{ ...measurement.policies[0], ...change }, ...measurement.policies.slice(1)],
+  });
+  const withRole = (change: Record<string, unknown>) => {
+    // A key set to undefined is left out of the role.
+    const role = Object.fromEntries(
+      Object.entries({ ...measurement.current_role, ...change }).filter(([, v]) => v !== undefined),
+    );
+    return { ...measurement, current_role: role };
+  };
+
+  it('missing or null optional parts read as none, not as a refusal', () => {
+    const {
+      using: _using,
+      with_check: _check,
+      ...bare
+    } = measurement.policies[0] as Record<string, unknown>;
+    const policies = parsePolicies({ ...measurement, owner: null, policies: [bare] });
+    expect(policies?.owner).toBeNull();
+    expect(policies?.policies[0]).toMatchObject({ using: null, withCheck: null });
+    expect(parsePolicies(withRole({ name: null }))?.currentRole.name).toBeNull();
+    const { notes: _notes, owner: _owner, ...ddl } = PG_DDL.device as Record<string, unknown>;
+    expect(parseDdl(ddl)).toMatchObject({ owner: null, notes: [] });
+    expect(parseDdl({ ...ddl, notes: null })?.notes).toEqual([]);
+  });
+
+  it('read the backend shapes', () => {
+    const ddl = parseDdl(PG_DDL.measurement_id_seq);
+    expect(ddl?.statements).toHaveLength(2);
+    expect(ddl?.ddl).toMatch(/^CREATE SEQUENCE public\.measurement_id_seq\n/);
+    expect(ddl?.owner).toBe('measure_owner');
+    expect(ddl?.notes).toHaveLength(1);
+    const policies = parsePolicies(PG_POLICIES.measurement);
+    expect(policies?.rlsEnabled).toBe(true);
+    expect(policies?.rlsApplies).toBe(true);
+    expect(policies?.currentRole).toEqual({
+      name: 'analyst',
+      superuser: false,
+      bypassRls: false,
+      owner: false,
+    });
+    expect(policies?.policies.map((policy) => [policy.command, policy.permissive])).toEqual([
+      ['SELECT', true],
+      ['ALL', false],
+    ]);
+    expect(policies?.policies[1]?.withCheck).toBe('false');
+    expect(parseRowCount(SQLITE_COUNTS.part)).toEqual({
+      schema: 'main',
+      name: 'part',
+      count: 1234,
+      elapsedMs: 3,
+    });
+  });
+
+  it.each([
+    ['DDL without statements', () => parseDdl({ ...PG_DDL.device, statements: null })],
+    ['DDL without its text', () => parseDdl({ ...PG_DDL.device, ddl: 1 })],
+    [
+      'DDL with a statement that is not text',
+      () => parseDdl({ ...PG_DDL.device, statements: [{}] }),
+    ],
+    ['policies without the list', () => parsePolicies({ ...PG_POLICIES.device, policies: {} })],
+    [
+      'policies without rls_enabled',
+      () => parsePolicies({ ...PG_POLICIES.device, rls_enabled: 1 }),
+    ],
+    [
+      'policies without rls_applies',
+      () => parsePolicies({ ...PG_POLICIES.device, rls_applies: null }),
+    ],
+    ['policies without the role', () => parsePolicies({ ...PG_POLICIES.device, current_role: [] })],
+    [
+      'a policy without a name',
+      () =>
+        parsePolicies({
+          ...PG_POLICIES.device,
+          policies: [{ permissive: true, command: 'ALL', roles: [] }],
+        }),
+    ],
+    // L-1 of stu-022-page-review.md: a part that is present but not what it claims refuses the whole answer.
+    ['a DDL owner that is not text', () => parseDdl({ ...PG_DDL.device, owner: 7 })],
+    ['DDL notes that are not a list', () => parseDdl({ ...PG_DDL.device, notes: 'note' })],
+    ['a DDL note that is not text', () => parseDdl({ ...PG_DDL.device, notes: ['ok', 1] })],
+    ['a policies owner that is not text', () => parsePolicies({ ...PG_POLICIES.device, owner: 7 })],
+    ['a USING that is not text', () => parsePolicies(withPolicy({ using: 42 }))],
+    ['a WITH CHECK that is not text', () => parsePolicies(withPolicy({ with_check: { a: 1 } }))],
+    // L-3 (M3): a list of roles with an entry that is not text.
+    ['a role that is not text', () => parsePolicies(withPolicy({ roles: ['analyst', 1] }))],
+    ...((['superuser', 'bypass_rls', 'owner'] as const).flatMap((key) => [
+      [`a role flag ${key} that is not a boolean`, () => parsePolicies(withRole({ [key]: 'yes' }))],
+      [`a missing role flag ${key}`, () => parsePolicies(withRole({ [key]: undefined }))],
+    ]) as [string, () => unknown][]),
+    ['a role name that is not text', () => parsePolicies(withRole({ name: 5 }))],
+    ['a count that is not a count', () => parseRowCount({ ...SQLITE_COUNTS.part, count: -1 })],
+    ['a count without a name', () => parseRowCount({ ...SQLITE_COUNTS.part, name: null })],
+  ])('refuse %s', (_, parse) => {
+    expect(parse()).toBeNull();
+  });
+
+  it('only GET in the query form, and an answer for another object or connection is refused', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const answer = (body: unknown) =>
+      (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), init });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }) as unknown as typeof fetch;
+    const invalid = { ok: false, problem: { code: 'studio.answer_invalid' } };
+    expect(await fetchDdl(answer(PG_DDL.device), 'c-pg', 'public', 'device')).toMatchObject({
+      ok: true,
+    });
+    expect(await fetchDdl(answer(PG_DDL.device), 'c-pg', 'public', 'measurement')).toMatchObject(
+      invalid,
+    );
+    expect(await fetchDdl(answer(PG_DDL.device), 'c-other', 'public', 'device')).toMatchObject(
+      invalid,
+    );
+    expect(
+      await fetchPolicies(answer(PG_POLICIES.device), 'c-pg', 'audit', 'device'),
+    ).toMatchObject(invalid);
+    expect(
+      await fetchRowCount(answer(SQLITE_COUNTS.part), 'c-sqlite', 'main', 'material'),
+    ).toMatchObject(invalid);
+    const { connection_id: _, ...anonymous } = SQLITE_COUNTS.part as { connection_id: string };
+    expect(await fetchRowCount(answer(anonymous), 'c-sqlite', 'main', 'part')).toMatchObject({
+      ok: true,
+    });
+    await fetchPolicies(answer(PG_POLICIES.device), 'c 1', 'my/schema', 'a/b&c');
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/connections/c-pg/ddl?schema=public&name=device',
+      '/api/connections/c-pg/ddl?schema=public&name=measurement',
+      '/api/connections/c-other/ddl?schema=public&name=device',
+      '/api/connections/c-pg/policies?schema=audit&name=device',
+      '/api/connections/c-sqlite/row-count?schema=main&name=material',
+      '/api/connections/c-sqlite/row-count?schema=main&name=part',
+      '/api/connections/c%201/policies?schema=my%2Fschema&name=a%2Fb%26c',
+    ]);
+    for (const call of calls) {
+      expect(call.init?.method).toBeUndefined();
+      expect(call.init?.credentials).toBe('same-origin');
+    }
   });
 });

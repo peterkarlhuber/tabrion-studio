@@ -289,7 +289,7 @@
       "more_one": "und {{count}} weiterer",
       "more_other": "und {{count}} weitere",
       "noColumns": "Dieses Objekt hat keine Spalten.",
-      "sequence": "Studio zeigt die Details einer Sequenz noch nicht.",
+      "sequence": "Studio zeigt die DDL einer Sequenz; ihre anderen Details zeigt es nicht.",
       "estimate_one": "Etwa {{rows}} Zeile (Schätzung der Datenbank).",
       "estimate_other": "Etwa {{rows}} Zeilen (Schätzung der Datenbank).",
       "goTo": "Zu {{name}} wechseln"
@@ -301,7 +301,9 @@
       "indexes": "Indizes",
       "relationships": "Beziehungen",
       "data": "Daten",
-      "sqlite": "SQLite"
+      "sqlite": "SQLite",
+      "ddl": "DDL",
+      "policies": "Policies"
     },
     "columns": {
       "name": "Name",
@@ -350,6 +352,52 @@
       "bytes_one": "{{size}} Byte",
       "bytes_other": "{{size}} Bytes",
       "mode": "Dateirechte"
+    },
+    "ddl": {
+      "loading": "Die DDL wird gelesen …",
+      "label": "DDL von {{name}}",
+      "owner": "Eigentümer: {{owner}} (die DDL lässt Eigentümer und Rechte aus, wie pg_dump --no-owner --no-privileges).",
+      "empty": "Studio hat keine DDL für dieses Objekt.",
+      "escaped": "Steuerzeichen erscheinen als \\uXXXX und ein Backslash als \\\\; Zeilenumbrüche und Tabulatoren bleiben, wie sie sind. „DDL kopieren“ kopiert den genauen Text.",
+      "cut": "Die DDL ist länger als {{chars}} Zeichen; nur der Anfang wird gezeigt. „DDL kopieren“ kopiert alles.",
+      "copy": "DDL kopieren",
+      "copied": "Die DDL ist in der Zwischenablage.",
+      "copyFailed": "Studio konnte die DDL nicht kopieren. Markiere den Text und kopiere ihn selbst."
+    },
+    "policies": {
+      "loading": "Die Row-Level-Security wird gelesen …",
+      "rls": "Row-Level-Security",
+      "on": "Ein",
+      "off": "Aus",
+      "forced": "Auch für den Eigentümer erzwungen",
+      "owner": "Eigentümer",
+      "role": "Deine Rolle",
+      "reason": {
+        "off": "Row-Level-Security ist aus: Die Policies binden niemanden.",
+        "superuser": "Deine Rolle {{role}} ist Superuser: Sie sieht jede Zeile, die Policies binden sie nicht.",
+        "bypass": "Deine Rolle {{role}} hat BYPASSRLS: Sie sieht jede Zeile, die Policies binden sie nicht.",
+        "owner": "Deine Rolle {{role}} besitzt die Tabelle oder ist Mitglied der Rolle, der sie gehört, und die Security ist nicht erzwungen: Die Policies binden sie nicht.",
+        "applies": "Die Policies binden deine Rolle {{role}}: Sie sieht nur die Zeilen, die sie erlauben. Gilt keine permissive Policy für deine Rolle, direkt oder über eine Rolle, der sie angehört, sieht sie keine Zeilen.",
+        "unknown": "Studio kann nicht sagen, ob die Policies deine Rolle {{role}} binden."
+      },
+      "denyAll": "Row-Level-Security ist an und die Tabelle hat keine Policies: Jede Rolle, die sie bindet, sieht keine Zeilen.",
+      "none": "Diese Tabelle hat keine Policies.",
+      "name": "Policy",
+      "type": "Art",
+      "command": "Befehl",
+      "roles": "Rollen",
+      "permissive": "Permissiv",
+      "restrictive": "Restriktiv",
+      "public": "Alle Rollen (PUBLIC)"
+    },
+    "rowCount": {
+      "button": "Zeilen zählen",
+      "counting": "Die Zeilen werden gezählt …",
+      "result_one": "{{rows}} Zeile (gezählt).",
+      "result_other": "{{rows}} Zeilen (gezählt).",
+      "resultTimed_one": "{{rows}} Zeile (gezählt in {{ms}} ms).",
+      "resultTimed_other": "{{rows}} Zeilen (gezählt in {{ms}} ms).",
+      "timeout": "Das Zählen dauerte länger als 10 Sekunden oder das Zeitlimit des Profils und wurde abgebrochen."
     },
     "actions": {
       "data": "Daten anzeigen",
