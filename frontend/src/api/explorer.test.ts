@@ -249,8 +249,10 @@ describe('STU-022: parseDdl, parsePolicies and parseRowCount', () => {
     policies: [{ ...measurement.policies[0], ...change }, ...measurement.policies.slice(1)],
   });
   const withRole = (change: Record<string, unknown>) => {
-    const role = { ...measurement.current_role, ...change };
-    for (const key of Object.keys(change)) if (change[key] === undefined) delete role[key];
+    // A key set to undefined is left out of the role.
+    const role = Object.fromEntries(
+      Object.entries({ ...measurement.current_role, ...change }).filter(([, v]) => v !== undefined),
+    );
     return { ...measurement, current_role: role };
   };
 
