@@ -795,12 +795,40 @@ def test_i3_the_byte_cap_is_the_max_result_mb_setting(sqlite_file: Any) -> None:
         connection_id = registry.open("project:parts").id
         query = wait(engine.start(connection_id, "SELECT name, data FROM part", max_rows=5000))
         assert query.max_bytes == 1024 * 1024 and query.truncated in ("bytes", None)
-        assert QueryEngine(registry).start(connection_id, "SELECT 1").max_bytes == 20 * 1024 * 1024
+        # Waited for, so no statement of this test still holds a session when the registry closes.
+        assert wait(QueryEngine(registry).start(connection_id, "SELECT 1")).max_bytes == 20 * 1024 * 1024
     finally:
         engine.close_all()
         registry.close_all()
     assert validate_settings({"limits": {"max_result_mb": 200}})[0].max_result_mb == 200
     assert [issue.code for issue in validate_settings({"limits": {"max_result_mb": 201}})[1]] == ["config.range"]
+
+
+def test_a_session_returned_after_close_is_closed(sqlite_file: Path) -> None:
+    """``Database.close()`` (``engine.dispose()``) closes only the idle sessions. One that a running statement holds
+    is closed when it comes back, not left open in the disposed pool until garbage collection (the
+    ``ResourceWarning: unclosed database`` that surfaced in an unrelated test's teardown)."""
+    registry = ConnectionRegistry(sqlite_source(sqlite_file))
+    connection = registry.get(registry.open("project:parts").id)
+    held: list[sqlite3.Connection] = []
+    inside, release = threading.Event(), threading.Event()
+
+    def hold() -> None:
+        with connection._read() as transaction:  # a running statement's session
+            held.append(transaction.connection.connection.dbapi_connection)
+            inside.set()
+            release.wait(10)
+
+    holder = threading.Thread(target=hold)
+    holder.start()
+    try:
+        assert inside.wait(10)
+        registry.close_all()  # while the session is checked out
+    finally:
+        release.set()
+        holder.join()
+    with pytest.raises(sqlite3.ProgrammingError):  # closed at check-in, still referenced here
+        held[0].execute("SELECT 1")
 
 
 # M-2: startup options and the check-in reset.
