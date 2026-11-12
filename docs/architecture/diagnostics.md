@@ -94,7 +94,8 @@ It only reads; nothing on the page writes to a database.
   below the findings, shown like findings (severity, code, en/de title of Studio's codes, the server's English detail
   and remedy, escaped and capped), at most 20, and not counted in the summary. The facts are not shown. A `backup`
   without a hints list says that the hints could not be read (never "no hints"); an answer without `backup` shows no
-  section. Since the page shows the hints, the page route passes `replace=True` like the report, so `TAB-PG-020`
+  section. No hints from a run that did not check the backups (`STU-DX-008` among the findings, or the facts
+  `searched: false` / `archive_mode: null`) says "Backups were not checked in this run" (L-1 of the TD-036 review). Since the page shows the hints, the page route passes `replace=True` like the report, so `TAB-PG-020`
   gives way to `STU-BK-010` there too.
 - **Report (TD-036).** "Download Markdown report" and "Download JSON report" post `.../diagnostics/report` with
   `{"format"}` on the shown connection (never a new one, so no D-02 and no way past it). The server runs the
@@ -102,7 +103,11 @@ It only reads; nothing on the page writes to a database.
   the server's form (`tabrion-studio-diagnosis-<letters, digits and ->.md|json`), else under a fixed name, and only
   when the media type is the one asked for (`studio.answer_invalid` otherwise). A refusal is the page's en/de text
   (`studio.report_unavailable`, `studio.report_invalid`, the connection problems). Cancel, a profile switch or
-  leaving the page posts the cancel route and drops the answer; nothing is saved then.
+  leaving the page aborts the report request (`AbortController`), posts the cancel route and drops the answer;
+  nothing is saved then. Cancel says "canceled" only when the server confirms it; a cancel that lands before the
+  server registered the report's diagnosis says that the diagnosis runs on to the time limit (N-2 of the review).
+  The download buttons check the phase and the shown diagnosis as of now (refs), so two presses before the next
+  render start one report (N-1).
 - **Keyboard.** "Run diagnosis", "Cancel", "Run again" and the two downloads stay mounted and use `aria-disabled`, so the focus never
   drops to the page when a run starts, ends or is canceled (C-2). The status region stays in the accessibility tree
   while it is empty (L-2).

@@ -44,6 +44,9 @@ above does not count them.
 | `STU-BK-013` | Note | PostgreSQL: the server is a standby that does not archive. |
 | `STU-BK-014` | Note | PostgreSQL: the archiving state could not be read. |
 
+When a diagnosis was canceled or stopped at the time limit before it looked at the backups, the section says
+"Backups were not checked in this run" instead of "No backup hints": no hint then says nothing about your backups.
+
 Studio sees only backups that are files next to a SQLite database, and on PostgreSQL only WAL archiving. Backups
 made with `pg_dump`, a backup tool or a copy elsewhere are not visible, so a hint such as "No backup found" is a
 reminder to check, not proof that there is none. When `STU-BK-010` is shown, tabrion's own finding on WAL archiving
@@ -54,7 +57,9 @@ reminder to check, not proof that there is none. When `STU-BK-010` is shown, tab
 After a diagnosis, **Download Markdown report** and **Download JSON report** save a report of the shown connection.
 Studio runs the diagnosis again for it, on the same connection (no new connection, so no new "Production database"
 question), and your browser saves the file under a name such as
-`tabrion-studio-diagnosis-postgresql-prod-20261112T101500Z.md`. **Cancel** stops it; nothing is saved then.
+`tabrion-studio-diagnosis-postgresql-prod-20261112T101500Z.md`. **Cancel** stops it; nothing is saved then. If the
+cancel reached the server too early to stop the report's diagnosis, the page says so: the diagnosis then ends at the
+connection's time limit.
 
 The report is meant to be shared, for example in a ticket. It holds the findings and the backup hints with their
 counts, the profile's name, engine and environment, the time and the versions of Studio and tabrion. It leaves out

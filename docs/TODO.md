@@ -1097,5 +1097,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   page and the report both replace `TAB-PG-020`), and `docs/guide/diagnostics.md`. Vitest, Playwright with axe in
   light and dark (`e2e/diagnostics.spec.ts`), and both downloads against a real `tabrion-studio`
   (`e2e/backend.spec.ts`).
+- **Review `td-036-page-review.md` (ACCEPTED), fixed:** L-1 "Backups were not checked in this run" instead of "No
+  backup hints" after a cancel or the time limit (`STU-DX-008`, or `searched: false` / `archive_mode: null`); N-1 the
+  download guards a double press with refs; N-2 the report request is aborted on cancel, switch and leave, and
+  "canceled" is said only when the server confirms it. Each with a test; the mutations of the three are killed.
 - **Still open: the command line.** Not part of the page PR: `tabrion-studio diagnose` needs the decision above (how
   the CLI opens a profile without the server, its secrets and project trust), which is larger than the page work.

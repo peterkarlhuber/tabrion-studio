@@ -477,12 +477,14 @@
       "note": "Für den Bericht läuft die Diagnose auf der angezeigten Verbindung erneut. Er lässt Passwörter, Hosts, Ports, Benutzer- und Datenbanknamen, Dateipfade und Werte weg.",
       "making": "Der Bericht wird erstellt. Studio führt die Diagnose dafür erneut aus…",
       "done": "Bericht heruntergeladen: {{filename}}",
-      "canceled": "Der Bericht wurde abgebrochen."
+      "canceled": "Der Bericht wurde abgebrochen.",
+      "cancelNotTaken": "Der Bericht wurde verworfen und nichts gespeichert, aber Studio konnte seine Diagnose auf dem Server nicht stoppen. Sie endet am Zeitlimit der Verbindung."
     },
     "backup": {
       "title": "Sicherungen",
       "lead": "Hinweise zu Sicherungen. Sie sind keine Befunde, die Zusammenfassung oben zählt sie also nicht mit.",
       "none": "Keine Hinweise zu Sicherungen: Studio hat dazu nichts anzumerken.",
+      "unchecked": "Sicherungen wurden in diesem Lauf nicht geprüft, daher sagt dies nichts über sie aus. Führe die Diagnose erneut aus.",
       "invalid": "Die Hinweise zu Sicherungen in der Antwort konnten nicht gelesen werden, daher wird keiner angezeigt.",
       "more_one": "Und {{count}} weiterer Hinweis zu Sicherungen, nicht angezeigt.",
       "more_other": "Und {{count}} weitere Hinweise zu Sicherungen, nicht angezeigt."

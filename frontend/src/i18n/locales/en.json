@@ -477,12 +477,14 @@
       "note": "The report runs the diagnosis again on the shown connection. It leaves out passwords, hosts, ports, user and database names, file paths and values.",
       "making": "Making the report. Studio runs the diagnosis again for it…",
       "done": "Report downloaded: {{filename}}",
-      "canceled": "The report was canceled."
+      "canceled": "The report was canceled.",
+      "cancelNotTaken": "The report was dropped and nothing was saved, but Studio could not stop its diagnosis on the server. It ends at the connection's time limit."
     },
     "backup": {
       "title": "Backups",
       "lead": "Hints about backups. They are not findings, so the summary above does not count them.",
       "none": "No backup hints: Studio found nothing to point out about backups.",
+      "unchecked": "Backups were not checked in this run, so this says nothing about them. Run the diagnosis again.",
       "invalid": "The backup hints in the answer could not be read, so none are shown.",
       "more_one": "And {{count}} more backup hint, not shown.",
       "more_other": "And {{count}} more backup hints, not shown."

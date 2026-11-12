@@ -14,7 +14,9 @@ All notable changes to this project are documented here. The format follows
   the page's en/de text, and Cancel, a profile switch or leaving the page drops it. The view's D-02 now uses the
   shared gate of the connection manager, so a PROD profile confirmed in the page session is not asked again. The
   diagnostics page route now replaces tabrion's `TAB-PG-020` with `STU-BK-010` like the report. New user-guide page
-  "Diagnostics".
+  "Diagnostics". After the review: a run that did not check the backups says "Backups were not
+  checked in this run" instead of "No backup hints"; a canceled report's request is aborted, and the page says
+  "canceled" only when the server confirms it; a double press starts one report.
 - STU-010 page: the explorer (`/explorer`). Open a profile's read-only connection (D-02 first for PROD, once per
   page session as in STU-008; it becomes the header's connection) and browse its catalog as a WAI-ARIA tree
   (PostgreSQL schemas, type groups and objects plus the extensions; SQLite's file facts and type groups), filter it

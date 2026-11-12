@@ -109,7 +109,13 @@ function diagnosis(findings: unknown[], extra: Record<string, unknown> = {}) {
   };
 }
 
-type Call = { url: string; method: string; headers: Record<string, string>; body: unknown };
+type Call = {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body: unknown;
+  signal?: AbortSignal | null;
+};
 type Answer = (call: Call) => Response | Promise<Response>;
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
@@ -123,6 +129,7 @@ function server(answers: Record<string, Answer | Answer[]> = {}) {
       method: init?.method ?? 'GET',
       headers: (init?.headers ?? {}) as Record<string, string>,
       body: typeof init?.body === 'string' ? JSON.parse(init.body) : undefined,
+      signal: init?.signal,
     };
     calls.push(call);
     const answer = answers[`${call.method} ${call.url}`];
@@ -1021,6 +1028,57 @@ describe('TD-036: backup hints', () => {
     expect(screen.queryByTestId('diagnostics-backup')).toBeNull();
   });
 
+  it('L-1: no hints from a run that did not check the backups says "not checked", never "no hints"', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': [
+        // A canceled run: STU-DX-008, and the backup step skipped.
+        () =>
+          json(
+            diagnosis([OWNER, INCOMPLETE], {
+              backup: { hints: [], facts: { engine: 'sqlite', searched: false } },
+            }),
+          ),
+        // STU-DX-008 alone is enough, whatever the facts say.
+        () =>
+          json(
+            diagnosis([OWNER, INCOMPLETE], {
+              backup: { hints: [], facts: { engine: 'sqlite', searched: true } },
+            }),
+          ),
+        // The facts alone are enough: PostgreSQL's archive state was not read.
+        () =>
+          json(
+            diagnosis([OWNER], {
+              backup: { hints: [], facts: { engine: 'postgresql', archive_mode: null } },
+            }),
+          ),
+        // A complete run that checked and found nothing.
+        () =>
+          json(
+            diagnosis([OWNER], {
+              backup: { hints: [], facts: { engine: 'postgresql', archive_mode: 'on' } },
+            }),
+          ),
+      ],
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    for (let run = 0; run < 3; run += 1) {
+      if (run > 0) await user.click(screen.getByRole('button', { name: 'Run again' }));
+      expect(await screen.findByTestId('diagnostics-backup-unchecked')).toHaveTextContent(
+        'Backups were not checked in this run, so this says nothing about them. Run the diagnosis again.',
+      );
+      expect(screen.queryByTestId('diagnostics-backup-none')).toBeNull();
+    }
+    await user.click(screen.getByRole('button', { name: 'Run again' }));
+    expect(await screen.findByTestId('diagnostics-backup-none')).toHaveTextContent(
+      'No backup hints: Studio found nothing to point out about backups.',
+    );
+    expect(screen.queryByTestId('diagnostics-backup-unchecked')).toBeNull();
+  });
+
   it('lists MAX_HINTS hints, then "and N more"', async () => {
     const user = userEvent.setup();
     const many = Array.from({ length: MAX_HINTS + 2 }, (_, index) =>
@@ -1081,11 +1139,21 @@ describe('TD-036: backup parsing', () => {
     expect(parseDiagnosis({ findings: [], backup: 'x' })?.backup).toEqual({
       hints: [],
       invalid: true,
+      checked: false,
     });
     expect(parseDiagnosis({ findings: [], backup: { facts: {} } })?.backup).toEqual({
       hints: [],
       invalid: true,
+      checked: false,
     });
+    // L-1: the facts say whether the backups were looked at.
+    const checked = (facts: unknown) =>
+      parseDiagnosis({ findings: [], backup: { hints: [], facts } })?.backup?.checked;
+    expect(checked({ engine: 'sqlite', searched: true })).toBe(true);
+    expect(checked({ engine: 'postgresql', archive_mode: 'on' })).toBe(true);
+    expect(checked(undefined)).toBe(true);
+    expect(checked({ engine: 'sqlite', searched: false })).toBe(false);
+    expect(checked({ engine: 'postgresql', archive_mode: null })).toBe(false);
     expect(
       parseDiagnosis({
         findings: [],
@@ -1273,7 +1341,14 @@ describe('TD-036: report download', () => {
       'true',
     );
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getByTestId('diagnostics-message')).toHaveTextContent('The report was canceled.');
+    await waitFor(() =>
+      expect(screen.getByTestId('diagnostics-message')).toHaveTextContent(
+        'The report was canceled.',
+      ),
+    );
+    // N-2: the report request is aborted, not read to its end.
+    const sent = writes(calls).find((call) => call.url.endsWith('/report'));
+    expect(sent?.signal?.aborted).toBe(true);
     pending.resolve(reportAnswer());
     await settle();
     expect(save).not.toHaveBeenCalled();
@@ -1281,6 +1356,65 @@ describe('TD-036: report download', () => {
       '/api/connections/c1/diagnostics/cancel',
     );
     expect(download).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  it('N-2: a cancel the server did not take says so instead of "canceled"', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const pending = deferred();
+    const cancelAnswer = deferred();
+    await runOnce(
+      user,
+      {
+        'POST /api/connections/c1/diagnostics/report': pending.answer,
+        'POST /api/connections/c1/diagnostics/cancel': cancelAnswer.answer,
+      },
+      save,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download Markdown report' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    // Until the server answers, the page does not claim the report was canceled.
+    expect(screen.getByTestId('diagnostics-message')).toHaveTextContent('Canceling…');
+    expect(screen.getByTestId('diagnostics-message')).not.toHaveTextContent('canceled');
+    cancelAnswer.resolve(json({ canceled: false }, 202));
+    await waitFor(() =>
+      expect(screen.getByTestId('diagnostics-message')).toHaveTextContent(
+        "The report was dropped and nothing was saved, but Studio could not stop its diagnosis on the server. It ends at the connection's time limit.",
+      ),
+    );
+    expect(screen.getByTestId('diagnostics-message')).not.toHaveTextContent(
+      'The report was canceled.',
+    );
+    pending.resolve(reportAnswer());
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Download Markdown report' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+  });
+
+  it('N-1: two presses before the next render start one report', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const pending = deferred();
+    const { calls } = await runOnce(
+      user,
+      { 'POST /api/connections/c1/diagnostics/report': pending.answer },
+      save,
+    );
+    const markdown = screen.getByRole('button', { name: 'Download Markdown report' });
+    const json_ = screen.getByRole('button', { name: 'Download JSON report' });
+    act(() => {
+      markdown.click();
+      markdown.click();
+      json_.click();
+    });
+    pending.resolve(reportAnswer());
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    await settle();
+    expect(writes(calls).filter((call) => call.url.endsWith('/report'))).toHaveLength(1);
+    expect(save).toHaveBeenCalledTimes(1);
   });
 
   it('a profile switch or leaving the page cancels the report', async () => {
@@ -1298,6 +1432,8 @@ describe('TD-036: report download', () => {
     await settle();
     expect(save).not.toHaveBeenCalled();
     expect(writes(calls).at(-1)?.url).toBe('/api/connections/c1/diagnostics/cancel');
+    // N-2: leaving the page aborts the report request.
+    expect(writes(calls).find((call) => call.url.endsWith('/report'))?.signal?.aborted).toBe(true);
 
     const second = deferred();
     const next = await runOnce(
@@ -1311,6 +1447,10 @@ describe('TD-036: report download', () => {
     await settle();
     expect(save).not.toHaveBeenCalled();
     expect(writes(next.calls).at(-1)?.url).toBe('/api/connections/c1/diagnostics/cancel');
+    // N-2: a profile switch aborts the report request.
+    expect(writes(next.calls).find((call) => call.url.endsWith('/report'))?.signal?.aborted).toBe(
+      true,
+    );
     expect(screen.queryByTestId('diagnostics-diagnosis')).toBeNull();
   });
 

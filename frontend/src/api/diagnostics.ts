@@ -52,6 +52,12 @@ export interface Backup {
   hints: Finding[];
   /** True when `backup` was there but its hints could not be read: the page says so instead of "no hints". */
   invalid: boolean;
+  /**
+   * False when the facts say the backups were not looked at (SQLite `searched: false`, PostgreSQL `archive_mode:
+   * null`): after a cancel or the time limit, without a file, or with an unreadable archiver (L-1 of the TD-036
+   * review). Then no hints is not "nothing to point out".
+   */
+  checked: boolean;
 }
 
 /** The problem for an answer the page cannot read (it never shows a half-read diagnosis as complete). */
@@ -100,8 +106,16 @@ function sortFindings(findings: Finding[]): Finding[] {
 function parseBackup(value: unknown): Backup | null {
   if (value === undefined || value === null) return null;
   const doc = (typeof value === 'object' ? value : {}) as Record<string, unknown>;
-  if (!Array.isArray(doc.hints)) return { hints: [], invalid: true };
-  return { hints: sortFindings(doc.hints.flatMap(parseFinding)), invalid: false };
+  if (!Array.isArray(doc.hints)) return { hints: [], invalid: true, checked: false };
+  const facts = (typeof doc.facts === 'object' && doc.facts !== null ? doc.facts : {}) as Record<
+    string,
+    unknown
+  >;
+  const checked = !(
+    facts.searched === false ||
+    ('archive_mode' in facts && facts.archive_mode === null)
+  );
+  return { hints: sortFindings(doc.hints.flatMap(parseFinding)), invalid: false, checked };
 }
 
 /** The diagnosis, or null for an answer without a findings list. */
@@ -199,9 +213,11 @@ export async function downloadReport(
   fetcher: typeof fetch,
   connectionId: string,
   format: ReportFormat,
+  signal?: AbortSignal,
 ): Promise<Result<Report>> {
   try {
     const response = await fetcher(`${diagnosticsPath(connectionId)}/report`, {
+      signal,
       method: 'POST',
       cache: 'no-store',
       credentials: 'same-origin',

@@ -150,7 +150,7 @@ function FindingItem({
 }
 
 /** The backup hints (STU-025): not findings, so they have their own heading and are not in the summary. */
-function BackupHints({ backup }: { backup: Backup }) {
+function BackupHints({ backup, incomplete }: { backup: Backup; incomplete: boolean }) {
   const { t } = useTranslation();
   const listed = backup.hints.slice(0, MAX_HINTS);
   let state: ReactNode = null;
@@ -158,6 +158,14 @@ function BackupHints({ backup }: { backup: Backup }) {
     state = (
       <p className={connectionStyles.warning} data-testid="diagnostics-backup-invalid">
         {t('diagnostics.backup.invalid')}
+      </p>
+    );
+  } else if (listed.length === 0 && (incomplete || !backup.checked)) {
+    // L-1 of the TD-036 review: no hints after a cancel or the time limit (or without a file to look next to) is no
+    // sign that the backups are fine, so the page says that they were not checked.
+    state = (
+      <p className={connectionStyles.warning} data-testid="diagnostics-backup-unchecked">
+        {t('diagnostics.backup.unchecked')}
       </p>
     );
   } else if (listed.length === 0) {
@@ -252,7 +260,9 @@ function DiagnosisResult({
           {t('diagnostics.result.more', { count: diagnosis.findings.length - listed.length })}
         </p>
       ) : null}
-      {diagnosis.backup !== null ? <BackupHints backup={diagnosis.backup} /> : null}
+      {diagnosis.backup !== null ? (
+        <BackupHints backup={diagnosis.backup} incomplete={incomplete} />
+      ) : null}
     </div>
   );
 }
@@ -280,7 +290,13 @@ export function DiagnosticsView({
   const gate = useConnect(fetcher);
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
-  const [shown, setShown] = useState<Shown | null>(null);
+  const [shown, setShownState] = useState<Shown | null>(null);
+  /** The shown diagnosis as of now, for a click that lands before the next render (N-1 of the TD-036 review). */
+  const shownNow = useRef<Shown | null>(null);
+  const setShown = (next: Shown | null) => {
+    shownNow.current = next;
+    setShownState(next);
+  };
   const [problem, setProblem] = useState<Problem | null>(null);
   const [phase, setPhaseState] = useState<Phase>('idle');
   /** The phase as of now, for a click that lands before the next render (review I-5). */
@@ -296,6 +312,12 @@ export function DiagnosticsView({
   const request = useRef(0);
   /** The connection whose diagnosis is running, so that a cancel, a profile switch or leaving the page can stop it. */
   const running = useRef<string | null>(null);
+  /** Aborts the report request in flight (N-2 of the TD-036 review): a dropped report is not read to its end. */
+  const reportAbort = useRef<AbortController | null>(null);
+  const abortReport = () => {
+    reportAbort.current?.abort();
+    reportAbort.current = null;
+  };
 
   useEffect(() => {
     let active = true;
@@ -314,6 +336,7 @@ export function DiagnosticsView({
   useEffect(
     () => () => {
       request.current += 1;
+      abortReport();
       const connection = running.current;
       running.current = null;
       if (connection !== null) void cancelDiagnostics(fetcher, connection);
@@ -387,16 +410,21 @@ export function DiagnosticsView({
 
   /** The report of the shown diagnosis's connection: never opens one, so D-02 cannot be skipped. */
   const report = async (format: ReportFormat) => {
-    // The phase as of now: a second press before the next render starts nothing (like Cancel, review I-5).
-    if (shown === null || phaseNow.current !== 'idle') return;
+    // The phase and the diagnosis as of now, never the render's: a second press before the next render starts nothing
+    // (N-1 of the TD-036 review, like Cancel in review I-5).
+    const current = shownNow.current;
+    if (current === null || phaseNow.current !== 'idle') return;
     const mine = ++request.current;
-    const connectionId = shown.connectionId;
+    const connectionId = current.connectionId;
     running.current = connectionId;
+    const abort = new AbortController();
+    reportAbort.current = abort;
     setPhase('reporting');
     setProblem(null);
     setMessage(t('diagnostics.download.making'));
     setQuiet(false);
-    const result = await downloadReport(fetcher, connectionId, format);
+    const result = await downloadReport(fetcher, connectionId, format, abort.signal);
+    if (reportAbort.current === abort) reportAbort.current = null;
     if (running.current === connectionId && mine === request.current) running.current = null;
     if (mine !== request.current) return;
     setPhase('idle');
@@ -411,13 +439,22 @@ export function DiagnosticsView({
 
   const cancel = async () => {
     if (phaseNow.current === 'reporting') {
-      // The report is dropped, not saved: its answer would be a diagnosis cut short by the cancel.
-      request.current += 1;
+      // The report is dropped, not saved: its answer would be a diagnosis cut short by the cancel. The request is
+      // aborted, and the server's diagnosis is stopped through the cancel route (N-2 of the TD-036 review).
+      const mine = ++request.current;
+      abortReport();
       const connection = running.current;
       running.current = null;
+      setPhase('canceling');
+      setMessage(t('diagnostics.canceling'));
+      const canceled = connection !== null && (await cancelDiagnostics(fetcher, connection));
+      if (mine !== request.current) return;
       setPhase('idle');
-      setMessage(t('diagnostics.download.canceled'));
-      if (connection !== null) await cancelDiagnostics(fetcher, connection);
+      // Only a cancel the server confirmed is "canceled": one that lands before the server registered the report's
+      // diagnosis (it reads the names first) does not stop it, and the page says so.
+      setMessage(
+        t(canceled ? 'diagnostics.download.canceled' : 'diagnostics.download.cancelNotTaken'),
+      );
       return;
     }
     if (phaseNow.current === 'opening') {
@@ -443,6 +480,7 @@ export function DiagnosticsView({
 
   const switchProfile = (id: string) => {
     request.current += 1;
+    abortReport();
     const connection = running.current;
     running.current = null;
     if (connection !== null) void cancelDiagnostics(fetcher, connection);
@@ -522,14 +560,14 @@ export function DiagnosticsView({
             <Button
               aria-disabled={!canReport}
               aria-describedby={noteId}
-              onClick={() => canReport && void report('markdown')}
+              onClick={() => void report('markdown')}
             >
               {t('diagnostics.download.markdown')}
             </Button>
             <Button
               aria-disabled={!canReport}
               aria-describedby={noteId}
-              onClick={() => canReport && void report('json')}
+              onClick={() => void report('json')}
             >
               {t('diagnostics.download.json')}
             </Button>
