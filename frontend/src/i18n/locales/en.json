@@ -11,6 +11,7 @@
     "connections": "Connections",
     "explorer": "Explorer",
     "migrations": "Migrations",
+    "diagnostics": "Diagnostics",
     "settings": "Settings"
   },
   "header": {
@@ -380,6 +381,66 @@
       }
     }
   },
+  "diagnostics": {
+    "title": "Diagnostics",
+    "lead": "Checks a connection's database against tabrion's rules and Studio's own: roles, timeouts, TLS, foreign keys and file permissions. The diagnosis only reads. It starts only when you run it, since SQLite's integrity check can take a while.",
+    "cardTitle": "Run a diagnosis",
+    "profile": "Connection profile",
+    "run": "Run diagnosis",
+    "opening": "Opening the connection…",
+    "running": "Running…",
+    "runningNote": "The diagnosis is running. It stops at the connection's time limit, or when you cancel it.",
+    "cancel": "Cancel",
+    "canceling": "Canceling…",
+    "canceledBeforeStart": "Canceled before the diagnosis started.",
+    "cancelFailed": "Studio could not cancel the diagnosis. It stops at the connection's time limit; you can try to cancel it again.",
+    "rerun": "Run again",
+    "noProfiles": "There are no connection profiles yet. Add one under Connections.",
+    "finished": "Diagnosis finished: {{summary}}",
+    "count": {
+      "error_one": "{{count}} error",
+      "error_other": "{{count}} errors",
+      "warning_one": "{{count}} warning",
+      "warning_other": "{{count}} warnings",
+      "info_one": "{{count}} note",
+      "info_other": "{{count}} notes",
+      "unknown_one": "{{count}} with an unknown severity",
+      "unknown_other": "{{count}} with an unknown severity"
+    },
+    "severity": {
+      "error": "Error",
+      "warning": "Warning",
+      "info": "Note",
+      "unknown": "Unknown severity"
+    },
+    "source": {
+      "tabrion": "from tabrion",
+      "studio": "from Studio",
+      "unknown": "unknown source"
+    },
+    "result": {
+      "none": "No findings: the checks found nothing to report.",
+      "incomplete": "Not every check ran (STU-DX-008), so this result is incomplete. Run the diagnosis again.",
+      "ranAt": "Checked",
+      "remedy": "Remedy:",
+      "noTitle": "(no title)",
+      "serverText": "Details and remedies are the checks' own English text.",
+      "more_one": "And {{count}} more finding, not shown.",
+      "more_other": "And {{count}} more findings, not shown."
+    },
+    "titles": {
+      "STU-DX-001": "Production connection without a verified certificate",
+      "STU-DX-002": "Weak TLS to a remote host",
+      "STU-DX-003": "The read-only role can write",
+      "STU-DX-004": "No statement timeout for the role or database",
+      "STU-DX-005": "Rows break foreign keys",
+      "STU-DX-006": "Role owns tables",
+      "STU-DX-007": "Future tables will be writable",
+      "STU-DX-008": "Not every check ran",
+      "STU-DX-009": "Foreign keys could not be checked",
+      "STU-DX-010": "Session settings missing for the role or database"
+    }
+  },
   "settings": {
     "title": "Settings",
     "general": "General",
@@ -545,6 +606,7 @@
     "keyring_failed": "The system keyring did not complete the request.",
     "secret_invalid": "The password is empty or too long.",
     "secret_not_storable": "This profile takes its password from its own source.",
+    "answer_invalid": "The server's answer could not be read, so nothing of it is shown.",
     "offline": "The local server does not answer.",
     "other": "The request failed ({{code}}).",
     "config_too_large": "The file would be larger than Studio reads (256 KB). Remove profiles you no longer use.",

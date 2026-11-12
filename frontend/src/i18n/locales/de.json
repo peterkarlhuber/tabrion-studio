@@ -11,6 +11,7 @@
     "connections": "Verbindungen",
     "explorer": "Explorer",
     "migrations": "Migrationen",
+    "diagnostics": "Diagnose",
     "settings": "Einstellungen"
   },
   "header": {
@@ -380,6 +381,66 @@
       }
     }
   },
+  "diagnostics": {
+    "title": "Diagnose",
+    "lead": "Prüft die Datenbank einer Verbindung gegen die Regeln von tabrion und die eigenen Prüfungen von Studio: Rollen, Timeouts, TLS, Fremdschlüssel und Dateirechte. Die Diagnose liest nur. Sie startet erst, wenn du sie ausführst, weil die Integritätsprüfung von SQLite dauern kann.",
+    "cardTitle": "Diagnose ausführen",
+    "profile": "Verbindungsprofil",
+    "run": "Diagnose starten",
+    "opening": "Verbindung wird geöffnet…",
+    "running": "Läuft…",
+    "runningNote": "Die Diagnose läuft. Sie endet am Zeitlimit der Verbindung oder wenn du sie abbrichst.",
+    "cancel": "Abbrechen",
+    "canceling": "Wird abgebrochen…",
+    "canceledBeforeStart": "Abgebrochen, bevor die Diagnose begann.",
+    "cancelFailed": "Studio konnte die Diagnose nicht abbrechen. Sie endet am Zeitlimit der Verbindung; du kannst den Abbruch erneut versuchen.",
+    "rerun": "Erneut prüfen",
+    "noProfiles": "Es gibt noch keine Verbindungsprofile. Lege eines unter „Verbindungen“ an.",
+    "finished": "Diagnose fertig: {{summary}}",
+    "count": {
+      "error_one": "{{count}} Fehler",
+      "error_other": "{{count}} Fehler",
+      "warning_one": "{{count}} Warnung",
+      "warning_other": "{{count}} Warnungen",
+      "info_one": "{{count}} Hinweis",
+      "info_other": "{{count}} Hinweise",
+      "unknown_one": "{{count}} mit unbekannter Schwere",
+      "unknown_other": "{{count}} mit unbekannter Schwere"
+    },
+    "severity": {
+      "error": "Fehler",
+      "warning": "Warnung",
+      "info": "Hinweis",
+      "unknown": "Unbekannte Schwere"
+    },
+    "source": {
+      "tabrion": "von tabrion",
+      "studio": "von Studio",
+      "unknown": "unbekannte Quelle"
+    },
+    "result": {
+      "none": "Keine Befunde: Die Prüfungen haben nichts zu melden.",
+      "incomplete": "Nicht jede Prüfung lief (STU-DX-008), das Ergebnis ist also unvollständig. Führe die Diagnose erneut aus.",
+      "ranAt": "Geprüft",
+      "remedy": "Abhilfe:",
+      "noTitle": "(ohne Titel)",
+      "serverText": "Details und Abhilfen sind der englische Originaltext der Prüfungen.",
+      "more_one": "Und {{count}} weiterer Befund, nicht angezeigt.",
+      "more_other": "Und {{count}} weitere Befunde, nicht angezeigt."
+    },
+    "titles": {
+      "STU-DX-001": "Produktionsverbindung ohne geprüftes Zertifikat",
+      "STU-DX-002": "Schwaches TLS zu einem entfernten Host",
+      "STU-DX-003": "Die Nur-Lese-Rolle darf schreiben",
+      "STU-DX-004": "Kein statement_timeout für die Rolle oder die Datenbank",
+      "STU-DX-005": "Zeilen verletzen Fremdschlüssel",
+      "STU-DX-006": "Die Rolle besitzt Tabellen",
+      "STU-DX-007": "Künftige Tabellen werden beschreibbar sein",
+      "STU-DX-008": "Nicht jede Prüfung lief",
+      "STU-DX-009": "Fremdschlüssel konnten nicht geprüft werden",
+      "STU-DX-010": "Sitzungseinstellungen fehlen für die Rolle oder die Datenbank"
+    }
+  },
   "settings": {
     "title": "Einstellungen",
     "general": "Allgemein",
@@ -545,6 +606,7 @@
     "keyring_failed": "Der Schlüsselbund des Systems hat die Anfrage nicht ausgeführt.",
     "secret_invalid": "Das Passwort ist leer oder zu lang.",
     "secret_not_storable": "Dieses Profil holt sein Passwort aus seiner eigenen Quelle.",
+    "answer_invalid": "Die Antwort des Servers ließ sich nicht lesen, daher wird nichts davon angezeigt.",
     "offline": "Der lokale Server antwortet nicht.",
     "other": "Die Anfrage ist fehlgeschlagen ({{code}}).",
     "config_too_large": "Die Datei würde größer, als Studio liest (256 KB). Entferne Profile, die du nicht mehr brauchst.",
