@@ -28,6 +28,7 @@ import {
   type MigrationStatus,
 } from '../../api/migrations';
 import type { Problem } from '../../api/problem';
+import { PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import { ProdConnectDialog, TrustCodeDialog } from '../../components/dialogs/StudioDialogs';
 import { EnvBadge } from '../../components/status/Status';
@@ -363,7 +364,8 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     setProblem(null);
     setStatus(null);
     const connecting = connections.beginConnect();
-    const opened = await openConnection(fetcher, profile.id);
+    // The environment this page confirmed for (D-02 on the server, TD-038).
+    const opened = await openConnection(fetcher, profile.id, profile.environment);
     // L-3 of the connect review: a profile switch (or a newer request) since makes this one stale; it does not
     // become the header's connection. Neither does it when a newer connect started elsewhere (L-4).
     if (mine !== request.current) return;
@@ -382,7 +384,15 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     if (result.ok) {
       setStatus(result.value);
       setStatusEnv(profile.environment);
-    } else setProblem(result.problem);
+    } else {
+      setProblem(result.problem);
+      // The profile became PROD after this page read it: read the profiles again, so the next try asks D-02.
+      if (result.problem.code === PROD_CONFIRMATION_REQUIRED) {
+        void fetchProfiles(fetcher).then((list) => {
+          if (list !== null) setProfiles(list.profiles);
+        });
+      }
+    }
   };
 
   /** Read the shown status again on its open connection: never opens one, so D-02 cannot be skipped (L-1). */

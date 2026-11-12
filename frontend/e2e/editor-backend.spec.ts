@@ -411,6 +411,58 @@ test('a profile changed to PROD elsewhere never connects without D-02 (C-5)', as
   expect(violations).toEqual([]);
 });
 
+test('the server refuses a PROD open the page confirmed as DEV; the next run asks D-02 (TD-038)', async ({
+  page,
+}) => {
+  const violations = await signIn(page);
+  expect(
+    await api(page, 'POST', '/api/profiles', {
+      profile: { name: 'e2e-dev6', engine: 'sqlite', environment: 'dev', path: database },
+      digest: await userDigest(page),
+      overwrite: false,
+    }),
+  ).toBe(201);
+  await openEditor(page);
+  await page.getByTestId('editor-profile').selectOption('user:e2e-dev6');
+  await type(page, 'select 1');
+  // The list as the page reads it before the change; the page's own check (C-5) sees it once more, so the profile
+  // changes after that read: only the server's check (D-02 on the server) is left.
+  const stale = await apiJson(page, '/api/profiles');
+  await retag(page, 'e2e-dev6', 'prod');
+  let served = false;
+  await page.route('**/api/profiles', async (route) => {
+    if (route.request().method() !== 'GET' || served) return route.continue();
+    served = true;
+    return route.fulfill({ status: 200, contentType: 'application/json', json: stale });
+  });
+  const opens: unknown[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/connections') {
+      opens.push(request.postDataJSON());
+    }
+  });
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByTestId('editor-connect-problem')).toHaveText(
+    /^This profile is marked as PROD now\. Confirm the production database, then try again\./,
+  );
+  await expect(page.getByRole('grid')).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await openProfiles(page, 'e2e-dev6')).toEqual([]);
+  // The page read the profile again: Run asks D-02, then opens it as PROD.
+  await page.getByTestId('editor-run').click();
+  const dialog = page.getByRole('dialog', { name: 'Production database' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByRole('grid').getByRole('gridcell').first()).toHaveText('1');
+  expect(await openProfiles(page, 'e2e-dev6')).toEqual(['prod']);
+  expect(opens).toEqual([
+    { profile_id: 'user:e2e-dev6', confirmed_environment: 'dev' },
+    { profile_id: 'user:e2e-dev6', confirmed_environment: 'prod' },
+  ]);
+  await page.unroute('**/api/profiles');
+  expect(violations).toEqual([]);
+});
+
 test('a profile list that cannot be read again opens no connection (L-9)', async ({ page }) => {
   const violations = await signIn(page);
   expect(

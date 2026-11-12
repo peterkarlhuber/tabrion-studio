@@ -700,6 +700,7 @@
     "connection_limit": "Studio hält höchstens 8 Verbindungen offen. Schließe zuerst eine.",
     "connection_busy": "Die Verbindung ist beschäftigt. Versuche es gleich noch einmal.",
     "connection_stale": "Die Verbindung wurde geschlossen, weil sich ihr Profil geändert hat. Versuche es erneut.",
+    "prod_confirmation_required": "Dieses Profil ist jetzt als PROD markiert. Bestätige die Produktionsdatenbank und versuche es erneut.",
     "connection_not_found": "Die Verbindung ist nicht mehr offen. Versuche es erneut.",
     "database_missing": "Die SQLite-Datei des Profils existiert nicht.",
     "database_unsafe": "Die SQLite-Datei des Profils ist ein Link oder hat sich beim Öffnen geändert.",

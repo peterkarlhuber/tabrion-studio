@@ -17,7 +17,7 @@ import uuid
 import pytest
 
 from tabrion_studio.api.config import Configuration
-from tabrion_studio.config.project import ProjectConfig
+from tabrion_studio.config.project import ProjectConfig, TrustError
 from tabrion_studio.config.secrets import KeyringStore, Secrets, SessionSecrets
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
@@ -133,7 +133,7 @@ def test_a_project_file_opens_only_after_trust(env: Env) -> None:
     assert refused.status_code == 404 and refused.json()["code"] == "studio.profile_not_found"
     digest = env.send("GET", "/api/project").json()["digest"]
     assert env.send("POST", "/api/project/trust", {"digest": digest}).status_code == 204
-    opened = env.send("POST", "/api/connections", {"profile_id": "project:proj"})
+    opened = env.send("POST", "/api/connections", {"profile_id": "project:proj", "confirmed_environment": "prod"})
     assert opened.status_code == 201 and opened.json()["environment"] == "prod"
     # The project file changes: the trust is gone, so is the connection.
     (env.project / ".tabrion" / "studio.toml").write_text(PROJECT.replace("p.db", "q.db"), encoding="utf-8")
@@ -193,6 +193,97 @@ def test_the_routes_need_a_session_csrf_and_json(env: Env) -> None:
         assert response.status_code in (401, 403), (method, path)
     bad = env.send("POST", "/api/connections", {"profile_id": 3})
     assert bad.status_code == 400 and bad.json()["code"] == "access.bad_request"
+    assert env.registry.list() == []
+
+
+def test_td_038_a_profile_changed_to_prod_elsewhere_needs_d02(env: Env) -> None:
+    """D-02 on the server (TD-038): the page confirmed the profile as DEV, then it became PROD in another tab or in
+    profiles.toml. Open and test are refused with studio.prod_confirmation_required until the page confirms PROD."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    digest = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    prod = {"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "prod"}
+    assert env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": prod, "digest": digest}).status_code == 200
+    for path in ("/api/connections", "/api/connection-tests"):
+        for confirmed in ({"confirmed_environment": "dev"}, {"confirmed_environment": None}, {}):
+            refused = env.send("POST", path, {"profile_id": "user:parts", **confirmed})
+            assert refused.status_code == 409, (path, confirmed)
+            doc = refused.json()
+            assert doc["code"] == "studio.prod_confirmation_required" and doc["kind"] == "database"
+            assert refused.headers["content-type"] == "application/problem+json"
+    assert env.registry.list() == []
+    # The page reads the profile again, asks D-02 and sends the request again.
+    assert env.send("GET", "/api/profiles").json()["profiles"][0]["environment"] == "prod"
+    tested = env.send("POST", "/api/connection-tests", {"profile_id": "user:parts", "confirmed_environment": "prod"})
+    assert tested.status_code == 200 and tested.json()["environment"] == "prod"
+    opened = env.send("POST", "/api/connections", {"profile_id": "user:parts", "confirmed_environment": "prod"})
+    assert opened.status_code == 201 and opened.json()["environment"] == "prod"
+    # The open PROD connection is not handed to a request that did not confirm PROD.
+    again = env.send("POST", "/api/connections", {"profile_id": "user:parts"})
+    assert again.status_code == 409 and again.json()["code"] == "studio.prod_confirmation_required"
+
+
+def test_c1_a_sqlite_file_comes_from_the_read_that_passed_the_check(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """C-1 of the #48 review, against the real ProfileSource (``Configuration``): profiles.toml is rewritten between
+    the read that passed the D-02 check (DEV) and the open, to a PROD profile with another file. The connection opens
+    the DEV file of the checked read, never the PROD file of a second read."""
+    prod_db = env.db.with_name("prod.db")
+    _database(prod_db)
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    file = env.config_dir / "profiles.toml"
+    dev_bytes = file.read_bytes()
+    digest = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    prod = {"name": "parts", "engine": "sqlite", "path": str(prod_db), "environment": "prod"}
+    assert env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": prod, "digest": digest}).status_code == 200
+    prod_bytes = file.read_bytes()
+    file.write_bytes(dev_bytes)
+    read = env.config.entry
+    reads: list[str] = []
+
+    def entry_then_rewrite(profile_id: str) -> Any:
+        found = read(profile_id)
+        reads.append(found.profile.environment)
+        file.write_bytes(prod_bytes)  # another tab or an editor saves the file right after this read
+        return found
+
+    monkeypatch.setattr(env.config, "entry", entry_then_rewrite)
+    connection = env.registry.open("user:parts", "dev")
+    assert reads == ["dev"]
+    assert connection.environment == "dev"
+    assert connection.database_file == env.db.resolve() != prod_db.resolve()
+    monkeypatch.undo()
+    # The file is PROD now: the DEV connection is stale, and a new open needs D-02.
+    assert env.registry.list() == []
+    refused = env.send("POST", "/api/connections", {"profile_id": "user:parts", "confirmed_environment": "dev"})
+    assert refused.status_code == 409 and refused.json()["code"] == "studio.prod_confirmation_required"
+
+
+def test_c1_a_project_file_refuses_when_the_trusted_profile_is_not_the_checked_read(env: Env) -> None:
+    """C-1 for a project profile: ``ProjectConfig.database_file`` reads the trusted file again; when that profile is
+    not the read the caller checked (here re-trusted as DEV with another file), the open fails closed."""
+    (env.project / ".tabrion" / "studio.toml").write_text(PROJECT, encoding="utf-8")
+    _database(env.project / "data" / "p.db")
+    _database(env.project / "data" / "q.db")
+    digest = env.send("GET", "/api/project").json()["digest"]
+    assert env.send("POST", "/api/project/trust", {"digest": digest}).status_code == 204
+    checked = env.config.entry("project:proj")
+    assert env.config.database_file(checked) == (env.project / "data" / "p.db").resolve()
+    changed = PROJECT.replace("p.db", "q.db").replace('"prod"', '"dev"')
+    (env.project / ".tabrion" / "studio.toml").write_text(changed, encoding="utf-8")
+    digest = env.send("GET", "/api/project").json()["digest"]
+    assert env.send("POST", "/api/project/trust", {"digest": digest}).status_code == 204
+    with pytest.raises(TrustError) as refused:
+        env.config.database_file(checked)
+    assert refused.value.code == "studio.project_untrusted"
+    # A fresh read is the trusted profile and opens its own file.
+    assert env.config.database_file(env.config.entry("project:proj")) == (env.project / "data" / "q.db").resolve()
+
+
+@pytest.mark.parametrize("value", ["PROD", "production", "", 3, True, ["prod"], {"prod": True}])
+def test_td_038_a_confirmed_environment_outside_the_three_is_a_bad_request(env: Env, value: object) -> None:
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    for path in ("/api/connections", "/api/connection-tests"):
+        response = env.send("POST", path, {"profile_id": "user:parts", "confirmed_environment": value})
+        assert (response.status_code, response.json()["code"]) == (400, "access.bad_request")
     assert env.registry.list() == []
 
 

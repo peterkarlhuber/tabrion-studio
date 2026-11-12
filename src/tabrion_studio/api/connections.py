@@ -1,13 +1,18 @@
 """Connection routes (03 section 6, STU-009). Every connection is read-only; Studio 1.0 never writes to a database.
 
-* ``POST /api/connections`` with ``{"profile_id": "user:<name>" | "project:<name>"}``: 201 ``{connection_id,
+* ``POST /api/connections`` with ``{"profile_id": "user:<name>" | "project:<name>", "confirmed_environment":
+  "dev" | "test" | "prod"}``: 201 ``{connection_id,
   profile_id, engine, environment, read_only: true, url, opened_at}``. ``url`` comes from ``tabrion.safe_url`` (no
   password). The connection is checked before the answer, so a wrong password or an unreachable host is a
   ``db.<kind>`` problem here. An open connection of the same profile is returned again.
 * ``GET /api/connections``: the open connections (each checked against its profile; a stale one is closed).
 * ``DELETE /api/connections`` with ``{"connection_id"}``: 204 (the id is in the body, like the profile routes).
-* ``POST /api/connection-tests`` with ``{"profile_id"}``: the connection test (TD-011): ``{ok, engine,
-  server_version, latency_ms, read_only}``; the connection is closed again.
+* ``POST /api/connection-tests`` with ``{"profile_id", "confirmed_environment"}``: the connection test (TD-011):
+  ``{ok, engine, environment, server_version, latency_ms, read_only, facts}``; the connection is closed again.
+* D-02 on the server (TD-038): ``confirmed_environment`` is the environment the page confirmed for. A profile that is
+  ``prod`` now opens (or is tested, or an open connection of it is returned) only with ``"prod"``; otherwise 409
+  ``studio.prod_confirmation_required``, and the page reads the profile again, asks D-02 and sends the request again.
+  A missing or null value means "not confirmed"; another value is ``access.bad_request``.
 
 Refusals are problems with fixed texts: ``studio.secret_*`` (no password), ``studio.project_untrusted`` and
 ``studio.database_outside`` (review T-1), ``studio.database_*``, ``studio.connection_*`` and ``db.<kind>`` built from
@@ -28,7 +33,13 @@ from tabrion.errors import TabrionError
 from tabrion_studio.config.project import TrustError
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.problems import db_problem_response, is_problem_code, problem_response
-from tabrion_studio.services.connections import ConnectionRegistry, HealthError, RegistryError, pool_busy
+from tabrion_studio.services.connections import (
+    ENVIRONMENTS,
+    ConnectionRegistry,
+    HealthError,
+    RegistryError,
+    pool_busy,
+)
 from tabrion_studio.services.readonly import StatementRefused
 
 logger = logging.getLogger("tabrion_studio.connections")
@@ -41,6 +52,12 @@ def _body(raw: bytes) -> dict[str, Any] | None:
     except (ValueError, RecursionError):
         doc = None
     return doc if isinstance(doc, dict) else None
+
+
+def _confirmation_ok(doc: dict[str, Any]) -> bool:
+    """``confirmed_environment`` is absent, null or one of the environments (anything else is a bad request)."""
+    value = doc.get("confirmed_environment")
+    return value is None or (isinstance(value, str) and value in ENVIRONMENTS)
 
 
 def connection_problem(exc: BaseException) -> Response | None:
@@ -85,9 +102,9 @@ def add_connection_routes(app: FastAPI, registry: ConnectionRegistry) -> None:
     @app.post("/api/connections", status_code=201)
     async def post_connection(request: Request) -> Response:
         doc = _body(await request.body())
-        if doc is None or not isinstance(doc.get("profile_id"), str):
+        if doc is None or not isinstance(doc.get("profile_id"), str) or not _confirmation_ok(doc):
             return problem_response("access.bad_request")
-        result = await guarded(registry.open, doc["profile_id"])
+        result = await guarded(registry.open, doc["profile_id"], doc.get("confirmed_environment"))
         if isinstance(result, Response):
             return result
         return JSONResponse(result.to_dict(), status_code=201)
@@ -109,9 +126,9 @@ def add_connection_routes(app: FastAPI, registry: ConnectionRegistry) -> None:
     @app.post("/api/connection-tests")
     async def post_connection_test(request: Request) -> Response:
         doc = _body(await request.body())
-        if doc is None or not isinstance(doc.get("profile_id"), str):
+        if doc is None or not isinstance(doc.get("profile_id"), str) or not _confirmation_ok(doc):
             return problem_response("access.bad_request")
-        result = await guarded(registry.test, doc["profile_id"])
+        result = await guarded(registry.test, doc["profile_id"], doc.get("confirmed_environment"))
         if isinstance(result, Response):
             return result
         return JSONResponse(result)

@@ -82,9 +82,9 @@ class Source:
             raise SecretError("studio.secret_missing")
         return self.passwords[entry.id]
 
-    def database_file(self, profile_id: str) -> Path:
-        self.calls.append(("database_file", profile_id))
-        return self.files[profile_id]
+    def database_file(self, entry: Entry) -> Path:
+        self.calls.append(("database_file", entry.id))
+        return self.files[entry.id]
 
     def limits(self) -> Settings:
         return self.settings
@@ -124,7 +124,7 @@ def sqlite_connection(sqlite_file: Path) -> Iterator[tuple[OpenConnection, Conne
     )
     registry = ConnectionRegistry(source)
     try:
-        yield registry.open("project:parts"), registry, source
+        yield registry.open("project:parts", "prod"), registry, source
     finally:
         registry.close_all()
 
@@ -568,7 +568,7 @@ def test_a_connection_whose_profile_changes_is_closed(
         registry.get(connection.id)  # closed and gone
     assert registry.list() == []
     source.profiles["project:parts"] = replace(source.profiles["project:parts"], path="data/parts.db")
-    again = registry.open("project:parts")
+    again = registry.open("project:parts", "prod")
     other = tmp_path / "swapped.db"
     shutil.copyfile(sqlite_file, other)  # not a rename: Windows keeps an open file in place
     source.files["project:parts"] = other  # database_file now resolves elsewhere (a link swapped in, T-1)
@@ -577,7 +577,7 @@ def test_a_connection_whose_profile_changes_is_closed(
         registry.get(again.id)
     del source.profiles["project:parts"]
     with pytest.raises(SecretError):
-        registry.open("project:parts")
+        registry.open("project:parts", "prod")
 
 
 def test_sqlite_refuses_several_statements_itself(
@@ -621,6 +621,87 @@ def test_a_connection_test_shares_the_limit(sqlite_file: Path) -> None:
         with pytest.raises(RegistryError) as raised:
             registry.test("user:p")
         assert raised.value.code == "studio.connection_limit"
+    finally:
+        registry.close_all()
+
+
+@pytest.mark.parametrize("confirmed", [None, "dev", "test"])
+def test_td_038_a_prod_profile_opens_only_when_prod_was_confirmed(sqlite_file: Path, confirmed: str | None) -> None:
+    """D-02 on the server (TD-038): open and test of a PROD profile need ``confirmed_environment="prod"``; nothing
+    sent means "not confirmed". Other environments need nothing."""
+    source = Source(
+        profiles={
+            "user:p": Profile("p", "sqlite", "prod", path="p.db"),
+            "user:d": Profile("d", "sqlite", "dev", path="d.db"),
+        },
+        files={"user:p": sqlite_file, "user:d": sqlite_file},
+    )
+    registry = ConnectionRegistry(source)
+    try:
+        for call in (registry.open, registry.test):
+            with pytest.raises(RegistryError) as raised:
+                call("user:p", confirmed)
+            assert raised.value.code == "studio.prod_confirmation_required"
+        assert registry.list() == []
+        # Refused before anything was resolved or opened.
+        assert ("database_file", "user:p") not in source.calls
+        assert registry.open("user:d", confirmed).environment == "dev"
+        assert registry.test("user:p", "prod")["environment"] == "prod"
+        opened = registry.open("user:p", "prod")
+        # An open PROD connection is not handed out without the confirmation either.
+        with pytest.raises(RegistryError) as raised:
+            registry.open("user:p", confirmed)
+        assert raised.value.code == "studio.prod_confirmation_required"
+        assert registry.open("user:p", "prod") is opened
+    finally:
+        registry.close_all()
+
+
+def test_td_038_the_confirmation_is_checked_on_the_profile_read_that_connects(sqlite_file: Path) -> None:
+    """The profile flips from dev to prod between reads (another tab, profiles.toml): the check and the connection use
+    one read, so a connection never opens as PROD for a caller that confirmed dev."""
+
+    class Flipping(Source):
+        def entry(self, profile_id: str) -> Entry:
+            entry = super().entry(profile_id)
+            current = self.profiles[profile_id]
+            self.profiles[profile_id] = replace(current, environment="prod" if current.environment == "dev" else "dev")
+            return entry
+
+    source = Flipping(profiles={"user:p": Profile("p", "sqlite", "dev", path="p.db")}, files={"user:p": sqlite_file})
+    registry = ConnectionRegistry(source)
+    try:
+        opened = registry.open("user:p", "dev")
+        assert opened.environment == "dev"
+        # The next read says prod: refused, never opened as prod.
+        with pytest.raises(RegistryError) as raised:
+            registry.test("user:p", "dev")
+        assert raised.value.code == "studio.prod_confirmation_required"
+    finally:
+        registry.close_all()
+
+
+def test_i2_the_worker_target_refuses_a_profile_that_became_prod_after_the_check(sqlite_file: Path) -> None:
+    """I-2 of the #48 delta review: ``worker_target`` reads the profile once more after ``get``; if that read is PROD,
+    the DEV connection's target is not handed to a migration worker."""
+
+    class LaterProd(Source):
+        def entry(self, profile_id: str) -> Entry:
+            entry = super().entry(profile_id)
+            if len(self.entries) == 2:  # open, then get's check: every read after them says prod
+                self.profiles[profile_id] = replace(self.profiles[profile_id], environment="prod")
+            return entry
+
+    source = LaterProd(profiles={"user:p": Profile("p", "sqlite", "dev", path="p.db")}, files={"user:p": sqlite_file})
+    registry = ConnectionRegistry(source)
+    try:
+        opened = registry.open("user:p", "dev")
+        with pytest.raises(RegistryError) as raised:
+            registry.worker_target(opened.id)
+        assert raised.value.code == "studio.connection_stale"
+        assert [entry.profile.environment for entry in source.entries] == ["dev", "dev", "prod"]
+        # The file was resolved for the open and for get's check, never for the worker.
+        assert source.calls == [("database_file", "user:p")] * 2
     finally:
         registry.close_all()
 
@@ -776,7 +857,7 @@ def pg() -> Iterator[tuple[OpenConnection, sqlalchemy.Engine]]:
     source = Source(profiles={"user:pg": profile}, passwords={"user:pg": url.password or ""})
     registry = ConnectionRegistry(source)
     try:
-        yield registry.open("user:pg"), admin
+        yield registry.open("user:pg", "prod"), admin
     finally:
         registry.close_all()
         with admin.begin() as c:
