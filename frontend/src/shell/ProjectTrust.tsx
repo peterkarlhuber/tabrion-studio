@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { fetchProject, trustProject, type ProjectInfo } from '../api/project';
 import { TrustProjectDialog } from '../components/dialogs/StudioDialogs';
 import { MAX_ENTRIES, visible } from '../lib/visible';
+import { useConnectionSession } from '../workspace';
 import styles from './ProjectTrust.module.css';
 
 /** The project file cannot be used: say so, with its issues (pointers come from the file, so they are escaped). */
@@ -57,6 +58,7 @@ export function ProjectTrust({ fetcher }: { fetcher: typeof fetch }) {
   const [project, setProject] = useState<ProjectInfo | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [stale, setStale] = useState(false);
+  const { forgetProd } = useConnectionSession();
 
   const load = useCallback(() => {
     let active = true;
@@ -87,6 +89,8 @@ export function ProjectTrust({ fetcher }: { fetcher: typeof fetch }) {
       onReject={() => setDismissed(true)}
       onTrust={() => {
         void trustProject(fetcher, digest).then((problem) => {
+          // C-1 of stu-008-connect-review.md: the project profiles may point elsewhere now; D-02 asks again.
+          if (problem === null) forgetProd((id) => id.startsWith('project:'));
           // Success or a refusal (for example a file that changed meanwhile): read the state again either way.
           setStale(problem?.code === 'studio.trust_stale');
           load();

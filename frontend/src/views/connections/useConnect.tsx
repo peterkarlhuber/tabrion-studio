@@ -1,7 +1,14 @@
 /**
- * "Connect" (STU-008, 08 section 5 "Connect"): D-02 before the first PROD connection of a profile in this page
- * session, then `POST /api/connections`, which checks the connection before it answers. While it opens, the header
- * shows the profile as "connecting"; afterwards the open connection, or again what it showed before.
+ * "Connect" (STU-008, 08 section 5 "Connect") and the D-02 gate in front of every new PROD connection.
+ *
+ * - `guard` asks D-02 before anything that opens a connection to a PROD profile the user has not confirmed in this page
+ *   session (`ConnectionSession.prodConfirmed`, keyed by the profile and its target): "Connect", and also the
+ *   connection test, which connects too (C-2 of `stu-008-connect-review.md`, the rule of `stu-015-ui-review.md` L-1:
+ *   never a new PROD connection without D-02).
+ * - `connect` then sends `POST /api/connections`, which checks the connection before it answers. While it opens, the
+ *   header shows the profile as "connecting". Only the newest connect request may set the header (L-4); a failed one
+ *   gives back the connection the header showed before, and the caller reads the open list again, which drops it if
+ *   it was closed meanwhile.
  */
 import { useState, type ReactNode } from 'react';
 
@@ -15,12 +22,14 @@ import { useConnectionSession } from '../../workspace';
 export const PROD_TIMEOUT_MS = 15_000;
 
 export function prodTimeoutSeconds(item: ProfileItem): number {
-  return Math.round((item.statement_timeout_ms ?? PROD_TIMEOUT_MS) / 1000);
+  return Math.max(1, Math.round((item.statement_timeout_ms ?? PROD_TIMEOUT_MS) / 1000));
 }
 
 type Done = (result: Result<OpenedConnection>, item: ProfileItem) => void;
 
 export function useConnect(fetcher: typeof fetch): {
+  /** Run `proceed` for `item`, after D-02 where needed; `cancelled` runs when D-02 is cancelled. */
+  guard: (item: ProfileItem, proceed: () => void, cancelled?: () => void) => void;
   /** Connect to `item` (D-02 first where needed); `done` gets the answer, `cancelled` runs when D-02 is cancelled. */
   connect: (item: ProfileItem, done: Done, cancelled?: () => void) => void;
   /** D-02 while it asks; render it next to the view. */
@@ -29,13 +38,14 @@ export function useConnect(fetcher: typeof fetch): {
   const session = useConnectionSession();
   const [asking, setAsking] = useState<{
     item: ProfileItem;
-    done: Done;
+    proceed: () => void;
     cancelled?: () => void;
   } | null>(null);
 
   const run = async (item: ProfileItem, done: Done) => {
     const name = visible(item.name);
-    // What the header showed when the user asked (the connection to go back to if this one fails).
+    const request = session.beginConnect();
+    // What the header showed when the user asked (given back if this one fails).
     const previous = session.active;
     session.setActive({
       name,
@@ -44,28 +54,32 @@ export function useConnect(fetcher: typeof fetch): {
       profileId: item.id,
     });
     const result = await openConnection(fetcher, item.id);
-    if (result.ok) {
-      session.setActive({
-        name,
-        environment: result.value.environment ?? item.environment,
-        status: 'connected',
-        connectionId: result.value.connectionId,
-        profileId: item.id,
-      });
-    } else {
-      // Another connection may have become active meanwhile; only take back our own "connecting".
-      session.setActive((current) =>
-        current?.profileId === item.id && current.status === 'connecting' ? previous : current,
-      );
+    if (session.isLatestConnect(request)) {
+      if (result.ok) {
+        session.setActive({
+          name,
+          environment: result.value.environment ?? item.environment,
+          status: 'connected',
+          connectionId: result.value.connectionId,
+          profileId: item.id,
+        });
+      } else {
+        session.setActive((current) =>
+          current?.profileId === item.id && current.status === 'connecting' ? previous : current,
+        );
+      }
     }
     done(result, item);
   };
 
-  const connect = (item: ProfileItem, done: Done, cancelled?: () => void) => {
-    if (item.environment === 'prod' && !session.prodConfirmed(item.id)) {
-      setAsking({ item, done, cancelled });
-    } else void run(item, done);
+  const guard = (item: ProfileItem, proceed: () => void, cancelled?: () => void) => {
+    if (item.environment === 'prod' && !session.prodConfirmed(item)) {
+      setAsking({ item, proceed, cancelled });
+    } else proceed();
   };
+
+  const connect = (item: ProfileItem, done: Done, cancelled?: () => void) =>
+    guard(item, () => void run(item, done), cancelled);
 
   const dialog =
     asking === null ? null : (
@@ -78,11 +92,11 @@ export function useConnect(fetcher: typeof fetch): {
           asking.cancelled?.();
         }}
         onConnect={() => {
-          session.confirmProd(asking.item.id);
+          session.confirmProd(asking.item);
           setAsking(null);
-          void run(asking.item, asking.done);
+          asking.proceed();
         }}
       />
     );
-  return { connect, dialog };
+  return { guard, connect, dialog };
 }

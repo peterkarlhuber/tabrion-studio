@@ -24,7 +24,8 @@ Your profiles are saved in `profiles.toml` in Studio's configuration folder, rea
    - **No password.**
 3. **Name and environment:** a unique name and the environment `DEV`, `TEST` or `PROD` (required). For a
    PostgreSQL profile, you can say that its role should not be able to write; the diagnostics will check that.
-   **Test the connection after saving** (on by default) runs the connection test on the saved profile.
+   **Test the connection after saving** (on by default) runs the connection test on the saved profile (a PROD
+   profile asks "Production database" first).
 
 ## Testing and connecting
 
@@ -36,7 +37,9 @@ boundary.
 
 **Connect** opens the profile's read-only connection; the header then shows it with its environment, and a PROD
 connection marks the whole window. The first PROD connection of a profile in a browser session asks first
-("Production database"; the default is Cancel); a reload asks again. **Disconnect** closes the connection.
+("Production database"; the default is Cancel), and so does the first connection test of a PROD profile, because
+the test connects too. A reload asks again, and so does a profile you edited or created again, or a project file you
+trusted again. **Disconnect** closes the connection.
 
 When the profile's password is not stored yet, the password dialog opens, and the test or the connection runs again
 after you saved it. A failure says what to check (host, port and firewall; user and password; the TLS mode; a file

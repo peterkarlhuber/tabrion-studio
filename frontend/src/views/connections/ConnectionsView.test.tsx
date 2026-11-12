@@ -182,7 +182,13 @@ describe('connection manager', () => {
       within(dialog).getByRole('checkbox', { name: 'Test the connection after saving' }),
     ).toBeChecked();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'New connection' })).toBeNull(),
+    );
+    // C-2: the test after saving connects to a PROD profile, so D-02 asks first.
+    const prod = await screen.findByRole('dialog', { name: 'Production database' });
+    expect(writes(calls)).toHaveLength(2);
+    await userEvent.click(within(prod).getByRole('button', { name: 'Connect' }));
     await waitFor(() => expect(writes(calls)).toHaveLength(3));
     const [create, secret, test] = writes(calls);
     expect(create?.body).toEqual({
@@ -229,6 +235,16 @@ describe('connection manager', () => {
       'must start with postgresql://',
     );
     expect(within(dialog).getByLabelText('Host')).toHaveValue('');
+    // L-2 of the connect review: a refused URL keeps no password in the field.
+    await userEvent.clear(url);
+    await userEvent.type(url, 'postgresql://ro:pw-canary@h1,h2/m');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Use URL' }));
+    expect(url).toHaveValue('postgresql://ro@h1,h2/m');
+    expect(within(dialog).getByTestId('wizard-url-state')).toHaveTextContent(
+      'Its password was removed from the field; enter it again in the next step.',
+    );
+    expect(within(dialog).getByLabelText('Host')).toHaveValue('');
+    expect(dialog.innerHTML).not.toContain('pw-canary');
     await userEvent.clear(url);
     await userEvent.type(
       url,

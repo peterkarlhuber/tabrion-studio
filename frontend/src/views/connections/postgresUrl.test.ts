@@ -1,5 +1,5 @@
 /** STU-008: a pasted `postgresql://` URL fills the profile, or is refused as a whole (never taken in part). */
-import { parsePostgresUrl } from './postgresUrl';
+import { parsePostgresUrl, withoutPassword } from './postgresUrl';
 
 describe('parsePostgresUrl', () => {
   it('takes host, port, database, user, password and sslmode, decoded', () => {
@@ -42,5 +42,20 @@ describe('parsePostgresUrl', () => {
     ['postgresql://h/d?sslmode=require&sslmode=disable', 'parameters'],
   ])('refuses %s (%s)', (url, refusal) => {
     expect(parsePostgresUrl(url)).toBe(refusal);
+  });
+});
+
+describe('withoutPassword (L-2 of the connect review)', () => {
+  it.each([
+    ['postgresql://ro:pw@h1,h2/m', 'postgresql://ro@h1,h2/m'],
+    ['postgres://ro:p@ss@h/m?x=1', 'postgres://ro@h/m?x=1'],
+    ['postgresql://:pw@h/m', 'postgresql://@h/m'],
+    // A password with a slash: the userinfo cannot be told apart, so nothing of the text stays.
+    ['postgresql://ro:p/w@h/m', ''],
+    ['postgresql://ro@h/m', 'postgresql://ro@h/m'],
+    ['postgresql://h:5432/m', 'postgresql://h:5432/m'],
+    ['mysql://h/d', 'mysql://h/d'],
+  ])('%s -> %s', (text, expected) => {
+    expect(withoutPassword(text)).toBe(expected);
   });
 });

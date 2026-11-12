@@ -39,8 +39,11 @@ closes the connection again.
 
 - **PostgreSQL:** one fixed catalog query of Studio's own through `OpenConnection.fetch` (read-only, the statement
   check, a prepared statement): `current_user`, `rolsuper` and `rolbypassrls` from `pg_roles`, `server_encoding`,
-  `TimeZone` and `pg_stat_ssl.ssl` of Studio's own session. tabrion's `postgres.role_info` needs the driver
-  connection; the catalog query gives the same `superuser` and `bypass_rls` without one.
+  `TimeZone`, `pg_stat_ssl.ssl` of Studio's own session and `server_version`. tabrion's `postgres.role_info` needs the
+  driver connection; the catalog query gives the same `superuser` and `bypass_rls` without one. tabrion 0.1's
+  `Health.server_version` is PostgreSQL's `server_version_num` (`160015`), so the answer's `server_version` is the
+  first word of `current_setting('server_version')` (`16.15`) instead; the page also turns a 5- or 6-digit number into
+  `major.minor` if it gets one.
 - **SQLite:** `PRAGMA foreign_keys`, `PRAGMA journal_mode` and `PRAGMA encoding` (reading pragmas, allowed by the
   authorizer).
 - Text facts are sent only as printable ASCII of at most 64 characters (`_fact_text`), else `null`. A database error
@@ -48,6 +51,12 @@ closes the connection again.
 
 The page runs the test on a saved profile only: a password typed in the assistant goes to the secret route and
 nowhere else (OA-010), so "Test the connection after saving" replaces 08's test before saving.
+
+The test opens a connection, so for a PROD profile the page asks D-02 before it, like before "Connect": the button,
+the test after saving and the retry after the password dialog (`stu-008-connect-review.md` C-2). The confirmation
+holds for the page session and belongs to the profile's target (id, environment, engine, host, port, database, user,
+path); saving or deleting the profile and trusting the project file again forget it. D-02 is a page rule: the routes
+do not check the environment (TD-038).
 
 ## How a connection is opened
 

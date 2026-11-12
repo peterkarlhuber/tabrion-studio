@@ -579,14 +579,18 @@ class ConnectionRegistry:
         connection = self._connect(profile_id)
         try:
             health = connection.health()
+            facts = connection_facts(connection)
+            # PostgreSQL: health() gives server_version_num ("160015"); the facts read the version as people write
+            # it ("16.15", C-3 of stu-008-connect-review.md). SQLite's health() version is already "3.45.1".
+            version = facts.pop("server_version", None) or health.server_version
             return {
                 "ok": health.ok,
                 "engine": connection.engine,
                 "environment": connection.environment,
-                "server_version": health.server_version,
+                "server_version": version,
                 "latency_ms": None if health.latency_ms is None else round(health.latency_ms, 1),
                 "read_only": True,
-                "facts": connection_facts(connection),
+                "facts": facts,
             }
         finally:
             connection.close()
@@ -597,7 +601,8 @@ class ConnectionRegistry:
 #: statement check, a prepared statement on PostgreSQL); none reads a table of the user.
 _POSTGRES_FACTS = (
     "SELECT current_user::text, r.rolsuper, r.rolbypassrls, current_setting('server_encoding'),"
-    " current_setting('TimeZone'), (SELECT s.ssl FROM pg_catalog.pg_stat_ssl s WHERE s.pid = pg_backend_pid())"
+    " current_setting('TimeZone'), (SELECT s.ssl FROM pg_catalog.pg_stat_ssl s WHERE s.pid = pg_backend_pid()),"
+    " current_setting('server_version')"
     " FROM pg_catalog.pg_roles r WHERE r.rolname = current_user"
 )
 _SQLITE_FACTS = (
@@ -615,8 +620,9 @@ def _fact_text(value: object) -> str | None:
 
 
 def connection_facts(connection: OpenConnection) -> dict[str, Any]:
-    """The facts of the connection test: on PostgreSQL ``role``, ``superuser``, ``bypass_rls``, ``encoding``,
-    ``timezone`` and ``tls`` (``pg_stat_ssl`` of Studio's own session); on SQLite ``foreign_keys``, ``journal_mode``
+    """The facts of the connection test: on PostgreSQL ``server_version`` (``current_setting``, the first word),
+    ``role``, ``superuser``, ``bypass_rls``, ``encoding``, ``timezone`` and ``tls`` (``pg_stat_ssl`` of Studio's own
+    session); on SQLite ``foreign_keys``, ``journal_mode``
     and ``encoding``. A fact Studio could not read is ``None``: the test's answer is the health check, the facts are
     what the page shows next to it. A database error while reading them is logged with its kind only."""
     try:
@@ -633,9 +639,12 @@ def connection_facts(connection: OpenConnection) -> dict[str, Any]:
             "connection facts not read", extra={"event": "studio.connection_facts", "error": type(exc).__name__}
         )
         return {}
-    row = rows[0] if rows else (None,) * 6
-    role, superuser, bypass_rls, encoding, timezone, tls = row
+    row = rows[0] if rows else (None,) * 7
+    role, superuser, bypass_rls, encoding, timezone, tls, version = row
+    # "16.15 (Debian 16.15-1.pgdg120+1)": the version without the packager's note (C-3 of the connect review).
+    version_text = version.split()[0] if isinstance(version, str) and version.strip() else None
     return {
+        "server_version": _fact_text(version_text),
         "role": _fact_text(role),
         "superuser": superuser if isinstance(superuser, bool) else None,
         "bypass_rls": bypass_rls if isinstance(bypass_rls, bool) else None,

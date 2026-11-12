@@ -234,6 +234,14 @@ test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "C
     ).toBeChecked();
     await dialog.getByRole('button', { name: 'Save' }).click();
     await expect(page.getByTestId('connections-status')).toHaveText(`${name} saved.`);
+    if (environment === 'PROD') {
+      // C-2 of the connect review: the test after saving connects too, so a PROD profile asks D-02 first.
+      const ask = page.getByRole('dialog', { name: 'Production database' });
+      await expect(ask).toContainText('e2e-prod is marked as PROD');
+      await expect(ask.getByRole('button', { name: 'Cancel' })).toBeFocused();
+      expect(await seriousViolations(page)).toEqual([]);
+      await ask.getByRole('button', { name: 'Connect' }).click();
+    }
     // The test ran on the saved profile: the facts the server read from the file.
     await expect(page.getByTestId('connection-outcome')).toContainText(
       /Connection works: [\d.]+ ms · SQLite 3\.\d+\.\d+ · foreign keys on · journal wal · encoding UTF-8/,
@@ -245,14 +253,11 @@ test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "C
   await detail.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(page.getByTestId('connection-switcher')).toContainText('e2e-dev');
   await expect(page).toHaveTitle('[DEV] e2e-dev – Tabrion Studio');
-  // PROD: D-02 first (default Cancel), then the header, the frame and the title.
+  // PROD: D-02 was confirmed for the test after saving (once per page session), so Connect does not ask again;
+  // then the header, the frame and the title.
   await page.getByTestId('connection-item').filter({ hasText: 'e2e-prod' }).click();
   await detail.getByRole('button', { name: 'Connect', exact: true }).click();
-  const prod = page.getByRole('dialog', { name: 'Production database' });
-  await expect(prod).toContainText('e2e-prod is marked as PROD');
-  await expect(prod.getByRole('button', { name: 'Cancel' })).toBeFocused();
-  expect(await seriousViolations(page)).toEqual([]);
-  await prod.getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page).toHaveTitle('[PROD] e2e-prod – Tabrion Studio');
   await expect(page.getByTestId('access-mode')).toHaveText(/Writing locked/);
   await expect(detail.getByTestId('connection-state')).toHaveText('open (read-only)');

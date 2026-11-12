@@ -62,3 +62,18 @@ export function parsePostgresUrl(text: string): PostgresUrl | UrlRefusal {
   const host = url.hostname.startsWith('[') ? url.hostname.slice(1, -1) : url.hostname;
   return { host, port: url.port, database, user, password, sslmode };
 }
+
+/**
+ * `text` without the password of its user part (`postgresql://user:secret@host` -> `postgresql://user@host`), so a
+ * refused URL does not keep showing its password (L-2 of `stu-008-connect-review.md`). The user part ends at the last
+ * `@` before the path, as the URL parser reads it. When the user part cannot be found that way (a `/` in the
+ * password) but the text still looks like it holds `user:password@`, the whole text goes.
+ */
+export function withoutPassword(text: string): string {
+  const match = /^(\s*[a-z]+:\/\/)([^/?#]*)@/i.exec(text);
+  if (match === null) return /^\s*[a-z]+:\/\/[^@]*:[^@]*@/i.test(text) ? '' : text;
+  const userinfo = match[2] ?? '';
+  const colon = userinfo.indexOf(':');
+  if (colon < 0) return text;
+  return `${match[1]}${userinfo.slice(0, colon)}@${text.slice(match[0].length)}`;
+}

@@ -14,7 +14,7 @@
  */
 import type { TFunction } from 'i18next';
 import { Database, Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -86,6 +86,17 @@ function SecretLine({ item }: { item: ProfileItem }) {
   );
 }
 
+/**
+ * PostgreSQL's `server_version_num` ("160015") as people write it ("16.15"); the server answers the written version,
+ * this only guards against the number (C-3 of the connect review).
+ */
+export function humanVersion(test: ConnectionTest): string {
+  const version = test.serverVersion ?? '';
+  if (test.engine !== 'postgresql' || !/^\d{5,6}$/.test(version)) return version;
+  const number = Number(version);
+  return `${Math.floor(number / 10000)}.${number % 10000}`;
+}
+
 /** One fact of a test: "role studio_ro"; a fact the server did not give is left out. */
 function testFacts(t: TFunction, test: ConnectionTest): string[] {
   const facts: string[] = [];
@@ -94,7 +105,7 @@ function testFacts(t: TFunction, test: ConnectionTest): string[] {
   if (test.serverVersion !== null) {
     facts.push(
       t(`connections.test.version.${test.engine ?? 'other'}`, {
-        version: visible(test.serverVersion),
+        version: visible(humanVersion(test)),
         ...NO_ESCAPE,
       }),
     );
@@ -171,7 +182,9 @@ function Details({
   onTest,
   onConnect,
   onDisconnect,
+  connectRef,
 }: {
+  connectRef: Ref<HTMLButtonElement>;
   item: ProfileItem;
   outcome: Outcome | undefined;
   /** The profile's open connection, if it has one. */
@@ -247,15 +260,21 @@ function Details({
         </dd>
       </dl>
       <div className={styles.actions}>
+        {/* L-1 of the connect review: while busy the buttons stay focusable (aria-disabled), so the focus stays. */}
         {open !== undefined ? (
-          <Button onClick={onDisconnect} disabled={busy}>
+          <Button aria-disabled={busy} onClick={() => !busy && onDisconnect()}>
             {t('connections.detail.disconnect')}
           </Button>
         ) : null}
-        <Button variant="primary" onClick={onConnect} disabled={busy}>
+        <Button
+          ref={connectRef}
+          variant="primary"
+          aria-disabled={busy}
+          onClick={() => !busy && onConnect()}
+        >
           {t(open !== undefined ? 'connections.detail.use' : 'connections.detail.connect')}
         </Button>
-        <Button onClick={onTest} disabled={busy}>
+        <Button aria-disabled={busy} onClick={() => !busy && onTest()}>
           {t('connections.detail.test')}
         </Button>
         {item.source === 'user' ? (
@@ -295,8 +314,10 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
   const [status, setStatus] = useState<{ text: string; problem: boolean } | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [opened, setOpened] = useState<OpenedConnection[]>([]);
-  const { setActive } = useConnectionSession();
-  const { connect, dialog: prodDialog } = useConnect(fetcher);
+  const { setActive, forgetProd, latestConnect, isLatestConnect } = useConnectionSession();
+  const { guard, connect, dialog: prodDialog } = useConnect(fetcher);
+  /** Where the focus goes when the button that had it goes away (Disconnect; L-1 of the connect review). */
+  const connectButton = useRef<HTMLButtonElement>(null);
 
   const outcome = (id: string, next: Outcome) =>
     setOutcomes((current) => ({ ...current, [id]: next }));
@@ -310,9 +331,11 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
    * from the list, and from the header too.
    */
   const syncOpen = useCallback(
-    (list: OpenedConnection[] | null) => {
+    (list: OpenedConnection[] | null, stamp: number) => {
       if (list === null) return;
       setOpened(list);
+      // A list read before a newer connect request started may miss that connection: it clears nothing.
+      if (!isLatestConnect(stamp)) return;
       setActive((current) =>
         current?.connectionId !== undefined &&
         !list.some((item) => item.connectionId === current.connectionId)
@@ -320,10 +343,17 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
           : current,
       );
     },
-    [setActive],
+    [setActive, isLatestConnect],
   );
 
+  /** Read the open connections again (with the connect request they were read after). */
+  const refreshOpen = useCallback(() => {
+    const stamp = latestConnect();
+    void fetchOpenConnections(fetcher).then((list) => syncOpen(list, stamp));
+  }, [fetcher, syncOpen, latestConnect]);
+
   const load = useCallback(async () => {
+    const stamp = latestConnect();
     const [profiles, available, open] = await Promise.all([
       fetchProfiles(fetcher),
       fetchKeyringAvailable(fetcher),
@@ -331,12 +361,13 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     ]);
     setList(profiles);
     setKeyring(available);
-    syncOpen(open);
+    syncOpen(open, stamp);
     return profiles;
-  }, [fetcher, syncOpen]);
+  }, [fetcher, syncOpen, latestConnect]);
 
   useEffect(() => {
     let active = true;
+    const stamp = latestConnect();
     void Promise.all([
       fetchProfiles(fetcher),
       fetchKeyringAvailable(fetcher),
@@ -345,12 +376,12 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       if (!active) return;
       setList(profiles);
       setKeyring(available);
-      syncOpen(open);
+      syncOpen(open, stamp);
     });
     return () => {
       active = false;
     };
-  }, [fetcher, syncOpen]);
+  }, [fetcher, syncOpen, latestConnect]);
 
   /** A missing password opens the password dialog; the action runs again after it was saved (08 section 5). */
   const askPassword = (item: ProfileItem, problem: Problem, then: Action): boolean => {
@@ -362,7 +393,10 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     return true;
   };
 
-  const runTest = async (item: ProfileItem) => {
+  /** The test connects too: D-02 first for a PROD profile (C-2 of the connect review). */
+  const runTest = (item: ProfileItem) => guard(item, () => void testNow(item));
+
+  const testNow = async (item: ProfileItem) => {
     outcome(item.id, { kind: 'busy', action: 'test' });
     const result = await testConnection(fetcher, item.id);
     if (result.ok) {
@@ -380,17 +414,21 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
         text: t('connections.connectedTo', { name: visible(item.name), ...NO_ESCAPE }),
         problem: false,
       });
-      void fetchOpenConnections(fetcher).then(syncOpen);
+      refreshOpen();
       return;
     }
     outcome(item.id, { kind: 'problem', action: 'connect', problem: result.problem });
+    // The header may have gone back to a connection that was closed meanwhile (L-4): read the open list again.
+    refreshOpen();
     askPassword(item, result.problem, 'connect');
   };
 
-  const runConnect = (item: ProfileItem) => {
-    outcome(item.id, { kind: 'busy', action: 'connect' });
-    connect(item, connected, () => forgetOutcome(item.id));
-  };
+  const runConnect = (item: ProfileItem) =>
+    guard(item, () => {
+      outcome(item.id, { kind: 'busy', action: 'connect' });
+      // Confirmed now (or not PROD), so `connect` does not ask again.
+      connect(item, connected);
+    });
 
   const disconnect = async (item: ProfileItem, connection: OpenedConnection) => {
     const result = await closeConnection(fetcher, connection.connectionId);
@@ -405,7 +443,8 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
         : { text: problemText(t, result.problem), problem: true },
     );
     forgetOutcome(item.id);
-    void fetchOpenConnections(fetcher).then(syncOpen);
+    connectButton.current?.focus();
+    refreshOpen();
   };
 
   const profiles = useMemo(
@@ -437,10 +476,12 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
             },
     );
     const id = `user:${result.name}`;
+    // C-1 of the connect review: the profile may point elsewhere now, so D-02 asks again.
+    forgetProd((profileId) => profileId === id || profileId === result.previousId);
     setSelected(id);
     void load().then((list) => {
       const item = list?.profiles.find((profile) => profile.id === id);
-      if (result.test && item !== undefined) void runTest(item);
+      if (result.test && item !== undefined) runTest(item);
     });
   };
 
@@ -453,6 +494,7 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     }
     close();
     setSelected(null);
+    forgetProd((profileId) => profileId === item.id);
     const kept = result.value.secret_removed === false;
     setStatus({
       text: t(kept ? 'connections.deletedSecretKept' : 'connections.deleted', {
@@ -477,7 +519,7 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       problem: false,
     });
     void load();
-    if (then === 'test') void runTest(item);
+    if (then === 'test') runTest(item);
     if (then === 'connect') runConnect(item);
   };
 
@@ -604,7 +646,8 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
               item={current}
               outcome={outcomes[current.id]}
               open={opened.find((connection) => connection.profileId === current.id)}
-              onTest={() => void runTest(current)}
+              connectRef={connectButton}
+              onTest={() => runTest(current)}
               onConnect={() => runConnect(current)}
               onDisconnect={() => {
                 const connection = opened.find((item) => item.profileId === current.id);

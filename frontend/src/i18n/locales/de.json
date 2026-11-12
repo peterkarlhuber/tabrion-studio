@@ -172,7 +172,8 @@
         "host": "Die URL muss genau einen Host nennen. Mehrere Hosts und Socket-Ordner werden nicht unterstützt.",
         "parameters": "Die URL hat Parameter, die ein Profil nicht aufnehmen kann. Nur sslmode wird übernommen; gib das Profil von Hand ein."
       },
-      "testAfterSave": "Verbindung nach dem Speichern testen"
+      "testAfterSave": "Verbindung nach dem Speichern testen",
+      "urlPasswordRemoved": "Ihr Passwort wurde aus dem Feld entfernt; gib es im nächsten Schritt erneut ein."
     },
     "delete": {
       "title": "{{name}} löschen?",

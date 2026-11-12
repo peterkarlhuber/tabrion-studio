@@ -145,6 +145,12 @@ async function select(name: string) {
 
 const header = () => screen.getByRole('banner');
 
+/** D-02 is open: confirm it ("Connect"). */
+async function confirmProd() {
+  const dialog = await screen.findByRole('dialog', { name: 'Production database' });
+  await userEvent.click(within(dialog).getByRole('button', { name: 'Connect' }));
+}
+
 afterEach(async () => {
   window.history.replaceState(null, '', '/');
   await act(async () => {
@@ -157,7 +163,14 @@ describe('connection test', () => {
     const { fetcher, calls } = server();
     await manager(fetcher);
     const detail = await select('measure');
+    // C-2 of the connect review: the test connects too, so a PROD profile asks D-02 first; Cancel tests nothing.
     await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    const dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(writes(calls)).toEqual([]);
+    expect(within(detail).getByRole('button', { name: 'Test connection' })).toHaveFocus();
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    await confirmProd();
     const result = await within(detail).findByText(/Connection works/);
     expect(result).toHaveTextContent(
       'Connection works: 12.4 ms · PostgreSQL 17.6 · role ro\\u202Ex · no superuser · TLS on · encoding UTF8 · time zone Europe/Vienna',
@@ -187,6 +200,9 @@ describe('connection test', () => {
             facts: { foreign_keys: true, journal_mode: 'wal', encoding: 'UTF-8' },
           }),
         () => json({ ...PG_TEST, facts: { ...PG_TEST.facts, superuser: true } }),
+        () => json({ ...PG_TEST, facts: { ...PG_TEST.facts, bypass_rls: true } }),
+        // A server_version_num would show as a version people read (C-3 of the connect review).
+        () => json({ ...PG_TEST, server_version: '160015' }),
       ],
     });
     await manager(fetcher);
@@ -197,8 +213,21 @@ describe('connection test', () => {
     );
     detail = await select('measure');
     await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
-    expect(await within(detail).findByText(/Connection works/)).toHaveTextContent('superuser');
+    await confirmProd();
+    expect(await within(detail).findByText(/Connection works/)).toHaveTextContent('· superuser ·');
     expect(within(detail).getByText(/superuser or bypasses row-level security/)).toBeVisible();
+    // Only bypassing row-level security (no superuser) warns as well (L-6, mutant M13). D-02 is not asked again.
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() =>
+      expect(within(detail).getByText(/Connection works/)).toHaveTextContent('no superuser'),
+    );
+    expect(within(detail).getByText(/superuser or bypasses row-level security/)).toBeVisible();
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    await waitFor(() =>
+      expect(within(detail).getByText(/Connection works/)).toHaveTextContent('PostgreSQL 16.15 ·'),
+    );
+    expect(within(detail).queryByText(/superuser or bypasses/)).toBeNull();
   });
 
   it.each([
@@ -328,6 +357,7 @@ describe('connect', () => {
     await manager(fetcher);
     const detail = await select('measure');
     await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    await confirmProd();
     const dialog = await screen.findByRole('dialog', { name: 'Password for measure' });
     await userEvent.type(within(dialog).getByLabelText('Password'), 'pw-canary');
     await userEvent.click(within(dialog).getByRole('radio', { name: 'Only for this session' }));
@@ -339,6 +369,33 @@ describe('connect', () => {
       '/api/connection-tests',
     ]);
     expect(document.body.textContent).not.toContain('pw-canary');
+  });
+
+  it('a missing password at Connect opens the password dialog, then connects (L-6, M10)', async () => {
+    const { fetcher, calls } = server({
+      'POST /api/connections': [
+        problem(409, { code: 'studio.secret_missing', kind: 'config', status: 409 }),
+        () => null,
+      ],
+      'PUT /api/profiles/user%3Ameasure/secret': () => new Response(null, { status: 204 }),
+    });
+    await manager(fetcher);
+    const detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    const dialog = await screen.findByRole('dialog', { name: 'Password for measure' });
+    await userEvent.type(within(dialog).getByLabelText('Password'), 'pw-canary');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Save password' }));
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'measure, connected',
+      ),
+    );
+    expect(writes(calls).map((call) => call.url)).toEqual([
+      '/api/connections',
+      '/api/profiles/user%3Ameasure/secret',
+      '/api/connections',
+    ]);
   });
 
   it('a connection the server closed (profile changed) leaves the header', async () => {
@@ -378,6 +435,264 @@ describe('connect', () => {
       ).toBe(true),
     );
     expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent('measure');
+  });
+});
+
+/** A fetch answer the test gives later. */
+function deferred() {
+  let resolve: (response: Response) => void = () => undefined;
+  const promise = new Promise<Response>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve, answer: (() => promise) as unknown as Answer };
+}
+
+const MEASURE = PROFILES.profiles[1] as (typeof PROFILES.profiles)[number];
+
+/** The profile list as the server has it now (the test changes it). */
+function liveProfiles(initial: Record<string, unknown>[]) {
+  const state = { profiles: initial };
+  const answer: Answer = () => json({ ...PROFILES, profiles: state.profiles });
+  return { state, answer };
+}
+
+describe('review fixes of the connect review (#42)', () => {
+  it('C-1: an edit that points the profile at another host asks D-02 again', async () => {
+    const live = liveProfiles([...PROFILES.profiles]);
+    const { fetcher, calls } = server({
+      'GET /api/profiles': live.answer,
+      'PUT /api/profiles': (call) => {
+        const body = call.body as { profile: Record<string, unknown> };
+        live.state.profiles = [
+          PROFILES.profiles[0] as Record<string, unknown>,
+          { ...MEASURE, host: String(body.profile.host) },
+        ];
+        return json({ id: 'user:measure', digest: 'c'.repeat(64) });
+      },
+    });
+    await manager(fetcher);
+    let detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'measure, connected',
+      ),
+    );
+    await userEvent.click(within(detail).getByRole('button', { name: 'Disconnect' }));
+    await within(header()).findByRole('button', { name: /No connection/ });
+    await userEvent.click(within(detail).getByRole('button', { name: 'Edit' }));
+    const wizard = screen.getByRole('dialog', { name: /^Edit/ });
+    const host = await within(wizard).findByLabelText('Host');
+    await userEvent.clear(host);
+    await userEvent.type(host, 'prod.example');
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Next' }));
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Next' }));
+    await userEvent.click(
+      within(wizard).getByRole('checkbox', { name: 'Test the connection after saving' }),
+    );
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    detail = screen.getByTestId('connection-detail');
+    await within(detail).findByText('prod.example:5432');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    expect(screen.getByRole('dialog', { name: 'Production database' })).toBeVisible();
+    expect(writes(calls).filter((call) => call.url === '/api/connections')).toHaveLength(2);
+  });
+
+  it('C-1: a deleted PROD profile created again with the same name and target asks D-02 again', async () => {
+    const live = liveProfiles([...PROFILES.profiles]);
+    const { fetcher } = server({
+      'GET /api/profiles': live.answer,
+      'DELETE /api/profiles': () => {
+        live.state.profiles = [PROFILES.profiles[0] as Record<string, unknown>];
+        return json({ digest: 'c'.repeat(64) });
+      },
+      'POST /api/profiles': () => {
+        live.state.profiles = [...PROFILES.profiles];
+        return json({ id: 'user:measure', digest: 'd'.repeat(64) }, 201);
+      },
+    });
+    await manager(fetcher);
+    let detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    await confirmProd();
+    await within(detail).findByText(/Connection works/);
+    await userEvent.click(within(detail).getByRole('button', { name: 'Delete' }));
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: /Delete/ })).getByRole('button', {
+        name: 'Delete',
+      }),
+    );
+    await waitFor(() => expect(screen.getAllByTestId('connection-item')).toHaveLength(1));
+    await userEvent.click(screen.getByRole('button', { name: 'New connection' }));
+    const wizard = screen.getByRole('dialog', { name: 'New connection' });
+    await userEvent.click(within(wizard).getByRole('radio', { name: 'PostgreSQL' }));
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Next' }));
+    await userEvent.type(within(wizard).getByLabelText('Host'), 'db.internal');
+    await userEvent.type(within(wizard).getByLabelText('Database'), 'm');
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Next' }));
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Next' }));
+    await userEvent.type(within(wizard).getByLabelText('Name'), 'measure');
+    await userEvent.click(within(wizard).getByRole('radio', { name: 'PROD' }));
+    // The test after saving is on: the new profile is not the one confirmed before, so D-02 asks.
+    await userEvent.click(within(wizard).getByRole('button', { name: 'Save' }));
+    expect(await screen.findByRole('dialog', { name: 'Production database' })).toBeVisible();
+    await userEvent.click(
+      within(screen.getByRole('dialog', { name: 'Production database' })).getByRole('button', {
+        name: 'Cancel',
+      }),
+    );
+    detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    expect(screen.getByRole('dialog', { name: 'Production database' })).toBeVisible();
+  });
+
+  it('C-1: a project profile that now points elsewhere (after a re-trust) asks D-02 again', async () => {
+    const PROJECT_PROD = {
+      ...MEASURE,
+      id: 'project:central',
+      source: 'project',
+      name: 'central',
+    };
+    const live = liveProfiles([PROJECT_PROD]);
+    const { fetcher } = server({ 'GET /api/profiles': live.answer });
+    await manager(fetcher);
+    let detail = await select('central');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    await confirmProd();
+    await within(detail).findByText(/Connection works/);
+    // The project file was changed and trusted again: same id, another database. Any reload of the list sees it.
+    live.state.profiles = [{ ...PROJECT_PROD, database: 'other' }];
+    await userEvent.click(within(detail).getByRole('button', { name: 'Remove saved password' }));
+    detail = screen.getByTestId('connection-detail');
+    await within(detail).findByText('other');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    expect(screen.getByRole('dialog', { name: 'Production database' })).toBeVisible();
+  });
+
+  it('L-1: the focus stays on Connect and Test while they run, goes to Connect after Disconnect and back after Escape', async () => {
+    const slow = deferred();
+    const { fetcher } = server({ 'POST /api/connection-tests': [slow.answer, () => null] });
+    await manager(fetcher);
+    const detail = await select('measure');
+    const test = within(detail).getByRole('button', { name: 'Test connection' });
+    await userEvent.click(test);
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(test).toHaveFocus();
+    await userEvent.click(test);
+    await confirmProd();
+    await waitFor(() => expect(test).toHaveAttribute('aria-disabled', 'true'));
+    expect(test).toHaveFocus();
+    slow.resolve(json(PG_TEST));
+    await within(detail).findByText(/Connection works/);
+    expect(test).toHaveFocus();
+    const connect = within(detail).getByRole('button', { name: 'Connect' });
+    await userEvent.click(connect);
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent('connected'),
+    );
+    // The same button, now "Use this connection" or similar: the focus did not fall to the page.
+    expect(connect).toHaveFocus();
+    await userEvent.click(within(detail).getByRole('button', { name: 'Disconnect' }));
+    await within(header()).findByRole('button', { name: /No connection/ });
+    expect(within(detail).getByRole('button', { name: 'Connect' })).toHaveFocus();
+  });
+
+  it('L-4: only the newest connect request sets the header', async () => {
+    const slow = deferred();
+    const { fetcher } = server({ 'POST /api/connections': [slow.answer, () => null] });
+    await manager(fetcher);
+    await userEvent.click(
+      within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+    );
+    const detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'measure, connected',
+      ),
+    );
+    // The older request answers last: it does not take the header back.
+    slow.resolve(
+      json(
+        {
+          connection_id: 'c-project:parts-dev',
+          profile_id: 'project:parts-dev',
+          engine: 'sqlite',
+          environment: 'dev',
+          read_only: true,
+          url: 'sqlite:///x',
+          opened_at: 1,
+        },
+        201,
+      ),
+    );
+    await slow.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+      'measure, connected',
+    );
+  });
+
+  it('L-4: a failed connect does not bring back a connection that was closed meanwhile', async () => {
+    const slow = deferred();
+    const { fetcher, open } = server({ 'POST /api/connections': [() => null, slow.answer] });
+    await manager(fetcher);
+    await userEvent.click(
+      within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+    );
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+    const detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await confirmProd();
+    // parts-dev was closed by the server while measure opened; then measure fails.
+    open.clear();
+    slow.resolve(
+      json({ code: 'db.connection', kind: 'connection', status: 502, sqlstate: '08001' }, 502),
+    );
+    await within(detail).findByText(/Not connected/);
+    await within(header()).findByRole('button', { name: /No connection/ });
+  });
+
+  it('L-3: a connection that opens after the profile was switched does not become the header connection', async () => {
+    const slow = deferred();
+    const { fetcher } = server({ 'POST /api/connections': slow.answer });
+    window.history.replaceState(null, '', '/migrations');
+    render(<App fetcher={fetcher} heartbeat={false} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await userEvent.selectOptions(screen.getByLabelText('Connection profile'), 'project:parts-dev');
+    await userEvent.click(screen.getByRole('button', { name: 'Show status' }));
+    await userEvent.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    slow.resolve(json({ connection_id: 'c-project:parts-dev' }, 201));
+    await slow.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(within(header()).getByRole('button', { name: /No connection/ })).toBeInTheDocument();
+  });
+
+  it('a PROD connection confirmed in the migration status view is not asked again in the manager', async () => {
+    const { fetcher, calls } = server();
+    window.history.replaceState(null, '', '/migrations');
+    render(<App fetcher={fetcher} heartbeat={false} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await userEvent.selectOptions(
+      await screen.findByLabelText('Connection profile'),
+      'user:measure',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Show status' }));
+    await confirmProd();
+    await waitFor(() => expect(calls.filter((call) => call.method === 'POST')).toHaveLength(1));
+    await userEvent.click(screen.getByRole('link', { name: 'Connections' }));
+    const detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await within(detail).findByText(/Connection works/);
   });
 });
 

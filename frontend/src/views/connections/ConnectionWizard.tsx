@@ -30,7 +30,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Dialog, type DialogAction } from '../../components/ui/Dialog';
 import { Field } from './Field';
-import { parsePostgresUrl, type UrlRefusal } from './postgresUrl';
+import { parsePostgresUrl, withoutPassword, type UrlRefusal } from './postgresUrl';
 import { issuesByField, problemText } from './messages';
 import styles from './Connections.module.css';
 
@@ -175,6 +175,8 @@ export interface WizardResult {
   secretKept?: boolean;
   /** "Test the connection after saving" was checked. */
   test?: boolean;
+  /** The id the profile had before (an edit keeps it; listed so its D-02 confirmation is forgotten). */
+  previousId?: string;
 }
 
 export function ConnectionWizard({
@@ -206,6 +208,7 @@ export function ConnectionWizard({
   const [busy, setBusy] = useState(false);
   const [url, setUrl] = useState('');
   const [urlState, setUrlState] = useState<UrlRefusal | 'taken' | 'takenPassword' | null>(null);
+  const [urlPasswordRemoved, setUrlPasswordRemoved] = useState(false);
   const stepRef = useRef<HTMLDivElement>(null);
   const shownStep = useRef(1);
   const editing = item !== null;
@@ -225,9 +228,14 @@ export function ConnectionWizard({
   const takeUrl = () => {
     const parsed = parsePostgresUrl(url);
     if (typeof parsed === 'string') {
+      // Refused: the URL stays to be corrected, but not its password.
+      const cleaned = withoutPassword(url);
+      setUrl(cleaned);
+      setUrlPasswordRemoved(cleaned !== url);
       setUrlState(parsed);
       return;
     }
+    setUrlPasswordRemoved(false);
     setUrl('');
     setForm((current) => ({
       ...current,
@@ -310,6 +318,7 @@ export function ConnectionWizard({
       secretProblem,
       secretKept: result.value.secret_removed === false,
       test: form.testAfterSave,
+      previousId: item?.id,
     });
   };
 
@@ -466,6 +475,7 @@ export function ConnectionWizard({
                       data-testid="wizard-url-state"
                     >
                       {t(`connections.wizard.urlState.${urlState}`)}
+                      {urlPasswordRemoved ? ` ${t('connections.wizard.urlPasswordRemoved')}` : ''}
                     </p>
                   ) : null}
                 </div>

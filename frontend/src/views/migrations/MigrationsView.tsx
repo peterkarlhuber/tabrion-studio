@@ -362,8 +362,12 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     setBusy(true);
     setProblem(null);
     setStatus(null);
+    const connecting = connections.beginConnect();
     const opened = await openConnection(fetcher, profile.id);
-    if (opened.ok) {
+    // L-3 of the connect review: a profile switch (or a newer request) since makes this one stale; it does not
+    // become the header's connection. Neither does it when a newer connect started elsewhere (L-4).
+    if (mine !== request.current) return;
+    if (opened.ok && connections.isLatestConnect(connecting)) {
       connections.setActive({
         name: visible(profile.name),
         environment: profile.environment,
@@ -483,7 +487,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
               variant="primary"
               disabled={profile === null || busy}
               onClick={() =>
-                profile?.environment === 'prod' && !connections.prodConfirmed(profile.id)
+                profile?.environment === 'prod' && !connections.prodConfirmed(profile)
                   ? setDialog('prod')
                   : void show()
               }
@@ -528,7 +532,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
           timeoutSeconds={prodTimeoutSeconds(profile)}
           onCancel={() => setDialog(null)}
           onConnect={() => {
-            connections.confirmProd(profile.id);
+            connections.confirmProd(profile);
             setDialog(null);
             void show();
           }}

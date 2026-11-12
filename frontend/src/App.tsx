@@ -16,6 +16,7 @@ import {
   ConnectionSessionContext,
   WorkspaceContext,
   type ActiveConnection,
+  prodKey,
   type ConnectionSession,
   type Workspace,
 } from './workspace';
@@ -82,15 +83,23 @@ export function App({
   const [offline, setOffline] = useState(false);
   const wasOffline = useRef(false);
   const [active, setActive] = useState<ActiveConnection | null>(null);
-  const [confirmed] = useState(() => new Set<string>());
+  /** D-02 confirmations: `prodKey` -> profile id. */
+  const [confirmed] = useState(() => new Map<string, string>());
+  const requests = useRef(0);
   const connections = useMemo<ConnectionSession>(
     () => ({
       active,
       setActive,
-      prodConfirmed: (profileId) => confirmed.has(profileId),
-      confirmProd: (profileId) => {
-        confirmed.add(profileId);
+      prodConfirmed: (target) => confirmed.has(prodKey(target)),
+      confirmProd: (target) => {
+        confirmed.set(prodKey(target), target.id);
       },
+      forgetProd: (matches) => {
+        for (const [key, id] of [...confirmed]) if (matches(id)) confirmed.delete(key);
+      },
+      beginConnect: () => ++requests.current,
+      isLatestConnect: (request) => request === requests.current,
+      latestConnect: () => requests.current,
     }),
     [active, confirmed],
   );

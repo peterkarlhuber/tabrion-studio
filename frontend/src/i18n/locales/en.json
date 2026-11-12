@@ -172,7 +172,8 @@
         "host": "The URL must name one host. Several hosts and socket folders are not supported.",
         "parameters": "The URL has parameters a profile cannot hold. Only sslmode is taken; enter the profile by hand."
       },
-      "testAfterSave": "Test the connection after saving"
+      "testAfterSave": "Test the connection after saving",
+      "urlPasswordRemoved": "Its password was removed from the field; enter it again in the next step."
     },
     "delete": {
       "title": "Delete {{name}}?",

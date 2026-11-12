@@ -46,25 +46,11 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       }
       await page.keyboard.press('Escape');
       await expect(page.getByRole('dialog')).toHaveCount(0);
-      // The connection test: a result with its facts, and a failure with its remedy.
+      // The connection test of a PROD profile: D-02 first (C-2 of the connect review), then a result with its
+      // facts; then a failure with its remedy.
       const detail = page.getByTestId('connection-detail');
       await detail
         .getByRole('button', { name: lang === 'en' ? 'Test connection' : 'Verbindung testen' })
-        .click();
-      await expect(detail.getByTestId('connection-outcome')).toContainText('PostgreSQL');
-      expect(await seriousViolations(page)).toEqual([]);
-      await page.getByTestId('connection-item').nth(1).click();
-      await detail
-        .getByRole('button', { name: lang === 'en' ? 'Test connection' : 'Verbindung testen' })
-        .click();
-      await expect(detail.getByTestId('connection-outcome')).toContainText(
-        lang === 'en' ? 'Test failed' : 'Test fehlgeschlagen',
-      );
-      expect(await seriousViolations(page)).toEqual([]);
-      // D-02 and the connected PROD shell.
-      await page.getByTestId('connection-item').nth(2).click();
-      await detail
-        .getByRole('button', { name: lang === 'en' ? 'Connect' : 'Verbinden', exact: true })
         .click();
       const prod = page.getByRole('dialog', {
         name: lang === 'en' ? 'Production database' : 'Produktionsdatenbank',
@@ -74,6 +60,24 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       await prod
         .getByRole('button', { name: lang === 'en' ? 'Connect' : 'Verbinden', exact: true })
         .click();
+      await expect(detail.getByTestId('connection-outcome')).toContainText(
+        lang === 'en' ? 'PostgreSQL 17.6' : 'PostgreSQL-Version 17.6',
+      );
+      expect(await seriousViolations(page)).toEqual([]);
+      await page.getByTestId('connection-item').nth(1).click();
+      await detail
+        .getByRole('button', { name: lang === 'en' ? 'Test connection' : 'Verbindung testen' })
+        .click();
+      await expect(detail.getByTestId('connection-outcome')).toContainText(
+        lang === 'en' ? 'Test failed' : 'Test fehlgeschlagen',
+      );
+      expect(await seriousViolations(page)).toEqual([]);
+      // The connected PROD shell (D-02 was confirmed for the test above).
+      await page.getByTestId('connection-item').nth(2).click();
+      await detail
+        .getByRole('button', { name: lang === 'en' ? 'Connect' : 'Verbinden', exact: true })
+        .click();
+      await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(page.getByTestId('connection-switcher')).toContainText('measure-central');
       await expect(page.locator('[data-env="prod"]').first()).toBeVisible();
       expect(await seriousViolations(page)).toEqual([]);
@@ -112,18 +116,26 @@ test('08 section 5 "Connect": test, D-02 once per session, header, PROD frame, d
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page).toHaveTitle('[DEV] parts-dev – Tabrion Studio');
+  // L-1 of the connect review: the focus goes back to the button that asked.
+  await expect(detail.getByRole('button', { name: 'Connect', exact: true })).toBeFocused();
   await detail.getByRole('button', { name: 'Connect', exact: true }).click();
   prod = page.getByRole('dialog', { name: 'Production database' });
   await prod.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(page).toHaveTitle('[PROD] measure-central – Tabrion Studio');
+  await expect(detail.getByRole('button', { name: 'Use this connection' })).toBeFocused();
   await expect(page.locator('[data-env="prod"]').first()).toBeVisible();
   await expect(page.getByTestId('access-mode')).toHaveText(/Writing locked/);
   await expect(detail.getByTestId('connection-state')).toHaveText('open (read-only)');
   // Disconnect, connect again: no second D-02 in this session.
   await detail.getByRole('button', { name: 'Disconnect' }).click();
   await expect(page.getByRole('button', { name: /No connection/ })).toBeVisible();
+  await expect(detail.getByRole('button', { name: 'Connect', exact: true })).toBeFocused();
   await detail.getByRole('button', { name: 'Connect', exact: true }).click();
   await expect(page).toHaveTitle('[PROD] measure-central – Tabrion Studio');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // The test of a confirmed PROD profile does not ask again.
+  await detail.getByRole('button', { name: 'Test connection' }).click();
+  await expect(detail.getByTestId('connection-outcome')).toContainText('PostgreSQL 17.6');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const sent = await writes(page);
   expect(sent.map((w) => `${w.method} ${w.url}`)).toEqual([
@@ -133,6 +145,7 @@ test('08 section 5 "Connect": test, D-02 once per session, header, PROD frame, d
     'POST /api/connections',
     'DELETE /api/connections',
     'POST /api/connections',
+    'POST /api/connection-tests',
   ]);
   for (const write of sent) expect(write.contentType).toBe('application/json');
 });

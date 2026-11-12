@@ -13,6 +13,8 @@ import hashlib
 import itertools
 import os
 from pathlib import Path
+import re
+import secrets
 import shutil
 import sqlite3
 import time
@@ -44,6 +46,7 @@ from tabrion_studio.services.sqltext import placeholders
 pytestmark = pytest.mark.security
 
 PG_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES")
+PG_SUPERUSER_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES_SUPERUSER")
 
 
 @dataclass
@@ -654,6 +657,52 @@ def test_stu_008_facts_that_cannot_be_read_leave_the_test_answer(
 
 
 @pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        (
+            ("ro", True, False, "UTF8", "UTC", True, "16.15 (Debian 16.15-1)"),
+            {"superuser": True, "bypass_rls": False, "tls": True, "server_version": "16.15"},
+        ),
+        (
+            ("ro", False, True, "SQL_ASCII", "Europe/Vienna", False, "17.6"),
+            {"superuser": False, "bypass_rls": True, "tls": False, "server_version": "17.6"},
+        ),
+        (
+            ("ro", None, "yes", "UTF8", "UTC", None, ""),
+            {"superuser": None, "bypass_rls": None, "tls": None, "server_version": None},
+        ),
+    ],
+)
+def test_stu_008_each_postgres_fact_comes_from_its_own_column(row: tuple[Any, ...], expected: dict[str, Any]) -> None:
+    """L-6 of the connect review: superuser, bypass RLS, TLS and the version each come from their own column, and a
+    value of the wrong type is "unknown" (``None``)."""
+
+    class Fake:
+        engine = "postgresql"
+
+        def fetch(self, sql: str) -> list[tuple[Any, ...]]:
+            assert "pg_stat_ssl" in sql and "server_version" in sql
+            return [row]
+
+    facts = connections_module.connection_facts(Fake())  # type: ignore[arg-type]
+    assert {key: facts[key] for key in expected} == expected
+    assert facts["encoding"] == row[3] and facts["timezone"] == row[4]
+
+
+@pytest.mark.parametrize("error", [TabrionError("no facts"), StatementRefused("studio.statement_refused")])
+def test_stu_008_a_refused_or_failed_facts_query_leaves_no_facts(error: Exception) -> None:
+    """L-6 (mutant P6): a refused statement is handled like a database error, not raised."""
+
+    class Fake:
+        engine = "postgresql"
+
+        def fetch(self, sql: str) -> list[tuple[Any, ...]]:
+            raise error
+
+    assert connections_module.connection_facts(Fake()) == {}  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
     ("value", "expected"),
     [
         ("UTF8", "UTF8"),
@@ -803,13 +852,9 @@ def test_the_known_gap_of_multiple_statements_is_closed_by_the_text_check(
     assert _rows(admin) == 1
 
 
-@pytest.mark.postgres
-@postgres
-def test_stu_008_the_connection_test_reports_the_postgres_facts(pg: tuple[OpenConnection, sqlalchemy.Engine]) -> None:
-    """STU-008 (03 section 2 A): role, superuser, encoding, time zone and TLS of Studio's own session."""
-    _, admin = pg
-    assert PG_URL is not None
-    url = sqlalchemy.make_url(PG_URL)
+def _pg_facts(url_text: str) -> dict[str, Any]:
+    """The connection test of a TEST profile for ``url_text`` (any role), through a registry of its own."""
+    url = sqlalchemy.make_url(url_text)
     profile = Profile(
         "pg",
         "postgresql",
@@ -822,18 +867,61 @@ def test_stu_008_the_connection_test_reports_the_postgres_facts(pg: tuple[OpenCo
     )
     registry = ConnectionRegistry(Source(profiles={"user:t": profile}, passwords={"user:t": url.password or ""}))
     result = registry.test("user:t")
+    assert registry.list() == []
+    return result
+
+
+@pytest.mark.postgres
+@postgres
+def test_stu_008_the_connection_test_reports_the_postgres_facts(pg: tuple[OpenConnection, sqlalchemy.Engine]) -> None:
+    """STU-008 (03 section 2 A): version, role, superuser, encoding, time zone and TLS of Studio's own session."""
+    _, admin = pg
+    assert PG_URL is not None
+    result = _pg_facts(PG_URL)
     with admin.connect() as c:
         expected = c.exec_driver_sql(
-            "SELECT rolsuper, rolbypassrls, current_setting('server_encoding') FROM pg_roles"
-            " WHERE rolname = current_user"
+            "SELECT rolsuper, rolbypassrls, current_setting('server_encoding'), current_setting('server_version'),"
+            " current_setting('ssl') FROM pg_roles WHERE rolname = current_user"
         ).one()
     assert result["ok"] is True and result["engine"] == "postgresql" and result["environment"] == "test"
+    # C-3 of stu-008-connect-review.md: the version as people write it ("16.15"), not server_version_num ("160015").
+    assert result["server_version"] == expected[3].split()[0]
+    assert re.fullmatch(r"\d+\.\d+(\.\d+)?\w*", result["server_version"])
     facts = result["facts"]
-    assert facts["role"] == url.username
-    assert (facts["superuser"], facts["bypass_rls"], facts["encoding"]) == tuple(expected)
+    assert facts["role"] == sqlalchemy.make_url(PG_URL).username
+    assert (facts["superuser"], facts["bypass_rls"], facts["encoding"]) == tuple(expected[:3])
     assert isinstance(facts["timezone"], str) and facts["timezone"]
-    assert isinstance(facts["tls"], bool)
-    assert registry.list() == []
+    # The URL sets no sslmode (libpq's default prefer): TLS is on exactly when the server offers it.
+    assert facts["tls"] is (expected[4] == "on")
+
+
+@pytest.mark.postgres_superuser
+@pytest.mark.skipif(
+    PG_URL is None or PG_SUPERUSER_URL is None,
+    reason="TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed",
+)
+def test_stu_008_the_privileged_facts_come_from_the_role() -> None:
+    """L-6 of the connect review: a superuser, and a role that only bypasses row-level security, are reported as
+    they are (each fact read on its own, not one from the other). The role is made here and dropped again."""
+    assert PG_URL is not None and PG_SUPERUSER_URL is not None
+    superuser = _pg_facts(PG_SUPERUSER_URL)["facts"]
+    assert (superuser["superuser"], superuser["bypass_rls"]) == (True, True)
+    role = f"stu008_bypass_{secrets.token_hex(4)}"
+    password = secrets.token_hex(16)
+    admin = sqlalchemy.create_engine(sqlalchemy.make_url(PG_SUPERUSER_URL).set(drivername="postgresql+psycopg"))
+    database = sqlalchemy.make_url(PG_URL).database
+    try:
+        with admin.begin() as c:
+            c.exec_driver_sql(f"CREATE ROLE {role} LOGIN BYPASSRLS PASSWORD '{password}'")
+            c.exec_driver_sql(f'GRANT CONNECT ON DATABASE "{database}" TO {role}')
+        url = sqlalchemy.make_url(PG_URL).set(username=role, password=password)
+        facts = _pg_facts(url.render_as_string(hide_password=False))["facts"]
+        assert (facts["role"], facts["superuser"], facts["bypass_rls"]) == (role, False, True)
+    finally:
+        with admin.begin() as c:
+            c.exec_driver_sql(f'REVOKE CONNECT ON DATABASE "{database}" FROM {role}')
+            c.exec_driver_sql(f"DROP ROLE IF EXISTS {role}")
+        admin.dispose()
 
 
 @pytest.mark.postgres
