@@ -9,8 +9,10 @@
  * test and opening a connection answered (STU-008; parts-pg's test fails with `db.connection`);
  * migrations: the code trust and migration status of STU-015; dialog-trust-code; diagnostics: the findings of
  * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036;
- * explorer: the catalogs and details of STU-010), `path` (/, /connections, /explorer, /migrations, /diagnostics,
- * /settings), `theme` (light, dark) and `lang` (en, de).
+ * editor: the profiles and a fake query engine for the SQL editor of STU-012, with `sql` as the first tab's draft,
+ * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
+ * catalogs and details of STU-010), `path` (/, /connections, /explorer, /sql, /migrations, /diagnostics, /settings),
+ * `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -33,6 +35,8 @@ import { explorerAnswer } from './explorer';
 import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
+import { draftsKey } from '../views/editor/drafts';
+import { createQueryServer } from './queries';
 import { PROFILES, SETTINGS, TEST_RESULTS } from './profiles';
 import { DIFF, HOSTILE_REVIEW, INVALID_PROJECT, REVIEW } from './trust';
 
@@ -57,6 +61,30 @@ const sent = window as unknown as {
 };
 sent.writes = [];
 
+/** The fake query engine of the editor scenario; e2e/editor.spec.ts reads what the page sent (`window.queryLog`). */
+// `connectDelay` (ms) delays opening a connection (e2e/editor.spec.ts: run, cancel and close while connecting).
+const queryServer = createQueryServer({ connectDelayMs: Number(params.get('connectDelay') ?? 0) });
+(window as unknown as { queryLog: unknown }).queryLog = queryServer.log;
+const draft = params.get('sql');
+/** The project folder of the editor scenario: its drafts are stored under that project's key (L-5). */
+const EDITOR_PROJECT = '/home/demo/parts';
+if (scenario === 'editor' && draft !== null) {
+  window.localStorage.setItem(
+    draftsKey(EDITOR_PROJECT),
+    JSON.stringify({
+      tabs: [
+        {
+          id: 'd1',
+          title: 'Query 1',
+          profile_id: params.get('profile') ?? 'project:parts-dev',
+          sql: draft,
+          saved_sql: '',
+        },
+      ],
+      activeTab: 'd1',
+    }),
+  );
+}
 /** The connections the connections scenario opened, by id. */
 const openConnections = new Map<string, Record<string, unknown>>();
 
@@ -146,6 +174,24 @@ const fakeServer: typeof fetch = async (input, init) => {
     if (url === '/api/connections/c1/migrations') {
       return new Response(JSON.stringify(migrationStatus(codeTrusted)), { status: 200 });
     }
+  }
+  if (scenario === 'editor') {
+    const url = String(input);
+    if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    if (url === '/api/project') {
+      return new Response(JSON.stringify({ path: EDITOR_PROJECT, state: 'none' }), { status: 200 });
+    }
+    if (url === '/api/settings') {
+      // `maxRows` sets the max_rows setting (the 100 000-row test of e2e/editor.spec.ts).
+      const maxRows = Number(params.get('maxRows') ?? SETTINGS.settings.limits.max_rows);
+      const limits = { ...SETTINGS.settings.limits, max_rows: maxRows };
+      return new Response(
+        JSON.stringify({ ...SETTINGS, settings: { ...SETTINGS.settings, limits } }),
+        { status: 200 },
+      );
+    }
+    const answer = queryServer.handle(url, init);
+    if (answer !== null) return answer;
   }
   if (scenario === 'diagnostics') {
     const url = String(input);

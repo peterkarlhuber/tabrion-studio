@@ -9,6 +9,7 @@ export const ROUTES = [
   '/',
   '/connections',
   '/explorer',
+  '/sql',
   '/migrations',
   '/diagnostics',
   '/settings',
