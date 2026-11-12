@@ -22,12 +22,17 @@ git checkout <commit SHA>
 python scripts/build_frontend.py      # npm ci + npm run build; copies the frontend into the package
 python -m venv ~/.venvs/tabrion-studio
 # Windows: %USERPROFILE%\.venvs\tabrion-studio\Scripts\python
+~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
 ~/.venvs/tabrion-studio/bin/python -m pip install . -c constraints/tabrion-integration.txt
 ```
 
 Tabrion is not on PyPI either. `constraints/tabrion-integration.txt` pins the Tabrion commit this Studio commit is
 built and tested against (Tabrion v0.1.0), so always install with `-c constraints/tabrion-integration.txt`. A plain
 `pip install .` fails, because pip cannot find Tabrion.
+
+The install needs pip 26.1 or later. Older pip versions (24.0 to 26.0, for example the pip 24.0 of a fresh
+Ubuntu 24.04 virtual environment) stop with `AssertionError: Candidate is not for this requirement`, because they
+cannot combine the constraint with the `tabrion[postgres,sqlalchemy]` extras. The upgrade step above avoids that.
 
 The wheel contains the built frontend. A build without it stops with a message that names
 `scripts/build_frontend.py`. For the same reason, `pip install git+https://…@<SHA>` does not work: the built frontend
