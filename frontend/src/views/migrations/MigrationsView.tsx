@@ -11,7 +11,7 @@
  * Every value from the project or the database (names, paths, revision ids) is escaped (`lib/visible.ts`, U-1).
  */
 import type { TFunction } from 'i18next';
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -31,7 +31,7 @@ import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import { ProdConnectDialog, TrustCodeDialog } from '../../components/dialogs/StudioDialogs';
 import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
-import { visible } from '../../lib/visible';
+import { capped, visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import viewStyles from '../Views.module.css';
@@ -146,10 +146,44 @@ const LEVUVO_TITLES: Record<LevuvoFormat, string> = {
 
 const STEP_STATUSES = new Set(['pending', 'unknown', 'changed']);
 
+/** How many open steps a version table lists before "and N more" (review I-6: a table can hold 10 000 rows). */
+export const MAX_LEVUVO_STEPS = 20;
+
+/**
+ * Why a Levuvo version table could not be read (STU-024 sends these codes for one table, review L-8); any other code
+ * falls back to the general problem text.
+ */
+const UNREADABLE_REASONS: Record<string, string> = {
+  'db.permission': 'permission',
+  'studio.migrations_table': 'table',
+  'studio.statement_refused': 'refused',
+  'db.timeout': 'timeout',
+};
+
+function unreadableText(t: TFunction, problem: Problem | null): string {
+  if (problem === null) return t('migrations.levuvo.unreadable');
+  const reason = UNREADABLE_REASONS[problem.code];
+  return `${t('migrations.levuvo.unreadable')} ${
+    reason === undefined ? problemText(t, problem) : t(`migrations.levuvo.reason.${reason}`)
+  }`;
+}
+
+/** An untrusted value escaped and cut to MAX_ENTRY_LENGTH with a visible marker (U-1c, review I-6). */
+function Capped({ value }: { value: string }) {
+  const [shown, cut] = capped(value);
+  return (
+    <>
+      <code>{shown}</code>
+      {cut ? <span aria-hidden="true">…</span> : null}
+    </>
+  );
+}
+
 /** A Levuvo version table (STU-024): its state, version and the steps not yet applied or not known. */
 function LevuvoResult({ status }: { status: LevuvoStatus }) {
   const { t } = useTranslation();
   const open = status.steps.filter((step) => step.status !== 'applied');
+  const listed = open.slice(0, MAX_LEVUVO_STEPS);
   const where = [status.table, status.namespace].filter((part): part is string => part !== null);
   return (
     <section className={styles.format} data-testid="migrations-levuvo">
@@ -158,7 +192,7 @@ function LevuvoResult({ status }: { status: LevuvoStatus }) {
         {where.length > 0 ? (
           <>
             {' '}
-            <code>{visible(where.join(' / '))}</code>
+            <Capped value={where.join(' / ')} />
           </>
         ) : null}
       </h3>
@@ -166,25 +200,30 @@ function LevuvoResult({ status }: { status: LevuvoStatus }) {
         className={status.state === 'current' ? connectionStyles.status : connectionStyles.warning}
         data-testid="migrations-levuvo-state"
       >
-        {status.state === 'unreadable' && status.problem !== null
-          ? `${t('migrations.levuvo.unreadable')} ${problemText(t, status.problem)}`
+        {status.state === 'unreadable'
+          ? unreadableText(t, status.problem)
           : t(`migrations.levuvo.${status.state}`)}
       </p>
       <dl className={connectionStyles.details}>
         <dt>{t('migrations.status.current')}</dt>
         <dd>{status.current === null ? t('migrations.status.unknown') : String(status.current)}</dd>
       </dl>
-      {open.length > 0 ? (
-        <ul className={styles.ids}>
-          {open.map((step, index) => (
+      {listed.length > 0 ? (
+        <ul className={styles.ids} data-testid="migrations-levuvo-steps">
+          {listed.map((step, index) => (
             <li key={index}>
-              <code>{visible(`${step.version ?? '?'} ${step.name ?? ''}`.trim())}</code>{' '}
+              <Capped value={`${step.version ?? '?'} ${step.name ?? ''}`.trim()} />{' '}
               {STEP_STATUSES.has(step.status)
                 ? `(${t(`migrations.levuvo.steps.${step.status}`)})`
-                : `(${t('migrations.levuvo.steps.other', { status: visible(step.status) })})`}
+                : `(${t('migrations.levuvo.steps.other', { status: capped(step.status)[0] })})`}
             </li>
           ))}
         </ul>
+      ) : null}
+      {open.length > listed.length ? (
+        <p className={connectionStyles.hint} data-testid="migrations-levuvo-more">
+          {t('migrations.levuvo.moreSteps', { count: open.length - listed.length })}
+        </p>
       ) : null}
     </section>
   );
@@ -283,6 +322,8 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   const [dialog, setDialog] = useState<'trust' | 'prod' | null>(null);
   const [stale, setStale] = useState(false);
   const [message, setMessage] = useState('');
+  /** Counts status requests; a result is shown only if no newer request or profile switch came since (review L-9). */
+  const request = useRef(0);
 
   const loadTrust = useCallback(async () => {
     const next = await fetchCodeTrust(fetcher);
@@ -310,11 +351,13 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
 
   const show = async () => {
     if (profile === null) return;
+    const mine = ++request.current;
     setBusy(true);
     setProblem(null);
     setStatus(null);
     const opened = await openConnection(fetcher, profile.id);
     const result = opened.ok ? await fetchMigrations(fetcher, opened.value) : opened;
+    if (mine !== request.current) return;
     setBusy(false);
     if (result.ok) {
       setStatus(result.value);
@@ -325,8 +368,10 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   /** Read the shown status again on its open connection: never opens one, so D-02 cannot be skipped (L-1). */
   const reread = async () => {
     if (status === null) return;
+    const mine = ++request.current;
     setBusy(true);
     const result = await fetchMigrations(fetcher, status.connectionId);
+    if (mine !== request.current) return;
     setBusy(false);
     if (result.ok) setStatus(result.value);
     else {
@@ -401,6 +446,8 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
               value={selected}
               disabled={profiles === null}
               onChange={(event) => {
+                request.current += 1;
+                setBusy(false);
                 setSelected(event.target.value);
                 setStatus(null);
                 setStatusEnv(null);

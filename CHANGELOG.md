@@ -24,6 +24,11 @@ All notable changes to this project are documented here. The format follows
   "Don't trust", sends the digest it showed and shows the new list when the files changed meanwhile; the trust can
   be taken back. A PROD profile asks D-02 before its connection opens. English and German.
   The command palette offers "Go to Migrations" like the activity bar.
+  The Nodestro, Axentra and Orkexa version tables that STU-024 reports are shown with their state, current version
+  and the steps not applied (at most 20, then "and N more"; names escaped and capped), and an unreadable table says
+  why (no read permission, unexpected columns, statement refused, timeout); a format the page does not know is
+  counted in a fixed line, so a database with only such tables never reads as "no migration format" (C-1 of
+  `stu-015-ui-review.md`). A status that arrives after the profile was switched is dropped.
 - STU-014 backend (`tabrion.check` on the driver connection until tabrion 0.2):
   `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host

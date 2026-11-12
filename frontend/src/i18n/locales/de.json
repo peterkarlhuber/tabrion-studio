@@ -239,6 +239,14 @@
       "changed": "Eine ausgeführte Datei wurde danach geändert.",
       "no_files": "Studio hat zu dieser Tabelle keine Dateien gefunden; es zeigt, was die Datenbank verzeichnet hat.",
       "unreadable": "Studio konnte diese Versionstabelle nicht lesen.",
+      "reason": {
+        "permission": "Die Rolle der Verbindung darf sie nicht lesen (kein USAGE auf ihrem Schema oder kein SELECT auf der Tabelle).",
+        "table": "Eine Spalte, die Studio liest, fehlt oder hat einen unerwarteten Typ; prüfe, ob der Migrationsrunner der Plattform die Tabelle angelegt hat.",
+        "refused": "Studio hat das eigene Lesen der Tabelle im Nur-Lese-Modus abgelehnt.",
+        "timeout": "Das Lesen hat länger gedauert als das Zeitlimit für Anweisungen."
+      },
+      "moreSteps_one": "und {{count}} weiterer Schritt",
+      "moreSteps_other": "und {{count}} weitere Schritte",
       "steps": {
         "pending": "noch nicht ausgeführt",
         "unknown": "nicht in den Dateien",

@@ -48,7 +48,7 @@
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 | TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
 | TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; `backend test (windows-latest)` green on `23fd8a6`, run 43201304911) | P2 | Done (PR #29) |
-| TD-025 STU-015/STU-024 page: the Levuvo view shows state, version and open steps, not the SQL preview or the files folder; formats the page does not know are only counted | P3 | Open (STU-015 page draft, C-1 of `stu-015-ui-review.md`) |
+| TD-025 STU-015/STU-024 page: the Levuvo view shows state, version, open steps and the reason a table is unreadable, not the SQL preview or the files folder; formats the page does not know are only counted | P3 | Open (STU-015 page draft; C-1 of `stu-015-ui-review.md` done, delta items L-6..L-9 and I-6 done) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 
@@ -685,12 +685,19 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-025 · STU-015/STU-024 page: the Levuvo view is minimal
 
-- **Priority:** P3 Low · **Status:** Open (STU-015 page draft PR, C-1 of `stu-015-ui-review.md`) ·
+- **Priority:** P3 Low · **Status:** Open (STU-015 page draft PR #32; C-1 of `stu-015-ui-review.md` is done) ·
   **Refs:** STU-024, `docs/architecture/migrations.md` ("The page")
 - **What:** the view Migrations shows each Nodestro, Axentra and Orkexa version table with its state, current
   version, the steps not applied (or not known, or changed) and its problem. It does not show the first 2 000
   characters of a pending step's SQL (`preview`), its checksum, the files folder or `files_issue`, nor Orkexa's
   expected version. A format the page does not know is counted in a fixed line ("N further formats, not shown yet").
+- **Done (C-1 and the delta review of `stu-015-ui-review.md`):** the page renders every format value #30 sends
+  (`nodestro`, `axentra`, `orkexa`, each state `current`/`pending`/`newer`/`changed`/`no_files`/`unreadable`, an
+  entry from files only); L-8, an unreadable table names `db.permission`, `studio.migrations_table`,
+  `studio.statement_refused` and `db.timeout` in its own en/de words, other codes fall back to the problem text;
+  I-6, at most 20 open steps, then "and N more steps", names and the namespace cut at 64 characters; L-7, an
+  unknown step status is escaped (test); L-6, the revoke path rereads on the shown connection (test); L-9, a status
+  that arrives after a newer request or a profile switch is dropped. I-7 (the `no_files` wording) is unchanged.
 - **Next step:** with STU-024 merged into the stack, show the preview of a pending step on request (escaped, as
   text, never run) and the files folder; keep the count line for formats added later.
 

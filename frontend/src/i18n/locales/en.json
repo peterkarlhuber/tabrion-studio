@@ -239,6 +239,14 @@
       "changed": "An applied file was changed after it ran.",
       "no_files": "Studio found no files for this table; it shows what the database recorded.",
       "unreadable": "Studio could not read this version table.",
+      "reason": {
+        "permission": "The connection's role may not read it (no USAGE on its schema or no SELECT on the table).",
+        "table": "A column Studio reads is missing or has an unexpected type; check that the platform's own migration runner made the table.",
+        "refused": "Studio refused its own read of the table in read-only mode.",
+        "timeout": "Reading it took longer than the statement timeout."
+      },
+      "moreSteps_one": "and {{count}} more step",
+      "moreSteps_other": "and {{count}} more steps",
       "steps": {
         "pending": "not yet applied",
         "unknown": "not in the files",

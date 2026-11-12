@@ -9,7 +9,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { parseCodeTrust, parseMigrations } from '../../api/migrations';
-import { MigrationsView } from './MigrationsView';
+import { MAX_LEVUVO_STEPS, MigrationsView } from './MigrationsView';
 
 const DIGEST = 'a'.repeat(64);
 const NEW_DIGEST = 'd'.repeat(64);
@@ -608,5 +608,141 @@ describe('migration status view: review fixes of #32', () => {
       ),
     );
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('L-6: after taking the trust back, reads the shown status again without opening a connection', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust({ state: 'trusted', trusted: true })),
+        () => json(trust()),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await screen.findByTestId('migrations-alembic');
+    const reads = () =>
+      calls.filter((call) => call.url === '/api/connections/c1/migrations').length;
+    expect(reads()).toBe(1);
+    await user.click(screen.getByRole('button', { name: 'Stop trusting' }));
+    await waitFor(() => expect(reads()).toBe(2));
+    expect(calls.filter((call) => call.url === '/api/connections').length).toBe(1);
+  });
+
+  it('L-9: drops a status that arrives after the profile was switched', async () => {
+    const user = userEvent.setup();
+    let answer: (response: Response) => void = () => undefined;
+    const late = new Promise<Response>((resolve) => {
+      answer = resolve;
+    });
+    const { fetcher } = server({
+      'GET /api/connections/c1/migrations': (() => late) as unknown as Answer,
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    expect(await screen.findByRole('button', { name: 'Reading…' })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    expect(screen.getByRole('button', { name: 'Show status' })).toBeEnabled();
+    answer(json(migrations([{ format: 'sqlite_user_version', current: 7 }])));
+    await late;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByTestId('migrations-sqlite')).toBeNull();
+    expect(screen.getByTestId('migrations-result')).toBeEmptyDOMElement();
+  });
+});
+
+describe('migration status view: the STU-024 formats as #30 sends them', () => {
+  function levuvo(extra: Record<string, unknown>) {
+    return {
+      format: 'nodestro',
+      schema: 'public',
+      table: 'nodestro_schema_migrations',
+      namespace: null,
+      current: null,
+      state: 'unreadable',
+      files: null,
+      files_issue: null,
+      steps: [],
+      problem: null,
+      ...extra,
+    };
+  }
+
+  async function showFormats(formats: unknown[]) {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'GET /api/connections/c1/migrations': () =>
+        json({ connection_id: 'c1', engine: 'postgresql', formats }),
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    return screen.findAllByTestId('migrations-levuvo');
+  }
+
+  it('L-8: names why a version table could not be read', async () => {
+    const reason = (code: string, kind: string, status: number) =>
+      levuvo({ problem: { code, kind, status } });
+    const [permission, table, refused, timeout, other] = await showFormats([
+      reason('db.permission', 'permission', 403),
+      reason('studio.migrations_table', 'config', 422),
+      reason('studio.statement_refused', 'request', 400),
+      reason('db.timeout', 'timeout', 504),
+      reason('db.connection', 'connection', 502),
+    ]);
+    expect(permission).toHaveTextContent(
+      "Studio could not read this version table. The connection's role may not read it",
+    );
+    expect(table).toHaveTextContent('A column Studio reads is missing or has an unexpected type');
+    expect(refused).toHaveTextContent('Studio refused its own read of the table');
+    expect(timeout).toHaveTextContent('Reading it took longer than the statement timeout.');
+    expect(other).toHaveTextContent('Studio could not read this version table. The request failed');
+    expect(other).toHaveTextContent('(db.connection)');
+  });
+
+  it('shows every format #30 knows, each state in its own words, and an entry from files only', async () => {
+    const entries = await showFormats([
+      levuvo({ state: 'current', current: 3 }),
+      levuvo({ format: 'axentra', state: 'newer', current: 9, namespace: 'axentra' }),
+      levuvo({ format: 'orkexa', state: 'changed', current: 2 }),
+      levuvo({ state: 'no_files', current: 1 }),
+      levuvo({
+        format: 'axentra',
+        schema: null,
+        table: null,
+        state: 'pending',
+        steps: [{ version: 1, name: 'init', status: 'pending', preview: 'CREATE TABLE t' }],
+      }),
+    ]);
+    expect(entries).toHaveLength(5);
+    expect(entries[0]).toHaveTextContent('The database is up to date with the files.');
+    expect(entries[0]).toHaveTextContent('3');
+    expect(entries[1]).toHaveTextContent('Axentra public.nodestro_schema_migrations / axentra');
+    expect(entries[1]).toHaveTextContent('The database has versions that the files do not know.');
+    expect(entries[2]).toHaveTextContent('Orkexa');
+    expect(entries[2]).toHaveTextContent('An applied file was changed after it ran.');
+    expect(entries[3]).toHaveTextContent('Studio found no files for this table');
+    expect(within(entries[4] as HTMLElement).getByRole('heading')).toHaveTextContent(/^Axentra$/);
+    expect(entries[4]).toHaveTextContent('1 init (not yet applied)');
+    expect(entries[4]?.textContent).not.toContain('CREATE TABLE');
+  });
+
+  it('L-7, I-6: escapes an unknown step status and caps the steps and long names', async () => {
+    const steps = Array.from({ length: MAX_LEVUVO_STEPS + 5 }, (_, index) => ({
+      version: index + 1,
+      name: index === 0 ? `${'n'.repeat(200)}${BIDI}` : `step${index + 1}`,
+      status: index === 1 ? `odd${BIDI}` : 'pending',
+    }));
+    const [entry] = await showFormats([levuvo({ state: 'pending', current: 0, steps })]);
+    const items = within(entry as HTMLElement).getAllByRole('listitem');
+    expect(items).toHaveLength(MAX_LEVUVO_STEPS);
+    expect(items[0]?.textContent).not.toContain(BIDI);
+    expect(items[0]?.textContent).toContain('…');
+    expect(items[0]?.textContent?.length).toBeLessThan(120);
+    expect(items[1]).toHaveTextContent('2 step2 (odd\\u202E)');
+    expect(items[1]?.textContent).not.toContain(BIDI);
+    expect(screen.getByTestId('migrations-levuvo-more')).toHaveTextContent('and 5 more steps');
   });
 });

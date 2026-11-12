@@ -141,8 +141,10 @@ the status. It only reads; there is no button that migrates.
   database, the heads and the revisions not yet applied (or "unknown" with the reason: code not trusted, folder not
   valid, or the problem of the worker such as `studio.migrations_busy`), and the revisions the database names that
   the project's files do not contain. With STU-024, each Nodestro, Axentra and Orkexa version table shows its
-  state, current version, open steps and problem; a format the page does not know is counted in a fixed line,
-  never dropped (TD-025). The result region names the profile's environment (badge) and is announced politely
+  state, current version, open steps (at most 20, then "and N more steps") and, for an unreadable table, the
+  reason in the page's own words (`db.permission`, `studio.migrations_table`, `studio.statement_refused`,
+  `db.timeout`; any other code as its problem text); a format the page does not know is counted in a fixed line,
+  never dropped (TD-025). A status that arrives after a newer request or a profile switch is dropped. The result region names the profile's environment (badge) and is announced politely
   (`aria-live`). After a trust or a revoke, the shown status is read again on its open connection; the page never
   opens a connection for that, so D-02 cannot be skipped. Revision ids, table, step and file names come from the
   project or the database and are shown escaped (`lib/visible.ts`).
