@@ -139,9 +139,10 @@ worker runs), so no file of the project is imported while the worker starts.
 - **Windows.** There is no process group. Instead, the worker goes into a job object with
   `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` before it gets its request. Closing the job after the answer or the timeout
   ends the worker and every process it started, and they cannot leave the job. If the job cannot be made (an old
-  Windows that does not allow nested jobs), only the worker is killed. The answer is read by a thread.
-  `test_children_end_with_the_worker_on_every_platform` checks this on every platform, but it runs on Windows only in
-  `platforms.yml` (TD-024).
+  Windows that does not allow nested jobs), only the worker is killed. The answer is read by a thread, which owns the
+  answer pipe and closes it when its read ends; Studio waits at most 5 seconds for it after the worker is gone.
+  `test_children_end_with_the_worker_on_every_platform` checks this on every platform; on Windows it runs in the
+  `backend test (windows-latest)` job of `ci.yml` (TD-024).
 
 ## Threat model entry
 

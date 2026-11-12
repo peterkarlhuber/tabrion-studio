@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 import contextlib
 from dataclasses import dataclass
+import gc
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,7 @@ import sys
 import threading
 import time
 from typing import Any
+import warnings
 
 import pytest
 import sqlalchemy
@@ -554,7 +556,7 @@ def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.M
     }[worker]
     boot = "import os, sys, time\nrequest = sys.stdin.buffer.read()\n" + write
     monkeypatch.setattr(migrations_module, "_BOOT", boot)
-    monkeypatch.setattr(migrations_module, "_exchange_posix", migrations_module._exchange_threads)
+    monkeypatch.setattr(migrations_module, "_POSIX", False)  # the Windows exchange, also on POSIX
     request = {"padding": "x" * 300_000}
     started = time.monotonic()
     answer = run_worker(request, cwd=tmp_path, timeout_s=3.0)
@@ -565,6 +567,48 @@ def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.M
         "too_big": {"error": "studio.migrations_failed"},
     }
     assert answer == expected[worker]
+
+
+@pytest.mark.parametrize("exchange", ["native", "windows"])
+@pytest.mark.parametrize("worker", ["answers", "hangs", "too_big"])
+def test_the_worker_pipes_are_closed_on_every_platform(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exchange: str, worker: str
+) -> None:
+    """TD-024: both pipes are closed and the worker is reaped when ``run_worker`` returns, also on the Windows path
+    (the reader thread's pipe). Nothing is left for a finalizer: no ``ResourceWarning`` when it is collected."""
+    write = {
+        "answers": "os.write(1, b'{}\\n')\n",
+        "hangs": "time.sleep(60)\n",
+        "too_big": "os.write(1, b'x' * 3_000_000)\ntime.sleep(60)\n",
+    }[worker]
+    monkeypatch.setattr(migrations_module, "_BOOT", "import os, sys, time\nsys.stdin.buffer.read()\n" + write)
+    if exchange == "windows":
+        monkeypatch.setattr(migrations_module, "_POSIX", False)
+    started: list[subprocess.Popen[bytes]] = []
+
+    class Recorded(subprocess.Popen[bytes]):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            started.append(self)
+
+    monkeypatch.setattr(subprocess, "Popen", Recorded)
+    expected = {
+        "answers": {},
+        "hangs": {"error": "studio.migrations_timeout"},
+        "too_big": {"error": "studio.migrations_failed"},
+    }
+    assert run_worker({}, cwd=tmp_path, timeout_s=2.0) == expected[worker]
+    [process] = started
+    assert process.stdin is not None and process.stdin.closed
+    assert process.stdout is not None and process.stdout.closed
+    assert process.returncode is not None
+    assert not [thread for thread in threading.enumerate() if thread.name == "tabrion-studio-migration-worker"]
+    del process
+    started.clear()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        gc.collect()
+    assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
 
 
 @posix
