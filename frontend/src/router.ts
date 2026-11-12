@@ -5,7 +5,7 @@
  */
 import { useSyncExternalStore } from 'react';
 
-export const ROUTES = ['/', '/connections', '/migrations', '/settings'] as const;
+export const ROUTES = ['/', '/connections', '/migrations', '/diagnostics', '/settings'] as const;
 export type Route = (typeof ROUTES)[number];
 
 const listeners = new Set<() => void>();

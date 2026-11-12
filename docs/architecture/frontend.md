@@ -13,7 +13,7 @@ settings.
 ┌ header: mark · "Tabrion Studio" · connection switcher · [PROD] · Writing locked · No transaction ┐
 ├──┬────────────────────────────────────────────────────────────────────────────────────────────────┤
 │⌂ │ [Query 1 PROD] [parts-dev DEV] [parts-pg TEST]      ← tabs, only with a workspace               │
-│🗄│ main view: Start · Connections · Migrations · Settings · Not found                               │
+│🗄│ main view: Start · Connections · Migrations · Diagnostics · Settings · Not found                 │
 │  │                                                                                                 │
 │⚙ │                                                                                                 │
 ├──┴────────────────────────────────────────────────────────────────────────────────────────────────┤
@@ -25,11 +25,11 @@ settings.
   With a session it sends the heartbeat; when the server answers 401 (or 403 `access.csrf_invalid`), the heartbeat
   stops and the page says "Your session has ended. Run `tabrion-studio` again to open Studio." (review S-1).
 - `src/shell/AppShell.tsx`: skip link, header with the status displays and the buttons for the command palette and
-  the keyboard shortcuts, activity bar (Start, Connections, Migrations, Settings), tabs, main area, status bar (server
-  version or "does not answer", language).
-- `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations` and `/settings`. The backend serves
-  `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists equal); every other path
-  stays 404.
+  the keyboard shortcuts, activity bar (Start, Connections, Migrations, Diagnostics, Settings), tabs, main area,
+  status bar (server version or "does not answer", language).
+- `src/router.ts`: a minimal history router for `/`, `/connections`, `/migrations`, `/diagnostics` and `/settings`.
+  The backend serves `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps both lists
+  equal); every other path stays 404.
 - `src/workspace.ts`: the active connection, its environment and the open tabs. The connection manager and the
   migration status view fill the active connection when they open one (`ConnectionSession`, provided by `App`); it
   also remembers the PROD profiles confirmed with D-02 in this page session (a reload asks again). Editor tabs arrive
@@ -110,7 +110,7 @@ for matching and for display, so the palette, the help and the header buttons al
   combobox pattern: the focus stays in the search, `aria-activedescendant` names the active command, ↑ ↓ Home End
   move, Enter or a click runs, Escape closes, Tab stays in the search, and the focus returns to the opener. A status
   region announces the number of matches. The commands (`commands.ts`) go to the views of the activity bar (Start,
-  Connections, Migrations, Settings), change the theme, the density and the language, and open the help; the
+  Connections, Migrations, Diagnostics, Settings), change the theme, the density and the language, and open the help; the
   current page, theme, density and language are marked. The filter matches every word, without case and accents. No command writes to a database; theme, density and language are
   saved to `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The explorer, the SQL
   editor and the history add their commands when they arrive.
