@@ -1099,11 +1099,15 @@ describe('D-02 on the server (TD-038)', () => {
     'C-2 (#48 review): %s retries at most once after a refusal, even when the server keeps refusing',
     async (button) => {
       const live = liveProfiles([...PROFILES.profiles]);
-      const refuse = problem(409, {
-        code: 'studio.prod_confirmation_required',
-        kind: 'database',
-        status: 409,
-      });
+      // Refuses every request; from the third on with another problem, so a manager that retried without end stops
+      // there and the count below fails cleanly (I-1 of the #48 delta review) instead of looping.
+      let answered = 0;
+      const refuse: Answer = () => {
+        answered += 1;
+        return answered <= 2
+          ? json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409)
+          : json({ code: 'db.connection', kind: 'connection', status: 502 }, 502);
+      };
       const { fetcher, calls } = server({
         'GET /api/profiles': live.answer,
         'POST /api/connections': refuse,
@@ -1119,18 +1123,18 @@ describe('D-02 on the server (TD-038)', () => {
       await confirmProd();
       const url = button === 'Connect' ? '/api/connections' : '/api/connection-tests';
       const sent = () => writes(calls).filter((call) => call.url === url);
-      await waitFor(() => expect(sent()).toHaveLength(2));
-      await waitFor(() =>
-        expect(within(detail).getByTestId('connection-outcome')).toHaveTextContent(
-          'This profile is marked as PROD now.',
-        ),
-      );
-      // Let every pending read and answer run: no third request, no second D-02.
+      await waitFor(() => expect(sent().length).toBeGreaterThanOrEqual(2));
+      // Let every pending read and answer run, then count first: no third request.
       for (let tick = 0; tick < 5; tick += 1) {
         await act(async () => {
           await new Promise((resolve) => setTimeout(resolve, 10));
         });
       }
+      expect(sent()).toHaveLength(2);
+      expect(within(detail).getByTestId('connection-outcome')).toHaveTextContent(
+        'This profile is marked as PROD now.',
+      );
+      // No second D-02.
       expect(screen.queryByRole('dialog')).toBeNull();
       expect(sent().map((call) => call.body)).toEqual([
         { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
@@ -1140,22 +1144,28 @@ describe('D-02 on the server (TD-038)', () => {
   );
 
   it('a refusal for a profile the page already shows as PROD is shown, not asked again', async () => {
+    // A second request would get another problem, so a retry fails the count below instead of looping (I-1).
     const { fetcher, calls } = server({
-      'POST /api/connections': problem(409, {
-        code: 'studio.prod_confirmation_required',
-        kind: 'database',
-        status: 409,
-      }),
+      'POST /api/connections': [
+        problem(409, { code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }),
+        problem(502, { code: 'db.connection', kind: 'connection', status: 502 }),
+      ],
     });
     await manager(fetcher);
     const detail = await select('measure');
     await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
     await confirmProd();
-    expect(await within(detail).findByText(/Not connected/)).toHaveTextContent(
+    await within(detail).findByText(/Not connected/);
+    for (let tick = 0; tick < 5; tick += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      });
+    }
+    expect(writes(calls).filter((call) => call.url === '/api/connections')).toHaveLength(1);
+    expect(within(detail).getByText(/Not connected/)).toHaveTextContent(
       'This profile is marked as PROD now.',
     );
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(writes(calls).filter((call) => call.url === '/api/connections')).toHaveLength(1);
   });
 });
 

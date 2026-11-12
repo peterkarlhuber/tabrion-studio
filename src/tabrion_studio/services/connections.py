@@ -472,7 +472,12 @@ class ConnectionRegistry:
         connection must be open and still valid (``get``)."""
         connection = self.get(connection_id)
         entry = self.source.entry(connection.profile_id)
-        if target_fingerprint(entry.profile.to_dict()) != connection.fingerprint:
+        # I-2 of the #48 delta review: this read must still be the connection's target *and* environment (a profile
+        # that became PROD after ``get`` must not hand a DEV connection's target to a worker).
+        if (
+            target_fingerprint(entry.profile.to_dict()) != connection.fingerprint
+            or entry.profile.environment != connection.environment
+        ):
             raise RegistryError("studio.connection_stale")
         database_file, password = self._credentials(connection.profile_id, entry)
         profile = entry.profile

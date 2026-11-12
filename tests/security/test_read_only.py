@@ -681,6 +681,31 @@ def test_td_038_the_confirmation_is_checked_on_the_profile_read_that_connects(sq
         registry.close_all()
 
 
+def test_i2_the_worker_target_refuses_a_profile_that_became_prod_after_the_check(sqlite_file: Path) -> None:
+    """I-2 of the #48 delta review: ``worker_target`` reads the profile once more after ``get``; if that read is PROD,
+    the DEV connection's target is not handed to a migration worker."""
+
+    class LaterProd(Source):
+        def entry(self, profile_id: str) -> Entry:
+            entry = super().entry(profile_id)
+            if len(self.entries) == 2:  # open, then get's check: every read after them says prod
+                self.profiles[profile_id] = replace(self.profiles[profile_id], environment="prod")
+            return entry
+
+    source = LaterProd(profiles={"user:p": Profile("p", "sqlite", "dev", path="p.db")}, files={"user:p": sqlite_file})
+    registry = ConnectionRegistry(source)
+    try:
+        opened = registry.open("user:p", "dev")
+        with pytest.raises(RegistryError) as raised:
+            registry.worker_target(opened.id)
+        assert raised.value.code == "studio.connection_stale"
+        assert [entry.profile.environment for entry in source.entries] == ["dev", "dev", "prod"]
+        # The file was resolved for the open and for get's check, never for the worker.
+        assert source.calls == [("database_file", "user:p")] * 2
+    finally:
+        registry.close_all()
+
+
 def test_stu_008_the_connection_test_reports_the_sqlite_facts(sqlite_file: Path) -> None:
     """STU-008 (03 section 2 A): the test answers the health check and the file's facts, and keeps nothing open."""
     with sqlite3.connect(sqlite_file) as raw:
