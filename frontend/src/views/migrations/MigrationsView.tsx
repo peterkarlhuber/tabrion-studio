@@ -168,6 +168,12 @@ function unreadableText(t: TFunction, problem: Problem | null): string {
   }`;
 }
 
+/** `capped(value)` as one string, with "…" when it was cut (review F-5). */
+function cutText(value: string): string {
+  const [shown, cut] = capped(value);
+  return cut ? `${shown}…` : shown;
+}
+
 /** An untrusted value escaped and cut to MAX_ENTRY_LENGTH with a visible marker (U-1c, review I-6). */
 function Capped({ value }: { value: string }) {
   const [shown, cut] = capped(value);
@@ -215,7 +221,7 @@ function LevuvoResult({ status }: { status: LevuvoStatus }) {
               <Capped value={`${step.version ?? '?'} ${step.name ?? ''}`.trim()} />{' '}
               {STEP_STATUSES.has(step.status)
                 ? `(${t(`migrations.levuvo.steps.${step.status}`)})`
-                : `(${t('migrations.levuvo.steps.other', { status: capped(step.status)[0] })})`}
+                : `(${t('migrations.levuvo.steps.other', { status: cutText(step.status) })})`}
             </li>
           ))}
         </ul>
@@ -381,6 +387,8 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   };
 
   const trustNow = async (digest: string) => {
+    // The reread below uses this render's status; skip it if a request or a profile switch came since (F-1).
+    const mine = request.current;
     const result = await trustCode(fetcher, digest);
     const stillStale = !result.ok && result.problem.code === 'studio.trust_stale';
     setStale(stillStale);
@@ -388,7 +396,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
     if (result.ok) {
       setDialog(null);
       setMessage(t('migrations.code.trustedNow'));
-      void reread();
+      if (mine === request.current) void reread();
     } else if (
       !stillStale ||
       next === null ||
@@ -402,10 +410,11 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   };
 
   const revoke = async () => {
+    const mine = request.current;
     const result = await revokeCodeTrust(fetcher);
     await loadTrust();
     setMessage(result.ok ? t('migrations.code.revokedNow') : problemText(t, result.problem));
-    if (result.ok) void reread();
+    if (result.ok && mine === request.current) void reread();
   };
 
   return (

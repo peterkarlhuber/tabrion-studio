@@ -5,7 +5,7 @@
  * profile's read-only connection (D-02 first for PROD) and shows every format; values from the project or the
  * database are escaped (U-1). Every write sends Content-Type: application/json, DELETE included.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { parseCodeTrust, parseMigrations } from '../../api/migrations';
@@ -651,6 +651,124 @@ describe('migration status view: review fixes of #32', () => {
     expect(screen.queryByTestId('migrations-sqlite')).toBeNull();
     expect(screen.getByTestId('migrations-result')).toBeEmptyDOMElement();
   });
+
+  function deferred() {
+    let resolve: (response: Response) => void = () => undefined;
+    const promise = new Promise<Response>((done) => {
+      resolve = done;
+    });
+    return { promise, resolve, answer: (() => promise) as unknown as Answer };
+  }
+
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  it('F-1: no reread after a revoke when the profile was switched meanwhile', async () => {
+    const user = userEvent.setup();
+    const revoked = deferred();
+    const { fetcher, calls } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust({ state: 'trusted', trusted: true })),
+        () => json(trust()),
+      ],
+      'DELETE /api/project/code-trust': revoked.answer,
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await screen.findByTestId('migrations-sqlite');
+    await user.click(screen.getByRole('button', { name: 'Stop trusting' }));
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    revoked.resolve(new Response(null, { status: 204 }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-message')).toHaveTextContent(
+        'The migration code is no longer trusted.',
+      ),
+    );
+    await settle();
+    expect(calls.filter((call) => call.url === '/api/connections/c1/migrations')).toHaveLength(1);
+    expect(screen.getByTestId('migrations-result')).toBeEmptyDOMElement();
+  });
+
+  it('F-1: no reread after a trust when the profile was switched meanwhile', async () => {
+    const user = userEvent.setup();
+    const trusted = deferred();
+    const { fetcher, calls } = server({ 'POST /api/project/code-trust': trusted.answer });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await screen.findByTestId('migrations-sqlite');
+    await user.click(screen.getByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    // The dialog is modal in a browser; jsdom lets the test switch behind it to reach the race.
+    fireEvent.change(screen.getByLabelText('Connection profile'), {
+      target: { value: 'user:measure' },
+    });
+    trusted.resolve(new Response(null, { status: 204 }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-message')).toHaveTextContent(
+        'The migration code is trusted.',
+      ),
+    );
+    await settle();
+    expect(calls.filter((call) => call.url === '/api/connections/c1/migrations')).toHaveLength(1);
+    expect(screen.getByTestId('migrations-result')).toBeEmptyDOMElement();
+  });
+
+  it('F-1: drops a reread that a profile switch overtook', async () => {
+    const user = userEvent.setup();
+    const late = deferred();
+    const { fetcher } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust({ state: 'trusted', trusted: true })),
+        () => json(trust()),
+      ],
+      'GET /api/connections/c1/migrations': [
+        () => json(migrations([{ format: 'sqlite_user_version', current: 7 }])),
+        late.answer,
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await screen.findByTestId('migrations-sqlite');
+    await user.click(screen.getByRole('button', { name: 'Stop trusting' }));
+    expect(await screen.findByRole('button', { name: 'Reading…' })).toBeDisabled();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    late.resolve(json(migrations([{ format: 'sqlite_user_version', current: 8 }])));
+    await late.promise;
+    await settle();
+    expect(screen.getByTestId('migrations-result')).toBeEmptyDOMElement();
+  });
+
+  it('F-1: a later reread wins over an earlier one that answers late', async () => {
+    const user = userEvent.setup();
+    const late = deferred();
+    const { fetcher } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust({ state: 'trusted', trusted: true })),
+        () => json(trust()),
+        () => json(trust({ state: 'trusted', trusted: true })),
+      ],
+      'GET /api/connections/c1/migrations': [
+        () => json(migrations([{ format: 'sqlite_user_version', current: 7 }])),
+        late.answer,
+        () => json(migrations([{ format: 'sqlite_user_version', current: 9 }])),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await screen.findByTestId('migrations-sqlite');
+    await user.click(screen.getByRole('button', { name: 'Stop trusting' }));
+    await user.click(await screen.findByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() => expect(screen.getByTestId('migrations-sqlite')).toHaveTextContent('9'));
+    late.resolve(json(migrations([{ format: 'sqlite_user_version', current: 8 }])));
+    await late.promise;
+    await settle();
+    expect(screen.getByTestId('migrations-sqlite')).toHaveTextContent('9');
+    expect(screen.getByTestId('migrations-sqlite')).not.toHaveTextContent('8');
+  });
 });
 
 describe('migration status view: the STU-024 formats as #30 sends them', () => {
@@ -708,6 +826,7 @@ describe('migration status view: the STU-024 formats as #30 sends them', () => {
       levuvo({ format: 'axentra', state: 'newer', current: 9, namespace: 'axentra' }),
       levuvo({ format: 'orkexa', state: 'changed', current: 2 }),
       levuvo({ state: 'no_files', current: 1 }),
+      levuvo({ format: 'orkexa', state: 'unknown_state', current: 4 }),
       levuvo({
         format: 'axentra',
         schema: null,
@@ -716,7 +835,7 @@ describe('migration status view: the STU-024 formats as #30 sends them', () => {
         steps: [{ version: 1, name: 'init', status: 'pending', preview: 'CREATE TABLE t' }],
       }),
     ]);
-    expect(entries).toHaveLength(5);
+    expect(entries).toHaveLength(6);
     expect(entries[0]).toHaveTextContent('The database is up to date with the files.');
     expect(entries[0]).toHaveTextContent('3');
     expect(entries[1]).toHaveTextContent('Axentra public.nodestro_schema_migrations / axentra');
@@ -724,16 +843,21 @@ describe('migration status view: the STU-024 formats as #30 sends them', () => {
     expect(entries[2]).toHaveTextContent('Orkexa');
     expect(entries[2]).toHaveTextContent('An applied file was changed after it ran.');
     expect(entries[3]).toHaveTextContent('Studio found no files for this table');
-    expect(within(entries[4] as HTMLElement).getByRole('heading')).toHaveTextContent(/^Axentra$/);
-    expect(entries[4]).toHaveTextContent('1 init (not yet applied)');
-    expect(entries[4]?.textContent).not.toContain('CREATE TABLE');
+    // An unknown state reads as unreadable with no problem: the plain text, never an empty line (F-3, M11).
+    expect(
+      within(entries[4] as HTMLElement).getByTestId('migrations-levuvo-state').textContent,
+    ).toBe('Studio could not read this version table.');
+    expect(within(entries[5] as HTMLElement).getByRole('heading')).toHaveTextContent(/^Axentra$/);
+    expect(entries[5]).toHaveTextContent('1 init (not yet applied)');
+    expect(entries[5]?.textContent).not.toContain('CREATE TABLE');
+    expect(screen.queryByTestId('migrations-levuvo-more')).toBeNull();
   });
 
   it('L-7, I-6: escapes an unknown step status and caps the steps and long names', async () => {
     const steps = Array.from({ length: MAX_LEVUVO_STEPS + 5 }, (_, index) => ({
       version: index + 1,
       name: index === 0 ? `${'n'.repeat(200)}${BIDI}` : `step${index + 1}`,
-      status: index === 1 ? `odd${BIDI}` : 'pending',
+      status: index === 1 ? `odd${BIDI}` : index === 2 ? 'x'.repeat(100) : 'pending',
     }));
     const [entry] = await showFormats([levuvo({ state: 'pending', current: 0, steps })]);
     const items = within(entry as HTMLElement).getAllByRole('listitem');
@@ -744,5 +868,31 @@ describe('migration status view: the STU-024 formats as #30 sends them', () => {
     expect(items[1]).toHaveTextContent('2 step2 (odd\\u202E)');
     expect(items[1]?.textContent).not.toContain(BIDI);
     expect(screen.getByTestId('migrations-levuvo-more')).toHaveTextContent('and 5 more steps');
+    expect(items[2]).toHaveTextContent(`3 step3 (${'x'.repeat(64)}…)`);
+  });
+});
+
+describe('migration status view: the step cap boundary', () => {
+  it('F-3 (M6): exactly MAX_LEVUVO_STEPS open steps show no "and N more" line', async () => {
+    const user = userEvent.setup();
+    const steps = Array.from({ length: MAX_LEVUVO_STEPS }, (_, index) => ({
+      version: index + 1,
+      name: `s${index + 1}`,
+      status: 'pending',
+    }));
+    const { fetcher } = server({
+      'GET /api/connections/c1/migrations': () =>
+        json({
+          connection_id: 'c1',
+          engine: 'postgresql',
+          formats: [{ format: 'nodestro', table: 't', state: 'pending', current: 0, steps }],
+        }),
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    const entry = await screen.findByTestId('migrations-levuvo');
+    expect(within(entry).getAllByRole('listitem')).toHaveLength(MAX_LEVUVO_STEPS);
+    expect(screen.queryByTestId('migrations-levuvo-more')).toBeNull();
   });
 });

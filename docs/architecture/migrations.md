@@ -144,9 +144,10 @@ the status. It only reads; there is no button that migrates.
   state, current version, open steps (at most 20, then "and N more steps") and, for an unreadable table, the
   reason in the page's own words (`db.permission`, `studio.migrations_table`, `studio.statement_refused`,
   `db.timeout`; any other code as its problem text); a format the page does not know is counted in a fixed line,
-  never dropped (TD-025). A status that arrives after a newer request or a profile switch is dropped. The result region names the profile's environment (badge) and is announced politely
-  (`aria-live`). After a trust or a revoke, the shown status is read again on its open connection; the page never
-  opens a connection for that, so D-02 cannot be skipped. Revision ids, table, step and file names come from the
+  never dropped (TD-025). A status that arrives after a newer request or a profile switch is dropped. The result
+  region names the profile's environment (badge) and is announced politely (`aria-live`). After a trust or a
+  revoke, the shown status is read again on its open connection, unless a request or a profile switch came
+  meanwhile; the page never opens a connection for that, so D-02 cannot be skipped. Revision ids, table, step and file names come from the
   project or the database and are shown escaped (`lib/visible.ts`).
 
 Tests: `MigrationsView.test.tsx` (trust with the shown digest, stale, refused, revoke, the states, D-02, escaping,

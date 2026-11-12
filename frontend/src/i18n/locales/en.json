@@ -241,7 +241,7 @@
       "unreadable": "Studio could not read this version table.",
       "reason": {
         "permission": "The connection's role may not read it (no USAGE on its schema or no SELECT on the table).",
-        "table": "A column Studio reads is missing or has an unexpected type; check that the platform's own migration runner made the table.",
+        "table": "A column Studio reads is missing or has an unexpected type; check that the platform's own migration runner created the table.",
         "refused": "Studio refused its own read of the table in read-only mode.",
         "timeout": "Reading it took longer than the statement timeout."
       },
