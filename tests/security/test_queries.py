@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import replace
+import gc
 import io
 import logging
 import os
@@ -24,6 +25,7 @@ import time
 import tracemalloc
 from typing import Any, cast
 import uuid
+import weakref
 
 import pytest
 import sqlalchemy
@@ -576,7 +578,7 @@ class CountingSqlite(sqlite3.Connection):
 
 
 class FakeTransaction:
-    def __init__(self, dbapi: Any, *, invalidate_fails: bool = False) -> None:
+    def __init__(self, dbapi: Any, *, invalidate_fails: bool = False, invalidate_closes: bool = False) -> None:
         self.invalidated = 0
         outer = self
 
@@ -589,6 +591,8 @@ class FakeTransaction:
                 if invalidate_fails:
                     raise RuntimeError("cannot invalidate")
                 outer.invalidated += 1
+                if invalidate_closes:  # as SQLAlchemy's invalidate() does
+                    dbapi.close()
 
         self.connection = Connection
 
@@ -653,6 +657,71 @@ def test_l2_a_connection_that_cannot_be_invalidated_is_closed() -> None:
     with pytest.raises(Cancelled), fake_stream(FakeTransaction(fake, invalidate_fails=True), hook, server_side=True):
         pass
     assert fake.closed
+
+
+class FakeServerCursor(FakeCursor):
+    """psycopg's ServerCursor.close(): ``CLOSE`` on an open connection, and a cancel that lands on it makes it raise
+    before the cursor is marked closed (then it warns "deleted while still open" at garbage collection)."""
+
+    def __init__(self, connection: FakeClosingPsycopg) -> None:
+        super().__init__(connection.on_execute)
+        self.connection = connection
+        self.closed = False
+
+    def close(self) -> None:
+        if self.closed:
+            return
+        if not self.connection.closed:
+            self.connection.on_close()  # while CLOSE runs
+            if self.connection.cancels:
+                raise RuntimeError("canceling statement due to user request")
+        self.closed = True
+
+
+class FakeClosingPsycopg(FakePsycopg):
+    def __init__(self) -> None:
+        super().__init__()
+        self.on_close: Any = lambda: None
+        self.cursors: list[FakeServerCursor] = []
+
+    def cursor(self, name: str | None = None) -> FakeServerCursor:
+        self.cursors.append(FakeServerCursor(self))
+        return self.cursors[-1]
+
+
+def test_f4_a_late_cancel_cannot_reach_the_cursors_close() -> None:
+    """F-4 of stu-011-leak-delta-review.md: a cancel that comes while the cursor closes is not sent, and the cursor
+    is closed (before: the cancel hit ``CLOSE``, the close raised and the server cursor stayed open)."""
+    fake = FakeClosingPsycopg()
+    hook = Cancel()
+    fake.on_close = hook.cancel
+    transaction = FakeTransaction(fake, invalidate_closes=True)
+    with fake_stream(transaction, hook, server_side=True):
+        pass
+    assert fake.cancels == 0 and transaction.invalidated == 0  # the statement had ended: nothing to cancel
+    assert fake.cursors[0].closed
+
+
+def test_f4_a_cursor_whose_statement_got_a_cancel_is_closed_without_the_database() -> None:
+    """A cancel sent while the statement ran may still reach the server late: the connection is discarded first, and
+    the cursor is closed without a ``CLOSE`` on it."""
+    fake = FakeClosingPsycopg()
+    hook = Cancel()
+    fake.on_execute = hook.cancel
+    transaction = FakeTransaction(fake, invalidate_closes=True)
+    with pytest.raises(Cancelled), fake_stream(transaction, hook, server_side=True):
+        pass
+    assert fake.cancels == 1 and transaction.invalidated == 1 and fake.closed
+    assert fake.cursors[0].closed
+
+
+def test_f4_a_cursor_that_cannot_close_closes_with_its_connection() -> None:
+    fake = FakeClosingPsycopg()
+    fake.cancels = 1  # whatever makes CLOSE fail on an open connection
+    transaction = FakeTransaction(fake, invalidate_closes=True)
+    with fake_stream(transaction, Cancel(), server_side=True):
+        pass
+    assert transaction.invalidated == 1 and fake.cursors[0].closed
 
 
 #: The reviewer's race: cancels after 0 to 30 ms (spread evenly, so the test is the same on every run).
@@ -875,6 +944,33 @@ def test_a_session_returned_after_close_is_closed(sqlite_file: Path) -> None:
         holder.join()
     with pytest.raises(sqlite3.ProgrammingError):  # closed at check-in, still referenced here
         held[0].execute("SELECT 1")
+
+
+def test_f3_an_open_connection_reuses_its_session(sqlite_file: Path) -> None:
+    """The close-after-dispose listener closes only after ``close()``: while open, sessions are pooled."""
+    registry = ConnectionRegistry(sqlite_source(sqlite_file))
+    try:
+        connection = registry.get(registry.open("project:parts").id)
+        seen = []
+        for _ in range(3):
+            with connection._read() as transaction:
+                seen.append(transaction.connection.connection.dbapi_connection)
+        assert seen[0] is seen[1] is seen[2]
+    finally:
+        registry.close_all()
+
+
+def test_f2_a_closed_connection_is_freed_without_the_cycle_collector(sqlite_file: Path) -> None:
+    """The check-in listener does not keep its Database alive (no db -> engine -> pool -> listener -> db cycle)."""
+    registry = ConnectionRegistry(sqlite_source(sqlite_file))
+    connection_id = registry.open("project:parts").id
+    database = weakref.ref(registry.get(connection_id)._db)
+    gc.disable()
+    try:
+        registry.close_all()
+        assert database() is None
+    finally:
+        gc.enable()
 
 
 # M-2: startup options and the check-in reset.
