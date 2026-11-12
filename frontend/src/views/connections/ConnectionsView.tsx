@@ -315,7 +315,7 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
   const [status, setStatus] = useState<{ text: string; problem: boolean } | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [opened, setOpened] = useState<OpenedConnection[]>([]);
-  const { setActive, forgetProd, latestConnect, isLatestConnect } = useConnectionSession();
+  const { setActive, forgetProd, headerVersion } = useConnectionSession();
   const { guard, connect, dialog: prodDialog } = useConnect(fetcher);
   /** Where the focus goes when the button that had it goes away (Disconnect; L-1 of the connect review). */
   const connectButton = useRef<HTMLButtonElement>(null);
@@ -335,8 +335,9 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     (list: OpenedConnection[] | null, stamp: number) => {
       if (list === null) return;
       setOpened(list);
-      // A list read before a newer connect request started may miss that connection: it clears nothing.
-      if (!isLatestConnect(stamp)) return;
+      // A list read before the header last changed (a connect started or ended meanwhile) may miss the header's
+      // connection: it clears nothing. A newer read follows that change.
+      if (headerVersion() !== stamp) return;
       setActive((current) =>
         current?.connectionId !== undefined &&
         !list.some((item) => item.connectionId === current.connectionId)
@@ -344,17 +345,17 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
           : current,
       );
     },
-    [setActive, isLatestConnect],
+    [setActive, headerVersion],
   );
 
-  /** Read the open connections again (with the connect request they were read after). */
+  /** Read the open connections again (with the header version they were read at). */
   const refreshOpen = useCallback(() => {
-    const stamp = latestConnect();
+    const stamp = headerVersion();
     void fetchOpenConnections(fetcher).then((list) => syncOpen(list, stamp));
-  }, [fetcher, syncOpen, latestConnect]);
+  }, [fetcher, syncOpen, headerVersion]);
 
   const load = useCallback(async () => {
-    const stamp = latestConnect();
+    const stamp = headerVersion();
     const [profiles, available, open] = await Promise.all([
       fetchProfiles(fetcher),
       fetchKeyringAvailable(fetcher),
@@ -364,11 +365,11 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     setKeyring(available);
     syncOpen(open, stamp);
     return profiles;
-  }, [fetcher, syncOpen, latestConnect]);
+  }, [fetcher, syncOpen, headerVersion]);
 
   useEffect(() => {
     let active = true;
-    const stamp = latestConnect();
+    const stamp = headerVersion();
     void Promise.all([
       fetchProfiles(fetcher),
       fetchKeyringAvailable(fetcher),
@@ -382,7 +383,7 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
     return () => {
       active = false;
     };
-  }, [fetcher, syncOpen, latestConnect]);
+  }, [fetcher, syncOpen, headerVersion]);
 
   /** A missing password opens the password dialog; the action runs again after it was saved (08 section 5). */
   const askPassword = (item: ProfileItem, problem: Problem, then: Action): boolean => {

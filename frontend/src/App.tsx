@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { startAppearanceSync } from './appearance';
@@ -86,14 +94,19 @@ export function App({
   const [ended, setEnded] = useState(false);
   const [offline, setOffline] = useState(false);
   const wasOffline = useRef(false);
-  const [active, setActive] = useState<ActiveConnection | null>(null);
+  const [active, setHeader] = useState<ActiveConnection | null>(null);
+  /** The header's version: every change of `active` through the session and every connect request counts. */
+  const headerChanges = useRef(0);
+  const setActive = useCallback<Dispatch<SetStateAction<ActiveConnection | null>>>((next) => {
+    headerChanges.current += 1;
+    setHeader(next);
+  }, []);
   /** D-02 confirmations: `prodKey` -> profile id. */
   const [confirmed] = useState(() => new Map<string, string>());
   const requests = useRef(0);
-  const connections = useMemo<ConnectionSession>(
+  // The functions keep their identity when the header changes, so views that depend on them do not reload.
+  const sessionFunctions = useMemo<Omit<ConnectionSession, 'active' | 'setActive'>>(
     () => ({
-      active,
-      setActive,
       prodConfirmed: (target) => confirmed.has(prodKey(target)),
       confirmProd: (target) => {
         confirmed.set(prodKey(target), target.id);
@@ -101,11 +114,18 @@ export function App({
       forgetProd: (matches) => {
         for (const [key, id] of [...confirmed]) if (matches(id)) confirmed.delete(key);
       },
-      beginConnect: () => ++requests.current,
+      beginConnect: () => {
+        headerChanges.current += 1;
+        return ++requests.current;
+      },
       isLatestConnect: (request) => request === requests.current,
-      latestConnect: () => requests.current,
+      headerVersion: () => headerChanges.current,
     }),
-    [active, confirmed],
+    [confirmed],
+  );
+  const connections = useMemo<ConnectionSession>(
+    () => ({ active, setActive, ...sessionFunctions }),
+    [active, setActive, sessionFunctions],
   );
   const shown = useMemo<Workspace>(
     () => workspace ?? { connection: active, tabs: [], activeTab: null },

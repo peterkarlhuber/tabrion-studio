@@ -661,6 +661,123 @@ describe('review fixes of the connect review (#42)', () => {
     await within(header()).findByRole('button', { name: /No connection/ });
   });
 
+  it.each([
+    ['opens', 'parts-dev, connected'],
+    ['fails', 'No connection'],
+  ])(
+    'L-10 (delta review): a slow connect that %s after a newer one failed does not leave "connecting"',
+    async (outcome, shown) => {
+      const slow = deferred();
+      const { fetcher, open } = server({
+        'POST /api/connections': [
+          slow.answer,
+          problem(502, { code: 'db.connection', kind: 'connection', status: 502 }),
+        ],
+      });
+      await manager(fetcher);
+      await userEvent.click(
+        within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+      );
+      const detail = await select('measure');
+      await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+      await confirmProd();
+      await within(detail).findByText(/Not connected/);
+      // The newer request failed and gave the header back to what it showed: parts-dev, still opening.
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connecting',
+      );
+      const opened = {
+        connection_id: 'c-project:parts-dev',
+        profile_id: 'project:parts-dev',
+        engine: 'sqlite',
+        environment: 'dev',
+        read_only: true,
+        url: 'sqlite:///x',
+        opened_at: 1,
+      };
+      if (outcome === 'opens') open.set(opened.connection_id, opened);
+      slow.resolve(
+        outcome === 'opens'
+          ? json(opened, 201)
+          : json({ code: 'db.connection', kind: 'connection', status: 502 }, 502),
+      );
+      await waitFor(() => expect(header()).toHaveTextContent(shown));
+      expect(header()).not.toHaveTextContent('connecting');
+    },
+  );
+
+  it('L-1 (delta review): a click on a button marked busy starts nothing', async () => {
+    const slow = deferred();
+    const { fetcher, calls } = server({ 'POST /api/connection-tests': slow.answer });
+    await manager(fetcher);
+    const detail = await select('parts-dev');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    const use = within(detail).getByRole('button', { name: 'Use this connection' });
+    await waitFor(() => expect(use).toHaveAttribute('aria-disabled', 'true'));
+    // While the test runs, Use, Disconnect and Test are marked busy and do nothing.
+    await userEvent.click(use);
+    await userEvent.click(within(detail).getByRole('button', { name: 'Disconnect' }));
+    await userEvent.click(within(detail).getByRole('button', { name: 'Test connection' }));
+    const sent = () => writes(calls).map((call) => `${call.method} ${call.url}`);
+    expect(sent()).toEqual(['POST /api/connections', 'POST /api/connection-tests']);
+    slow.resolve(json({ ...PG_TEST, engine: 'sqlite', server_version: '3.45.1', facts: {} }));
+    await within(detail).findByText(/Connection works/);
+    expect(sent()).toHaveLength(2);
+    expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+      'parts-dev, connected',
+    );
+  });
+
+  it('an open list read while a connect runs, and answered after it, does not clear the header', async () => {
+    // The e2e flake of backend.spec (the switcher did not appear after Connect): a list of the open connections
+    // read before the server had the new connection, answering after the header showed it, cleared it again.
+    const slow = deferred();
+    const late = deferred();
+    let hold = false;
+    const { fetcher, open } = server({
+      'POST /api/connections': slow.answer,
+      'GET /api/connections': () => (hold ? (late.promise as unknown as Response) : null),
+    });
+    await manager(fetcher);
+    await userEvent.click(
+      within(await select('parts-dev')).getByRole('button', { name: 'Connect' }),
+    );
+    await within(header()).findByText(/connecting/);
+    // Something else reads the list while the connect runs (here: a password removed for another profile).
+    hold = true;
+    const detail = await select('measure');
+    await userEvent.click(within(detail).getByRole('button', { name: 'Remove saved password' }));
+    hold = false;
+    const opened = {
+      connection_id: 'c-project:parts-dev',
+      profile_id: 'project:parts-dev',
+      engine: 'sqlite',
+      environment: 'dev',
+      read_only: true,
+      url: 'sqlite:///x',
+      opened_at: 1,
+    };
+    open.set(opened.connection_id, opened);
+    slow.resolve(json(opened, 201));
+    await waitFor(() =>
+      expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+        'parts-dev, connected',
+      ),
+    );
+    late.resolve(json({ connections: [] }));
+    await late.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(within(header()).getByTestId('connection-switcher')).toHaveTextContent(
+      'parts-dev, connected',
+    );
+  });
+
   it('L-3: a connection that opens after the profile was switched does not become the header connection', async () => {
     const slow = deferred();
     const { fetcher } = server({ 'POST /api/connections': slow.answer });

@@ -55,6 +55,13 @@ describe('withoutPassword (L-2 of the connect review)', () => {
     ['postgresql://ro@h/m', 'postgresql://ro@h/m'],
     ['postgresql://h:5432/m', 'postgresql://h:5432/m'],
     ['mysql://h/d', 'mysql://h/d'],
+    // The delta review's residue: a password given as a query parameter.
+    ['postgresql://ro@h/m?password=pw', 'postgresql://ro@h/m'],
+    ['postgresql://h/m?sslmode=require&password=pw&x=1', 'postgresql://h/m?sslmode=require&x=1'],
+    ['postgresql://h/m?%70assword=pw', 'postgresql://h/m'],
+    ['postgresql://h/m?PASSWORD=pw&password=two', 'postgresql://h/m'],
+    ['postgresql://ro:pw@h/m?password=pw2&passfile=x', 'postgresql://ro@h/m?passfile=x'],
+    ['postgresql://h/m?passwords=x', 'postgresql://h/m?passwords=x'],
   ])('%s -> %s', (text, expected) => {
     expect(withoutPassword(text)).toBe(expected);
   });
