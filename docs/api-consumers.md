@@ -15,16 +15,24 @@ is used.
 | `tabrion.TLSMode.INSECURE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.REQUIRE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.VERIFY_FULL` | `src/tabrion_studio/services/connections.py` |
-| `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py` |
+| `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.Transaction` | `src/tabrion_studio/services/tabrion_compat.py` |
+| `tabrion.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Finding` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity` | `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity.ERROR` | `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity.INFO` | `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity.WARNING` | `tests/security/test_diagnostics.py` |
+| `tabrion.check.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py` |
-| `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py` |
+| `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
 | `tabrion.errors.Kind` | `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/queries.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/unit/test_problems.py` |
+| `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.safe_url` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py` |

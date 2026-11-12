@@ -490,7 +490,17 @@ def test_stu_t_011_every_environment_gets_a_read_only_profile() -> None:
 
 def test_stu_t_012_a_handle_offers_no_way_to_write() -> None:
     public = {name for name in dir(OpenConnection) if not name.startswith("_")}
-    assert public == {"close", "fetch", "health", "inspect", "prepare", "read_only", "stream", "to_dict"}
+    assert public == {
+        "close",
+        "fetch",
+        "health",
+        "inspect",
+        "prepare",
+        "read_only",
+        "stream",
+        "tabrion_findings",
+        "to_dict",
+    }
     assert not any(hasattr(module, "transaction") for module in (connections_module,))
 
 

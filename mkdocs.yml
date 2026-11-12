@@ -71,6 +71,8 @@ nav:
       - Query engine: architecture/queries.md
       - Database explorer: architecture/explorer.md
       - Data viewer: architecture/viewer.md
+      - Diagnostics: architecture/diagnostics.md
+      - Migration status: architecture/migrations.md
       - Export: architecture/exports.md
       - App shell and design system: architecture/frontend.md
       - Accessibility audit: architecture/accessibility.md

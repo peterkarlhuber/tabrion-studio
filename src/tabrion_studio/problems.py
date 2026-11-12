@@ -472,6 +472,57 @@ CATALOG: dict[str, Entry] = {
         "The row is no longer in the table, or it changed.",
         "Load the table again.",
     ),
+    # Migration status and code trust (STU-015, threat T-16).
+    "studio.no_migrations": Entry(
+        404, ProblemKind.CONFIG, "No Alembic project", "The project folder has no alembic.ini with a script_location."
+    ),
+    "studio.migrations_invalid": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Migrations folder not valid",
+        "The project's Alembic files cannot be checked, so their code cannot be trusted.",
+        "Check that script_location lies inside the project and that its versions folder holds only plain files.",
+    ),
+    "studio.migrations_changed": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Migration code changed",
+        "The project's Alembic files changed after they were trusted, so their code did not run.",
+        "Review the project's migration code again.",
+    ),
+    "studio.migrations_timeout": Entry(
+        504,
+        ProblemKind.DATABASE,
+        "Migration status timed out",
+        "Reading the revisions took too long and was stopped.",
+    ),
+    "studio.migrations_busy": Entry(
+        429,
+        ProblemKind.DATABASE,
+        "Migration status busy",
+        "Studio reads the revisions of one migration status at a time, and another one is running.",
+        "Try again when it has finished.",
+    ),
+    "studio.migrations_revisions": Entry(
+        422,
+        ProblemKind.CONFIG,
+        "Revisions not readable",
+        "Alembic could not read the revision graph of the project's migrations folder.",
+        "Run alembic heads in the project to see the error.",
+    ),
+    "studio.migrations_database": Entry(
+        502,
+        ProblemKind.DATABASE,
+        "Version table not readable",
+        "The database did not answer while Studio read the Alembic version table.",
+    ),
+    "studio.migrations_failed": Entry(
+        500,
+        ProblemKind.INTERNAL,
+        "Migration status failed",
+        "The process that reads the project's revisions ended without an answer.",
+        "Run alembic heads in the project to see whether its revision files load.",
+    ),
     # Export (STU-021).
     "studio.export_invalid": Entry(
         400,

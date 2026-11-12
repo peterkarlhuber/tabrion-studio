@@ -103,7 +103,8 @@ jobs:
     name: backend integration (PostgreSQL 17)
     # STU-009 (03 section 8, TD-012): the PostgreSQL tests (marker "postgres") against a real server, as a role that
     # owns its database but is no superuser, so only Studio's read-only settings stop the writes. Password
-    # authentication (SCRAM), so the M-1 tests (no libpq password fallback) mean something.
+    # authentication (SCRAM), so the M-1 tests (no libpq password fallback) mean something. The tests that make roles
+    # (marker "postgres_superuser", STU-014 CI-1) use the service's own superuser, set on the pytest step only.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -139,7 +140,10 @@ jobs:
               admin.execute("CREATE DATABASE studio_test OWNER studio_owner")
               print(admin.execute("SELECT version()").fetchone()[0])
           PY
-      - run: pytest -m postgres -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/postgres.xml"
+      - run: pytest -m "postgres or postgres_superuser" -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/postgres.xml"
+        env:
+          # The throwaway server's own superuser, for the tests that make roles (marker postgres_superuser, CI-1).
+          TABRION_STUDIO_TEST_POSTGRES_SUPERUSER: postgresql://postgres:ci-admin-pw@127.0.0.1:5432/studio_test
       - name: Every PostgreSQL test ran and none was skipped
         env:
           JUNIT: ${{ runner.temp }}/postgres.xml
@@ -152,7 +156,7 @@ jobs:
           skipped = sum(int(s.get("skipped", 0)) for s in suites)
           bad = sum(int(s.get("failures", 0)) + int(s.get("errors", 0)) for s in suites)
           print(f"{tests} tests, {skipped} skipped, {bad} failed")
-          assert tests >= 10 and skipped == 0 and bad == 0, (tests, skipped, bad)
+          assert tests >= 50 and skipped == 0 and bad == 0, (tests, skipped, bad)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
               summary.write(f"### PostgreSQL 17\n\n{tests} tests passed, none skipped\n")
           PY
