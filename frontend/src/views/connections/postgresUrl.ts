@@ -64,16 +64,43 @@ export function parsePostgresUrl(text: string): PostgresUrl | UrlRefusal {
 }
 
 /**
- * `text` without the password of its user part (`postgresql://user:secret@host` -> `postgresql://user@host`), so a
- * refused URL does not keep showing its password (L-2 of `stu-008-connect-review.md`). The user part ends at the last
- * `@` before the path, as the URL parser reads it. When the user part cannot be found that way (a `/` in the
- * password) but the text still looks like it holds `user:password@`, the whole text goes.
+ * `text` without its passwords, so a refused URL does not keep showing one (L-2 of `stu-008-connect-review.md`):
+ *
+ * - the password of the user part (`postgresql://user:secret@host` -> `postgresql://user@host`). The user part ends at
+ *   the last `@` before the path, as the URL parser reads it. When the user part cannot be found that way (a `/` in
+ *   the password) but the text still looks like it holds `user:password@`, the whole text goes;
+ * - every `password` and `sslpassword` parameter of the query (`?password=secret`), its name read as the URL parser
+ *   decodes it.
  */
 export function withoutPassword(text: string): string {
+  return withoutPasswordParameter(withoutUserPassword(text));
+}
+
+function withoutUserPassword(text: string): string {
   const match = /^(\s*[a-z]+:\/\/)([^/?#]*)@/i.exec(text);
   if (match === null) return /^\s*[a-z]+:\/\/[^@]*:[^@]*@/i.test(text) ? '' : text;
   const userinfo = match[2] ?? '';
   const colon = userinfo.indexOf(':');
   if (colon < 0) return text;
   return `${match[1]}${userinfo.slice(0, colon)}@${text.slice(match[0].length)}`;
+}
+
+/** Query parameters that hold a secret: the password, and libpq's passphrase of the client key. */
+const SECRET_PARAMETERS = new Set(['password', 'sslpassword']);
+
+function parameterName(part: string): string {
+  const name = part.split('=', 1)[0] ?? '';
+  return (decode(name.replace(/\+/g, ' ')) ?? name).trim().toLowerCase();
+}
+
+function withoutPasswordParameter(text: string): string {
+  const start = text.indexOf('?');
+  if (start < 0) return text;
+  const hash = text.indexOf('#', start);
+  const end = hash < 0 ? text.length : hash;
+  const parts = text.slice(start + 1, end).split('&');
+  const kept = parts.filter((part) => !SECRET_PARAMETERS.has(parameterName(part)));
+  if (kept.length === parts.length) return text;
+  const query = kept.filter((part) => part !== '').join('&');
+  return `${text.slice(0, start)}${query === '' ? '' : `?${query}`}${text.slice(end)}`;
 }

@@ -79,6 +79,7 @@ export function prodKey(target: ProdTarget): string {
  * is asked every time.
  *
  * `beginConnect` numbers the connect requests: only the newest may still set the header (`isLatestConnect`).
+ * `headerVersion` counts the header's changes: a list of open connections read before a change is outdated.
  */
 export interface ConnectionSession {
   active: ActiveConnection | null;
@@ -89,8 +90,11 @@ export interface ConnectionSession {
   forgetProd: (matches: (profileId: string) => boolean) => void;
   beginConnect: () => number;
   isLatestConnect: (request: number) => boolean;
-  /** The number of the newest connect request so far (a list read before a newer request must not clear it). */
-  latestConnect: () => number;
+  /**
+   * Counts every change of the header through `setActive` and every connect request. A list of open connections read
+   * while it had another value may miss the header's connection, so it must not clear it.
+   */
+  headerVersion: () => number;
 }
 
 export const NO_CONNECTION_SESSION: ConnectionSession = {
@@ -101,7 +105,7 @@ export const NO_CONNECTION_SESSION: ConnectionSession = {
   forgetProd: () => undefined,
   beginConnect: () => 0,
   isLatestConnect: () => true,
-  latestConnect: () => 0,
+  headerVersion: () => 0,
 };
 
 export const ConnectionSessionContext = createContext<ConnectionSession>(NO_CONNECTION_SESSION);
