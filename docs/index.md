@@ -10,10 +10,12 @@ Tabrion Studio is a local developer tool for SQLite files and PostgreSQL databas
 and opens in the browser.
 
 !!! warning "Pre-alpha"
-    This is the project skeleton (work packages STU-001, STU-002, STU-003, STU-005, STU-018, STU-031, STU-051): the
-    command-line process model, CI, the license and supply-chain checks, the access protection and the empty app
-    shell. Nothing is released or published.
+    Studio does not connect to databases yet. It has the command-line process model, the access protection, Problem
+    JSON errors and redacted logs, the configuration files, profiles and project trust, saved passwords, the
+    connection manager and the settings, the app shell in German and English, and the command palette. Nothing is
+    released or published; distribution is by Git SHA pin.
 
+- [User guide](guide/index.md): installing, starting, connections, settings and troubleshooting.
 - [Process model](architecture/process-model.md): how `tabrion-studio` starts, reuses and stops its server.
 - [Access protection](architecture/access-protection.md) and the
   [app shell and design system](architecture/frontend.md).

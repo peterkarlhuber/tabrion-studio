@@ -53,6 +53,14 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - User guide:
+      - guide/index.md
+      - Installation: guide/installation.md
+      - Starting and stopping: guide/starting.md
+      - Connections: guide/connections.md
+      - Settings and keyboard: guide/settings.md
+      - How Studio protects your data: guide/security.md
+      - Troubleshooting: guide/troubleshooting.md
   - Architecture:
       - Process model: architecture/process-model.md
       - Access protection: architecture/access-protection.md
@@ -68,6 +76,8 @@ nav:
   - Development:
       - Building and testing: development/building.md
       - CI and supply chain: development/ci.md
+      - Repository conventions: development/conventions.md
+      - Tabrion API used: api-consumers.md
   - Architecture decisions:
       - adr/README.md
       - "0001 Local web app": adr/0001-local-web-app.md
