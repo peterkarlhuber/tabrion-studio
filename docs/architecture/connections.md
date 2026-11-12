@@ -20,16 +20,43 @@ services (import-linter contracts `services-below-api` and `engines-only-in-serv
 
 | Route | Body | Answer |
 |---|---|---|
-| `POST /api/connections` | `{"profile_id"}` | 201 `{connection_id, profile_id, engine, environment, read_only: true, url, opened_at}` |
+| `POST /api/connections` | `{"profile_id", "confirmed_environment"}` | 201 `{connection_id, profile_id, engine, environment, read_only: true, url, opened_at}`; `studio.prod_confirmation_required` (409, see below) |
 | `GET /api/connections` | – | `{"connections": [...]}` (each checked against its profile; a stale one is closed and left out) |
 | `DELETE /api/connections` | `{"connection_id"}` | 204, or `studio.connection_not_found` |
-| `POST /api/connection-tests` | `{"profile_id"}` | `{ok, engine, environment, server_version, latency_ms, read_only, facts}`; the connection is closed again |
+| `POST /api/connection-tests` | `{"profile_id", "confirmed_environment"}` | `{ok, engine, environment, server_version, latency_ms, read_only, facts}`; the connection is closed again; `studio.prod_confirmation_required` (409) |
 
 The ids go in the body, like the profile routes. All routes sit behind the access middleware (session, CSRF,
 Origin, JSON). `url` comes from `tabrion.safe_url` and never contains the password. The connection is checked with
 `Database.health()` before the answer, so a wrong password is the answer to "open" (a `db.<kind>` problem).
 An open connection of the same profile is returned again, and at most 8 are open (`studio.connection_limit`).
 Opening and closing run in a worker thread. Shutdown disposes every engine.
+
+### D-02 on the server: `confirmed_environment` (TD-038)
+
+The page asks D-02 before it opens a PROD connection, but it decides from the profile list it loaded. That list can
+be stale: another tab, or a hand edit of `profiles.toml`, may have made the profile PROD since. So the server checks
+too.
+
+- **Every caller of `POST /api/connections` and `POST /api/connection-tests` sends `confirmed_environment`:** the
+  profile's environment as the page shows it (`"dev"`, `"test"` or `"prod"`), and `"prod"` only after D-02 was
+  confirmed for that profile. In the page this is the third argument of `openConnection` (`api/connections.ts` and
+  `api/migrations.ts`) and `testConnection`: `openConnection(fetcher, profile.id, profile.environment)`, called after
+  the view's D-02 step. The argument is required (C-2 of the #48 review): a call that leaves it out does not compile,
+  so `npm run build` fails until every caller names the environment it confirmed.
+- The server reads the profile when it opens the connection, and checks it on that same read
+  (`require_prod_confirmation` in `services/connections.py`). A profile that is `prod` now opens, is tested, or has its
+  already open connection returned only with `"prod"`.
+- **Fail closed:** a missing or `null` value means "not confirmed". A client that does not send the field (a script,
+  or page code from before this change) still opens DEV and TEST profiles, but gets 409
+  `studio.prod_confirmation_required` for every PROD profile. A value other than the three is `access.bad_request`.
+- **On 409 `studio.prod_confirmation_required`:** the problem carries no profile data (problems never carry request or
+  profile values, T-05). The page reads the profile again (`GET /api/profiles`), asks D-02 for it as it is now, and
+  sends the request again with `"prod"`. The connection manager does this at once, and at most once: a refusal for a
+  profile it already shows as PROD is only shown. The migration status, diagnostics and explorer views and the SQL
+  editor show the problem text, read their profile list again, and ask D-02 on the next click (in the editor: the
+  next run).
+- D-02 is still a page dialog; the server only refuses a PROD connection that no page confirmed. It cannot tell which
+  person confirmed, so a script with a session can still send `"prod"`.
 
 ## The connection test (STU-008)
 
@@ -55,16 +82,19 @@ nowhere else (OA-010), so "Test the connection after saving" replaces 08's test 
 The test opens a connection, so for a PROD profile the page asks D-02 before it, like before "Connect": the button,
 the test after saving and the retry after the password dialog (`stu-008-connect-review.md` C-2). The confirmation
 holds for the page session and belongs to the profile's target (id, environment, engine, host, port, database, user,
-path); saving or deleting the profile and trusting the project file again forget it. D-02 is a page rule: the routes
-do not check the environment (TD-038).
+path); saving or deleting the profile and trusting the project file again forget it. The routes check it too: see
+"D-02 on the server" above.
 
 ## How a connection is opened
 
 1. The profile entry comes from `Configuration.entry(id)`. Project profiles exist only while the project file is
    trusted.
-2. **SQLite:** the file comes from `Configuration.database_file(id)`.
+2. **SQLite:** the file comes from `Configuration.database_file(entry)`, with the entry of step 1: the same read of
+   the profile that passed the D-02 check, never a second read of `profiles.toml` (C-1 of the #48 review), so a file
+   rewritten in between cannot put another database behind a check that passed.
    - For a project profile, that call goes to `ProjectConfig.database_file`, which checks the trust state and the
-     confirmed containment again on the file system (review T-1). Studio opens exactly the real path it returns.
+     confirmed containment again on the file system (review T-1). Studio opens exactly the real path it returns. The
+     trusted profile it reads must equal the entry, or it refuses with `studio.project_untrusted` (fail closed).
    - A relative path of the user's own profile is relative to the configuration folder.
    - A missing file is `studio.database_missing`; Studio never creates one.
 3. **PostgreSQL:** the password comes from `Configuration.resolve_entry_secret(entry)` when the connection opens:
@@ -176,7 +206,7 @@ server's text. User SQL, the viewer and the exports run under the session's path
 | `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
 | `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; a wrong password is `db.connection` without server text; `url` has no password |
 | `tests/security/test_read_only.py` (STU-008) | the connection test's facts on SQLite (WAL, foreign keys, encoding; the file unchanged, nothing left open) and PostgreSQL (role, superuser, bypass RLS and encoding as the catalog says, time zone, TLS); facts that cannot be read leave the answer; only short printable text |
-| `tests/security/test_connections_api.py` | open, reuse, list, test and close through the API; a changed profile and a changed project file close the connection; a project file opens only after trust; refusals as fixed problems; session and CSRF required; shutdown disposes the engines |
+| `tests/security/test_connections_api.py` | open, reuse, list, test and close through the API; a changed profile and a changed project file close the connection; a project file opens only after trust; refusals as fixed problems; session and CSRF required; D-02 on the server (TD-038); a SQLite file from the read that passed the check, with `profiles.toml` rewritten in between, and a project profile that is no longer the checked read (C-1 of the #48 review); shutdown disposes the engines |
 | `tests/unit/test_problems.py` | `DB_KINDS` is `tabrion.errors.Kind`; a `db.<kind>` problem takes only the kind and the SQLSTATE from the error |
 
 The PostgreSQL tests need a database whose owner role they may use. Locally:

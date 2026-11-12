@@ -105,6 +105,21 @@ class RegistryError(Exception):
         self.code = code
 
 
+#: The environments a page may name as the one it confirmed (``confirmed_environment``).
+ENVIRONMENTS = frozenset({"dev", "test", "prod"})
+
+
+def require_prod_confirmation(environment: str, confirmed_environment: str | None) -> None:
+    """D-02 on the server (TD-038): a PROD connection opens only when the caller says it confirmed PROD.
+
+    The page asks D-02 from the profile list it loaded; that list may be stale (the profile was changed to ``prod`` in
+    another tab or in ``profiles.toml``). So the caller sends the environment it confirmed for, and the server compares
+    it with the profile as it reads it now. Nothing sent counts as "not confirmed" (fail closed).
+    """
+    if environment == "prod" and confirmed_environment != "prod":
+        raise RegistryError("studio.prod_confirmation_required")
+
+
 class ProfileEntryLike(Protocol):
     @property
     def id(self) -> str: ...
@@ -119,7 +134,7 @@ class ProfileSource(Protocol):
 
     def entry(self, profile_id: str) -> ProfileEntryLike: ...
     def resolve_entry_secret(self, entry: Any) -> str: ...
-    def database_file(self, profile_id: str) -> Path: ...
+    def database_file(self, entry: Any) -> Path: ...
     def limits(self) -> Settings: ...
 
 
@@ -442,7 +457,8 @@ class ConnectionRegistry:
         password: str | None = None
         if profile.engine == "sqlite":
             # T-1: a project file only through database_file, which re-checks the trust and the containment now.
-            database_file = self.source.database_file(profile_id)
+            # C-1 of the #48 review: the path of this very entry, the read that passed the D-02 check.
+            database_file = self.source.database_file(entry)
         else:
             try:
                 # L-1 of stu-009-review.md: the secret of this very entry, so the URL and the password come from
@@ -464,7 +480,12 @@ class ConnectionRegistry:
         connection must be open and still valid (``get``)."""
         connection = self.get(connection_id)
         entry = self.source.entry(connection.profile_id)
-        if target_fingerprint(entry.profile.to_dict()) != connection.fingerprint:
+        # I-2 of the #48 delta review: this read must still be the connection's target *and* environment (a profile
+        # that became PROD after ``get`` must not hand a DEV connection's target to a worker).
+        if (
+            target_fingerprint(entry.profile.to_dict()) != connection.fingerprint
+            or entry.profile.environment != connection.environment
+        ):
             raise RegistryError("studio.connection_stale")
         database_file, password = self._credentials(connection.profile_id, entry)
         profile = entry.profile
@@ -481,9 +502,11 @@ class ConnectionRegistry:
             "password": password,
         }
 
-    def _connect(self, profile_id: str) -> OpenConnection:
+    def _connect(self, profile_id: str, confirmed_environment: str | None) -> OpenConnection:
         entry = self.source.entry(profile_id)
         profile = entry.profile
+        # The same read of the profile as the connection's target: no window for a change in between.
+        require_prod_confirmation(profile.environment, confirmed_environment)
         limits = self.source.limits()
         database_file, password = self._credentials(profile_id, entry)
         db = read_only_database(profile, limits, password, database_file)
@@ -515,8 +538,12 @@ class ConnectionRegistry:
             raise _health_error(health)
         return connection
 
-    def open(self, profile_id: str) -> OpenConnection:
-        """Open (or return the open) connection of ``profile_id``."""
+    def open(self, profile_id: str, confirmed_environment: str | None = None) -> OpenConnection:
+        """Open (or return the open) connection of ``profile_id``.
+
+        ``confirmed_environment`` is the environment the caller confirmed for (D-02); a PROD profile needs ``"prod"``,
+        also to get back a connection that is already open (:func:`require_prod_confirmation`).
+        """
         with self._lock:
             for connection in self._open.values():
                 if connection.profile_id == profile_id:
@@ -526,8 +553,10 @@ class ConnectionRegistry:
             if connection is None and len(self._open) >= self.max_open:
                 raise RegistryError("studio.connection_limit")
         if connection is not None:
-            return self.get(connection.id)
-        connection = self._connect(profile_id)
+            existing = self.get(connection.id)
+            require_prod_confirmation(existing.environment, confirmed_environment)
+            return existing
+        connection = self._connect(profile_id, confirmed_environment)
         with self._lock:
             if len(self._open) >= self.max_open:
                 connection.close()
@@ -551,13 +580,14 @@ class ConnectionRegistry:
 
     def _still_valid(self, connection: OpenConnection) -> bool:
         try:
-            profile = self.source.entry(connection.profile_id).profile
+            entry = self.source.entry(connection.profile_id)
+            profile = entry.profile
             if target_fingerprint(profile.to_dict()) != connection.fingerprint:
                 return False
             if profile.environment != connection.environment:
                 return False
             if connection.database_file is not None:
-                return self.source.database_file(connection.profile_id) == connection.database_file
+                return self.source.database_file(entry) == connection.database_file
         except Exception:  # gone, no longer trusted, damaged: the connection must not be used
             return False
         return True
@@ -593,14 +623,15 @@ class ConnectionRegistry:
                 connection.close()
             self._closed(connection.id)
 
-    def test(self, profile_id: str) -> dict[str, Any]:
+    def test(self, profile_id: str, confirmed_environment: str | None = None) -> dict[str, Any]:
         """The connection test (STU-008, TD-011): open, check, read the facts of :func:`connection_facts`, close;
-        never keeps the connection."""
+        never keeps the connection. It connects, so a PROD profile needs ``confirmed_environment="prod"`` like
+        :meth:`open` (C-2 of ``stu-008-connect-review.md``)."""
         with self._lock:
             # A test shares the limit of open connections (review I-4).
             if len(self._open) >= self.max_open:
                 raise RegistryError("studio.connection_limit")
-        connection = self._connect(profile_id)
+        connection = self._connect(profile_id, confirmed_environment)
         try:
             health = connection.health()
             facts = connection_facts(connection)

@@ -50,6 +50,7 @@ import {
 } from '../../api/explorer';
 import { openConnection } from '../../api/migrations';
 import { OFFLINE, type Problem } from '../../api/problem';
+import { PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import { ProdConnectDialog } from '../../components/dialogs/StudioDialogs';
 import { EnvBadge } from '../../components/status/Status';
@@ -389,7 +390,8 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setDetail(null);
     setMessage(t('explorer.opening'));
     const connecting = connections.beginConnect();
-    const result = await openConnection(fetcher, profile.id);
+    // The environment this page confirmed for (D-02 on the server, TD-038).
+    const result = await openConnection(fetcher, profile.id, profile.environment);
     if (mine !== request.current) return;
     // Only the newest connect request of the page sets the header (L-4 of stu-008-connect-review.md).
     if (result.ok && connections.isLatestConnect(connecting)) {
@@ -405,6 +407,12 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       setPhase('idle');
       setProblem(result.problem);
       setMessage('');
+      // The profile became PROD after this page read it: read the profiles again, so the next try asks D-02.
+      if (result.problem.code === PROD_CONFIRMATION_REQUIRED) {
+        void fetchProfiles(fetcher).then((list) => {
+          if (list !== null) setProfiles(list.profiles);
+        });
+      }
       return;
     }
     await loadCatalog(mine, { ...target, connectionId: result.value }, false);

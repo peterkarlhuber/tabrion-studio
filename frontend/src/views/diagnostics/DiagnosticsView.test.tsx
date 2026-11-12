@@ -197,7 +197,11 @@ describe('diagnostics view: run', () => {
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
     await screen.findByTestId('diagnostics-findings');
     expect(writes(calls).map((call) => [call.method, call.url, call.body])).toEqual([
-      ['POST', '/api/connections', { profile_id: 'project:parts-dev' }],
+      [
+        'POST',
+        '/api/connections',
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+      ],
       ['POST', '/api/connections/c1/diagnostics', {}],
     ]);
     for (const call of writes(calls)) expect(call.headers['Content-Type']).toBe('application/json');
@@ -286,7 +290,10 @@ describe('diagnostics view: run', () => {
       '/api/connections',
       '/api/connections/c1/diagnostics',
     ]);
-    expect(writes(calls)[0]?.body).toEqual({ profile_id: 'user:measure' });
+    expect(writes(calls)[0]?.body).toEqual({
+      profile_id: 'user:measure',
+      confirmed_environment: 'prod',
+    });
     expect(screen.getByTestId('env-badge')).toHaveAttribute('data-env', 'prod');
   });
 
@@ -1192,7 +1199,11 @@ describe('TD-036: report download', () => {
     );
     // No new connection: the report uses the shown one, so D-02 cannot be skipped.
     expect(writes(calls).map((call) => [call.method, call.url, call.body])).toEqual([
-      ['POST', '/api/connections', { profile_id: 'project:parts-dev' }],
+      [
+        'POST',
+        '/api/connections',
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+      ],
       ['POST', '/api/connections/c1/diagnostics', {}],
       ['POST', '/api/connections/c1/diagnostics/report', { format: 'markdown' }],
     ]);
@@ -1528,7 +1539,11 @@ describe('TD-036: D-02 through the shared page session (useConnect)', () => {
     expect(shared.prodConfirmed).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'user:measure' }),
     );
-    expect(writes(calls)[0]?.body).toEqual({ profile_id: 'user:measure' });
+    // Confirmed in the page session, so the request names PROD (D-02 on the server, TD-038).
+    expect(writes(calls)[0]?.body).toEqual({
+      profile_id: 'user:measure',
+      confirmed_environment: 'prod',
+    });
   });
 
   it('D-02 confirms the profile in the page session; Cancel confirms nothing and opens nothing', async () => {
@@ -1560,5 +1575,41 @@ describe('TD-036: D-02 through the shared page session (useConnect)', () => {
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
     await screen.findByTestId('diagnostics-findings');
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+describe('diagnostics view: D-02 on the server (TD-038)', () => {
+  it('a profile that became PROD after the page read it: the refusal reads the profiles again, the next try asks D-02', async () => {
+    const user = userEvent.setup();
+    const flipped = {
+      ...PROFILES,
+      profiles: [{ ...PROFILES.profiles[0], environment: 'prod' }, PROFILES.profiles[1]],
+    };
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [() => json(PROFILES), () => json(flipped)],
+      'POST /api/connections': [
+        () =>
+          json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409),
+        () => json({ connection_id: 'c1' }, 201),
+      ],
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    expect(await screen.findByText(/This profile is marked as PROD now/)).toBeVisible();
+    await screen.findByRole('option', { name: 'parts-dev (PROD)' });
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    const dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(
+        writes(calls)
+          .filter((call) => call.url === '/api/connections')
+          .map((call) => call.body),
+      ).toEqual([
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+        { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+      ]),
+    );
   });
 });

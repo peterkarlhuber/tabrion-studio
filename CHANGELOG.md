@@ -18,6 +18,14 @@ All notable changes to this project are documented here. The format follows
   for one request (12 KB, below the server's 16 KB head limit) are refused in the form; the memory estimate counts 4
   bytes a character (code points above U+FFFF); the first page is read 150 ms after the tab opens, so passing
   through it reads nothing; "Load in full" is aborted when its cell is left.
+- D-02 on the server (TD-038): `POST /api/connections` and `POST /api/connection-tests` take `confirmed_environment`,
+  the environment the page confirmed for. A profile that is PROD now opens, is tested or has its open connection
+  returned only with `"prod"`; otherwise 409 `studio.prod_confirmation_required` (a missing value counts as not
+  confirmed). So a page with a stale profile list (the profile became PROD in another tab or in `profiles.toml`) no
+  longer opens PROD without D-02: the connection manager reads the profile again and asks D-02 (at most once), and
+  the migration status, diagnostics and explorer views and the SQL editor read their list again and ask on the next
+  try. The page's `openConnection` and `testConnection` require the environment, so no caller can leave it out. A
+  SQLite file is opened from the same read of the profile that passed the check. English and German.
 - TD-043 (STU-021 in the page): the export dialog. **Export…** on a finished result of the SQL editor saves it as
   CSV or JSON: the fetched rows or up to 1 000 000 rows, with the CSV formula protection on by default. The statement
   runs again with its parameters on the result's connection (D-02 through the shared guard; no new connection). The

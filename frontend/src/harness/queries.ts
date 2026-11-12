@@ -243,14 +243,21 @@ export function createQueryServer(
   const handle = (url: string, init?: RequestInit): Promise<Response> | null => {
     const method = init?.method ?? 'GET';
     if (url === '/api/connections' && method === 'POST') {
-      const body = JSON.parse(String(init?.body ?? '{}')) as { profile_id?: string };
+      const body = JSON.parse(String(init?.body ?? '{}')) as {
+        profile_id?: string;
+        confirmed_environment?: string;
+      };
       log.connections.push(body.profile_id ?? '');
       // Like the server, the answer names the profile's environment (the editor's backstop checks it, C-5 and L-9).
       const id = body.profile_id ?? '';
       const environment =
         options.environmentOf?.(id) ??
         PROFILES.profiles.find((item) => item.id === id)?.environment;
-      const answer = json({ connection_id: `c-${id}`, profile_id: id, environment }, 201);
+      // D-02 on the server (TD-038): a PROD profile needs a request that confirmed PROD.
+      const answer =
+        environment === 'prod' && body.confirmed_environment !== 'prod'
+          ? json({ code: 'studio.prod_confirmation_required', kind: 'database', status: 409 }, 409)
+          : json({ connection_id: `c-${id}`, profile_id: id, environment }, 201);
       const delay = options.connectDelayMs ?? 0;
       if (delay === 0) return Promise.resolve(answer);
       return new Promise((resolve) => setTimeout(() => resolve(answer), delay));

@@ -430,6 +430,53 @@ describe('EditorView', () => {
       expect(await screen.findByRole('dialog', { name: 'Production database' })).toBeVisible();
     });
 
+    it('TD-038: the server refuses a PROD open the page did not confirm; the page takes the profile as it is and the next run asks D-02', async () => {
+      const user = userEvent.setup();
+      let refused = false;
+      const bodies: unknown[] = [];
+      const { log } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url, init) => {
+            if (url === '/api/connections' && init?.method === 'POST') {
+              bodies.push(JSON.parse(String(init.body)));
+              if (!refused) {
+                // The profile became PROD after the editor's last read, just before the open.
+                refused = true;
+                return new Response(
+                  JSON.stringify({
+                    code: 'studio.prod_confirmation_required',
+                    kind: 'database',
+                    status: 409,
+                  }),
+                  { status: 409 },
+                );
+              }
+            }
+            if (url === '/api/profiles' && refused) return asProd();
+            return null;
+          },
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      expect(await screen.findByTestId('editor-connect-problem')).toHaveTextContent(
+        'This profile is marked as PROD now.',
+      );
+      expect(log.starts).toEqual([]);
+      await waitFor(() =>
+        expect(screen.getAllByTestId('env-badge').at(-1)).toHaveTextContent('PROD'),
+      );
+      await user.click(screen.getByTestId('editor-run'));
+      const dialog = await screen.findByRole('dialog', { name: 'Production database' });
+      await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+      await waitFor(() => expect(log.starts).toHaveLength(1));
+      expect(bodies).toEqual([
+        { profile_id: 'project:parts-dev', confirmed_environment: 'dev' },
+        { profile_id: 'project:parts-dev', confirmed_environment: 'prod' },
+      ]);
+    });
+
     it('backstop: a connection whose environment differs from the guarded profile is closed, and nothing runs', async () => {
       const user = userEvent.setup();
       const { log, requests } = setup(

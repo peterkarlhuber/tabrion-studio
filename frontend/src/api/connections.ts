@@ -1,10 +1,16 @@
 /**
  * Read-only database connections (STU-008 page, STU-009 routes; docs/architecture/connections.md).
  *
- * - `POST /api/connections {profile_id}` opens (or returns) the read-only connection of a profile. The backend checks
- *   it before it answers, so a wrong password or an unreachable host is the answer (a `db.<kind>` problem).
+ * - `POST /api/connections {profile_id, confirmed_environment}` opens (or returns) the read-only connection of a
+ *   profile. The backend checks it before it answers, so a wrong password or an unreachable host is the answer (a
+ *   `db.<kind>` problem).
  * - `GET /api/connections` lists the open ones; `DELETE /api/connections {connection_id}` closes one.
- * - `POST /api/connection-tests {profile_id}` is the connection test: it connects, reads a few facts and closes again.
+ * - `POST /api/connection-tests {profile_id, confirmed_environment}` is the connection test: it connects, reads a few
+ *   facts and closes again.
+ * - D-02 on the server (TD-038): `confirmed_environment` is the environment the page confirmed for, the profile's
+ *   environment as the page shows it, after D-02 for PROD. If the profile is PROD now and the page did not confirm
+ *   PROD (its list was stale, or it sent nothing), the answer is `studio.prod_confirmation_required` (409): read the
+ *   profile again, ask D-02, and send again (`PROD_CONFIRMATION_REQUIRED`).
  *
  * Every answer is parsed defensively (TD-011: no generated API types yet): a field of the wrong type is "unknown",
  * never an exception. Names, versions and settings come from the database, so the page shows them escaped.
@@ -98,13 +104,35 @@ export function parseOpenList(body: unknown): OpenedConnection[] | null {
   });
 }
 
+/** The refusal of a PROD open or test the page did not confirm for PROD (D-02 on the server, TD-038). */
+export const PROD_CONFIRMATION_REQUIRED = 'studio.prod_confirmation_required';
+
+/**
+ * The request body of an open or a test. `confirmedEnvironment` is required in every function that connects (C-2 of
+ * the #48 review): a caller that does not name the environment it confirmed does not build.
+ */
+export function connectBody(
+  profileId: string,
+  confirmedEnvironment: EnvironmentTag,
+): Record<string, string> {
+  return { profile_id: profileId, confirmed_environment: confirmedEnvironment };
+}
+
+/**
+ * Open (or get back) the read-only connection of `profileId`. `confirmedEnvironment` is the profile's environment as
+ * the page showed it, after D-02 for PROD; the server refuses a PROD profile confirmed for anything else.
+ */
 export async function openConnection(
   fetcher: typeof fetch,
   profileId: string,
+  confirmedEnvironment: EnvironmentTag,
 ): Promise<Result<OpenedConnection>> {
-  const result = await send<unknown>(fetcher, 'POST', '/api/connections', {
-    profile_id: profileId,
-  });
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/connections',
+    connectBody(profileId, confirmedEnvironment),
+  );
   if (!result.ok) return result;
   const opened = parseOpened(result.value);
   return opened === null ? { ok: false, problem: OFFLINE } : { ok: true, value: opened };
@@ -113,10 +141,14 @@ export async function openConnection(
 export async function testConnection(
   fetcher: typeof fetch,
   profileId: string,
+  confirmedEnvironment: EnvironmentTag,
 ): Promise<Result<ConnectionTest>> {
-  const result = await send<unknown>(fetcher, 'POST', '/api/connection-tests', {
-    profile_id: profileId,
-  });
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/connection-tests',
+    connectBody(profileId, confirmedEnvironment),
+  );
   if (!result.ok) return result;
   const test = parseTest(result.value);
   return test === null ? { ok: false, problem: OFFLINE } : { ok: true, value: test };
