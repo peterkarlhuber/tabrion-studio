@@ -253,3 +253,10 @@ All notable changes to this project are documented here. The format follows
 - `/api/heartbeat` and `/api/openapi.json` need a session. The control endpoint `POST /api/control/launch` takes
   `{"redirect": true|false}` and answers the launch URL and the redirect file. The Vite development proxy presents the
   backend's own Host and Origin.
+
+### Fixed
+
+- TABRION QA-21: `scripts/check_tabrion_api.py --surface` no longer reports enum members and dataclass fields as
+  missing. Tabrion's `docs/api/surface.json` lists them in the parent entry (`members`, `fields`), not as names of
+  their own, so `tabrion.TLSMode.AUTO` failed against tabrion v0.1.0; such a name is now checked against its parent's
+  entry and passes when the parent is stable (`S`). Tooling only; the four copies stay identical.
