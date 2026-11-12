@@ -17,7 +17,8 @@ export interface Shortcut {
 
 /**
  * The shortcuts that work now. The SQL editor's (STU-012) work on its page: a new editor tab is Alt+T and closing one
- * ⌥⌘W / Ctrl+Alt+W, because the browser keeps ⌘T and ⌘W (08 section 7).
+ * Alt+W (⌥T and ⌥W on a Mac), because the browser keeps ⌘T and ⌘W and Safari's ⌥⌘W closes the other tabs (08
+ * section 7).
  */
 export const SHORTCUTS = {
   palette: { key: 'k', mod: true },

@@ -27,6 +27,17 @@ describe('parseStatus', () => {
     expect(parseStatus({ query_id: 'q', state: 'weird' })?.problem?.code).toBe('studio.unknown');
     expect(parseStatus({})).toBeNull();
   });
+
+  it('reads the one-decimal duration of the server (C-3 of stu-012-review.md)', () => {
+    expect(parseStatus({ query_id: 'q', state: 'done', elapsed_ms: 12.3 })?.elapsedMs).toBe(12.3);
+    expect(parseStatus({ query_id: 'q', state: 'done', elapsed_ms: 0.4 })?.elapsedMs).toBe(0.4);
+    expect(parseStatus({ query_id: 'q', state: 'done', elapsed_ms: 1500 })?.elapsedMs).toBe(1500);
+    for (const bad of [-1, Number.NaN, Number.POSITIVE_INFINITY, '12', null]) {
+      expect(parseStatus({ query_id: 'q', state: 'done', elapsed_ms: bad })?.elapsedMs).toBe(0);
+    }
+    // Counts stay whole numbers.
+    expect(parseStatus({ query_id: 'q', state: 'done', row_count: 2.5 })?.rowCount).toBe(0);
+  });
 });
 
 describe('readEvents', () => {

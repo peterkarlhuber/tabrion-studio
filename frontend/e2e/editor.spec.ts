@@ -19,11 +19,18 @@ interface QueryLog {
 async function openEditor(
   page: Page,
   sql: string,
-  options: { theme?: Theme; lang?: 'en' | 'de'; profile?: string; maxRows?: number } = {},
+  options: {
+    theme?: Theme;
+    lang?: 'en' | 'de';
+    profile?: string;
+    maxRows?: number;
+    connectDelay?: number;
+  } = {},
 ): Promise<void> {
   const params = new URLSearchParams({ sql });
   if (options.profile) params.set('profile', options.profile);
   if (options.maxRows) params.set('maxRows', String(options.maxRows));
+  if (options.connectDelay) params.set('connectDelay', String(options.connectDelay));
   await page.emulateMedia({ colorScheme: options.theme ?? 'light', reducedMotion: 'reduce' });
   await page.goto(
     `/harness.html?scenario=editor&path=/sql&theme=${options.theme ?? 'light'}&lang=${options.lang ?? 'en'}&${params.toString()}`,
@@ -46,8 +53,8 @@ test('runs the statement at the cursor with Ctrl+Enter and shows the grid', asyn
   await openEditor(page, 'select 1;\nselect * from generate_series(1, 3)');
   await focusEditor(page);
   await page.keyboard.press('Control+Enter');
-  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 24 ms');
-  await expect(page.getByTestId('result-announce')).toHaveText('3 rows · 24 ms');
+  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 25 ms');
+  await expect(page.getByTestId('result-announce')).toHaveText('3 rows · 25 ms');
   expect((await log(page)).starts.map((s) => s.sql)).toEqual([
     'select * from generate_series(1, 3)',
   ]);
@@ -107,9 +114,80 @@ test('the grid is one tab stop with arrow keys, Enter opens the detail panel, Es
   await page.keyboard.press('Escape');
   await expect(detail).toHaveCount(0);
   await expect(grid).toBeFocused();
-  // A cut value says so in the panel.
+  // A cut value says so in the panel; a click keeps the focus in the grid (L-7 of stu-012-review.md).
   await grid.getByRole('row').nth(2).getByRole('gridcell').nth(1).click();
   await expect(page.getByTestId('cell-cut')).toBeVisible();
+  await expect(grid).toBeFocused();
+});
+
+test('Tab leaves the editor and Shift+Tab returns; the shortcuts describe the text area', async ({
+  page,
+}) => {
+  await openEditor(page, 'select 1');
+  const text = page.getByRole('textbox', { name: 'SQL of Query 1' });
+  // The description is inside the editor's shadow root, so it reaches the text area (L-2).
+  await expect(text).toHaveAccessibleDescription(
+    /Ctrl\+(↵|Enter) runs the statement at the cursor/,
+  );
+  await focusEditor(page);
+  await page.keyboard.press('Tab');
+  await expect(page.locator('.cm-content')).not.toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(page.locator('.cm-content')).toBeFocused();
+});
+
+test('while connecting: a second run starts nothing, Ctrl+. and closing the tab start no query (M-2)', async ({
+  page,
+}) => {
+  // Ctrl+Enter twice, then Ctrl+.: one connection, no query.
+  await openEditor(page, 'select pg_sleep(60)', { connectDelay: 800 });
+  await focusEditor(page);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('result-status')).toHaveText('Connecting…');
+  await expect(page.getByTestId('editor-cancel')).toBeEnabled();
+  await page.keyboard.press('Control+Enter');
+  await page.keyboard.press('Control+.');
+  await expect(page.getByTestId('editor-notice')).toHaveText('Canceled before the query started.');
+  await page.waitForTimeout(300);
+  expect((await log(page)).connections).toHaveLength(1);
+  expect((await log(page)).starts).toEqual([]);
+
+  // Closing the tab while it connects.
+  await openEditor(page, 'select pg_sleep(60)', { connectDelay: 800 });
+  await focusEditor(page);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('result-status')).toHaveText('Connecting…');
+  await page.keyboard.press('Alt+w');
+  await page
+    .getByRole('dialog', { name: 'Script not saved' })
+    .getByRole('button', { name: 'Discard' })
+    .click();
+  await page.waitForTimeout(1_200);
+  expect((await log(page)).starts).toEqual([]);
+
+  // A double run starts one query.
+  await openEditor(page, 'select 1', { connectDelay: 800 });
+  await focusEditor(page);
+  await page.keyboard.press('Control+Enter');
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByTestId('result-status')).toHaveText('Connecting…');
+  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 25 ms');
+  expect((await log(page)).starts).toHaveLength(1);
+});
+
+test('PROD results are cleared when the tab changes to another profile (M-1)', async ({ page }) => {
+  await openEditor(page, 'select * from generate_series(1, 2000)', {
+    profile: 'user:measure-central',
+  });
+  await page.getByTestId('editor-run').click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Connect' }).click();
+  await expect(page.getByRole('grid')).toBeVisible();
+  await expect(page.getByTestId('load-more')).toBeVisible();
+  await page.getByTestId('editor-profile').selectOption('project:parts-dev');
+  await expect(page.getByTestId('env-badge').last()).toHaveText(/DEV/);
+  await expect(page.getByRole('grid')).toHaveCount(0);
+  await expect(page.getByTestId('load-more')).toHaveCount(0);
+  await expect(page.getByTestId('result-status')).toHaveText('');
 });
 
 test('parameters: a missing value stops the run and gets the focus; typed values are sent', async ({
@@ -129,7 +207,7 @@ test('parameters: a missing value stops the run and gets the focus; typed values
   await expect(panel.getByTestId('param-error')).toHaveText(':id is not a number.');
   await value.fill('42');
   await page.getByTestId('editor-run').click();
-  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 24 ms');
+  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 25 ms');
   expect((await log(page)).starts[0]?.params).toEqual({ id: 42 });
   await expect(page.getByRole('grid').getByRole('columnheader').last()).toHaveText('param');
 });
@@ -152,7 +230,7 @@ test('a script runs statement by statement, stops at an error, and lists every s
   await expect(tabs).toHaveText(['Result 1', 'Messages']);
   await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(page.getByTestId('message')).toHaveText([
-    /Statement 1.*2 rows · 24 ms/,
+    /Statement 1.*2 rows · 25 ms/,
     /Statement 2.*A table, column, function or other object does not exist\./,
     /Statement 3.*Not run/,
   ]);
@@ -218,10 +296,10 @@ test('a result cut at its row limit loads up to the max_rows setting', async ({ 
   await openEditor(page, 'select * from generate_series(1, 5000)');
   await page.getByTestId('editor-run').click();
   await expect(page.getByTestId('result-status')).toHaveText(
-    '1,000 rows, capped at 1,000 (more rows exist) · 24 ms',
+    '1,000 rows, capped at 1,000 (more rows exist) · 25 ms',
   );
   await page.getByRole('button', { name: 'Load up to 10,000 rows' }).click();
-  await expect(page.getByTestId('result-status')).toHaveText('5,000 rows · 24 ms');
+  await expect(page.getByTestId('result-status')).toHaveText('5,000 rows · 25 ms');
   expect((await log(page)).starts.map((s) => s.maxRows)).toEqual([null, 10000]);
   await expect(page.getByRole('grid')).toHaveAttribute('aria-rowcount', '5001');
 });
@@ -271,7 +349,7 @@ test('D-02 asks before the first PROD connection; Cancel connects nothing', asyn
   expect((await log(page)).connections).toEqual([]);
   await page.getByTestId('editor-run').click();
   await page.getByRole('dialog').getByRole('button', { name: 'Connect' }).click();
-  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 24 ms');
+  await expect(page.getByTestId('result-status')).toHaveText('3 rows · 25 ms');
   // Once per page: the next run does not ask again.
   await page.getByTestId('editor-run').click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
@@ -283,7 +361,7 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
   await openEditor(page, 'select * from generate_series(1, 100000)', { maxRows: 100_000 });
   await page.getByTestId('editor-run').click();
   await page.getByRole('button', { name: 'Load up to 100,000 rows' }).click();
-  await expect(page.getByTestId('result-status')).toHaveText('100,000 rows · 24 ms');
+  await expect(page.getByTestId('result-status')).toHaveText('100,000 rows · 25 ms');
   const grid = page.getByRole('grid');
   await expect(grid).toHaveAttribute('aria-rowcount', '100001');
   // Scroll through the whole result, then jump to its last row with the keyboard.
@@ -299,7 +377,7 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
     '100000',
   );
   const rows = await log(page);
-  expect(Math.max(...rows.rows.map((r) => r.offset))).toBe(99_500);
+  expect(Math.max(...rows.rows.map((r) => r.offset + r.limit))).toBe(100_000);
   // Only what is visible is in the DOM.
   expect(await grid.getByRole('row').count()).toBeLessThan(120);
   const cdp = await page.context().newCDPSession(page);
@@ -312,8 +390,39 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
     `100 000 rows: JS heap used ${(heap / 2 ** 20).toFixed(1)} MB, total ${(total / 2 ** 20).toFixed(1)} MB`,
   );
   expect(total).toBeLessThan(300 * 2 ** 20);
-  // The grid's own cache holds at most 20 pages of 500 rows; the heap stays far below the limit.
+  // The grid's own cache holds at most 10 000 rows; the heap stays far below the limit.
   expect(heap).toBeLessThan(100 * 2 ** 20);
+});
+
+test('wide rows stay within the memory limit too: the cache is bounded in bytes (M-4)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  // 1 000 rows of three texts of 30 000 characters "€" (2 bytes each in V8): about 180 MB if all were held.
+  await openEditor(page, 'select * from generate_series(1, 1000) wide(30000)');
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByTestId('result-status')).toHaveText('1,000 rows · 25 ms');
+  const grid = page.getByRole('grid');
+  for (let step = 0; step <= 40; step += 1) {
+    await grid.evaluate((el, fraction) => {
+      el.scrollTop = (el.scrollHeight - el.clientHeight) * fraction;
+    }, step / 40);
+    await expect(grid.getByRole('row').nth(1).getByRole('gridcell').first()).not.toHaveText('…');
+  }
+  const offsets = (await log(page)).rows;
+  expect(Math.max(...offsets.map((r) => r.offset + r.limit))).toBe(1_000);
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('HeapProfiler.collectGarbage');
+  await cdp.send('Performance.enable');
+  const { metrics } = await cdp.send('Performance.getMetrics');
+  const heap = metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? Infinity;
+  const total = metrics.find((m) => m.name === 'JSHeapTotalSize')?.value ?? Infinity;
+  console.warn(
+    `1 000 wide rows: JS heap used ${(heap / 2 ** 20).toFixed(1)} MB, total ${(total / 2 ** 20).toFixed(1)} MB`,
+  );
+  expect(total).toBeLessThan(300 * 2 ** 20);
+  // The byte budget is 64 MB; without it the heap would hold about 180 MB of text.
+  expect(heap).toBeLessThan(140 * 2 ** 20);
 });
 
 for (const theme of ['light', 'dark'] as Theme[]) {

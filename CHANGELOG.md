@@ -12,9 +12,12 @@ All notable changes to this project are documented here. The format follows
   run script (statement by statement, stopping at the first error), cancel within a second, `:name` parameters
   (text, number, boolean, null, JSON), and a virtualized result grid (WAI-ARIA grid, keyboard, copy, a detail panel
   that shows the whole value as plain text). D-02 before the first PROD connection, D-06 before closing a changed
-  tab, "Save" downloads a `.sql` file. At most 10 000 rows are in the browser at a time, so 100 000 rows stay far
-  below the 300 MB limit. New shortcuts in the help and the palette. CodeMirror runs in a shadow root, so the strict
-  CSP stays unchanged. Open items are TD-033 and TD-037. The migrations page now has its own window title.
+  tab, "Save" downloads a `.sql` file. At most 10 000 rows and about 64 MB are in the browser at a time, so 100 000
+  rows, and wide rows at the largest result size, stay far below the 300 MB limit. After the review: a profile
+  change clears the tab's results, a run cannot be started twice while it connects and can be canceled then, the
+  durations show (they read as 0 before), D-02 names the profile's own timeout, drafts are kept per project, and a
+  failed row page is asked for again. New shortcuts in the help and the palette. CodeMirror runs in a shadow root,
+  so the strict CSP stays unchanged. Open items are TD-033 and TD-037. The migrations page now has its own window title.
 - STU-021 backend (on tabrion 0.1 like STU-011): `POST /api/exports`
   exports a query result or a table as CSV or JSON, streamed with bounded memory (1 million rows under 100 MB). The
   statement and object checks run before the first byte, so refusals are problem documents. Limits: at most

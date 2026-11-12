@@ -6,6 +6,11 @@
  * (`services/sqltext.py`, docs/architecture/queries.md): literals, quoted identifiers, dollar quotes (PostgreSQL) and
  * comments are skipped, `::` is a cast, and a `;` outside of them ends a statement.
  *
+ * The placeholder rules are the server's (`services/sqltext.py`): a word holds letters, digits, `_`, `$` and every
+ * non-ASCII character; a name is at most 63 characters and must not run on into a word character; `--` ends at a line
+ * break (`\n` or `\r`). Where this scan and the server's statement splitter (`tabrion.sql.split_statements`, which
+ * knows no dialect) still read a text differently, docs/TODO.md TD-033 lists the cases; each ends in a refusal.
+ *
  * This is a convenience, not a security boundary: the backend checks every statement again (one statement, an
  * allowed first word, `tabrion.sql.split_statements`) and refuses what it does not accept. A text this scan reads
  * differently from the server is refused there, never run as something else.
@@ -22,8 +27,10 @@ export interface Statement {
   params: string[];
 }
 
-const NAME_START = /[A-Za-z_]/;
-const NAME_PART = /[A-Za-z0-9_]/;
+/** A placeholder's name after the `:` (the server's `_NAME`). */
+const NAME = /[A-Za-z_][A-Za-z0-9_]{0,62}/y;
+/** A character of a word (the server's `_is_word_char`). */
+const WORD = /[A-Za-z0-9_$\u0080-\uffff]/;
 const SPACE = /[ \t\n\r\f\v]/;
 
 interface Token {
@@ -85,8 +92,8 @@ function* tokens(text: string, dialect: Dialect): Generator<Token> {
     const next = text[i + 1];
     const start = i;
     if (char === '-' && next === '-') {
-      const end = text.indexOf('\n', i);
-      i = end === -1 ? text.length : end + 1;
+      const rest = text.slice(i).search(/[\n\r]/);
+      i = rest === -1 ? text.length : i + rest + 1;
       yield { kind: 'skip', from: start, to: i };
     } else if (char === '/' && next === '*') {
       i = blockComment(text, i, dialect === 'postgresql');
@@ -97,7 +104,7 @@ function* tokens(text: string, dialect: Dialect): Generator<Token> {
         dialect === 'postgresql' &&
         i > 0 &&
         /[eE]/.test(text[i - 1] as string) &&
-        (i < 2 || !NAME_PART.test(text[i - 2] as string));
+        (i < 2 || !WORD.test(text[i - 2] as string));
       i = quoted(text, i, "'", escaped);
       yield { kind: 'skip', from: start, to: i };
     } else if (char === '"') {
@@ -113,7 +120,7 @@ function* tokens(text: string, dialect: Dialect): Generator<Token> {
     } else if (
       dialect === 'postgresql' &&
       char === '$' &&
-      (i === 0 || !NAME_PART.test(text[i - 1] as string))
+      (i === 0 || !WORD.test(text[i - 1] as string))
     ) {
       const tag = dollarTag(text, i);
       if (tag === null) {
@@ -130,13 +137,22 @@ function* tokens(text: string, dialect: Dialect): Generator<Token> {
     } else if (char === ':' && next === ':') {
       i += 2;
       yield { kind: 'code', from: start, to: i };
-    } else if (char === ':' && next !== undefined && NAME_START.test(next)) {
-      i += 2;
-      while (i < text.length && NAME_PART.test(text[i] as string)) i += 1;
-      yield { kind: 'param', from: start, to: i, name: text.slice(start + 1, i) };
-    } else if (NAME_PART.test(char)) {
-      // A whole word at once, so a `:` inside it (none in SQL) or an E before a quote is judged by its neighbour.
-      while (i < text.length && NAME_PART.test(text[i] as string)) i += 1;
+    } else if (char === ':') {
+      NAME.lastIndex = i + 1;
+      const name = NAME.exec(text);
+      const end = name === null ? -1 : i + 1 + name[0].length;
+      if (name !== null && (end === text.length || !WORD.test(text[end] as string))) {
+        i = end;
+        yield { kind: 'param', from: start, to: i, name: name[0] };
+      } else {
+        // Not a placeholder (a name longer than 63 characters, or one that runs on into `$` or a non-ASCII
+        // character): the `:` is code and the word after it is read on its own.
+        i += 1;
+        yield { kind: 'code', from: start, to: i };
+      }
+    } else if (WORD.test(char)) {
+      // A whole word at once, so a `:` inside it (none in SQL) or an E before a quote is judged by its neighbor.
+      while (i < text.length && WORD.test(text[i] as string)) i += 1;
       yield { kind: 'code', from: start, to: i };
     } else {
       i += 1;

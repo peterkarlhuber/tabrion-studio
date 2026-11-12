@@ -573,7 +573,8 @@
       "cappedBytes_other": "{{rows}} Zeilen, gekappt an der Größengrenze eines Ergebnisses (weitere vorhanden) · {{ms}} ms",
       "statements_one": "{{count}} Statement, {{failed}} fehlgeschlagen",
       "statements_other": "{{count}} Statements, {{failed}} fehlgeschlagen",
-      "loadMore": "Bis zu {{rows}} Zeilen laden"
+      "loadMore": "Bis zu {{rows}} Zeilen laden",
+      "connecting": "Verbinde …"
     },
     "grid": {
       "cut": "gekürzt"
@@ -613,6 +614,7 @@
       "permission": "Die Datenbankrolle darf dieses Objekt nicht lesen.",
       "data": "Ein Wert passt nicht zu seiner Spalte oder Operation.",
       "database": "Die Datenbank hat das Statement abgelehnt ({{code}})."
-    }
+    },
+    "canceledBeforeStart": "Abgebrochen, bevor die Abfrage begann."
   }
 }

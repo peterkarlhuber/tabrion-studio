@@ -8,6 +8,10 @@
  * - a first word that is not a reading one (`INSERT`, `DELETE`, ...) is refused with `studio.statement_refused`;
  *   `missing_table` fails with `db.undefined_object`; `read_only_violation` with `db.read_only`.
  * - `:name` placeholders come back as the column `param` of every row.
+ * - `wide(C)` fills the text columns with C characters "€" (a string V8 holds with 2 bytes per character), for the
+ *   memory bound in bytes (M-4 of stu-012-review.md).
+ * - `connectDelayMs` delays every answer to `POST /api/connections` (the races while connecting, M-2 of
+ *   stu-012-review.md).
  *
  * `requests` records what the page sent (no parameter value is ever logged by the real server; this is a test fake).
  */
@@ -21,6 +25,7 @@ interface FakeQuery {
   problem: { code: string; kind: string; status: number } | null;
   started: number;
   slow: boolean;
+  wide: number;
   param: ParamValue | undefined;
   listeners: Set<() => void>;
 }
@@ -53,7 +58,7 @@ function problem(code: string, status: number): Response {
   return json({ code, kind: code.startsWith('db.') ? 'database' : 'request', status }, status);
 }
 
-export function createQueryServer(): {
+export function createQueryServer(options: { connectDelayMs?: number } = {}): {
   handle: (url: string, init?: RequestInit) => Promise<Response> | null;
   log: QueryLog;
 } {
@@ -69,7 +74,8 @@ export function createQueryServer(): {
     max_rows: query.maxRows,
     truncated: query.state === 'done' && query.rowCount > query.maxRows,
     truncated_by: query.state === 'done' && query.rowCount > query.maxRows ? 'rows' : null,
-    elapsed_ms: query.state === 'running' ? Date.now() - query.started : 24,
+    // One decimal like the real engine (`round(..., 1)`): a parser that takes only integers shows 0.
+    elapsed_ms: query.state === 'running' ? Date.now() - query.started + 0.5 : 24.6,
     columns:
       query.state === 'done'
         ? [...COLUMNS, ...(query.param === undefined ? [] : [{ name: 'param', type: '' }])]
@@ -79,6 +85,10 @@ export function createQueryServer(): {
 
   const row = (query: FakeQuery, index: number): unknown[] => {
     const n = index + 1;
+    if (query.wide > 0) {
+      const text = `${n} ${'€'.repeat(query.wide)}`;
+      return [n, text, { n, text }, { base64: btoa('wide') }, text];
+    }
     const values: unknown[] = [
       n,
       n === 2 ? `${'long text '.repeat(40)}end` : `row ${n}`,
@@ -121,7 +131,10 @@ export function createQueryServer(): {
     if (url === '/api/connections' && method === 'POST') {
       const body = JSON.parse(String(init?.body ?? '{}')) as { profile_id?: string };
       log.connections.push(body.profile_id ?? '');
-      return Promise.resolve(json({ connection_id: `c-${body.profile_id ?? ''}` }, 201));
+      const answer = json({ connection_id: `c-${body.profile_id ?? ''}` }, 201);
+      const delay = options.connectDelayMs ?? 0;
+      if (delay === 0) return Promise.resolve(answer);
+      return new Promise((resolve) => setTimeout(() => resolve(answer), delay));
     }
     if (url === '/api/queries' && method === 'POST') {
       const body = JSON.parse(String(init?.body ?? '{}')) as {
@@ -147,6 +160,7 @@ export function createQueryServer(): {
         problem: null,
         started: Date.now(),
         slow: /pg_sleep/i.test(body.sql),
+        wide: Number(/wide\(\s*(\d+)\s*\)/i.exec(body.sql)?.[1] ?? 0),
         param: params.length > 0 ? params[0] : undefined,
         listeners: new Set(),
       };
@@ -191,7 +205,10 @@ export function createQueryServer(): {
         const count = Math.min(query.rowCount, query.maxRows);
         const rows: unknown[][] = [];
         for (let i = offset; i < Math.min(count, offset + limit); i += 1) rows.push(row(query, i));
-        const cut = offset <= 1 && 1 < offset + limit && count > 1 ? [[1 - offset, 1]] : [];
+        const cut =
+          query.wide === 0 && offset <= 1 && 1 < offset + limit && count > 1
+            ? [[1 - offset, 1]]
+            : [];
         return Promise.resolve(
           json({
             query_id: query.id,

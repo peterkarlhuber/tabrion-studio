@@ -140,9 +140,9 @@ the editor's write mode (STU-026, D-03..D-05) stay locked behind G-S2.
 | Parameters | `ParamPanel.tsx`, `params.ts` | text, number, boolean, null, JSON (sent as text, cast in the SQL); a missing or invalid value stops the run and gets the focus |
 | Run | `EditorView.tsx` | the selection or the statement at the cursor; a script runs statement by statement and stops at the first error or a cancel; D-02 before the first PROD connection of the page; the run reopens a connection the server closed once |
 | Events | `api/queries.ts` | `POST /api/queries`, the SSE stream read with `fetch` (the CSRF header), `GET /api/queries/{id}` every 250 ms when the stream breaks, row pages, cancel |
-| Grid | `ResultGrid.tsx`, `rowCache.ts` | TanStack Virtual in both directions; at most 20 pages of 500 rows in the browser, least recently used dropped; WAI-ARIA grid with `aria-activedescendant` |
+| Grid | `ResultGrid.tsx`, `rowCache.ts` | TanStack Virtual in both directions; rows in chunks of 50, at most 10 000 rows and 64 MB (estimated) in the browser, least recently used dropped; a failed or wrong page is asked for again (3 times); WAI-ARIA grid with `aria-activedescendant` |
 | Detail | `CellDetail.tsx`, `format.ts` | the whole value as plain text, JSON indented, bytes as hex; invisible and bidi characters shown as marks |
-| Drafts | `drafts.ts` | title, profile and text of every tab in `localStorage` (never parameter values or results); D-06 before closing a changed tab, "Save" downloads a `.sql` file |
+| Drafts | `drafts.ts` | title, profile and text of every tab in `localStorage` under a key per project (a hash of its folder), merged by tab with other pages (never parameter values or results); D-06 before closing a changed tab, "Save" downloads a `.sql` file |
 
 **CSP and CodeMirror.** CodeMirror writes its styles through `style-mod`, which adds a `<style>` element to the
 document; the CSP of STU-003 (`style-src 'self'`) refuses that, and Studio keeps its CSP. In a shadow root
@@ -151,19 +151,40 @@ mounted in a shadow root of its own; its look comes from the `--tb-` tokens, whi
 inline styles only through the CSSOM (`element.style`), which the CSP allows. `e2e/editor-backend.spec.ts` runs the
 built page in a real `tabrion-studio` and records no CSP violation.
 
-**Memory (acceptance "100k rows within the memory limit").** A result stays in the backend (03 section 6); the grid
-asks for the 500-row page of a visible row and keeps 20 pages. The limit of 03 section 10 is 300 MB of browser memory
-for 100 000 rows; after scrolling a 100 000-row result from the first to the last row, the JS heap is about 10 MB
-against the real server and 27 MB in the harness (both tests fail above 300 MB of heap and above 100 MB used), with
-fewer than 120 rows in the DOM. `src/views/editor/rowCache.test.ts` checks the bound of 10 000 held rows.
+**Memory (acceptance "100k rows within the memory limit").** A result stays in the backend (03 section 6). The grid
+holds rows in chunks of 50 and asks for the chunk of a visible row together with the next missing ones, as many as
+fit in about 4 MB by the size of the rows seen so far (one chunk first, at most 500 rows). It drops the least
+recently used chunks while it holds more than 10 000 rows or more than 64 MB, estimated with text as UTF-16 (2 bytes
+per code unit) plus an overhead per value and row: the server allows results of up to 200 MB (`max_result_mb`) and
+cells of up to 64 KB of text, so a bound in rows alone would not hold (M-4 of `stu-012-review.md`). The limit of 03
+section 10 is 300 MB of browser memory for 100 000 rows. Measured after a forced garbage collection:
+
+| Test | JS heap used |
+|---|---|
+| 100 000 narrow rows, real server (`e2e/editor-backend.spec.ts`) | about 10 MB |
+| 100 000 narrow rows, harness (`e2e/editor.spec.ts`) | about 27 MB |
+| 1 000 rows of three 30 000-character "€" texts, real server at `max_result_mb = 200` | about 70 MB (about 220 MB without the byte bound) |
+| the same in the harness | about 87 MB (about 200 MB without the byte bound) |
+
+The tests fail above 300 MB of heap, and above 100 MB (narrow) or 140 MB (wide) used, so the wide-row tests fail
+when the byte bound is removed. Fewer than 120 rows are in the DOM. `src/views/editor/rowCache.test.ts` checks the
+row and byte bounds, the fetch sizes and the retries.
 
 **Accessibility.** Editor tabs are a list of buttons (`aria-current`) with their close buttons, the result tabs a
 WAI-ARIA tablist (arrows, Home, End). The grid is one tab stop: `role="grid"` with `aria-rowcount`/`aria-colcount`
 and `aria-rowindex`/`aria-colindex` on every rendered row and cell (08 section 9); arrows, Home/End, Ctrl+Home/End,
 Page Up/Down, Enter for the detail panel, Ctrl+C to copy. A status line shows the running time; a polite live region
-reads out the final state once ("3 rows · 24 ms"). The environment badge and the access chip ("Read-only", "Writing
+reads out the final state once ("3 rows · 25 ms"). The editor's shortcut description is inside its shadow root,
+because an `aria-describedby` id does not cross a shadow boundary; a click on a cell opens the detail panel and keeps
+the focus in the grid, Enter moves it into the panel. The environment badge and the access chip ("Read-only", "Writing
 locked") are in the toolbar; a PROD tab gets a red top border on the page until the shell shows the tab's connection
-(TD-011, TD-033).
+(TD-011, TD-033). A tab's results belong to the profile they came from: changing the tab's profile clears them, so
+PROD rows never show under another environment's badge (M-1).
+
+**Runs and connecting.** A run is registered before the connection is opened, so while it connects a second run
+starts nothing, Cancel and ⌘. / Ctrl+. stop it before any query starts, and closing the tab starts none (M-2). The
+status line says "Connecting…" meanwhile. Durations come from the server with one decimal (`elapsed_ms`); the page
+shows milliseconds with one decimal below 10 ms (C-3).
 
 ## Tests
 

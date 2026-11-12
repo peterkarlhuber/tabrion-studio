@@ -43,14 +43,20 @@ export interface SqlEditorProps {
   dialect: Dialect;
   /** The accessible name of the text area. */
   label: string;
-  /** The id of the element that describes the shortcuts (`aria-describedby` of the text area). */
-  describedBy?: string;
+  /**
+   * What describes the text area (the shortcuts). It is rendered inside the editor's shadow root, because an
+   * `aria-describedby` id does not reach across a shadow boundary (L-2 of stu-012-review.md).
+   */
+  description?: string;
   onRun: () => void;
   onRunScript: () => void;
   onCancel: () => void;
   /** Focus the text as soon as the editor exists (a new tab). */
   focusOnCreate?: boolean;
 }
+
+/** The id of the description inside the shadow root. */
+const DESCRIPTION_ID = 'sql-editor-description';
 
 const theme = EditorView.theme({
   '&': {
@@ -118,7 +124,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
     onChange,
     dialect,
     label,
-    describedBy,
+    description = '',
     onRun,
     onRunScript,
     onCancel,
@@ -144,8 +150,19 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       inner.style.height = '100%';
       root.append(inner);
     }
+    if (root.getElementById(DESCRIPTION_ID) === null) {
+      const text = document.createElement('div');
+      text.id = DESCRIPTION_ID;
+      text.hidden = true;
+      root.append(text);
+    }
     setMount({ root, element: inner });
   }, []);
+
+  useEffect(() => {
+    const text = mount?.root.getElementById(DESCRIPTION_ID);
+    if (text) text.textContent = description;
+  }, [mount, description]);
 
   const extensions = useMemo(
     () => [
@@ -159,7 +176,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       ),
       EditorView.contentAttributes.of({
         'aria-label': label,
-        ...(describedBy ? { 'aria-describedby': describedBy } : {}),
+        'aria-describedby': DESCRIPTION_ID,
         'aria-multiline': 'true',
         spellcheck: 'false',
         autocapitalize: 'off',
@@ -168,7 +185,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       theme,
       highlight,
     ],
-    [dialect, label, describedBy],
+    [dialect, label],
   );
 
   const stableChange = useMemo(() => (next: string) => handlers.current.onChange(next), []);

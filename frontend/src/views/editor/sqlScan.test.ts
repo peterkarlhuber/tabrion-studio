@@ -50,6 +50,17 @@ describe('placeholders', () => {
     ).toEqual(['a', 'f_2', 'Z']);
   });
 
+  it('takes names like the server (L-3 of stu-012-review.md)', () => {
+    const long = 'n'.repeat(63);
+    expect(placeholders(`select :${long}, :${long}x`, 'postgresql')).toEqual([long]);
+    // A name that runs on into `$` or a non-ASCII character is no placeholder.
+    expect(placeholders('select :a$b, :größe, :ok', 'postgresql')).toEqual(['ok']);
+    // `--` ends at a carriage return too.
+    expect(placeholders('select 1 -- note\r:after', 'sqlite')).toEqual(['after']);
+    // A non-ASCII word followed by `$x$` is one word, not a dollar quote.
+    expect(placeholders('select ä$x$ :p $x$', 'postgresql')).toEqual(['p']);
+  });
+
   it('lists the placeholders per statement', () => {
     expect(splitStatements('select :a; select :b, :a', 'sqlite').map((s) => s.params)).toEqual([
       ['a'],

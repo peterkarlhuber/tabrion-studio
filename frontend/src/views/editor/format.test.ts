@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { cellKind, fullText, hexDump, markInvisible, previewText } from './format';
+import {
+  cellKind,
+  formatMs,
+  formatSeconds,
+  fullText,
+  hexDump,
+  markInvisible,
+  previewText,
+} from './format';
 
 describe('cell values', () => {
   it('knows the kinds the server sends', () => {
@@ -27,5 +35,20 @@ describe('cell values', () => {
     expect(fullText({ a: 1 })).toBe('{\n  "a": 1\n}');
     expect(hexDump(btoa('AB\u0000'))).toBe(`00000000  41 42 00${' '.repeat(39)}  AB.`);
     expect(markInvisible('a\nb‮')).toBe('a\nb⟨U+202E⟩');
+  });
+});
+
+describe('durations', () => {
+  it('shows milliseconds with one decimal below 10 ms and whole above', () => {
+    expect(formatMs(0.4, 'en')).toBe('0.4');
+    expect(formatMs(2.56, 'de')).toBe('2,6');
+    expect(formatMs(24.6, 'en')).toBe('25');
+    expect(formatMs(1234.4, 'en')).toBe('1,234');
+  });
+
+  it('shows seconds with one decimal', () => {
+    expect(formatSeconds(4200, 'en')).toBe('4.2');
+    expect(formatSeconds(4200, 'de')).toBe('4,2');
+    expect(formatSeconds(1512.3, 'en')).toBe('1.5');
   });
 });

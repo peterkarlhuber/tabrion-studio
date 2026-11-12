@@ -15,8 +15,8 @@
  *   stops the run and gets the focus.
  * - **Results:** one result tab per statement that returned columns, and "Messages" with every statement (number,
  *   rows, duration, error; "Go to statement" selects it in the editor). The grid (`ResultGrid.tsx`) shows only the
- *   visible rows and holds at most `MAX_PAGES` pages (`rowCache.ts`). A result cut at its row limit offers to load up
- *   to the `max_rows` setting.
+ *   visible rows and holds at most 10 000 rows and 64 MB (`rowCache.ts`). A result cut at its row limit offers to
+ *   load up to the `max_rows` setting. A profile change clears the tab's results (they belong to their profile).
  * - **Cancel:** ⌘./Ctrl+. or Escape in the results, or the button; "Canceled after 4.2 s".
  */
 import type { TFunction } from 'i18next';
@@ -36,6 +36,7 @@ import { useTranslation } from 'react-i18next';
 import { openConnection } from '../../api/migrations';
 import type { Problem } from '../../api/problem';
 import { fetchProfiles, fetchSettings, type ProfileItem } from '../../api/profiles';
+import { fetchProject } from '../../api/project';
 import {
   cancelQuery,
   followQuery,
@@ -56,8 +57,8 @@ import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { CellDetail, type OpenCell } from './CellDetail';
-import { readDrafts, writeDrafts, type DraftTab } from './drafts';
-import { formatCount, formatSeconds } from './format';
+import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
+import { formatCount, formatMs, formatSeconds } from './format';
 import { ParamPanel, paramFieldId } from './ParamPanel';
 import { paramValue, type ParamInput, type ParamProblem } from './params';
 import { ResultGrid } from './ResultGrid';
@@ -72,8 +73,8 @@ import {
 } from './sqlScan';
 import styles from './Editor.module.css';
 
-/** 03 section 5.3: production profiles get a 15 s statement timeout (D-02 names it). */
-const PROD_TIMEOUT_S = 15;
+/** 03 section 5.3: production profiles get a 15 s statement timeout unless the profile sets its own (D-02 names it). */
+const PROD_TIMEOUT_MS = 15_000;
 /** The query engine's default row limit (03 section 5.3: "1 000 preview"). */
 export const DEFAULT_MAX_ROWS = 1_000;
 /** The `max_rows` setting when the settings cannot be read (the server's default). */
@@ -99,9 +100,13 @@ export interface StatementResult {
 interface RunState {
   results: StatementResult[];
   running: boolean;
+  /** The connection is being opened; no query has started yet. */
+  connecting: boolean;
+  /** The profile the results came from: a profile change clears them (M-1 of stu-012-review.md). */
+  profileId: string;
   /** `messages` or a result's key. */
   view: string;
-  /** The connection the results came from, for "Load more" (the same one, never a new PROD connection). */
+  /** The connection the results came from. */
   connectionId: string | null;
   /** What to read out after the run (08 section 9: a live region for the query state). */
   announce: string;
@@ -222,7 +227,7 @@ function summary(t: TFunction, result: StatementResult, locale: string): string 
     default: {
       if (status === null) return '';
       const rows = formatCount(status.rowCount, locale);
-      const ms = formatCount(status.elapsedMs, locale);
+      const ms = formatMs(status.elapsedMs, locale);
       if (status.columns.length === 0) return t('editor.result.noRows', { ms });
       if (status.truncatedBy === 'rows') {
         return t('editor.result.cappedRows', { count: status.rowCount, rows, ms });
@@ -246,8 +251,12 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
 
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [maxRowsSetting, setMaxRowsSetting] = useState(SETTING_MAX_ROWS);
-  const [tabs, setTabs] = useState<DraftTab[]>(() => readDrafts()?.tabs ?? []);
-  const [activeId, setActiveId] = useState<string>(() => readDrafts()?.activeTab ?? '');
+  const [tabs, setTabs] = useState<DraftTab[]>([]);
+  const [activeId, setActiveId] = useState<string>('');
+  /** The drafts' storage key (per project), known once the project's folder was read. */
+  const [draftKey, setDraftKey] = useState<string | null>(null);
+  /** Every tab id this page has had: a draft write keeps only the other pages' tabs (`drafts.ts`). */
+  const known = useRef(new Set<string>());
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const [params, setParams] = useState<Record<string, Record<string, ParamInput>>>({});
   const [paramProblem, setParamProblem] = useState<{ name: string; problem: ParamProblem } | null>(
@@ -265,17 +274,21 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   /** The open connection of each profile used in this page (profile id to connection id). */
   const connections = useRef(new Map<string, string>());
 
-  // Profiles and the row limit setting.
+  // Profiles, the drafts of this project and the row limit setting.
   useEffect(() => {
     let active = true;
-    void fetchProfiles(fetcher).then((list) => {
+    void Promise.all([fetchProfiles(fetcher), fetchProject(fetcher)]).then(([list, project]) => {
       if (!active) return;
       const items = list?.profiles ?? [];
+      const key = draftsKey(project?.path ?? '');
+      const drafts = readDrafts(key);
+      // The drafts, or a first tab (on the first profile, or none).
+      const first = drafts?.tabs ?? [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))];
+      for (const item of first) known.current.add(item.id);
       setProfiles(items);
-      // A first tab when there is no draft (on the first profile, or none).
-      setTabs((current) =>
-        current.length > 0 ? current : [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))],
-      );
+      setTabs(first);
+      setActiveId(drafts?.activeTab ?? first[0]?.id ?? '');
+      setDraftKey(key);
     });
     void fetchSettings(fetcher).then((state) => {
       if (active && state !== null) setMaxRowsSetting(state.settings.maxRows);
@@ -287,10 +300,13 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
 
   // Drafts, a moment after the last change.
   useEffect(() => {
-    if (tabs.length === 0) return undefined;
-    const timer = setTimeout(() => writeDrafts({ tabs, activeTab: activeId }), DRAFT_SAVE_MS);
+    if (tabs.length === 0 || draftKey === null) return undefined;
+    const timer = setTimeout(
+      () => writeDrafts({ tabs, activeTab: activeId }, draftKey, known.current),
+      DRAFT_SAVE_MS,
+    );
     return () => clearTimeout(timer);
-  }, [tabs, activeId]);
+  }, [tabs, activeId, draftKey]);
 
   // Cancel what still runs when the page goes (the results are not kept).
   useEffect(
@@ -369,14 +385,41 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       maxRows?: number,
       replaceKey?: string,
     ) => {
-      let connectionId = await connect(item);
-      if (connectionId === null) return;
+      // The run is registered before the first `await`, so a second run, a cancel and closing the tab all see it
+      // while the connection opens (M-2 of stu-012-review.md).
       const controller: Controller = {
         abort: new AbortController(),
         queryId: null,
         stopped: false,
       };
       controllers.current.set(tabId, controller);
+      setRuns((all) => ({
+        ...all,
+        [tabId]: {
+          ...(all[tabId] ?? {
+            results: [],
+            view: 'messages',
+            connectionId: null,
+            announce: '',
+            profileId: item.id,
+          }),
+          running: true,
+          connecting: true,
+        },
+      }));
+      const release = () => {
+        if (controllers.current.get(tabId) === controller) controllers.current.delete(tabId);
+      };
+      let connectionId = await connect(item);
+      if (connectionId === null || controller.stopped) {
+        release();
+        patchRun(tabId, (current) => ({ ...current, running: false, connecting: false }));
+        // Canceled while connecting (a closed tab says nothing).
+        if (connectionId !== null && !controller.abort.signal.aborted) {
+          setNotice(t('editor.canceledBeforeStart'));
+        }
+        return;
+      }
       const stamp = Date.now();
       const fresh: StatementResult[] = statements.map((statement, index) => ({
         key: replaceKey ?? `${stamp}-${index}`,
@@ -401,6 +444,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             [tabId]: {
               ...previous,
               running: true,
+              connecting: false,
               announce: '',
               results: previous.results.map((result) =>
                 result.key === replaceKey
@@ -416,6 +460,8 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           [tabId]: {
             results: fresh,
             running: true,
+            connecting: false,
+            profileId: item.id,
             view: fresh[0]?.key ?? 'messages',
             connectionId,
             announce: '',
@@ -506,7 +552,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         last = result;
         if (state !== 'done') controller.stopped = true;
       }
-      if (controllers.current.get(tabId) === controller) controllers.current.delete(tabId);
+      release();
       const announce = last === null ? '' : summary(t, last, locale);
       patchRun(tabId, (current) => {
         // Show the first result with rows, else the messages (also after an error in a script).
@@ -524,10 +570,19 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     [connect, fetcher, locale, patchResult, patchRun, t],
   );
 
+  /** Drop a tab's results (their row caches too). */
+  const clearRun = useCallback((tabId: string) => {
+    setRuns(({ [tabId]: gone, ...rest }) => {
+      for (const result of gone?.results ?? []) result.cache?.dispose();
+      return rest;
+    });
+    setDetail(null);
+  }, []);
+
   /** Check the placeholders, connect (D-02 for PROD) and run. */
   const start = useCallback(
     (statements: Statement[], options: { maxRows?: number; replaceKey?: string } = {}) => {
-      if (tab === null || running) return;
+      if (tab === null || running || controllers.current.has(tab.id)) return;
       if (profile === null) {
         setNotice(t('editor.noProfile'));
         return;
@@ -596,12 +651,14 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     if (tab === null) return;
     const controller = controllers.current.get(tab.id);
     if (controller === undefined) return;
+    // While the connection opens there is no query yet: `execute` sees `stopped` and starts none.
     controller.stopped = true;
     if (controller.queryId !== null) void cancelQuery(fetcher, controller.queryId);
   }, [fetcher, tab]);
 
   const addTab = useCallback(() => {
     const created = newTab(nextNumber(tabs, t), tab?.profileId ?? profiles?.[0]?.id ?? '', t);
+    known.current.add(created.id);
     setTabs((list) => [...list, created]);
     setActiveId(created.id);
     // The new tab's editor takes the focus as soon as it exists.
@@ -624,7 +681,11 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         const index = list.findIndex((item) => item.id === id);
         const rest = list.filter((item) => item.id !== id);
         // The last tab closed: a new empty one takes its place.
-        if (rest.length === 0) rest.push(newTab(1, list[index]?.profileId ?? '', t));
+        if (rest.length === 0) {
+          const fresh = newTab(1, list[index]?.profileId ?? '', t);
+          known.current.add(fresh.id);
+          rest.push(fresh);
+        }
         if (id === activeId) {
           const next = rest[Math.min(index, rest.length - 1)];
           setActiveId(next?.id ?? '');
@@ -706,7 +767,6 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   }, [platform]);
 
   const keys = (id: keyof typeof SHORTCUTS) => shortcutText(SHORTCUTS[id], platform, keyNames);
-  const shortcutsId = `${prefix}-shortcuts`;
   const results = run?.results ?? [];
   const withColumns = results.filter((result) => result.cache !== null);
   const runningResult = results.find((result) => result.state === 'running') ?? null;
@@ -717,6 +777,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     detail !== null && shown?.status ? (shown.status.columns[detail.column] ?? null) : null;
 
   const statusLine = (() => {
+    if (run?.connecting) return t('editor.result.connecting');
     if (runningResult !== null) {
       return t('editor.result.runningFor', {
         number: runningResult.number,
@@ -742,6 +803,8 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   };
 
   const loadMore = (result: StatementResult) => {
+    // Only on the profile the result came from (L-1 of stu-012-review.md; a profile change clears the results).
+    if (run?.profileId !== tab?.profileId) return;
     start(
       [
         {
@@ -859,6 +922,8 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           onChange={(event) => {
             updateTab(tab.id, { profileId: event.target.value });
             setConnectProblem(null);
+            // Results stay with the profile they came from: PROD rows never show under another badge (M-1).
+            clearRun(tab.id);
           }}
           data-testid="editor-profile"
         >
@@ -926,13 +991,6 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         </Button>
       </div>
 
-      <p id={shortcutsId} className="tb-sr-only">
-        {t('editor.shortcuts', {
-          run: keys('run'),
-          script: keys('runScript'),
-          cancel: keys('cancel'),
-        })}
-      </p>
       <div className={styles.editorArea}>
         <SqlEditor
           key={tab.id}
@@ -941,7 +999,11 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           onChange={(value) => updateTab(tab.id, { sql: value })}
           dialect={dialect}
           label={t('editor.textLabel', { name: tab.title })}
-          describedBy={shortcutsId}
+          description={t('editor.shortcuts', {
+            run: keys('run'),
+            script: keys('runScript'),
+            cancel: keys('cancel'),
+          })}
           onRun={runCurrent}
           onRunScript={runScript}
           onCancel={cancel}
@@ -992,6 +1054,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           shown.state === 'done' &&
           shown.status?.truncatedBy === 'rows' &&
           shown.status.maxRows < maxRowsSetting &&
+          run?.profileId === tab.profileId &&
           !running ? (
             <Button size="sm" onClick={() => loadMore(shown)} data-testid="load-more">
               {t('editor.result.loadMore', { rows: formatCount(maxRowsSetting, locale) })}
@@ -1071,7 +1134,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
                   cache={shown.cache}
                   columns={shown.status.columns}
                   label={t('editor.result.gridLabel', { number: shown.number })}
-                  onOpen={(cell, value, cut) => setDetail({ ...cell, value, cut })}
+                  onOpen={(cell, value, cut, focus) => setDetail({ ...cell, value, cut, focus })}
                   onCopy={(copied) => setNotice(t(copied ? 'editor.copied' : 'editor.copyFailed'))}
                 />
                 {detail !== null && detailColumn !== null ? (
@@ -1100,7 +1163,7 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         <ProdConnectDialog
           open
           name={visible(prodAsk.profile.name)}
-          timeoutSeconds={PROD_TIMEOUT_S}
+          timeoutSeconds={(prodAsk.profile.statement_timeout_ms ?? PROD_TIMEOUT_MS) / 1000}
           onCancel={() => setProdAsk(null)}
           onConnect={() => {
             prodConfirmed.current.add(prodAsk.profile.id);

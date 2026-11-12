@@ -56,7 +56,8 @@ const sent = window as unknown as {
 sent.writes = [];
 
 /** The fake query engine of the editor scenario; e2e/editor.spec.ts reads what the page sent (`window.queryLog`). */
-const queryServer = createQueryServer();
+// `connectDelay` (ms) delays opening a connection (e2e/editor.spec.ts: run, cancel and close while connecting).
+const queryServer = createQueryServer({ connectDelayMs: Number(params.get('connectDelay') ?? 0) });
 (window as unknown as { queryLog: unknown }).queryLog = queryServer.log;
 const draft = params.get('sql');
 if (scenario === 'editor' && draft !== null) {

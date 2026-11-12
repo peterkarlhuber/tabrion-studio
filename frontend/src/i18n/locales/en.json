@@ -573,7 +573,8 @@
       "cappedBytes_other": "{{rows}} rows, capped at the size limit of a result (more rows exist) · {{ms}} ms",
       "statements_one": "{{count}} statement, {{failed}} failed",
       "statements_other": "{{count}} statements, {{failed}} failed",
-      "loadMore": "Load up to {{rows}} rows"
+      "loadMore": "Load up to {{rows}} rows",
+      "connecting": "Connecting…"
     },
     "grid": {
       "cut": "cut"
@@ -613,6 +614,7 @@
       "permission": "The database role may not read this object.",
       "data": "A value does not fit its column or operation.",
       "database": "The database refused the statement ({{code}})."
-    }
+    },
+    "canceledBeforeStart": "Canceled before the query started."
   }
 }

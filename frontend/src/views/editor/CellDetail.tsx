@@ -1,7 +1,7 @@
 /**
  * The detail panel of one cell (08 section 4.4): the whole value as plain text (never HTML, threat T-07), JSON
- * indented, bytes as a hex dump, with "Copy". Opened with Enter or a click in the grid; Escape or "Close" returns the
- * focus to the grid.
+ * indented, bytes as a hex dump, with "Copy". Opened with Enter (the focus moves into the panel) or a click in the
+ * grid (the focus stays in the grid); Escape or "Close" returns the focus to the grid.
  */
 import { Copy, X } from 'lucide-react';
 import { useEffect, useRef, type KeyboardEvent } from 'react';
@@ -26,6 +26,8 @@ export interface OpenCell {
   column: number;
   value: unknown;
   cut: boolean;
+  /** Move the focus into the panel: on Enter, not on a click, which keeps it in the grid (L-7). */
+  focus?: boolean;
 }
 
 export function CellDetail({
@@ -46,8 +48,8 @@ export function CellDetail({
   const kind = cellKind(cell.value);
 
   useEffect(() => {
-    heading.current?.focus();
-  }, [cell.row, cell.column]);
+    if (cell.focus) heading.current?.focus();
+  }, [cell.row, cell.column, cell.focus]);
 
   const copy = async () => {
     try {

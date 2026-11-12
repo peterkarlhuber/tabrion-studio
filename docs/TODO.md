@@ -54,8 +54,8 @@
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
-| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41) |
-| TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Open (needs a `.github/` pull request) |
+| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-4 and L-1..L-8 done) |
+| TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Open (needs a `.github/` pull request; does not block STU-012) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -360,7 +360,7 @@ merge after OA-004.
 | TABRION STU-015 | Migration status (Alembic, SQLite `user_version`) | P1 | STU-009 | Done (PR #29): `GET /api/connections/{id}/migrations`, the per-project code trust (`/api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the revision files) and the worker process for `tabrion.migrations.status` (only the connection's target, minimal environment, 30 s timeout); threat-model entry T-16 in `docs/architecture/migrations.md`. Review fix round (`stu-015-review.md`): H-1 the worker runs the hashed bytes and reads no bytecode of the project, M-1 the driver loads before the project's folders are on `sys.path`, M-2 bounded read and kill without waiting for the pipe (Windows: TD-024), M-3 tests for `-I`, the closed streams, the answer cap and `os._exit`, L-1 the T-16 wording, L-2 cap while reading, L-3 one worker at a time (`studio.migrations_busy`). The trust dialog and the status view in the page are in PR #32. Open: the T-16 row and the changed T-08 text in doc 03 section 7.3 (coordinating thread); tests against `examples/parts` of the tabrion repository once it has an Alembic project (the tests use their own fixture); the Levuvo formats are STU-024 (done) |
 | TABRION STU-021 | Export (CSV, JSON) | P1 | STU-011, STU-013 | Done (PR #33; done before STU-017, the plan's dependency on it is not needed, accepted by the owner on 2026-11-12 15:45Z, tabrion program status D-123), on tabrion 0.1 like STU-011 (TD-013): `POST /api/exports` streams a query result or a table as CSV or JSON (refusals before the first byte, at most 1 000 000 rows, 10 minutes, one export per connection and 2 at a time, CSV formula escaping for text and bytes); 1 million rows under 100 MB (tracemalloc test); `docs/architecture/exports.md`. Review `stu-021-review.md` (accepted with conditions): F-1 fetches of at most 32 rows (RSS test of wide rows after narrow ones), F-2 tests for every guard, F-3 fullwidth formula starts, F-4 one spelling of non-finite values, F-5 large integers as text, F-6 ISO 8601 intervals, F-8 the response closes the export; F-7, F-9, F-10 are TD-026. Delta check ACCEPTED at `65b544f`; its notes R-1 (the memory bound grows with the widest row) and R-2 (large integers inside arrays and single-number json documents) are documented in `exports.md`. Open: the export dialog in the page (frontend lane, after STU-012) |
 | TABRION STU-024 | Migration status of the Levuvo formats (Nodestro, Axentra, Orkexa) | P2 | STU-015 | Done (PR #30; backend). The plan's STU-017 dependency was dropped on 2026-11-12: doc 03 section 10 needs only STU-015, the backend needs nothing from STU-017, and the page condition C-1 (`stu-015-ui-review.md`) is met in PR #32. The owner accepted this order on 2026-11-12 15:37Z (no rollback; tabrion program status D-122); it lifts no other gate (G-S1, G-S2 for STU-026, G-R and the human security review before a public release stay). Version tables in every schema compared with the project's migration files (also in a project `.venv`), checksums as the runners record them, states current/pending/newer/changed/no_files with an SQL preview of pending steps; nothing is imported or run; fixtures copied from the three repositories (`tests/security/levuvo_fixtures`). Review `stu-024-review.md`: ACCEPTED with conditions; F-1 (a version table the role may not read, with unexpected columns or types, or a failed read is reported as `state: unreadable` with its problem, `studio.migrations_table` is new; only Orkexa's own table names count) and F-2 (tests for the preview and file caps, identifier quoting, glob characters in the project path, the order of the states, a database without version tables) are fixed. Windows (`backend test (windows-latest)` at `281258a`, 2 failures): the preview is now the text the runner reads and the checksum covers (every line end `\n`), so a file written with `\r\n` has the same preview on every platform; the glob test uses `a[b]c` everywhere and `a[b]*c?` only where `*` and `?` are valid file name characters (not Windows). The view in the page is in PR #32 (minimal, TD-025). Open: Axentra product namespaces have no files (registered in code); the review's minor findings M-1 (duplicate versions dropped silently), M-2 (Orkexa file problems show as `no_files`), M-3 (`LIMIT 100` tables and 10 000 rows cut without a flag), M-4 (files read on every request), M-5 (`config.not_utf8` vs `config.encoding`), M-6 (`python3.10` sorts before `python3.9`), M-7 (`os.scandir` without `with`) |
-| TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | In progress (draft PR #41): the page `/sql` with CodeMirror 6, editor tabs with local drafts, run, run script, cancel, `:name` parameters, the virtualized result grid with the detail panel, D-02 and D-06; 100 000 rows within the memory limit (`e2e/editor.spec.ts`, `e2e/editor-backend.spec.ts`). The rest is TD-033; the required-suite list is TD-037. The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | In progress (draft PR #41): the page `/sql` with CodeMirror 6, editor tabs with local drafts, run, run script, cancel, `:name` parameters, the virtualized result grid with the detail panel, D-02 and D-06; 100 000 rows within the memory limit, and wide rows at `max_result_mb = 200` too (`e2e/editor.spec.ts`, `e2e/editor-backend.spec.ts`). Review `stu-012-review.md` (accepted with conditions): C-1..C-4 (results cleared on a profile change, the run registered before connecting, one-decimal durations, a row cache bounded in bytes) and L-1..L-8 done. The rest is TD-033; the required-suite list is TD-037. The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
@@ -954,14 +954,32 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 ### TD-033 · STU-012 SQL editor MVP: what it leaves for later
 
 - **Priority:** P2 Medium · **Status:** Open (STU-012 draft PR #41) · **Refs:** 03 section 2 C, 08 sections 4.4, 5 and 7,
-  `docs/architecture/frontend.md` ("SQL editor (STU-012)")
+  `docs/architecture/frontend.md` ("SQL editor (STU-012)"), `stu-012-review.md`
+- **Done in the review fix round (`stu-012-review.md`, accepted with conditions):** C-1/M-1 and L-1, a profile change
+  clears the tab's results, so PROD rows never show under another badge and "Load more" runs only on the profile the
+  result came from; C-2/M-2, a run is registered before the connection opens (a second run starts nothing, cancel
+  and closing the tab start no query); C-3/M-3, `elapsed_ms` with one decimal (the harness sends one too, the
+  real-server tests reject "0 ms" and expect at least 0.4 s for a cancel after 0.5 s); C-4/M-4, the row cache is
+  bounded in bytes (64 MB estimated, chunks of 50 rows, fetches sized by the rows seen) as well as in rows, with
+  wide-row tests in the harness and against the real server at `max_result_mb = 200` that fail without the byte
+  bound; L-2 the shortcut description inside the editor's shadow root; L-3 the placeholder rules of
+  `services/sqltext.py` (below); L-4 D-02 names the profile's own timeout; L-5 drafts per project and merged by tab;
+  L-6 row pages checked (offset, row count) and asked for again up to 3 times; L-7 a click keeps the focus in the
+  grid; L-8 the `SHORTCUTS` comment. Tests for the review's surviving mutants: a script stopping at a failed
+  statement, the draft size cap, the row index, the duration parser. Info: a Tab-exit e2e was added.
 - **Drafts in the state database:** 08 keeps drafts in Studio's state database; the MVP keeps the tabs' titles,
-  profiles and text in the browser's `localStorage` (`src/views/editor/drafts.ts`), which is per port like TD-021.
-  Move them behind an API route when the state database has a drafts table. Parameter values and results are never
-  stored.
+  profiles and text in the browser's `localStorage` (`src/views/editor/drafts.ts`), which is per port like TD-021,
+  under a key per project (a hash of the project's folder) and merged by tab between pages. Move them behind an API
+  route when the state database has a drafts table (then they also get its 0600 file, 03 section 4.3, T-04).
+  Parameter values and results are never stored.
 - **Statement splitting:** the page splits scripts with its own scanner (`sqlScan.ts`) instead of
   `tabrion.sql.split_statements`; the server checks every statement again, so a different reading is refused, never
-  run as something else. Replace it with a server route (or tabrion 0.2's splitter) when one exists.
+  run as something else. Replace it with a server route (or tabrion 0.2's splitter) when one exists. The page now
+  finds placeholders with the server's rules (`services/sqltext.py`: names of at most 63 characters, not running on
+  into a word character, which includes `$` and non-ASCII; `--` ends at `\n` or `\r`; a non-ASCII word followed by
+  `$x$` is one word). Known differences that remain, each ending in a refusal: the server's splitter knows no
+  dialect, so SQLite `[a;b]`, a backtick identifier with `;` and a SQLite comment that looks nested are split by the
+  server (`studio.statement_multiple`) but not by the page; the page nests block comments only for PostgreSQL.
 - **Error positions:** `db.<kind>` problems carry no position yet (TD-013 follow-up), so the editor marks no error
   location.
 - **Grid:** no column resizing, sorting or "load in full" for a cut cell (03 section 5.3; the data viewer has it);
@@ -975,12 +993,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-037 · STU-012: the editor suites in the e2e job's required list
 
-- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request) · **Refs:** `.github/workflows/ci.yml`
-  (job `e2e`), OA-003
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request; does not block STU-012, review
+  `stu-012-review.md`) · **Refs:** `.github/workflows/ci.yml` (job `e2e`), OA-003
 - **Problem:** `e2e/editor.spec.ts` and `e2e/editor-backend.spec.ts` run in the CI job `e2e`, but the step "Every
   suite ran and none was skipped" does not list them, so a skipped editor suite would not fail the job. Adding them
   changes `.github/workflows/ci.yml` and needs a workflow-change review (OA-003), like `keyboard.spec.ts` (TD-020) and
   `a11y-audit.spec.ts` (TD-022). The STU-012 PR does not touch `.github/`.
+- **What runs already:** `npm run e2e` runs every spec, and the job fails on any unexpected result; the review saw
+  both editor suites pass in CI at `7acfe6b`. Only the skip detection is missing.
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 

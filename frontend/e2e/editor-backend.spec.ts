@@ -2,7 +2,9 @@
  * STU-012 end to end: the built SQL editor in a real `tabrion-studio` process with a SQLite profile, under the strict
  * Content-Security-Policy of STU-003 (CodeMirror's styles live in a shadow root, see src/views/editor/SqlEditor.tsx):
  * run, the grid, parameters, a refused write, cancel of an endless query within a second (STU-T-020 from the page),
- * and 100 000 rows within the memory limit of 03 section 10 (300 MB of browser memory).
+ * 100 000 rows within the memory limit of 03 section 10 (300 MB of browser memory), and wide rows at the largest
+ * result the server allows (`max_result_mb = 200`) within it too (M-4 of stu-012-review.md). Durations must not read
+ * as 0: the server sends them with one decimal (C-3).
  *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
@@ -133,7 +135,12 @@ async function type(page: Page, sql: string): Promise<void> {
   await page.keyboard.insertText(sql);
 }
 
-test('setup: a SQLite profile and a row limit of 100 000', async ({ page }) => {
+/** A duration in the status line that is not zero ("0 ms" was every duration before C-3 of stu-012-review.md). */
+const MS = String.raw`(?!0 ms)\d[\d,.]* ms`;
+
+test('setup: a SQLite profile, a row limit of 100 000 and the largest result size', async ({
+  page,
+}) => {
   await signIn(page);
   expect(
     await api(page, 'POST', '/api/profiles', {
@@ -144,7 +151,10 @@ test('setup: a SQLite profile and a row limit of 100 000', async ({ page }) => {
   ).toBe(201);
   expect(
     await api(page, 'PUT', '/api/settings', {
-      settings: { log_sql: false, limits: { max_rows: 100_000, statement_timeout_ms: 30_000 } },
+      settings: {
+        log_sql: false,
+        limits: { max_rows: 100_000, statement_timeout_ms: 30_000, max_result_mb: 200 },
+      },
       digest: null,
       overwrite: false,
     }),
@@ -168,7 +178,7 @@ test('runs a query under the CSP, with the grid, parameters and the detail panel
   await page.keyboard.type('Aluminium');
   await page.locator('.cm-content').click();
   await page.keyboard.press('Control+Enter');
-  await expect(page.getByTestId('result-status')).toHaveText(/^25 rows · \d+ ms$/);
+  await expect(page.getByTestId('result-status')).toHaveText(new RegExp(`^25 rows · ${MS}$`));
   const grid = page.getByRole('grid', { name: 'Result 1' });
   await expect(grid).toHaveAttribute('aria-rowcount', '26');
   await expect(grid.getByRole('columnheader')).toHaveText(['id', 'material', 'weight', 'note']);
@@ -220,10 +230,12 @@ test('cancel stops an endless query within a second (STU-T-020)', async ({ page 
   await page.waitForTimeout(500);
   const started = Date.now();
   await page.keyboard.press('Control+.');
-  await expect(page.getByTestId('result-status')).toHaveText(/^Canceled after \d+\.\d s\.$/, {
-    timeout: 5_000,
-  });
+  const status = page.getByTestId('result-status');
+  await expect(status).toHaveText(/^Canceled after \d+\.\d s\.$/, { timeout: 5_000 });
   expect(Date.now() - started).toBeLessThan(1_500);
+  // The query ran for at least the 500 ms waited above.
+  const seconds = Number(/after (\d+\.\d) s/.exec((await status.textContent()) ?? '')?.[1]);
+  expect(seconds).toBeGreaterThanOrEqual(0.4);
   // The connection works afterwards.
   await type(page, 'select 42');
   await page.getByTestId('editor-run').click();
@@ -242,7 +254,7 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
   await page.getByTestId('editor-run').click();
   await expect(page.getByTestId('result-status')).toHaveText(/^1,000 rows, capped at 1,000/);
   await page.getByRole('button', { name: 'Load up to 100,000 rows' }).click();
-  await expect(page.getByTestId('result-status')).toHaveText(/^100,000 rows · \d+ ms$/, {
+  await expect(page.getByTestId('result-status')).toHaveText(new RegExp(`^100,000 rows · ${MS}$`), {
     timeout: 60_000,
   });
   const grid = page.getByRole('grid');
@@ -270,5 +282,45 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
   );
   expect(total).toBeLessThan(300 * 2 ** 20);
   expect(used).toBeLessThan(100 * 2 ** 20);
+  expect(violations).toEqual([]);
+});
+
+test('wide rows at max_result_mb = 200 stay within the memory limit (M-4)', async ({ page }) => {
+  test.setTimeout(240_000);
+  const violations = await signIn(page);
+  await openEditor(page);
+  // Three texts of 30 000 characters "€" per row: about 270 KB of UTF-8 and 180 KB in V8 per row. Each text starts
+  // with its row and column, so no two are equal (equal strings could be shared by the JSON parser).
+  const wide = (column: string) => `n || '${column}' || replace(hex(zeroblob(30000)), '00', '€')`;
+  await type(
+    page,
+    `with recursive c(n) as (select 1 union all select n + 1 from c where n < 1200) select n, ${wide('a')} as a, ${wide('b')} as b, ${wide('c')} as c from c`,
+  );
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByTestId('result-status')).toHaveText(/rows/, { timeout: 120_000 });
+  const grid = page.getByRole('grid');
+  const count = Number(await grid.getAttribute('aria-rowcount')) - 1;
+  console.warn(`real server, wide rows: ${count} rows in the result`);
+  expect(count).toBeGreaterThan(500);
+  for (let step = 0; step <= 40; step += 1) {
+    await grid.evaluate((el, fraction) => {
+      el.scrollTop = (el.scrollHeight - el.clientHeight) * fraction;
+    }, step / 40);
+    await expect(grid.getByRole('row').nth(1).getByRole('gridcell').first()).not.toHaveText('…', {
+      timeout: 20_000,
+    });
+  }
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('HeapProfiler.collectGarbage');
+  await cdp.send('Performance.enable');
+  const { metrics } = await cdp.send('Performance.getMetrics');
+  const used = metrics.find((m) => m.name === 'JSHeapUsedSize')?.value ?? Infinity;
+  const total = metrics.find((m) => m.name === 'JSHeapTotalSize')?.value ?? Infinity;
+  console.warn(
+    `real server, wide rows: JS heap used ${(used / 2 ** 20).toFixed(1)} MB, total ${(total / 2 ** 20).toFixed(1)} MB`,
+  );
+  expect(total).toBeLessThan(300 * 2 ** 20);
+  // The byte budget is 64 MB; all rows held would be well above 100 MB.
+  expect(used).toBeLessThan(140 * 2 ** 20);
   expect(violations).toEqual([]);
 });

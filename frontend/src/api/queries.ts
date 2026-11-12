@@ -51,6 +51,11 @@ function count(value: unknown): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
 }
 
+/** A duration in milliseconds: the server sends one decimal (`12.3`), so any finite number of 0 or more. */
+export function duration(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 function problem(value: unknown, status: number): Problem | null {
   if (typeof value !== 'object' || value === null) return null;
   const doc = value as Record<string, unknown>;
@@ -76,7 +81,7 @@ export function parseStatus(body: unknown): QueryStatus | null {
     maxRows: count(doc.max_rows),
     truncatedBy:
       doc.truncated_by === 'rows' || doc.truncated_by === 'bytes' ? doc.truncated_by : null,
-    elapsedMs: count(doc.elapsed_ms),
+    elapsedMs: duration(doc.elapsed_ms),
     columns: columns.map((item: unknown): QueryColumn => {
       const column = (typeof item === 'object' && item !== null ? item : {}) as Record<
         string,

@@ -137,6 +137,11 @@ export function formatCount(count: number, locale: string): string {
   return new Intl.NumberFormat(locale).format(count);
 }
 
+/** A duration in milliseconds: one decimal below 10 ms ("0.4", "2.5"), whole milliseconds above ("24", "1,234"). */
+export function formatMs(ms: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: ms < 10 ? 1 : 0 }).format(ms);
+}
+
 /** A duration in seconds with one decimal ("4.2", "4,2" in German). */
 export function formatSeconds(ms: number, locale: string): string {
   return new Intl.NumberFormat(locale, {

@@ -1,7 +1,7 @@
 /**
  * The result grid (03 section 2 C, 08 sections 4.4 and 9): column names and types, the rows of one result,
  * virtualized in both directions with TanStack Virtual, so a result of 100 000 rows renders only what is visible and
- * holds only the pages of `RowCache` (at most 10 000 rows) in the browser.
+ * holds only the chunks of `RowCache` (at most 10 000 rows and 64 MB) in the browser.
  *
  * Accessibility (WAI-ARIA grid pattern with `aria-activedescendant`, 08 section 9): `role="grid"` with
  * `aria-rowcount`/`aria-colcount`, every rendered row and cell with `aria-rowindex`/`aria-colindex`. The grid is one
@@ -52,8 +52,8 @@ export function ResultGrid({
   cache: RowCache;
   columns: QueryColumn[];
   label: string;
-  /** Enter, a click or a double click on a cell: show it in the detail panel. */
-  onOpen: (cell: ActiveCell, value: unknown, cut: boolean) => void;
+  /** Enter (`focus` true: the panel takes the focus) or a click (the grid keeps it): show it in the detail panel. */
+  onOpen: (cell: ActiveCell, value: unknown, cut: boolean, focus: boolean) => void;
   /** After ⌘C/Ctrl+C: whether the value reached the clipboard. */
   onCopy: (copied: boolean) => void;
 }) {
@@ -145,7 +145,7 @@ export function ResultGrid({
         const cached = cache.get(row);
         if (cached !== undefined) {
           event.preventDefault();
-          onOpen(active, cached.values[column], cached.cut.has(column));
+          onOpen(active, cached.values[column], cached.cut.has(column), true);
         }
         return;
       }
@@ -177,7 +177,9 @@ export function ResultGrid({
     const cell = { row: Number(target.dataset.row), column: Number(target.dataset.column) };
     setActive(cell);
     const cached = cache.get(cell.row);
-    if (cached !== undefined) onOpen(cell, cached.values[cell.column], cached.cut.has(cell.column));
+    if (cached !== undefined) {
+      onOpen(cell, cached.values[cell.column], cached.cut.has(cell.column), false);
+    }
   };
 
   const totalWidth = cols.getTotalSize();
