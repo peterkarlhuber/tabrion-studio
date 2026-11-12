@@ -151,7 +151,8 @@ and the exports keep the session's `search_path` (see [explorer](explorer.md)).
 **Connection setup (TD-039):** when a PostgreSQL connection is opened, SQLAlchemy's dialect sends setup queries of its
 own (`current_schema()` among them) before Studio or tabrion send anything, and a database or role setting may put a
 user schema ahead of `pg_catalog`. Studio's first `connect` listener (`tabrion_compat.pin_setup_path`) sets
-`search_path` to `pg_catalog, pg_temp` for the setup (hardening against object resolution through user schemas), and
+`search_path` to `tabrion_compat.CATALOG_SEARCH_PATH` (`pg_catalog, pg_temp`, the path of Studio's own catalog reads)
+for the setup (hardening against object resolution through user schemas), and
 its last one (`restore_setup_path`) runs `RESET search_path`, so the session gets back the path of the database, role
 or startup settings before it is used; the dialect's default schema is then read again with a qualified
 `pg_catalog.current_schema()`. Studio sets no `search_path` of its own (`startup_options` refuses one), so tabrion's

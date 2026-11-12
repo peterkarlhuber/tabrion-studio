@@ -870,7 +870,7 @@ TRAP = "studio_ddl_trap"
 
 def plant(admin: sqlalchemy.Connection, attacker: str) -> None:
     """Operators in ``public``, owned by ``attacker``. Each answers like pg_catalog's until the trap is armed (a row
-    in ``public.studio_ddl_trap``), then raises: connecting works, and a call after arming fails its statement."""
+    in ``public.studio_ddl_trap``), then raises: a call after arming fails its statement."""
     admin.exec_driver_sql(f"CREATE TABLE public.{TRAP} (armed boolean)")
     admin.exec_driver_sql(f"ALTER TABLE public.{TRAP} OWNER TO {attacker}")
     admin.exec_driver_sql(f"GRANT SELECT ON public.{TRAP} TO PUBLIC")
@@ -936,10 +936,12 @@ def test_pg_h1_planted_operators_are_never_called(user_schema_first: bool) -> No
                     f"ALTER ROLE {_quote(admin, victim)} IN DATABASE {_quote(admin, database)} "
                     "SET search_path = public, pg_catalog"
                 )
-        definitions = Definitions(Explorer(registry))
-        connection_id = registry.open("user:pg").id
+        # Armed before the connection is opened (I-3 of td-039-review.md): the connection's setup (the dialect's
+        # first-connect queries, tabrion's session settings) runs under the fixed path too (TD-039).
         with admin.begin() as connection:
             connection.exec_driver_sql("INSERT INTO public.studio_ddl_trap VALUES (true)")
+        definitions = Definitions(Explorer(registry))
+        connection_id = registry.open("user:pg").id
         # Control: the armed operators are reachable from statements under the role's own search_path.
         controls = ["SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltuples >= 0 LIMIT 1"]
         if user_schema_first:
@@ -949,7 +951,7 @@ def test_pg_h1_planted_operators_are_never_called(user_schema_first: bool) -> No
                 registry.get(connection_id).fetch(control, catalog=False)
         browse(definitions, connection_id)
         # Studio's own diagnosis statements (STU-DX-003/004/006/007) are catalog reads too; tabrion's checks catch their
-        # own errors, so this does not show that they call nothing (TD-039).
+        # own errors, so this does not show that they call nothing (they are fully qualified, tabrion contract I-16).
         assert Diagnostics(registry).run(connection_id)["engine"] == "postgresql"
         # The migration status: the Levuvo version tables (a pinned catalog read) and the Alembic table, which is
         # looked up on the session's search_path with qualified operators.
