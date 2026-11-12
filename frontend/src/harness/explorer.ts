@@ -220,6 +220,20 @@ export const PG_TABLES: Record<string, object> = {
     name: 'measurement_id_seq',
     kind: 'sequence',
   },
+  device_overview: {
+    connection_id: 'c-pg',
+    schema: 'public',
+    name: 'device_overview',
+    kind: 'view',
+    columns: [column('id', 'BIGINT', true), column('name', 'TEXT', true)],
+    primary_key: null,
+    foreign_keys: [],
+    referenced_by: [],
+    unique_constraints: [],
+    check_constraints: [],
+    indexes: [],
+    row_estimate: null,
+  },
 };
 
 export const PG_EXTENSIONS = {
@@ -242,8 +256,161 @@ export const PG_EXTENSIONS = {
   ],
 };
 
+/** STU-022: the DDL of some objects (`services/definitions.py`), keyed by name; one carries hostile text (U-1). */
+const ddl = (
+  connection: string,
+  schema: string,
+  name: string,
+  kind: string,
+  statements: string[],
+  extra = {},
+) => ({
+  connection_id: connection,
+  schema,
+  name,
+  kind,
+  engine: connection === 'c-sqlite' ? 'sqlite' : 'postgresql',
+  owner: null,
+  statements,
+  ddl: statements.map((statement) => `${statement};\n\n`).join(''),
+  notes: [],
+  ...extra,
+});
+
+export const SQLITE_DDL: Record<string, object> = {
+  part: ddl('c-sqlite', 'main', 'part', 'table', [
+    'CREATE TABLE part (\n\tid INTEGER NOT NULL,\n\tpart_number VARCHAR(40) NOT NULL,\n\tname VARCHAR(200) NOT NULL,\n\tCONSTRAINT pk_part PRIMARY KEY (id)\n) STRICT',
+    'CREATE INDEX ix_part_name ON part (name)',
+  ]),
+  part_overview: ddl('c-sqlite', 'main', 'part_overview', 'view', [
+    'CREATE VIEW part_overview AS SELECT id, part_number FROM part',
+  ]),
+  [HOSTILE_TABLE]: ddl('c-sqlite', 'main', HOSTILE_TABLE, 'table', [
+    'CREATE TABLE "notes\u202etxt.exe\nx" (body\u202eevil TEXT) -- \\ \r<b>bold</b>',
+  ]),
+};
+
+export const PG_DDL: Record<string, object> = {
+  measurement: ddl(
+    'c-pg',
+    'public',
+    'measurement',
+    'table',
+    [
+      'CREATE TABLE public.measurement (\n    id bigint NOT NULL,\n    device_id bigint NOT NULL,\n    value numeric(18,6) NOT NULL\n)',
+      'ALTER TABLE ONLY public.measurement\n    ADD CONSTRAINT measurement_pkey PRIMARY KEY (id)',
+      'ALTER TABLE public.measurement ENABLE ROW LEVEL SECURITY',
+      'CREATE POLICY own_devices ON public.measurement FOR SELECT TO analyst USING ((device_id IN ( SELECT device.id\n   FROM public.device)))',
+    ],
+    { owner: 'measure_owner' },
+  ),
+  device: ddl(
+    'c-pg',
+    'public',
+    'device',
+    'table',
+    ['CREATE TABLE public.device (\n    id bigint NOT NULL,\n    name text NOT NULL\n)'],
+    { owner: 'measure_owner' },
+  ),
+  device_overview: ddl(
+    'c-pg',
+    'public',
+    'device_overview',
+    'view',
+    [
+      'CREATE VIEW public.device_overview AS\n SELECT device.id,\n    device.name\n   FROM public.device',
+    ],
+    { owner: 'measure_owner' },
+  ),
+  measurement_id_seq: ddl(
+    'c-pg',
+    'public',
+    'measurement_id_seq',
+    'sequence',
+    [
+      'CREATE SEQUENCE public.measurement_id_seq\n    START WITH 1\n    INCREMENT BY 1\n    NO MINVALUE\n    NO MAXVALUE\n    CACHE 1',
+      'ALTER SEQUENCE public.measurement_id_seq OWNED BY public.measurement.id',
+    ],
+    {
+      owner: 'measure_owner',
+      notes: ["Column id owns the sequence measurement_id_seq; its DDL is the sequence's."],
+    },
+  ),
+};
+
+/** STU-022: row-level security of two PostgreSQL tables (the harness role `analyst` is bound on one of them). */
+export const PG_POLICIES: Record<string, object> = {
+  measurement: {
+    connection_id: 'c-pg',
+    schema: 'public',
+    name: 'measurement',
+    kind: 'table',
+    owner: 'measure_owner',
+    rls_enabled: true,
+    rls_forced: false,
+    current_role: { name: 'analyst', superuser: false, bypass_rls: false, owner: false },
+    rls_applies: true,
+    policies: [
+      {
+        name: 'own_devices',
+        permissive: true,
+        command: 'SELECT',
+        roles: ['analyst'],
+        using: '(device_id IN ( SELECT device.id\n   FROM device))',
+        with_check: null,
+      },
+      {
+        name: 'no‮_writes',
+        permissive: false,
+        command: 'ALL',
+        roles: ['public'],
+        using: 'true',
+        with_check: 'false',
+      },
+    ],
+  },
+  device: {
+    connection_id: 'c-pg',
+    schema: 'public',
+    name: 'device',
+    kind: 'table',
+    owner: 'measure_owner',
+    rls_enabled: true,
+    rls_forced: false,
+    current_role: { name: 'measure_owner', superuser: false, bypass_rls: false, owner: true },
+    rls_applies: false,
+    policies: [],
+  },
+};
+
+/** STU-022: SQLite's `count(*)` on request; `material` runs past the server's timeout. */
+export const SQLITE_COUNTS: Record<string, object> = {
+  part: {
+    connection_id: 'c-sqlite',
+    schema: 'main',
+    name: 'part',
+    kind: 'table',
+    count: 1234,
+    elapsed_ms: 3,
+  },
+  part_overview: {
+    connection_id: 'c-sqlite',
+    schema: 'main',
+    name: 'part_overview',
+    kind: 'view',
+    count: 1,
+    elapsed_ms: 1,
+  },
+};
+
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
-const problem = (code: string, status: number) => json({ code, kind: 'not_found', status }, status);
+const problem = (code: string, status: number, kind = 'not_found') =>
+  json({ code, kind, status }, status);
+
+function byName(query: string | undefined, answers: Record<string, object>): Response {
+  const name = new URLSearchParams(query ?? '').get('name') ?? '';
+  return name in answers ? json(answers[name]) : problem('studio.object_not_found', 404);
+}
 
 /** The explorer's answer to one request, or null when the request is not the explorer's. */
 export function explorerAnswer(url: string, method: string, body?: string): Response | null {
@@ -268,6 +435,16 @@ export function explorerAnswer(url: string, method: string, body?: string): Resp
       return sqlite ? json(SQLITE_INFO) : problem('studio.explorer_engine', 409);
     case 'extensions':
       return sqlite ? problem('studio.explorer_engine', 409) : json(PG_EXTENSIONS);
+    case 'ddl':
+      return byName(query, sqlite ? SQLITE_DDL : PG_DDL);
+    case 'policies':
+      return sqlite ? problem('studio.explorer_engine', 409) : byName(query, PG_POLICIES);
+    case 'row-count': {
+      if (!sqlite) return problem('studio.explorer_engine', 409);
+      const name = new URLSearchParams(query ?? '').get('name');
+      if (name === 'material') return problem('db.timeout', 504, 'timeout');
+      return byName(query, SQLITE_COUNTS);
+    }
     default:
       return null;
   }

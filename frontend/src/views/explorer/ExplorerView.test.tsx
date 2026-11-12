@@ -12,6 +12,7 @@ import {
   explorerAnswer,
   HOSTILE_TABLE,
   PG_CATALOG,
+  PG_DDL,
   PG_TABLES,
   SQLITE_CATALOG,
   SQLITE_INFO,
@@ -590,6 +591,7 @@ describe('the details', () => {
       'Relationships',
       'Data',
       'SQLite',
+      'DDL',
     ]);
     const columns = await within(detail).findAllByTestId('detail-column');
     expect(columns).toHaveLength(8);
@@ -622,18 +624,23 @@ describe('the details', () => {
         .getAllByTestId('detail-referenced-by')
         .map((i) => i.textContent),
     ).toEqual(['main.part_relation (assembly_id) → id', 'main.property (part_id) → id']);
-    await user.keyboard('{End}');
+    await user.keyboard('{ArrowRight}');
+    expect(tabs[4]).toHaveFocus(); // Data (STU-013 page)
+    await user.keyboard('{ArrowRight}');
     expect(tabs[5]).toHaveFocus();
     expect(within(detail).getByTestId('detail-sqlite')).toHaveTextContent(
       'STRICTYesWITHOUT ROWIDNo',
     );
+    await user.keyboard('{End}');
+    expect(tabs[6]).toHaveFocus();
+    expect(await within(detail).findByTestId('detail-ddl')).toBeVisible();
     await user.keyboard('{Home}');
     expect(tabs[0]).toHaveFocus();
     await user.keyboard('{ArrowLeft}'); // wraps around
-    expect(tabs[5]).toHaveFocus();
+    expect(tabs[6]).toHaveFocus();
     // The panel is labelled by its tab and takes the focus (WAI-ARIA tabs).
     const panel = within(detail).getByRole('tabpanel');
-    expect(panel).toHaveAttribute('aria-labelledby', tabs[5]?.id);
+    expect(panel).toHaveAttribute('aria-labelledby', tabs[6]?.id);
     expect(panel).toHaveAttribute('tabindex', '0');
   });
 
@@ -666,8 +673,12 @@ describe('the details', () => {
     expect(screen.queryByRole('tab', { name: 'SQLite' })).toBeNull();
     await user.click(row('Sequences (1)'));
     await user.click(row('measurement_id_seq'));
-    expect(await screen.findByText(/does not show the details of a sequence yet/)).toBeVisible();
+    expect(await screen.findByText(/shows a sequence's DDL/)).toBeVisible();
     expect(screen.queryByRole('tablist')).toBeNull();
+    expect(await screen.findByTestId('ddl-text')).toHaveTextContent(
+      'CREATE SEQUENCE public.measurement_id_seq',
+    );
+    expect(screen.getByTestId('ddl-notes')).toHaveTextContent('Column id owns the sequence');
   });
 
   it('following a relationship selects the target and puts the focus on its row', async () => {
@@ -1109,6 +1120,93 @@ describe('fail closed', () => {
     expect(objects[MAX_GROUP_ITEMS - 1]).toHaveTextContent('t0499');
     expect(screen.getByTestId('explorer-truncated')).toBeInTheDocument();
     expect(screen.getByTestId('explorer-large')).toHaveTextContent(`${LARGE_CATALOG} objects`);
+  });
+});
+
+describe('STU-022: the DDL and policies tabs and the SQLite row count', () => {
+  it('PostgreSQL: a table has DDL and Policies, a view only DDL; both read on the open connection', async () => {
+    const { fetcher, calls } = server();
+    const user = await openPg(fetcher);
+    await user.click(row('measurement'));
+    const detail = screen.getByTestId('explorer-detail');
+    await within(detail).findAllByTestId('detail-column');
+    expect(
+      within(detail)
+        .getAllByRole('tab')
+        .map((tab) => tab.textContent),
+    ).toEqual(['Columns', 'Constraints', 'Indexes', 'Relationships', 'Data', 'DDL', 'Policies']);
+    // Nothing is read before its tab is chosen; no row count on PostgreSQL (its estimate is shown).
+    expect(calls.filter((c) => /\/(ddl|policies|row-count)\?/.test(c.url))).toEqual([]);
+    expect(screen.queryByRole('button', { name: 'Count rows' })).toBeNull();
+    await user.click(within(detail).getByRole('tab', { name: 'DDL' }));
+    expect(await within(detail).findByTestId('ddl-text')).toHaveTextContent(
+      'CREATE TABLE public.measurement',
+    );
+    await user.click(within(detail).getByRole('tab', { name: 'Policies' }));
+    expect(await within(detail).findAllByTestId('detail-policy')).toHaveLength(2);
+    expect(calls.filter((c) => /\/(ddl|policies)\?/.test(c.url)).map((c) => c.url)).toEqual([
+      `${PG}/ddl?schema=public&name=measurement`,
+      `${PG}/policies?schema=public&name=measurement`,
+    ]);
+    // The tab stays when the next table is selected, and reads that table's policies.
+    await user.click(row('device'));
+    expect(await screen.findByTestId('policies-deny')).toBeVisible();
+    // A view has no policies tab: the page falls back to the columns.
+    await user.click(row('Views (1)'));
+    await user.click(row('device_overview'));
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('explorer-detail'))
+          .queryAllByRole('tab')
+          .map((tab) => tab.textContent),
+      ).toEqual(['Columns', 'Constraints', 'Indexes', 'Relationships', 'Data', 'DDL']),
+    );
+  });
+
+  it('a DDL that answers after the next selection is not shown', async () => {
+    const slow = later();
+    const { fetcher } = server({ [`GET ${PG}/ddl?schema=public&name=measurement`]: slow.answer });
+    const user = await openPg(fetcher);
+    await user.click(row('measurement'));
+    await screen.findAllByTestId('detail-column');
+    await user.click(screen.getByRole('tab', { name: 'DDL' }));
+    await user.click(row('device'));
+    expect(await screen.findByTestId('ddl-text')).toHaveTextContent('CREATE TABLE public.device');
+    await act(async () => {
+      slow.send(json(PG_DDL.measurement));
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('ddl-text')).toHaveTextContent('CREATE TABLE public.device');
+    expect(screen.getByTestId('ddl-text')).not.toHaveTextContent('measurement');
+  });
+
+  it('SQLite: a row count on request for a table and a view, with the timeout said in words', async () => {
+    const { fetcher, calls } = server();
+    const user = await openSqlite(fetcher);
+    await user.click(row('part'));
+    await screen.findAllByTestId('detail-column');
+    expect(screen.queryByRole('tab', { name: 'Policies' })).toBeNull();
+    expect(calls.filter((c) => c.url.includes('/row-count'))).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Count rows' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('row-count-result')).toHaveTextContent(
+        '1,234 rows (counted in 3 ms).',
+      ),
+    );
+    // Another object: the count of the last one is gone.
+    await user.click(row('material'));
+    await screen.findAllByTestId('detail-column');
+    expect(screen.getByTestId('row-count-result')).toHaveTextContent('');
+    await user.click(screen.getByRole('button', { name: 'Count rows' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('row-count-result')).toHaveTextContent(
+        'Counting took longer than 10 seconds',
+      ),
+    );
+    expect(calls.filter((c) => c.url.includes('/row-count')).map((c) => c.url)).toEqual([
+      `${SQLITE}/row-count?schema=main&name=part`,
+      `${SQLITE}/row-count?schema=main&name=material`,
+    ]);
   });
 });
 

@@ -170,9 +170,25 @@ and by the header.
   one asked for, or a catalog for another connection, is `studio.answer_invalid` too.
 - **Stale answers:** a profile switch, an open or a refresh counts up one request counter, a selection a second one;
   only the latest answer of each is shown. A refresh keeps the selection of the moment it answers.
+- **DDL, policies and row counts (STU-022, `views/explorer/Definitions.tsx`):** a **DDL** tab for every object (a
+  sequence shows its DDL without tabs) and a **Policies** tab for a PostgreSQL table; on SQLite, **Count rows** for a
+  table or view. Each reads its GET route on the explorer's open connection only when it is shown or pressed, never
+  opens a connection and sends no write (D-02). The DDL is escaped per line (`visible()`: line breaks and tabs kept,
+  every other control, separator and bidi character as `\uXXXX`, a backslash as `\\`) and cut after 100,000 characters
+  with a note; **Copy DDL** copies the exact text (the clipboard, not the database). The owner and the server's notes
+  are shown escaped and capped. The policies tab shows RLS on/forced, the owner and the connection's role, whether the
+  policies bind that role and why not (off, superuser, `BYPASSRLS`, owner or member of the owning role without
+  `FORCE`), a warning when RLS is on without a policy, and every policy (permissive or restrictive, command, roles,
+  `USING`, `WITH CHECK`, expressions capped at 1000 characters). A row count past the server's timeout (`db.timeout`)
+  says so in the page's words. The parsers fail closed: a statement, note, owner, role name, `USING` or `WITH CHECK`
+  that is present but not text, a role flag that is not a boolean, or a policy with an unknown command or roles that
+  are not a list of text refuses the whole answer, and an answer for another connection or object is refused (I-1).
+  Each panel is keyed by connection and object (a JSON key, since names may hold any character), so a late answer for
+  an earlier selection is dropped. Copy DDL empties its status before the new text, so a second copy is announced
+  again.
 
-Open: the tree's context menu (its actions are buttons above the tabs for now), the DDL and policies tab (with
-STU-022, #38), the virtualized tree and following the header's connection; see TD-041.
+Open: the tree's context menu (its actions are buttons above the tabs for now), the virtualized tree, the estimates
+of `row-estimates` in the tree, and following the header's connection; see TD-041.
 
 ## Tests
 
@@ -184,4 +200,6 @@ STU-022, #38), the virtualized tree and following the header's connection; see T
 | `tests/security/test_definitions.py` (PostgreSQL) | STU-022 acceptance: the DDL of the parts, measurements and `extras` schemas, and of both apps in `public`, equals `pg_dump --schema-only` statement by statement (recorded and live); `extras` includes rules, child-only `NOT NULL`, replica identity, `CLUSTER ON`, column statistics, storage and compression, a materialized view with options, a statistics target and `CLUSTER ON`, a view column default, a type and a domain; identity and owned sequences, policies and `rls_applies` (forced, not forced, owner, member, `BYPASSRLS`, superuser), row estimates with partitions (an unanalyzed partition gives none), a foreign table (superuser), the spy, the routes |
 | `tests/security/test_definitions.py` (PostgreSQL superuser) | the fixed catalog search path: operators, and the function the connection's setup calls unqualified (`current_schema()`; `version()` is planted too as a guard, though the setup calls it qualified), that another role plants in `public`, armed before the connection is opened (so the connection's setup is covered too, TD-039), are never called by Studio's catalog reads (DDL, policies, estimates, the catalog, table detail, extensions, the migration lookups), with `pg_catalog` implicit and with `public` placed before it in the role's `search_path` |
 | `frontend/src/views/explorer/ExplorerView.test.tsx`, `tree.test.ts`, `src/api/explorer.test.ts` | the page: D-02, the tree keyboard, the filter, the detail tabs, U-1 escaping and caps, stale answers, focus, fail-closed parsing, no write |
+| `frontend/src/views/explorer/Definitions.test.tsx` | STU-022 in the page: one GET on the given connection per panel, the DDL escaped per line with its line breaks, the cut note, Copy DDL (exact text, refused clipboard), the policies' facts, reasons and rows (escaped), fail-closed answers, an answer for another object or connection refused, late answers dropped, the row count on request and its timeout |
+| `frontend/e2e/explorer-definitions.spec.ts` | the DDL and policies tabs and the row count in Chromium with axe (light/dark, en/de); the DDL region takes the focus and keeps hostile text escaped; Copy DDL; no write but the connection open |
 | `frontend/e2e/explorer.spec.ts` | the page in Chromium with axe (light/dark, en/de) and keyboard-only; `e2e/explorer-reference.spec.ts` against the parts and measurements reference apps (skipped without its variables, TD-041) |

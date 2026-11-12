@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-022 in the explorer page: a **DDL** tab for every object (a sequence shows its DDL on its own) with **Copy
+  DDL**, a **Policies** tab for a PostgreSQL table (row-level security on and forced, the owner and the connection's
+  role, whether the policies bind that role and why not, a warning when RLS is on without a policy, every policy with
+  its command, roles, `USING` and `WITH CHECK`), and **Count rows** for a SQLite table or view (on request; a count
+  past the server's timeout says so). Read-only on the explorer's open connection; every text escaped (line breaks and
+  tabs in the DDL kept), the DDL cut after 100,000 characters with a note; answers for another object or connection refused.
+  New user-guide page "Explorer".
 - STU-013 page: the data viewer as the explorer's **Data** tab (08 section 4.5), read-only. Pages of 50 to 1,000 rows
   through the server's keyset tokens (Next, Previous, Reload), sort by a column, up to 20 filters the server binds as
   parameters, a search in the current page, and the SQL editor's grid and cell detail with "Load in full" (10 MB). A
