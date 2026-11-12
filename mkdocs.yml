@@ -58,6 +58,7 @@ nav:
       - Installation: guide/installation.md
       - Starting and stopping: guide/starting.md
       - Connections: guide/connections.md
+      - Diagnostics: guide/diagnostics.md
       - SQL editor: guide/sql-editor.md
       - Data viewer: guide/data-viewer.md
       - Settings and keyboard: guide/settings.md

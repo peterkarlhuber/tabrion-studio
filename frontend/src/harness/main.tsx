@@ -8,10 +8,11 @@
  * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, a connection
  * test and opening a connection answered (STU-008; parts-pg's test fails with `db.connection`);
  * migrations: the code trust and migration status of STU-015; dialog-trust-code; diagnostics: the findings of
- * STU-014, `?slow=1` keeps a run open until it is canceled; editor: the profiles and a fake query engine for the
- * SQL editor of STU-012, with `sql` as the first tab's draft, `profile` its profile, `maxRows` the row limit
- * setting and `connectDelay` a delay of the connection; explorer: the catalogs and details of STU-010 and the
- * data viewer's pages of STU-013), `path` (/, /connections, /explorer, /sql, /migrations, /diagnostics, /settings),
+ * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036;
+ * editor: the profiles and a fake query engine for the SQL editor of STU-012, with `sql` as the first tab's draft,
+ * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
+ * catalogs and details of STU-010 and the data viewer's pages of STU-013), `path` (/, /connections, /explorer, /sql,
+ * /migrations, /diagnostics, /settings),
  * `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
@@ -34,7 +35,7 @@ import type { Workspace } from '../workspace';
 import { explorerAnswer } from './explorer';
 import { createViewer } from './viewer';
 import styles from './harness.module.css';
-import { diagnosis } from './diagnostics';
+import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
 import { draftsKey } from '../views/editor/drafts';
 import { createQueryServer } from './queries';
@@ -125,6 +126,8 @@ function connectionAnswer(method: string, url: string, body: string): Response {
 
 /** The diagnostics scenario with `slow=1`: a run answers only after the page canceled it (e2e/diagnostics.spec.ts). */
 const slow = params.get('slow') === '1';
+/** The diagnostics scenario with `report=unavailable`: the report is refused with `studio.report_unavailable`. */
+const reportUnavailable = params.get('report') === 'unavailable';
 let cancelRun: (() => void) | null = null;
 
 /** Whether the migrations scenario's project code is trusted (the trust dialog and "Stop trusting" change it). */
@@ -211,6 +214,21 @@ const fakeServer: typeof fetch = async (input, init) => {
       cancelRun = null;
       running?.();
       return new Response(JSON.stringify({ canceled: running !== null }), { status: 202 });
+    }
+    if (url === '/api/connections/c1/diagnostics/report') {
+      if (reportUnavailable) {
+        return new Response(
+          JSON.stringify({ code: 'studio.report_unavailable', kind: 'database', status: 503 }),
+          { status: 503 },
+        );
+      }
+      return new Response(REPORT_MARKDOWN, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/markdown; charset=utf-8',
+          'Content-Disposition': `attachment; filename="${REPORT_FILENAME}"`,
+        },
+      });
     }
     if (url === '/api/connections/c1/diagnostics') {
       if (slow) {
