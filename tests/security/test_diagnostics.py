@@ -596,6 +596,50 @@ def test_n1_a_limit_during_quick_check_keeps_tabrions_other_findings(
     assert "TAB-SQ-006" in found["STU-DX-008"]["detail"] and "tabrion's checks" not in found["STU-DX-008"]["detail"]
 
 
+@posix
+@pytest.mark.parametrize("stop", ["limit", "cancel"])
+def test_n1_a_stop_before_tabrions_step_still_runs_it_on_sqlite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stop: str
+) -> None:
+    """Finding 3 of stu-014-delta-v010-review.md: the limit or the cancel is requested before the step "tabrion's
+    checks" starts, every time. On SQLite that step still runs (``always``), so tabrion's quick findings stay and
+    only quick_check is named; a step that skips once the hook is requested (``always=False``) fails this test."""
+    path = prepared(tmp_path / "shop.db", mode=0o644, orphans=True, wal=False)
+    timeout_ms = 1 if stop == "limit" else 60_000
+    source = Source(
+        profiles={"project:shop": Profile("shop", "sqlite", "dev", path="shop.db", statement_timeout_ms=timeout_ms)},
+        files={"project:shop": path},
+    )
+    registry = ConnectionRegistry(source)
+    diagnostics = Diagnostics(registry)
+    real_step = diagnostics_module._Run.step
+    entered: list[bool] = []
+
+    def step_after_the_stop(run: Any, name: str, work: Any, default: Any, *, always: bool = False) -> Any:
+        if name == "tabrion's checks":
+            if stop == "cancel":
+                assert diagnostics.cancel(connection_id) is True
+            deadline = time.monotonic() + 5
+            while not run.hook.requested and time.monotonic() < deadline:
+                time.sleep(0.002)
+            entered.append(run.hook.requested)
+        return real_step(run, name, work, default, always=always)
+
+    monkeypatch.setattr(diagnostics_module._Run, "step", step_after_the_stop)
+    try:
+        connection_id = registry.open("project:shop").id
+        doc = diagnostics.run(connection_id)
+    finally:
+        registry.close_all()
+    assert entered == [True]  # the stop was requested before the step began
+    found = {item["code"]: item for item in doc["findings"]}
+    why = "time limit" if stop == "limit" else "you canceled it"
+    assert why in found["STU-DX-008"]["detail"]
+    assert "tabrion's checks" not in found["STU-DX-008"]["detail"]
+    assert "TAB-SQ-006" in found["STU-DX-008"]["detail"] and found["TAB-SQ-006"]["severity"] == "info"
+    assert found["TAB-SQ-003"]["severity"] == "error" and found["TAB-SQ-002"]["severity"] == "info"
+
+
 def test_n1_the_cancel_stops_only_the_integrity_check(tmp_path: Path) -> None:
     """N-1, at the compat layer: with a cancel requested before tabrion's check starts, every pragma still runs and
     only quick_check is stopped (a cancel that interrupts every statement fails the check instead)."""
