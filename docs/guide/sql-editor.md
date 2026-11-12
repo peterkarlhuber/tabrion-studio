@@ -48,6 +48,21 @@ statement (`:doc::jsonb`). A whole number beyond 2^53 does not fit a number; giv
 
 Studio keeps the last 16 results on the server. An older one says "no longer kept"; run the statement again.
 
+## Export
+
+**Export…** next to a finished result saves it as a file:
+
+- **Format:** CSV (for spreadsheets) or JSON (for programs).
+- **Rows:** the fetched rows of the result, or **Up to** a number of rows from 1 to 1,000,000.
+- **Protect against spreadsheet formulas** (CSV only, on by default): a text that starts with `=`, `+`, `-` or `@`
+  gets a leading `'`, so a spreadsheet does not run it as a formula.
+
+Studio runs the statement again for the export, read-only and with the same parameters, so the file holds the rows
+as they are now. If there are more rows than the limit, the file stops there; a JSON file says so, and Studio tells
+you after the download. A CSV file cannot say it. **Cancel export** (or Esc) stops it, and nothing is saved. Studio
+runs one export per connection and two at a time, and an export stops after 10 minutes. The browser holds the file
+until it is saved, so a very large export needs that much browser memory.
+
 ## Tabs and drafts
 
 Each tab has its own connection and text. **New editor tab** is Alt+T (⌥T), **Close editor tab** is Alt+W (⌥W):

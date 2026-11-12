@@ -35,6 +35,8 @@ export interface DialogAction {
   label: string;
   variant?: ButtonVariant;
   onSelect: () => void;
+  /** Shown as unavailable (`aria-disabled`): it stays focusable, so the focus never drops out of the dialog. */
+  disabled?: boolean;
 }
 
 export interface DialogProps {
@@ -165,7 +167,10 @@ function OpenDialog({
             key={action.id}
             data-action={action.id}
             variant={action.variant ?? 'secondary'}
-            onClick={action.onSelect}
+            aria-disabled={action.disabled === true ? true : undefined}
+            onClick={() => {
+              if (action.disabled !== true) action.onSelect();
+            }}
           >
             {action.label}
           </Button>

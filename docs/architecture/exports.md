@@ -103,7 +103,38 @@ statement through `OpenConnection.stream` in its own `Database.read()`, like eve
 - **Data-modifying CTEs (F-10).** On PostgreSQL, `WITH d AS (DELETE ...) SELECT ...` is refused by the server's
   `DECLARE CURSOR` as an unsupported feature (`db.unknown`), not as `db.read_only`. It is blocked either way.
 
+## The page
+
+The export dialog (`frontend/src/components/export/ExportDialog.tsx`, client `frontend/src/api/exports.ts`, TD-043)
+implements 08 section 5 "Export": result → ⤓ CSV/JSON → dialog (the fetched rows, or query again up to a limit) →
+download, with a hint when the export is cut.
+
+- **Where:** the SQL editor offers "Export…" on a finished result. The export is that statement with the parameters
+  it ran with, on the connection the result came from. The data viewer (STU-013) mounts the same dialog with a table
+  as its source.
+- **D-02:** the caller asks it through the shared guard (`useConnect().guard`) before it opens the dialog; for a
+  result of the editor it was confirmed when the connection opened. The dialog never opens a connection.
+- **Choices:** CSV or JSON; "the fetched rows of the result" (`max_rows` = the rows the page holds) or "up to" 1 to
+  1 000 000 rows, checked in the page before anything is sent; for CSV the formula protection, on by default. The
+  dialog says that the statement runs again (so the file holds the rows as they are now), that a cut result's export
+  is cut too, and that a CSV file cannot mark a cut while a JSON file does.
+- **Download:** `fetch` with the session's CSRF header; the stream is read chunk by chunk and the bytes received are
+  announced. The file is kept only when its media type is the one asked for, and a JSON file only when it ends with
+  the server's closing `"truncated"` member (an export that ended early is not saved). It is saved under the
+  `Content-Disposition` name only when that has the server's form (`[A-Za-z0-9_-][A-Za-z0-9_.-]{0,99}` plus the
+  format's suffix, no `..`), else as `export.csv` or `export.json`. A JSON file the server cut says so after the save.
+- **Cancel:** the button, Escape, closing the dialog and leaving the page abort the request (`AbortController`); the
+  server closes the export when the request goes away, and nothing is saved. A second press before the next render
+  starts nothing.
+- **Problems** are the page's en/de texts (`studio.export_invalid`, `studio.export_busy`, `studio.export_stopped`,
+  a closed connection, and in the editor the statement's own wording).
+- **Memory in the browser:** the file is held as a `Blob` until it is saved (TD-043).
+
+Tests: `src/api/exports.test.ts`, `src/components/export/ExportDialog.test.tsx`, the export part of
+`EditorView.test.tsx`, axe in jsdom (`a11y.test.tsx`); in Chromium `e2e/export.spec.ts` (axe in light and dark, English
+and German, the keyboard flow and the download, cancel while streaming) and, against a real `tabrion-studio`, the
+export test of `e2e/editor-backend.spec.ts` (CSV of the fetched rows with a parameter, JSON cut at 10 rows).
+
 ## Not in this package
 
-- **The export dialog in the page** (format, rows, the formula option) comes with the frontend lane after STU-012.
 - **Other formats** (Excel, Parquet, SQL `INSERT`s) are not in 03 section 2 D for 1.0.

@@ -807,7 +807,8 @@
       "cancel": "Abfrage abbrechen",
       "newTab": "Neuer Editor-Tab",
       "closeTab": "Editor-Tab schließen",
-      "save": "Als .sql speichern"
+      "save": "Als .sql speichern",
+      "export": "Exportieren…"
     },
     "params": {
       "title": "Parameter",
@@ -896,6 +897,42 @@
     "canceledBeforeStart": "Abgebrochen, bevor die Abfrage begann.",
     "profileChanged": "Das Profil {{name}} hat sich geändert, seit diese Seite es gelesen hat (jetzt {{environment}}). Darauf wurde nichts ausgeführt; führen Sie erneut aus, um es so zu verwenden, wie es jetzt ist.",
     "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt.",
-    "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt."
+    "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt.",
+    "exportSubject": "Ergebnis {{number}} von {{tab}}"
+  },
+  "export": {
+    "title": "Exportieren",
+    "description": "{{subject}} als Datei exportieren. Der Export liest nur.",
+    "format": "Dateiformat",
+    "formats": {
+      "csv": "CSV (für Tabellenkalkulationen)",
+      "json": "JSON (für Programme)"
+    },
+    "rows": "Zeilen",
+    "fetched_one": "Die geholte Zeile des Ergebnisses ({{rows}})",
+    "fetched_other": "Die geholten Zeilen des Ergebnisses ({{rows}})",
+    "upTo": "Bis zu",
+    "limitLabel": "Zeilenlimit",
+    "limitHint": "Höchstens {{max}} Zeilen.",
+    "limitInvalid": "Gib eine ganze Zahl von 1 bis {{max}} ein.",
+    "escape": "Vor Tabellenformeln schützen (ein Text, der mit =, +, - oder @ beginnt, bekommt ein ' davor)",
+    "again": "Studio führt die Anweisung für den Export erneut aus, nur lesend; die Datei enthält die Zeilen also so, wie sie jetzt sind.",
+    "cappedFetched": "Das Ergebnis wurde gekappt, daher endet auch dieser Export bei derselben Zeilenzahl. Wähle „Bis zu“, um mehr zu exportieren.",
+    "csvCut": "Gibt es mehr Zeilen als das Limit, endet die Datei dort; eine CSV-Datei sagt das nicht.",
+    "jsonCut": "Gibt es mehr Zeilen als das Limit, endet die Datei dort und sagt das.",
+    "starting": "Wird exportiert…",
+    "received": "Wird exportiert… {{size}} empfangen",
+    "canceled": "Der Export wurde abgebrochen; nichts wurde gespeichert.",
+    "cancel": "Export abbrechen",
+    "start": "Exportieren",
+    "done": "Export gespeichert: {{filename}} ({{size}}).",
+    "doneCut": "Export gespeichert: {{filename}} ({{size}}). Er endet bei {{rows}} Zeilen; es gibt weitere.",
+    "problems": {
+      "invalid": "Die Export-Einstellungen sind ungültig: ein Format und 1 bis 1 000 000 Zeilen.",
+      "busy": "Auf dieser Verbindung läuft schon ein Export, oder es laufen bereits zwei. Warte, bis einer fertig ist.",
+      "stopped": "Der Export dauerte länger als 10 Minuten und wurde gestoppt. Exportiere weniger Zeilen oder filtere die Abfrage.",
+      "incomplete": "Die Datei kam nicht vollständig an, daher wurde nichts gespeichert. Versuche es erneut.",
+      "connectionGone": "Die Verbindung ist nicht mehr offen. Führe die Anweisung erneut aus und exportiere dann."
+    }
   }
 }

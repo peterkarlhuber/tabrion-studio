@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-043 (STU-021 in the page): the export dialog. **Export…** on a finished result of the SQL editor saves it as
+  CSV or JSON: the fetched rows or up to 1 000 000 rows, with the CSV formula protection on by default. The statement
+  runs again with its parameters on the result's connection (D-02 through the shared guard; no new connection). The
+  dialog shows the bytes received, Cancel or Esc aborts the request and saves nothing, a file is saved only when it
+  arrived whole and of the asked type, under the server's file name only when that has the expected form, and a JSON
+  export the server cut says so. en/de; the data viewer (STU-013) can mount the same dialog with a table.
 - TD-036 (STU-025 in the page): the Diagnostics view lists the backup hints (`STU-BK-*`) under "Backups", with
   en/de titles, not counted as findings; a broken `backup` field says that the hints could not be read. **Download
   Markdown report** and **Download JSON report** save the report of the shown connection (no new connection, so no
