@@ -25,6 +25,8 @@ for (const theme of ['light', 'dark'] as Theme[]) {
     test(`${theme}, ${lang}: tree, detail tabs, file facts and extensions pass axe`, async ({
       page,
     }) => {
+      // Nine full axe runs (each 2-3 s with colour contrast): more than the default 30 s on a busy runner.
+      test.setTimeout(90_000);
       const text = TEXT[lang];
       await openHarness(page, { scenario: 'explorer', path: '/explorer', theme, lang });
       await expect(page.getByTestId('explorer-open')).toBeEnabled();
