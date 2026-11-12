@@ -1,8 +1,7 @@
 # Connections
 
 The **Connections** view lists the connection profiles Studio knows, in two groups: the profiles of the project
-folder and your own profiles. Select a profile to see its details. Testing and connecting arrive with the database
-connection (STU-009) and are shown disabled until then.
+folder and your own profiles. Select a profile to see its details, test it, or connect to it.
 
 A profile never contains a password, only where the password comes from.
 
@@ -13,7 +12,10 @@ Your profiles are saved in `profiles.toml` in Studio's configuration folder, rea
 
 1. **Database:** a SQLite file (the full path; Studio always opens SQLite read-only) or a PostgreSQL server (host,
    port, database, user, TLS mode). The TLS mode "Automatic" means `verify-full` for any remote host and `prefer`
-   only for this computer.
+   only for this computer. **Or paste a URL** takes a `postgresql://user:password@host:port/database?sslmode=...`
+   URL apart: its fields fill the form, its password moves to the password field of the next step, and the URL itself
+   is cleared. A URL with anything a profile cannot hold (several hosts, a socket folder, other parameters) is
+   refused as a whole.
 2. **Sign-in:** where the password comes from:
    - **System keyring:** Studio saves it in your operating system's keyring;
    - **Environment variable:** read from a variable of the `tabrion-studio` process, for example `env:PGPASSWORD`;
@@ -22,6 +24,26 @@ Your profiles are saved in `profiles.toml` in Studio's configuration folder, rea
    - **No password.**
 3. **Name and environment:** a unique name and the environment `DEV`, `TEST` or `PROD` (required). For a
    PostgreSQL profile, you can say that its role should not be able to write; the diagnostics will check that.
+   **Test the connection after saving** (on by default) runs the connection test on the saved profile (a PROD
+   profile asks "Production database" first).
+
+## Testing and connecting
+
+**Test connection** connects, reads a few facts and closes again. The result stays in the profile's details: the
+time it took and the server version, and for PostgreSQL the role, whether it is a superuser, TLS, the encoding and
+the time zone; for SQLite foreign keys, the journal mode and the encoding. A superuser role, or one that bypasses
+row-level security, gets a warning: Studio stays read-only, but only a role without write privileges is a hard
+boundary.
+
+**Connect** opens the profile's read-only connection; the header then shows it with its environment, and a PROD
+connection marks the whole window. The first PROD connection of a profile in a browser session asks first
+("Production database"; the default is Cancel), and so does the first connection test of a PROD profile, because
+the test connects too. A reload asks again, and so does a profile you edited or created again, or a project file you
+trusted again. **Disconnect** closes the connection.
+
+When the profile's password is not stored yet, the password dialog opens, and the test or the connection runs again
+after you saved it. A failure says what to check (host, port and firewall; user and password; the TLS mode; a file
+that is no SQLite database), never the database server's own message.
 
 **Edit** changes a profile (its name stays), **Delete** removes it and its saved password (the dialog's default is
 Cancel), **Enter password** and **Remove saved password** manage the password.

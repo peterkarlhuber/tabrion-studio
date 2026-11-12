@@ -213,11 +213,14 @@
   margin: 0;
   accent-color: var(--tb-color-primary);
 }
-.testRow {
+.urlRow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--tb-space-3);
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--tb-space-2);
+}
+.urlRow > .field {
+  align-self: stretch;
 }
 .stepLabel {
   margin: 0 0 var(--tb-space-1);

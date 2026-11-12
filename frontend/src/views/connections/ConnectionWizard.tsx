@@ -7,8 +7,12 @@
  * 3. Name and environment: the name (fixed once saved), the environment (required, no default), the read-only role.
  *
  * Saving writes the user's own `profiles.toml` (`POST` or `PUT /api/profiles`); an entered password then goes once to
- * `PUT /api/profiles/{id}/secret`. The connection test of step 3 needs the connection registry (STU-009) and is shown
- * disabled until then. "Save in project" is not offered: Studio never writes the project's file.
+ * `PUT /api/profiles/{id}/secret`. "Save in project" is not offered: Studio never writes the project's file.
+ *
+ * Step 1 takes a pasted `postgresql://` URL (`postgresUrl.ts`): its fields fill the form, its password moves to the
+ * password field of step 2. Step 3 offers "Test the connection after saving" (on by default): the test runs on the
+ * saved profile, so a typed password still goes only to the secret route (OA-010), and its result shows in the
+ * profile's details.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +30,7 @@ import {
 import { Button } from '../../components/ui/Button';
 import { Dialog, type DialogAction } from '../../components/ui/Dialog';
 import { Field } from './Field';
+import { parsePostgresUrl, withoutPassword, type UrlRefusal } from './postgresUrl';
 import { issuesByField, problemText } from './messages';
 import styles from './Connections.module.css';
 
@@ -60,6 +65,7 @@ interface Form {
   name: string;
   environment: EnvironmentTag | '';
   readOnlyRole: boolean;
+  testAfterSave: boolean;
 }
 
 function initialForm(item: ProfileItem | null, keyring: boolean): Form {
@@ -79,6 +85,7 @@ function initialForm(item: ProfileItem | null, keyring: boolean): Form {
       name: '',
       environment: '',
       readOnlyRole: false,
+      testAfterSave: true,
     };
   }
   const ref = item.password;
@@ -102,6 +109,7 @@ function initialForm(item: ProfileItem | null, keyring: boolean): Form {
     name: item.name,
     environment: item.environment,
     readOnlyRole: item.read_only_role === true,
+    testAfterSave: true,
   };
 }
 
@@ -165,6 +173,10 @@ export interface WizardResult {
   secretProblem: Problem | null;
   /** The keyring kept the old saved password after a change of the target (L-3 of stu-008-review.md). */
   secretKept?: boolean;
+  /** "Test the connection after saving" was checked. */
+  test?: boolean;
+  /** The id the profile had before (an edit keeps it; listed so its D-02 confirmation is forgotten). */
+  previousId?: string;
 }
 
 export function ConnectionWizard({
@@ -194,6 +206,9 @@ export function ConnectionWizard({
   const [problem, setProblem] = useState<Problem | null>(null);
   const [overwrite, setOverwrite] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [url, setUrl] = useState('');
+  const [urlState, setUrlState] = useState<UrlRefusal | 'taken' | 'takenPassword' | null>(null);
+  const [urlPasswordRemoved, setUrlPasswordRemoved] = useState(false);
   const stepRef = useRef<HTMLDivElement>(null);
   const shownStep = useRef(1);
   const editing = item !== null;
@@ -208,6 +223,41 @@ export function ConnectionWizard({
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
+
+  /** Take the pasted URL apart; the URL itself (with its password) is cleared at once and never kept. */
+  const takeUrl = () => {
+    const parsed = parsePostgresUrl(url);
+    if (typeof parsed === 'string') {
+      // Refused: the URL stays to be corrected, but not its password.
+      const cleaned = withoutPassword(url);
+      setUrl(cleaned);
+      setUrlPasswordRemoved(cleaned !== url);
+      setUrlState(parsed);
+      return;
+    }
+    setUrlPasswordRemoved(false);
+    setUrl('');
+    setForm((current) => ({
+      ...current,
+      host: parsed.host,
+      port: parsed.port,
+      database: parsed.database,
+      user: parsed.user,
+      sslmode: parsed.sslmode,
+      ...(parsed.password !== ''
+        ? {
+            password: parsed.password,
+            source:
+              current.source === 'keyring' || current.source === 'session'
+                ? current.source
+                : keyringAvailable
+                  ? 'keyring'
+                  : 'session',
+          }
+        : {}),
+    }));
+    setUrlState(parsed.password !== '' ? 'takenPassword' : 'taken');
+  };
   const fields = issuesByField(problem);
 
   const next = () => {
@@ -263,7 +313,13 @@ export function ConnectionWizard({
       if (!stored.ok) secretProblem = stored.problem;
     }
     setBusy(false);
-    onSaved({ name: form.name, secretProblem, secretKept: result.value.secret_removed === false });
+    onSaved({
+      name: form.name,
+      secretProblem,
+      secretKept: result.value.secret_removed === false,
+      test: form.testAfterSave,
+      previousId: item?.id,
+    });
   };
 
   const actions: DialogAction[] = [{ id: 'cancel', label: t('dialog.cancel'), onSelect: onCancel }];
@@ -381,6 +437,48 @@ export function ConnectionWizard({
               </Field>
             ) : (
               <>
+                <div className={styles.urlRow}>
+                  <Field label={t('connections.wizard.url')} hint={t('connections.wizard.urlHint')}>
+                    {(props) => (
+                      <input
+                        {...props}
+                        className={styles.input}
+                        value={url}
+                        spellCheck={false}
+                        autoComplete="off"
+                        placeholder="postgresql://"
+                        onChange={(event) => {
+                          setUrl(event.target.value);
+                          setUrlState(null);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            event.preventDefault();
+                            takeUrl();
+                          }
+                        }}
+                      />
+                    )}
+                  </Field>
+                  <Button onClick={takeUrl} disabled={url.trim() === ''}>
+                    {t('connections.wizard.urlTake')}
+                  </Button>
+                </div>
+                <div aria-live="polite">
+                  {urlState !== null ? (
+                    <p
+                      className={
+                        urlState === 'taken' || urlState === 'takenPassword'
+                          ? styles.status
+                          : styles.problem
+                      }
+                      data-testid="wizard-url-state"
+                    >
+                      {t(`connections.wizard.urlState.${urlState}`)}
+                      {urlPasswordRemoved ? ` ${t('connections.wizard.urlPasswordRemoved')}` : ''}
+                    </p>
+                  ) : null}
+                </div>
                 <div className={styles.row}>
                   <Field label={t('connections.wizard.host')} issues={fields.host}>
                     {(props) => (
@@ -585,10 +683,14 @@ export function ConnectionWizard({
                 {t('connections.wizard.readOnlyRole')}
               </label>
             ) : null}
-            <div className={styles.testRow}>
-              <Button disabled>{t('connections.wizard.test')}</Button>
-              <p className={styles.hint}>{t('connections.wizard.testLater')}</p>
-            </div>
+            <label className={styles.check}>
+              <input
+                type="checkbox"
+                checked={form.testAfterSave}
+                onChange={(event) => set('testAfterSave', event.target.checked)}
+              />
+              {t('connections.wizard.testAfterSave')}
+            </label>
             <p className={styles.hint}>{t('connections.wizard.savedIn')}</p>
           </>
         ) : null}

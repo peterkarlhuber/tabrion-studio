@@ -23,13 +23,40 @@ services (import-linter contracts `services-below-api` and `engines-only-in-serv
 | `POST /api/connections` | `{"profile_id"}` | 201 `{connection_id, profile_id, engine, environment, read_only: true, url, opened_at}` |
 | `GET /api/connections` | – | `{"connections": [...]}` (each checked against its profile; a stale one is closed and left out) |
 | `DELETE /api/connections` | `{"connection_id"}` | 204, or `studio.connection_not_found` |
-| `POST /api/connection-tests` | `{"profile_id"}` | `{ok, engine, server_version, latency_ms, read_only}`; the connection is closed again |
+| `POST /api/connection-tests` | `{"profile_id"}` | `{ok, engine, environment, server_version, latency_ms, read_only, facts}`; the connection is closed again |
 
 The ids go in the body, like the profile routes. All routes sit behind the access middleware (session, CSRF,
 Origin, JSON). `url` comes from `tabrion.safe_url` and never contains the password. The connection is checked with
 `Database.health()` before the answer, so a wrong password is the answer to "open" (a `db.<kind>` problem).
 An open connection of the same profile is returned again, and at most 8 are open (`studio.connection_limit`).
 Opening and closing run in a worker thread. Shutdown disposes every engine.
+
+## The connection test (STU-008)
+
+`ConnectionRegistry.test` opens the profile's connection like "open" (same checks, same read-only guards, and it
+counts against the limit), runs `Database.health()`, reads the facts of 03 section 2 A with `connection_facts`, and
+closes the connection again.
+
+- **PostgreSQL:** one fixed catalog query of Studio's own through `OpenConnection.fetch` (read-only, the statement
+  check, a prepared statement): `current_user`, `rolsuper` and `rolbypassrls` from `pg_roles`, `server_encoding`,
+  `TimeZone`, `pg_stat_ssl.ssl` of Studio's own session and `server_version`. tabrion's `postgres.role_info` needs the
+  driver connection; the catalog query gives the same `superuser` and `bypass_rls` without one. tabrion 0.1's
+  `Health.server_version` is PostgreSQL's `server_version_num` (`160015`), so the answer's `server_version` is the
+  first word of `current_setting('server_version')` (`16.15`) instead; the page also turns a 5- or 6-digit number into
+  `major.minor` if it gets one.
+- **SQLite:** `PRAGMA foreign_keys`, `PRAGMA journal_mode` and `PRAGMA encoding` (reading pragmas, allowed by the
+  authorizer).
+- Text facts are sent only as printable ASCII of at most 64 characters (`_fact_text`), else `null`. A database error
+  while reading them leaves `facts` empty and is logged with its type only; the test's answer is the health check.
+
+The page runs the test on a saved profile only: a password typed in the assistant goes to the secret route and
+nowhere else (OA-010), so "Test the connection after saving" replaces 08's test before saving.
+
+The test opens a connection, so for a PROD profile the page asks D-02 before it, like before "Connect": the button,
+the test after saving and the retry after the password dialog (`stu-008-connect-review.md` C-2). The confirmation
+holds for the page session and belongs to the profile's target (id, environment, engine, host, port, database, user,
+path); saving or deleting the profile and trusting the project file again forget it. D-02 is a page rule: the routes
+do not check the environment (TD-038).
 
 ## How a connection is opened
 
@@ -135,6 +162,7 @@ and the exports keep the session's `search_path` (see [explorer](explorer.md)).
 |---|---|
 | `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
 | `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; a wrong password is `db.connection` without server text; `url` has no password |
+| `tests/security/test_read_only.py` (STU-008) | the connection test's facts on SQLite (WAL, foreign keys, encoding; the file unchanged, nothing left open) and PostgreSQL (role, superuser, bypass RLS and encoding as the catalog says, time zone, TLS); facts that cannot be read leave the answer; only short printable text |
 | `tests/security/test_connections_api.py` | open, reuse, list, test and close through the API; a changed profile and a changed project file close the connection; a project file opens only after trust; refusals as fixed problems; session and CSRF required; shutdown disposes the engines |
 | `tests/unit/test_problems.py` | `DB_KINDS` is `tabrion.errors.Kind`; a `db.<kind>` problem takes only the kind and the SQLSTATE from the error |
 
