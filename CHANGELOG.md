@@ -13,7 +13,7 @@ All notable changes to this project are documented here. The format follows
   constraints, indexes, relationships (a related table is one click or Enter away) and, on SQLite, `STRICT` and
   `WITHOUT ROWID`. Refresh reads the catalog again on the open connection. The page only reads; every database text
   is escaped and capped, the answers are parsed fail-closed, and stale answers after a profile switch are dropped.
-  E2E against the parts and measurements reference apps (`e2e/backend.spec.ts`). Open parts: TD-041.
+  E2E against the parts and measurements reference apps (`e2e/explorer-reference.spec.ts`; not in CI yet). Open parts: TD-041.
 - STU-014 page: the view Diagnostics (`/diagnostics`) runs the diagnosis of a chosen profile on a click and lists the
   findings by severity, each with an icon and a word for its severity, its code, title, detail, remedy and source.
   A PROD profile asks D-02 before its connection opens; "Run again" uses the shown connection. Cancel stops a
