@@ -116,7 +116,21 @@ def test_td039_opening_a_connection_calls_no_planted_object(planted: str) -> Non
         assert dialect.default_schema_name == SCHEMA
         assert dialect.use_native_hstore is False  # the driver's type lookup is not sent
 
-        # User SQL sees the session's path, on every pooled connection, and so reaches the planted objects.
+        # User SQL sees the session's path on every pooled connection (L-1 of td-039-review.md): two queries that
+        # overlap need both of the pool's sessions, so the second one is opened (and set up) here.
+        overlapping = [
+            engine.start(
+                connection.id,
+                "SELECT pg_catalog.pg_backend_pid(), pg_catalog.current_setting('search_path') "
+                "FROM pg_catalog.pg_sleep(1)",
+            )
+            for _ in range(2)
+        ]
+        for query in overlapping:
+            assert query.done.wait(10.0), "the query did not finish"
+            assert query.state == "done", query.problem
+        assert len({query.rows[0][0] for query in overlapping}) == 2  # two sessions
+        assert [query.rows[0][1] for query in overlapping] == [planted, planted]
         for _ in range(4):
             shown = _run(engine, connection.id, "SHOW search_path")
             assert shown.state == "done", shown.problem
@@ -129,3 +143,47 @@ def test_td039_opening_a_connection_calls_no_planted_object(planted: str) -> Non
     finally:
         engine.close_all()
         registry.close_all()
+
+
+def test_td039_hstore_values_are_the_servers_text() -> None:
+    """L-2 of td-039-review.md: without the driver's hstore adaptation, an hstore value reaches user SQL as the server's
+    text, not as a mapping. Skipped only where the server has no hstore extension."""
+    assert PG_URL is not None and PG_SUPERUSER_URL is not None
+    admin = sqlalchemy.create_engine(
+        sqlalchemy.make_url(PG_SUPERUSER_URL).set(drivername="postgresql+psycopg"), isolation_level="AUTOCOMMIT"
+    )
+    schema = "studio_td039_hstore"
+    try:
+        with admin.connect() as connection:
+            available = connection.exec_driver_sql(
+                "SELECT count(*) FROM pg_catalog.pg_available_extensions WHERE name = 'hstore'"
+            ).scalar()
+            if not available:
+                pytest.skip("the server has no hstore extension")
+            installed = connection.exec_driver_sql(
+                "SELECT count(*) FROM pg_catalog.pg_extension WHERE extname = 'hstore'"
+            ).scalar()
+            if installed:
+                pytest.skip("hstore is installed in this database already; the test installs and removes its own")
+            connection.exec_driver_sql(f"CREATE SCHEMA {schema}")
+            connection.exec_driver_sql(f"CREATE EXTENSION hstore SCHEMA {schema}")
+            connection.exec_driver_sql(f"CREATE TABLE {schema}.tagged (id integer, tags {schema}.hstore)")
+            connection.exec_driver_sql("INSERT INTO studio_td039_hstore.tagged VALUES (1, 'a=>1, b=>\"x y\"')")
+            connection.exec_driver_sql(f"GRANT USAGE ON SCHEMA {schema} TO PUBLIC")
+            connection.exec_driver_sql(f"GRANT SELECT ON {schema}.tagged TO PUBLIC")
+        url = sqlalchemy.make_url(PG_URL)
+        source = Source(profiles={"user:pg": _profile(url)}, passwords={"user:pg": url.password or ""})
+        registry = ConnectionRegistry(source)
+        engine = QueryEngine(registry, source.limits)
+        try:
+            connection_id = registry.open("user:pg").id
+            query = _run(engine, connection_id, "SELECT id, tags FROM studio_td039_hstore.tagged")
+            assert query.state == "done", query.problem
+            assert query.rows == [[1, '"a"=>"1", "b"=>"x y"']]
+        finally:
+            engine.close_all()
+            registry.close_all()
+    finally:
+        with admin.connect() as connection:
+            connection.exec_driver_sql(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
+        admin.dispose()
