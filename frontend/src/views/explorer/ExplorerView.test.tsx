@@ -444,7 +444,7 @@ describe('the details', () => {
     const user = await openPg(fetcher);
     await user.click(row('measurement'));
     await user.click(await screen.findByRole('tab', { name: 'Relationships' }));
-    // The target is hidden by the filter: following it clears the filter.
+    // The filter hides the target, so following it clears the filter.
     await user.type(screen.getByLabelText('Filter objects'), 'meas');
     await user.click(screen.getByRole('button', { name: 'Go to public.device' }));
     await waitFor(() => expect(row('device')).toHaveFocus());
