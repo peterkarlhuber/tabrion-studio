@@ -1082,10 +1082,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 - **Priority:** P2 Medium · **Status:** Done (CI e2e-list PR, workflow-change review; review `stu-012-review.md`) ·
   **Refs:** `.github/workflows/ci.yml` (job `e2e`), OA-003
-- **Done:** the step "Every suite ran and none was skipped" now requires every `frontend/e2e/*.spec.ts` except
-  `screenshots.spec.ts` (it takes screenshots only when `STUDIO_SCREENSHOTS` names a folder), so both editor suites,
-  and any spec added later, must pass with no test skipped; `explorer-definitions.spec.ts` (STU-022 page, #54) is
-  required that way since it reached master.
+- **Done:** the step "Every suite ran and none was skipped" now requires every test file Playwright runs from
+  `frontend/e2e` (its default `testMatch`, subfolders included) except `screenshots.spec.ts` (it takes screenshots
+  only when `STUDIO_SCREENSHOTS` names a folder), so both editor suites, and any spec added later, must pass with no
+  test skipped; `explorer-definitions.spec.ts` (STU-022 page, #54) is required that way since it reached master.
 - **Problem:** `e2e/editor.spec.ts` and `e2e/editor-backend.spec.ts` run in the CI job `e2e`, but the step "Every
   suite ran and none was skipped" does not list them, so a skipped editor suite would not fail the job. Adding them
   changes `.github/workflows/ci.yml` and needs a workflow-change review (OA-003), like `keyboard.spec.ts` (TD-020) and
@@ -1165,7 +1165,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     `TABRION_STUDIO_E2E_PG_USER` are. Since the CI e2e-list PR the job `e2e` checks out tabrion's `examples` at the
     commit `constraints/tabrion-integration.txt` pins and sets `TABRION_STUDIO_E2E_EXAMPLES`, so the spec runs (its
     SQLite part) and must pass without a skip like every spec. Open: its PostgreSQL part, which needs a PostgreSQL
-    service and the three URLs in that job (another `.github/` change).
+    service and the three URLs in that job (another `.github/` change). It is an `if` inside the test, not a skip,
+    so the gate does not see that it did not run (L-2 of the CI e2e-list workflow review).
   - SQLite's row count "on request with a timeout" (03 section 2 B, release 1) and the "no privileges" state (08:
     columns from the catalog, data not available) belong to the data tab (TD-042).
 
