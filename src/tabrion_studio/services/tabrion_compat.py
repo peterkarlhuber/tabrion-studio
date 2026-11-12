@@ -25,6 +25,12 @@ What each part replaces:
 * :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
 * :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
   ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
+* :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1): Studio's own catalog reads on PostgreSQL (``stream(...,
+  catalog=True)`` and :func:`inspector`) first set a fixed ``search_path`` for their transaction only
+  (``set_config(..., true)``), as pg_dump does, so no object in a user's schema takes part in resolving their
+  functions and operators. This is Studio's fixed text, never a user statement (the statement check still refuses
+  ``set_config`` in user SQL), and it is not a write. User SQL and the viewer's and exports' statements keep the
+  session's ``search_path``.
 
 Every statement still runs inside ``Database.read()``: PostgreSQL ``BEGIN READ ONLY`` on a read-only session,
 SQLite ``query_only`` and Studio's authorizer, and every PostgreSQL statement is a prepared statement
@@ -47,7 +53,22 @@ import sqlalchemy
 import tabrion
 from tabrion import check as tabrion_check
 
-__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "check", "inspector", "reset_session", "stream"]
+__all__ = [
+    "CATALOG_SEARCH_PATH",
+    "Cancel",
+    "Cancelled",
+    "Column",
+    "ResultCursor",
+    "check",
+    "inspector",
+    "reset_session",
+    "stream",
+]
+
+#: The ``search_path`` of Studio's own catalog reads (PostgreSQL): the system catalog, temporary relations last (never
+#: searched for functions and operators). Set transaction-locally, so it ends with the read.
+CATALOG_SEARCH_PATH = "pg_catalog, pg_temp"
+_PIN_SQL = "SELECT pg_catalog.set_config('search_path', %s, true)"
 
 
 @dataclass(frozen=True)
@@ -193,8 +214,11 @@ def stream(
     *,
     cancel: Cancel,
     server_side: bool,
+    catalog: bool = False,
 ) -> Iterator[ResultCursor]:
     """Run ``sql`` (the driver's text, one statement) in ``transaction`` and yield its cursor.
+
+    ``catalog``: one of Studio's own catalog reads; on PostgreSQL it runs under :data:`CATALOG_SEARCH_PATH`.
 
     Raises :class:`Cancelled` after a canceled statement that ended without a database error. A database error
     propagates and ``Database.read()`` turns it into a ``TabrionError``.
@@ -206,6 +230,8 @@ def stream(
     sent = False
     cursor: Any = None
     try:
+        if postgres and catalog:
+            _pin_catalog_path(dbapi)
         # A named psycopg cursor is a server-side cursor (DECLARE ... CURSOR, FETCH).
         cursor = dbapi.cursor(name=f"studio_{secrets.token_hex(8)}") if postgres and server_side else dbapi.cursor()
         cursor.execute(sql, dict(values))
@@ -303,7 +329,20 @@ def _check_sqlite(dbapi: sqlite3.Connection, cancel: Cancel) -> list[tabrion_che
         dbapi.set_trace_callback(None)
 
 
+def _pin_catalog_path(dbapi: Any) -> None:
+    """:data:`CATALOG_SEARCH_PATH` for the rest of the running transaction (PostgreSQL)."""
+    with dbapi.cursor() as cursor:
+        cursor.execute(_PIN_SQL, (CATALOG_SEARCH_PATH,))
+
+
 @contextlib.contextmanager
 def inspector(transaction: tabrion.Transaction) -> Iterator[sqlalchemy.Inspector]:
-    """A SQLAlchemy inspector on ``transaction`` (one ``Database.read()``; tabrion 0.2: ``Database.inspector``)."""
-    yield sqlalchemy.inspect(transaction.connection)
+    """A SQLAlchemy inspector on ``transaction`` (one ``Database.read()``; tabrion 0.2: ``Database.inspector``).
+
+    On PostgreSQL the reflection's catalog queries run under :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1).
+    """
+    connection = transaction.connection
+    dbapi: Any = connection.connection.dbapi_connection
+    if not isinstance(dbapi, sqlite3.Connection):
+        _pin_catalog_path(dbapi)
+    yield sqlalchemy.inspect(connection)

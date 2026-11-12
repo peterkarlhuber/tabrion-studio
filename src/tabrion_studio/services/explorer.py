@@ -42,7 +42,7 @@ _T = TypeVar("_T")
 
 KINDS = ("table", "view", "materialized_view", "sequence", "foreign_table")
 #: Schemas of the server itself, with ``pg_*``: the catalog leaves them out, and so a table detail of them is refused
-#: too (``_known`` answers only objects of the catalog; I-1 of ``stu-010-review.md``).
+#: too (``known`` answers only objects of the catalog; I-1 of ``stu-010-review.md``).
 _SYSTEM_SCHEMAS = frozenset({"information_schema"})
 #: L-3 of stu-010-review.md: a name missing from a catalog at least this old rebuilds it once; a younger one does not.
 REBUILD_AFTER_S = 5.0
@@ -68,8 +68,14 @@ _PG_FOREIGN_KEYS_SQL = (
     "OR (tn.nspname = :schema AND tc.relname = :name)) "
     "ORDER BY sn.nspname, sc.relname, con.conname"
 )
+#: STU-022: ``pg_class.reltuples``, ``-1`` before the first ``VACUUM``/``ANALYZE`` (``None``); a partitioned table
+#: without an estimate of its own gets the sum of its partitions' when each of them has one.
 _ESTIMATE_SQL = (
-    "SELECT c.reltuples::bigint FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
+    "SELECT CASE WHEN c.reltuples OPERATOR(pg_catalog.>=) 0 THEN c.reltuples::pg_catalog.int8 "
+    "WHEN c.relkind OPERATOR(pg_catalog.=) 'p' THEN (SELECT CASE WHEN pg_catalog.bool_and(l.reltuples "
+    "OPERATOR(pg_catalog.>=) 0) THEN pg_catalog.sum(l.reltuples)::pg_catalog.int8 END "
+    "FROM pg_catalog.pg_partition_tree(c.oid) t JOIN pg_catalog.pg_class l ON l.oid = t.relid WHERE t.isleaf) END "
+    "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE n.nspname = :schema AND c.relname = :name"
 )
 _EXTENSIONS_SQL = (
@@ -236,7 +242,9 @@ class Explorer:
                 objects += [{"schema": schema, "name": name, "kind": kind} for name in sorted(listing[kind])]
         return {"engine": connection.engine, "schemas": schemas, "objects": objects}
 
-    def _known(self, connection_id: object, schema: str, name: str) -> tuple[OpenConnection, str]:
+    def known(self, connection_id: object, schema: str, name: str) -> tuple[OpenConnection, str]:
+        """The connection and kind of a catalog object; ``studio.object_not_found`` for anything else (the check of
+        every per-object route, also STU-022's DDL, policies and row count)."""
         doc = self.catalog(connection_id)
         kind = self._kind(doc, schema, name)
         if kind is None and doc["cached"] and self.clock() - doc["built_at"] >= REBUILD_AFTER_S:
@@ -264,7 +272,7 @@ class Explorer:
         ``category`` (``pg_type.typcategory`` of the element or base type). Kept for :data:`COLUMNS_TTL_S`, keyed
         like the catalog (L-5 of ``stu-013-review.md``), and dropped with it.
         """
-        connection, kind = self._known(connection_id, schema, name)
+        connection, kind = self.known(connection_id, schema, name)
         cache_key = (connection.id, schema, name)
         with self._lock:
             cached = self._columns.get(cache_key)
@@ -321,7 +329,7 @@ class Explorer:
     # Table detail
 
     def table(self, connection_id: object, schema: str, name: str) -> dict[str, Any]:
-        connection, kind = self._known(connection_id, schema, name)
+        connection, kind = self.known(connection_id, schema, name)
         if kind == "sequence":
             return {"connection_id": connection.id, "schema": schema, "name": name, "kind": kind}
         key = None if connection.engine == "sqlite" else schema

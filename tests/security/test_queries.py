@@ -1016,8 +1016,9 @@ def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Sou
     for sql in ("SET statement_timeout = 0", "SET lock_timeout = 0", "SET search_path = public, pg_catalog"):
         for _ in range(3):  # whichever of the pool's connections it lands on
             _below_the_check(connection, sql)
+    # The session's settings, as user SQL sees them (no fixed catalog search_path).
     shown = {
-        name: {connection.fetch(f"SHOW {name}")[0][0] for _ in range(4)}
+        name: {connection.fetch(f"SHOW {name}", catalog=False)[0][0] for _ in range(4)}
         for name in ("statement_timeout", "lock_timeout", "search_path", "default_transaction_read_only")
     }
     assert shown["statement_timeout"] == {"1500ms"}
@@ -1025,6 +1026,9 @@ def test_pg_m2_no_setting_outlives_its_statement(pg: tuple[QueryEngine, str, Sou
     assert shown["search_path"] == {'"$user", public'}
     assert shown["default_transaction_read_only"] == {"on"}
     assert connection.fetch("SHOW application_name") == [("tabrion-studio",)]
+    # Studio's own catalog reads fix the search_path for their read transaction only.
+    assert connection.fetch("SHOW search_path") == [("pg_catalog, pg_temp",)]
+    assert connection.fetch("SHOW search_path", catalog=False) == [('"$user", public',)]
 
 
 @pytest.mark.postgres

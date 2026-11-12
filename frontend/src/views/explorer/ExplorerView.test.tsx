@@ -25,7 +25,7 @@ import {
   type ConnectionSession,
 } from '../../workspace';
 import { ExplorerView } from './ExplorerView';
-import { MAX_GROUP_ITEMS } from './tree';
+import { LARGE_CATALOG, MAX_GROUP_ITEMS } from './tree';
 
 const BIDI = String.fromCodePoint(0x202e);
 
@@ -269,6 +269,32 @@ describe('opening and the tree', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent('measure');
   });
 
+  it('Open on a profile deleted after its catalog was shown: the old catalog goes away', async () => {
+    const { fetcher, calls } = server({
+      'GET /api/profiles': [
+        () => json(PROFILES),
+        () => json(PROFILES),
+        () => json({ ...PROFILES, profiles: [PROFILES.profiles[1]] }),
+      ],
+    });
+    const user = await openSqlite(fetcher);
+    await user.click(row('part'));
+    await screen.findAllByTestId('detail-column');
+    await user.click(screen.getByTestId('explorer-open'));
+    expect(await screen.findByTestId('explorer-problem')).toHaveTextContent(
+      'The profile no longer exists.',
+    );
+    // Nothing of the deleted profile's database stays on the page.
+    expect(screen.queryByTestId('explorer-workspace')).toBeNull();
+    expect(screen.queryByRole('tree')).toBeNull();
+    expect(screen.queryByTestId('explorer-detail')).toBeNull();
+    expect(screen.getByLabelText<HTMLSelectElement>('Connection profile').value).toBe(
+      'user:measure',
+    );
+    await waitFor(() => expect(screen.getByLabelText('Connection profile')).toHaveFocus());
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
+
   it('Open on the last profile, now gone: the focus goes to the problem, not the body', async () => {
     const { fetcher } = server({
       'GET /api/profiles': [() => json(PROFILES), () => json({ ...PROFILES, profiles: [] })],
@@ -441,15 +467,21 @@ describe('the filter', () => {
   });
 
   it('finds an object past the first 5000: the catalog is never cut (C-2)', async () => {
+    // The 6000 tables are in a schema the tree does not open at first (`public` is open and empty), so the test
+    // renders a handful of rows instead of a 500-row group: what it proves is the parser and the filter, not the
+    // rendering, and the 500-row render cost about 1.5 s in jsdom, enough to pass 5 s on a loaded runner.
     const many = Array.from({ length: 6000 }, (_, index) => ({
-      schema: 'public',
+      schema: 'bulk',
       name: `t${String(index).padStart(4, '0')}`,
       kind: 'table',
     }));
     const { fetcher } = server({
-      [`GET ${PG}/catalog`]: () => json({ ...PG_CATALOG, objects: many }),
+      [`GET ${PG}/catalog`]: () =>
+        json({ ...PG_CATALOG, schemas: ['bulk', 'public'], objects: many }),
     });
     const user = await openPg(fetcher);
+    expect(row('bulk (6000)')).toHaveAttribute('aria-expanded', 'false');
+    expect(rows()).toHaveLength(3); // bulk, public (empty), Extensions
     expect(screen.getByTestId('explorer-message')).toHaveTextContent('Catalog read: 6000 objects.');
     expect(screen.getByTestId('explorer-large')).toHaveTextContent('6000 objects');
     fireEvent.change(screen.getByLabelText('Filter objects'), { target: { value: 't55' } });
@@ -1029,7 +1061,8 @@ describe('fail closed', () => {
   });
 
   it('a group with more objects than it renders says so; a large catalog says it loads names only', async () => {
-    const many = Array.from({ length: 2100 }, (_, index) => ({
+    // LARGE_CATALOG objects, one group: the property is the render cap itself, so the 500 rows must be rendered.
+    const many = Array.from({ length: LARGE_CATALOG }, (_, index) => ({
       schema: 'public',
       name: `t${String(index).padStart(4, '0')}`,
       kind: 'table',
@@ -1038,9 +1071,14 @@ describe('fail closed', () => {
       [`GET ${PG}/catalog`]: () => json({ ...PG_CATALOG, objects: many }),
     });
     await openPg(fetcher);
-    expect(screen.getAllByRole('treeitem', { name: /^t\d{4}$/ })).toHaveLength(MAX_GROUP_ITEMS);
+    // Counted by row type, not by accessible name: a name query computes the name of every one of the 500 rows.
+    const objects = screen
+      .getByRole('tree')
+      .querySelectorAll('[role="treeitem"][data-row-type="object"]');
+    expect(objects).toHaveLength(MAX_GROUP_ITEMS);
+    expect(objects[MAX_GROUP_ITEMS - 1]).toHaveTextContent('t0499');
     expect(screen.getByTestId('explorer-truncated')).toBeInTheDocument();
-    expect(screen.getByTestId('explorer-large')).toHaveTextContent('2100 objects');
+    expect(screen.getByTestId('explorer-large')).toHaveTextContent(`${LARGE_CATALOG} objects`);
   });
 });
 

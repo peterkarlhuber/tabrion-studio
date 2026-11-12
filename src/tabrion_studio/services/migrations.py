@@ -82,10 +82,13 @@ _WORKER_VARIABLES = (
 _BOOT = "import sys; sys.path.insert(0, sys.argv[1]); from tabrion_studio.services.migration_worker import main; main()"
 _ALEMBIC_TABLE = {
     "sqlite": "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'alembic_version'",
+    # Under the session's search_path (current_schemas), so every operator and function is qualified (STU-022 H-1).
     "postgresql": (
-        "SELECT count(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
-        "WHERE c.relname = 'alembic_version' AND c.relkind IN ('r', 'p') "
-        "AND n.nspname = ANY (pg_catalog.current_schemas(false))"
+        "SELECT pg_catalog.count(*) FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace "
+        "WHERE c.relname OPERATOR(pg_catalog.=) 'alembic_version' "
+        "AND c.relkind OPERATOR(pg_catalog.=) ANY ('{r,p}'::pg_catalog.\"char\"[]) "
+        "AND n.nspname OPERATOR(pg_catalog.=) ANY (pg_catalog.current_schemas(false))"
     ),
 }
 _ALEMBIC_CURRENT = "SELECT version_num FROM alembic_version ORDER BY version_num LIMIT 100"
@@ -336,8 +339,9 @@ class Migrations:
 
     def _alembic(self, connection: OpenConnection, code: CodeTrustState) -> dict[str, Any]:
         current = None
-        if connection.fetch(_ALEMBIC_TABLE[connection.engine])[0][0]:
-            current = [str(row[0]) for row in connection.fetch(_ALEMBIC_CURRENT)]
+        # The version table is found on the session's search_path, as Alembic finds it (not a pinned catalog read).
+        if connection.fetch(_ALEMBIC_TABLE[connection.engine], catalog=False)[0][0]:
+            current = [str(row[0]) for row in connection.fetch(_ALEMBIC_CURRENT, catalog=False)]
         trust = code.to_dict(self.code.project)
         doc: dict[str, Any] = {
             "format": "alembic",
