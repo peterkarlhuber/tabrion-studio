@@ -31,7 +31,9 @@ All notable changes to this project are documented here. The format follows
   key definition is `STU-DX-009` instead of a failed route; no TLS finding twice, none for a Unix socket.
   Delta review: on SQLite a time limit or cancel stops tabrion's `quick_check` alone, so tabrion's other findings
   (a 0644 file's `TAB-SQ-003`, say) stay and `TAB-SQ-006` says "not checked"; `STU-DX-009` calls only "foreign key
-  mismatch" and "no such table" a broken definition (a lock or I/O error gets a neutral text).
+  mismatch" and "no such table" a broken definition (a lock or I/O error gets a neutral text). A deterministic test
+  requests the limit or the cancel before tabrion's step starts on SQLite (finding 3 of
+  `stu-014-delta-v010-review.md`).
 - STU-013 backend (on tabrion 0.1 like STU-011):
   `GET /api/connections/{id}/tables/{schema}/{name}/rows` (pages of 1 to 1000 rows, sort, JSON filters, `next`
   token) and `GET .../cell` (one value in full, up to 10 MB). Every statement has a `LIMIT`; pages go by primary
@@ -103,6 +105,12 @@ All notable changes to this project are documented here. The format follows
     - R2-I2: a text with a NUL character is refused.
     - R2-I1: the check-in reset also takes back a role change (`SET SESSION AUTHORIZATION DEFAULT`, `RESET ROLE`),
       which `RESET ALL` keeps.
+  - Delta review `stu-011-leak-delta-review.md`:
+    - A session that a running statement returns after its connection was closed is closed at check-in, not left
+      open in the disposed pool (the unclosed-database ResourceWarning); the listener holds its Database weakly.
+    - F-4: the cancel hook is detached before the cursor closes, so a late cancel can no longer hit the server
+      cursor's `CLOSE` and leave it open (the flaky `ServerCursor ... deleted while still open` warning); a cursor
+      that cannot close is closed with its connection.
 - STU-009 (tabrion v0.1.0 pinned by full SHA):
   - The connection registry and the routes `POST`/`GET`/`DELETE /api/connections` and `POST /api/connection-tests`.
   - Every connection is read-only. SQLite: `mode=ro`, `query_only` and an authorizer allowlist (no ATTACH, no
