@@ -1,10 +1,11 @@
 /**
  * The detail panel of one cell (08 section 4.4): the whole value as plain text (never HTML, threat T-07), JSON
  * indented, bytes as a hex dump, with "Copy". Opened with Enter (the focus moves into the panel) or a click in the
- * grid (the focus stays in the grid); Escape or "Close" returns the focus to the grid.
+ * grid (the focus stays in the grid); Escape or "Close" returns the focus to the grid. The data viewer (STU-013) adds
+ * "Load in full" for a value the server cut (`cutAction`).
  */
 import { Copy, X } from 'lucide-react';
-import { useEffect, useRef, type KeyboardEvent } from 'react';
+import { useEffect, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import type { QueryColumn } from '../../api/queries';
@@ -36,12 +37,15 @@ export function CellDetail({
   locale,
   onClose,
   onCopy,
+  cutAction,
 }: {
   cell: OpenCell;
   column: QueryColumn;
   locale: string;
   onClose: () => void;
   onCopy: (copied: boolean) => void;
+  /** Shown under the "cut" note of a cut value: the data viewer's "Load in full" (STU-013). */
+  cutAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const heading = useRef<HTMLHeadingElement>(null);
@@ -98,6 +102,7 @@ export function CellDetail({
           {t('editor.detail.cut')}
         </p>
       ) : null}
+      {cell.cut && cutAction !== undefined ? cutAction : null}
       {/* A scrollable region must be reachable by keyboard (WCAG 2.1.1). */}
       <pre
         className={styles.detailValue}

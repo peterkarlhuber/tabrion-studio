@@ -289,7 +289,7 @@
       "more_one": "and {{count}} more",
       "more_other": "and {{count}} more",
       "noColumns": "This object has no columns.",
-      "sequence": "Studio does not show the details of a sequence yet.",
+      "sequence": "Studio shows a sequence's DDL; its other details are not shown.",
       "estimate_one": "About {{rows}} row (estimate of the database).",
       "estimate_other": "About {{rows}} rows (estimate of the database).",
       "goTo": "Go to {{name}}"
@@ -300,7 +300,10 @@
       "constraints": "Constraints",
       "indexes": "Indexes",
       "relationships": "Relationships",
-      "sqlite": "SQLite"
+      "data": "Data",
+      "sqlite": "SQLite",
+      "ddl": "DDL",
+      "policies": "Policies"
     },
     "columns": {
       "name": "Name",
@@ -349,6 +352,59 @@
       "bytes_one": "{{size}} byte",
       "bytes_other": "{{size}} bytes",
       "mode": "File permissions"
+    },
+    "ddl": {
+      "loading": "Reading the DDL…",
+      "label": "DDL of {{name}}",
+      "owner": "Owner: {{owner}} (the DDL leaves the owner and the privileges out, like pg_dump --no-owner --no-privileges).",
+      "empty": "Studio has no DDL for this object.",
+      "escaped": "Control characters show as \\uXXXX and a backslash as \\\\; line breaks and tabs stay as they are. \"Copy DDL\" copies the exact text.",
+      "cut": "The DDL is longer than {{chars}} characters; only the start is shown. \"Copy DDL\" copies all of it.",
+      "copy": "Copy DDL",
+      "copied": "The DDL is on the clipboard.",
+      "copyFailed": "Studio could not copy the DDL. Select the text and copy it instead."
+    },
+    "policies": {
+      "loading": "Reading the row-level security…",
+      "rls": "Row-level security",
+      "on": "On",
+      "off": "Off",
+      "forced": "Forced for the owner",
+      "owner": "Owner",
+      "role": "Your role",
+      "reason": {
+        "off": "Row-level security is off: the policies bind no one.",
+        "superuser": "Your role {{role}} is a superuser: it sees every row, the policies do not bind it.",
+        "bypass": "Your role {{role}} has BYPASSRLS: it sees every row, the policies do not bind it.",
+        "owner": "Your role {{role}} owns the table, or is a member of the role that owns it, and the security is not forced: the policies do not bind it.",
+        "applies": "The policies bind your role {{role}}: it sees only the rows they allow. If no permissive policy applies to your role, directly or through a role it belongs to, it sees no rows.",
+        "unknown": "Studio cannot tell whether the policies bind your role {{role}}."
+      },
+      "denyAll": "Row-level security is on and the table has no policies: every role it binds sees no rows.",
+      "none": "This table has no policies.",
+      "name": "Policy",
+      "type": "Type",
+      "command": "Command",
+      "roles": "Roles",
+      "permissive": "Permissive",
+      "restrictive": "Restrictive",
+      "public": "All roles (PUBLIC)"
+    },
+    "rowCount": {
+      "button": "Count rows",
+      "counting": "Counting the rows…",
+      "result_one": "{{rows}} row (counted).",
+      "result_other": "{{rows}} rows (counted).",
+      "resultTimed_one": "{{rows}} row (counted in {{ms}} ms).",
+      "resultTimed_other": "{{rows}} rows (counted in {{ms}} ms).",
+      "timeout": "Counting took longer than 10 seconds or the profile's time limit, so it was stopped."
+    },
+    "actions": {
+      "data": "Show data",
+      "select": "SELECT … LIMIT 100 in the SQL editor",
+      "copy": "Copy name",
+      "copied": "Name copied.",
+      "copyFailed": "The name could not be copied."
     }
   },
   "migrations": {
@@ -900,6 +956,85 @@
     "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
     "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run.",
     "exportSubject": "result {{number}} of {{tab}}"
+  },
+  "viewer": {
+    "loading": "Loading the page…",
+    "gridLabel": "Data of {{name}}",
+    "pageSize": "Rows per page",
+    "previous": "Previous",
+    "next": "Next",
+    "refresh": "Reload page",
+    "firstPage": "Back to the first page",
+    "limited": "Pages here hold at most {{rows}} rows, so that a page of the widest values stays within the browser’s memory limit.",
+    "cutByBytes": "This page stopped at the result size limit; “Next” shows the rest.",
+    "sort": {
+      "label": "Sort by",
+      "none": "Table order",
+      "direction": "Direction",
+      "asc": "Ascending",
+      "desc": "Descending"
+    },
+    "search": {
+      "label": "Search this page",
+      "matches_one": "{{count}} of {{total}} rows on this page match.",
+      "matches_other": "{{count}} of {{total}} rows on this page match."
+    },
+    "status": {
+      "rows": "Rows {{first}}–{{last}}; more rows follow.",
+      "rowsLast": "Rows {{first}}–{{last}}; this is the last page.",
+      "empty": "There are no rows.",
+      "noMatch": "No row matches the filters."
+    },
+    "hint": {
+      "no_primary_key": "No primary key: the rows are paged by their physical position (rowid or ctid), which is not stable when the table changes.",
+      "unstable_order": "No primary key: the rows are paged by position, so their order may change between pages."
+    },
+    "filter": {
+      "title": "Filters",
+      "applied_one": "({{count}} applied)",
+      "applied_other": "({{count}} applied)",
+      "add": "Add filter",
+      "apply": "Apply",
+      "clear": "Clear filters",
+      "column": "Column of filter {{number}}",
+      "op": "Operator of filter {{number}}",
+      "value": "Value of filter {{number}}",
+      "remove": "Remove filter {{number}}",
+      "chooseColumn": "Choose a column for every filter.",
+      "tooLong": "These filters are too long for one request. Shorten their values or use fewer filters.",
+      "most": "At most {{count}} filters.",
+      "caseSqlite": "All filters must hold. “contains” and “starts with” ignore the case of ASCII letters on SQLite.",
+      "casePostgres": "All filters must hold. “contains” and “starts with” respect case on PostgreSQL."
+    },
+    "ops": {
+      "eq": "=",
+      "ne": "≠",
+      "lt": "<",
+      "le": "≤",
+      "gt": ">",
+      "ge": "≥",
+      "contains": "contains",
+      "starts_with": "starts with",
+      "is_null": "is NULL",
+      "not_null": "is not NULL"
+    },
+    "full": {
+      "load": "Load in full",
+      "loading": "Loading the whole value…",
+      "done": "The whole value is shown ({{size}} bytes).",
+      "cut": "The first 10 MB of the value are shown (it has {{size}} bytes).",
+      "unavailable": "Rows of a view without a primary key cannot be found again, so the whole value cannot be loaded here. Open it with a query in the SQL editor."
+    },
+    "problems": {
+      "viewer_column_unknown": "The object has no column with this name anymore. Refresh the catalog.",
+      "viewer_filter_invalid": "A filter is not valid.",
+      "viewer_filter_too_long": "These filters are too long for one request. Shorten their values or use fewer filters.",
+      "viewer_sort_unsupported": "This column cannot be sorted (its type has no order, for example json, xml or a geometric type). Sort by another column.",
+      "viewer_page_unknown": "Studio no longer keeps this page. Start again at the first page.",
+      "viewer_cell_unavailable": "The whole value cannot be loaded for this row. Open it with a query in the SQL editor.",
+      "viewer_row_gone": "The row is no longer there, or it changed. Reload the page.",
+      "query_limit": "Studio is already running as many queries as it allows, in all or on this connection. Wait for one to finish."
+    }
   },
   "export": {
     "title": "Export",

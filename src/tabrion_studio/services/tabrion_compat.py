@@ -22,8 +22,8 @@ What each part replaces:
 * :func:`reset_session`: ``RESET ALL`` when a PostgreSQL connection goes back to the pool (M-2 of
   ``stu-011-review.md``).
 * :func:`pin_setup_path` and :func:`restore_setup_path`: the queries SQLAlchemy's dialect sends when a PostgreSQL
-  connection is opened run under :data:`CATALOG_SEARCH_PATH`, and the session's own path is
-  restored before the connection is used (TD-039).
+  connection is opened run under :data:`CATALOG_SEARCH_PATH`, and the session's own path is restored before the
+  connection is used (TD-039).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
 * :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
 * :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a

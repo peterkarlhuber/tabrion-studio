@@ -54,6 +54,10 @@ const SAME_IN_BOTH = new Set([
   'explorer.indexes.name',
   'explorer.extensions.version',
   'explorer.extensions.schema',
+  // STU-022: the DDL and policies tabs, technical terms German uses as they are.
+  'explorer.tabs.ddl',
+  'explorer.tabs.policies',
+  'explorer.policies.name',
   'app.name',
   'app.title',
   'app.connectionTitle',
@@ -77,6 +81,13 @@ const SAME_IN_BOTH = new Set([
   'editor.detail.kind.json',
   'editor.detail.kind.bytes',
   'editor.result.statement',
+  // The data viewer (STU-013): the comparison operators are symbols.
+  'viewer.ops.eq',
+  'viewer.ops.ne',
+  'viewer.ops.lt',
+  'viewer.ops.le',
+  'viewer.ops.gt',
+  'viewer.ops.ge',
 ]);
 
 describe('translations (de and en)', () => {

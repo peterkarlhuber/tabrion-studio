@@ -85,9 +85,19 @@ test('keyboard only: open, move through the tree, select, switch tabs, follow a 
     'aria-selected',
     'true',
   );
-  // Tab leaves the tree for the detail tabs; ← → move between them.
+  // Tab leaves the tree for the object's actions (STU-013 page: Show data, SELECT … LIMIT 100, Copy name), SQLite's
+  // "Count rows" (STU-022), then the detail tabs; ← → move between them (← from the first wraps to the last, DDL).
+  await page.keyboard.press('Tab');
+  await expect(page.getByTestId('explorer-show-data')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('button', { name: 'Count rows' })).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(page.getByRole('tab', { name: 'Columns' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab', { name: 'DDL' })).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
   await page.keyboard.press('ArrowLeft');
   await expect(page.getByRole('tab', { name: 'Relationships' })).toBeFocused();

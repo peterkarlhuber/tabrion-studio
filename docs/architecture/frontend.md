@@ -4,7 +4,8 @@ The frontend in `frontend/` is a React 19 / TypeScript / Vite single-page app th
 `tabrion_studio/static/`. This page describes the shell, the design system, the languages, the status displays and
 the dialogs, and how they are tested. The connection manager and the server settings are STU-008
 (`docs/architecture/configuration.md`); the SQL editor (STU-012) is described [below](#sql-editor-stu-012); the
-explorer (STU-010) in `docs/architecture/explorer.md`. Studio has **no write UI for
+explorer (STU-010) in `docs/architecture/explorer.md`, and its data tab (STU-013 page) in
+`docs/architecture/viewer.md`. Studio has **no write UI for
 databases** (the Data Editor, STU-026, stays locked behind G-S2); the only files it writes are its own profiles and
 settings.
 
@@ -194,6 +195,12 @@ changed elsewhere since the page read it opens nothing, and the next run goes th
 open answer that names another environment is closed again (C-5). Durations come from the server with one decimal (`elapsed_ms`); the page
 shows milliseconds with one decimal below 10 ms (C-3).
 
+**Shared with the data viewer.** The grid reads rows through `GridRows` (`rowCache.ts`): the editor's `RowCache`, or
+one page of the data viewer (`views/viewer/pageRows.ts`, STU-013 page), which sizes its pages by the same 64 MB
+bound. The cell detail takes the viewer's "Load in full" (`cutAction`). The explorer's "SELECT … LIMIT 100 in the
+SQL editor" hands its statement over in the page's memory (`editor/handoff.ts`); the editor opens it in a new tab on
+that profile and runs nothing by itself.
+
 ## Tests
 
 | What | Where | Runs |
@@ -213,6 +220,7 @@ shows milliseconds with one decimal below 10 ms (C-3).
 | SQL editor (STU-012): statements and placeholders, parameter values, drafts, cell text, the event stream and its fallback, the row cache bound with 100 000 rows, the page with a fake engine (run, selection, parameters, script, cancel, D-02, D-06, Alt+T), the palette's editor commands, axe in jsdom | `src/views/editor/*.test.ts(x)`, `src/api/queries.test.ts`, `src/keyboard/*.test.ts`, `src/a11y.test.tsx` | `npm test` (CI) |
 | SQL editor in Chromium with the harness's fake engine: run, grid keyboard, detail panel, parameters, script and messages, cancel (Ctrl+. and Escape), refused write, load more, tabs and drafts, D-06, D-02, run/cancel/close while connecting, PROD results cleared on a profile change, Tab out of the editor and its description, 100 000 rows and wide rows under the memory limit, axe light/dark x en/de | `e2e/editor.spec.ts`, `e2e/a11y.spec.ts` | Playwright, Chromium (CI `e2e`) |
 | SQL editor in a real `tabrion-studio` with SQLite: no CSP violation, parameters, grid, detail, axe light/dark, a refused write, cancel of an endless query within a second (durations not zero), 100 000 rows and wide rows at `max_result_mb = 200` under the memory limit | `e2e/editor-backend.spec.ts` | Playwright, Chromium (CI `e2e`, not yet in the required list: TD-037) |
+| Data viewer (STU-013 page): the explorer's Data tab with the harness's fake viewer and against a real server | `src/views/viewer/*.test.ts(x)`, `src/api/viewer.test.ts`, `e2e/viewer.spec.ts`, `e2e/viewer-backend.spec.ts`; details in `docs/architecture/viewer.md` | `npm test`, Playwright, Chromium (CI `e2e`) |
 | No request to another host (QA-9, SQ-08: no CDN font, telemetry, external image or script), in every view, dialog and notice of the harness and in the real server | `e2e/network.spec.ts`, `e2e/backend.spec.ts` (`foreignRequests` in `e2e/support.ts` records every request of the browser context, popups and workers included, and every WebSocket) | Playwright, Chromium (CI `e2e`) |
 
 The Playwright tests run against the Vite development server and the e2e harness `frontend/harness.html`
