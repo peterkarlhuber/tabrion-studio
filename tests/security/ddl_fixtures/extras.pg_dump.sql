@@ -389,6 +389,13 @@ ALTER TABLE ONLY studio_ddl_extras.ticketed ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: titles title; Type: DEFAULT; Schema: studio_ddl_extras; Owner: -
+--
+
+ALTER TABLE ONLY studio_ddl_extras.titles ALTER COLUMN title SET DEFAULT 'untitled'::text;
+
+
+--
 -- Name: Order Order_pk; Type: CONSTRAINT; Schema: studio_ddl_extras; Owner: -
 --
 

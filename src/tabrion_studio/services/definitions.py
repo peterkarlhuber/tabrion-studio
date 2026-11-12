@@ -533,6 +533,11 @@ class Definitions:
             keyword = "VIEW"
         columns = connection.fetch(_COLUMNS_SQL, values)
         statements = [create, *self._comments(target, keyword, comment, columns)]
+        if relkind == "v":
+            # A view's column default (what an INSERT through the view stores), as pg_dump writes it (E-1).
+            for row in columns:
+                if row[5] is not None:
+                    statements.append(f"ALTER TABLE ONLY {target} ALTER COLUMN {row[0]} SET DEFAULT {row[5]}")
         if relkind == "m":
             # A materialized view keeps per-column settings and a clustering index, as a table does.
             for row in columns:

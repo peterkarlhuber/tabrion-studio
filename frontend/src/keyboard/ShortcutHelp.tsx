@@ -10,7 +10,7 @@ import { useKeyboardPlatform } from './platform';
 import { SHORTCUTS, type ShortcutId } from './shortcuts';
 import styles from './ShortcutHelp.module.css';
 
-const ROWS: ShortcutId[] = ['palette', 'help', 'nextRegion', 'previousRegion'];
+const ROWS: ShortcutId[] = ['palette', 'help', 'nextRegion', 'previousRegion', 'explorerFilter'];
 
 export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();

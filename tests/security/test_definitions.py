@@ -81,6 +81,7 @@ CREATE POLICY doc_write ON {s}.doc AS RESTRICTIVE FOR INSERT TO {role} WITH CHEC
 CREATE POLICY doc_all ON {s}.doc USING (true) WITH CHECK (title IS NOT NULL);
 CREATE UNIQUE INDEX doc_title_lower ON {s}.doc (lower(title)) WHERE body IS NOT NULL;
 CREATE VIEW {s}.titles AS SELECT id, title FROM {s}.doc WHERE body IS NOT NULL;
+ALTER VIEW {s}.titles ALTER COLUMN title SET DEFAULT 'untitled';
 CREATE MATERIALIZED VIEW {s}.counts AS SELECT owner, count(*) AS n FROM {s}.doc GROUP BY owner;
 CREATE UNIQUE INDEX counts_owner ON {s}.counts (owner);
 COMMENT ON MATERIALIZED VIEW {s}.counts IS 'cached';
