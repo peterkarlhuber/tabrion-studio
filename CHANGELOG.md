@@ -20,6 +20,14 @@ All notable changes to this project are documented here. The format follows
   is never connected to without D-02. New shortcuts in the help and the palette. CodeMirror runs in a shadow root, so
   the strict CSP stays unchanged. Open items are TD-033 and TD-037. The migrations and diagnostics pages now have
   their own window titles.
+- STU-010 page: the explorer (`/explorer`). Open a profile's read-only connection (D-02 first for PROD, once per
+  page session as in STU-008; it becomes the header's connection) and browse its catalog as a WAI-ARIA tree
+  (PostgreSQL schemas, type groups and objects plus the extensions; SQLite's file facts and type groups), filter it
+  by name prefix and type (⌘P / Ctrl+P), and read an object's columns, constraints, indexes, relationships (a
+  related table is one click or Enter away) and, on SQLite, `STRICT` and `WITHOUT ROWID`. Refresh reads the catalog
+  again on the open connection. The page only reads; every database text is escaped and capped, the answers are
+  parsed fail-closed, and stale answers after a profile switch are dropped. E2E against the parts and measurements
+  reference apps (`e2e/explorer-reference.spec.ts`; not in CI yet). Open parts: TD-041.
 - STU-025 backend: `POST /api/connections/{id}/diagnostics/report` with
   `{"format": "markdown" | "json"}` runs a diagnosis with its backup hints and answers it as a file
   (`Content-Disposition: attachment`). The report is built from an allowlist: no password, token, connection URL or

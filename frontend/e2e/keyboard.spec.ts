@@ -55,8 +55,9 @@ test('keyboard only: palette to Settings, F6 through the areas, help and back', 
   const help = page.getByTestId('shortcut-help');
   await expect(help).toBeVisible();
   await expect(help.locator('[data-action="close"]')).toBeFocused();
-  // The heading row, the two group rows and ten shortcuts (four of the page, six of the SQL editor, STU-012).
-  await expect(help.getByRole('row')).toHaveCount(13);
+  // The heading row, the three group rows and eleven shortcuts (four of the page, six of the SQL editor, STU-012, and
+  // one of the explorer, STU-010).
+  await expect(help.getByRole('row')).toHaveCount(15);
   await page.keyboard.press('Escape');
   await expect(help).toBeHidden();
   await expect(page.locator('#main')).toBeFocused();

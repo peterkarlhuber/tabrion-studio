@@ -8,6 +8,7 @@ import { useSyncExternalStore } from 'react';
 export const ROUTES = [
   '/',
   '/connections',
+  '/explorer',
   '/sql',
   '/migrations',
   '/diagnostics',

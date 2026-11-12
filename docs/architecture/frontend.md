@@ -4,7 +4,7 @@ The frontend in `frontend/` is a React 19 / TypeScript / Vite single-page app th
 `tabrion_studio/static/`. This page describes the shell, the design system, the languages, the status displays and
 the dialogs, and how they are tested. The connection manager and the server settings are STU-008
 (`docs/architecture/configuration.md`); the SQL editor (STU-012) is described [below](#sql-editor-stu-012); the
-explorer arrives later. Studio has **no write UI for
+explorer (STU-010) in `docs/architecture/explorer.md`. Studio has **no write UI for
 databases** (the Data Editor, STU-026, stays locked behind G-S2); the only files it writes are its own profiles and
 settings.
 
@@ -26,11 +26,11 @@ settings.
   With a session it sends the heartbeat; when the server answers 401 (or 403 `access.csrf_invalid`), the heartbeat
   stops and the page says "Your session has ended. Run `tabrion-studio` again to open Studio." (review S-1).
 - `src/shell/AppShell.tsx`: skip link, header with the status displays and the buttons for the command palette and
-  the keyboard shortcuts, activity bar (Start, Connections, SQL editor, Migrations, Diagnostics, Settings), tabs,
-  main area, status bar (server version or "does not answer", language).
-- `src/router.ts`: a minimal history router for `/`, `/connections`, `/sql`, `/migrations`, `/diagnostics` and
-  `/settings`. The backend serves `index.html` for exactly these paths (`CLIENT_ROUTES` in `app.py`; a test keeps
-  both lists equal); every other path stays 404.
+  the keyboard shortcuts, activity bar (Start, Connections, Explorer, SQL editor, Migrations, Diagnostics,
+  Settings), tabs, main area, status bar (server version or "does not answer", language).
+- `src/router.ts`: a minimal history router for `/`, `/connections`, `/explorer`, `/sql`, `/migrations`,
+  `/diagnostics` and `/settings`. The backend serves `index.html` for exactly these paths (`CLIENT_ROUTES` in
+  `app.py`; a test keeps both lists equal); every other path stays 404.
 - `src/workspace.ts`: the active connection, its environment and the open tabs. The connection manager and the
   migration status view fill the active connection when they open one (`ConnectionSession`, provided by `App`); it
   also remembers the PROD profiles confirmed with D-02 in this page session (a reload asks again). The SQL editor
@@ -117,18 +117,19 @@ for matching and for display, so the palette, the help and the header buttons al
   combobox pattern: the focus stays in the search, `aria-activedescendant` names the active command, ↑ ↓ Home End
   move, Enter or a click runs, Escape closes, Tab stays in the search, and the focus returns to the opener. A status
   region announces the number of matches. The commands (`commands.ts`) go to the views of the activity bar (Start,
-  Connections, Migrations, Diagnostics, Settings), change the theme, the density and the language, and open the help; the
-  current page, theme, density and language are marked. The filter matches every word, without case and accents. No command writes to a database; theme, density and language are
-  saved to `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The explorer, the SQL
-  editor and the history add their commands when they arrive.
+  Connections, Explorer, SQL editor, Migrations, Diagnostics, Settings), change the theme, the density and the
+  language, and open the help; the current page, theme, density and language are marked. The filter matches every
+  word, without case and accents. No command writes to a database; theme, density and language are saved to
+  `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The SQL editor adds its commands while its
+  page is shown; the history adds its own when it arrives.
 - **Areas** (`regions.ts`): each area carries `data-region`; F6 focuses its current item (the active navigation link,
   the selected tab), else its first control, else the area itself, which then shows the focus ring
   (`data-region-focus`, WCAG 2.4.7).
 - While any modal dialog is open, the page shortcuts do nothing: the dialog owns the keyboard.
 - The SQL editor's shortcuts work on its page; the help lists them in a group of their own and the palette offers
   its commands (`src/keyboard/editorActions.ts`) while the page is shown. A shortcut with ⌥ matches the physical key
-  too, because ⌥T types "†" on a Mac. The explorer filter, the history and F6 between the editor's own areas are
-  still open (`docs/TODO.md`, TD-020, TD-033).
+  too, because ⌥T types "†" on a Mac. The explorer filter (⌘P / Ctrl+P) works on the explorer page and has a help
+  group of its own. The history and F6 between the editor's own areas are still open (`docs/TODO.md`, TD-020, TD-033).
 
 ## SQL editor (STU-012)
 

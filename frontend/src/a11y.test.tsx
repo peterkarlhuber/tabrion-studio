@@ -148,6 +148,7 @@ const PAGES: [string, string, () => ReactElement][] = [
   ],
   ['D-08', '/', () => <QuitDialog open running={2} onQuit={noop} onCancel={noop} />],
   ['migrations (STU-015)', '/migrations', () => <App fetcher={migrations} heartbeat={false} />],
+  ['explorer (STU-010)', '/explorer', () => <App fetcher={profiles} heartbeat={false} />],
   ['SQL editor (STU-012)', '/sql', () => <EditorView fetcher={editor} />],
   ['diagnostics (STU-014)', '/diagnostics', () => <App fetcher={profiles} heartbeat={false} />],
   [

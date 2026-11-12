@@ -1,18 +1,25 @@
 /**
  * Help: keyboard shortcuts (⌘/ or Ctrl+/, 08 section 7). It lists the shortcuts that work now, with the keys of this
- * platform: those of the whole page and those of the SQL editor's page (STU-012).
+ * platform: those of the whole page, those of the SQL editor's page (STU-012) and those of the explorer's (STU-010).
  */
 import { useTranslation } from 'react-i18next';
 
 import { Dialog } from '../components/ui/Dialog';
 import { Keys } from './Keys';
 import { useKeyboardPlatform } from './platform';
-import { EDITOR_SHORTCUTS, PAGE_SHORTCUTS, SHORTCUTS, type ShortcutId } from './shortcuts';
+import {
+  EDITOR_SHORTCUTS,
+  EXPLORER_SHORTCUTS,
+  PAGE_SHORTCUTS,
+  SHORTCUTS,
+  type ShortcutId,
+} from './shortcuts';
 import styles from './ShortcutHelp.module.css';
 
 const GROUPS: [string, ShortcutId[]][] = [
   ['pageGroup', PAGE_SHORTCUTS],
   ['editorGroup', EDITOR_SHORTCUTS],
+  ['explorerGroup', EXPLORER_SHORTCUTS],
 ];
 
 export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) {

@@ -10,8 +10,8 @@
  * migrations: the code trust and migration status of STU-015; dialog-trust-code; diagnostics: the findings of
  * STU-014, `?slow=1` keeps a run open until it is canceled; editor: the profiles and a fake query engine for the
  * SQL editor of STU-012, with `sql` as the first tab's draft, `profile` its profile, `maxRows` the row limit
- * setting and `connectDelay` a delay of the connection), `path` (/, /connections, /sql, /migrations,
- * /diagnostics, /settings), `theme` (light, dark) and `lang` (en, de).
+ * setting and `connectDelay` a delay of the connection; explorer: the catalogs and details of STU-010), `path` (/,
+ * /connections, /explorer, /sql, /migrations, /diagnostics, /settings), `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -30,6 +30,7 @@ import '../styles/global.css';
 import { installTooltipDismiss } from '../lib/tooltips';
 import { initTheme, setThemePreference } from '../theme';
 import type { Workspace } from '../workspace';
+import { explorerAnswer } from './explorer';
 import styles from './harness.module.css';
 import { diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
@@ -53,7 +54,7 @@ if (lang === 'en' || lang === 'de') void setLocale(lang);
 const counters = window as unknown as { heartbeats: number };
 counters.heartbeats = 0;
 
-/** The writes the page sent in the connections, migrations and diagnostics scenarios (e2e/*.spec.ts check them). */
+/** The writes the page sent in the connections, migrations, diagnostics and explorer scenarios (e2e/*.spec.ts). */
 const sent = window as unknown as {
   writes: { method: string; url: string; contentType: string }[];
 };
@@ -215,6 +216,17 @@ const fakeServer: typeof fetch = async (input, init) => {
       }
       return new Response(JSON.stringify(diagnosis()), { status: 200 });
     }
+  }
+  if (scenario === 'explorer') {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    if (method !== 'GET') {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      sent.writes.push({ method, url, contentType: headers['Content-Type'] ?? '' });
+    }
+    if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
+    const answer = explorerAnswer(url, method, typeof init?.body === 'string' ? init.body : '');
+    if (answer !== null) return answer;
   }
   if (String(input) === '/api/heartbeat') {
     counters.heartbeats += 1;

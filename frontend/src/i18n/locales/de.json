@@ -9,6 +9,7 @@
     "label": "Hauptnavigation",
     "start": "Start",
     "connections": "Verbindungen",
+    "explorer": "Explorer",
     "migrations": "Migrationen",
     "diagnostics": "Diagnose",
     "settings": "Einstellungen",
@@ -224,6 +225,130 @@
       "encoding": "Kodierung {{encoding}}",
       "timezone": "Zeitzone {{zone}}",
       "privileged": "Die Rolle ist Superuser oder umgeht die Zeilensicherheit. Studio bleibt schreibgeschützt, eine harte Grenze ist aber nur eine Rolle ohne Schreibrechte. Verwende eine Nur-Lese-Rolle, vor allem für PROD."
+    }
+  },
+  "explorer": {
+    "title": "Explorer",
+    "lead": "Die Tabellen, Views und anderen Objekte der Datenbank einer Verbindung, mit ihren Spalten, Schlüsseln und Indizes. Studio liest sie nur; es ändert die Datenbank nie.",
+    "connection": "Verbindung",
+    "profile": "Verbindungsprofil",
+    "noProfiles": "Es gibt noch keine Verbindungsprofile. Lege eines unter Verbindungen an.",
+    "open": "Öffnen",
+    "openingShort": "Öffnet …",
+    "opening": "Die Verbindung wird geöffnet …",
+    "loading": "Der Katalog wird gelesen …",
+    "loaded_one": "Katalog gelesen: {{count}} Objekt.",
+    "loaded_other": "Katalog gelesen: {{count}} Objekte.",
+    "selectionGone": "Das gewählte Objekt ist nicht mehr im Katalog.",
+    "refresh": "Aktualisieren",
+    "built": "Katalog gelesen um {{time}}.",
+    "builtCached": "Katalog gelesen um {{time}} (vom Server gemerkt; „Aktualisieren“ liest ihn neu).",
+    "filter": {
+      "label": "Objekte filtern",
+      "placeholder": "Objekte filtern …",
+      "kind": "Objekttyp",
+      "all": "Alle Typen",
+      "matches_one": "{{count}} von {{total}} Objekten passt.",
+      "matches_other": "{{count}} von {{total}} Objekten passen.",
+      "none": "Kein Objekt passt zum Filter."
+    },
+    "tree": {
+      "label": "Objekte von {{name}}",
+      "extensions": "Erweiterungen",
+      "file": "Datenbankdatei",
+      "empty": "(leer)",
+      "noObjects": "Diese Datenbank hat keine Tabellen, Views oder Sequenzen.",
+      "large": "Dieser Katalog hat {{count}} Objekte. Studio lädt nur ihre Namen; die Details laden, wenn du ein Objekt wählst.",
+      "truncated": "Einige Gruppen zeigen nur ihre ersten 500 Objekte. Finde die anderen mit dem Filter."
+    },
+    "groups": {
+      "table": "Tabellen",
+      "view": "Views",
+      "materialized_view": "Materialisierte Views",
+      "sequence": "Sequenzen",
+      "foreign_table": "Fremdtabellen",
+      "other": "Andere Objekte"
+    },
+    "kind": {
+      "table": "Tabelle",
+      "view": "View",
+      "materialized_view": "Materialisierte View",
+      "sequence": "Sequenz",
+      "foreign_table": "Fremdtabelle",
+      "other": "Anderes Objekt"
+    },
+    "detail": {
+      "title": "Details",
+      "choose": "Wähle ein Objekt im Baum, um seine Details zu sehen.",
+      "loading": "Die Details werden gelesen …",
+      "none": "Keine",
+      "unknown": "Unbekannt",
+      "unnamed": "(ohne Namen)",
+      "yes": "Ja",
+      "no": "Nein",
+      "more_one": "und {{count}} weiterer",
+      "more_other": "und {{count}} weitere",
+      "noColumns": "Dieses Objekt hat keine Spalten.",
+      "sequence": "Studio zeigt die Details einer Sequenz noch nicht.",
+      "estimate_one": "Etwa {{rows}} Zeile (Schätzung der Datenbank).",
+      "estimate_other": "Etwa {{rows}} Zeilen (Schätzung der Datenbank).",
+      "goTo": "Zu {{name}} wechseln"
+    },
+    "tabs": {
+      "label": "Details von {{name}}",
+      "columns": "Spalten",
+      "constraints": "Constraints",
+      "indexes": "Indizes",
+      "relationships": "Beziehungen",
+      "sqlite": "SQLite"
+    },
+    "columns": {
+      "name": "Name",
+      "type": "Typ",
+      "nullable": "NULL erlaubt",
+      "default": "Standardwert",
+      "comment": "Kommentar",
+      "primaryKey": "Primärschlüssel",
+      "foreignKey": "Fremdschlüssel"
+    },
+    "constraints": {
+      "primaryKey": "Primärschlüssel",
+      "noPrimaryKey": "Dieses Objekt hat keinen Primärschlüssel.",
+      "foreignKeys": "Fremdschlüssel",
+      "unique": "Unique-Constraints",
+      "check": "Check-Constraints"
+    },
+    "indexes": {
+      "name": "Index",
+      "columns": "Spalten",
+      "unique": "Eindeutig",
+      "none": "Dieses Objekt hat keine Indizes."
+    },
+    "relationships": {
+      "references": "Verweist auf",
+      "referencedBy": "Referenziert von"
+    },
+    "sqlite": {
+      "noFacts": "Studio konnte die SQLite-Angaben dieser Tabelle nicht lesen."
+    },
+    "extensions": {
+      "title": "Erweiterungen",
+      "none": "In dieser Datenbank ist keine Erweiterung installiert.",
+      "name": "Erweiterung",
+      "version": "Version",
+      "schema": "Schema",
+      "available": "Verfügbar",
+      "update": "Update auf {{version}} verfügbar",
+      "current": "Aktuell"
+    },
+    "file": {
+      "title": "Datenbankdatei",
+      "on": "Ein",
+      "off": "Aus",
+      "size": "Dateigröße",
+      "bytes_one": "{{size}} Byte",
+      "bytes_other": "{{size}} Bytes",
+      "mode": "Dateirechte"
     }
   },
   "migrations": {
@@ -557,6 +682,8 @@
     "secret_file_unsafe": "Die Passwortdatei ist ein Link, keine normale Datei, hat mehr als einen Namen oder gehört einem anderen Benutzer.",
     "secret_file_not_private": "Andere Benutzer können die Passwortdatei lesen. Mache sie nur für dich lesbar (chmod 600).",
     "secret_file_unreadable": "Die Passwortdatei fehlt, ist leer, größer als 4 KB oder nicht UTF-8.",
+    "object_not_found": "Das Objekt ist nicht mehr im Katalog der Datenbank. Aktualisiere den Katalog.",
+    "explorer_engine": "Diese Angabe gibt es nur für die andere Datenbank-Engine.",
     "db": {
       "connection": "Studio konnte keine Verbindung herstellen. Prüfe Host und Port (eine Firewall kann sie blockieren), Benutzer und Passwort und den TLS-Modus (verify-full verlangt ein vertrauenswürdiges Serverzertifikat; verify-ca oder eine CA-Datei kann helfen).",
       "auth": "Die Datenbank hat die Anmeldung abgelehnt. Prüfe Benutzer und Passwort.",
@@ -594,7 +721,8 @@
       "close": "Schließen",
       "later": "Die Kürzel des SQL-Editors wirken auf seiner Seite. Im Editor kommentiert ⌘/ bzw. Strg+/ Zeilen aus; dort öffnet die Schaltfläche in der Kopfzeile diese Hilfe.",
       "pageGroup": "Ganze Seite",
-      "editorGroup": "SQL-Editor"
+      "editorGroup": "SQL-Editor",
+      "explorerGroup": "Explorer"
     },
     "shortcuts": {
       "palette": "Befehlspalette öffnen",
@@ -606,14 +734,16 @@
       "cancel": "Laufende Abfrage abbrechen (SQL-Editor; auch Esc in den Ergebnissen)",
       "newTab": "Neuer Editor-Tab (SQL-Editor)",
       "closeTab": "Editor-Tab schließen (SQL-Editor)",
-      "save": "Tab als .sql-Datei speichern (SQL-Editor)"
+      "save": "Tab als .sql-Datei speichern (SQL-Editor)",
+      "explorerFilter": "Explorer-Filter fokussieren (auf der Explorer-Seite)"
     },
     "commands": {
       "goTo": "Gehe zu {{page}}",
       "theme": "Darstellung: {{theme}}",
       "density": "Dichte: {{density}}",
       "language": "Sprache: {{language}}",
-      "shortcuts": "Tastenkürzel anzeigen"
+      "shortcuts": "Tastenkürzel anzeigen",
+      "explorerFilter": "Explorer-Filter fokussieren"
     },
     "keys": {
       "ctrl": "Strg"

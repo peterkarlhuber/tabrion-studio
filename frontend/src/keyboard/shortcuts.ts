@@ -18,7 +18,7 @@ export interface Shortcut {
 /**
  * The shortcuts that work now. The SQL editor's (STU-012) work on its page: a new editor tab is Alt+T and closing one
  * Alt+W (⌥T and ⌥W on a Mac), because the browser keeps ⌘T and ⌘W and Safari's ⌥⌘W closes the other tabs (08
- * section 7).
+ * section 7). The explorer filter (STU-010) works on the explorer page only.
  */
 export const SHORTCUTS = {
   palette: { key: 'k', mod: true },
@@ -31,9 +31,14 @@ export const SHORTCUTS = {
   newTab: { key: 't', alt: true },
   closeTab: { key: 'w', alt: true },
   save: { key: 's', mod: true },
+  /** On the explorer page (STU-010): the object filter. The browser's print dialog stays on every other page. */
+  explorerFilter: { key: 'p', mod: true },
 } as const satisfies Record<string, Shortcut>;
 
-/** The shortcuts of the whole page, and those of the SQL editor's page (the help lists them in two groups). */
+/**
+ * The shortcuts of the whole page, those of the SQL editor's page and those of the explorer's (the help lists them in
+ * three groups).
+ */
 export const PAGE_SHORTCUTS: ShortcutId[] = ['palette', 'help', 'nextRegion', 'previousRegion'];
 export const EDITOR_SHORTCUTS: ShortcutId[] = [
   'run',
@@ -43,6 +48,7 @@ export const EDITOR_SHORTCUTS: ShortcutId[] = [
   'closeTab',
   'save',
 ];
+export const EXPLORER_SHORTCUTS: ShortcutId[] = ['explorerFilter'];
 
 export type ShortcutId = keyof typeof SHORTCUTS;
 
