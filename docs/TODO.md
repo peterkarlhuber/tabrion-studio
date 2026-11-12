@@ -659,7 +659,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     is reaped and no `ResourceWarning` is left for a finalizer.
 - **Open:**
   - Get `backend test (windows-latest)` of `ci.yml` green on the STU-015 branch with the fix above; the job object
-    has run there, but that job was red until now.
+    has run there, but that job was red until now. On STU-024 (same `migrations.py`) it passed with only the RC-8
+    failure; on STU-015 head `425194e` it hit the job's time limit and left no log, so pytest now dumps every
+    thread's stack after 300 s in one test (`faulthandler_timeout`).
   - If Windows cannot make the job (nested jobs before Windows 8), only the worker is killed.
 - **Also from the review (Info, accepted):** I-2 the answer can be forged by trusted code (`_revisions()` validates
   it); I-3 the digest is computed on every code-trust and status request (cache by mtime, size and inode if it
