@@ -97,9 +97,9 @@ statement through `OpenConnection.stream` in its own `Database.read()`, like eve
 
 - **Infinite and out-of-range dates (F-7).** psycopg cannot load PostgreSQL `infinity`/`-infinity` dates and
   timestamps, BC dates or years above 9999. The query engine and the viewer have the same limit. The export fails
-  with `db.data`: before the first byte as a problem, after it as a cut download (TD-025).
+  with `db.data`: before the first byte as a problem, after it as a cut download (TD-026).
 - **File names (F-9).** A table export's file name keeps only `[A-Za-z0-9_.-]`, with leading dots removed, so
-  `Ümlaut` becomes `_mlaut.csv` (TD-025).
+  `Ümlaut` becomes `_mlaut.csv` (TD-026).
 - **Data-modifying CTEs (F-10).** On PostgreSQL, `WITH d AS (DELETE ...) SELECT ...` is refused by the server's
   `DECLARE CURSOR` as an unsupported feature (`db.unknown`), not as `db.read_only`. It is blocked either way.
 
