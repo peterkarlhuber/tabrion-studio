@@ -99,7 +99,11 @@
       "forgetPassword": "Remove saved password",
       "test": "Test connection",
       "connect": "Connect",
-      "needsRegistry": "Testing and connecting arrive with the database connection in the next version."
+      "state": "Connection",
+      "open": "open (read-only)",
+      "closed": "not open",
+      "disconnect": "Disconnect",
+      "use": "Use this connection"
     },
     "secret": {
       "keyring": "system keyring",
@@ -155,10 +159,21 @@
       "environment": "Environment (required)",
       "readOnlyRole": "The role should have no write privileges (diagnostics checks it)",
       "savedIn": "Saved in your profiles (profiles.toml). Studio does not change the project file.",
-      "test": "Test connection",
-      "testLater": "The connection test arrives with the database connection in the next version.",
       "required": "Fill in the required fields.",
-      "handWritten": "Your profiles.toml was written by hand. Saving rewrites it; its comments and formatting are not kept."
+      "handWritten": "Your profiles.toml was written by hand. Saving rewrites it; its comments and formatting are not kept.",
+      "url": "Or paste a URL",
+      "urlHint": "A postgresql:// URL fills the fields. Its password moves to the next step and is stored in the keyring (or for this session), never in the file.",
+      "urlTake": "Use URL",
+      "urlState": {
+        "taken": "The fields were taken from the URL.",
+        "takenPassword": "The fields were taken from the URL. Its password is in the next step and is not shown again.",
+        "scheme": "The URL must start with postgresql:// or postgres://.",
+        "invalid": "This is not a valid URL.",
+        "host": "The URL must name one host. Several hosts and socket folders are not supported.",
+        "parameters": "The URL has parameters a profile cannot hold. Only sslmode is taken; enter the profile by hand."
+      },
+      "testAfterSave": "Test the connection after saving",
+      "urlPasswordRemoved": "Its password was removed from the field; enter it again in the next step."
     },
     "delete": {
       "title": "Delete {{name}}?",
@@ -180,7 +195,35 @@
     "secretRemoved": "Saved password removed for {{name}}.",
     "secretNotSaved": "{{name}} saved, but the password was not: {{reason}}",
     "deletedSecretKept": "{{name}} deleted, but the system keyring did not remove its saved password. Remove it in the keyring app.",
-    "savedSecretKept": "{{name}} saved, but the system keyring did not remove the old saved password. Remove it in the keyring app."
+    "savedSecretKept": "{{name}} saved, but the system keyring did not remove the old saved password. Remove it in the keyring app.",
+    "connecting": "Connecting…",
+    "connected": "Connected (read-only). The header shows the connection.",
+    "connectedTo": "Connected to {{name}} (read-only).",
+    "connectFailed": "Not connected: {{reason}}",
+    "disconnected": "Connection to {{name}} closed.",
+    "test": {
+      "running": "Testing the connection…",
+      "ok": "Connection works:",
+      "notOk": "The database answered, but its health check failed:",
+      "failed": "Test failed: {{reason}}",
+      "latency": "{{ms}} ms",
+      "version": {
+        "sqlite": "SQLite {{version}}",
+        "postgresql": "PostgreSQL {{version}}",
+        "other": "version {{version}}"
+      },
+      "role": "role {{role}}",
+      "superuser": "superuser",
+      "noSuperuser": "no superuser",
+      "tlsOn": "TLS on",
+      "tlsOff": "TLS off",
+      "foreignKeysOn": "foreign keys on",
+      "foreignKeysOff": "foreign keys off",
+      "journal": "journal {{mode}}",
+      "encoding": "encoding {{encoding}}",
+      "timezone": "time zone {{zone}}",
+      "privileged": "The role is a superuser or bypasses row-level security. Studio stays read-only, but only a role without write privileges is a hard boundary. Use a read-only role, above all for PROD."
+    }
   },
   "migrations": {
     "title": "Migrations",
@@ -512,7 +555,20 @@
     "secret_file_outside": "The password file lies outside the project folder and the configuration folder.",
     "secret_file_unsafe": "The password file is a link, not a regular file, has more than one name, or belongs to another user.",
     "secret_file_not_private": "Other users can read the password file. Make it readable by you only (chmod 600).",
-    "secret_file_unreadable": "The password file is missing, empty, larger than 4 KB or not UTF-8."
+    "secret_file_unreadable": "The password file is missing, empty, larger than 4 KB or not UTF-8.",
+    "db": {
+      "connection": "Studio could not connect. Check the host and the port (a firewall may block it), the user and the password, and the TLS mode (verify-full needs the server certificate to be trusted; verify-ca or a CA file may help).",
+      "auth": "The database refused the sign-in. Check the user and the password.",
+      "timeout": "The database did not answer in time.",
+      "canceled": "The request was canceled.",
+      "locked": "The database is busy. Try again later.",
+      "permission": "The database role has no permission for this. Ask the database owner.",
+      "read_only": "The database refused a change: Studio connections are read-only.",
+      "corrupt": "The file is not a SQLite database, or the database is damaged.",
+      "disk_full": "The database ran out of disk space.",
+      "resource": "The database ran out of memory or another resource. Try again later.",
+      "other": "The database reported an error ({{kind}})."
+    }
   },
   "keyboard": {
     "palette": {

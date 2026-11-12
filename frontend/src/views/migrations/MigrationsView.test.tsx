@@ -816,8 +816,11 @@ describe('migration status view: the STU-024 formats as #30 sends them', () => {
     expect(table).toHaveTextContent('A column Studio reads is missing or has an unexpected type');
     expect(refused).toHaveTextContent('Studio refused its own read of the table');
     expect(timeout).toHaveTextContent('Reading it took longer than the statement timeout.');
-    expect(other).toHaveTextContent('Studio could not read this version table. The request failed');
-    expect(other).toHaveTextContent('(db.connection)');
+    // Any other code: the page's general text for it (STU-008 gave db.connection a text that says what to check).
+    expect(other).toHaveTextContent(
+      'Studio could not read this version table. Studio could not connect.',
+    );
+    expect(other).not.toHaveTextContent('version table. The request failed');
   });
 
   it('shows every format #30 knows, each state in its own words, and an entry from files only', async () => {

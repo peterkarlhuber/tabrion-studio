@@ -40,7 +40,7 @@
 | TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
-| TD-011 STU-008 parts that wait for STU-009 or a later package (connection test and Connect in the page, URL paste, file dialog, `openapi in sync` job; the backend routes are in the STU-009 draft) | P1 | Open |
+| TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR) | P2 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
@@ -52,6 +52,8 @@
 | TD-026 STU-021 export: infinite and out-of-range dates, Unicode file names, the problem code of data-modifying CTEs (F-7, F-9, F-10) | P3 | Open (STU-021 done in PR #33) |
 | TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Open (2026-11-12) |
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
+| TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the header learns of a connection the server closed only when the manager reloads, no reconnect banner, the status bar's role and database) | P2 | Open (STU-008 connect PR) |
+| TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 is enforced only in the page: `POST /api/connections` and `POST /api/connection-tests` do not check the environment, and the page decides from its loaded list, so a profile changed to `prod` on disk after the list loaded is connected without D-02 until the list is read again. The diagnostics view (STU-014) asks D-02 on every run and does not share the page session's confirmation. The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time | P2 | Open (STU-008 connect PR) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
@@ -349,7 +351,7 @@ merge after OA-004.
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Acceptance met in the QA-9 PR: smoke and axe green, and the network log shows 0 foreign hosts (SQ-08; `e2e/network.spec.ts` over every harness view, dialog and notice, and the real server in `backend.spec.ts`). QA-9 is closed with this PR (`stu-pr12-14-review.md`: accepted with condition C-1, the merge of master with CI green). The listener sits on the browser context (review L-1). The platforms e2e smoke (05 §3.5, `platforms.yml`), Firefox and WebKit belong to STU-050 (doc 07, doc 09); both change `.github/` and need a workflow-change review (TD-007). Review I-1 (visit the wizard steps, the settings forms after a change and the delete dialog too) is open |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
 | TABRION STU-007 | Secret management | P0 | STU-006 | Done (PR #10, OA-009 accepted with conditions; C-1, I-1..I-3 done in the STU-008 PR): keyring (no plain-text fallback, refused `fail`/`null`/`keyrings.alt`), `env:`, `file:` with C-3, session secrets bound to the connection target; `PUT`/`DELETE /api/profiles/{id}/secret`, `GET /api/secrets`; fake keyring in tests |
-| TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done except the parts that need STU-009 (PR #11, OA-010 accepted; review items in the follow-up PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. The connection test and "Connect" need STU-009 (TD-011) |
+| TABRION STU-008 | Connection manager UI and connection test | P1 | STU-005, STU-007, STU-009 | Done (PR #11, OA-010 accepted; review items in the follow-up PR; the connection test and "Connect" in the STU-008 connect PR): the manager (list, details, three-step assistant, delete, password), writing the user's `profiles.toml` and `settings.toml` (digest-bound, atomic, 0600, private folder), the settings view's queries and security. Connect PR: "Test connection" with the facts of 03 section 2 A (`POST /api/connection-tests` now also reads role, superuser, bypass RLS, encoding, time zone and TLS, or foreign keys, journal mode and encoding for SQLite), "Test the connection after saving" in the assistant (on the saved profile, OA-010), "Connect"/"Disconnect" with D-02 once per page session for each profile and target (id, environment, engine, host, port, database, user, path; forgotten when the profile is saved or deleted and when the project is trusted again; shared with the migration status view), D-02 also before the connection test of a PROD profile (the button, the test after saving and the retry after the password dialog; `stu-008-connect-review.md` C-2), the header, PROD frame and window title from the open connection (only the newest connect request sets it), the password dialog when a password is missing, `db.<kind>` texts with the remedy (the separate SQLSTATE class 28 and TLS texts are reached only by mocks, TD-038), the server version as people read it (`16.15`, not `server_version_num`), pasting a `postgresql://` URL (a refused URL loses its password from the field); review `stu-008-connect-review.md` fix round done (C-1..C-3, L-1..L-6; L-5 and L-7 are TD-038); Vitest, `e2e/connections.spec.ts` (axe in light/dark, en/de) and `e2e/backend.spec.ts` against the real registry. Open: the file dialog and the `openapi in sync` job (TD-011), TD-034, TD-038 |
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
@@ -829,20 +831,28 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-011 · STU-008 parts that wait for STU-009 or a later package
 
-- **Priority:** P1 High · **Status:** Open · **Refs:** 08 §4.2, 03 §2 A, §6
-- **Connection test and "Connect"** (`POST /api/profiles/{id}/test`, the test result in step 3 and in the details,
-  D-02 before a PROD connection): they need the connection registry, `Database.health()` and
-  `tabrion.postgres.role_info` (STU-009, TAB-040, RC-8). The buttons are shown disabled with a note until then.
+- **Priority:** P2 Medium (was P1 until the connection test and Connect were done) · **Status:** Open · **Refs:**
+  08 §4.2, 03 §2 A, §6
+- **Connection test and "Connect": done** in the STU-008 connect PR. The test is `POST /api/connection-tests`
+  (STU-009's route, not doc 03's `POST /profiles/{id}/test`); its facts come from a catalog query of Studio's own,
+  not from `tabrion.postgres.role_info`, which needs the driver connection (`docs/architecture/connections.md`, "The
+  connection test"). Deviation from 08 §4.2: the assistant tests after saving ("Test the connection after saving",
+  on by default), not before, so a typed password still reaches only the secret route (OA-010). D-02 is asked once
+  per profile and page session; a reload asks again. Follow-ups are TD-034.
 - **"Save in: Project"** of the assistant is not offered: Studio 1.0 writes only its own files. A project profile is
   edited in `.tabrion/studio.toml`; the manager says so.
-- **Pasting a `postgresql://` URL** (its password moved to the keyring) and showing URLs need `tabrion.safe_url()`
-  (STU-009).
+- **Pasting a `postgresql://` URL: done** in the STU-008 connect PR, parsed in the page
+  (`src/views/connections/postgresUrl.ts`): host, port, database, user and `sslmode` fill the form, the password moves
+  to the password field of step 2 (keyring or session), the URL is cleared; anything else refuses the whole URL. The
+  open connection's `url` (from `tabrion.safe_url`) is not shown in the page yet.
 - **"Browse…" for a SQLite file** needs a file dialog in the backend; the path is typed until then.
 - **Renaming a profile** (it would move its keyring entry) is refused (`config.rename_unsupported`); delete and
   create instead.
 - **Favorites and recently opened** are a 1.0 feature (03 §2 A).
 - **The `openapi in sync` CI job** (the first API types for the frontend) changes `.github/` and needs a
-  workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`) until then.
+  workflow-change review (OA-003); the frontend parses the answers defensively (`src/api/profiles.ts`,
+  `src/api/connections.ts`) until then. Recorded again in the STU-008 connect PR, not done there (no `.github`
+  change in a feature PR).
 - **Language and theme in `settings.toml`:** done in the appearance PR (TD-021).
 - **PR #13 review (`stu-pr12-14-review.md`, accepted; open follow-ups):**
   - **L-1:** in the assistant, `secretKept` hides `secretProblem`. When a retarget could neither remove the old
@@ -976,6 +986,23 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
   (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
   `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.
+
+### TD-034 · STU-008 connect: what the page does not do yet
+
+- **Priority:** P2 Medium · **Status:** Open (STU-008 connect PR, 2026-11-12) · **Refs:** 08 §3, §5 ("Connect",
+  "error recovery"), `src/views/connections/useConnect.tsx`
+- **After "Connect"** 08 §5 goes on to the workspace overview. There is no workspace view yet (explorer page,
+  STU-010/STU-012 frontend lane), so the page stays in the connection manager and the header shows the connection.
+  Navigate there once the workspace route exists.
+- **A connection the server closed** (its profile changed, was removed or is no longer trusted;
+  `studio.connection_stale`) leaves the header only when the connection manager reads `GET /api/connections` again
+  (on load and after each change it makes). Another view keeps showing it as connected until its next request fails.
+  08 §5's banner "Connection lost" with "Reconnect" is not built; it belongs with the heartbeat move of STU-012
+  (TD-013, "The page's heartbeat").
+- **The status bar** (08 §3: server version, role, database or file) still shows only the local server. The test's
+  facts are not kept for the open connection; `POST /api/connections` could answer them as well.
+- **Several open connections:** the header shows the last one opened; the others stay open in the backend (the list
+  marks them "open") until "Disconnect" or shutdown. A connection switcher with a list comes with the editor tabs.
 
 ### TD-032 · STU-014 page: deviations from 08 section 4.9 (route, English server text, progress, links, OK rows)
 
