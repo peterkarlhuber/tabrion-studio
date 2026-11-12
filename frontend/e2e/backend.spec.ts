@@ -7,7 +7,15 @@
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel).
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -192,6 +200,54 @@ test('STU-008: a profile created in the page is written to profiles.toml and del
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByTestId('connections-status')).toHaveText('e2e-parts deleted.');
   expect(readFileSync(file, 'utf-8')).not.toContain('e2e-parts');
+  expect(violations).toEqual([]);
+});
+
+test('STU-014: the page runs the diagnosis of a prepared SQLite file and shows its findings', async ({
+  page,
+}) => {
+  // 09 backlog: rows written with foreign keys off (STU-DX-005) and, on POSIX, a 0644 file (TAB-SQ-003).
+  const file = join(root, 'diag-shop.db');
+  execFileSync(python as string, [
+    '-c',
+    [
+      'import sqlite3, sys',
+      'c = sqlite3.connect(sys.argv[1])',
+      'c.executescript("CREATE TABLE supplier (id INTEGER PRIMARY KEY);' +
+        ' CREATE TABLE part (id INTEGER PRIMARY KEY, supplier_id INTEGER REFERENCES supplier (id));' +
+        ' INSERT INTO part VALUES (1, 99);")',
+      'c.commit()',
+      'c.close()',
+    ].join('\n'),
+    file,
+  ]);
+  if (process.platform !== 'win32') chmodSync(file, 0o644);
+  links.push(newLink());
+  const violations = await signIn(page);
+  await page.getByRole('link', { name: 'Connections' }).click();
+  await page.getByRole('button', { name: 'New connection' }).click();
+  const wizard = page.getByRole('dialog', { name: 'New connection' });
+  await wizard.getByRole('textbox', { name: 'File' }).fill(file);
+  await wizard.getByRole('button', { name: 'Next' }).click();
+  await wizard.getByRole('button', { name: 'Next' }).click();
+  await wizard.getByLabel('Name').fill('e2e-diag');
+  await wizard.getByRole('radio', { name: 'DEV' }).check();
+  await wizard.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('connections-status')).toHaveText('e2e-diag saved.');
+
+  await page.getByRole('link', { name: 'Diagnostics' }).click();
+  await page.getByLabel('Connection profile').selectOption({ label: 'e2e-diag (DEV)' });
+  await page.getByRole('button', { name: 'Run diagnosis' }).click();
+  const list = page.getByTestId('diagnostics-findings');
+  await expect(list).toBeVisible();
+  const codes = await page.getByTestId('diagnostics-code').allTextContents();
+  expect(codes).toContain('STU-DX-005');
+  if (process.platform !== 'win32') expect(codes).toContain('TAB-SQ-003');
+  // Studio's own session findings are left out, and no finding names the file (03 section 6).
+  expect(codes).not.toContain('TAB-SQ-001');
+  await expect(page.getByTestId('diagnostics-result')).not.toContainText('diag-shop');
+  await expect(page.getByTestId('diagnostics-incomplete')).toHaveCount(0);
+  expect(await seriousViolations(page)).toEqual([]);
   expect(violations).toEqual([]);
 });
 
