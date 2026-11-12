@@ -25,7 +25,8 @@ they are shown as text only.
 Per format and namespace, ``state`` is ``current``, ``pending`` (files the database has not applied), ``newer`` (the
 database has versions the files do not know), ``changed`` (an applied file whose name or checksum differs) or
 ``no_files``; ``steps`` lists each version with ``status`` ``applied``, ``pending``, ``unknown`` or ``changed`` and,
-for a pending step, the file name, checksum and the first 2 000 characters of its SQL (``preview``).
+for a pending step, the file name, checksum and the first 2 000 characters of its SQL as the runner reads it, every
+line end ``\n`` (``preview``).
 
 One version table that cannot be read never fails the whole answer (F-1 of ``stu-024-review.md``): a table the role
 may not read (no ``USAGE`` on its schema or no ``SELECT`` on it), a table without the expected columns and types, or
@@ -92,11 +93,15 @@ _COLUMNS: dict[str, dict[str, frozenset[str] | None]] = {
 logger = logging.getLogger(__name__)
 
 
+def _runner_text(data: bytes) -> str:
+    """A migration file as the runners read it: ``Path.read_text`` (UTF-8, every line end ``\\n``). The same on every
+    platform, whatever line ends the file was written with."""
+    return data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
+
+
 def sql_checksum(data: bytes) -> str:
-    """The checksum Nodestro and Axentra record: SHA-256 of the text as ``Path.read_text`` reads it (UTF-8, every
-    line end ``\\n``)."""
-    text = data.decode("utf-8").replace("\r\n", "\n").replace("\r", "\n")
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    """The checksum Nodestro and Axentra record: SHA-256 of the text as the runners read it (:func:`_runner_text`)."""
+    return hashlib.sha256(_runner_text(data).encode("utf-8")).hexdigest()
 
 
 def _quote(name: str) -> str:
@@ -216,7 +221,7 @@ def _read_files(folder: Path, relative: str) -> FileSet:
             checksum = sql_checksum(data)
         except UnicodeDecodeError:
             return FileSet(relative, {}, "config.not_utf8")
-        text = data.decode("utf-8")
+        text = _runner_text(data)  # the preview shows the text the checksum covers, with the same line ends everywhere
         files[int(match.group(1))] = MigrationFile(
             int(match.group(1)), match.group(2), file_name, checksum, text[:PREVIEW_CHARS]
         )

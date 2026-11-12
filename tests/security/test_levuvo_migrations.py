@@ -267,6 +267,19 @@ def test_the_preview_holds_the_first_2000_characters(tmp_path: Path) -> None:
     assert step["status"] == "pending" and step["preview"] == text[:2_000]
 
 
+@pytest.mark.parametrize("line_end", ["\n", "\r\n", "\r"])
+def test_the_preview_is_the_text_the_runner_reads(tmp_path: Path, line_end: str) -> None:
+    """Line ends as the runners read them (``Path.read_text``), whatever the file and the platform have: the preview
+    is the text the checksum covers, and its 2 000 characters do not depend on ``\\r``."""
+    folder = tmp_path / "product/nodestro_runtime/migrations/postgres"
+    folder.mkdir(parents=True)
+    text = "".join(f"-- line {number:05d}\n" for number in range(400))
+    (folder / "0001_long.sql").write_bytes(text.replace("\n", line_end).encode("utf-8"))
+    files = levuvo._file_set(tmp_path / "product", levuvo._NODESTRO_FILES)
+    assert files is not None and files.files[1].preview == text[:2_000]
+    assert files.files[1].checksum == hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
 def test_more_files_than_the_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = make_project(tmp_path)  # three Nodestro files
     monkeypatch.setattr(levuvo, "MAX_FILES", 3)
@@ -283,9 +296,18 @@ def test_identifiers_are_quoted() -> None:
     assert levuvo._select("version", 'x"y', "t") == 'SELECT version FROM "x""y"."t"'
 
 
-def test_a_project_path_with_glob_characters(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "name",
+    [
+        "a[b]c",  # valid everywhere; without glob.escape the pattern matches "abc" and not itself
+        pytest.param(
+            "a[b]*c?", marks=pytest.mark.skipif(sys.platform == "win32", reason="* and ? are not valid on Windows")
+        ),
+    ],
+)
+def test_a_project_path_with_glob_characters(tmp_path: Path, name: str) -> None:
     venv_files = ".venv/lib/python3.12/site-packages/nodestro_runtime/migrations/postgres"
-    project = make_project(tmp_path / "a[b]*c?", nodestro=venv_files)
+    project = make_project(tmp_path / name, nodestro=venv_files)
     (tmp_path / "abc").mkdir()  # what the pattern would match without glob.escape
     files = levuvo._file_set(project, levuvo._NODESTRO_FILES)
     assert files is not None and files.folder == venv_files and sorted(files.files) == [1, 2, 3]

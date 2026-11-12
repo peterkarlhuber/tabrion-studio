@@ -57,7 +57,7 @@ Each entry has a `state`:
 
 - `current`: everything applied.
 - `pending`: files the database has not applied. Each pending step comes with its file name, checksum and the first
-  2 000 characters of its SQL.
+  2 000 characters of its SQL, as the runner reads it (every line end `\n`, also for a file written with `\r\n`).
 - `newer`: the database has versions that the files do not know.
 - `changed`: an applied file's name or checksum differs.
 - `no_files`: Studio found no files to compare with.
