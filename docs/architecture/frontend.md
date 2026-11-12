@@ -106,9 +106,9 @@ for matching and for display, so the palette, the help and the header buttons al
 - **Command palette** (`CommandPalette.tsx`): a modal native `<dialog>` like the other dialogs, with the WAI-ARIA
   combobox pattern: the focus stays in the search, `aria-activedescendant` names the active command, ↑ ↓ Home End
   move, Enter or a click runs, Escape closes, Tab stays in the search, and the focus returns to the opener. A status
-  region announces the number of matches. The commands (`commands.ts`) go to the views and change the theme, the
-  density and the language, and open the help; the current page, theme, density and language are marked. The filter
-  matches every word, without case and accents. No command writes to a database; theme, density and language are
+  region announces the number of matches. The commands (`commands.ts`) go to the views of the activity bar (Start,
+  Connections, Migrations, Settings), change the theme, the density and the language, and open the help; the
+  current page, theme, density and language are marked. The filter matches every word, without case and accents. No command writes to a database; theme, density and language are
   saved to `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The explorer, the SQL
   editor and the history add their commands when they arrive.
 - **Areas** (`regions.ts`): each area carries `data-region`; F6 focuses its current item (the active navigation link,

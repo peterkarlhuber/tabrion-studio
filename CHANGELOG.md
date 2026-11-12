@@ -21,6 +21,7 @@ All notable changes to this project are documented here. The format follows
   The trust dialog lists `alembic.ini`, the `script_location` and every revision file (escaped, like D-01), opens on
   "Don't trust", sends the digest it showed and shows the new list when the files changed meanwhile; the trust can
   be taken back. A PROD profile asks D-02 before its connection opens. English and German.
+  The command palette offers "Go to Migrations" like the activity bar.
 - STU-014 backend (`tabrion.check` on the driver connection until tabrion 0.2):
   `POST /api/connections/{id}/diagnostics` with tabrion's findings (without those about Studio's own
   session) and Studio's `STU-DX-001..005`: a prod profile without a verified certificate, weak TLS to a remote host

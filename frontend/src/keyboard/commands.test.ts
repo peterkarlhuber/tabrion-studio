@@ -25,6 +25,7 @@ describe('buildCommands', () => {
     expect(labels(buildCommands(context()))).toEqual([
       'Go to Start',
       'Go to Connections',
+      'Go to Migrations',
       'Go to Settings',
       'Theme: System',
       'Theme: Light',
@@ -51,9 +52,10 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 4)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 5)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
+      'Gehe zu Migrationen',
       'Gehe zu Einstellungen',
       'Darstellung: System',
     ]);
