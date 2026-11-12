@@ -62,6 +62,14 @@ describe('withoutPassword (L-2 of the connect review)', () => {
     ['postgresql://h/m?PASSWORD=pw&password=two', 'postgresql://h/m'],
     ['postgresql://ro:pw@h/m?password=pw2&passfile=x', 'postgresql://ro@h/m?passfile=x'],
     ['postgresql://h/m?passwords=x', 'postgresql://h/m?passwords=x'],
+    // libpq's passphrase of the client key is a secret too (#44 review).
+    [
+      'postgresql://h/m?sslmode=verify-full&sslpassword=key-pw',
+      'postgresql://h/m?sslmode=verify-full',
+    ],
+    ['postgresql://h/m?SSLPassword=key-pw&ssl%70assword=x', 'postgresql://h/m'],
+    // URL-encoded form: '+' is a space, so 'password+' is the name 'password'.
+    ['postgresql://h/m?password+=x', 'postgresql://h/m'],
   ])('%s -> %s', (text, expected) => {
     expect(withoutPassword(text)).toBe(expected);
   });

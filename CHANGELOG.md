@@ -15,13 +15,13 @@ All notable changes to this project are documented here. The format follows
   connection of a profile in a page session asks D-02, the connection test of a PROD profile included (shared with
   the migration status view; it belongs to the profile's target and is forgotten when the profile is saved or deleted
   or the project is trusted again); **Disconnect** closes it. Only the newest connect request sets the header, and it
-  never stays "connecting…" when an older request answers after a newer one failed; a list of the open connections
+  never stays "connecting…" when an older request answers before or after a newer one that failed; a list of the open connections
   read while a connect ran no longer clears the new connection from the header. A
   missing password opens the password dialog and the action runs again. Failures name the remedy (host, port, user,
   password and TLS mode; a file that is no SQLite database), never the server's text; the separate class-28 and TLS
   texts are reached only by mocks with tabrion 0.1 (TD-038). The server version is the one people read (`16.15`).
   The assistant takes a pasted `postgresql://` URL apart (its password goes to the next step, never into the file;
-  a refused URL loses its password from the field, a `password` query parameter included) and tests the profile
+  a refused URL loses its password from the field, `password` and `sslpassword` query parameters included) and tests the profile
   after saving. English and German.
 - STU-014 page: the view Diagnostics (`/diagnostics`) runs the diagnosis of a chosen profile on a click and lists the
   findings by severity, each with an icon and a word for its severity, its code, title, detail, remedy and source.

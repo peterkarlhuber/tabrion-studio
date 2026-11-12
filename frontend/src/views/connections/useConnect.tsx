@@ -11,7 +11,7 @@
  *   it was closed meanwhile. An older request whose "connecting" was given back that way still decides the header
  *   when it answers (L-10 of the delta review), so the header never stays "connecting".
  */
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 
 import { openConnection, type OpenedConnection } from '../../api/connections';
 import type { ProfileItem, Result } from '../../api/profiles';
@@ -48,9 +48,17 @@ export function useConnect(fetcher: typeof fetch): {
     cancelled?: () => void;
   } | null>(null);
 
+  /**
+   * How the requests that were no longer the newest ended, by profile: the connection one opened, or null if it
+   * failed (R-1 of the #44 review). A newest request that fails gives the header back to what it showed before; if
+   * that was an older request's "connecting" and that request has answered already, its outcome goes in instead.
+   */
+  const settled = useRef(new Map<string, ActiveConnection | null>());
+
   const run = async (item: ProfileItem, done: Done) => {
     const name = visible(item.name);
     const request = session.beginConnect();
+    settled.current.delete(item.id);
     // What the header showed when the user asked (given back if this one fails).
     const previous = session.active;
     session.setActive({
@@ -73,10 +81,16 @@ export function useConnect(fetcher: typeof fetch): {
     // was itself a request still "connecting" (which answers later, or never sets the header if it is stale).
     const before = previous?.status === 'connecting' ? null : previous;
     if (session.isLatestConnect(request)) {
+      // An older request that answered already does not answer again: take its outcome instead of its "connecting".
+      const back =
+        previous?.status === 'connecting' && settled.current.has(previous.profileId ?? '')
+          ? (settled.current.get(previous.profileId ?? '') ?? null)
+          : previous;
       session.setActive((current) =>
-        opened !== null ? opened : ownConnecting(current, item) ? previous : current,
+        opened !== null ? opened : ownConnecting(current, item) ? back : current,
       );
     } else {
+      settled.current.set(item.id, opened);
       // L-10 of the connect review: a newer request may have given the header back to this one's "connecting" (it
       // failed, or was dropped). Then this answer still decides; otherwise the newer request owns the header.
       session.setActive((current) => (ownConnecting(current, item) ? (opened ?? before) : current));
