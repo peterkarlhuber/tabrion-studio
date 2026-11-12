@@ -33,8 +33,8 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { openConnection } from '../../api/connections';
-import type { Problem } from '../../api/problem';
+import { closeConnection, openConnection } from '../../api/connections';
+import { OFFLINE, type Problem } from '../../api/problem';
 import { fetchProfiles, fetchSettings, type ProfileItem } from '../../api/profiles';
 import { fetchProject } from '../../api/project';
 import {
@@ -57,6 +57,7 @@ import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
+import { prodKey } from '../../workspace';
 import { CellDetail, type OpenCell } from './CellDetail';
 import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
 import { formatCount, formatMs, formatSeconds } from './format';
@@ -359,20 +360,78 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   );
 
   /** The tab's connection: opened once per profile (D-02 is asked before, in `start`). */
+  /**
+   * The connection of `item`, the profile as it was when the run passed D-02 (`start`). A known connection is used as
+   * it is. Before a new one (the first, or again after `studio.connection_stale`), the profile is read again from the
+   * server, because another page or an edit of `profiles.toml` may have changed it since this page read it (C-5 of
+   * `stu-012-review.md`): when its environment or target changed, nothing is opened, the page takes the new profile
+   * and the user runs again, which asks D-02 for a PROD profile. As a backstop the server's answer must name the same
+   * environment; else that connection is closed again and the run stops.
+   */
+  /** A profile changed on the server: its results (rows of the old target or environment) and connection go. */
+  const forgetProfile = useCallback((profileId: string) => {
+    connections.current.delete(profileId);
+    setRuns((all) => {
+      const kept: Record<string, RunState> = {};
+      for (const [tabId, state] of Object.entries(all)) {
+        if (state.profileId === profileId) {
+          for (const result of state.results) result.cache?.dispose();
+        } else kept[tabId] = state;
+      }
+      return kept;
+    });
+    setDetail(null);
+  }, []);
+
   const connect = useCallback(
     async (item: ProfileItem): Promise<string | null> => {
       const known = connections.current.get(item.id);
       if (known !== undefined) return known;
       setConnectProblem(null);
-      const opened = await openConnection(fetcher, item.id);
+      const list = await fetchProfiles(fetcher);
+      if (list === null) {
+        setConnectProblem(OFFLINE);
+        return null;
+      }
+      setProfiles(list.profiles);
+      const fresh = list.profiles.find((entry) => entry.id === item.id);
+      if (fresh === undefined) {
+        setNotice(t('editor.profileGone', { name: visible(item.name) }));
+        return null;
+      }
+      if (prodKey(fresh) !== prodKey(item)) {
+        forgetProfile(item.id);
+        setNotice(
+          t('editor.profileChanged', {
+            name: visible(fresh.name),
+            environment: fresh.environment.toUpperCase(),
+          }),
+        );
+        return null;
+      }
+      const opened = await openConnection(fetcher, fresh.id);
       if (!opened.ok) {
         setConnectProblem(opened.problem);
+        return null;
+      }
+      const environment = opened.value.environment;
+      if (environment !== null && environment !== fresh.environment) {
+        void closeConnection(fetcher, opened.value.connectionId);
+        forgetProfile(item.id);
+        const again = await fetchProfiles(fetcher);
+        if (again !== null) setProfiles(again.profiles);
+        setNotice(
+          t('editor.profileChanged', {
+            name: visible(fresh.name),
+            environment: environment.toUpperCase(),
+          }),
+        );
         return null;
       }
       connections.current.set(item.id, opened.value.connectionId);
       return opened.value.connectionId;
     },
-    [fetcher],
+    [fetcher, forgetProfile, t],
   );
 
   /** Run `statements` of `tabId` in turn on `connectionId`; stops at the first error or a cancel. */
@@ -487,7 +546,8 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           params: own,
           maxRows,
         });
-        // The server closed the connection (its profile changed, Studio restarted it): open it once more.
+        // The server closed the connection (its profile changed, Studio restarted it): open it once more, through the
+        // same checks as a first connection (`connect` reads the profile again; a changed one stops the run).
         if (
           !started.ok &&
           (started.problem.code === 'studio.connection_not_found' ||

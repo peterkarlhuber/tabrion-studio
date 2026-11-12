@@ -187,7 +187,10 @@ PROD rows never show under another environment's badge (M-1).
 
 **Runs and connecting.** A run is registered before the connection is opened, so while it connects a second run
 starts nothing, Cancel and ⌘. / Ctrl+. stop it before any query starts, and closing the tab starts none (M-2). The
-status line says "Connecting…" meanwhile. Durations come from the server with one decimal (`elapsed_ms`); the page
+status line says "Connecting…" meanwhile. Before a new connection (the first one, and again after
+`studio.connection_stale`) the editor reads the profile from the server again: a profile whose environment or target
+changed elsewhere since the page read it opens nothing, and the next run goes through D-02 with the new profile; an
+open answer that names another environment is closed again (C-5). Durations come from the server with one decimal (`elapsed_ms`); the page
 shows milliseconds with one decimal below 10 ms (C-3).
 
 ## Tests

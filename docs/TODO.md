@@ -57,7 +57,7 @@
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
-| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-4 and L-1..L-8 done) |
+| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Open (needs a `.github/` pull request; does not block STU-012) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -984,6 +984,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   L-6 row pages checked (offset, row count) and asked for again up to 3 times; L-7 a click keeps the focus in the
   grid; L-8 the `SHORTCUTS` comment. Tests for the review's surviving mutants: a script stopping at a failed
   statement, the draft size cap, the row index, the duration parser. Info: a Tab-exit e2e was added.
+- **Done after delta review 2 (C-5):** before a new connection (the first one, and again after
+  `studio.connection_stale`) the editor reads the profile from the server again. When its environment or target
+  changed since the page read it, nothing is opened, the tab's results and connection for it go, the page takes the
+  new profile and says so; the next run asks D-02 for a PROD profile through the shared guard. As a backstop, an
+  open answer whose `environment` differs is closed again (`DELETE /api/connections`) and nothing runs. Vitest for
+  both paths and the backstop; `e2e/editor-backend.spec.ts` changes profiles to PROD through `PUT /api/profiles`
+  while the editor is open. A server-side check for every page comes from the STU-008 lane; whether the connection
+  manager's own list has the same staleness is for that lane too (`stu-012-review.md`, "To check for #42").
 - **Drafts in the state database:** 08 keeps drafts in Studio's state database; the MVP keeps the tabs' titles,
   profiles and text in the browser's `localStorage` (`src/views/editor/drafts.ts`), which is per port like TD-021,
   under a key per project (a hash of the project's folder) and merged by tab between pages. Move them behind an API

@@ -324,3 +324,89 @@ test('wide rows at max_result_mb = 200 stay within the memory limit (M-4)', asyn
   expect(used).toBeLessThan(140 * 2 ** 20);
   expect(violations).toEqual([]);
 });
+
+/** A call to the API from the page that returns the JSON body. */
+async function apiJson(page: Page, path: string): Promise<unknown> {
+  return page.evaluate(async (path) => {
+    const csrf = sessionStorage.getItem('tabrion-studio.csrf') ?? '';
+    const response = await fetch(path, { headers: { 'X-Tabrion-CSRF': csrf } });
+    return response.json();
+  }, path);
+}
+
+async function openProfiles(page: Page, name: string): Promise<string[]> {
+  const doc = (await apiJson(page, '/api/connections')) as {
+    connections: { profile_id?: string; environment?: string }[];
+  };
+  return doc.connections
+    .filter((item) => item.profile_id === `user:${name}`)
+    .map((item) => item.environment ?? '');
+}
+
+/** The digest of the user's profiles file, which a save must name. */
+async function userDigest(page: Page): Promise<string | null> {
+  const doc = (await apiJson(page, '/api/profiles')) as { user_file?: { digest?: string | null } };
+  return doc.user_file?.digest ?? null;
+}
+
+/** Change a profile's environment as another page would. */
+async function retag(page: Page, name: string, environment: string): Promise<void> {
+  expect(
+    await api(page, 'PUT', '/api/profiles', {
+      id: `user:${name}`,
+      profile: { name, engine: 'sqlite', environment, path: database },
+      digest: await userDigest(page),
+      overwrite: false,
+    }),
+  ).toBe(200);
+}
+
+test('a profile changed to PROD elsewhere never connects without D-02 (C-5)', async ({ page }) => {
+  const violations = await signIn(page);
+  for (const name of ['e2e-dev3', 'e2e-dev4']) {
+    expect(
+      await api(page, 'POST', '/api/profiles', {
+        profile: { name, engine: 'sqlite', environment: 'dev', path: database },
+        digest: await userDigest(page),
+        overwrite: false,
+      }),
+    ).toBe(201);
+  }
+  await openEditor(page);
+  const notice = page.getByTestId('editor-notice');
+
+  // First connection: the page read e2e-dev3 as DEV; another page makes it PROD before Run.
+  await page.getByTestId('editor-profile').selectOption('user:e2e-dev3');
+  await type(page, 'select 1');
+  await retag(page, 'e2e-dev3', 'prod');
+  await page.getByTestId('editor-run').click();
+  await expect(notice).toHaveText(
+    /^The profile e2e-dev3 changed since this page read it \(now PROD\)/,
+  );
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await openProfiles(page, 'e2e-dev3')).toEqual([]);
+  // The page shows it as PROD now, and Run asks D-02.
+  await page.getByTestId('editor-run').click();
+  const dialog = page.getByRole('dialog', { name: 'Production database' });
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  expect(await openProfiles(page, 'e2e-dev3')).toEqual([]);
+
+  // A connection that went stale: e2e-dev4 ran on DEV, then turns PROD.
+  await page.getByTestId('editor-profile').selectOption('user:e2e-dev4');
+  await type(page, 'select 1');
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByRole('grid').getByRole('gridcell').first()).toHaveText('1');
+  expect(await openProfiles(page, 'e2e-dev4')).toEqual(['dev']);
+  await retag(page, 'e2e-dev4', 'prod');
+  await page.getByTestId('editor-run').click();
+  await expect(notice).toHaveText(
+    /^The profile e2e-dev4 changed since this page read it \(now PROD\)/,
+  );
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('grid')).toHaveCount(0);
+  expect(await openProfiles(page, 'e2e-dev4')).not.toContain('prod');
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByRole('dialog', { name: 'Production database' })).toBeVisible();
+  expect(violations).toEqual([]);
+});

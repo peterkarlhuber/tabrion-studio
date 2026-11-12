@@ -9,7 +9,9 @@ read-only transaction, and there is no write mode.
 1. Choose the **Connection** of the tab. A PROD profile asks before Studio first connects to it in this page session
    ("Production database"; a confirmation in **Connections** counts too, and a reload asks again). Queries on it are
    limited to 15 seconds, or to the profile's own statement timeout when it has one (the question names the limit).
-   Changing a tab's connection clears its results.
+   Changing a tab's connection clears its results. When a profile was changed elsewhere (another browser tab, or
+   `profiles.toml`) since the editor read it, Studio runs nothing, shows the profile as it is now and says so; run
+   again, which asks first for a PROD profile.
 2. Write SQL. The editor highlights PostgreSQL or SQLite, depending on the profile.
 3. Press **Run** (⌘↵ / Ctrl+Enter): Studio runs the selection, or the statement the cursor is in. **Run script**
    (⇧⌘↵ / Shift+Ctrl+Enter) runs every statement of the tab, one after the other, and stops at the first error.

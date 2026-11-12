@@ -16,7 +16,8 @@ All notable changes to this project are documented here. The format follows
   rows, and wide rows at the largest result size, stay far below the 300 MB limit. After the review: a profile
   change clears the tab's results, a run cannot be started twice while it connects and can be canceled then, the
   durations show (they read as 0 before), D-02 names the profile's own timeout, drafts are kept per project, and a
-  failed row page is asked for again. New shortcuts in the help and the palette. CodeMirror runs in a shadow root,
+  failed row page is asked for again. Before a new connection the editor reads the profile again, so a profile
+  changed to PROD elsewhere is never connected to without D-02. New shortcuts in the help and the palette. CodeMirror runs in a shadow root,
   so the strict CSP stays unchanged. Open items are TD-033 and TD-037. The migrations and diagnostics pages now have their own window titles.
 - STU-008 connection test and Connect (the parts that waited for STU-009): in the connection manager, **Test
   connection** shows the time, the server version and, for PostgreSQL, the role, superuser, TLS, encoding and time

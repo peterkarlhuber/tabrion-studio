@@ -53,6 +53,8 @@ interface Options {
   connectDelayMs?: number;
   projectPath?: string;
   profileTimeoutMs?: number;
+  /** Answers before the fake server (a changed profile, a stale connection, the connection's environment). */
+  before?: (url: string, init?: RequestInit) => Response | null;
 }
 
 function setup(draft?: { sql: string; profile?: string }, options: Options = {}) {
@@ -82,8 +84,12 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
         : item,
     ),
   };
+  const requests: { method: string; url: string }[] = [];
   const fetcher: typeof fetch = async (input, init) => {
     const url = String(input);
+    requests.push({ method: init?.method ?? 'GET', url });
+    const early = options.before?.(url, init) ?? null;
+    if (early !== null) return early;
     if (url === '/api/profiles') return new Response(JSON.stringify(profiles));
     if (url === '/api/project' && options.projectPath !== undefined) {
       return new Response(JSON.stringify({ path: options.projectPath, state: 'none' }));
@@ -92,7 +98,7 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
     return (await server.handle(url, init)) ?? new Response(null, { status: 404 });
   };
   render(<EditorView fetcher={fetcher} />);
-  return { log: server.log as QueryLog };
+  return { log: server.log as QueryLog, requests };
 }
 
 async function editor() {
@@ -322,6 +328,119 @@ describe('EditorView', () => {
     });
     expect(localStorage.getItem(draftsKey('/work/parts'))).toContain('select 8');
     expect(localStorage.getItem(DRAFTS_KEY)).toBeNull();
+  });
+
+  describe('a profile that changed on the server since the page read it (C-5)', () => {
+    const asProd = () =>
+      new Response(
+        JSON.stringify({
+          ...PROFILES,
+          profiles: PROFILES.profiles.map((item) =>
+            item.id === 'project:parts-dev' ? { ...item, environment: 'prod' } : item,
+          ),
+        }),
+      );
+
+    it('first connection: nothing is opened, the page takes the new profile and the next run asks D-02', async () => {
+      const user = userEvent.setup();
+      let reads = 0;
+      const { log } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url) => {
+            if (url !== '/api/profiles') return null;
+            reads += 1;
+            // The page read it as DEV; it is PROD now.
+            return reads === 1 ? null : asProd();
+          },
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      await waitFor(() =>
+        expect(screen.getByTestId('editor-notice')).toHaveTextContent(
+          'The profile parts-dev changed since this page read it (now PROD). Nothing was run on it',
+        ),
+      );
+      expect(log.connections).toEqual([]);
+      expect(log.starts).toEqual([]);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      // The toolbar shows the profile as it is now, and Run asks D-02.
+      expect(screen.getAllByTestId('env-badge').at(-1)).toHaveTextContent('PROD');
+      await user.click(screen.getByTestId('editor-run'));
+      const dialog = await screen.findByRole('dialog', { name: 'Production database' });
+      await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+      await waitFor(() => expect(log.starts).toHaveLength(1));
+      expect(log.connections).toEqual(['project:parts-dev']);
+    });
+
+    it('a stale connection is not opened again silently: the run stops and the next one asks D-02', async () => {
+      const user = userEvent.setup();
+      let changed = false;
+      const { log } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url, init) => {
+            if (!changed) return null;
+            if (url === '/api/profiles') return asProd();
+            if (url === '/api/queries' && init?.method === 'POST') {
+              return new Response(
+                JSON.stringify({ code: 'studio.connection_stale', status: 409 }),
+                {
+                  status: 409,
+                },
+              );
+            }
+            return null;
+          },
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      await waitFor(() =>
+        expect(screen.getByTestId('result-status')).toHaveTextContent('3 rows · 25 ms'),
+      );
+      changed = true;
+      await user.click(screen.getByTestId('editor-run'));
+      await waitFor(() =>
+        expect(screen.getByTestId('editor-notice')).toHaveTextContent(
+          'The profile parts-dev changed since this page read it (now PROD)',
+        ),
+      );
+      // No second connection, no dialog, and the DEV rows are gone.
+      expect(log.connections).toEqual(['project:parts-dev']);
+      expect(screen.queryByRole('dialog')).toBeNull();
+      expect(screen.queryByRole('grid')).toBeNull();
+      await user.click(screen.getByTestId('editor-run'));
+      expect(await screen.findByRole('dialog', { name: 'Production database' })).toBeVisible();
+    });
+
+    it('backstop: a connection whose environment differs from the guarded profile is closed, and nothing runs', async () => {
+      const user = userEvent.setup();
+      const { log, requests } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url, init) =>
+            url === '/api/connections' && init?.method === 'POST'
+              ? new Response(
+                  JSON.stringify({
+                    connection_id: 'c-x',
+                    profile_id: 'project:parts-dev',
+                    environment: 'prod',
+                  }),
+                  { status: 201 },
+                )
+              : null,
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      await waitFor(() =>
+        expect(screen.getByTestId('editor-notice')).toHaveTextContent('(now PROD)'),
+      );
+      expect(log.starts).toEqual([]);
+      expect(requests).toContainEqual({ method: 'DELETE', url: '/api/connections' });
+    });
   });
 
   it('asks D-02 before the first PROD connection', async () => {
