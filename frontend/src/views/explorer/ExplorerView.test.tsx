@@ -535,6 +535,28 @@ describe('stale answers are dropped', () => {
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 
+  it('a PostgreSQL catalog (no file facts after it) that answers after a switch is not shown', async () => {
+    const catalog = later();
+    const { fetcher } = server({ [`GET ${PG}/catalog`]: catalog.answer });
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Connect' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('explorer-message')).toHaveTextContent('Reading the catalog…'),
+    );
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'project:parts-dev');
+    await act(async () => {
+      catalog.send(json(PG_CATALOG));
+      await Promise.resolve();
+    });
+    // No PROD catalog under the DEV profile, and no PROD badge.
+    expect(screen.queryByRole('tree')).toBeNull();
+    expect(screen.queryByTestId('env-badge')).toBeNull();
+  });
+
   it('a detail that answers after the next selection is not shown', async () => {
     const part = later();
     const { fetcher } = server({ [table(SQLITE, 'main', 'part')]: part.answer });
