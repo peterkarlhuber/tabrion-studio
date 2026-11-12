@@ -12,7 +12,8 @@
     "explorer": "Explorer",
     "migrations": "Migrations",
     "diagnostics": "Diagnostics",
-    "settings": "Settings"
+    "settings": "Settings",
+    "sql": "SQL editor"
   },
   "header": {
     "label": "Status",
@@ -719,13 +720,22 @@
       "action": "Action",
       "keys": "Keys",
       "close": "Close",
-      "later": "Shortcuts for running and cancelling queries and for editor tabs arrive with the SQL editor."
+      "later": "The SQL editor's shortcuts work on its page. In the editor, ⌘/ or Ctrl+/ comments lines out; the header button opens this help there.",
+      "pageGroup": "Whole page",
+      "editorGroup": "SQL editor",
+      "explorerGroup": "Explorer"
     },
     "shortcuts": {
       "palette": "Open the command palette",
       "help": "Show the keyboard shortcuts",
       "nextRegion": "Go to the next area (header, navigation, tabs, main area, status bar)",
       "previousRegion": "Go to the previous area",
+      "run": "Run the statement at the cursor or the selection (SQL editor)",
+      "runScript": "Run every statement of the tab (SQL editor)",
+      "cancel": "Cancel the running query (SQL editor; also Escape in the results)",
+      "newTab": "New editor tab (SQL editor)",
+      "closeTab": "Close the editor tab (SQL editor)",
+      "save": "Save the tab as a .sql file (SQL editor)",
       "explorerFilter": "Focus the explorer filter (on the Explorer page)"
     },
     "commands": {
@@ -739,5 +749,124 @@
     "keys": {
       "ctrl": "Ctrl"
     }
+  },
+  "editor": {
+    "title": "SQL editor",
+    "loading": "Loading the connection profiles…",
+    "toolbar": "Query",
+    "connection": "Connection",
+    "noProfiles": "No connection profile",
+    "chooseProfile": "Choose a profile",
+    "noProfile": "Choose a connection profile for this tab first.",
+    "noStatement": "There is no statement at the cursor or in the selection.",
+    "textLabel": "SQL of {{name}}",
+    "shortcuts": "{{run}} runs the statement at the cursor or the selection, {{script}} runs every statement, {{cancel}} cancels. Tab leaves the editor.",
+    "saved": "Saved as {{name}} in your downloads.",
+    "copied": "Value copied.",
+    "copyFailed": "The browser did not allow copying. Select the value in the detail panel and copy it there.",
+    "tabs": {
+      "label": "Editor tabs",
+      "untitled": "Query {{number}}",
+      "new": "New editor tab ({{keys}})",
+      "close": "Close {{name}}",
+      "unsaved": "not saved",
+      "running": "query running"
+    },
+    "actions": {
+      "run": "Run",
+      "runScript": "Run script",
+      "cancel": "Cancel query",
+      "newTab": "New editor tab",
+      "closeTab": "Close editor tab",
+      "save": "Save as .sql"
+    },
+    "params": {
+      "title": "Parameters",
+      "type": "Type of :{{name}}",
+      "types": {
+        "text": "Text",
+        "number": "Number",
+        "boolean": "Boolean",
+        "null": "Null",
+        "json": "JSON"
+      },
+      "problem": {
+        "missing": "Give :{{name}} a value.",
+        "number": ":{{name}} is not a number.",
+        "range": ":{{name}} is too large for a number. Give it as text and cast it, for example :{{name}}::bigint.",
+        "json": ":{{name}} is not valid JSON."
+      }
+    },
+    "result": {
+      "title": "Results",
+      "tabs": "Results",
+      "empty": "Run a statement to see its result here. Studio runs only reading statements.",
+      "tab": "Result {{number}}",
+      "messages": "Messages",
+      "statement": "Statement {{number}}",
+      "goTo": "Go to statement",
+      "progress": "Query running",
+      "gridLabel": "Result {{number}}",
+      "pending": "Waiting",
+      "skipped": "Not run",
+      "running": "Running…",
+      "runningFor": "Running statement {{number}} of {{count}}… {{seconds}} s",
+      "failed": "Failed.",
+      "canceled": "Canceled after {{seconds}} s.",
+      "noRows": "Done in {{ms}} ms (no result rows).",
+      "rows_one": "{{rows}} row · {{ms}} ms",
+      "rows_other": "{{rows}} rows · {{ms}} ms",
+      "cappedRows_one": "{{rows}} row, capped at {{rows}} (more rows exist) · {{ms}} ms",
+      "cappedRows_other": "{{rows}} rows, capped at {{rows}} (more rows exist) · {{ms}} ms",
+      "cappedBytes_one": "{{rows}} row, capped at the size limit of a result (more rows exist) · {{ms}} ms",
+      "cappedBytes_other": "{{rows}} rows, capped at the size limit of a result (more rows exist) · {{ms}} ms",
+      "statements_one": "{{count}} statement, {{failed}} failed",
+      "statements_other": "{{count}} statements, {{failed}} failed",
+      "loadMore": "Load up to {{rows}} rows",
+      "connecting": "Connecting…"
+    },
+    "grid": {
+      "cut": "cut"
+    },
+    "detail": {
+      "title": "{{column}}, row {{row}}",
+      "close": "Close the value",
+      "copy": "Copy",
+      "value": "Value",
+      "cut": "The server cut this value (64 KB of text, 32 KB of bytes); the rest is not loaded.",
+      "bytes_one": "{{count}} byte",
+      "bytes_other": "{{count}} bytes",
+      "kind": {
+        "null": "NULL",
+        "text": "Text",
+        "number": "Number",
+        "boolean": "Boolean",
+        "json": "JSON",
+        "bytes": "Bytes"
+      }
+    },
+    "problems": {
+      "readOnly": "This connection is read-only. The database refused the change (read-only transaction).",
+      "refused": "Studio runs only reading statements: SELECT, WITH, VALUES, TABLE, EXPLAIN of a query, SHOW and SQLite's PRAGMA.",
+      "multiple": "Studio runs one statement at a time. Run the statements one by one or use Run script.",
+      "transaction": "Studio runs every statement in its own read-only transaction; BEGIN, COMMIT, SET and similar statements are refused.",
+      "empty": "The text holds no statement.",
+      "gone": "This result is no longer kept on the server (Studio keeps the last 16). Run the statement again.",
+      "limit": "Studio runs at most 4 queries at a time, 2 per connection. Wait for one to finish or cancel one.",
+      "paramMissing": "A :name placeholder has no value.",
+      "paramsInvalid": "A parameter value is not valid. Give JSON as text and cast it, for example :doc::jsonb.",
+      "tooLarge": "The statement or its parameters are too large.",
+      "canceled": "The statement was canceled.",
+      "timeout": "The statement ran longer than the profile's time limit.",
+      "syntax": "The database could not parse the statement.",
+      "undefinedObject": "A table, column, function or other object does not exist.",
+      "permission": "The database role may not read this object.",
+      "data": "A value does not fit its column or operation.",
+      "database": "The database refused the statement ({{code}})."
+    },
+    "canceledBeforeStart": "Canceled before the query started.",
+    "profileChanged": "The profile {{name}} changed since this page read it (now {{environment}}). Nothing was run on it; run again to use it as it is now.",
+    "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
+    "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run."
   }
 }

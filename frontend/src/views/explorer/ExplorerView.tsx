@@ -45,7 +45,7 @@ import {
   type TableDetail,
 } from '../../api/explorer';
 import { openConnection } from '../../api/migrations';
-import type { Problem } from '../../api/problem';
+import { OFFLINE, type Problem } from '../../api/problem';
 import { PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import { ProdConnectDialog } from '../../components/dialogs/StudioDialogs';
@@ -165,6 +165,9 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const detailRequest = useRef(0);
   const filterInput = useRef<HTMLInputElement>(null);
   const profileSelect = useRef<HTMLSelectElement>(null);
+  const problemRef = useRef<HTMLParagraphElement>(null);
+  /** Set when Open found its profile gone: after the next render the focus goes to the picker (or the problem). */
+  const refocus = useRef(false);
   const detailHeading = useRef<HTMLHeadingElement>(null);
   const openButton = useRef<HTMLButtonElement>(null);
   /** An Open press whose profile list is still being read; a second press meanwhile does nothing. */
@@ -183,6 +186,13 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       active = false;
     };
   }, [fetcher]);
+
+  // After Open found its profile gone: the picker (or, with no profile left, the problem) takes the focus.
+  useEffect(() => {
+    if (!refocus.current || profiles === null) return;
+    refocus.current = false;
+    (profileSelect.current ?? problemRef.current)?.focus();
+  }, [profiles, selected]);
 
   // Leaving the page drops every answer still on its way.
   useEffect(
@@ -324,11 +334,20 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     const list = await fetchProfiles(fetcher);
     checking.current = false;
     if (asked !== request.current) return;
-    if (list !== null) setProfiles(list.profiles);
-    const item = list === null ? loaded : list.profiles.find((entry) => entry.id === loaded.id);
-    if (item === undefined) {
+    // Fail closed: without the current list the PROD check cannot be made, so nothing is opened.
+    if (list === null) {
       setPhase('idle');
+      setProblem(OFFLINE);
+      return;
+    }
+    setProfiles(list.profiles);
+    const item = list.profiles.find((entry) => entry.id === loaded.id);
+    if (item === undefined) {
+      // The picker moves to the first remaining profile, so its value matches an option, and takes the focus.
+      setPhase('idle');
+      setSelected(list.profiles[0]?.id ?? '');
       setProblem({ code: 'studio.profile_not_found', kind: 'not_found', status: 404, logId: null });
+      refocus.current = true;
       return;
     }
     if (item.environment === 'prod' && !connections.prodConfirmed(item)) {
@@ -594,7 +613,13 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           {message}
         </p>
         {problem !== null ? (
-          <p role="alert" className={connectionStyles.problem} data-testid="explorer-problem">
+          <p
+            ref={problemRef}
+            tabIndex={-1}
+            role="alert"
+            className={connectionStyles.problem}
+            data-testid="explorer-problem"
+          >
             {problemText(t, problem)}
           </p>
         ) : null}
