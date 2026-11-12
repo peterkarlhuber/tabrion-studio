@@ -7,8 +7,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- STU-010 backend (integration branch only, stacked on STU-011; reflection through `tabrion_compat.inspector`
-  until tabrion 0.2): `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
+- STU-010 backend (reflection through `tabrion_compat.inspector` until tabrion 0.2):
+  `GET /api/connections/{id}/catalog` (schemas and objects by kind, cached until `refresh`),
   `GET /api/connections/{id}/tables/{schema}/{name}` (columns, keys in and out, constraints, indexes, row estimate),
   `GET /api/connections/{id}/extensions` (PostgreSQL) and `GET /api/connections/{id}/sqlite-info` (pragmas, file
   size and mode, `STRICT`, `WITHOUT ROWID`). 500 tables in under a second.
