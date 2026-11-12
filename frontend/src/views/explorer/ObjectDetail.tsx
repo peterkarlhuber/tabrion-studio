@@ -539,7 +539,8 @@ export function TableView({
   const { t, i18n } = useTranslation();
   // The STU-022 panels read on the explorer's connection; one panel per connection and object (stale answers dropped).
   const target = { fetcher, connectionId, schema: detail.schema, name: detail.name };
-  const targetKey = `${connectionId}|${detail.schema}|${detail.name}`;
+  // JSON, not a separator: names may hold any character (L-2 of stu-022-page-review.md).
+  const targetKey = JSON.stringify([connectionId, detail.schema, detail.name]);
   if (detail.kind === 'sequence') {
     return (
       <>

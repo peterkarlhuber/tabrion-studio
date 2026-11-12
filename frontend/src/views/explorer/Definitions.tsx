@@ -83,29 +83,44 @@ function Pending<T>({ state, loading }: { state: Loaded<T>; loading: string }) {
   return null;
 }
 
-/** The DDL as shown: escaped per line (line breaks kept), cut after MAX_DDL_CHARS. */
+/**
+ * The DDL as shown: escaped, cut after MAX_DDL_CHARS. Line breaks and tabs stay as they are (they only move text
+ * down or to the right and cannot reorder it; SQLite's stored DDL is often indented with tabs); every other control,
+ * separator and bidi character is an escape (U-1).
+ */
 export function shownDdl(ddl: string): { text: string; cut: boolean } {
   const chars = Array.from(ddl);
   const cut = chars.length > MAX_DDL_CHARS;
   const kept = cut ? chars.slice(0, MAX_DDL_CHARS).join('') : ddl;
-  return { text: kept.split('\n').map(visible).join('\n'), cut };
+  const lines = kept.split('\n').map((line) => line.split('\t').map(visible).join('\t'));
+  return { text: lines.join('\n'), cut };
 }
+
+/** How long "Copy DDL" leaves its status empty before the new one, so that a second copy is announced again. */
+const ANNOUNCE_DELAY_MS = 100;
 
 export function DdlView({ fetcher, connectionId, schema, name }: Target) {
   const { t, i18n } = useTranslation();
   const state = useRead(() => fetchDdl(fetcher, connectionId, schema, name));
   const [copied, setCopied] = useState('');
+  const announce = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(announce.current), []);
   if (state.status !== 'ready')
     return <Pending state={state} loading={t('explorer.ddl.loading')} />;
   const ddl: Ddl = state.value;
   const shown = shownDdl(ddl.ddl);
   const copy = async () => {
+    let message: string;
     try {
       await navigator.clipboard.writeText(ddl.ddl);
-      setCopied(t('explorer.ddl.copied'));
+      message = t('explorer.ddl.copied');
     } catch {
-      setCopied(t('explorer.ddl.copyFailed'));
+      message = t('explorer.ddl.copyFailed');
     }
+    // The status is emptied first, so the same text after a second copy is a change the screen reader announces.
+    setCopied('');
+    window.clearTimeout(announce.current);
+    announce.current = window.setTimeout(() => setCopied(message), ANNOUNCE_DELAY_MS);
   };
   return (
     <div className={explorerStyles.sections} data-testid="detail-ddl">

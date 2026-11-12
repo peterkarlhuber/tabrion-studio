@@ -9,7 +9,9 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { explorerAnswer, HOSTILE_TABLE, PG_DDL, PG_POLICIES } from '../../harness/explorer';
+import { parseTable, type Engine, type TableDetail } from '../../api/explorer';
 import { DdlView, MAX_DDL_CHARS, PoliciesView, RowCount, shownDdl } from './Definitions';
+import { TableView, type TabId } from './ObjectDetail';
 
 type Call = { url: string; method: string };
 
@@ -79,7 +81,8 @@ describe('the DDL tab', () => {
   it('cuts a very long DDL with a note; the shown part is escaped per line', () => {
     const long = `${'x'.repeat(MAX_DDL_CHARS)}\n${BIDI}`;
     expect(shownDdl(long)).toEqual({ text: 'x'.repeat(MAX_DDL_CHARS), cut: true });
-    expect(shownDdl(`a\n${BIDI}\tb`)).toEqual({ text: 'a\n\\u202E\\u0009b', cut: false });
+    // Tabs and line breaks stay (I-1 of stu-022-page-review.md); other controls are escapes.
+    expect(shownDdl(`a\n${BIDI}\tb\r`)).toEqual({ text: 'a\n\\u202E\tb\\u000D', cut: false });
   });
 
   it('shows the cut note for a DDL past the limit, and Copy DDL copies all of it', async () => {
@@ -100,7 +103,13 @@ describe('the DDL tab', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Copy DDL' }));
     expect(writeText).toHaveBeenCalledWith(`${statement};\n\n`);
-    expect(screen.getByTestId('ddl-copy-status')).toHaveTextContent('The DDL is on the clipboard.');
+    const status = screen.getByTestId('ddl-copy-status');
+    await waitFor(() => expect(status).toHaveTextContent('The DDL is on the clipboard.'));
+    // A second copy empties the status first, so the same text is announced again (I-4).
+    await user.click(screen.getByRole('button', { name: 'Copy DDL' }));
+    expect(status).toHaveTextContent('');
+    await waitFor(() => expect(status).toHaveTextContent('The DDL is on the clipboard.'));
+    expect(writeText).toHaveBeenCalledTimes(2);
   });
 
   it('says so when the clipboard refuses the copy', async () => {
@@ -112,7 +121,9 @@ describe('the DDL tab', () => {
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     render(<DdlView fetcher={fetcher} connectionId="c-pg" schema="public" name="device" />);
     await user.click(await screen.findByRole('button', { name: 'Copy DDL' }));
-    expect(screen.getByTestId('ddl-copy-status')).toHaveTextContent('could not copy the DDL');
+    await waitFor(() =>
+      expect(screen.getByTestId('ddl-copy-status')).toHaveTextContent('could not copy the DDL'),
+    );
   });
 
   it('an object without statements says so and offers no copy', async () => {
@@ -188,7 +199,7 @@ describe('the policies tab', () => {
       'Row-level securityOnForced for the ownerNoOwnermeasure_ownerYour roleanalyst',
     );
     expect(screen.getByTestId('policies-applies')).toHaveTextContent(
-      'The policies bind your role analyst: it sees only the rows they allow.',
+      'The policies bind your role analyst: it sees only the rows they allow. If no permissive policy applies to your role, directly or through a role it belongs to, it sees no rows.',
     );
     expect(screen.queryByTestId('policies-deny')).toBeNull();
     expect(items.map((item) => item.textContent)).toEqual([
@@ -202,11 +213,25 @@ describe('the policies tab', () => {
     const { fetcher } = server();
     render(<PoliciesView fetcher={fetcher} connectionId="c-pg" schema="public" name="device" />);
     expect(await screen.findByTestId('policies-applies')).toHaveTextContent(
-      'Your role measure_owner owns the table and the security is not forced',
+      'Your role measure_owner owns the table, or is a member of the role that owns it, and the security is not forced',
     );
     expect(screen.getByTestId('policies-deny')).toHaveTextContent(
       'every role it binds sees no rows',
     );
+    expect(screen.getByText('This table has no policies.')).toBeVisible();
+  });
+
+  it('RLS off without policies: no claim that RLS is on or that rows are denied (L-3)', async () => {
+    const body = { ...(PG_POLICIES.device as object), rls_enabled: false };
+    const { fetcher } = server({
+      [route('c-pg', 'policies', 'public', 'device')]: () => json(body),
+    });
+    render(<PoliciesView fetcher={fetcher} connectionId="c-pg" schema="public" name="device" />);
+    expect(await screen.findByTestId('policies-applies')).toHaveTextContent(
+      'Row-level security is off',
+    );
+    expect(screen.getByTestId('policies-rls')).toHaveTextContent('Off');
+    expect(screen.queryByTestId('policies-deny')).toBeNull();
     expect(screen.getByText('This table has no policies.')).toBeVisible();
   });
 
@@ -328,5 +353,86 @@ describe('SQLite row count on request', () => {
         "The server's answer could not be read",
       ),
     );
+  });
+});
+
+describe('one panel per connection and object (L-2)', () => {
+  // Two objects whose names would join to the same text with a separator: `a|b`.`c` and `a`.`b|c`.
+  const detail = (schema: string, name: string): TableDetail => {
+    const value = parseTable({
+      connection_id: 'c-x',
+      schema,
+      name,
+      kind: 'table',
+      columns: [{ name: 'id', type: 'INTEGER', nullable: false, default: null, comment: null }],
+      primary_key: null,
+      foreign_keys: [],
+      referenced_by: [],
+      unique_constraints: [],
+      check_constraints: [],
+      indexes: [],
+      row_estimate: null,
+    });
+    if (value === null) throw new Error('bad detail');
+    return value;
+  };
+  const first = detail('a|b', 'c');
+  const second = detail('a', 'b|c');
+  const ddlOf = (schema: string, name: string) => {
+    const statement = `CREATE TABLE "${schema}"."${name}" (id INTEGER)`;
+    return json({
+      connection_id: 'c-x',
+      schema,
+      name,
+      statements: [statement],
+      ddl: `${statement};\n\n`,
+    });
+  };
+  const countOf = (schema: string, name: string, rows: number) =>
+    json({ connection_id: 'c-x', schema, name, count: rows, elapsed_ms: 1 });
+
+  function view(fetcher: typeof fetch, shown: TableDetail, tab: TabId, engine: Engine) {
+    return (
+      <TableView
+        detail={shown}
+        engine={engine}
+        sqliteInfo={null}
+        tab={tab}
+        onTab={() => undefined}
+        find={() => null}
+        onFollow={() => undefined}
+        fetcher={fetcher}
+        connectionId="c-x"
+      />
+    );
+  }
+
+  it('the DDL tab reads the next object again when the view shows another one', async () => {
+    const { fetcher, calls } = server({
+      [route('c-x', 'ddl', 'a|b', 'c')]: () => ddlOf('a|b', 'c'),
+      [route('c-x', 'ddl', 'a', 'b|c')]: () => ddlOf('a', 'b|c'),
+    });
+    const { rerender } = render(view(fetcher, first, 'ddl', 'postgresql'));
+    expect(await screen.findByTestId('ddl-text')).toHaveTextContent('CREATE TABLE "a|b"."c"');
+    rerender(view(fetcher, second, 'ddl', 'postgresql'));
+    await waitFor(() =>
+      expect(screen.getByTestId('ddl-text')).toHaveTextContent('CREATE TABLE "a"."b|c"'),
+    );
+    expect(calls.map((call) => call.url)).toEqual([
+      route('c-x', 'ddl', 'a|b', 'c'),
+      route('c-x', 'ddl', 'a', 'b|c'),
+    ]);
+  });
+
+  it('the row count of one object is not shown for the next', async () => {
+    const { fetcher } = server({
+      [route('c-x', 'row-count', 'a|b', 'c')]: () => countOf('a|b', 'c', 7),
+    });
+    const user = userEvent.setup();
+    const { rerender } = render(view(fetcher, first, 'columns', 'sqlite'));
+    await user.click(screen.getByRole('button', { name: 'Count rows' }));
+    await waitFor(() => expect(screen.getByTestId('row-count-result')).toHaveTextContent('7 rows'));
+    rerender(view(fetcher, second, 'columns', 'sqlite'));
+    expect(screen.getByTestId('row-count-result')).toHaveTextContent('');
   });
 });

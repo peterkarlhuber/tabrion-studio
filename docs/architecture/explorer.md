@@ -169,16 +169,19 @@ and by the header.
 - **DDL, policies and row counts (STU-022, `views/explorer/Definitions.tsx`):** a **DDL** tab for every object (a
   sequence shows its DDL without tabs) and a **Policies** tab for a PostgreSQL table; on SQLite, **Count rows** for a
   table or view. Each reads its GET route on the explorer's open connection only when it is shown or pressed, never
-  opens a connection and sends no write (D-02). The DDL is escaped per line (`visible()`: line breaks kept, every other
-  control, separator and bidi character as `\uXXXX`, a backslash as `\\`) and cut after 100,000 characters with a
-  note; **Copy DDL** copies the exact text (the clipboard, not the database). The owner and the server's notes are
-  shown escaped and capped. The policies tab shows RLS on/forced, the owner and the connection's role, whether the
-  policies bind that role and why not (off, superuser, `BYPASSRLS`, owner without `FORCE`), a warning when RLS is on
-  without a policy, and every policy (permissive or restrictive, command, roles, `USING`, `WITH CHECK`, expressions
-  capped at 1000 characters). A row count past the server's timeout (`db.timeout`) says so in the page's words.
-  The parsers fail closed (a statement that is not text, a policy with an unknown command or without its roles refuses
-  the whole answer), and an answer for another connection or object is refused (I-1). Each panel is keyed by
-  connection and object, so a late answer for an earlier selection is dropped.
+  opens a connection and sends no write (D-02). The DDL is escaped per line (`visible()`: line breaks and tabs kept,
+  every other control, separator and bidi character as `\uXXXX`, a backslash as `\\`) and cut after 100,000 characters
+  with a note; **Copy DDL** copies the exact text (the clipboard, not the database). The owner and the server's notes
+  are shown escaped and capped. The policies tab shows RLS on/forced, the owner and the connection's role, whether the
+  policies bind that role and why not (off, superuser, `BYPASSRLS`, owner or member of the owning role without
+  `FORCE`), a warning when RLS is on without a policy, and every policy (permissive or restrictive, command, roles,
+  `USING`, `WITH CHECK`, expressions capped at 1000 characters). A row count past the server's timeout (`db.timeout`)
+  says so in the page's words. The parsers fail closed: a statement, note, owner, role name, `USING` or `WITH CHECK`
+  that is present but not text, a role flag that is not a boolean, or a policy with an unknown command or roles that
+  are not a list of text refuses the whole answer, and an answer for another connection or object is refused (I-1).
+  Each panel is keyed by connection and object (a JSON key, since names may hold any character), so a late answer for
+  an earlier selection is dropped. Copy DDL empties its status before the new text, so a second copy is announced
+  again.
 
 Open: "Open in editor" and "SELECT … LIMIT 100" (with the SQL editor, #41), the data tab (STU-013 page), the
 virtualized tree, the estimates of `row-estimates` in the tree, and following the header's connection; see TD-041.

@@ -23,7 +23,7 @@ const TEXT = {
 for (const theme of ['light', 'dark'] as Theme[]) {
   for (const lang of ['en', 'de'] as const) {
     test(`${theme}, ${lang}: DDL, policies and the row count pass axe`, async ({ page }) => {
-      // Seven full axe runs (each 2-3 s with colour contrast): more than the default 30 s on a busy runner.
+      // Seven full axe runs (each 2-3 s with color contrast): more than the default 30 s on a busy runner.
       test.setTimeout(90_000);
       const text = TEXT[lang];
       await openHarness(page, { scenario: 'explorer', path: '/explorer', theme, lang });

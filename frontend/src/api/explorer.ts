@@ -396,6 +396,21 @@ export function parseSqliteInfo(body: unknown): SqliteInfo | null {
   };
 }
 
+/** Missing, null or a string: the string or null; any other value is `INVALID` (the answer is refused, L-1). */
+const INVALID = Symbol('invalid');
+function optionalText(value: unknown): string | null | typeof INVALID {
+  if (value === undefined || value === null) return null;
+  return typeof value === 'string' ? value : INVALID;
+}
+
+/** Missing or null: no entries; otherwise a list of strings, or `INVALID`. */
+function optionalTexts(value: unknown): string[] | typeof INVALID {
+  if (value === undefined || value === null) return [];
+  return Array.isArray(value) && value.every((item) => typeof item === 'string')
+    ? (value as string[])
+    : INVALID;
+}
+
 export function parseDdl(body: unknown): Ddl | null {
   const root = doc(body);
   if (root === null) return null;
@@ -403,16 +418,19 @@ export function parseDdl(body: unknown): Ddl | null {
   const name = text(root.name);
   const statements = list(root.statements);
   const script = text(root.ddl);
-  // Every statement must be text: a DDL with a part the page cannot show is not shown at all (fail closed).
+  const owner = optionalText(root.owner);
+  const notes = optionalTexts(root.notes);
+  // Every part must be what it claims: a DDL with a part the page cannot show is not shown at all (fail closed).
   if (schema === null || name === null || statements === null || script === null) return null;
   if (!statements.every((item) => typeof item === 'string')) return null;
+  if (owner === INVALID || notes === INVALID) return null;
   return {
     schema,
     name,
     statements: statements as string[],
     ddl: script,
-    owner: text(root.owner),
-    notes: texts(root.notes),
+    owner,
+    notes,
   };
 }
 
@@ -425,7 +443,12 @@ export function parsePolicies(body: unknown): Policies | null {
   const enabled = flag(root.rls_enabled);
   const forced = flag(root.rls_forced);
   const applies = flag(root.rls_applies);
+  const owner = optionalText(root.owner);
   const role = doc(root.current_role);
+  const roleName = optionalText(role?.name);
+  const superuser = flag(role?.superuser);
+  const bypassRls = flag(role?.bypass_rls);
+  const isOwner = flag(role?.owner);
   if (
     schema === null ||
     name === null ||
@@ -433,7 +456,12 @@ export function parsePolicies(body: unknown): Policies | null {
     enabled === null ||
     forced === null ||
     applies === null ||
-    role === null
+    owner === INVALID ||
+    role === null ||
+    roleName === INVALID ||
+    superuser === null ||
+    bypassRls === null ||
+    isOwner === null
   ) {
     return null;
   }
@@ -444,6 +472,8 @@ export function parsePolicies(body: unknown): Policies | null {
     const permissive = flag(entry?.permissive);
     const command = entry?.command;
     const roles = list(entry?.roles);
+    const using = optionalText(entry?.using);
+    const withCheck = optionalText(entry?.with_check);
     // A policy the page cannot read in full would hide a rule: the whole answer is refused (fail closed).
     if (
       entry === null ||
@@ -451,7 +481,9 @@ export function parsePolicies(body: unknown): Policies | null {
       permissive === null ||
       !POLICY_COMMANDS.includes(command as PolicyCommand) ||
       roles === null ||
-      !roles.every((item) => typeof item === 'string')
+      !roles.every((item) => typeof item === 'string') ||
+      using === INVALID ||
+      withCheck === INVALID
     ) {
       return null;
     }
@@ -460,22 +492,17 @@ export function parsePolicies(body: unknown): Policies | null {
       permissive,
       command: command as PolicyCommand,
       roles: roles as string[],
-      using: text(entry.using),
-      withCheck: text(entry.with_check),
+      using,
+      withCheck,
     });
   }
   return {
     schema,
     name,
-    owner: text(root.owner),
+    owner,
     rlsEnabled: enabled,
     rlsForced: forced,
-    currentRole: {
-      name: text(role.name),
-      superuser: role.superuser === true,
-      bypassRls: role.bypass_rls === true,
-      owner: role.owner === true,
-    },
+    currentRole: { name: roleName, superuser, bypassRls, owner: isOwner },
     rlsApplies: applies,
     policies,
   };

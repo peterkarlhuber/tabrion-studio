@@ -10,6 +10,7 @@
   font-family: var(--tb-font-mono);
   font-size: var(--tb-text-sm);
   white-space: pre;
+  tab-size: 4;
 }
 .ddl:focus-visible {
   outline: 2px solid var(--tb-color-focus);

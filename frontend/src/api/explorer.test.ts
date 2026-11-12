@@ -239,6 +239,36 @@ describe('requests', () => {
 });
 
 describe('STU-022: parseDdl, parsePolicies and parseRowCount', () => {
+  const measurement = PG_POLICIES.measurement as {
+    policies: Record<string, unknown>[];
+    current_role: Record<string, unknown>;
+  };
+  /** The measurement policies with the first policy changed. */
+  const withPolicy = (change: Record<string, unknown>) => ({
+    ...measurement,
+    policies: [{ ...measurement.policies[0], ...change }, ...measurement.policies.slice(1)],
+  });
+  const withRole = (change: Record<string, unknown>) => {
+    const role = { ...measurement.current_role, ...change };
+    for (const key of Object.keys(change)) if (change[key] === undefined) delete role[key];
+    return { ...measurement, current_role: role };
+  };
+
+  it('missing or null optional parts read as none, not as a refusal', () => {
+    const {
+      using: _using,
+      with_check: _check,
+      ...bare
+    } = measurement.policies[0] as Record<string, unknown>;
+    const policies = parsePolicies({ ...measurement, owner: null, policies: [bare] });
+    expect(policies?.owner).toBeNull();
+    expect(policies?.policies[0]).toMatchObject({ using: null, withCheck: null });
+    expect(parsePolicies(withRole({ name: null }))?.currentRole.name).toBeNull();
+    const { notes: _notes, owner: _owner, ...ddl } = PG_DDL.device as Record<string, unknown>;
+    expect(parseDdl(ddl)).toMatchObject({ owner: null, notes: [] });
+    expect(parseDdl({ ...ddl, notes: null })?.notes).toEqual([]);
+  });
+
   it('read the backend shapes', () => {
     const ddl = parseDdl(PG_DDL.measurement_id_seq);
     expect(ddl?.statements).toHaveLength(2);
@@ -292,6 +322,20 @@ describe('STU-022: parseDdl, parsePolicies and parseRowCount', () => {
           policies: [{ permissive: true, command: 'ALL', roles: [] }],
         }),
     ],
+    // L-1 of stu-022-page-review.md: a part that is present but not what it claims refuses the whole answer.
+    ['a DDL owner that is not text', () => parseDdl({ ...PG_DDL.device, owner: 7 })],
+    ['DDL notes that are not a list', () => parseDdl({ ...PG_DDL.device, notes: 'note' })],
+    ['a DDL note that is not text', () => parseDdl({ ...PG_DDL.device, notes: ['ok', 1] })],
+    ['a policies owner that is not text', () => parsePolicies({ ...PG_POLICIES.device, owner: 7 })],
+    ['a USING that is not text', () => parsePolicies(withPolicy({ using: 42 }))],
+    ['a WITH CHECK that is not text', () => parsePolicies(withPolicy({ with_check: { a: 1 } }))],
+    // L-3 (M3): a list of roles with an entry that is not text.
+    ['a role that is not text', () => parsePolicies(withPolicy({ roles: ['analyst', 1] }))],
+    ...((['superuser', 'bypass_rls', 'owner'] as const).flatMap((key) => [
+      [`a role flag ${key} that is not a boolean`, () => parsePolicies(withRole({ [key]: 'yes' }))],
+      [`a missing role flag ${key}`, () => parsePolicies(withRole({ [key]: undefined }))],
+    ]) as [string, () => unknown][]),
+    ['a role name that is not text', () => parsePolicies(withRole({ name: 5 }))],
     ['a count that is not a count', () => parseRowCount({ ...SQLITE_COUNTS.part, count: -1 })],
     ['a count without a name', () => parseRowCount({ ...SQLITE_COUNTS.part, name: null })],
   ])('refuse %s', (_, parse) => {

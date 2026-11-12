@@ -29,7 +29,7 @@ The **DDL** tab shows the statements that create the object:
 A sequence has no tabs. Its DDL is shown on its own.
 
 Control characters in the DDL are shown as `\uXXXX` and a backslash as `\\`, so nothing in a name or a string can
-change how the text reads. Line breaks stay line breaks. **Copy DDL** copies the exact text, without these escapes.
+change how the text reads. Line breaks and tabs stay as they are. **Copy DDL** copies the exact text, without these escapes.
 A DDL longer than 100,000 characters is shown only in part, and the tab says so. **Copy DDL** still copies all of it.
 
 ## Policies (PostgreSQL)
@@ -39,8 +39,10 @@ The **Policies** tab of a PostgreSQL table shows its row-level security:
 - whether row-level security is **on**, and whether it is **forced** for the table's owner;
 - the owner and **your role**, the role of the connection;
 - whether the policies **bind your role**, and why not if they do not. Row-level security may be off. Your role may
-  be a superuser or have `BYPASSRLS`. Or it may own the table while the security is not forced. A role the policies do
-  not bind sees every row in the data viewer and the SQL editor; a bound role sees only the rows they allow;
+  be a superuser or have `BYPASSRLS`. Or it may own the table, or be a member of the role that owns it, while the
+  security is not forced. A role the policies do not bind sees every row in the data viewer and the SQL editor; a
+  bound role sees only the rows they allow. If no permissive policy applies to your role, directly or through a role
+  it belongs to, it sees no rows;
 - every policy: its name, **Permissive** or **Restrictive**, the command (`ALL`, `SELECT`, `INSERT`, `UPDATE`,
   `DELETE`), the roles (**All roles (PUBLIC)** for every role), and its `USING` and `WITH CHECK` expressions.
 
