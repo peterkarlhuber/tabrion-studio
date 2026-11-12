@@ -52,13 +52,17 @@
 | TD-026 STU-021 export: infinite and out-of-range dates, Unicode file names, the problem code of data-modifying CTEs (F-7, F-9, F-10) | P3 | Open (STU-021 done in PR #33) |
 | TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Open (2026-11-12) |
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
-| TD-039 the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (TD-039 draft PR) |
+| TD-035 STU-022 DDL: what pg_dump writes and Studio's DDL does not (owner, privileges, tablespace, access method, functions, types and domains, foreign-table column options, security labels; PostgreSQL 18 forms) | P3 | Open (STU-022 draft PR #38) |
+| TD-039 STU-022 review: the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (PR #45) |
 | TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the header learns of a connection the server closed only when the manager reloads, no reconnect banner, the status bar's role and database) | P2 | Open (STU-008 connect PR) |
-| TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 is enforced only in the page: `POST /api/connections` and `POST /api/connection-tests` do not check the environment, and the page decides from its loaded list, so a profile changed to `prod` on disk after the list loaded is connected without D-02 until the list is read again. The diagnostics view (STU-014) asks D-02 on every run and does not share the page session's confirmation. The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time | P2 | Open (STU-008 connect PR) |
+| TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 is enforced only in the page: `POST /api/connections` and `POST /api/connection-tests` do not check the environment, and the page decides from its loaded list, so a profile changed to `prod` on disk after the list loaded is connected without D-02 until the list is read again. The diagnostics view (STU-014) asks D-02 on every run and does not share the page session's confirmation. The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time. The delta review's leftovers are fixed in the STU-008 follow-up PR: L-10 (the header could stay "connecting…" after a slow connect and a newer one that failed), a refused URL's `password` query parameter staying in the field (and `sslpassword`, from the #44 review), the other order of L-10 (the older request answers first, then the newer one fails; #44 review R-1), a connection that was open before two connects that both failed (#44 delta review R-2), tests for the two surviving mutants (the busy click guard, the open-list read after a failed connect), and the cause of a `backend.spec.ts` failure under load (the switcher did not appear after Connect): a list of the open connections read while the connect ran, and answered after it, cleared the header; the manager also read that list again on every header change. A list now clears only what the header showed when it was read (`headerVersion`), and the session's functions keep their identity | P2 | Open (STU-008 connect PR #42; follow-up PR for the delta review) |
+| TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022, the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI) | P2 | Open (STU-010 page PR) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
-| TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Open (STU-025 backend PR) |
+| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
+| TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
+| TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Open (needs a `.github/` pull request; does not block STU-012) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -357,14 +361,15 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
-| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. Open: the T-10 TLS finding (STU-014), the tree, search and detail tabs in the page (with STU-012), the E2E test against both reference apps, DDL and policies (release 1) |
+| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. The page (`/explorer`: tree, search, detail tabs; STU-010 page PR) is in review, with the E2E test against both reference apps (`e2e/explorer-reference.spec.ts`, needs `TABRION_STUDIO_E2E_EXAMPLES`). Open: the T-10 TLS finding (STU-014), DDL and policies (release 1, STU-022), and the parts of TD-041 |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Done (PR #24), on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). The `ViewerTimeout` of `test_m4_a_small_first_row_does_not_size_the_next_batch` on Python 3.12 in CI is fixed in the test: tracemalloc plus coverage's line tracer on 3.12 made the statement check take about 2 s, past the `lite` profile's 800 ms, so the test now gives its statement a timeout it cannot reach (its assertions are unchanged; delta check `stu-013-delta-v010-review.md` accepted). Its condition C-1 is fixed the same way: `test_pg_r1_decoded_json_counts_toward_the_page_cap` timed out under the `pg` fixture's 1.5 s on 3.12 with coverage and now gets the same 300 s statement timeout, as do the two other tracemalloc tests, `test_bytes_are_capped_on_the_server` and `test_pg_bytes_are_capped_on_the_server`, which timed out the same way on a loaded machine. Open: the grid tab in the page (frontend lane), editing stays STU-026 |
 | TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Done (PR #25), on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..010` (prod TLS, T-10 / STU-T-021, read-only role that can write in any way or through any role it can become, owner in any schema, default privileges, role settings with their precedence, SQLite rows written with foreign keys off or a broken foreign key, the time limit); `POST .../diagnostics/cancel`; the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout, the write paths of M-2). Review `stu-014-review.md` fix round done (M-1..M-3, L-1..L-6, I-1..I-3); delta review of `a11c8bb` fixed (N-1 the cancel stops SQLite's `quick_check` alone, CI-1 role-making tests under the `postgres_superuser` marker plus owner-level tests, T-1 tests for the 7 surviving mutants, L-5 narrowed); the CI workflow change for CI-1 is in this PR (accepted by the workflow-change review). The diagnostics view in the page: `/diagnostics` (PR #39, draft): run on a click with D-02 for PROD, run again on the shown connection, cancel (before and during the run, on a profile switch and on leaving the page), findings by severity with icon and word, Studio's titles in en/de, every server text escaped and capped (U-1), a fail-closed parser, stale answers dropped, buttons kept focusable (aria-disabled); Vitest, Playwright and axe in light/dark × en/de; review `stu-014-ui-review.md` C-1..C-3 and L-1..L-3 done. Open: the report export is STU-025 (backend in PR #40; the page's download button and backup hints are TD-036), German details and remedies and the rest of 08 section 4.9 (TD-032) |
 | TABRION STU-015 | Migration status (Alembic, SQLite `user_version`) | P1 | STU-009 | Done (PR #29): `GET /api/connections/{id}/migrations`, the per-project code trust (`/api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the revision files) and the worker process for `tabrion.migrations.status` (only the connection's target, minimal environment, 30 s timeout); threat-model entry T-16 in `docs/architecture/migrations.md`. Review fix round (`stu-015-review.md`): H-1 the worker runs the hashed bytes and reads no bytecode of the project, M-1 the driver loads before the project's folders are on `sys.path`, M-2 bounded read and kill without waiting for the pipe (Windows: TD-024), M-3 tests for `-I`, the closed streams, the answer cap and `os._exit`, L-1 the T-16 wording, L-2 cap while reading, L-3 one worker at a time (`studio.migrations_busy`). The trust dialog and the status view in the page are in PR #32. Open: the T-16 row and the changed T-08 text in doc 03 section 7.3 (coordinating thread); tests against `examples/parts` of the tabrion repository once it has an Alembic project (the tests use their own fixture); the Levuvo formats are STU-024 (done) |
 | TABRION STU-021 | Export (CSV, JSON) | P1 | STU-011, STU-013 | Done (PR #33; done before STU-017, the plan's dependency on it is not needed, accepted by the owner on 2026-11-12 15:45Z, tabrion program status D-123), on tabrion 0.1 like STU-011 (TD-013): `POST /api/exports` streams a query result or a table as CSV or JSON (refusals before the first byte, at most 1 000 000 rows, 10 minutes, one export per connection and 2 at a time, CSV formula escaping for text and bytes); 1 million rows under 100 MB (tracemalloc test); `docs/architecture/exports.md`. Review `stu-021-review.md` (accepted with conditions): F-1 fetches of at most 32 rows (RSS test of wide rows after narrow ones), F-2 tests for every guard, F-3 fullwidth formula starts, F-4 one spelling of non-finite values, F-5 large integers as text, F-6 ISO 8601 intervals, F-8 the response closes the export; F-7, F-9, F-10 are TD-026. Delta check ACCEPTED at `65b544f`; its notes R-1 (the memory bound grows with the widest row) and R-2 (large integers inside arrays and single-number json documents) are documented in `exports.md`. Open: the export dialog in the page (frontend lane, after STU-012) |
 | TABRION STU-024 | Migration status of the Levuvo formats (Nodestro, Axentra, Orkexa) | P2 | STU-015 | Done (PR #30; backend). The plan's STU-017 dependency was dropped on 2026-11-12: doc 03 section 10 needs only STU-015, the backend needs nothing from STU-017, and the page condition C-1 (`stu-015-ui-review.md`) is met in PR #32. The owner accepted this order on 2026-11-12 15:37Z (no rollback; tabrion program status D-122); it lifts no other gate (G-S1, G-S2 for STU-026, G-R and the human security review before a public release stay). Version tables in every schema compared with the project's migration files (also in a project `.venv`), checksums as the runners record them, states current/pending/newer/changed/no_files with an SQL preview of pending steps; nothing is imported or run; fixtures copied from the three repositories (`tests/security/levuvo_fixtures`). Review `stu-024-review.md`: ACCEPTED with conditions; F-1 (a version table the role may not read, with unexpected columns or types, or a failed read is reported as `state: unreadable` with its problem, `studio.migrations_table` is new; only Orkexa's own table names count) and F-2 (tests for the preview and file caps, identifier quoting, glob characters in the project path, the order of the states, a database without version tables) are fixed. Windows (`backend test (windows-latest)` at `281258a`, 2 failures): the preview is now the text the runner reads and the checksum covers (every line end `\n`), so a file written with `\r\n` has the same preview on every platform; the glob test uses `a[b]c` everywhere and `a[b]*c?` only where `*` and `?` are valid file name characters (not Windows). The view in the page is in PR #32 (minimal, TD-025). Open: Axentra product namespaces have no files (registered in code); the review's minor findings M-1 (duplicate versions dropped silently), M-2 (Orkexa file problems show as `no_files`), M-3 (`LIMIT 100` tables and 10 000 rows cut without a flag), M-4 (files read on every request), M-5 (`config.not_utf8` vs `config.encoding`), M-6 (`python3.10` sorts before `python3.9`), M-7 (`os.scandir` without `with`) |
-| TABRION STU-025 | Diagnosis report and backup hints | P2 | STU-014 (plan: STU-017) | In progress (backend in the STU-025 draft PR; started before STU-017 on 2026-11-12: the owner allows normal ordering decisions so work can run in parallel, and the backend needs only the diagnostics backend of STU-014, PR #25; nothing in it depends on STU-017's docs or tag. Doc 09 still lists STU-017; recording the changed dependency there is for the coordinating thread). `POST /api/connections/{id}/diagnostics/report` with `{"format": "markdown" | "json"}` answers the report as an attachment, built from an allowlist (no password, token, URL or DSN, host, port, user, database name, path or parameter value) and passed through the log redaction (`logs.scrub`); Markdown escapes database text (T-07). Backup hints `STU-BK-001..014` in every diagnosis (`backup: {hints, facts}`): SQLite backups next to the database (found, older than the data, readable by others), PostgreSQL `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, standby); tabrion's `TAB-PG-020` gives way only when `STU-BK-010` is given. Acceptance "report without secrets (canary test)": `tests/security/test_diagnosis_report.py` (canaries in the PostgreSQL password, the process's tokens, URLs and DSNs, parameter values, a role setting, stored values and the SQLite path; both formats and the log). `docs/architecture/diagnostics.md`. Review `stu-025-review.md`: ACCEPTED WITH CONDITIONS; C-1 (the login role and the database as `[role]`/`[database]` in every text, canary with schemas named exactly like both), C-2 (`TAB-PG-020` dropped only when `STU-BK-010` is given), L-1..L-6 fixed (16 targeted mutations killed); I-1 noted. Delta review of `b8756c2`: D-1 (no report when the server cannot tell the names, `studio.report_unavailable`), D-2 (the page route keeps `TAB-PG-020` until TD-036), N-1..N-5 fixed. Open: TD-036 (the download button and the backup hints in the diagnostics view, STU-014 UI lane; the CLI report; the guide) |
-| TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | The "openapi in sync" CI job planned with STU-008 is TD-011 |
+| TABRION STU-022 | DDL, policies, row estimates | P2 | STU-010 (plan: STU-017) | Backend in review (draft PR #38, branch `claude/project-thread-rdo6g3-stu022`), started before STU-017: the owner allows the normal ordering decisions so that work runs in parallel, and the backend needs only the explorer backend (STU-010, PR #19). `GET .../tables/{schema}/{name}/ddl`, `.../policies` (PostgreSQL), `.../row-count` (SQLite, `count(*)` on request with a 10 s timeout) and `GET /api/connections/{id}/row-estimates` (PostgreSQL `reltuples`, partitioned tables summed); the table detail's estimate sums partitions too. PostgreSQL DDL is rebuilt from the catalog with `pg_get_*def` in `pg_dump --schema-only` form, SQLite's is the stored text; only checked `SELECT` statements on the read-only path (spy tests). Delta review 2 of `cfcb6bc` ACCEPTED (E-1: a view's column default added). Delta review of `dada71c` ACCEPTED (D-1: TD-039 corrected and raised to P1; D-2: a materialized view's column settings and `CLUSTER ON` added). Review fix round (`stu-022-review.md`, H-1, M-1, M-2, L-1..L-4): catalog reads now use a fixed search_path (hardening against object resolution through user schemas; the explorer's, migrations' and reflection's catalog reads too); the acceptance covers both apps in `public`; rules, child-only `NOT NULL`, replica identity, `CLUSTER ON`, column statistics, storage, compression and options, and the materialized view's `WITH` line added; SQLite names always quoted; a failing live pg_dump fails the test; more tests. Acceptance: `tests/security/test_definitions.py::test_pg_ddl_equals_pg_dump_schema_only` and `::test_pg_ddl_of_the_reference_apps_in_public_equals_pg_dump` (the reference apps `examples/parts` and `examples/measurements` of tabrion `f4228ec`, copied, plus an `extras` schema with RLS policies) equals pg_dump statement by statement, against recorded pg_dump 16.15 output always and a live `pg_dump` where one can dump the server; `docs/architecture/explorer.md`. Open: the DDL tab and the policy and estimate display in the page (frontend lane, with STU-012); the independent review; the gaps in TD-035 |
+| TABRION STU-025 | Diagnosis report and backup hints | P2 | STU-014 (plan: STU-017) | In progress (backend in the STU-025 draft PR; started before STU-017 on 2026-11-12: the owner allows normal ordering decisions so work can run in parallel, and the backend needs only the diagnostics backend of STU-014, PR #25; nothing in it depends on STU-017's docs or tag. Doc 09 still lists STU-017; recording the changed dependency there is for the coordinating thread). `POST /api/connections/{id}/diagnostics/report` with `{"format": "markdown" | "json"}` answers the report as an attachment, built from an allowlist (no password, token, URL or DSN, host, port, user, database name, path or parameter value) and passed through the log redaction (`logs.scrub`); Markdown escapes database text (T-07). Backup hints `STU-BK-001..014` in every diagnosis (`backup: {hints, facts}`): SQLite backups next to the database (found, older than the data, readable by others), PostgreSQL `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, standby); tabrion's `TAB-PG-020` gives way only when `STU-BK-010` is given. Acceptance "report without secrets (canary test)": `tests/security/test_diagnosis_report.py` (canaries in the PostgreSQL password, the process's tokens, URLs and DSNs, parameter values, a role setting, stored values and the SQLite path; both formats and the log). `docs/architecture/diagnostics.md`. Review `stu-025-review.md`: ACCEPTED WITH CONDITIONS; C-1 (the login role and the database as `[role]`/`[database]` in every text, canary with schemas named exactly like both), C-2 (`TAB-PG-020` dropped only when `STU-BK-010` is given), L-1..L-6 fixed (16 targeted mutations killed); I-1 noted. Delta review of `b8756c2`: D-1 (no report when the server cannot tell the names, `studio.report_unavailable`), D-2 (the page route keeps `TAB-PG-020` until TD-036), N-1..N-5 fixed. Open: TD-036 (the download button and the backup hints in the diagnostics view, STU-014 UI lane; the CLI report; the guide). The TD-036 page PR adds the download, the backup hints and the guide page `guide/diagnostics.md`, and the page route replaces `TAB-PG-020` too; the CLI report stays open |
+| TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | In progress (draft PR #41): the page `/sql` with CodeMirror 6, editor tabs with local drafts, run, run script, cancel, `:name` parameters, the virtualized result grid with the detail panel, D-02 and D-06; 100 000 rows within the memory limit, and wide rows at `max_result_mb = 200` too (`e2e/editor.spec.ts`, `e2e/editor-backend.spec.ts`). Review `stu-012-review.md` (accepted with conditions): C-1..C-4 (results cleared on a profile change, the run registered before connecting, one-decimal durations, a row cache bounded in bytes) and L-1..L-8 done. The rest is TD-033; the required-suite list is TD-037. The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
@@ -374,7 +379,8 @@ merge after OA-004.
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R); STU-021
 and STU-024 no longer wait for STU-017 (doc 09, Phase B changes, accepted 2026-11-12). STU-025 was started before
 STU-017 on 2026-11-12 under the owner's allowance of normal ordering decisions (its backend needs only STU-014); the
-change of its dependency is not yet recorded in doc 09 (coordinating thread);
+change of its dependency is not yet recorded in doc 09 (coordinating thread); the STU-022 backend was started before
+STU-017 as well (see its row);
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
 later extension. The Studio 1.1 Schema Designer (change request 14 §3.5) is not planned here; the process model
 and the server-side write flag (STU-ADR-0003) leave room for it.
@@ -882,8 +888,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   new editor tab (⌘T is the browser's: Alt+T, the palette shows the shortcut that works), close tab, save script,
   format (1.0), explorer filter (⌘P / Ctrl+P), history (1.0). Add them to `SHORTCUTS`, the help and the palette with
   STU-011, STU-012 and STU-020; F6 then also cycles explorer, editor and result.
-- **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); it is
-  met with STU-012.
+- **Done in the STU-012 PR:** run (⌘↵ / Ctrl+Enter), run script (⇧⌘↵ / Shift+Ctrl+Enter), cancel (⌘. / Ctrl+.;
+  Esc in the grid), new tab (Alt+T), close tab (Alt+W: ⌘W closes the browser tab and ⌥⌘W closes the other tabs in
+  Safari, so 08's ⌥⌘W is not used), save script (⌘S / Ctrl+S) in `SHORTCUTS`, the help and the palette; keyboard-only
+  query and cancel in `e2e/editor.spec.ts`. Still open: the explorer filter (STU-020), format and history (1.0), F6
+  between explorer, editor and result (TD-033).
+- **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); query
+  and cancel are covered since STU-012, connect and explorer follow with their pages.
 - **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
   skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
   `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
@@ -933,9 +944,11 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   could tell them apart (the header wraps before it would shrink the brand). I-1: refresh the report's
   "Chromium 1243" line when CI's Chromium runs it.
 - **Screen-reader sample** (VoiceOver on macOS, NVDA on Windows): needs a person on those desktops (owner or QA-S1).
-- **With STU-010..STU-013:** the explorer tree (WAI-ARIA tree), the result grid (`role="grid"`, `aria-rowcount`,
-  `aria-rowindex`), the live region for the query status, the SQL editor (CodeMirror, leaving it with Escape); with
-  STU-023 the ER diagram's table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
+- **Done in the STU-012 PR:** the result grid (`role="grid"`, `aria-rowcount`, `aria-rowindex`), the live region for
+  the query status and the SQL editor (CodeMirror; Tab leaves it, no tab trap), with the editor page in `a11y.spec.ts`
+  (light/dark, en/de) and keyboard tests in `e2e/editor.spec.ts`.
+- **With STU-010, STU-013 and STU-023:** the explorer tree (WAI-ARIA tree), the data viewer's grid, the ER diagram's
+  table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
 - **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
 - **Required e2e suite:** `a11y-audit.spec.ts` runs in the CI job `e2e`, but is not in the list of suites that must
   pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
@@ -949,7 +962,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Done in the user-guide PR:** `docs/guide/` for the features that exist: installation from a Git commit (no PyPI,
   owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
   connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
-- **With STU-009..STU-015:** connecting and the connection test, the explorer, the SQL editor and its shortcuts, the
+- **Done in the STU-012 PR:** `guide/sql-editor.md` (running, parameters, the grid, cancel, drafts, shortcuts).
+- **With STU-009..STU-015:** connecting and the connection test, the explorer, the
   data viewer, diagnostics and migration status; update the "Development version" note on `guide/index.md`.
 - **Troubleshooting:** the tables grow with the problem codes those packages add; the guide's command lines are
   checked by the STU-017 clean-install test.
@@ -964,9 +978,34 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
   binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
 
+### TD-035 · STU-022 DDL: what pg_dump writes and Studio's DDL does not (TABRION STU-022)
+
+- **Priority:** P3 Low · **Status:** Open (STU-022 draft PR #38) · **Refs:** 03 section 2 B ("DDL anzeigen
+  (rekonstruiert über Inspector + `pg_get_*def`)"), `services/definitions.py`, `docs/architecture/explorer.md`
+- **Left out on purpose** (like pg_dump's `--no-owner --no-privileges`): `ALTER ... OWNER TO` (the answer has
+  `owner`) and `GRANT`/`REVOKE`. Functions and procedures (doc 03: release S), so a trigger's function is not in the
+  table's DDL.
+- **Done in the review fix round:** rules, `SET NOT NULL` on a child only, `REPLICA IDENTITY`, `CLUSTER ON`, column
+  `SET STATISTICS`/`SET (...)`/`SET STORAGE`/`SET COMPRESSION`, the materialized view's `WITH` line; catalog reads use a
+  fixed search_path, so expressions are qualified as pg_dump qualifies them and the acceptance covers `public` too; a
+  policy's DDL lists its roles in catalog order like pg_dump (the structured list stays sorted).
+- **Not yet:** types and domains (not objects of the catalog page); `SET default_tablespace` and a table access method
+  other than `heap`; the per-column `OPTIONS` of a foreign table (a note says so); security labels; publication and
+  statistics objects; PostgreSQL 18's virtual generated columns (written without `STORED`, untested) and its named
+  `NOT NULL` constraints (contype `n`).
+- **Done in the delta reviews:** a materialized view's column settings (`SET STATISTICS` and the others) and its
+  `CLUSTER ON`; a view's column default (`ALTER TABLE ONLY v ALTER COLUMN c SET DEFAULT ...`, E-1).
+- **CI:** the PostgreSQL 17 job compares with the recorded pg_dump 16.15 output (`tests/security/ddl_fixtures/`) and
+  with the runner's own `pg_dump` (18 or later on `ubuntu-26.04`), whose `NOT NULL col` form for a child table (rejected by
+  PostgreSQL 17) the test rewrites to the server's form. An exact live comparison with a pg_dump of the server's
+  major version in CI needs a pg_dump 17 client in that job (a `.github/` change, not made here); it was run locally
+  against PostgreSQL 17.10 with pg_dump 17.10. Recommended for a later workflow pull request (`.github/` is not
+  changed here): set `TABRION_STUDIO_TEST_LIVE_PG_DUMP=1` in the integration job, so the live comparison can never be
+  skipped silently if the runner's client becomes older than the server again, and print `pg_dump --version` there.
+
 ### TD-039 · Queries made when a PostgreSQL connection is opened (TABRION STU-022 review)
 
-- **Priority:** P1 High · **Status:** Done (TD-039 draft PR) · **Refs:** `stu-022-review.md` (off GitHub, delta
+- **Priority:** P1 High · **Status:** Done (PR #45) · **Refs:** `stu-022-review.md` (off GitHub, delta
   review D-1), `services/connections.py`, `services/tabrion_compat.py`, `docs/architecture/connections.md`
 - **What:** the queries SQLAlchemy's dialect sends when a connection is opened (`current_schema()` among them) and
   the driver's hstore type lookup ran under the session's `search_path`, before Studio's own catalog reads
@@ -975,9 +1014,112 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `search_path` to `pg_catalog, pg_temp` for the setup, a last one restores the session's path (`RESET
   search_path`) and reads the dialect's default schema again; native hstore adaptation is off, so the type lookup is
   not sent. `tests/security/test_connect_path.py` covers it with a database setting that puts another role's schema
-  ahead of `pg_catalog`, and checks that user SQL still sees the session's path.
+  ahead of `pg_catalog`, and checks that user SQL still sees the session's path, on two sessions at once (L-1 of
+  `td-039-review.md`); an `hstore` value comes back as the server's text (L-2). Studio's own catalog reads and the
+  connection setup share one path constant (`tabrion_compat.CATALOG_SEARCH_PATH`), and the STU-022 regression test
+  for planted objects now places them before the connection is opened, so it covers the setup too (I-3).
 - **Not in scope:** tabrion's diagnostics collectors are fully qualified and stay on the session's path, since they
-  report it. User SQL, the viewer and the exports keep the session's path on purpose.
+  report it. User SQL, the viewer and the exports keep the session's path on purpose, and so do the statements that
+  Alembic and `tabrion.migrations` send in the migration worker after the setup (I-1), like the viewer's.
+
+### TD-033 · STU-012 SQL editor MVP: what it leaves for later
+
+- **Priority:** P2 Medium · **Status:** Open (STU-012 draft PR #41) · **Refs:** 03 section 2 C, 08 sections 4.4, 5 and 7,
+  `docs/architecture/frontend.md` ("SQL editor (STU-012)"), `stu-012-review.md`
+- **Done in the review fix round (`stu-012-review.md`, accepted with conditions):** C-1/M-1 and L-1, a profile change
+  clears the tab's results, so PROD rows never show under another badge and "Load more" runs only on the profile the
+  result came from; C-2/M-2, a run is registered before the connection opens (a second run starts nothing, cancel
+  and closing the tab start no query); C-3/M-3, `elapsed_ms` with one decimal (the harness sends one too, the
+  real-server tests reject "0 ms" and expect at least 0.4 s for a cancel after 0.5 s); C-4/M-4, the row cache is
+  bounded in bytes (64 MB estimated, chunks of 50 rows, fetches sized by the rows seen) as well as in rows, with
+  wide-row tests in the harness and against the real server at `max_result_mb = 200` that fail without the byte
+  bound; L-2 the shortcut description inside the editor's shadow root; L-3 the placeholder rules of
+  `services/sqltext.py` (below); L-4 D-02 names the profile's own timeout; L-5 drafts per project and merged by tab;
+  L-6 row pages checked (offset, row count) and asked for again up to 3 times; L-7 a click keeps the focus in the
+  grid; L-8 the `SHORTCUTS` comment. Tests for the review's surviving mutants: a script stopping at a failed
+  statement, the draft size cap, the row index, the duration parser. Info: a Tab-exit e2e was added.
+- **Done after delta review 2 (C-5):** before a new connection (the first one, and again after
+  `studio.connection_stale`) the editor reads the profile from the server again. When its environment or target
+  changed since the page read it, nothing is opened, the tab's results and connection for it go, the page takes the
+  new profile and says so; the next run asks D-02 for a PROD profile through the shared guard. As a backstop, an
+  open answer whose `environment` differs is closed again (`DELETE /api/connections`) and nothing runs. Vitest for
+  both paths and the backstop; `e2e/editor-backend.spec.ts` changes profiles to PROD through `PUT /api/profiles`
+  while the editor is open. A server-side check for every page comes from the STU-008 lane; whether the connection
+  manager's own list has the same staleness is for that lane too (`stu-012-review.md`, "To check for #42").
+- **Done after delta review 3 (L-9):** the backstop compares the server's answer with the profile that passed D-02
+  (not the one read again), and an answer without an environment counts as a mismatch. When the profile list cannot
+  be read again, nothing is opened: Vitest, and `e2e/editor-backend.spec.ts` with `/api/profiles` failing (no
+  `POST /api/connections`). The test fake's connection answer names the profile's environment, like the server's.
+- **Drafts in the state database:** 08 keeps drafts in Studio's state database; the MVP keeps the tabs' titles,
+  profiles and text in the browser's `localStorage` (`src/views/editor/drafts.ts`), which is per port like TD-021,
+  under a key per project (a hash of the project's folder) and merged by tab between pages. Move them behind an API
+  route when the state database has a drafts table (then they also get its 0600 file, 03 section 4.3, T-04).
+  Parameter values and results are never stored.
+- **Statement splitting:** the page splits scripts with its own scanner (`sqlScan.ts`) instead of
+  `tabrion.sql.split_statements`; the server checks every statement again, so a different reading is refused, never
+  run as something else. Replace it with a server route (or tabrion 0.2's splitter) when one exists. The page now
+  finds placeholders with the server's rules (`services/sqltext.py`: names of at most 63 characters, not running on
+  into a word character, which includes `$` and non-ASCII; `--` ends at `\n` or `\r`; a non-ASCII word followed by
+  `$x$` is one word). Known differences that remain, each ending in a refusal: the server's splitter knows no
+  dialect, so SQLite `[a;b]`, a backtick identifier with `;` and a SQLite comment that looks nested are split by the
+  server (`studio.statement_multiple`) but not by the page; the page nests block comments only for PostgreSQL.
+- **Error positions:** `db.<kind>` problems carry no position yet (TD-013 follow-up), so the editor marks no error
+  location.
+- **Grid:** no column resizing, sorting or "load in full" for a cut cell (03 section 5.3; the data viewer has it);
+  TanStack Table was not needed for the MVP grid and is not added.
+- **Shell:** the shell's workspace tabs and the connection in the header (TD-011) are not filled by the editor; a
+  PROD tab shows its environment on the page only. F6 does not yet cycle editor, parameters and result (TD-020).
+- **From TD-013:** the `max_rows` default stays 10 000; the editor asks for 1 000 rows first and offers "Load up to
+  N rows" with the setting (tests set 100 000). The `EXPLAIN` cost warning for prod profiles, closing a connection
+  that has running queries, and the heartbeat on a stream are open.
+- **Bundle:** the editor chunk is about 520 kB (Vite warns above 500 kB); it loads only on `/sql`.
+
+### TD-037 · STU-012: the editor suites in the e2e job's required list
+
+- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request; does not block STU-012, review
+  `stu-012-review.md`) · **Refs:** `.github/workflows/ci.yml` (job `e2e`), OA-003
+- **Problem:** `e2e/editor.spec.ts` and `e2e/editor-backend.spec.ts` run in the CI job `e2e`, but the step "Every
+  suite ran and none was skipped" does not list them, so a skipped editor suite would not fail the job. Adding them
+  changes `.github/workflows/ci.yml` and needs a workflow-change review (OA-003), like `keyboard.spec.ts` (TD-020) and
+  `a11y-audit.spec.ts` (TD-022). The STU-012 PR does not touch `.github/`.
+- **What runs already:** `npm run e2e` runs every spec, and the job fails on any unexpected result; the review saw
+  both editor suites pass in CI at `7acfe6b`. Only the skip detection is missing.
+
+### TD-041 · STU-010 page: parts that wait for other packages
+
+- **Priority:** P2 Medium · **Status:** Open · **Refs:** STU-010, 08 sections 2, 4.3, 7 and 8, `docs/architecture/explorer.md`
+- **What the page does now:** `/explorer` with its own profile picker (D-02 for PROD), the WAI-ARIA tree, the
+  filter (name prefix, type, ⌘P / Ctrl+P), the detail tabs (columns, constraints, indexes, relationships, SQLite),
+  the extensions and the SQLite file facts; read-only, escaped and capped, fail-closed.
+- **Open, with the package that brings it:**
+  - "Open in editor" and "SELECT … LIMIT 100 in the editor" from the tree's context menu, and "Copy name": with the
+    SQL editor (#41, STU-012). The context menu itself comes with them.
+  - The DDL tab and the policies (RLS, read-only): with STU-022 (#38).
+  - The data tab: with the STU-013 page (the grid).
+  - Done after #42: the page uses the shared D-02 confirmation of the page session (`useConnectionSession`, bound to the
+    profile's target) and makes the opened connection the header's connection; a connection gone on Refresh leaves the
+    header too. Open reads the profile list again before its PROD check, so a profile changed to `prod` on disk after
+    the list loaded gets D-02, and so does a PROD profile whose target (host, database, path) changed (the stale-list
+    case of TD-038, for this page). It fails closed: if the list cannot be read, Open shows the offline problem and
+    opens nothing. A profile that is gone is `profile_not_found`; the picker moves to the first remaining profile and
+    takes the focus (with none left, the problem does). Open: the page does not take over a connection the header
+    already shows (it opens its own, which the registry returns for the same profile), nor does it follow a header
+    switch (TD-034).
+  - The route `/c/:conn/t/:schema/:name` (08 section 2) instead of `/explorer` with a picker: with the workspace
+    routes (TD-011). The explorer as the always-present left bar of a connection workspace belongs there too.
+  - A virtualized tree (08: TanStack Virtual; `@tanstack/react-virtual` arrives with #41). Until then a group renders
+    at most 500 objects and says so. The page reads the whole catalog, with no cap on the number of objects
+    (C-2 of `stu-010-ui-review.md`), so the filter finds every object, also past the first 5000. The rows are
+    already a flat list for the virtualized tree.
+  - The E2E test against the reference apps (`e2e/explorer-reference.spec.ts`, a spec of its own so that
+    `backend.spec.ts`, which the CI gate requires to run without a skip, stays complete) runs where
+    `TABRION_STUDIO_E2E_PYTHON` and `TABRION_STUDIO_E2E_EXAMPLES` (tabrion's `examples` folder) are set, and its
+    PostgreSQL part where `TABRION_STUDIO_E2E_PG_PARTS`, `TABRION_STUDIO_E2E_PG_MEASUREMENTS` and
+    `TABRION_STUDIO_E2E_PG_USER` are. CI sets none, so the spec is skipped there; the wiring (a tabrion checkout, a
+    PostgreSQL service, and the spec in the gate's required list) needs a `workflow-change-reviewed` `.github/`
+    pull request (lane J).
+  - SQLite's row count "on request with a timeout" (03 section 2 B, release 1) and the "no privileges" state (08:
+    columns from the catalog, data not available) belong to the data tab.
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 
@@ -1068,3 +1210,17 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `tabrion-studio diagnose --profile <id> --format markdown|json` needs a decision on how the CLI opens a profile
   without the server (the registry, the secrets, project trust); it reuses `DiagnosisReports`.
 - **User guide:** the diagnostics section of TD-023 describes the report and the backup hints.
+- **Done in the TD-036 page PR:** the view lists `backup.hints` under "Backups" (en/de titles of `STU-BK-*`, fail
+  closed on a broken `backup`), "Download Markdown report" and "Download JSON report" on the shown connection (saved
+  under the server's file name when it has the expected form; `studio.report_unavailable` and
+  `studio.report_invalid` in en/de; cancel, profile switch and unmount drop it), D-02 of the view through the shared
+  `useConnect` gate and page session of STU-008, the page route with `replace=True` (the D-2 test now checks that the
+  page and the report both replace `TAB-PG-020`), and `docs/guide/diagnostics.md`. Vitest, Playwright with axe in
+  light and dark (`e2e/diagnostics.spec.ts`), and both downloads against a real `tabrion-studio`
+  (`e2e/backend.spec.ts`).
+- **Review `td-036-page-review.md` (ACCEPTED), fixed:** L-1 "Backups were not checked in this run" instead of "No
+  backup hints" after a cancel or the time limit (`STU-DX-008`, or `searched: false` / `archive_mode: null`); N-1 the
+  download guards a double press with refs; N-2 the report request is aborted on cancel, switch and leave, and
+  "canceled" is said only when the server confirms it. Each with a test; the mutations of the three are killed.
+- **Still open: the command line.** Not part of the page PR: `tabrion-studio diagnose` needs the decision above (how
+  the CLI opens a profile without the server, its secrets and project trust), which is larger than the page work.

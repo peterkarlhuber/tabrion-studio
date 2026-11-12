@@ -1,6 +1,7 @@
 /**
  * The diagnosis the e2e harness answers in its `diagnostics` scenario (STU-014): one finding of each severity, from
- * tabrion and from Studio, with a schema name that carries a bidi override (escaped on the page, U-1).
+ * tabrion and from Studio, with a schema name that carries a bidi override (escaped on the page, U-1), and two backup
+ * hints of STU-025 (TD-036). `report` is the Markdown report the scenario answers for a download.
  */
 export const HOSTILE_SCHEMA = `audit${String.fromCodePoint(0x202e)}gol`;
 
@@ -69,5 +70,36 @@ export function diagnosis(canceled = false) {
       ...findings,
     ],
     counts: { error: 1, warning: 2, info: canceled ? 2 : 1 },
+    backup: {
+      hints: [
+        {
+          code: 'STU-BK-010',
+          severity: 'warning',
+          title: 'WAL archiving is off',
+          detail:
+            'archive_mode is off, so the server keeps no WAL for point-in-time recovery; only full backups can ' +
+            'restore it.',
+          remedy:
+            'Turn on archive_mode with an archive_command or a backup tool that archives WAL, if the database ' +
+            'needs point-in-time recovery.',
+          source: 'studio',
+        },
+        {
+          code: 'STU-BK-012',
+          severity: 'info',
+          title: 'Nothing archived yet',
+          detail: 'The archiver has not archived a WAL file since the statistics were reset.',
+          remedy: 'Check the archiver after the next WAL switch.',
+          source: 'studio',
+        },
+      ],
+      facts: { archive_mode: 'off' },
+    },
   };
 }
+
+/** The report file name of the scenario (the server's form, so the page keeps it). */
+export const REPORT_FILENAME = 'tabrion-studio-diagnosis-postgresql-dev-20261112T101500Z.md';
+
+export const REPORT_MARKDOWN =
+  '# tabrion Studio diagnosis report\n\n- Findings: 1 error, 2 warnings, 1 note\n';

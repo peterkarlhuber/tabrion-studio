@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { startAppearanceSync } from './appearance';
@@ -9,6 +19,7 @@ import { AppShell, type ServerState } from './shell/AppShell';
 import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView } from './views/connections/ConnectionsView';
+import { ExplorerView } from './views/explorer/ExplorerView';
 import { DiagnosticsView } from './views/diagnostics/DiagnosticsView';
 import { MigrationsView } from './views/migrations/MigrationsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
@@ -22,6 +33,11 @@ import {
 } from './workspace';
 
 export type AppSession = SessionState | 'ended';
+
+/** The SQL editor (STU-012) and CodeMirror load only when the page is opened: the other views stay small. */
+const EditorView = lazy(() =>
+  import('./views/editor/EditorView').then((module) => ({ default: module.EditorView })),
+);
 
 function useServer(fetcher: typeof fetch): [ServerState, () => void] {
   const [server, setServer] = useState<ServerState>({ kind: 'loading' });
@@ -44,6 +60,14 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
       return <StartView />;
     case '/connections':
       return <ConnectionsView fetcher={fetcher} />;
+    case '/explorer':
+      return <ExplorerView fetcher={fetcher} />;
+    case '/sql':
+      return (
+        <Suspense fallback={null}>
+          <EditorView fetcher={fetcher} />
+        </Suspense>
+      );
     case '/migrations':
       return <MigrationsView fetcher={fetcher} />;
     case '/diagnostics':
@@ -57,6 +81,10 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
 
 const PAGE_TITLES: Record<string, string> = {
   '/connections': 'connections.title',
+  '/explorer': 'explorer.title',
+  '/sql': 'editor.title',
+  '/migrations': 'migrations.title',
+  '/diagnostics': 'diagnostics.title',
   '/settings': 'settings.title',
 };
 
@@ -82,14 +110,19 @@ export function App({
   const [ended, setEnded] = useState(false);
   const [offline, setOffline] = useState(false);
   const wasOffline = useRef(false);
-  const [active, setActive] = useState<ActiveConnection | null>(null);
+  const [active, setHeader] = useState<ActiveConnection | null>(null);
+  /** The header's version: every change of `active` through the session and every connect request counts. */
+  const headerChanges = useRef(0);
+  const setActive = useCallback<Dispatch<SetStateAction<ActiveConnection | null>>>((next) => {
+    headerChanges.current += 1;
+    setHeader(next);
+  }, []);
   /** D-02 confirmations: `prodKey` -> profile id. */
   const [confirmed] = useState(() => new Map<string, string>());
   const requests = useRef(0);
-  const connections = useMemo<ConnectionSession>(
+  // The functions keep their identity when the header changes, so views that depend on them do not reload.
+  const sessionFunctions = useMemo<Omit<ConnectionSession, 'active' | 'setActive'>>(
     () => ({
-      active,
-      setActive,
       prodConfirmed: (target) => confirmed.has(prodKey(target)),
       confirmProd: (target) => {
         confirmed.set(prodKey(target), target.id);
@@ -97,11 +130,18 @@ export function App({
       forgetProd: (matches) => {
         for (const [key, id] of [...confirmed]) if (matches(id)) confirmed.delete(key);
       },
-      beginConnect: () => ++requests.current,
+      beginConnect: () => {
+        headerChanges.current += 1;
+        return ++requests.current;
+      },
       isLatestConnect: (request) => request === requests.current,
-      latestConnect: () => requests.current,
+      headerVersion: () => headerChanges.current,
     }),
-    [active, confirmed],
+    [confirmed],
+  );
+  const connections = useMemo<ConnectionSession>(
+    () => ({ active, setActive, ...sessionFunctions }),
+    [active, setActive, sessionFunctions],
   );
   const shown = useMemo<Workspace>(
     () => workspace ?? { connection: active, tabs: [], activeTab: null },

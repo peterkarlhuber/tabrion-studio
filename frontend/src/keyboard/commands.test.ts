@@ -3,6 +3,7 @@ import { act } from '@testing-library/react';
 
 import i18n from '../i18n';
 import { buildCommands, filterCommands, type Command } from './commands';
+import { setEditorActions } from './editorActions';
 
 const context = (openHelp = () => undefined) => ({
   t: i18n.t.bind(i18n),
@@ -25,6 +26,8 @@ describe('buildCommands', () => {
     expect(labels(buildCommands(context()))).toEqual([
       'Go to Start',
       'Go to Connections',
+      'Go to Explorer',
+      'Go to SQL editor',
       'Go to Migrations',
       'Go to Diagnostics',
       'Go to Settings',
@@ -53,9 +56,11 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 6)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 8)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
+      'Gehe zu Explorer',
+      'Gehe zu SQL-Editor',
       'Gehe zu Migrationen',
       'Gehe zu Diagnose',
       'Gehe zu Einstellungen',
@@ -65,6 +70,31 @@ describe('buildCommands', () => {
     expect(labels(filterCommands(buildCommands(context()), 'darstellung dunkel'))).toEqual([
       'Darstellung: Dunkel',
     ]);
+  });
+
+  it('offers the explorer filter on the explorer page only, and it focuses the filter (STU-010)', () => {
+    vi.useFakeTimers();
+    try {
+      expect(buildCommands(context()).some((c) => c.id === 'explorer:filter')).toBe(false);
+      const command = buildCommands({ ...context(), path: '/explorer' }).find(
+        (c) => c.id === 'explorer:filter',
+      );
+      expect(command?.label).toBe('Focus the explorer filter');
+      expect(command?.shortcut).toEqual({ key: 'p', mod: true });
+      document.body.innerHTML =
+        '<select data-explorer-profile></select><input data-explorer-filter />';
+      command?.run();
+      vi.runAllTimers();
+      expect(document.activeElement).toBe(document.querySelector('[data-explorer-filter]'));
+      // Before a catalog is open there is no filter: the profile picker gets the focus.
+      document.body.innerHTML = '<select data-explorer-profile></select>';
+      command?.run();
+      vi.runAllTimers();
+      expect(document.activeElement).toBe(document.querySelector('[data-explorer-profile]'));
+    } finally {
+      document.body.innerHTML = '';
+      vi.useRealTimers();
+    }
   });
 
   it('the help command opens the help and shows its shortcut', () => {
@@ -98,5 +128,39 @@ describe('filterCommands', () => {
 
   it('finds nothing for an unknown word', () => {
     expect(filterCommands(commands, 'drop table')).toEqual([]);
+  });
+});
+
+describe('SQL editor commands (STU-012)', () => {
+  afterEach(() => setEditorActions(null));
+
+  it('are offered on the editor page while it is shown; Cancel only while a query runs', () => {
+    const ran: string[] = [];
+    let running = false;
+    setEditorActions({
+      run: () => ran.push('run'),
+      runScript: () => ran.push('runScript'),
+      cancel: () => ran.push('cancel'),
+      newTab: () => ran.push('newTab'),
+      closeTab: () => ran.push('closeTab'),
+      save: () => ran.push('save'),
+      running: () => running,
+    });
+    const onEditor = { ...context(), path: '/sql' };
+    expect(labels(buildCommands(context())).filter((l) => l.startsWith('Run'))).toEqual([]);
+    expect(labels(buildCommands(onEditor)).slice(0, 5)).toEqual([
+      'Run',
+      'Run script',
+      'New editor tab',
+      'Close editor tab',
+      'Save as .sql',
+    ]);
+    running = true;
+    const commands = buildCommands(onEditor);
+    expect(labels(commands)).toContain('Cancel query');
+    for (const command of commands.filter((c) => c.group === 'editor')) command.run();
+    expect(ran).toEqual(['run', 'runScript', 'cancel', 'newTab', 'closeTab', 'save']);
+    setEditorActions(null);
+    expect(labels(buildCommands(onEditor))).not.toContain('Run');
   });
 });

@@ -48,8 +48,13 @@ const PROBLEMS = new Set([
   'secret_file_unsafe',
   'secret_file_not_private',
   'secret_file_unreadable',
-  // An answer the page cannot read (STU-014 diagnostics).
+  // The explorer (STU-010), and an answer the page cannot read (STU-014 diagnostics, STU-010).
+  'object_not_found',
+  'explorer_engine',
   'answer_invalid',
+  // The diagnosis report (STU-025, TD-036).
+  'report_invalid',
+  'report_unavailable',
   'offline',
 ]);
 

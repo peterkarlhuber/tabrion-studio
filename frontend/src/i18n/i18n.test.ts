@@ -41,6 +41,19 @@ const SAME_IN_BOTH = new Set([
   // The product name of the migration tool (STU-015).
   'migrations.status.alembic',
   'migrations.levuvo.steps.other',
+  // The explorer (STU-010): technical terms German uses as they are.
+  'nav.explorer',
+  'explorer.title',
+  'keyboard.help.explorerGroup',
+  'explorer.groups.view',
+  'explorer.kind.view',
+  'explorer.detail.title',
+  'explorer.tabs.constraints',
+  'explorer.tabs.sqlite',
+  'explorer.columns.name',
+  'explorer.indexes.name',
+  'explorer.extensions.version',
+  'explorer.extensions.schema',
   'app.name',
   'app.title',
   'app.connectionTitle',
@@ -55,6 +68,15 @@ const SAME_IN_BOTH = new Set([
   'settings.themeSystem',
   'settings.densityNormal',
   'dialogs.trustProject.hosts',
+  // SQL editor (STU-012): type names and words German uses as they are.
+  'editor.params.types.text',
+  'editor.params.types.null',
+  'editor.params.types.json',
+  'editor.detail.kind.null',
+  'editor.detail.kind.text',
+  'editor.detail.kind.json',
+  'editor.detail.kind.bytes',
+  'editor.result.statement',
 ]);
 
 describe('translations (de and en)', () => {

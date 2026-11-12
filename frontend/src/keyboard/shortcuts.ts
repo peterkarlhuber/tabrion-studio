@@ -15,13 +15,40 @@ export interface Shortcut {
   alt?: boolean;
 }
 
-/** The shortcuts that work now. The editor's (run, cancel, editor tabs, save) arrive with STU-011 and STU-012. */
+/**
+ * The shortcuts that work now. The SQL editor's (STU-012) work on its page: a new editor tab is Alt+T and closing one
+ * Alt+W (⌥T and ⌥W on a Mac), because the browser keeps ⌘T and ⌘W and Safari's ⌥⌘W closes the other tabs (08
+ * section 7). The explorer filter (STU-010) works on the explorer page only.
+ */
 export const SHORTCUTS = {
   palette: { key: 'k', mod: true },
   help: { key: '/', mod: true },
   nextRegion: { key: 'F6' },
   previousRegion: { key: 'F6', shift: true },
+  run: { key: 'Enter', mod: true },
+  runScript: { key: 'Enter', mod: true, shift: true },
+  cancel: { key: '.', mod: true },
+  newTab: { key: 't', alt: true },
+  closeTab: { key: 'w', alt: true },
+  save: { key: 's', mod: true },
+  /** On the explorer page (STU-010): the object filter. The browser's print dialog stays on every other page. */
+  explorerFilter: { key: 'p', mod: true },
 } as const satisfies Record<string, Shortcut>;
+
+/**
+ * The shortcuts of the whole page, those of the SQL editor's page and those of the explorer's (the help lists them in
+ * three groups).
+ */
+export const PAGE_SHORTCUTS: ShortcutId[] = ['palette', 'help', 'nextRegion', 'previousRegion'];
+export const EDITOR_SHORTCUTS: ShortcutId[] = [
+  'run',
+  'runScript',
+  'cancel',
+  'newTab',
+  'closeTab',
+  'save',
+];
+export const EXPLORER_SHORTCUTS: ShortcutId[] = ['explorerFilter'];
 
 export type ShortcutId = keyof typeof SHORTCUTS;
 
@@ -43,12 +70,19 @@ function shiftMatters(key: string): boolean {
 }
 
 export function matches(
-  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'>,
+  event: Pick<KeyboardEvent, 'key' | 'ctrlKey' | 'metaKey' | 'shiftKey' | 'altKey'> & {
+    code?: string;
+  },
   shortcut: Shortcut,
   platform: Platform,
 ): boolean {
   const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
-  if (key !== shortcut.key) return false;
+  // With ⌥ on macOS a letter key gives another character (⌥T is "†"): the physical key decides then.
+  const physical =
+    shortcut.alt === true &&
+    /^[a-z]$/.test(shortcut.key) &&
+    event.code === `Key${shortcut.key.toUpperCase()}`;
+  if (key !== shortcut.key && !physical) return false;
   const mod = platform === 'mac' ? event.metaKey : event.ctrlKey;
   const other = platform === 'mac' ? event.ctrlKey : event.metaKey;
   if (mod !== (shortcut.mod ?? false) || other) return false;
@@ -57,7 +91,8 @@ export function matches(
   return true;
 }
 
-function keyLabel(key: string): string {
+function keyLabel(key: string, platform: Platform = 'other'): string {
+  if (key === 'Enter' && platform === 'mac') return '↵';
   return key.length === 1 ? key.toUpperCase() : key;
 }
 
@@ -84,7 +119,7 @@ export function shortcutKeys(
     if (shortcut.alt) keys.push('Alt');
     if (shortcut.shift) keys.push('Shift');
   }
-  keys.push(keyLabel(shortcut.key));
+  keys.push(keyLabel(shortcut.key, platform));
   return keys;
 }
 

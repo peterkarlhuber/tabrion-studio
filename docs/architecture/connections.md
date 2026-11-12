@@ -144,6 +144,9 @@ a function of an extension Studio does not know that runs a query from text, is 
 (`OpenConnection.prepare`, and again in `OpenConnection.stream`), with one `read()` per statement, and always through
 `ConnectionRegistry.get`: a handle does not check itself again. User SQL never goes through SQLAlchemy `text()`, so
 `:name` inside a literal stays text (review I-2): `OpenConnection.fetch` uses the same path.
+For Studio's own catalog statements `fetch` (`catalog=True`, the default) also sets a fixed `search_path`
+(`pg_catalog, pg_temp`) for its own read transaction, a transaction-local setting and not a write; user SQL, the viewer
+and the exports keep the session's `search_path` (see [explorer](explorer.md)).
 
 **Connection setup (TD-039):** when a PostgreSQL connection is opened, SQLAlchemy's dialect sends setup queries of its
 own (`current_schema()` among them) before Studio or tabrion send anything, and a database or role setting may put a

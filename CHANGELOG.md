@@ -7,6 +7,49 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-022 backend: DDL, row-level security policies and row estimates in the explorer, read-only.
+  `GET /api/connections/{id}/tables/{schema}/{name}/ddl` rebuilds a PostgreSQL table, view, materialized view or
+  sequence from the catalog (`pg_get_*def`) in the form of `pg_dump --schema-only`, and gives SQLite's stored text.
+  `.../policies` lists PostgreSQL's policies, whether RLS is on and forced, and whether it applies to the connection's
+  role. `.../row-count` counts a SQLite table or view on request, stopped after 10 seconds (`db.timeout`), and
+  `GET /api/connections/{id}/row-estimates` gives PostgreSQL's `reltuples` per table; a partitioned table's estimate
+  is the sum of its partitions' (also in the table detail). Each route also takes `?schema=&name=`. For the
+  reference apps parts and measurements, the DDL equals pg_dump's statement by statement, in their own schemas and in
+  `public`. The DDL includes rules, column statistics, storage and compression settings, replica identity,
+  `CLUSTER ON` and a view's column defaults.
+- TD-036 (STU-025 in the page): the Diagnostics view lists the backup hints (`STU-BK-*`) under "Backups", with
+  en/de titles, not counted as findings; a broken `backup` field says that the hints could not be read. **Download
+  Markdown report** and **Download JSON report** save the report of the shown connection (no new connection, so no
+  new D-02) under the server's file name; a refused report (`studio.report_unavailable`, `studio.report_invalid`) is
+  the page's en/de text, and Cancel, a profile switch or leaving the page drops it. The view's D-02 now uses the
+  shared gate of the connection manager, so a PROD profile confirmed in the page session is not asked again. The
+  diagnostics page route now replaces tabrion's `TAB-PG-020` with `STU-BK-010` like the report. New user-guide page
+  "Diagnostics". After the review: a run that did not check the backups says "Backups were not
+  checked in this run" instead of "No backup hints"; a canceled report's request is aborted, and the page says
+  "canceled" only when the server confirms it; a double press starts one report.
+- STU-012 SQL editor (MVP, read-only): the page `/sql` with CodeMirror 6 (PostgreSQL or SQLite highlighting and
+  completion), editor tabs whose drafts are kept in the browser, run (the selection or the statement at the cursor), run
+  script (statement by statement, stopping at the first error), cancel within a second, `:name` parameters (text,
+  number, boolean, null, JSON), and a virtualized result grid (WAI-ARIA grid, keyboard, copy, a detail panel that shows
+  the whole value as plain text). D-02 before the first PROD connection, D-06 before closing a changed tab, "Save"
+  downloads a `.sql` file. At most 10 000 rows and about 64 MB are in the browser at a time, so 100 000 rows, and wide
+  rows at the largest result size, stay far below the 300 MB limit. After the review: a profile change clears the tab's
+  results, a run cannot be started twice while it connects and can be canceled then, the durations show (they read as 0
+  before), D-02 names the profile's own timeout, drafts are kept per project, and a failed row page is asked for again.
+  Before a new connection the editor reads the profile again, so a profile changed to PROD elsewhere is never connected
+  to without D-02, and an open answer that does not name that profile's environment is closed again. New shortcuts in
+  the help and the palette. CodeMirror runs in a shadow root, so the strict CSP stays unchanged. Open items are TD-033
+  and TD-037. The migrations and diagnostics pages now have their own window titles.
+- STU-010 page: the explorer (`/explorer`). Open a profile's read-only connection (D-02 first for PROD, once per
+  page session as in STU-008; it becomes the header's connection) and browse its catalog as a WAI-ARIA tree
+  (PostgreSQL schemas, type groups and objects plus the extensions; SQLite's file facts and type groups), filter it
+  by name prefix and type (⌘P / Ctrl+P), and read an object's columns, constraints, indexes, relationships (a
+  related table is one click or Enter away) and, on SQLite, `STRICT` and `WITHOUT ROWID`. Refresh reads the catalog
+  again on the open connection. The page only reads; every database text is escaped and capped, the answers are
+  parsed fail-closed, and stale answers after a profile switch are dropped. E2E against the parts and measurements
+  reference apps (`e2e/explorer-reference.spec.ts`; not in CI yet). Open parts: TD-041.
+  Follow-up: Open fails closed when the profile list cannot be read again (the offline problem, no D-02 and no
+  connection), and a profile deleted meanwhile moves the picker to a remaining profile and the focus to it.
 - STU-025 backend: `POST /api/connections/{id}/diagnostics/report` with
   `{"format": "markdown" | "json"}` runs a diagnosis with its backup hints and answers it as a file
   (`Content-Disposition: attachment`). The report is built from an allowlist: no password, token, connection URL or
@@ -28,12 +71,16 @@ All notable changes to this project are documented here. The format follows
   opens the read-only connection and the header, the PROD frame and the window title show it; the first PROD
   connection of a profile in a page session asks D-02, the connection test of a PROD profile included (shared with
   the migration status view; it belongs to the profile's target and is forgotten when the profile is saved or deleted
-  or the project is trusted again); **Disconnect** closes it. Only the newest connect request sets the header. A
+  or the project is trusted again); **Disconnect** closes it. Only the newest connect request sets the header, and it
+  never stays "connecting…" when an older request answers before or after a newer one that failed, and a connection that was open before keeps the
+  header when both fail; a list of the open connections
+  read while a connect ran no longer clears the new connection from the header. A
   missing password opens the password dialog and the action runs again. Failures name the remedy (host, port, user,
   password and TLS mode; a file that is no SQLite database), never the server's text; the separate class-28 and TLS
   texts are reached only by mocks with tabrion 0.1 (TD-038). The server version is the one people read (`16.15`).
   The assistant takes a pasted `postgresql://` URL apart (its password goes to the next step, never into the file;
-  a refused URL loses its password from the field) and tests the profile after saving. English and German.
+  a refused URL loses its password from the field, `password` and `sslpassword` query parameters included) and tests the profile
+  after saving. English and German.
 - STU-014 page: the view Diagnostics (`/diagnostics`) runs the diagnosis of a chosen profile on a click and lists the
   findings by severity, each with an icon and a word for its severity, its code, title, detail, remedy and source.
   A PROD profile asks D-02 before its connection opens; "Run again" uses the shown connection. Cancel stops a
@@ -353,6 +400,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
+  review). User SQL, the viewer and the exports keep the session's `search_path`.
 - Opening a PostgreSQL connection now runs the driver's and SQLAlchemy's setup queries under a fixed search_path;
   hardening against object resolution through user schemas (TD-039). The session's own `search_path` is restored
   before the connection is used, so user SQL, the viewer and the exports see the path the user configured.

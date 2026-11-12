@@ -9,7 +9,9 @@ import {
   Database,
   GitBranch,
   House,
+  ListTree,
   Settings,
+  SquareTerminal,
   Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
@@ -37,6 +39,8 @@ export type ServerState =
 const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/', key: 'nav.start', icon: <House /> },
   { path: '/connections', key: 'nav.connections', icon: <Database /> },
+  { path: '/explorer', key: 'nav.explorer', icon: <ListTree /> },
+  { path: '/sql', key: 'nav.sql', icon: <SquareTerminal /> },
   { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
   { path: '/diagnostics', key: 'nav.diagnostics', icon: <Stethoscope /> },
 ];

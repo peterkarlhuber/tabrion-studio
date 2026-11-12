@@ -10,10 +10,11 @@ import { chooseDensity, chooseLanguage, chooseTheme } from '../appearance';
 import { currentLocale, SUPPORTED_LOCALES } from '../i18n';
 import { navigate, type Route } from '../router';
 import type { Density, ThemePreference } from '../theme';
+import { editorActions } from './editorActions';
 import { focusRegion } from './regions';
 import { SHORTCUTS, type Shortcut } from './shortcuts';
 
-export type CommandGroup = 'navigate' | 'appearance' | 'help';
+export type CommandGroup = 'navigate' | 'editor' | 'appearance' | 'help';
 
 export interface Command {
   id: string;
@@ -36,6 +37,8 @@ export interface CommandContext {
 const PAGES: { path: Route; key: string }[] = [
   { path: '/', key: 'nav.start' },
   { path: '/connections', key: 'nav.connections' },
+  { path: '/explorer', key: 'nav.explorer' },
+  { path: '/sql', key: 'nav.sql' },
   { path: '/migrations', key: 'nav.migrations' },
   { path: '/diagnostics', key: 'nav.diagnostics' },
   { path: '/settings', key: 'nav.settings' },
@@ -52,9 +55,54 @@ const DENSITIES: { value: Density; key: string }[] = [
   { value: 'normal', key: 'settings.densityNormal' },
 ];
 
+/** The SQL editor's commands, while its page is shown (STU-012). None of them writes to a database. */
+function editorCommands(t: TFunction, path: string): Command[] {
+  const actions = editorActions();
+  if (path !== '/sql' || actions === null) return [];
+  const commands: Command[] = [
+    { id: 'editor:run', label: t('editor.actions.run'), shortcut: SHORTCUTS.run, run: actions.run },
+    {
+      id: 'editor:runScript',
+      label: t('editor.actions.runScript'),
+      shortcut: SHORTCUTS.runScript,
+      run: actions.runScript,
+    },
+    ...(actions.running()
+      ? [
+          {
+            id: 'editor:cancel',
+            label: t('editor.actions.cancel'),
+            shortcut: SHORTCUTS.cancel,
+            run: actions.cancel,
+          },
+        ]
+      : []),
+    {
+      id: 'editor:newTab',
+      label: t('editor.actions.newTab'),
+      shortcut: SHORTCUTS.newTab,
+      run: actions.newTab,
+    },
+    {
+      id: 'editor:closeTab',
+      label: t('editor.actions.closeTab'),
+      shortcut: SHORTCUTS.closeTab,
+      run: actions.closeTab,
+    },
+    {
+      id: 'editor:save',
+      label: t('editor.actions.save'),
+      shortcut: SHORTCUTS.save,
+      run: actions.save,
+    },
+  ].map((command) => ({ ...command, group: 'editor' as const }));
+  return commands;
+}
+
 export function buildCommands({ t, path, theme, density, openHelp }: CommandContext): Command[] {
   const locale = currentLocale();
   return [
+    ...editorCommands(t, path),
     ...PAGES.map((page): Command => ({
       id: `go:${page.path}`,
       group: 'navigate',
@@ -88,6 +136,25 @@ export function buildCommands({ t, path, theme, density, openHelp }: CommandCont
       current: locale === value,
       run: () => chooseLanguage(value),
     })),
+    ...(path === '/explorer'
+      ? [
+          {
+            id: 'explorer:filter',
+            group: 'navigate' as const,
+            label: t('keyboard.commands.explorerFilter'),
+            shortcut: SHORTCUTS.explorerFilter,
+            // After the palette has returned the focus to its opener: the filter, or the profile picker before a
+            // catalog is open (STU-010).
+            run: () =>
+              window.setTimeout(() => {
+                const target =
+                  document.querySelector<HTMLElement>('[data-explorer-filter]') ??
+                  document.querySelector<HTMLElement>('[data-explorer-profile]');
+                target?.focus();
+              }, 0),
+          },
+        ]
+      : []),
     {
       id: 'help:shortcuts',
       group: 'help',

@@ -9,9 +9,11 @@
     "label": "Hauptnavigation",
     "start": "Start",
     "connections": "Verbindungen",
+    "explorer": "Explorer",
     "migrations": "Migrationen",
     "diagnostics": "Diagnose",
-    "settings": "Einstellungen"
+    "settings": "Einstellungen",
+    "sql": "SQL-Editor"
   },
   "header": {
     "label": "Status",
@@ -225,6 +227,130 @@
       "privileged": "Die Rolle ist Superuser oder umgeht die Zeilensicherheit. Studio bleibt schreibgeschützt, eine harte Grenze ist aber nur eine Rolle ohne Schreibrechte. Verwende eine Nur-Lese-Rolle, vor allem für PROD."
     }
   },
+  "explorer": {
+    "title": "Explorer",
+    "lead": "Die Tabellen, Views und anderen Objekte der Datenbank einer Verbindung, mit ihren Spalten, Schlüsseln und Indizes. Studio liest sie nur; es ändert die Datenbank nie.",
+    "connection": "Verbindung",
+    "profile": "Verbindungsprofil",
+    "noProfiles": "Es gibt noch keine Verbindungsprofile. Lege eines unter Verbindungen an.",
+    "open": "Öffnen",
+    "openingShort": "Öffnet …",
+    "opening": "Die Verbindung wird geöffnet …",
+    "loading": "Der Katalog wird gelesen …",
+    "loaded_one": "Katalog gelesen: {{count}} Objekt.",
+    "loaded_other": "Katalog gelesen: {{count}} Objekte.",
+    "selectionGone": "Das gewählte Objekt ist nicht mehr im Katalog.",
+    "refresh": "Aktualisieren",
+    "built": "Katalog gelesen um {{time}}.",
+    "builtCached": "Katalog gelesen um {{time}} (vom Server gemerkt; „Aktualisieren“ liest ihn neu).",
+    "filter": {
+      "label": "Objekte filtern",
+      "placeholder": "Objekte filtern …",
+      "kind": "Objekttyp",
+      "all": "Alle Typen",
+      "matches_one": "{{count}} von {{total}} Objekten passt.",
+      "matches_other": "{{count}} von {{total}} Objekten passen.",
+      "none": "Kein Objekt passt zum Filter."
+    },
+    "tree": {
+      "label": "Objekte von {{name}}",
+      "extensions": "Erweiterungen",
+      "file": "Datenbankdatei",
+      "empty": "(leer)",
+      "noObjects": "Diese Datenbank hat keine Tabellen, Views oder Sequenzen.",
+      "large": "Dieser Katalog hat {{count}} Objekte. Studio lädt nur ihre Namen; die Details laden, wenn du ein Objekt wählst.",
+      "truncated": "Einige Gruppen zeigen nur ihre ersten 500 Objekte. Finde die anderen mit dem Filter."
+    },
+    "groups": {
+      "table": "Tabellen",
+      "view": "Views",
+      "materialized_view": "Materialisierte Views",
+      "sequence": "Sequenzen",
+      "foreign_table": "Fremdtabellen",
+      "other": "Andere Objekte"
+    },
+    "kind": {
+      "table": "Tabelle",
+      "view": "View",
+      "materialized_view": "Materialisierte View",
+      "sequence": "Sequenz",
+      "foreign_table": "Fremdtabelle",
+      "other": "Anderes Objekt"
+    },
+    "detail": {
+      "title": "Details",
+      "choose": "Wähle ein Objekt im Baum, um seine Details zu sehen.",
+      "loading": "Die Details werden gelesen …",
+      "none": "Keine",
+      "unknown": "Unbekannt",
+      "unnamed": "(ohne Namen)",
+      "yes": "Ja",
+      "no": "Nein",
+      "more_one": "und {{count}} weiterer",
+      "more_other": "und {{count}} weitere",
+      "noColumns": "Dieses Objekt hat keine Spalten.",
+      "sequence": "Studio zeigt die Details einer Sequenz noch nicht.",
+      "estimate_one": "Etwa {{rows}} Zeile (Schätzung der Datenbank).",
+      "estimate_other": "Etwa {{rows}} Zeilen (Schätzung der Datenbank).",
+      "goTo": "Zu {{name}} wechseln"
+    },
+    "tabs": {
+      "label": "Details von {{name}}",
+      "columns": "Spalten",
+      "constraints": "Constraints",
+      "indexes": "Indizes",
+      "relationships": "Beziehungen",
+      "sqlite": "SQLite"
+    },
+    "columns": {
+      "name": "Name",
+      "type": "Typ",
+      "nullable": "NULL erlaubt",
+      "default": "Standardwert",
+      "comment": "Kommentar",
+      "primaryKey": "Primärschlüssel",
+      "foreignKey": "Fremdschlüssel"
+    },
+    "constraints": {
+      "primaryKey": "Primärschlüssel",
+      "noPrimaryKey": "Dieses Objekt hat keinen Primärschlüssel.",
+      "foreignKeys": "Fremdschlüssel",
+      "unique": "Unique-Constraints",
+      "check": "Check-Constraints"
+    },
+    "indexes": {
+      "name": "Index",
+      "columns": "Spalten",
+      "unique": "Eindeutig",
+      "none": "Dieses Objekt hat keine Indizes."
+    },
+    "relationships": {
+      "references": "Verweist auf",
+      "referencedBy": "Referenziert von"
+    },
+    "sqlite": {
+      "noFacts": "Studio konnte die SQLite-Angaben dieser Tabelle nicht lesen."
+    },
+    "extensions": {
+      "title": "Erweiterungen",
+      "none": "In dieser Datenbank ist keine Erweiterung installiert.",
+      "name": "Erweiterung",
+      "version": "Version",
+      "schema": "Schema",
+      "available": "Verfügbar",
+      "update": "Update auf {{version}} verfügbar",
+      "current": "Aktuell"
+    },
+    "file": {
+      "title": "Datenbankdatei",
+      "on": "Ein",
+      "off": "Aus",
+      "size": "Dateigröße",
+      "bytes_one": "{{size}} Byte",
+      "bytes_other": "{{size}} Bytes",
+      "mode": "Dateirechte"
+    }
+  },
   "migrations": {
     "title": "Migrationen",
     "lead": "Der Migrationsstand der Datenbank einer Verbindung. Studio liest ihn nur und führt nie eine Migration aus.",
@@ -346,6 +472,24 @@
       "more_one": "Und {{count}} weiterer Befund, nicht angezeigt.",
       "more_other": "Und {{count}} weitere Befunde, nicht angezeigt."
     },
+    "download": {
+      "markdown": "Bericht als Markdown herunterladen",
+      "json": "Bericht als JSON herunterladen",
+      "note": "Für den Bericht läuft die Diagnose auf der angezeigten Verbindung erneut. Er lässt Passwörter, Hosts, Ports, Benutzer- und Datenbanknamen, Dateipfade und Werte weg.",
+      "making": "Der Bericht wird erstellt. Studio führt die Diagnose dafür erneut aus…",
+      "done": "Bericht heruntergeladen: {{filename}}",
+      "canceled": "Der Bericht wurde abgebrochen.",
+      "cancelNotTaken": "Der Bericht wurde verworfen und nichts gespeichert, aber Studio konnte seine Diagnose auf dem Server nicht stoppen. Sie endet am Zeitlimit der Verbindung."
+    },
+    "backup": {
+      "title": "Sicherungen",
+      "lead": "Hinweise zu Sicherungen. Sie sind keine Befunde, die Zusammenfassung oben zählt sie also nicht mit.",
+      "none": "Keine Hinweise zu Sicherungen: Studio hat dazu nichts anzumerken.",
+      "unchecked": "Sicherungen wurden in diesem Lauf nicht geprüft, daher sagt dies nichts über sie aus. Führe die Diagnose erneut aus.",
+      "invalid": "Die Hinweise zu Sicherungen in der Antwort konnten nicht gelesen werden, daher wird keiner angezeigt.",
+      "more_one": "Und {{count}} weiterer Hinweis zu Sicherungen, nicht angezeigt.",
+      "more_other": "Und {{count}} weitere Hinweise zu Sicherungen, nicht angezeigt."
+    },
     "titles": {
       "STU-DX-001": "Produktionsverbindung ohne geprüftes Zertifikat",
       "STU-DX-002": "Schwaches TLS zu einem entfernten Host",
@@ -356,7 +500,17 @@
       "STU-DX-007": "Künftige Tabellen werden beschreibbar sein",
       "STU-DX-008": "Nicht jede Prüfung lief",
       "STU-DX-009": "Fremdschlüssel konnten nicht geprüft werden",
-      "STU-DX-010": "Sitzungseinstellungen fehlen für die Rolle oder die Datenbank"
+      "STU-DX-010": "Sitzungseinstellungen fehlen für die Rolle oder die Datenbank",
+      "STU-BK-001": "Keine Sicherung gefunden",
+      "STU-BK-002": "Die neueste Sicherung ist älter als die Daten",
+      "STU-BK-003": "Sicherungen sind für andere Benutzer lesbar",
+      "STU-BK-004": "Sicherungen konnten nicht gesucht werden",
+      "STU-BK-005": "Suche nach Sicherungen abgebrochen",
+      "STU-BK-010": "WAL-Archivierung ist aus",
+      "STU-BK-011": "WAL-Archivierung schlägt fehl",
+      "STU-BK-012": "Noch nichts archiviert",
+      "STU-BK-013": "Dieser Standby archiviert nicht",
+      "STU-BK-014": "Archivierungsstatus nicht lesbar"
     }
   },
   "settings": {
@@ -556,6 +710,8 @@
     "secret_file_unsafe": "Die Passwortdatei ist ein Link, keine normale Datei, hat mehr als einen Namen oder gehört einem anderen Benutzer.",
     "secret_file_not_private": "Andere Benutzer können die Passwortdatei lesen. Mache sie nur für dich lesbar (chmod 600).",
     "secret_file_unreadable": "Die Passwortdatei fehlt, ist leer, größer als 4 KB oder nicht UTF-8.",
+    "object_not_found": "Das Objekt ist nicht mehr im Katalog der Datenbank. Aktualisiere den Katalog.",
+    "explorer_engine": "Diese Angabe gibt es nur für die andere Datenbank-Engine.",
     "db": {
       "connection": "Studio konnte keine Verbindung herstellen. Prüfe Host und Port (eine Firewall kann sie blockieren), Benutzer und Passwort und den TLS-Modus (verify-full verlangt ein vertrauenswürdiges Serverzertifikat; verify-ca oder eine CA-Datei kann helfen).",
       "auth": "Die Datenbank hat die Anmeldung abgelehnt. Prüfe Benutzer und Passwort.",
@@ -568,7 +724,9 @@
       "disk_full": "Der Datenbank ist der Speicherplatz ausgegangen.",
       "resource": "Der Datenbank ist der Arbeitsspeicher oder eine andere Ressource ausgegangen. Versuche es später noch einmal.",
       "other": "Die Datenbank hat einen Fehler gemeldet ({{kind}})."
-    }
+    },
+    "report_invalid": "Studio konnte den Bericht nicht erstellen: Die Anfrage war ungültig.",
+    "report_unavailable": "Studio konnte die Namen, die der Bericht weglässt, nicht vom Server lesen, und hat daher keinen Bericht erstellt. Versuche es erneut, wenn die Verbindung frei ist, oder verbinde neu."
   },
   "keyboard": {
     "palette": {
@@ -591,23 +749,153 @@
       "action": "Aktion",
       "keys": "Tasten",
       "close": "Schließen",
-      "later": "Kürzel zum Ausführen und Abbrechen von Abfragen und für Editor-Tabs kommen mit dem SQL-Editor."
+      "later": "Die Kürzel des SQL-Editors wirken auf seiner Seite. Im Editor kommentiert ⌘/ bzw. Strg+/ Zeilen aus; dort öffnet die Schaltfläche in der Kopfzeile diese Hilfe.",
+      "pageGroup": "Ganze Seite",
+      "editorGroup": "SQL-Editor",
+      "explorerGroup": "Explorer"
     },
     "shortcuts": {
       "palette": "Befehlspalette öffnen",
       "help": "Tastenkürzel anzeigen",
       "nextRegion": "Zum nächsten Bereich (Kopfzeile, Navigation, Tabs, Hauptbereich, Statusleiste)",
-      "previousRegion": "Zum vorherigen Bereich"
+      "previousRegion": "Zum vorherigen Bereich",
+      "run": "Statement am Cursor oder die Auswahl ausführen (SQL-Editor)",
+      "runScript": "Alle Statements des Tabs ausführen (SQL-Editor)",
+      "cancel": "Laufende Abfrage abbrechen (SQL-Editor; auch Esc in den Ergebnissen)",
+      "newTab": "Neuer Editor-Tab (SQL-Editor)",
+      "closeTab": "Editor-Tab schließen (SQL-Editor)",
+      "save": "Tab als .sql-Datei speichern (SQL-Editor)",
+      "explorerFilter": "Explorer-Filter fokussieren (auf der Explorer-Seite)"
     },
     "commands": {
       "goTo": "Gehe zu {{page}}",
       "theme": "Darstellung: {{theme}}",
       "density": "Dichte: {{density}}",
       "language": "Sprache: {{language}}",
-      "shortcuts": "Tastenkürzel anzeigen"
+      "shortcuts": "Tastenkürzel anzeigen",
+      "explorerFilter": "Explorer-Filter fokussieren"
     },
     "keys": {
       "ctrl": "Strg"
     }
+  },
+  "editor": {
+    "title": "SQL-Editor",
+    "loading": "Verbindungsprofile werden geladen …",
+    "toolbar": "Abfrage",
+    "connection": "Verbindung",
+    "noProfiles": "Kein Verbindungsprofil",
+    "chooseProfile": "Profil wählen",
+    "noProfile": "Wähle zuerst ein Verbindungsprofil für diesen Tab.",
+    "noStatement": "Am Cursor oder in der Auswahl steht kein Statement.",
+    "textLabel": "SQL von {{name}}",
+    "shortcuts": "{{run}} führt das Statement am Cursor oder die Auswahl aus, {{script}} alle Statements, {{cancel}} bricht ab. Tab verlässt den Editor.",
+    "saved": "Als {{name}} in deinen Downloads gespeichert.",
+    "copied": "Wert kopiert.",
+    "copyFailed": "Der Browser hat das Kopieren nicht erlaubt. Markiere den Wert im Detailbereich und kopiere ihn dort.",
+    "tabs": {
+      "label": "Editor-Tabs",
+      "untitled": "Abfrage {{number}}",
+      "new": "Neuer Editor-Tab ({{keys}})",
+      "close": "{{name}} schließen",
+      "unsaved": "nicht gespeichert",
+      "running": "Abfrage läuft"
+    },
+    "actions": {
+      "run": "Ausführen",
+      "runScript": "Skript ausführen",
+      "cancel": "Abfrage abbrechen",
+      "newTab": "Neuer Editor-Tab",
+      "closeTab": "Editor-Tab schließen",
+      "save": "Als .sql speichern"
+    },
+    "params": {
+      "title": "Parameter",
+      "type": "Typ von :{{name}}",
+      "types": {
+        "text": "Text",
+        "number": "Zahl",
+        "boolean": "Wahrheitswert",
+        "null": "Null",
+        "json": "JSON"
+      },
+      "problem": {
+        "missing": "Gib :{{name}} einen Wert.",
+        "number": ":{{name}} ist keine Zahl.",
+        "range": ":{{name}} ist zu groß für eine Zahl. Gib den Wert als Text an und wandle ihn um, zum Beispiel :{{name}}::bigint.",
+        "json": ":{{name}} ist kein gültiges JSON."
+      }
+    },
+    "result": {
+      "title": "Ergebnisse",
+      "tabs": "Ergebnisse",
+      "empty": "Führe ein Statement aus, um hier sein Ergebnis zu sehen. Studio führt nur lesende Statements aus.",
+      "tab": "Ergebnis {{number}}",
+      "messages": "Meldungen",
+      "statement": "Statement {{number}}",
+      "goTo": "Zum Statement",
+      "progress": "Abfrage läuft",
+      "gridLabel": "Ergebnis {{number}}",
+      "pending": "Wartet",
+      "skipped": "Nicht ausgeführt",
+      "running": "Läuft …",
+      "runningFor": "Statement {{number}} von {{count}} läuft … {{seconds}} s",
+      "failed": "Fehlgeschlagen.",
+      "canceled": "Abgebrochen nach {{seconds}} s.",
+      "noRows": "Fertig in {{ms}} ms (keine Ergebniszeilen).",
+      "rows_one": "{{rows}} Zeile · {{ms}} ms",
+      "rows_other": "{{rows}} Zeilen · {{ms}} ms",
+      "cappedRows_one": "{{rows}} Zeile, gekappt bei {{rows}} (weitere vorhanden) · {{ms}} ms",
+      "cappedRows_other": "{{rows}} Zeilen, gekappt bei {{rows}} (weitere vorhanden) · {{ms}} ms",
+      "cappedBytes_one": "{{rows}} Zeile, gekappt an der Größengrenze eines Ergebnisses (weitere vorhanden) · {{ms}} ms",
+      "cappedBytes_other": "{{rows}} Zeilen, gekappt an der Größengrenze eines Ergebnisses (weitere vorhanden) · {{ms}} ms",
+      "statements_one": "{{count}} Statement, {{failed}} fehlgeschlagen",
+      "statements_other": "{{count}} Statements, {{failed}} fehlgeschlagen",
+      "loadMore": "Bis zu {{rows}} Zeilen laden",
+      "connecting": "Verbinde …"
+    },
+    "grid": {
+      "cut": "gekürzt"
+    },
+    "detail": {
+      "title": "{{column}}, Zeile {{row}}",
+      "close": "Wert schließen",
+      "copy": "Kopieren",
+      "value": "Wert",
+      "cut": "Der Server hat diesen Wert gekürzt (64 KB Text, 32 KB Bytes); der Rest ist nicht geladen.",
+      "bytes_one": "{{count}} Byte",
+      "bytes_other": "{{count}} Bytes",
+      "kind": {
+        "null": "NULL",
+        "text": "Text",
+        "number": "Zahl",
+        "boolean": "Wahrheitswert",
+        "json": "JSON",
+        "bytes": "Bytes"
+      }
+    },
+    "problems": {
+      "readOnly": "Diese Verbindung ist schreibgeschützt. Die Datenbank hat die Änderung abgelehnt (read-only transaction).",
+      "refused": "Studio führt nur lesende Statements aus: SELECT, WITH, VALUES, TABLE, EXPLAIN einer Abfrage, SHOW und PRAGMA von SQLite.",
+      "multiple": "Studio führt ein Statement nach dem anderen aus. Führe die Statements einzeln aus oder nutze „Skript ausführen“.",
+      "transaction": "Studio führt jedes Statement in einer eigenen schreibgeschützten Transaktion aus; BEGIN, COMMIT, SET und ähnliche Statements werden abgelehnt.",
+      "empty": "Der Text enthält kein Statement.",
+      "gone": "Dieses Ergebnis liegt nicht mehr auf dem Server (Studio behält die letzten 16). Führe das Statement erneut aus.",
+      "limit": "Studio führt höchstens 4 Abfragen gleichzeitig aus, 2 je Verbindung. Warte, bis eine fertig ist, oder brich eine ab.",
+      "paramMissing": "Ein :name-Platzhalter hat keinen Wert.",
+      "paramsInvalid": "Ein Parameterwert ist nicht gültig. Gib JSON als Text an und wandle ihn um, zum Beispiel :doc::jsonb.",
+      "tooLarge": "Das Statement oder seine Parameter sind zu groß.",
+      "canceled": "Das Statement wurde abgebrochen.",
+      "timeout": "Das Statement lief länger als das Zeitlimit des Profils.",
+      "syntax": "Die Datenbank konnte das Statement nicht lesen.",
+      "undefinedObject": "Eine Tabelle, Spalte, Funktion oder ein anderes Objekt existiert nicht.",
+      "permission": "Die Datenbankrolle darf dieses Objekt nicht lesen.",
+      "data": "Ein Wert passt nicht zu seiner Spalte oder Operation.",
+      "database": "Die Datenbank hat das Statement abgelehnt ({{code}})."
+    },
+    "canceledBeforeStart": "Abgebrochen, bevor die Abfrage begann.",
+    "profileChanged": "Das Profil {{name}} hat sich geändert, seit diese Seite es gelesen hat (jetzt {{environment}}). Darauf wurde nichts ausgeführt; führen Sie erneut aus, um es so zu verwenden, wie es jetzt ist.",
+    "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt.",
+    "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt."
   }
 }

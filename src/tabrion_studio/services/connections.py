@@ -344,6 +344,7 @@ class OpenConnection:
         consume: Callable[[ResultCursor], _T],
         *,
         cancel: Cancel | None = None,
+        catalog: bool = False,
     ) -> _T:
         """Run ``statement`` in its own ``Database.read()`` and return ``consume(cursor)`` (STU-011).
 
@@ -358,7 +359,12 @@ class OpenConnection:
         with (
             self._read() as transaction,
             tabrion_compat.stream(
-                transaction, statement.driver_sql, statement.values, cancel=hook, server_side=server_side
+                transaction,
+                statement.driver_sql,
+                statement.values,
+                cancel=hook,
+                server_side=server_side,
+                catalog=catalog,
             ) as cursor,
         ):
             return consume(cursor)
@@ -378,11 +384,21 @@ class OpenConnection:
             return tabrion_compat.check(transaction, cancel=cancel if cancel is not None else Cancel())
 
     def fetch(
-        self, sql: str, params: Mapping[str, object] | None = None, *, cancel: Cancel | None = None
+        self,
+        sql: str,
+        params: Mapping[str, object] | None = None,
+        *,
+        cancel: Cancel | None = None,
+        catalog: bool = True,
     ) -> list[tuple[Any, ...]]:
         """All rows of one read-only statement, for Studio's own small queries; a refused one raises
         ``StatementRefused``. User SQL goes through :class:`tabrion_studio.services.queries.QueryEngine` (caps).
-        ``cancel`` stops it from another thread."""
+        ``cancel`` stops it from another thread.
+
+        ``catalog`` (the default): on PostgreSQL the statement runs under the fixed ``search_path`` of
+        ``tabrion_compat.CATALOG_SEARCH_PATH``, so objects in user schemas cannot take part in resolving its functions
+        and operators (STU-022 review H-1). Only a read that must find a table on the session's ``search_path`` (the
+        Alembic version table) passes ``False``."""
 
         def every_row(cursor: ResultCursor) -> list[tuple[Any, ...]]:
             rows: list[tuple[Any, ...]] = []
@@ -390,7 +406,7 @@ class OpenConnection:
                 rows += batch
             return rows
 
-        return self.stream(self.prepare(sql, params), every_row, cancel=cancel)
+        return self.stream(self.prepare(sql, params), every_row, cancel=cancel, catalog=catalog)
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))
