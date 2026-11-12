@@ -52,6 +52,7 @@
 | TD-026 STU-021 export: infinite and out-of-range dates, Unicode file names, the problem code of data-modifying CTEs (F-7, F-9, F-10) | P3 | Open (STU-021 done in PR #33) |
 | TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Open (2026-11-12) |
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
+| TD-039 the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (TD-039 draft PR) |
 | TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the header learns of a connection the server closed only when the manager reloads, no reconnect banner, the status bar's role and database) | P2 | Open (STU-008 connect PR) |
 | TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 is enforced only in the page: `POST /api/connections` and `POST /api/connection-tests` do not check the environment, and the page decides from its loaded list, so a profile changed to `prod` on disk after the list loaded is connected without D-02 until the list is read again. The diagnostics view (STU-014) asks D-02 on every run and does not share the page session's confirmation. The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time | P2 | Open (STU-008 connect PR) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
@@ -957,6 +958,21 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
 - **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
   binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
+
+### TD-039 · Queries made when a PostgreSQL connection is opened (TABRION STU-022 review)
+
+- **Priority:** P1 High · **Status:** Done (TD-039 draft PR) · **Refs:** `stu-022-review.md` (off GitHub, delta
+  review D-1), `services/connections.py`, `services/tabrion_compat.py`, `docs/architecture/connections.md`
+- **What:** the queries SQLAlchemy's dialect sends when a connection is opened (`current_schema()` among them) and
+  the driver's hstore type lookup ran under the session's `search_path`, before Studio's own catalog reads
+  (STU-022) pin theirs. This predated STU-022.
+- **Done:** hardening against object resolution through user schemas: a first `connect` listener fixes
+  `search_path` to `pg_catalog, pg_temp` for the setup, a last one restores the session's path (`RESET
+  search_path`) and reads the dialect's default schema again; native hstore adaptation is off, so the type lookup is
+  not sent. `tests/security/test_connect_path.py` covers it with a database setting that puts another role's schema
+  ahead of `pg_catalog`, and checks that user SQL still sees the session's path.
+- **Not in scope:** tabrion's diagnostics collectors are fully qualified and stay on the session's path, since they
+  report it. User SQL, the viewer and the exports keep the session's path on purpose.
 
 ### TD-030 · Moderate npm advisory in development tools only (TABRION QA-8)
 

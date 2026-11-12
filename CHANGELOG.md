@@ -339,6 +339,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Opening a PostgreSQL connection now runs the driver's and SQLAlchemy's setup queries under a fixed search_path;
+  hardening against object resolution through user schemas (TD-039). The session's own `search_path` is restored
+  before the connection is used, so user SQL, the viewer and the exports see the path the user configured. The
+  driver's native hstore adaptation is off: hstore values are the server's text.
 - D-01 shows where each PostgreSQL connection's password goes (TD-010 T-5, T-4 rest; `stu-007-review.md` L-1): the
   secret's source, `host:port` and the TLS mode, marked for a host outside loopback, TLS weaker than `verify-full`, a
   variable that looks like another service's credential and a password file outside the project. Projects trusted

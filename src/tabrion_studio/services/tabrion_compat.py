@@ -21,6 +21,9 @@ What each part replaces:
   ``tab-033-review.md``); a SQLite connection too, for the same guarantee.
 * :func:`reset_session`: ``RESET ALL`` when a PostgreSQL connection goes back to the pool (M-2 of
   ``stu-011-review.md``).
+* :func:`pin_setup_path` and :func:`restore_setup_path`: the queries SQLAlchemy's dialect sends when a PostgreSQL
+  connection is opened run under a fixed ``search_path`` (``pg_catalog, pg_temp``), and the session's own path is
+  restored before the connection is used (TD-039).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
 * :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
 * :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
@@ -35,7 +38,7 @@ tabrion's collectors run on the read-only session in their own read-only transac
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 import contextlib
 from dataclasses import dataclass
 import secrets
@@ -47,7 +50,18 @@ import sqlalchemy
 import tabrion
 from tabrion import check as tabrion_check
 
-__all__ = ["Cancel", "Cancelled", "Column", "ResultCursor", "check", "inspector", "reset_session", "stream"]
+__all__ = [
+    "Cancel",
+    "Cancelled",
+    "Column",
+    "ResultCursor",
+    "check",
+    "inspector",
+    "pin_setup_path",
+    "reset_session",
+    "restore_setup_path",
+    "stream",
+]
 
 
 @dataclass(frozen=True)
@@ -183,6 +197,49 @@ def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
         dbapi_connection.commit()
     except Exception as exc:
         connection_record.invalidate(exc)
+
+
+#: The ``search_path`` of a new PostgreSQL connection's setup (TD-039): names resolve in ``pg_catalog`` only, and
+#: ``pg_temp`` last keeps temporary objects out of function and operator lookup.
+SETUP_SEARCH_PATH = "pg_catalog, pg_temp"
+
+
+def pin_setup_path(dbapi_connection: Any, _connection_record: Any) -> None:
+    """Pool ``connect`` listener, the first one (PostgreSQL): a fixed ``search_path`` for the connection's setup.
+
+    When a connection is opened, SQLAlchemy's dialect sends its own setup queries (``current_schema()`` among them,
+    unqualified) before Studio or tabrion send anything. A database or role setting can put a schema that another
+    role may write ahead of ``pg_catalog``; under the fixed path the setup resolves every name in ``pg_catalog``
+    (hardening against object resolution through user schemas). :func:`restore_setup_path` gives the session its own
+    path back. ``set_config`` is committed, so the dialect's rollback after its setup keeps it; it is not a write.
+    """
+    if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
+        return
+    with dbapi_connection.cursor() as cursor:
+        cursor.execute("SELECT pg_catalog.set_config('search_path', %s, false)", (SETUP_SEARCH_PATH,))
+    dbapi_connection.commit()
+
+
+def restore_setup_path(dialect: sqlalchemy.Dialect) -> Callable[[Any, Any], None]:
+    """Pool ``connect`` listener, after the dialect's setup and tabrion's (PostgreSQL): the session's own path.
+
+    ``RESET search_path`` gives back the value of the database, role or startup settings (Studio sets no
+    ``search_path`` of its own, :func:`tabrion_studio.services.connections.startup_options`), so user SQL, the viewer
+    and the exports see the path the user configured. The dialect learned its default schema under the fixed path
+    (``pg_catalog``); it gets the session's, read with a qualified ``pg_catalog.current_schema()``.
+    """
+
+    def restore(dbapi_connection: Any, _connection_record: Any) -> None:
+        if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
+            return
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute("RESET search_path")
+            cursor.execute("SELECT pg_catalog.current_schema()")
+            row = cursor.fetchone()
+        dbapi_connection.commit()
+        dialect.default_schema_name = None if row is None else row[0]
+
+    return restore
 
 
 @contextlib.contextmanager
