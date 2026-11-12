@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-036 (STU-025 in the page): the Diagnostics view lists the backup hints (`STU-BK-*`) under "Backups", with
+  en/de titles, not counted as findings; a broken `backup` field says that the hints could not be read. **Download
+  Markdown report** and **Download JSON report** save the report of the shown connection (no new connection, so no
+  new D-02) under the server's file name; a refused report (`studio.report_unavailable`, `studio.report_invalid`) is
+  the page's en/de text, and Cancel, a profile switch or leaving the page drops it. The view's D-02 now uses the
+  shared gate of the connection manager, so a PROD profile confirmed in the page session is not asked again. The
+  diagnostics page route now replaces tabrion's `TAB-PG-020` with `STU-BK-010` like the report. New user-guide page
+  "Diagnostics".
 - STU-025 backend: `POST /api/connections/{id}/diagnostics/report` with
   `{"format": "markdown" | "json"}` runs a diagnosis with its backup hints and answers it as a file
   (`Content-Disposition: attachment`). The report is built from an allowlist: no password, token, connection URL or

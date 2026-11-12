@@ -35,7 +35,7 @@ the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`,
 :mod:`.backup_hints`, under the same time limit and cancel. They are not findings and not in ``counts``. When the
 hints hold ``STU-BK-010`` (archiving off, read with the archiver's state), tabrion's ``TAB-PG-020`` is left out of the
 findings (:data:`BACKUP_CODES`); after a cancel, the time limit or ``STU-BK-014`` it stays (C-2 of the review). The page
-route passes ``replace=False`` and keeps it until its view shows the hints (D-2, TD-036); the report replaces it.
+route and the report both replace it, since the page shows the hints (D-2, TD-036).
 
 **Time limit (M-1):** a diagnosis runs at most the connection's statement timeout; then every statement is canceled
 like a query (:class:`.tabrion_compat.Cancel`: SQLite interrupt, psycopg cancel), and the checks that did not
@@ -224,8 +224,8 @@ class Diagnostics:
 
     def run(self, connection_id: object, *, backup: bool = False, replace: bool = True) -> dict[str, Any]:
         """The diagnosis of an open connection; with ``backup``, also its backup hints (STU-025). ``replace=False``
-        keeps the tabrion findings that a given hint would replace (:data:`BACKUP_CODES`): the page route, whose view
-        does not show the hints yet (D-2 of the delta review, TD-036)."""
+        keeps the tabrion findings that a given hint would replace (:data:`BACKUP_CODES`), for a caller that does not
+        show the hints (D-2 of the delta review); the page and the report replace them (TD-036)."""
         connection = self.registry.get(connection_id)
         profile = self.registry.source.entry(connection.profile_id).profile
         prod = connection.environment == "prod"

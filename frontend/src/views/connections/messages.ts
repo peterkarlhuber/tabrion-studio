@@ -50,6 +50,9 @@ const PROBLEMS = new Set([
   'secret_file_unreadable',
   // An answer the page cannot read (STU-014 diagnostics).
   'answer_invalid',
+  // The diagnosis report (STU-025, TD-036).
+  'report_invalid',
+  'report_unavailable',
   'offline',
 ]);
 

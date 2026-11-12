@@ -331,13 +331,40 @@ test('STU-014: the page runs the diagnosis of a prepared SQLite file and shows i
   await page.getByRole('button', { name: 'Run diagnosis' }).click();
   const list = page.getByTestId('diagnostics-findings');
   await expect(list).toBeVisible();
-  const codes = await page.getByTestId('diagnostics-code').allTextContents();
+  const codes = await list.getByTestId('diagnostics-code').allTextContents();
   expect(codes).toContain('STU-DX-005');
   if (process.platform !== 'win32') expect(codes).toContain('TAB-SQ-003');
   // Studio's own session findings are left out, and no finding names the file (03 section 6).
   expect(codes).not.toContain('TAB-SQ-001');
   await expect(page.getByTestId('diagnostics-result')).not.toContainText('diag-shop');
   await expect(page.getByTestId('diagnostics-incomplete')).toHaveCount(0);
+  // TD-036: the backup hints of STU-025 (no backup next to the file: STU-BK-001), not counted as findings.
+  const backup = page.getByRole('region', { name: 'Backups' });
+  await expect(backup.getByRole('heading', { level: 4, name: 'No backup found' })).toBeVisible();
+  expect(await backup.getByTestId('diagnostics-code').allTextContents()).toContain('STU-BK-001');
+  expect(await seriousViolations(page)).toEqual([]);
+
+  // TD-036: both reports from the real route, saved under the server's name, without the file's path or name.
+  for (const [format, suffix] of [
+    ['Markdown', 'md'],
+    ['JSON', 'json'],
+  ] as const) {
+    const saved = page.waitForEvent('download');
+    await page.getByRole('button', { name: `Download ${format} report` }).click();
+    const file = await saved;
+    expect(file.suggestedFilename()).toMatch(
+      new RegExp(`^tabrion-studio-diagnosis-sqlite-dev-\\d{8}T\\d{6}Z\\.${suffix}$`),
+    );
+    const body = readFileSync(await file.path(), 'utf8');
+    expect(body).toContain('STU-DX-005');
+    expect(body).toContain('STU-BK-001');
+    expect(body).not.toContain('diag-shop');
+    expect(body).not.toContain(root);
+    if (format === 'JSON') expect(() => JSON.parse(body) as unknown).not.toThrow();
+    await expect(page.getByTestId('diagnostics-message')).toHaveText(
+      `Report downloaded: ${file.suggestedFilename()}`,
+    );
+  }
   expect(await seriousViolations(page)).toEqual([]);
   expect(violations).toEqual([]);
 });

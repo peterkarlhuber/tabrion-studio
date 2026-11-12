@@ -8,12 +8,15 @@
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
-import { countFindings, parseDiagnosis } from '../../api/diagnostics';
+import { countFindings, parseDiagnosis, reportFilename } from '../../api/diagnostics';
 import i18n from '../../i18n';
+import type { SaveFile } from '../../lib/download';
+import { ConnectionSessionContext, NO_CONNECTION_SESSION } from '../../workspace';
 import {
   DiagnosticsView,
   MAX_CODE_LENGTH,
   MAX_FINDINGS,
+  MAX_HINTS,
   MAX_TEXT_LENGTH,
   MAX_TITLE_LENGTH,
 } from './DiagnosticsView';
@@ -715,6 +718,7 @@ describe('diagnostics API parsing', () => {
         },
         { code: 'A', severity: 'warning', title: '', detail: '', remedy: '', source: 'studio' },
       ],
+      backup: null,
     });
     expect(countFindings(parsed?.findings ?? [])).toEqual({
       error: 0,
@@ -896,22 +900,525 @@ describe('diagnostics view: review fixes of #39 (stu-014-ui-review.md)', () => {
     expect(await screen.findByTestId('diagnostics-summary')).toHaveTextContent(/^1 error$/);
     expect(findings()).toHaveLength(1);
   });
+});
 
-  it('#40: an answer with a backup field (STU-025) is read; the hints are not shown yet', async () => {
+// TD-036 (STU-025 in the page): the backup hints, the report download and the shared D-02 gate.
+
+function hint(extra: Record<string, unknown> = {}) {
+  return {
+    code: 'STU-BK-010',
+    severity: 'warning',
+    title: 'WAL archiving is off',
+    detail: 'archive_mode is off, so there is no point-in-time recovery.',
+    remedy: 'Turn on archive_mode with an archive_command, or use a backup tool.',
+    source: 'studio',
+    ...extra,
+  };
+}
+
+const BACKUP = {
+  hints: [
+    hint({ code: 'STU-BK-012', severity: 'info', title: 'Nothing archived yet' }),
+    hint(),
+    hint({ code: 'STU-XX-999', severity: 'nope', title: `Other${BIDI}hint`, source: 'tabrion' }),
+  ],
+  facts: { archive_mode: 'off', host: 'db.internal' },
+};
+
+const REPORT_NAME = 'tabrion-studio-diagnosis-postgresql-dev-20261112T101500Z.md';
+
+function reportAnswer(
+  body = '# Diagnosis report\n',
+  type = 'text/markdown; charset=utf-8',
+  name = REPORT_NAME,
+) {
+  return new Response(body, {
+    status: 200,
+    headers: { 'Content-Type': type, 'Content-Disposition': `attachment; filename="${name}"` },
+  });
+}
+
+function hints() {
+  return within(screen.getByTestId('diagnostics-hints')).getAllByTestId('diagnostics-hint');
+}
+
+async function runOnce(
+  user: ReturnType<typeof userEvent.setup>,
+  answers: Record<string, Answer | Answer[]> = {},
+  save: SaveFile = vi.fn(),
+) {
+  const backend = server({
+    'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER], { backup: BACKUP })),
+    ...answers,
+  });
+  const view = render(<DiagnosticsView fetcher={backend.fetcher} save={save} />);
+  await ready();
+  await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+  await screen.findByTestId('diagnostics-findings');
+  return { ...backend, view, save };
+}
+
+describe('TD-036: backup hints', () => {
+  it('lists the hints under "Backups", sorted, with en titles; the summary does not count them', async () => {
     const user = userEvent.setup();
-    const backup = {
-      hints: [{ code: 'STU-BK-010', severity: 'warning', title: 'Backup hint text' }],
-      facts: { archive_mode: 'off' },
-    };
+    await runOnce(user);
+    expect(screen.getByTestId('diagnostics-summary')).toHaveTextContent(/^1 error$/);
+    const section = screen.getByRole('region', { name: 'Backups' });
+    expect(section).toBe(screen.getByTestId('diagnostics-backup'));
+    expect(within(section).getByRole('heading', { level: 3, name: 'Backups' })).toBeVisible();
+    const items = hints();
+    // The unknown severity is shown first (fail closed), then the server's order by severity.
+    expect(items.map((item) => item.dataset.severity)).toEqual(['unknown', 'warning', 'info']);
+    expect(items[1]).toHaveAccessibleName('WAL archiving is off');
+    expect(within(nth(items, 1)).getByRole('heading', { level: 4 })).toHaveTextContent(
+      'WAL archiving is off',
+    );
+    expect(within(nth(items, 1)).getByTestId('diagnostics-severity')).toHaveTextContent('Warning');
+    expect(within(nth(items, 1)).getByTestId('diagnostics-code')).toHaveTextContent('STU-BK-010');
+    expect(items[1]).toHaveTextContent('from Studio');
+    expect(within(nth(items, 1)).getByTestId('diagnostics-detail')).toHaveAttribute('lang', 'en');
+    expect(within(nth(items, 1)).getByTestId('diagnostics-remedy')).toHaveTextContent(
+      'Remedy: Turn on archive_mode with an archive_command, or use a backup tool.',
+    );
+    // A code Studio does not know keeps the server's title, escaped and marked as English (U-1).
+    expect(items[0]).toHaveTextContent('Other\\u202Ehint');
+    expect(items[0]?.textContent).not.toContain(BIDI);
+    expect(items[0]).toHaveTextContent('Unknown severity');
+    // The facts are not shown (the page reads only the hints).
+    expect(section).not.toHaveTextContent('db.internal');
+    // The hints are not findings.
+    expect(findings()).toHaveLength(1);
+  });
+
+  it('says so when there are no hints, and when the hints cannot be read; no section without backup', async () => {
+    const user = userEvent.setup();
     const { fetcher } = server({
-      'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER, NOTE], { backup })),
+      'POST /api/connections/c1/diagnostics': [
+        () => json(diagnosis([OWNER], { backup: { hints: [], facts: {} } })),
+        () => json(diagnosis([OWNER], { backup: { hints: 'none' } })),
+        () => json(diagnosis([OWNER], { backup: 'broken' })),
+        () => json(diagnosis([OWNER])),
+      ],
     });
     render(<DiagnosticsView fetcher={fetcher} />);
     await ready();
     await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
-    expect(await screen.findByTestId('diagnostics-summary')).toHaveTextContent('1 error · 1 note');
-    expect(findings()).toHaveLength(2);
-    expect(screen.getByTestId('diagnostics-card')).not.toHaveTextContent('Backup hint text');
-    expect(screen.getByTestId('diagnostics-card')).not.toHaveTextContent('STU-BK-010');
+    expect(await screen.findByTestId('diagnostics-backup-none')).toHaveTextContent(
+      'No backup hints: Studio found nothing to point out about backups.',
+    );
+    expect(screen.queryByTestId('diagnostics-backup-invalid')).toBeNull();
+    for (let run = 0; run < 2; run += 1) {
+      await user.click(screen.getByRole('button', { name: 'Run again' }));
+      expect(await screen.findByTestId('diagnostics-backup-invalid')).toHaveTextContent(
+        'The backup hints in the answer could not be read, so none are shown.',
+      );
+      expect(screen.queryByTestId('diagnostics-backup-none')).toBeNull();
+      // The findings stay readable.
+      expect(findings()).toHaveLength(1);
+    }
+    await user.click(screen.getByRole('button', { name: 'Run again' }));
+    await screen.findByTestId('diagnostics-findings');
+    expect(screen.queryByTestId('diagnostics-backup')).toBeNull();
+  });
+
+  it('lists MAX_HINTS hints, then "and N more"', async () => {
+    const user = userEvent.setup();
+    const many = Array.from({ length: MAX_HINTS + 2 }, (_, index) =>
+      hint({ code: `STU-BK-9${String(index).padStart(2, '0')}`, severity: 'info' }),
+    );
+    await runOnce(user, {
+      'POST /api/connections/c1/diagnostics': () =>
+        json(diagnosis([OWNER], { backup: { hints: many } })),
+    });
+    expect(hints()).toHaveLength(MAX_HINTS);
+    expect(screen.getByTestId('diagnostics-hints-more')).toHaveTextContent(
+      'And 2 more backup hints, not shown.',
+    );
+  });
+
+  it('names the backup hints in German and keeps the server text marked as English', async () => {
+    const user = userEvent.setup();
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': () => json(diagnosis([OWNER], { backup: BACKUP })),
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByRole('button', { name: 'Diagnose starten' }));
+    const section = await screen.findByRole('region', { name: 'Sicherungen' });
+    expect(
+      within(section).getByRole('heading', { name: 'WAL-Archivierung ist aus' }),
+    ).not.toHaveAttribute('lang');
+    expect(within(section).getByRole('heading', { name: 'Noch nichts archiviert' })).toBeVisible();
+    // A code Studio does not know keeps the server's English title.
+    expect(within(section).getByRole('heading', { name: 'Other\\u202Ehint' })).toHaveAttribute(
+      'lang',
+      'en',
+    );
+    expect(
+      screen.getByRole('button', { name: 'Bericht als Markdown herunterladen' }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Bericht als JSON herunterladen' })).toBeVisible();
+  });
+
+  it('every STU-BK code of the backend has an en and a de title', async () => {
+    const codes = ['001', '002', '003', '004', '005', '010', '011', '012', '013', '014'];
+    for (const lang of ['en', 'de']) {
+      for (const code of codes) {
+        const key = `diagnostics.titles.STU-BK-${code}`;
+        expect(i18n.exists(key, { lng: lang })).toBe(true);
+      }
+    }
+  });
+});
+
+describe('TD-036: backup parsing', () => {
+  it('reads the hints with the finding parser and fails closed on a broken backup', () => {
+    expect(parseDiagnosis({ findings: [] })?.backup).toBeNull();
+    expect(parseDiagnosis({ findings: [], backup: null })?.backup).toBeNull();
+    expect(parseDiagnosis({ findings: [], backup: 'x' })?.backup).toEqual({
+      hints: [],
+      invalid: true,
+    });
+    expect(parseDiagnosis({ findings: [], backup: { facts: {} } })?.backup).toEqual({
+      hints: [],
+      invalid: true,
+    });
+    expect(
+      parseDiagnosis({
+        findings: [],
+        backup: {
+          hints: [
+            hint({ code: '' }),
+            null,
+            hint({ severity: 'info' }),
+            hint({ severity: 'error' }),
+          ],
+        },
+      })?.backup?.hints.map((item) => item.severity),
+    ).toEqual(['error', 'info']);
+  });
+});
+
+describe('TD-036: report download', () => {
+  it('posts the report route on the shown connection and saves the file under the server name', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const { calls } = await runOnce(
+      user,
+      { 'POST /api/connections/c1/diagnostics/report': () => reportAnswer() },
+      save,
+    );
+    const button = screen.getByRole('button', { name: 'Download Markdown report' });
+    expect(button).toHaveAccessibleDescription(/leaves out passwords, hosts, ports/);
+    await user.click(button);
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    const [blob, name] = save.mock.calls[0] ?? [];
+    expect(name).toBe(REPORT_NAME);
+    expect(blob?.type).toBe('text/markdown');
+    expect(await blob?.text()).toBe('# Diagnosis report\n');
+    expect(screen.getByTestId('diagnostics-message')).toHaveTextContent(
+      `Report downloaded: ${REPORT_NAME}`,
+    );
+    // No new connection: the report uses the shown one, so D-02 cannot be skipped.
+    expect(writes(calls).map((call) => [call.method, call.url, call.body])).toEqual([
+      ['POST', '/api/connections', { profile_id: 'project:parts-dev' }],
+      ['POST', '/api/connections/c1/diagnostics', {}],
+      ['POST', '/api/connections/c1/diagnostics/report', { format: 'markdown' }],
+    ]);
+    for (const call of writes(calls)) expect(call.headers['Content-Type']).toBe('application/json');
+    // The shown diagnosis stays.
+    expect(findings()).toHaveLength(1);
+  });
+
+  it('downloads the JSON report', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const name = 'tabrion-studio-diagnosis-sqlite-prod-20261112T101500Z.json';
+    const { calls } = await runOnce(
+      user,
+      {
+        'POST /api/connections/c1/diagnostics/report': () =>
+          reportAnswer('{"diagnosis": {}}', 'application/json', name),
+      },
+      save,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download JSON report' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]?.[1]).toBe(name);
+    expect(save.mock.calls[0]?.[0].type).toBe('application/json');
+    expect(writes(calls).at(-1)?.body).toEqual({ format: 'json' });
+  });
+
+  it('is aria-disabled until a diagnosis is shown and does nothing then', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const { fetcher, calls } = server();
+    render(<DiagnosticsView fetcher={fetcher} save={save} />);
+    await ready();
+    for (const name of ['Download Markdown report', 'Download JSON report']) {
+      const button = screen.getByRole('button', { name });
+      expect(button).toHaveAttribute('aria-disabled', 'true');
+      await user.click(button);
+    }
+    await settle();
+    expect(writes(calls)).toEqual([]);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("shows studio.report_unavailable and studio.report_invalid in the page's words and saves nothing", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    await runOnce(
+      user,
+      {
+        'POST /api/connections/c1/diagnostics/report': [
+          () =>
+            json(
+              { code: 'studio.report_unavailable', detail: 'server words', kind: 'database' },
+              503,
+            ),
+          () => json({ code: 'studio.report_invalid', kind: 'request' }, 400),
+        ],
+      },
+      save,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download Markdown report' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Studio could not read from the server the names the report leaves out, so it made no report.',
+    );
+    expect(alert).not.toHaveTextContent('server words');
+    expect(screen.getByTestId('diagnostics-message')).toBeEmptyDOMElement();
+    await user.click(screen.getByRole('button', { name: 'Download JSON report' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(
+        'Studio could not make the report: the request was not valid.',
+      ),
+    );
+    expect(save).not.toHaveBeenCalled();
+    // The diagnosis stays, and the report can be asked again.
+    expect(findings()).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Download JSON report' })).toHaveAttribute(
+      'aria-disabled',
+      'false',
+    );
+  });
+
+  it('fails closed on an answer of another media type, and on a network error', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    await runOnce(
+      user,
+      {
+        'POST /api/connections/c1/diagnostics/report': [
+          () => reportAnswer('<html></html>', 'text/html'),
+          () => {
+            throw new TypeError('network');
+          },
+        ],
+      },
+      save,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download Markdown report' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "The server's answer could not be read, so nothing of it is shown.",
+    );
+    await user.click(screen.getByRole('button', { name: 'Download Markdown report' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('The local server does not answer.'),
+    );
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('keeps only a file name of the server form; anything else gets a fixed name', () => {
+    const good = `attachment; filename="${REPORT_NAME}"`;
+    expect(reportFilename(good, 'markdown')).toBe(REPORT_NAME);
+    expect(reportFilename(good, 'json')).toBe('tabrion-studio-diagnosis.json');
+    for (const bad of [
+      null,
+      '',
+      'attachment; filename="../../.bashrc.md"',
+      'attachment; filename="tabrion-studio-diagnosis-a/../b.md"',
+      'attachment; filename="tabrion-studio-diagnosis-x.md.exe"',
+      'attachment; filename="tabrion-studio-diagnosis-‮gnp.md"',
+      'attachment; filename="report.md"',
+      'inline; filename="tabrion-studio-diagnosis-a.md"',
+      `attachment; filename="${REPORT_NAME}"; filename*=UTF-8''evil.md`,
+      `attachment; filename="tabrion-studio-diagnosis-${'a'.repeat(40)}.md"`,
+    ]) {
+      expect(reportFilename(bad, 'markdown')).toBe('tabrion-studio-diagnosis.md');
+    }
+  });
+
+  it('Cancel during the report posts the cancel route and drops the answer', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const pending = deferred();
+    const { calls } = await runOnce(
+      user,
+      { 'POST /api/connections/c1/diagnostics/report': pending.answer },
+      save,
+    );
+    const download = screen.getByRole('button', { name: 'Download Markdown report' });
+    await user.click(download);
+    expect(screen.getByTestId('diagnostics-message')).toHaveTextContent(
+      'Making the report. Studio runs the diagnosis again for it…',
+    );
+    expect(download).toHaveAttribute('aria-disabled', 'true');
+    expect(screen.getByRole('button', { name: 'Run again' })).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    );
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(screen.getByTestId('diagnostics-message')).toHaveTextContent('The report was canceled.');
+    pending.resolve(reportAnswer());
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+    expect(writes(calls).map((call) => call.url)).toContain(
+      '/api/connections/c1/diagnostics/cancel',
+    );
+    expect(download).toHaveAttribute('aria-disabled', 'false');
+  });
+
+  it('a profile switch or leaving the page cancels the report', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const pending = deferred();
+    const { calls, view } = await runOnce(
+      user,
+      { 'POST /api/connections/c1/diagnostics/report': pending.answer },
+      save,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download JSON report' }));
+    view.unmount();
+    pending.resolve(reportAnswer('{}', 'application/json'));
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+    expect(writes(calls).at(-1)?.url).toBe('/api/connections/c1/diagnostics/cancel');
+
+    const second = deferred();
+    const next = await runOnce(
+      user,
+      { 'POST /api/connections/c1/diagnostics/report': second.answer },
+      save,
+    );
+    await user.click(screen.getByRole('button', { name: 'Download JSON report' }));
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    second.resolve(reportAnswer('{}', 'application/json'));
+    await settle();
+    expect(save).not.toHaveBeenCalled();
+    expect(writes(next.calls).at(-1)?.url).toBe('/api/connections/c1/diagnostics/cancel');
+    expect(screen.queryByTestId('diagnostics-diagnosis')).toBeNull();
+  });
+
+  it('keeps the keyboard focus on the download button while the report is made and after', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const pending = deferred();
+    await runOnce(user, { 'POST /api/connections/c1/diagnostics/report': pending.answer }, save);
+    const download = screen.getByRole('button', { name: 'Download Markdown report' });
+    download.focus();
+    await user.keyboard('{Enter}');
+    expect(download).toHaveAttribute('aria-disabled', 'true');
+    expect(document.activeElement).toBe(download);
+    // A second press while it runs does nothing.
+    await user.keyboard('{Enter}');
+    pending.resolve(reportAnswer());
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(document.activeElement).toBe(download);
+    expect(download).toHaveAttribute('aria-disabled', 'false');
+    // Tab order: Run, Cancel, Run again, then the two downloads.
+    screen.getByRole('button', { name: 'Run again' }).focus();
+    await user.tab();
+    expect(document.activeElement).toBe(download);
+    await user.tab();
+    expect(document.activeElement).toBe(
+      screen.getByRole('button', { name: 'Download JSON report' }),
+    );
+  });
+
+  it('a PROD report asks no D-02 and opens nothing: it uses the confirmed, shown connection', async () => {
+    const user = userEvent.setup();
+    const save = vi.fn<SaveFile>();
+    const { fetcher, calls } = server({
+      'POST /api/connections/c1/diagnostics': () =>
+        json(diagnosis([OWNER], { environment: 'prod', backup: BACKUP })),
+      'POST /api/connections/c1/diagnostics/report': () => reportAnswer(),
+    });
+    render(<DiagnosticsView fetcher={fetcher} save={save} />);
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    const dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await screen.findByTestId('diagnostics-findings');
+    await user.click(screen.getByRole('button', { name: 'Download Markdown report' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(writes(calls).filter((call) => call.url === '/api/connections')).toHaveLength(1);
+  });
+});
+
+describe('TD-036: D-02 through the shared page session (useConnect)', () => {
+  function session(confirmed: boolean) {
+    return {
+      ...NO_CONNECTION_SESSION,
+      prodConfirmed: vi.fn(() => confirmed),
+      confirmProd: vi.fn(),
+    };
+  }
+
+  it('a PROD profile confirmed in this page session runs without asking again', async () => {
+    const user = userEvent.setup();
+    const shared = session(true);
+    const { fetcher, calls } = server();
+    render(
+      <ConnectionSessionContext.Provider value={shared}>
+        <DiagnosticsView fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    await screen.findByTestId('diagnostics-findings');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(shared.prodConfirmed).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user:measure' }),
+    );
+    expect(writes(calls)[0]?.body).toEqual({ profile_id: 'user:measure' });
+  });
+
+  it('D-02 confirms the profile in the page session; Cancel confirms nothing and opens nothing', async () => {
+    const user = userEvent.setup();
+    const shared = session(false);
+    const { fetcher, calls } = server();
+    render(
+      <ConnectionSessionContext.Provider value={shared}>
+        <DiagnosticsView fetcher={fetcher} />
+      </ConnectionSessionContext.Provider>,
+    );
+    await ready();
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    let dialog = screen.getByRole('dialog', { name: 'Production database' });
+    expect(dialog).toHaveAccessibleDescription(/15 s/);
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(shared.confirmProd).not.toHaveBeenCalled();
+    expect(writes(calls)).toEqual([]);
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    dialog = screen.getByRole('dialog', { name: 'Production database' });
+    await user.click(within(dialog).getByRole('button', { name: 'Connect' }));
+    await screen.findByTestId('diagnostics-findings');
+    expect(shared.confirmProd).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'user:measure' }),
+    );
+    // A DEV profile never asks.
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'project:parts-dev');
+    await user.click(screen.getByRole('button', { name: 'Run diagnosis' }));
+    await screen.findByTestId('diagnostics-findings');
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

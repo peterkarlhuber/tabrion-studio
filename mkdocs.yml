@@ -58,6 +58,7 @@ nav:
       - Installation: guide/installation.md
       - Starting and stopping: guide/starting.md
       - Connections: guide/connections.md
+      - Diagnostics: guide/diagnostics.md
       - Settings and keyboard: guide/settings.md
       - How Studio protects your data: guide/security.md
       - Troubleshooting: guide/troubleshooting.md

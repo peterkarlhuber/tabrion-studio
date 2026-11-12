@@ -12,6 +12,7 @@ This guide is for people who use Tabrion Studio. It describes what the current d
 - [Starting and stopping](starting.md): the `tabrion-studio` command, the sign-in link, one Studio per project
   folder, the logs.
 - [Connections](connections.md): your profiles, the project's profiles and the trust dialog, passwords.
+- [Diagnostics](diagnostics.md): the findings of a diagnosis, the backup hints and the report without secrets.
 - [Settings and keyboard](settings.md): language, theme, density, query limits, the command palette and the
   shortcuts.
 - [How Studio protects your data](security.md): what Studio does and does not do, in short.

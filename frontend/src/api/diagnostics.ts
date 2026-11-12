@@ -7,13 +7,19 @@
  *   title, detail, remedy, source}], counts}`.
  * - `POST /api/connections/{id}/diagnostics/cancel {}` stops the running diagnoses of that connection; their answers
  *   then carry `STU-DX-008` ("Not every check ran").
+ * - `POST /api/connections/{id}/diagnostics/report {format}` (STU-025, TD-036) runs the diagnosis again and answers the
+ *   report as a file: `text/markdown` or `application/json`, named in `Content-Disposition`. The page keeps that name
+ *   only when it has the server's form (`tabrion-studio-diagnosis-…`); otherwise it uses a fixed one.
  *
- * Fields the page does not know (such as `backup` of STU-025) are ignored. The parser fails closed: an answer without a findings list is no answer (`studio.answer_invalid`), an unknown
- * severity stays visible as `unknown` and is never counted as a lesser one, and the page counts the findings itself
- * instead of trusting `counts`. Titles, details and remedies are the server's English text and may name database
+ * The answer's `backup: {hints, facts}` (STU-025) holds the backup hints `STU-BK-*`, which are not findings and not in
+ * `counts`; the page reads the hints and ignores the facts. Fields the page does not know are ignored. The parser fails
+ * closed: an answer without a findings list is no answer (`studio.answer_invalid`), a `backup` without a hints list is
+ * shown as unreadable (never as "no hints"), an unknown severity stays visible as `unknown` and is never counted as a
+ * lesser one, and the page counts the findings itself instead of trusting `counts`. Titles, details and remedies are the server's English text and may name database
  * objects (tabrion names schemas and extensions), so the page shows them escaped and capped (`lib/visible.ts`, U-1).
  */
-import type { Problem } from './problem';
+import { apiHeaders } from '../session';
+import { OFFLINE, readProblem, type Problem } from './problem';
 import { send, type Result } from './profiles';
 import type { Environment } from '../workspace';
 
@@ -38,6 +44,14 @@ export interface Diagnosis {
   ranAt: number | null;
   /** In the server's order (severity, then code), with unknown severities first. */
   findings: Finding[];
+  /** The backup hints (STU-025), sorted like the findings; null when the answer has none (an older server). */
+  backup: Backup | null;
+}
+
+export interface Backup {
+  hints: Finding[];
+  /** True when `backup` was there but its hints could not be read: the page says so instead of "no hints". */
+  invalid: boolean;
 }
 
 /** The problem for an answer the page cannot read (it never shows a half-read diagnosis as complete). */
@@ -78,14 +92,24 @@ function parseFinding(item: unknown): Finding[] {
   ];
 }
 
+function sortFindings(findings: Finding[]): Finding[] {
+  // A stable sort keeps the server's order within one rank.
+  return findings.sort((a, b) => RANK[a.severity] - RANK[b.severity]);
+}
+
+function parseBackup(value: unknown): Backup | null {
+  if (value === undefined || value === null) return null;
+  const doc = (typeof value === 'object' ? value : {}) as Record<string, unknown>;
+  if (!Array.isArray(doc.hints)) return { hints: [], invalid: true };
+  return { hints: sortFindings(doc.hints.flatMap(parseFinding)), invalid: false };
+}
+
 /** The diagnosis, or null for an answer without a findings list. */
 export function parseDiagnosis(body: unknown): Diagnosis | null {
   if (typeof body !== 'object' || body === null) return null;
   const doc = body as Record<string, unknown>;
   if (!Array.isArray(doc.findings)) return null;
-  const findings = doc.findings.flatMap(parseFinding);
-  // A stable sort keeps the server's order within one rank.
-  findings.sort((a, b) => RANK[a.severity] - RANK[b.severity]);
+  const findings = sortFindings(doc.findings.flatMap(parseFinding));
   // Only a time a Date can hold (at most 8.64e15 ms): a larger one would throw when it is formatted (C-1).
   const ms =
     typeof doc.ran_at === 'number' && Number.isFinite(doc.ran_at) && doc.ran_at > 0
@@ -100,6 +124,7 @@ export function parseDiagnosis(body: unknown): Diagnosis | null {
       : null,
     ranAt,
     findings,
+    backup: parseBackup(doc.backup),
   };
 }
 
@@ -138,4 +163,63 @@ export async function cancelDiagnostics(
     {},
   );
   return result.ok && result.value?.canceled === true;
+}
+
+export type ReportFormat = 'markdown' | 'json';
+
+export interface Report {
+  filename: string;
+  blob: Blob;
+}
+
+const REPORT_TYPES: Record<ReportFormat, string> = {
+  markdown: 'text/markdown',
+  json: 'application/json',
+};
+const REPORT_SUFFIXES: Record<ReportFormat, string> = { markdown: '.md', json: '.json' };
+/** The server's names: `tabrion-studio-diagnosis-<engine>-<environment>-<UTC time>` (letters, digits, `-`). */
+const REPORT_NAME = /^tabrion-studio-diagnosis(?:-[A-Za-z0-9]{1,32}){1,4}$/;
+
+/** The name to save a report under: the server's when it has the expected form, else a fixed one. */
+export function reportFilename(disposition: string | null, format: ReportFormat): string {
+  const suffix = REPORT_SUFFIXES[format];
+  const name =
+    /^attachment;\s*filename="([^"]{1,200})"$/.exec(disposition?.trim() ?? '')?.[1] ?? '';
+  return name.endsWith(suffix) && REPORT_NAME.test(name.slice(0, -suffix.length))
+    ? name
+    : `tabrion-studio-diagnosis${suffix}`;
+}
+
+/**
+ * The diagnosis report of an open connection as a file. A refusal is its problem (`studio.report_unavailable`, the
+ * connection's problems); an answer of another media type is `studio.answer_invalid`, so the page never saves
+ * something it did not ask for.
+ */
+export async function downloadReport(
+  fetcher: typeof fetch,
+  connectionId: string,
+  format: ReportFormat,
+): Promise<Result<Report>> {
+  try {
+    const response = await fetcher(`${diagnosticsPath(connectionId)}/report`, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ format }),
+    });
+    if (!response.ok) return { ok: false, problem: await readProblem(response) };
+    const type = (response.headers.get('Content-Type') ?? '').split(';')[0]?.trim().toLowerCase();
+    if (type !== REPORT_TYPES[format]) return { ok: false, problem: ANSWER_INVALID };
+    const body = await response.arrayBuffer();
+    return {
+      ok: true,
+      value: {
+        filename: reportFilename(response.headers.get('Content-Disposition'), format),
+        blob: new Blob([body], { type: REPORT_TYPES[format] }),
+      },
+    };
+  } catch {
+    return { ok: false, problem: OFFLINE };
+  }
 }
