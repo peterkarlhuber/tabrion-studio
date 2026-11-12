@@ -52,7 +52,8 @@ All notable changes to this project are documented here. The format follows
   connection of a profile in a page session asks D-02, the connection test of a PROD profile included (shared with
   the migration status view; it belongs to the profile's target and is forgotten when the profile is saved or deleted
   or the project is trusted again); **Disconnect** closes it. Only the newest connect request sets the header, and it
-  never stays "connecting…" when an older request answers before or after a newer one that failed; a list of the open connections
+  never stays "connecting…" when an older request answers before or after a newer one that failed, and a connection that was open before keeps the
+  header when both fail; a list of the open connections
   read while a connect ran no longer clears the new connection from the header. A
   missing password opens the password dialog and the action runs again. Failures name the remedy (host, port, user,
   password and TLS mode; a file that is no SQLite database), never the server's text; the separate class-28 and TLS
