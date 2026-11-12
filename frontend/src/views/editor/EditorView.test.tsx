@@ -75,7 +75,12 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
       }),
     );
   }
-  const server = createQueryServer({ connectDelayMs: options.connectDelayMs ?? 0 });
+  // The profiles as the page last read them; the fake server's connection answers name their environment.
+  let seen: { profiles: { id: string; environment: string }[] } | null = null;
+  const server = createQueryServer({
+    connectDelayMs: options.connectDelayMs ?? 0,
+    environmentOf: (id) => seen?.profiles.find((item) => item.id === id)?.environment,
+  });
   const profiles = {
     ...PROFILES,
     profiles: PROFILES.profiles.map((item) =>
@@ -89,8 +94,14 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
     const url = String(input);
     requests.push({ method: init?.method ?? 'GET', url });
     const early = options.before?.(url, init) ?? null;
-    if (early !== null) return early;
-    if (url === '/api/profiles') return new Response(JSON.stringify(profiles));
+    if (early !== null) {
+      if (url === '/api/profiles' && early.ok) seen = (await early.clone().json()) as typeof seen;
+      return early;
+    }
+    if (url === '/api/profiles') {
+      seen = profiles;
+      return new Response(JSON.stringify(profiles));
+    }
     if (url === '/api/project' && options.projectPath !== undefined) {
       return new Response(JSON.stringify({ path: options.projectPath, state: 'none' }));
     }
@@ -440,6 +451,54 @@ describe('EditorView', () => {
       );
       expect(log.starts).toEqual([]);
       expect(requests).toContainEqual({ method: 'DELETE', url: '/api/connections' });
+    });
+
+    it('backstop (L-9): an answer without an environment counts as a mismatch', async () => {
+      const user = userEvent.setup();
+      const { log, requests } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url, init) =>
+            url === '/api/connections' && init?.method === 'POST'
+              ? new Response(
+                  JSON.stringify({ connection_id: 'c-x', profile_id: 'project:parts-dev' }),
+                  { status: 201 },
+                )
+              : null,
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      await waitFor(() =>
+        expect(screen.getByTestId('editor-notice')).toHaveTextContent(
+          'The server did not say which environment the connection to parts-dev is in',
+        ),
+      );
+      expect(log.starts).toEqual([]);
+      expect(requests).toContainEqual({ method: 'DELETE', url: '/api/connections' });
+    });
+
+    it('opens nothing when the profiles cannot be read again', async () => {
+      const user = userEvent.setup();
+      let reads = 0;
+      const { log, requests } = setup(
+        { sql: 'select 1' },
+        {
+          before: (url) => {
+            if (url !== '/api/profiles') return null;
+            reads += 1;
+            return reads > 1 ? new Response('{}', { status: 500 }) : null;
+          },
+        },
+      );
+      await editor();
+      await user.click(screen.getByTestId('editor-run'));
+      expect(await screen.findByTestId('editor-connect-problem')).toHaveTextContent(
+        'The local server does not answer.',
+      );
+      expect(requests.filter((r) => r.url === '/api/connections')).toEqual([]);
+      expect(log.connections).toEqual([]);
+      expect(log.starts).toEqual([]);
     });
   });
 

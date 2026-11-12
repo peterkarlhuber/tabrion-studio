@@ -998,7 +998,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   both paths and the backstop; `e2e/editor-backend.spec.ts` changes profiles to PROD through `PUT /api/profiles`
   while the editor is open. A server-side check for every page comes from the STU-008 lane; whether the connection
   manager's own list has the same staleness is for that lane too (`stu-012-review.md`, "To check for #42").
-
+- **Done after delta review 3 (L-9):** the backstop compares the server's answer with the profile that passed D-02
+  (not the one read again), and an answer without an environment counts as a mismatch. When the profile list cannot
+  be read again, nothing is opened: Vitest, and `e2e/editor-backend.spec.ts` with `/api/profiles` failing (no
+  `POST /api/connections`). The test fake's connection answer names the profile's environment, like the server's.
 - **Drafts in the state database:** 08 keeps drafts in Studio's state database; the MVP keeps the tabs' titles,
   profiles and text in the browser's `localStorage` (`src/views/editor/drafts.ts`), which is per port like TD-021,
   under a key per project (a hash of the project's folder) and merged by tab between pages. Move them behind an API

@@ -12,10 +12,13 @@
  *   memory bound in bytes (M-4 of stu-012-review.md).
  * - `connectDelayMs` delays every answer to `POST /api/connections` (the races while connecting, M-2 of
  *   stu-012-review.md).
+ * - the answer to `POST /api/connections` names the profile's environment like the server's: `environmentOf` when
+ *   given (a test that changes profiles), else that of the harness profiles.
  *
  * `requests` records what the page sent (no parameter value is ever logged by the real server; this is a test fake).
  */
 import type { ParamValue } from '../api/queries';
+import { PROFILES } from './profiles';
 
 interface FakeQuery {
   id: string;
@@ -58,7 +61,12 @@ function problem(code: string, status: number): Response {
   return json({ code, kind: code.startsWith('db.') ? 'database' : 'request', status }, status);
 }
 
-export function createQueryServer(options: { connectDelayMs?: number } = {}): {
+export function createQueryServer(
+  options: {
+    connectDelayMs?: number;
+    environmentOf?: (profileId: string) => string | undefined;
+  } = {},
+): {
   handle: (url: string, init?: RequestInit) => Promise<Response> | null;
   log: QueryLog;
 } {
@@ -131,7 +139,12 @@ export function createQueryServer(options: { connectDelayMs?: number } = {}): {
     if (url === '/api/connections' && method === 'POST') {
       const body = JSON.parse(String(init?.body ?? '{}')) as { profile_id?: string };
       log.connections.push(body.profile_id ?? '');
-      const answer = json({ connection_id: `c-${body.profile_id ?? ''}` }, 201);
+      // Like the server, the answer names the profile's environment (the editor's backstop checks it, C-5 and L-9).
+      const id = body.profile_id ?? '';
+      const environment =
+        options.environmentOf?.(id) ??
+        PROFILES.profiles.find((item) => item.id === id)?.environment;
+      const answer = json({ connection_id: `c-${id}`, profile_id: id, environment }, 201);
       const delay = options.connectDelayMs ?? 0;
       if (delay === 0) return Promise.resolve(answer);
       return new Promise((resolve) => setTimeout(() => resolve(answer), delay));

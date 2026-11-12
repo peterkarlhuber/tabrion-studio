@@ -359,15 +359,6 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     [patchRun],
   );
 
-  /** The tab's connection: opened once per profile (D-02 is asked before, in `start`). */
-  /**
-   * The connection of `item`, the profile as it was when the run passed D-02 (`start`). A known connection is used as
-   * it is. Before a new one (the first, or again after `studio.connection_stale`), the profile is read again from the
-   * server, because another page or an edit of `profiles.toml` may have changed it since this page read it (C-5 of
-   * `stu-012-review.md`): when its environment or target changed, nothing is opened, the page takes the new profile
-   * and the user runs again, which asks D-02 for a PROD profile. As a backstop the server's answer must name the same
-   * environment; else that connection is closed again and the run stops.
-   */
   /** A profile changed on the server: its results (rows of the old target or environment) and connection go. */
   const forgetProfile = useCallback((profileId: string) => {
     connections.current.delete(profileId);
@@ -383,6 +374,15 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setDetail(null);
   }, []);
 
+  /**
+   * The connection of `item`, the profile as it was when the run passed D-02 (`start`). A known connection is used as
+   * it is. Before a new one (the first, or again after `studio.connection_stale`), the profile is read again from the
+   * server, because another page or an edit of `profiles.toml` may have changed it since this page read it (C-5 of
+   * `stu-012-review.md`): when its environment or target changed, nothing is opened, the page takes the new profile
+   * and the user runs again, which asks D-02 for a PROD profile. As a backstop the server's answer must name the
+   * environment of `item`, the profile that passed D-02 (an answer without an environment counts as a mismatch, L-9);
+   * else that connection is closed again and the run stops.
+   */
   const connect = useCallback(
     async (item: ProfileItem): Promise<string | null> => {
       const known = connections.current.get(item.id);
@@ -415,16 +415,18 @@ export function EditorView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         return null;
       }
       const environment = opened.value.environment;
-      if (environment !== null && environment !== fresh.environment) {
+      if (environment !== item.environment) {
         void closeConnection(fetcher, opened.value.connectionId);
         forgetProfile(item.id);
         const again = await fetchProfiles(fetcher);
         if (again !== null) setProfiles(again.profiles);
         setNotice(
-          t('editor.profileChanged', {
-            name: visible(fresh.name),
-            environment: environment.toUpperCase(),
-          }),
+          environment === null
+            ? t('editor.environmentUnknown', { name: visible(item.name) })
+            : t('editor.profileChanged', {
+                name: visible(fresh.name),
+                environment: environment.toUpperCase(),
+              }),
         );
         return null;
       }

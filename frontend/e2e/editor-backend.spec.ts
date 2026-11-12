@@ -410,3 +410,34 @@ test('a profile changed to PROD elsewhere never connects without D-02 (C-5)', as
   await expect(page.getByRole('dialog', { name: 'Production database' })).toBeVisible();
   expect(violations).toEqual([]);
 });
+
+test('a profile list that cannot be read again opens no connection (L-9)', async ({ page }) => {
+  const violations = await signIn(page);
+  expect(
+    await api(page, 'POST', '/api/profiles', {
+      profile: { name: 'e2e-dev5', engine: 'sqlite', environment: 'dev', path: database },
+      digest: await userDigest(page),
+      overwrite: false,
+    }),
+  ).toBe(201);
+  await openEditor(page);
+  await page.getByTestId('editor-profile').selectOption('user:e2e-dev5');
+  await type(page, 'select 1');
+  // From now on the server's profile list fails, so the editor cannot check the profile before connecting.
+  await page.route('**/api/profiles', (route) => route.fulfill({ status: 500, body: '{}' }));
+  const opens: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && new URL(request.url()).pathname === '/api/connections') {
+      opens.push(request.url());
+    }
+  });
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByTestId('editor-connect-problem')).toHaveText(
+    'The local server does not answer.',
+  );
+  await expect(page.getByRole('grid')).toHaveCount(0);
+  expect(opens).toEqual([]);
+  await page.unroute('**/api/profiles');
+  expect(await openProfiles(page, 'e2e-dev5')).toEqual([]);
+  expect(violations).toEqual([]);
+});

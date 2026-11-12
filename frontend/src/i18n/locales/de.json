@@ -865,6 +865,7 @@
     },
     "canceledBeforeStart": "Abgebrochen, bevor die Abfrage begann.",
     "profileChanged": "Das Profil {{name}} hat sich geändert, seit diese Seite es gelesen hat (jetzt {{environment}}). Darauf wurde nichts ausgeführt; führen Sie erneut aus, um es so zu verwenden, wie es jetzt ist.",
-    "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt."
+    "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt.",
+    "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt."
   }
 }

@@ -865,6 +865,7 @@
     },
     "canceledBeforeStart": "Canceled before the query started.",
     "profileChanged": "The profile {{name}} changed since this page read it (now {{environment}}). Nothing was run on it; run again to use it as it is now.",
-    "profileGone": "The profile {{name}} no longer exists. Nothing was run."
+    "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
+    "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run."
   }
 }
