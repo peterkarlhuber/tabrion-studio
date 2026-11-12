@@ -1,12 +1,26 @@
 /** STU-010: the explorer's parsers fail closed, and its requests only read. */
-import { PG_EXTENSIONS, PG_TABLES, SQLITE_CATALOG, SQLITE_INFO } from '../harness/explorer';
+import {
+  PG_DDL,
+  PG_EXTENSIONS,
+  PG_POLICIES,
+  PG_TABLES,
+  SQLITE_CATALOG,
+  SQLITE_COUNTS,
+  SQLITE_INFO,
+} from '../harness/explorer';
 import {
   count,
   epochMs,
   fetchCatalog,
+  fetchDdl,
+  fetchPolicies,
+  fetchRowCount,
   fetchTable,
   parseCatalog,
+  parseDdl,
   parseExtensions,
+  parsePolicies,
+  parseRowCount,
   parseSqliteInfo,
   parseTable,
 } from './explorer';
@@ -221,5 +235,109 @@ describe('requests', () => {
       ok: false,
       problem: { code: 'studio.offline' },
     });
+  });
+});
+
+describe('STU-022: parseDdl, parsePolicies and parseRowCount', () => {
+  it('read the backend shapes', () => {
+    const ddl = parseDdl(PG_DDL.measurement_id_seq);
+    expect(ddl?.statements).toHaveLength(2);
+    expect(ddl?.ddl).toMatch(/^CREATE SEQUENCE public\.measurement_id_seq\n/);
+    expect(ddl?.owner).toBe('measure_owner');
+    expect(ddl?.notes).toHaveLength(1);
+    const policies = parsePolicies(PG_POLICIES.measurement);
+    expect(policies?.rlsEnabled).toBe(true);
+    expect(policies?.rlsApplies).toBe(true);
+    expect(policies?.currentRole).toEqual({
+      name: 'analyst',
+      superuser: false,
+      bypassRls: false,
+      owner: false,
+    });
+    expect(policies?.policies.map((policy) => [policy.command, policy.permissive])).toEqual([
+      ['SELECT', true],
+      ['ALL', false],
+    ]);
+    expect(policies?.policies[1]?.withCheck).toBe('false');
+    expect(parseRowCount(SQLITE_COUNTS.part)).toEqual({
+      schema: 'main',
+      name: 'part',
+      count: 1234,
+      elapsedMs: 3,
+    });
+  });
+
+  it.each([
+    ['DDL without statements', () => parseDdl({ ...PG_DDL.device, statements: null })],
+    ['DDL without its text', () => parseDdl({ ...PG_DDL.device, ddl: 1 })],
+    [
+      'DDL with a statement that is not text',
+      () => parseDdl({ ...PG_DDL.device, statements: [{}] }),
+    ],
+    ['policies without the list', () => parsePolicies({ ...PG_POLICIES.device, policies: {} })],
+    [
+      'policies without rls_enabled',
+      () => parsePolicies({ ...PG_POLICIES.device, rls_enabled: 1 }),
+    ],
+    [
+      'policies without rls_applies',
+      () => parsePolicies({ ...PG_POLICIES.device, rls_applies: null }),
+    ],
+    ['policies without the role', () => parsePolicies({ ...PG_POLICIES.device, current_role: [] })],
+    [
+      'a policy without a name',
+      () =>
+        parsePolicies({
+          ...PG_POLICIES.device,
+          policies: [{ permissive: true, command: 'ALL', roles: [] }],
+        }),
+    ],
+    ['a count that is not a count', () => parseRowCount({ ...SQLITE_COUNTS.part, count: -1 })],
+    ['a count without a name', () => parseRowCount({ ...SQLITE_COUNTS.part, name: null })],
+  ])('refuse %s', (_, parse) => {
+    expect(parse()).toBeNull();
+  });
+
+  it('only GET in the query form, and an answer for another object or connection is refused', async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const answer = (body: unknown) =>
+      (async (input: RequestInfo | URL, init?: RequestInit) => {
+        calls.push({ url: String(input), init });
+        return new Response(JSON.stringify(body), { status: 200 });
+      }) as unknown as typeof fetch;
+    const invalid = { ok: false, problem: { code: 'studio.answer_invalid' } };
+    expect(await fetchDdl(answer(PG_DDL.device), 'c-pg', 'public', 'device')).toMatchObject({
+      ok: true,
+    });
+    expect(await fetchDdl(answer(PG_DDL.device), 'c-pg', 'public', 'measurement')).toMatchObject(
+      invalid,
+    );
+    expect(await fetchDdl(answer(PG_DDL.device), 'c-other', 'public', 'device')).toMatchObject(
+      invalid,
+    );
+    expect(
+      await fetchPolicies(answer(PG_POLICIES.device), 'c-pg', 'audit', 'device'),
+    ).toMatchObject(invalid);
+    expect(
+      await fetchRowCount(answer(SQLITE_COUNTS.part), 'c-sqlite', 'main', 'material'),
+    ).toMatchObject(invalid);
+    const { connection_id: _, ...anonymous } = SQLITE_COUNTS.part as { connection_id: string };
+    expect(await fetchRowCount(answer(anonymous), 'c-sqlite', 'main', 'part')).toMatchObject({
+      ok: true,
+    });
+    await fetchPolicies(answer(PG_POLICIES.device), 'c 1', 'my/schema', 'a/b&c');
+    expect(calls.map((call) => call.url)).toEqual([
+      '/api/connections/c-pg/ddl?schema=public&name=device',
+      '/api/connections/c-pg/ddl?schema=public&name=measurement',
+      '/api/connections/c-other/ddl?schema=public&name=device',
+      '/api/connections/c-pg/policies?schema=audit&name=device',
+      '/api/connections/c-sqlite/row-count?schema=main&name=material',
+      '/api/connections/c-sqlite/row-count?schema=main&name=part',
+      '/api/connections/c%201/policies?schema=my%2Fschema&name=a%2Fb%26c',
+    ]);
+    for (const call of calls) {
+      expect(call.init?.method).toBeUndefined();
+      expect(call.init?.credentials).toBe('same-origin');
+    }
   });
 });

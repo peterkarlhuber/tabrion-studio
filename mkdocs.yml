@@ -59,6 +59,7 @@ nav:
       - Starting and stopping: guide/starting.md
       - Connections: guide/connections.md
       - Diagnostics: guide/diagnostics.md
+      - Explorer: guide/explorer.md
       - SQL editor: guide/sql-editor.md
       - Settings and keyboard: guide/settings.md
       - How Studio protects your data: guide/security.md

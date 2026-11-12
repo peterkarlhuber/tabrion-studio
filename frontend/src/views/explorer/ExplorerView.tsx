@@ -536,6 +536,8 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         onTab={setTab}
         find={find}
         onFollow={follow}
+        fetcher={fetcher}
+        connectionId={opened?.connectionId ?? ''}
       />
     );
   } else if (detail?.status === 'extensions') {

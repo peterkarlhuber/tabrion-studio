@@ -13,6 +13,8 @@ This guide is for people who use Tabrion Studio. It describes what the current d
   folder, the logs.
 - [Connections](connections.md): your profiles, the project's profiles and the trust dialog, passwords.
 - [Diagnostics](diagnostics.md): the findings of a diagnosis, the backup hints and the report without secrets.
+- [Explorer](explorer.md): the objects of a database, their details, DDL and row-level security policies, row
+  counts.
 - [SQL editor](sql-editor.md): running reading statements, parameters, results, cancel, tabs and drafts.
 - [Settings and keyboard](settings.md): language, theme, density, query limits, the command palette and the
   shortcuts.

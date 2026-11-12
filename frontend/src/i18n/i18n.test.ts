@@ -54,6 +54,10 @@ const SAME_IN_BOTH = new Set([
   'explorer.indexes.name',
   'explorer.extensions.version',
   'explorer.extensions.schema',
+  // STU-022: the DDL and policies tabs, technical terms German uses as they are.
+  'explorer.tabs.ddl',
+  'explorer.tabs.policies',
+  'explorer.policies.name',
   'app.name',
   'app.title',
   'app.connectionTitle',
