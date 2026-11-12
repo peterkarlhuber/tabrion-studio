@@ -866,11 +866,17 @@ PLANTED_OPERATORS = (
     ("name", "text", "!~"),
 )
 TRAP = "studio_ddl_trap"
+#: Functions planted next to the operators. With native hstore off the dialect's setup sends no operator, and its only
+#: unqualified call is ``current_schema()``, so that plant makes a setup without its fixed search_path fail the
+#: ``public_before_pg_catalog`` variant (DL-1 of td-039-review.md). The dialect asks for ``pg_catalog.version()``
+#: qualified; ``version()`` is planted only as a guard against an unqualified call later. Each answers like
+#: pg_catalog's until the trap is armed.
+PLANTED_FUNCTIONS = (("current_schema", "name"), ("version", "text"))
 
 
 def plant(admin: sqlalchemy.Connection, attacker: str) -> None:
-    """Operators in ``public``, owned by ``attacker``. Each answers like pg_catalog's until the trap is armed (a row
-    in ``public.studio_ddl_trap``), then raises: a call after arming fails its statement."""
+    """Operators and functions in ``public``, owned by ``attacker``. Each answers like pg_catalog's until the trap is
+    armed (a row in ``public.studio_ddl_trap``), then raises: a call after arming fails its statement."""
     admin.exec_driver_sql(f"CREATE TABLE public.{TRAP} (armed boolean)")
     admin.exec_driver_sql(f"ALTER TABLE public.{TRAP} OWNER TO {attacker}")
     admin.exec_driver_sql(f"GRANT SELECT ON public.{TRAP} TO PUBLIC")
@@ -886,9 +892,18 @@ def plant(admin: sqlalchemy.Connection, attacker: str) -> None:
             f"CREATE OPERATOR public.{symbol} (LEFTARG = {left}, RIGHTARG = {right}, FUNCTION = {function})"
         )
         admin.exec_driver_sql(f"ALTER OPERATOR public.{symbol} ({left}, {right}) OWNER TO {attacker}")
+    for name, returns in PLANTED_FUNCTIONS:
+        admin.exec_driver_sql(
+            f"CREATE FUNCTION public.{name}() RETURNS {returns} LANGUAGE plpgsql "
+            f"AS $$BEGIN IF EXISTS (SELECT FROM public.{TRAP}) THEN RAISE EXCEPTION '{TRAP} called'; END IF; "
+            f"RETURN pg_catalog.{name}(); END$$"
+        )
+        admin.exec_driver_sql(f"ALTER FUNCTION public.{name}() OWNER TO {attacker}")
 
 
 def unplant(admin: sqlalchemy.Connection) -> None:
+    for name, _ in PLANTED_FUNCTIONS:
+        admin.exec_driver_sql(f"DROP FUNCTION IF EXISTS public.{name}()")
     for number, (left, right, symbol) in enumerate(PLANTED_OPERATORS):
         admin.exec_driver_sql(f"DROP OPERATOR IF EXISTS public.{symbol} ({left}, {right})")
         admin.exec_driver_sql(f"DROP FUNCTION IF EXISTS public.{TRAP}_{number}({left}, {right})")
@@ -918,8 +933,9 @@ def browse(definitions: Definitions, connection_id: str) -> None:
 )
 @pytest.mark.parametrize("user_schema_first", [False, True], ids=["pg_catalog_implicit", "public_before_pg_catalog"])
 def test_pg_h1_planted_operators_are_never_called(user_schema_first: bool) -> None:
-    """Another role plants raising operators in ``public``; browsing as the Studio role calls none of them, also
-    when the role's ``search_path`` puts ``public`` before ``pg_catalog``. The control shows they are on the path."""
+    """Another role plants raising operators and functions in ``public``; opening a connection and browsing as the
+    Studio role calls none of them, also when the role's ``search_path`` puts ``public`` before ``pg_catalog``. The
+    control shows they are on the path."""
     assert PG_URL is not None and PG_SUPERUSER_URL is not None
     create_schemas(PG_URL)
     url = sqlalchemy.make_url(PG_URL)
@@ -946,6 +962,8 @@ def test_pg_h1_planted_operators_are_never_called(user_schema_first: bool) -> No
         controls = ["SELECT 1 FROM pg_catalog.pg_class c WHERE c.reltuples >= 0 LIMIT 1"]
         if user_schema_first:
             controls.append("SELECT 1 FROM pg_catalog.pg_class c WHERE c.relname = 'pg_class' LIMIT 1")
+            # The functions the dialect's setup calls unqualified (DL-1): reached only with public first.
+            controls += ["SELECT current_schema()", "SELECT version()"]
         for control in controls:
             with pytest.raises(Exception, match="P0001"):  # raise_exception: the planted function ran
                 registry.get(connection_id).fetch(control, catalog=False)
