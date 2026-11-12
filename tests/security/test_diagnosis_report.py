@@ -200,6 +200,7 @@ def test_an_unreadable_folder_is_a_hint(tmp_path: Path, monkeypatch: pytest.Monk
     assert found == {"STU-BK-001": "warning", "STU-BK-004": "info"}
 
 
+@posix
 def test_no_hint_or_fact_names_a_path_or_file(tmp_path: Path) -> None:
     folder = tmp_path / CANARY
     database = sqlite_file(folder / f"{CANARY}.db")
