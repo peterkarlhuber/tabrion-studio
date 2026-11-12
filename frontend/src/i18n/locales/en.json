@@ -300,6 +300,7 @@
       "constraints": "Constraints",
       "indexes": "Indexes",
       "relationships": "Relationships",
+      "data": "Data",
       "sqlite": "SQLite"
     },
     "columns": {
@@ -349,6 +350,13 @@
       "bytes_one": "{{size}} byte",
       "bytes_other": "{{size}} bytes",
       "mode": "File permissions"
+    },
+    "actions": {
+      "data": "Show data",
+      "select": "SELECT … LIMIT 100 in the SQL editor",
+      "copy": "Copy name",
+      "copied": "Name copied.",
+      "copyFailed": "The name could not be copied."
     }
   },
   "migrations": {
@@ -900,6 +908,85 @@
     "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
     "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run.",
     "exportSubject": "result {{number}} of {{tab}}"
+  },
+  "viewer": {
+    "loading": "Loading the page…",
+    "gridLabel": "Data of {{name}}",
+    "pageSize": "Rows per page",
+    "previous": "Previous",
+    "next": "Next",
+    "refresh": "Reload page",
+    "firstPage": "Back to the first page",
+    "limited": "Pages here hold at most {{rows}} rows, so that a page of the widest values stays within the browser’s memory limit.",
+    "cutByBytes": "This page stopped at the result size limit; “Next” shows the rest.",
+    "sort": {
+      "label": "Sort by",
+      "none": "Table order",
+      "direction": "Direction",
+      "asc": "Ascending",
+      "desc": "Descending"
+    },
+    "search": {
+      "label": "Search this page",
+      "matches_one": "{{count}} of {{total}} rows on this page match.",
+      "matches_other": "{{count}} of {{total}} rows on this page match."
+    },
+    "status": {
+      "rows": "Rows {{first}}–{{last}}; more rows follow.",
+      "rowsLast": "Rows {{first}}–{{last}}; this is the last page.",
+      "empty": "There are no rows.",
+      "noMatch": "No row matches the filters."
+    },
+    "hint": {
+      "no_primary_key": "No primary key: the rows are paged by their physical position (rowid or ctid), which is not stable when the table changes.",
+      "unstable_order": "No primary key: the rows are paged by position, so their order may change between pages."
+    },
+    "filter": {
+      "title": "Filters",
+      "applied_one": "({{count}} applied)",
+      "applied_other": "({{count}} applied)",
+      "add": "Add filter",
+      "apply": "Apply",
+      "clear": "Clear filters",
+      "column": "Column of filter {{number}}",
+      "op": "Operator of filter {{number}}",
+      "value": "Value of filter {{number}}",
+      "remove": "Remove filter {{number}}",
+      "chooseColumn": "Choose a column for every filter.",
+      "tooLong": "These filters are too long for one request. Shorten their values or use fewer filters.",
+      "most": "At most {{count}} filters.",
+      "caseSqlite": "All filters must hold. “contains” and “starts with” ignore the case of ASCII letters on SQLite.",
+      "casePostgres": "All filters must hold. “contains” and “starts with” respect case on PostgreSQL."
+    },
+    "ops": {
+      "eq": "=",
+      "ne": "≠",
+      "lt": "<",
+      "le": "≤",
+      "gt": ">",
+      "ge": "≥",
+      "contains": "contains",
+      "starts_with": "starts with",
+      "is_null": "is NULL",
+      "not_null": "is not NULL"
+    },
+    "full": {
+      "load": "Load in full",
+      "loading": "Loading the whole value…",
+      "done": "The whole value is shown ({{size}} bytes).",
+      "cut": "The first 10 MB of the value are shown (it has {{size}} bytes).",
+      "unavailable": "Rows of a view without a primary key cannot be found again, so the whole value cannot be loaded here. Open it with a query in the SQL editor."
+    },
+    "problems": {
+      "viewer_column_unknown": "The object has no column with this name anymore. Refresh the catalog.",
+      "viewer_filter_invalid": "A filter is not valid.",
+      "viewer_filter_too_long": "These filters are too long for one request. Shorten their values or use fewer filters.",
+      "viewer_sort_unsupported": "This column cannot be sorted (its type has no order, for example json, xml or a geometric type). Sort by another column.",
+      "viewer_page_unknown": "Studio no longer keeps this page. Start again at the first page.",
+      "viewer_cell_unavailable": "The whole value cannot be loaded for this row. Open it with a query in the SQL editor.",
+      "viewer_row_gone": "The row is no longer there, or it changed. Reload the page.",
+      "query_limit": "Studio is already running as many queries as it allows, in all or on this connection. Wait for one to finish."
+    }
   },
   "export": {
     "title": "Export",

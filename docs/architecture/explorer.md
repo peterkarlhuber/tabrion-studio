@@ -151,11 +151,14 @@ and by the header.
   from 2 000 objects on the page says that it loads names only.
 - **Filter:** a name prefix (case-insensitive; with a dot, a prefix of `schema.name`) and an object type (03 section
   2 B). Matching groups open; a status line counts the matches. ⌘P / Ctrl+P focuses the filter on this page.
-- **Details:** tabs Columns, Constraints, Indexes, Relationships and, on SQLite, the table's `STRICT` and
-  `WITHOUT ROWID`. A related table is a button that selects it and moves the focus to its tree row. PostgreSQL
+- **Details:** tabs Columns, Constraints, Indexes, Relationships, Data (tables, views, materialized views and
+  foreign tables; the data viewer of the STU-013 page, see [Data viewer](viewer.md#the-page-stu-013-page)) and, on
+  SQLite, the table's `STRICT` and `WITHOUT ROWID`. Above the tabs, **Show data** selects the Data tab and focuses
+  it, **SELECT … LIMIT 100 in the SQL editor** opens that statement in a new editor tab on the same profile (nothing
+  runs by itself), and **Copy name** copies the qualified name. A related table is a button that selects it and moves the focus to its tree row. PostgreSQL
   shows the row estimate; the extensions node lists versions and updates; the SQLite file node lists the pragmas,
   the file size and its permission bits.
-- **Safety:** the page sends only GET requests and the connection open; it offers no action that changes the
+- **Safety:** the page sends only GET requests (the explorer's and the data viewer's) and the connection open; it offers no action that changes the
   database (STU-026 stays locked). Every database text is escaped (`visible()`: control, separator and bidi
   characters as `\uXXXX`) and cut with a visible "…" (names 64, types 64, defaults 160, comments and check texts
   300 characters); lists stop after 500 entries with "and N more".
@@ -168,8 +171,8 @@ and by the header.
 - **Stale answers:** a profile switch, an open or a refresh counts up one request counter, a selection a second one;
   only the latest answer of each is shown. A refresh keeps the selection of the moment it answers.
 
-Open: "Open in editor" and "SELECT … LIMIT 100" (with the SQL editor, #41), the DDL and policies tab (with STU-022,
-#38), the data tab (STU-013 page), the virtualized tree and following the header's connection; see TD-041.
+Open: the tree's context menu (its actions are buttons above the tabs for now), the DDL and policies tab (with
+STU-022, #38), the virtualized tree and following the header's connection; see TD-041.
 
 ## Tests
 

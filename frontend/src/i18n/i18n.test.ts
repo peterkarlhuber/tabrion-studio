@@ -77,6 +77,13 @@ const SAME_IN_BOTH = new Set([
   'editor.detail.kind.json',
   'editor.detail.kind.bytes',
   'editor.result.statement',
+  // The data viewer (STU-013): the comparison operators are symbols.
+  'viewer.ops.eq',
+  'viewer.ops.ne',
+  'viewer.ops.lt',
+  'viewer.ops.le',
+  'viewer.ops.gt',
+  'viewer.ops.ge',
 ]);
 
 describe('translations (de and en)', () => {

@@ -64,6 +64,7 @@ import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
 import { prodKey } from '../../workspace';
 import { CellDetail, type OpenCell } from './CellDetail';
+import { takeHandoff } from './handoff';
 import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
 import { formatCount, formatMs, formatSeconds } from './format';
 import { ParamPanel, paramFieldId } from './ParamPanel';
@@ -309,11 +310,23 @@ export function EditorView({
       const key = draftsKey(project?.path ?? '');
       const drafts = readDrafts(key);
       // The drafts, or a first tab (on the first profile, or none).
-      const first = drafts?.tabs ?? [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))];
+      let first = drafts?.tabs ?? [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))];
+      let activeTab = drafts?.activeTab ?? first[0]?.id ?? '';
+      // A statement from another page (the explorer's "SELECT … LIMIT 100"): a new tab, never run by itself.
+      const handed = takeHandoff();
+      if (handed !== null) {
+        const created = {
+          ...newTab(first.length + 1, handed.profileId, i18n.t.bind(i18n)),
+          title: handed.title,
+          sql: handed.sql,
+        };
+        first = drafts === null ? [created] : [...first, created];
+        activeTab = created.id;
+      }
       for (const item of first) known.current.add(item.id);
       setProfiles(items);
       setTabs(first);
-      setActiveId(drafts?.activeTab ?? first[0]?.id ?? '');
+      setActiveId(activeTab);
       setDraftKey(key);
     });
     void fetchSettings(fetcher).then((state) => {

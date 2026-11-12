@@ -226,3 +226,8 @@
 .update {
   font-weight: var(--tb-weight-semibold);
 }
+.objectActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-space-2);
+}

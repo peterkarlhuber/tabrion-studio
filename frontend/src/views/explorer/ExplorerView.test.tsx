@@ -588,6 +588,7 @@ describe('the details', () => {
       'Constraints',
       'Indexes',
       'Relationships',
+      'Data',
       'SQLite',
     ]);
     const columns = await within(detail).findAllByTestId('detail-column');
@@ -622,17 +623,17 @@ describe('the details', () => {
         .map((i) => i.textContent),
     ).toEqual(['main.part_relation (assembly_id) → id', 'main.property (part_id) → id']);
     await user.keyboard('{End}');
-    expect(tabs[4]).toHaveFocus();
+    expect(tabs[5]).toHaveFocus();
     expect(within(detail).getByTestId('detail-sqlite')).toHaveTextContent(
       'STRICTYesWITHOUT ROWIDNo',
     );
     await user.keyboard('{Home}');
     expect(tabs[0]).toHaveFocus();
     await user.keyboard('{ArrowLeft}'); // wraps around
-    expect(tabs[4]).toHaveFocus();
+    expect(tabs[5]).toHaveFocus();
     // The panel is labelled by its tab and takes the focus (WAI-ARIA tabs).
     const panel = within(detail).getByRole('tabpanel');
-    expect(panel).toHaveAttribute('aria-labelledby', tabs[4]?.id);
+    expect(panel).toHaveAttribute('aria-labelledby', tabs[5]?.id);
     expect(panel).toHaveAttribute('tabindex', '0');
   });
 
