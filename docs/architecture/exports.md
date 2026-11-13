@@ -63,7 +63,7 @@ statement through `OpenConnection.stream` in its own `Database.read()`, like eve
 |---|---|
 | Rows | `max_rows`, 1 to 1 000 000 (the default is 1 000 000); a JSON export over it says `"truncated": "rows"` |
 | Time | 10 minutes; then the export is canceled like a query (PostgreSQL cancel, SQLite interrupt) |
-| Parallel | One export per connection and 2 at a time (`studio.export_busy`). Each holds one of the connection's sessions while it runs |
+| Parallel | One export per connection and 2 at a time (`studio.export_busy`). Each holds one of the connection's sessions while it runs; the slot is freed when its transaction has ended, before the client sees the end or the error (TD-057) |
 | Memory | Bounded (see below); the acceptance of STU-021 is 1 million rows with a peak under 100 MB, and so are wide rows of up to 1 MB after narrow ones (wider rows: see below) |
 
 ## Streaming and memory

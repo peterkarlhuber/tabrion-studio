@@ -695,6 +695,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Export: starting the next export on a connection right after the previous one was downloaded to its end could
+  be refused with `studio.export_busy`, because the finished export freed its slot only after its last log line.
+  The slot is now freed as soon as the export's transaction has ended, before the end or the error reaches the
+  client; an earlier export can no longer free a later one's slot (TD-057).
+- Export and query engine: when a worker or its timeout timer could not start (no more threads), the export's slot
+  or a `running` query stayed taken until restart, and the export's download waited forever. Both now end with an
+  error and free their slot (TD-057, review F-1 of PR #80).
 - The accessibility audit's Tab-stop walk (STU-053) measures each stop one task after the focus moved, because WebKit
   scrolls a newly focused element into view from a zero-delay timer; the explorer's selected tree row, below the
   fold since the "View" group was added, read as out of view now and then in the WebKit job (TD-058). Test only.

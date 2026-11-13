@@ -157,6 +157,46 @@ def test_a_query_runs_and_pages(lite: tuple[QueryEngine, str, Source]) -> None:
     assert page["rows"] == [[2, "part 1"]] and page["row_count"] == 3
 
 
+def test_td057_f1_a_query_whose_worker_cannot_start_keeps_no_slot(
+    lite: tuple[QueryEngine, str, Source], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TD-057 review F-1: a query whose worker thread cannot start is not left ``running`` (it would hold one of the
+    connection's slots until restart); more such failures than the per-connection limit still leave room."""
+    engine, connection_id, _ = lite
+    start = threading.Thread.start
+
+    def failing_start(self: threading.Thread) -> None:
+        if self.name.startswith("studio-query-"):
+            raise RuntimeError("can't start new thread")
+        start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", failing_start)
+    for _ in range(engine.per_connection + 1):
+        with pytest.raises(RuntimeError):
+            engine.start(connection_id, "SELECT 1")
+    assert not [query for query in engine._queries.values() if not query.finished]
+    monkeypatch.setattr(threading.Thread, "start", start)
+    assert wait(engine.start(connection_id, "SELECT 1 AS one")).status()["state"] == "done"
+
+
+def test_td057_f1_a_query_whose_timer_cannot_start_ends_as_failed(
+    lite: tuple[QueryEngine, str, Source], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    engine, connection_id, _ = lite
+    start = threading.Timer.start
+
+    def failing_start(self: threading.Timer) -> None:
+        if threading.current_thread().name.startswith("studio-query-"):
+            raise RuntimeError("can't start new thread")
+        start(self)
+
+    monkeypatch.setattr(threading.Timer, "start", failing_start)
+    status = wait(engine.start(connection_id, "SELECT 1 AS one")).status()
+    assert status["state"] == "failed" and status["problem"]["code"] == "studio.internal_error"
+    monkeypatch.setattr(threading.Timer, "start", start)
+    assert wait(engine.start(connection_id, "SELECT 1 AS one")).status()["state"] == "done"
+
+
 def test_i2_a_colon_inside_a_literal_is_text(lite: tuple[QueryEngine, str, Source]) -> None:
     engine, connection_id, _ = lite
     query = wait(engine.start(connection_id, "SELECT ':name' AS x, '%' AS p"))
