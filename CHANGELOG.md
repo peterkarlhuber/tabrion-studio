@@ -481,6 +481,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- STU-016 review F-7 (T-16, TD-054): the migration code trust also covers the project modules under the
+  `prepend_sys_path` folders (every `*.py` in identifier-named folders, by path and bytes), so a changed or new
+  module asks for trust again. The digest is versioned: a project trusted before needs trust again. Over the caps
+  (5 000 modules, 32 MB, 256 KB per module) or with a link out of the project, the code cannot be trusted. The
+  worker runs only the hashed module bytes, and the trust dialog lists the modules and says what is checked (en/de).
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
   (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
   so numbers must be written in decimal) in the editor, the

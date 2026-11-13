@@ -437,7 +437,7 @@
       "unavailable": "Studio could not read the trust state of the project's migration code.",
       "none": "The project has no Alembic configuration (alembic.ini with a script_location). Studio reads SQLite's user_version without it.",
       "untrusted": "The project's Alembic files are not trusted. Studio shows the version in the database, but not the revisions, until you trust them.",
-      "changed": "The project's Alembic files changed after you trusted them. Review them again to read the revisions.",
+      "changed": "The project's Alembic files changed after you trusted them, or this version of Studio checks more of them. Review them again to read the revisions.",
       "trusted_one": "You trust the project's Alembic files ({{count}} revision file).",
       "trusted_other": "You trust the project's Alembic files ({{count}} revision files).",
       "invalid": "Studio cannot trust the project's Alembic files: {{reason}}",
@@ -454,6 +454,9 @@
       "file_name": "a revision file has a name Studio does not accept.",
       "unreadable": "the files could not be read.",
       "changed": "the files changed while Studio read them.",
+      "too_many_modules": "the prepend_sys_path folders hold more project modules than Studio checks.",
+      "modules_too_large": "the project modules in the prepend_sys_path folders are larger than Studio checks.",
+      "link_outside": "a link in a prepend_sys_path folder points outside the project folder.",
       "other": "the check failed ({{code}})."
     },
     "status": {
@@ -717,10 +720,11 @@
     },
     "trustCode": {
       "title": "Run the project's migration code?",
-      "body": "To read the revisions, Studio imports the project's Alembic files, which runs their code on this computer, in a separate process that stops after 30 seconds. The code runs as you, as with alembic heads: it gets the open connection's address and password, so it can change the database, and it can read your files and Studio's settings. Trust it only if you would run it yourself. Studio asks again when alembic.ini or a revision file changes; the project modules that revision files import are trusted with them but not checked for changes.",
+      "body": "To read the revisions, Studio imports the project's Alembic files, which runs their code on this computer, in a separate process that stops after 30 seconds. The code runs as you, as with alembic heads: it gets the open connection's address and password, so it can change the database, and it can read your files and Studio's settings. Trust it only if you would run it yourself. Studio checks alembic.ini, the revision files and the project modules in the prepend_sys_path folders, which revision files can import, and asks again when any of them changes or a module is added.",
       "stale": "The files changed after they were shown. This is the new list: review it again before you trust it.",
       "config": "Alembic configuration",
       "files": "Revision files",
+      "modules": "Project modules (prepend_sys_path)",
       "reject": "Don't trust",
       "trust": "Trust and run"
     }

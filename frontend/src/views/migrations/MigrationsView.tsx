@@ -50,6 +50,9 @@ const ISSUES = new Set([
   'file_name',
   'unreadable',
   'changed',
+  'too_many_modules',
+  'modules_too_large',
+  'link_outside',
 ]);
 
 function issueReason(t: TFunction, issue: string | null): string {
@@ -541,6 +544,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
           configFile={trust.configFile ?? 'alembic.ini'}
           scriptLocation={trust.scriptLocation}
           revisionFiles={trust.revisionFiles}
+          moduleFiles={trust.moduleFiles}
           stale={stale}
           onReject={() => setDialog(null)}
           onTrust={() => void trustNow(trust.digest ?? '')}

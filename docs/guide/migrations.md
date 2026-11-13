@@ -29,12 +29,15 @@ after you trusted these files:
   in the database but "unknown" for the revisions.
 - **Review files** opens "Run the project's migration code?". It says what trusting means (the code runs as you, in a
   separate process for at most 30 seconds, with the open connection's address and password) and lists
-  `alembic.ini`, the `script_location` and every revision file. The focus starts on **Don't trust**; Escape rejects.
+  `alembic.ini`, the `script_location`, every revision file and every project module in the `prepend_sys_path`
+  folders (the modules revision files can import). The focus starts on **Don't trust**; Escape rejects.
   **Trust and run** trusts exactly the files shown. If they changed meanwhile, the dialog shows the new list first.
-- When `alembic.ini` or a revision file changes later, the section says so and Studio asks again before it runs any
-  of them. **Stop trusting** takes the trust back.
-- A folder Studio cannot check (a `script_location` outside the project, a revision file that is a link, too many
-  files) cannot be trusted; the section names the reason.
+- When `alembic.ini`, a revision file or a project module changes later, or a module is added, the section says so
+  and Studio asks again before it runs any of them. After an update of Studio that checks more files, it asks again
+  once as well. **Stop trusting** takes the trust back.
+- A folder Studio cannot check (a `script_location` outside the project, a revision file that is a link, a link in a
+  `prepend_sys_path` folder that points outside the project, too many or too large files) cannot be trusted; the
+  section names the reason.
 
 ## When something goes wrong
 

@@ -11,19 +11,20 @@ timeout. Its connection is read-only like every Studio connection (:func:`.conne
 Input (JSON): ``{target, project, script_location, sys_path, digest}``. Output (JSON, one line): ``{current, heads,
 pending, is_current, unknown}`` or ``{error: <problem code>}``. The order matters (review of #29):
 
-1. The worker computes the digest of ``alembic.ini`` and the revision files again and keeps the bytes it hashed; it
-   refuses to run if the digest is not the trusted one.
+1. The worker computes the digest of ``alembic.ini``, the revision files and the project modules under the import
+   roots again and keeps the bytes it hashed; it refuses to run if the digest is not the trusted one. The folders it
+   adds to ``sys.path`` are the import roots of its own scan.
 2. It opens the read-only connection once before the project's folders are on ``sys.path``, so the database driver
    and what the first connection imports come from Studio's environment, not from a module of the same name in the
    project.
 3. It never reads bytecode of the project: no ``__pycache__`` (``sys.pycache_prefix`` is an empty private folder,
    nothing is written), and the project's folders get a finder for ``.py`` sources only (no ``.pyc`` or extension
-   module there).
+   module there), whose loader compiles the module bytes of step 1 and refuses a module that was not hashed (F-7).
 4. Alembic's ``load_python_file`` is replaced, for the revision files, by one that compiles the bytes of step 1, so
    what runs is what was hashed, and a file that was not hashed is not loaded.
 
-What the measures do not cover: a revision file may import other modules of the project (``prepend_sys_path``), whose
-sources the digest does not cover; and trusted code runs as the user (see T-16 in ``docs/architecture/migrations.md``).
+What the measures do not cover: trusted code runs as the user, and what it reads or runs by other means than an
+import from the roots (see T-16 in ``docs/architecture/migrations.md``).
 """
 
 from __future__ import annotations
@@ -57,32 +58,62 @@ def _inside(path: str, root: str) -> bool:
         return False
 
 
-def _source_only(folders: list[str]) -> Callable[[str], Any]:
+def _lexically_inside(path: str, root: str) -> bool:
+    try:
+        return os.path.commonpath([os.path.abspath(path or os.curdir), root]) == root
+    except ValueError:  # another drive (Windows)
+        return False
+
+
+def _hashed_modules(modules: Mapping[str, bytes]) -> type[importlib.machinery.SourceFileLoader]:
+    """A source loader that compiles the hashed bytes of a project module (by :func:`.code_trust.module_key` of its
+    path) and refuses a module that was not hashed; it never looks for bytecode."""
+    from tabrion_studio.config.code_trust import module_key
+
+    class HashedSourceLoader(importlib.machinery.SourceFileLoader):
+        def get_data(self, path: str) -> bytes:
+            if path.endswith(".py"):
+                data = modules.get(module_key(path))
+                if data is None:
+                    raise ImportError("not a trusted project module")
+                return data
+            return super().get_data(path)  # a package's data file, not code
+
+        def path_stats(self, path: str) -> Mapping[str, Any]:
+            raise OSError("no bytecode")  # get_code then reads the source (get_data) and compiles it
+
+    return HashedSourceLoader
+
+
+def _source_only(folders: list[str], modules: Mapping[str, bytes] | None = None) -> Callable[[str], Any]:
     """A path hook: the project's ``sys_path`` folders and the packages in them get a finder for ``.py`` sources only.
 
-    Folders that were on ``sys.path`` before (Studio's own environment, also a virtual environment inside the project)
-    keep the interpreter's finder."""
+    With ``modules`` (the hashed module bytes), the loader runs those bytes and refuses any other module. A folder
+    counts as the project's when its path or its real path lies under a root, so a link under a root does not lead to
+    the interpreter's finder. Folders that were on ``sys.path`` before (Studio's own environment, also a virtual
+    environment inside the project) keep the interpreter's finder."""
     roots = [os.path.realpath(folder) for folder in folders]
     own = [os.path.realpath(entry) for entry in sys.path if entry]
-    hook = importlib.machinery.FileFinder.path_hook(
-        (importlib.machinery.SourceFileLoader, importlib.machinery.SOURCE_SUFFIXES)
-    )
+    loader = importlib.machinery.SourceFileLoader if modules is None else _hashed_modules(modules)
+    hook = importlib.machinery.FileFinder.path_hook((loader, [".py"]))
 
     def find(path: str) -> Any:
-        if not any(_inside(path, root) for root in roots) or any(_inside(path, entry) for entry in own):
+        if any(_inside(path, entry) for entry in own) or not any(
+            _inside(path, root) or _lexically_inside(path, root) for root in roots
+        ):
             raise ImportError("not a project folder")  # the next hook (the interpreter's own) takes it
         return hook(path)
 
     return find
 
 
-def _no_bytecode(folders: list[str]) -> str:
+def _no_bytecode(folders: list[str], modules: Mapping[str, bytes] | None = None) -> str:
     """No bytecode is read or written from here on, and none from the project's folders; the private, empty cache
     folder to remove afterwards."""
     cache = tempfile.mkdtemp(prefix="tabrion-studio-worker-")
     sys.dont_write_bytecode = True
     sys.pycache_prefix = os.path.join(cache, "none")  # never created: every later import compiles its source
-    sys.path_hooks.insert(0, _source_only(folders))
+    sys.path_hooks.insert(0, _source_only(folders, modules))
     sys.path_importer_cache.clear()
     return cache
 
@@ -146,8 +177,8 @@ def _status(request: dict[str, Any]) -> dict[str, Any]:
         with db.read():
             pass
         # A folder only: no archive (zipimport reads bytecode).
-        folders = [folder for folder in request["sys_path"] if os.path.isdir(folder)]
-        cache = _no_bytecode(folders)
+        folders = [str(folder) for folder in found.sys_path if os.path.isdir(folder)]
+        cache = _no_bytecode(folders, found.modules)
         alembic_util.load_python_file = _hashed_loader(found.script_location / "versions", found.contents)
         for folder in reversed(folders):
             sys.path.insert(0, folder)

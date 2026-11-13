@@ -771,3 +771,185 @@ def test_pg_trusted_status_through_the_worker(tmp_path: Path, monkeypatch: pytes
         with admin.begin() as connection:
             connection.exec_driver_sql("DROP TABLE IF EXISTS public.alembic_version")
         admin.dispose()
+
+
+# The project modules under the import roots (review finding F-7).
+
+
+def test_what_the_trust_covers(shop: Shop) -> None:
+    (shop.project / "shop_pkg" / "sub").mkdir(parents=True)
+    (shop.project / "shop_pkg" / "__init__.py").write_text("")
+    (shop.project / "shop_pkg" / "sub" / "rules.py").write_text("RULES = 1\n")
+    doc = shop.code.load().to_dict(shop.project)
+    assert doc["import_roots"] == ["."]
+    assert doc["module_files"] == [
+        "migrations/versions/0001_parts.py",
+        "migrations/versions/0002_suppliers.py",
+        "shop_models.py",
+        "shop_pkg/__init__.py",
+        "shop_pkg/sub/rules.py",
+    ]
+    (shop.project / "alembic.ini").write_text(INI.replace("prepend_sys_path = .", "prepend_sys_path = shop_pkg"))
+    doc = shop.code.load().to_dict(shop.project)
+    assert doc["import_roots"] == ["shop_pkg"] and doc["module_files"] == [
+        "shop_pkg/__init__.py",
+        "shop_pkg/sub/rules.py",
+    ]
+
+
+def test_a_changed_project_module_takes_the_trust_back(shop: Shop) -> None:
+    trust(shop)
+    module = shop.project / "shop_models.py"
+    module.write_text('NAME = "changed"\n')
+    assert shop.code.load().state == "changed"
+    found = alembic(shop.migrations.status(shop.connection_id))
+    assert found["code_trust"] == "changed" and found["revisions"] == NOT_TRUSTED and found["heads"] is None
+    assert shop.ran() is None
+    module.write_text('NAME = "shop"\n')
+    assert shop.code.load().state == "trusted"
+
+
+@pytest.mark.parametrize(
+    "added", ["shop_extra.py", "shop_pkg/__init__.py", "shop_pkg/sub/rules.py", "migrations/helpers.py", "odd-name.py"]
+)
+def test_a_new_project_module_takes_the_trust_back(shop: Shop, added: str) -> None:
+    trust(shop)
+    path = shop.project / added
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("VALUE = 1\n")
+    assert shop.code.load().state == "changed"
+    assert shop.ran() is None
+
+
+@pytest.mark.parametrize(
+    "skipped",
+    [
+        "__pycache__/shop_models.cpython-313.pyc",
+        "shop_models.pyc",
+        ".venv/lib/helper.py",
+        ".git/hooks/helper.py",
+        "node_modules/helper.py",
+        "env/site-packages/helper.py",
+        "not-a-package/helper.py",
+        "notes.txt",
+    ],
+)
+def test_files_that_cannot_be_imported_from_the_roots_are_not_covered(shop: Shop, skipped: str) -> None:
+    trust(shop)
+    path = shop.project / skipped
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("VALUE = 1\n")
+    assert shop.code.load().state == "trusted"
+
+
+def test_a_virtual_environment_under_a_root_is_not_covered(shop: Shop) -> None:
+    trust(shop)
+    venv = shop.project / "venv"
+    (venv / "lib").mkdir(parents=True)
+    (venv / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (venv / "lib" / "helper.py").write_text("VALUE = 1\n")
+    assert shop.code.load().state == "trusted"
+
+
+@pytest.mark.parametrize(
+    ("cap", "value", "issue"),
+    [
+        ("MAX_MODULE_FILES", 2, "migrations.too_many_modules"),
+        ("MAX_SCANNED_ENTRIES", 3, "migrations.too_many_modules"),
+        ("MAX_MODULE_BYTES", 10, "migrations.modules_too_large"),
+        (None, None, "migrations.modules_too_large"),
+    ],
+)
+def test_project_modules_over_the_caps_cannot_be_trusted(
+    shop: Shop, monkeypatch: pytest.MonkeyPatch, cap: str | None, value: int | None, issue: str
+) -> None:
+    trust(shop)
+    if cap is None:
+        (shop.project / "shop_big.py").write_text("#" * (256 * 1024 + 1))  # over the per-file cap
+    else:
+        monkeypatch.setattr(f"tabrion_studio.config.code_trust.{cap}", value)
+    state = shop.code.load()
+    assert (state.state, state.issue) == ("invalid", issue)  # fail closed: the earlier trust does not hold
+    found = alembic(shop.migrations.status(shop.connection_id))
+    assert found["code_trust"] == "invalid" and found["heads"] is None
+    with pytest.raises(Exception) as raised:
+        shop.code.trust("a" * 64)
+    assert getattr(raised.value, "code", None) == "studio.migrations_invalid"
+    assert shop.ran() is None
+
+
+@posix
+@pytest.mark.parametrize("kind", ["file", "folder", "dangling"])
+def test_a_link_out_of_the_project_cannot_be_trusted(shop: Shop, tmp_path: Path, kind: str) -> None:
+    trust(shop)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "shared.py").write_text("VALUE = 1\n")
+    if kind == "file":
+        (shop.project / "shared.py").symlink_to(outside / "shared.py")
+    elif kind == "folder":
+        (shop.project / "shared").symlink_to(outside, target_is_directory=True)
+    else:
+        (shop.project / "shared.py").symlink_to(outside / "gone.py")
+    state = shop.code.load()
+    assert (state.state, state.issue) == ("invalid", "migrations.link_outside")
+    assert alembic(shop.migrations.status(shop.connection_id))["heads"] is None
+    assert shop.ran() is None
+
+
+@posix
+def test_a_link_inside_the_project_is_not_followed(shop: Shop) -> None:
+    (shop.project / "alias.py").symlink_to(shop.project / "shop_models.py")
+    (shop.project / "loop").symlink_to(shop.project, target_is_directory=True)
+    state = shop.code.load()
+    assert state.state == "untrusted" and state.scan is not None
+    assert "alias.py" not in state.scan.module_files and not any(
+        name.startswith("loop/") for name in state.scan.module_files
+    )
+
+
+def test_a_record_of_the_earlier_digest_scheme_needs_trust_again(shop: Shop) -> None:
+    trust(shop)
+    record = json.loads(shop.code.record.read_text())
+    assert record["version"] == 2
+    record["version"] = 1  # trusted before the modules were covered: the digest alone must not keep the trust
+    shop.code.record.write_text(json.dumps(record))
+    assert shop.code.load().state == "changed"
+    assert alembic(shop.migrations.status(shop.connection_id))["heads"] is None
+    record["version"] = True
+    shop.code.record.write_text(json.dumps(record))
+    assert shop.code.load().state == "untrusted"
+    trust(shop)
+    assert shop.code.load().state == "trusted"
+
+
+def test_the_worker_runs_the_hashed_modules_and_no_other(shop: Shop) -> None:
+    ran_instead = shop.project / "module-ran"
+    body = (
+        "import importlib, json, pathlib\n"
+        "here = pathlib.Path(__file__).resolve().parents[2]\n"
+        f"here.joinpath('shop_models.py').write_text({probe(ran_instead) + 'NAME = 1'!r})\n"
+        f"here.joinpath('late_module.py').write_text({probe(ran_instead)!r})\n"
+        "importlib.invalidate_caches()\n"
+        "import shop_models\n"
+        "try:\n    import late_module\n    late = True\nexcept ImportError:\n    late = False\n"
+        "here.joinpath('ran.json').write_text(json.dumps({'module': shop_models.NAME, 'late': late}))\n"
+    )
+    (shop.project / "migrations" / "versions" / "0001_parts.py").write_text(revision("0001", None, body))
+    trust(shop)
+    found = alembic(shop.migrations.status(shop.connection_id))
+    assert found["heads"] == ["0002"] and found["problem"] is None
+    assert shop.ran() == {"module": "shop", "late": False}  # the hashed bytes; a module added later is not loaded
+    assert not ran_instead.exists()
+
+
+def test_import_roots_and_module_names_on_windows() -> None:
+    """``prepend_sys_path`` with drives, and the names and keys of modules with Windows paths."""
+    import ntpath
+
+    from tabrion_studio.config.code_trust import _relative, module_key, sys_path_entries
+
+    assert sys_path_entries(r"C:\proj\src;C:/proj/lib, .", windows=True) == [r"C:\proj\src", "C:/proj/lib", "."]
+    assert sys_path_entries("src:lib vendor,tools", windows=False) == ["src", "lib", "vendor", "tools"]
+    assert _relative(r"C:\Proj\src\pkg\models.py", r"C:\Proj", ntpath) == "src/pkg/models.py"
+    assert module_key(r"C:\Proj\SRC\Models.py", ntpath) == module_key(r"c:/proj/src/models.py", ntpath)

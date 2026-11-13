@@ -23,6 +23,8 @@ export interface CodeTrust {
   digest: string | null;
   scriptLocation: string | null;
   revisionFiles: string[];
+  /** The project modules in the `prepend_sys_path` folders that the trust covers as well (F-7). */
+  moduleFiles: string[];
   /** A fixed issue code of the server when the layout cannot be trusted (`state: 'invalid'`). */
   issue: string | null;
 }
@@ -153,6 +155,7 @@ export function parseCodeTrust(body: unknown): CodeTrust | null {
     digest: text(doc.digest),
     scriptLocation: text(doc.script_location),
     revisionFiles: texts(doc.revision_files) ?? [],
+    moduleFiles: texts(doc.module_files) ?? [],
     issue: text(doc.issue),
   };
 }

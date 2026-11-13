@@ -437,7 +437,7 @@
       "unavailable": "Studio konnte den Vertrauensstatus des Migrationscodes nicht lesen.",
       "none": "Das Projekt hat keine Alembic-Konfiguration (alembic.ini mit script_location). Die user_version von SQLite liest Studio auch ohne sie.",
       "untrusted": "Den Alembic-Dateien des Projekts wird nicht vertraut. Studio zeigt die Version in der Datenbank, die Revisionen aber erst, wenn du ihnen vertraust.",
-      "changed": "Die Alembic-Dateien des Projekts haben sich geändert, seit du ihnen vertraut hast. Prüfe sie erneut, um die Revisionen zu lesen.",
+      "changed": "Die Alembic-Dateien des Projekts haben sich geändert, seit du ihnen vertraut hast, oder diese Version von Studio prüft mehr davon. Prüfe sie erneut, um die Revisionen zu lesen.",
       "trusted_one": "Du vertraust den Alembic-Dateien des Projekts ({{count}} Revisionsdatei).",
       "trusted_other": "Du vertraust den Alembic-Dateien des Projekts ({{count}} Revisionsdateien).",
       "invalid": "Studio kann den Alembic-Dateien des Projekts nicht vertrauen: {{reason}}",
@@ -454,6 +454,9 @@
       "file_name": "eine Revisionsdatei hat einen Namen, den Studio nicht annimmt.",
       "unreadable": "die Dateien konnten nicht gelesen werden.",
       "changed": "die Dateien haben sich geändert, während Studio sie las.",
+      "too_many_modules": "die prepend_sys_path-Ordner enthalten mehr Projektmodule, als Studio prüft.",
+      "modules_too_large": "die Projektmodule in den prepend_sys_path-Ordnern sind größer, als Studio prüft.",
+      "link_outside": "ein Link in einem prepend_sys_path-Ordner zeigt aus dem Projektordner hinaus.",
       "other": "die Prüfung ist fehlgeschlagen ({{code}})."
     },
     "status": {
@@ -717,10 +720,11 @@
     },
     "trustCode": {
       "title": "Migrationscode des Projekts ausführen?",
-      "body": "Um die Revisionen zu lesen, importiert Studio die Alembic-Dateien des Projekts und führt damit ihren Code auf diesem Computer aus, in einem eigenen Prozess, der nach 30 Sekunden beendet wird. Der Code läuft unter deinem Benutzer, wie bei alembic heads: Er erhält Adresse und Passwort der offenen Verbindung, kann also die Datenbank ändern, und er kann deine Dateien und die Einstellungen von Studio lesen. Vertraue ihm nur, wenn du ihn selbst ausführen würdest. Studio fragt erneut, wenn sich alembic.ini oder eine Revisionsdatei ändert; Projektmodule, die Revisionsdateien importieren, gelten als mitvertraut, werden aber nicht auf Änderungen geprüft.",
+      "body": "Um die Revisionen zu lesen, importiert Studio die Alembic-Dateien des Projekts und führt damit ihren Code auf diesem Computer aus, in einem eigenen Prozess, der nach 30 Sekunden beendet wird. Der Code läuft unter deinem Benutzer, wie bei alembic heads: Er erhält Adresse und Passwort der offenen Verbindung, kann also die Datenbank ändern, und er kann deine Dateien und die Einstellungen von Studio lesen. Vertraue ihm nur, wenn du ihn selbst ausführen würdest. Studio prüft alembic.ini, die Revisionsdateien und die Projektmodule in den prepend_sys_path-Ordnern, die Revisionsdateien importieren können, und fragt erneut, wenn sich eine davon ändert oder ein Modul hinzukommt.",
       "stale": "Die Dateien haben sich geändert, nachdem sie angezeigt wurden. Das ist die neue Liste: Prüfe sie erneut, bevor du ihr vertraust.",
       "config": "Alembic-Konfiguration",
       "files": "Revisionsdateien",
+      "modules": "Projektmodule (prepend_sys_path)",
       "reject": "Nicht vertrauen",
       "trust": "Vertrauen und ausführen"
     }

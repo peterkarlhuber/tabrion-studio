@@ -56,7 +56,7 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist, functions included (F-2); `trusted_schema` off | STU-T-024 and the F-2 tests (`test_read_only.py`) | **Not met at `e186178`** (review F-2); fixed with tests in the read-only hardening PR, re-review pending |
 | T-14 Network exposure | No `--host` | STU-T-025 | Covered |
 | T-15 Cached answers | `Cache-Control: no-store` | STU-T-026; every refusal in `test_every_route.py` | Covered |
-| T-16 Trusted project code (Alembic) | Code trust bound to file digests, isolated worker | `test_migrations.py` | Covered; the digest does not cover project modules that revision files import (documented; review F-7, owner decision) |
+| T-16 Trusted project code (Alembic) | Code trust bound to file digests (also the project modules on `prepend_sys_path`, F-7), isolated worker | `test_migrations.py` | Covered; residual: what trusted code runs by other means than an import from those folders (documented in T-16) |
 
 ## The pages and their API
 
@@ -143,13 +143,13 @@ reproduction steps, stays outside the repository.
 | F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed in the request-limits PR: caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)) |
 | F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | **Owner decision:** finish TD-033 before a public release, or accept the risk and say so in the user guide |
 | F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | **Owner decision:** hashed pins used in CI and documented, before G-R |
-| F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | **Owner decision:** hash those modules too, or say so in the trust dialog |
+| F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | Fixed in the F-7 PR (TD-054): the digest covers them, versioned (earlier trust is renewed), fail closed over its caps; the dialog lists them; re-review pending |
 | F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed in the request-limits PR: the control token is checked in the middleware for every control path but the proof; dot segments in `/api/*` paths reach no route |
 | F-9 | Info | This page said "covered" for SQ-05, T-06 and T-13 | Fixed: this page |
 
 Re-review conditions: F-1 and F-2 fixed with tests, merged and re-reviewed; F-3 and F-4 fixed or accepted by the
-owner; F-5, F-6 and F-7 recorded as owner decisions. G-S1 stays the owner's decision after the re-review, and the
-human security review before a public release (STU-028, G-R) stays mandatory.
+owner; F-5 and F-6 recorded as owner decisions; F-7 fixed (TD-054). G-S1 stays the owner's decision after the
+re-review, and the human security review before a public release (STU-028, G-R) stays mandatory.
 
 ## For the human reviewer
 

@@ -1,8 +1,10 @@
 """Migration status and code trust routes (03 sections 2 F and 6, STU-015, threat T-16).
 
 * ``GET /api/project/code-trust``: whether Studio may run the project's Alembic revision files: ``{state, trusted,
-  format, config_file, digest, script_location, revision_files, issue, notice}``; ``state`` is ``none``,
-  ``untrusted``, ``changed``, ``trusted`` or ``invalid``. ``notice`` is the fixed text the trust dialog shows.
+  format, config_file, digest, script_location, revision_files, import_roots, module_files, issue, notice}``;
+  ``state`` is ``none``, ``untrusted``, ``changed``, ``trusted`` or ``invalid``. ``import_roots`` are the
+  ``prepend_sys_path`` folders and ``module_files`` the project modules under them that the digest covers (F-7).
+  ``notice`` is the fixed text the trust dialog shows.
 * ``POST /api/project/code-trust`` with ``{"digest": "<the digest the dialog showed>"}``: 204, or a problem
   (``studio.trust_stale`` when the files changed meanwhile, ``studio.migrations_invalid``, ``studio.no_migrations``).
 * ``DELETE /api/project/code-trust`` (with a JSON body, like every changing request): 204; the code is not trusted
@@ -35,8 +37,8 @@ NOTICE = (
     "does this only when you trust this project's code, in a separate process that gets the open connection's "
     "address and password and stops after 30 seconds. The code runs as you, as with alembic heads: it can use "
     "that password to change the database and can read your files and Studio's settings. Trust only code you would "
-    "run yourself. Any change to alembic.ini or a revision file needs your trust again; the project modules that "
-    "revision files import are part of the trusted code but are not checked for changes."
+    "run yourself. Studio checks alembic.ini, the revision files and the project modules in the prepend_sys_path "
+    "folders, which revision files can import: any change to them, also a new module, needs your trust again."
 )
 _MAX_BODY = 4096
 

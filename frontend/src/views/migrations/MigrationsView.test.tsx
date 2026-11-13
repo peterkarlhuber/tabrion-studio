@@ -25,6 +25,8 @@ function trust(extra: Record<string, unknown> = {}) {
     digest: DIGEST,
     script_location: 'migrations',
     revision_files: ['0001_init.py', HOSTILE_FILE],
+    import_roots: ['.'],
+    module_files: ['shop/models.py', `shop/${HOSTILE_FILE}`],
     issue: null,
     notice: 'server text that the page does not show',
     ...extra,
@@ -175,6 +177,17 @@ describe('migration status view: code trust (T-16)', () => {
     ).toEqual(['0001_init.py', 'evil\\u202Eyp.py']);
     expect(within(dialog).getByTestId('trust-code-config')).toHaveTextContent('alembic.ini');
     expect(within(dialog).getByTestId('trust-code-config')).toHaveTextContent('migrations');
+    // The project modules in the prepend_sys_path folders are covered too (F-7), and the dialog says so.
+    expect(dialog).toHaveAccessibleDescription(/project modules in the prepend_sys_path folders/);
+    const modules = within(dialog).getByTestId('trust-code-modules');
+    expect(within(modules).getByRole('heading')).toHaveTextContent(
+      'Project modules (prepend_sys_path) (2)',
+    );
+    expect(
+      within(modules)
+        .getAllByRole('listitem')
+        .map((item) => item.querySelector('code')?.textContent),
+    ).toEqual(['shop/models.py', 'shop/evil\\u202Eyp.py']);
     expect(dialog.textContent).not.toContain(BIDI);
     expect(dialog.textContent).not.toContain('server text');
     await user.click(within(dialog).getByRole('button', { name: 'Trust and run' }));
@@ -483,8 +496,12 @@ describe('migration API parsing', () => {
       digest: null,
       scriptLocation: null,
       revisionFiles: ['a.py'],
+      moduleFiles: [],
       issue: null,
     });
+    expect(parseCodeTrust({ state: 'trusted', module_files: ['m.py', null] })?.moduleFiles).toEqual(
+      ['m.py'],
+    );
     expect(parseMigrations('x')).toBeNull();
     const parsed = parseMigrations({
       connection_id: 'c1',

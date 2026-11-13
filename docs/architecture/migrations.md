@@ -8,7 +8,7 @@ STU-024 adds the Levuvo formats Nodestro, Axentra and Orkexa on PostgreSQL. Stud
 | Route | Answer |
 |---|---|
 | `GET /api/connections/{id}/migrations` | `{connection_id, engine, formats: [...]}`, one entry per format found (and per schema and namespace for the Levuvo formats) |
-| `GET /api/project/code-trust` | `{state, trusted, format, config_file, digest, script_location, revision_files, issue, notice}` |
+| `GET /api/project/code-trust` | `{state, trusted, format, config_file, digest, script_location, revision_files, import_roots, module_files, issue, notice}` |
 | `POST /api/project/code-trust` | `{"digest": "<the digest the dialog showed>"}`: 204, or `studio.trust_stale`, `studio.migrations_invalid`, `studio.no_migrations` |
 | `DELETE /api/project/code-trust` | 204: the project's code is not trusted any more |
 
@@ -90,13 +90,27 @@ on "no code from project files". That still holds for the profiles, but not for 
 repository (AT4) could put any code into a revision file. So:
 
 - **Off by default.** Without a trust record, the state is `untrusted`, and no project code runs.
-- **Trust is per project and bound to the files.** The page shows `notice`, `script_location` and the list of revision
-  files, and sends back the digest it showed. The digest is SHA-256 over `alembic.ini` and every `*.py` directly in
-  `versions` (name and bytes). The record is `<state_dir>/code-trust-<key>.json` (0600). Any change to these files
-  makes the state `changed`, and nothing runs until the user trusts the new digest. `DELETE` takes the trust back.
+- **Trust is per project and bound to the files.** The page shows `notice`, `script_location`, the list of revision
+  files and the list of project modules, and sends back the digest it showed. The digest is SHA-256 over
+  `alembic.ini`, every `*.py` directly in `versions` (name and bytes), the import roots and the project modules under
+  them. The record is `<state_dir>/code-trust-<key>.json` (0600). Any change to these files, also a new module, makes
+  the state `changed`, and nothing runs until the user trusts the new digest. `DELETE` takes the trust back.
+- **Project modules are covered (review finding F-7).** The import roots are the `prepend_sys_path` folders of
+  `alembic.ini` that exist inside the project; they are the only folders the worker adds to `sys.path`. Under each
+  root, the digest covers every `*.py` file in the root and in its sub-folders whose names are Python identifiers,
+  by its path relative to the project (`/`-separated on every platform, sorted) and its bytes (`module_files`).
+  Skipped: `__pycache__` and bytecode, `node_modules`, `site-packages`, folders whose names are not identifiers (such
+  as `.git` or `.venv`) and virtual environments (a folder with `pyvenv.cfg`). Skipping is safe because the worker
+  loads no module from under a root that was not hashed (see the worker).
+- **A versioned digest.** The record holds the digest scheme's version (2 since F-7). A record of an earlier scheme
+  is `changed`: a project trusted before the modules were covered needs trust again, it does not keep it silently.
 - **Checked on the file system.** The `script_location` must lie inside the project, also after links are followed.
   A revision file that is a link or not a regular file, more than 5 000 revision files, or a file over the
-  configuration size cap (256 KB) makes the state `invalid`, which cannot be trusted.
+  configuration size cap (256 KB) makes the state `invalid`, which cannot be trusted. Under the import roots, links
+  are never followed: a link that points outside the project makes the state `invalid` (`link_outside`), a link
+  inside it is skipped. More than 5 000 modules, more than 32 MB of modules in all, a module over 256 KB
+  (`too_many_modules`, `modules_too_large`) or more than 50 000 folder entries under the roots make it `invalid` too:
+  Studio refuses to run rather than run code it did not check.
 
 ## The worker
 
@@ -118,8 +132,10 @@ worker runs), so no file of the project is imported while the worker starts.
   table.
 - **Checked again, and run as checked.** The worker computes the digest again and refuses to import anything if it
   differs (`studio.migrations_changed`). It keeps the bytes it hashed, and Alembic's loader for the revision files is
-  replaced by one that compiles exactly those bytes. A revision file that changes on disk afterwards, or a file that
-  was not hashed, is not run.
+  replaced by one that compiles exactly those bytes; the import roots it puts on `sys.path` are those of its own
+  scan. A revision file that changes on disk afterwards, or a file that was not hashed, is not run. The same holds
+  for the project modules: their loader compiles the hashed bytes (found by the module's real path) and refuses a
+  module that was not hashed, also one reached through a link under a root.
 - **No bytecode of the project.** The worker writes no bytecode, and from the moment the project's folders are on
   `sys.path` it reads none: `sys.pycache_prefix` points to an empty private folder, so no `__pycache__` file is used,
   and the `prepend_sys_path` folders get an import finder for `.py` sources only (no `.pyc` or extension module).
@@ -148,7 +164,7 @@ worker runs), so no file of the project is imported while the worker starts.
 
 | ID | STRIDE | Threat | Measure | Test |
 |---|---|---|---|---|
-| T-16 | E/I | AT4: a revision file of a cloned project runs code when Studio reads the Alembic revision graph (`ScriptDirectory` imports `versions/*.py`). That code could read Studio's secrets or act with them. | The revision graph is read only when the project's code is trusted, which is off by default and bound to the digest of `alembic.ini` and the revision files; no other project code runs before the user trusts it. The worker runs the hashed bytes, reads no bytecode of the project and loads the driver before the project's folders are on `sys.path`. It is a separate process that gets only the open connection's target on standard input, with a minimal environment and closed standard streams, and its process group is killed after the answer or after 30 s (POSIX). Without trust, the revisions are `unknown (project not trusted)`, and `current` comes from plain SQL. Once trusted, the code runs as the user: the separate process and the read-only connection protect against mistakes, not against the trusted code (see below). | `tests/security/test_migrations.py` |
+| T-16 | E/I | AT4: a revision file of a cloned project runs code when Studio reads the Alembic revision graph (`ScriptDirectory` imports `versions/*.py`). That code could read Studio's secrets or act with them. | The revision graph is read only when the project's code is trusted, which is off by default and bound to the digest of `alembic.ini`, the revision files and the project modules under the `prepend_sys_path` folders (review F-7; versioned, so an earlier trust needs renewing); no other project code runs before the user trusts it. The worker runs the hashed bytes of the revision files and the modules and loads no other module from those folders, reads no bytecode of the project and loads the driver before the project's folders are on `sys.path`. It is a separate process that gets only the open connection's target on standard input, with a minimal environment and closed standard streams, and its process group is killed after the answer or after 30 s (POSIX). Without trust, the revisions are `unknown (project not trusted)`, and `current` comes from plain SQL. Once trusted, the code runs as the user: the separate process and the read-only connection protect against mistakes, not against the trusted code (see below). | `tests/security/test_migrations.py` |
 
 What the measure does not cover. Trusting the code means trusting it as you would trust `alembic heads`:
 
@@ -161,9 +177,10 @@ What the measure does not cover. Trusting the code means trusting it as you woul
   environment and the separate process keep Studio's own reads from writing and keep secrets out of the worker by
   accident. They do not stop code that sets out to do otherwise. The worker runs no user SQL, so Studio's SQL checks
   (STU-011) play no part here.
-- **Modules on `prepend_sys_path` are not covered by the digest.** A revision file can import other modules of the
-  project, and those modules are part of the trusted code. A change to them does not ask for trust again; only
-  `alembic.ini` and the revision files do.
+- **Only imports from the roots are checked.** The digest covers what Python imports from the import roots (F-7).
+  What the trusted code reads, runs or imports by other means (its own file reads, its own changes to `sys.path`,
+  other processes) is part of the trusted code and is not checked again. Studio's own environment, also a virtual
+  environment inside the project that Studio runs from, keeps the usual import finder.
 - **Windows:** children of the project's code are bounded by the job object only when Windows lets Studio make one
   (see the worker).
 
@@ -183,9 +200,10 @@ the status. It only reads; there is no button that migrates.
   states `untrusted` and `changed`. It names what trusting means, in the page's own de/en text rather than the
   server's `notice`: the code runs as the user in a separate process for at most 30 seconds, it gets the open
   connection's address and password, it can change the database and read the user's files and Studio's settings,
-  modules that revision files import are trusted with them but not checked for changes. Below the text it lists
-  `alembic.ini`, the `script_location` and every revision file, each as its own escaped and capped entry like D-01
-  (U-1). The focus starts on "Don't trust"; Escape and the close button reject. "Trust and run" sends the digest
+  and Studio checks `alembic.ini`, the revision files and the project modules in the `prepend_sys_path` folders and
+  asks again when any of them changes or a module is added. Below the text it lists `alembic.ini`, the
+  `script_location`, every revision file and every project module (`module_files`, when there are any), each as its
+  own escaped and capped entry like D-01 (U-1). The focus starts on "Don't trust"; Escape and the close button reject. "Trust and run" sends the digest
   the dialog showed. On `studio.trust_stale` the dialog stays open with the new list and says that the files
   changed; trusting then sends the new digest. "Stop trusting" sends `DELETE` (with a JSON body like every write).
 - **Status.** The user picks a profile and chooses "Show status". The page opens the profile's read-only connection
