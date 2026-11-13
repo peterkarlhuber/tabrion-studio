@@ -958,7 +958,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   fixed; D-1 records why grid cells cut with "…" have no `title` (the cell detail shows the whole value).
 - **With STU-023 and STU-016:** the ER diagram's table alternative and the STU-016 pages. Add their states to the
   pages' axe tests and to `WORK_PAGES` in `a11y-audit.spec.ts`.
-- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-047, a CI change).
 - **Required e2e suite:** done in the CI e2e-list PR: `a11y-audit.spec.ts` must pass without a skip, like every spec
   in `frontend/e2e` but `screenshots.spec.ts`.
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
