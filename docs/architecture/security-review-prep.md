@@ -145,7 +145,7 @@ reproduction steps, stays outside the repository.
 | F-3 | Low | PostgreSQL side-effect functions outside the statement check's denylist | Fixed (PR #66, refused); independent re-review accepted at `2a8a229`; see the residual risks |
 | F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed (PR #65): caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)); independent re-review accepted at `2a8a229` |
 | F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | **Owner decision:** finish TD-033 before a public release, or accept the risk and say so in the user guide |
-| F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | **Owner decision:** hashed pins used in CI and documented, before G-R |
+| F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | Fixed in the f6-lock PR: CI and the installation guide install from the hashed lock `constraints/runtime-lock.txt` (`--require-hashes`), checked against the `pyproject.toml` ranges; Tabrion stays a full-SHA pin |
 | F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | **Owner decision:** hash those modules too, or say so in the trust dialog |
 | F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed (PR #65): every control request except GET/HEAD of the proof path needs the token; dot segments in `/api/*` paths reach no route; independent re-review accepted at `2a8a229` |
 | F-9 | Info | This page said "covered" for SQ-05, T-06 and T-13 | Fixed: this page (PR #65); the status after the re-review is recorded below |
@@ -168,7 +168,8 @@ reproducibility. The report stays outside the repository.
 
 - **F-5 / TD-033:** editor drafts (SQL text) in the browser storage of the port-scoped origin. Finish TD-033 before
   a public release, or accept the risk and say so in the user guide.
-- **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock.
+- **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock. Addressed by the f6-lock PR (hashed
+  lock in CI and the installation guide; table above); the owner confirms it with G-S1.
 - **F-7 / T-16:** the migration code-trust digest does not cover project modules that revision files import.
 - Still open from this page: TD-005 (the spent launch URL in the browser history), TD-002 and TD-007 (the
   redirect-file launch path and the checks in a real browser), TD-003 and TD-008 (the file-permission model on
