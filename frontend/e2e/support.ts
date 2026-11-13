@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page } from '@playwright/test';
+import { expect, type ConsoleMessage, type Page } from '@playwright/test';
 
 export type Theme = 'light' | 'dark';
 
@@ -70,4 +70,155 @@ export function foreignRequests(page: Page, origin: () => string): string[] {
   watch(page);
   context.on('page', watch);
   return foreign;
+}
+
+/**
+ * WebKit's console report for a refused inline style (TD-047). WebKit logs it once for every `<select>` a page under
+ * `style-src 'self'` creates, with a `securitypolicyviolation` event for a `style-src-attr` of the select itself,
+ * although the select has no `style` attribute: WebKit's own styling of the control, not the page's. WebKit words a
+ * real refused `<style>` or `style` attribute the same way, so the text alone tells nothing; the event does.
+ * `e2e/csp.spec.ts` shows both on a page with nothing but Studio's CSP and a plain `<select>`.
+ */
+export const WEBKIT_SELECT_CSP_REPORT =
+  "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.";
+
+/** What the page logs (a warning) for each violation event that is WebKit's own for a `<select>`. */
+export const WEBKIT_SELECT_EVENT = 'TD-047: WebKit refused its own inline style of a <select>';
+
+/** Whether a console message has the text and form of WebKit's report: an error at line 0, column 0 of the page. */
+export function isWebKitSelectReport(page: Page, message: ConsoleMessage): boolean {
+  if (page.context().browser()?.browserType().name() !== 'webkit') return false;
+  const { url, lineNumber, columnNumber } = message.location();
+  let sameOrigin: boolean;
+  try {
+    sameOrigin = new URL(url).origin === new URL(page.url()).origin;
+  } catch {
+    sameOrigin = false;
+  }
+  return (
+    message.type() === 'error' &&
+    message.text() === WEBKIT_SELECT_CSP_REPORT &&
+    sameOrigin &&
+    lineNumber === 0 &&
+    columnNumber === 0
+  );
+}
+
+/** Where the init script of recordViolations keeps the page's violation events that are not WebKit's select. */
+const PAGE_VIOLATIONS = 'studioCspViolations';
+
+/**
+ * Record the page's CSP reports and its errors; call it before the page loads. Two channels, both asserted by
+ * expectNoViolations:
+ *
+ * - the console: Chromium and WebKit begin a report with "Refused to", Firefox with "Content-Security-Policy:"
+ *   (hyphenated); `e2e/csp.spec.ts` shows that a refused `<style>` and `style` attribute are heard in each browser;
+ * - the page's own `securitypolicyviolation` events, counted in the page for every browser, so the check holds
+ *   whatever a browser writes to its console.
+ *
+ * The one exception is WebKit's own report for a `<select>`: in WebKit only, a `style-src-attr` event of a `<select>`
+ * that has no `style` attribute, once per select element (a second event of the same select counts). Such an event
+ * is left out of the page's count and cancels one console report of WebKit's form (isWebKitSelectReport), in
+ * whichever order the two arrive; a report without such an event stays a violation.
+ */
+export async function recordViolations(page: Page): Promise<string[]> {
+  const violations: string[] = [];
+  const webkit = page.context().browser()?.browserType().name() === 'webkit';
+  let reports = 0; // WebKit reports in `violations` without their event yet
+  let events = 0; // WebKit select events without their report yet
+  await page.addInitScript(
+    ({ webkit, marker, key }: { webkit: boolean; marker: string; key: string }) => {
+      // Once per document, however often the watcher is set up for the page.
+      const own = window as unknown as Record<string, unknown>;
+      if (own[key] !== undefined) return;
+      const seen: string[] = [];
+      own[key] = seen;
+      const exempted = new WeakSet<Element>();
+      document.addEventListener(
+        'securitypolicyviolation',
+        (event) => {
+          const target = event.target;
+          if (
+            webkit &&
+            event.effectiveDirective === 'style-src-attr' &&
+            event.blockedURI === 'inline' &&
+            target instanceof HTMLSelectElement &&
+            !target.hasAttribute('style') &&
+            !exempted.has(target)
+          ) {
+            exempted.add(target);
+            console.warn(marker);
+            return;
+          }
+          const name = target instanceof Node ? target.nodeName : String(target);
+          seen.push(
+            `${event.effectiveDirective} ${event.blockedURI} <${name}> ${event.sourceFile}:${event.lineNumber}`,
+          );
+        },
+        true,
+      );
+    },
+    { webkit, marker: WEBKIT_SELECT_EVENT, key: PAGE_VIOLATIONS },
+  );
+  page.on('console', (message) => {
+    const text = message.text();
+    if (webkit && text === WEBKIT_SELECT_EVENT) {
+      const index = violations.lastIndexOf(WEBKIT_SELECT_CSP_REPORT);
+      if (reports > 0 && index >= 0) {
+        violations.splice(index, 1);
+        reports -= 1;
+      } else events += 1;
+      return;
+    }
+    if (!/Content[- ]Security[- ]Policy|Refused to/i.test(text)) return;
+    if (isWebKitSelectReport(page, message)) {
+      if (events > 0) {
+        events -= 1;
+        return;
+      }
+      reports += 1;
+    }
+    violations.push(text);
+  });
+  page.on('pageerror', (error) => violations.push(String(error)));
+  return violations;
+}
+
+/**
+ * Wait until the console messages of everything the page did so far have arrived: a warning logged from a task
+ * queued after the pending violation events (console messages arrive in order).
+ */
+export async function settleConsole(page: Page): Promise<void> {
+  const marker = `console settled ${Date.now()} ${Math.random()}`;
+  const settled = page.waitForEvent('console', (message) => message.text() === marker);
+  await page.evaluate(
+    (text) =>
+      new Promise<void>((resolve) =>
+        setTimeout(() =>
+          requestAnimationFrame(() =>
+            setTimeout(() => {
+              console.warn(text);
+              resolve();
+            }),
+          ),
+        ),
+      ),
+    marker,
+  );
+  await settled;
+}
+
+/** The page's violation events so far that are not WebKit's select (recordViolations); null without the watcher. */
+export async function pageViolationEvents(page: Page): Promise<string[] | null> {
+  return page.evaluate(
+    (key) => ((window as unknown as Record<string, unknown>)[key] as string[] | undefined) ?? null,
+    PAGE_VIOLATIONS,
+  );
+}
+
+/** No CSP report, no violation event and no page error so far (recordViolations), in every browser. */
+export async function expectNoViolations(page: Page, violations: string[]): Promise<void> {
+  await settleConsole(page);
+  expect(violations).toEqual([]);
+  expect(await pageViolationEvents(page)).toEqual([]);
 }

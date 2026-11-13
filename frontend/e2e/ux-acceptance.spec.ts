@@ -12,9 +12,14 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 
-import { foreignRequests, seriousViolations } from './support';
+import {
+  expectNoViolations,
+  foreignRequests,
+  recordViolations,
+  seriousViolations,
+} from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -113,19 +118,10 @@ function newLink(): string {
   return match[1];
 }
 
-function watch(page: Page): string[] {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
-  });
-  page.on('pageerror', (error) => violations.push(String(error)));
-  return violations;
-}
-
 test('08 section 5 "First start": D-01, the start page, the first table\'s rows in under 60 s', async ({
   page,
 }) => {
-  const violations = watch(page);
+  const violations = await recordViolations(page);
   const foreign = foreignRequests(page, () => base);
   const started = Date.now();
   await page.goto(links.shift() as string);
@@ -157,12 +153,12 @@ test('08 section 5 "First start": D-01, the start page, the first table\'s rows 
   expect(Date.now() - started).toBeLessThan(60_000);
   await expect(page).toHaveTitle('[DEV] parts-dev – Tabrion Studio');
   expect(await seriousViolations(page)).toEqual([]);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
   expect(foreign).toEqual([]);
 });
 
 test('08 section 5 "Connect": a failed connection test says what to check', async ({ page }) => {
-  const violations = watch(page);
+  const violations = await recordViolations(page);
   await page.goto(newLink());
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   // The project stays trusted for the next page (the record is on the server).
@@ -184,5 +180,5 @@ test('08 section 5 "Connect": a failed connection test says what to check', asyn
   ]);
   await detail.getByRole('button', { name: 'Test connection' }).click();
   await expect(detail.getByTestId('connection-outcome')).toContainText('Connection works:');
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
