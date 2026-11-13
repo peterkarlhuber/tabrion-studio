@@ -81,6 +81,7 @@
 | TD-062 JR-N1: an e2e test of the PROD case of "Reconnect" after a failed reconnect (the behavior is accepted, G-S1 decision 4) | P3 | Done (PR #89: `e2e/connection-lost-prod-retry.spec.ts`) |
 | TD-060 STU-054 UX acceptance 1.0: what stays open (the owner decisions on the "403" wording, D-07, tabrion's English finding texts and the start page are done, 2026-11-13; TD-032's dependency resolved by PR #85; open: TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR #84; owner decisions 2026-11-13) |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
+| TD-063 Security assessment B-1 and B-2: the statement check's function denylist in every PostgreSQL call form, the pg_surgery and pg_visibility functions, dblink connections closed at check-in; what stays open (newer servers' functions, a diagnostics hint) | P1 | In progress (secb1 PR): B-1 and B-2 done; open: the PostgreSQL 17/18 candidates and the diagnostics hint (see the entry) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -1953,3 +1954,21 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - **R-1:** `release_bom.py` fails (with or without `--strict`) on every license record whose canonical name is
     neither a pin nor `tabrion-studio`, and lists it in the report
     (`test_a_record_of_a_package_the_lock_does_not_pin_fails`).
+
+### TD-063 · Security assessment B-1 and B-2: refused functions in every call form
+
+- **Priority:** P1 · **Status:** In progress (secb1 PR) · **Refs:** the security assessment of 2026-11 (B-1 Medium,
+  B-2 Low; the report and its reproductions stay with the planning documents), TD-048 (F-3),
+  `docs/architecture/connections.md`
+- **Done in the PR:** B-1: `readonly._calls_refused_function` counts a refused name as a call when the next token is
+  `(` or the token before it is `.` (PostgreSQL's attribute notation), on the existing tokens (comments and white
+  space dropped, quoted identifiers unquoted, both lexings of `'...'`); a column or table named like a refused
+  function is refused after a `.`, the bare name stays allowed. The check-in reset (`tabrion_compat.reset_session`)
+  closes the session's named and unnamed dblink connections when the database has dblink, and drops a connection
+  where that fails. B-2: `heap_force_kill`, `heap_force_freeze` and `pg_truncate_visibility_map` are refused. Tests in
+  `tests/security/test_function_call_forms.py` (every call form, reads that only mention a name, the reset with and
+  without dblink; the PostgreSQL ones in the PostgreSQL CI job).
+- **Open:** the assessment's untested candidates of newer servers (PostgreSQL 17 `pg_buffercache_evict*`, 18
+  `pg_restore_*_stats` and `pg_clear_*_stats`): check whether they act in a read-only transaction and refuse them if
+  so; a diagnostics hint when the profile's role may run dblink, adminpack or session-ending functions. The text
+  check stays best effort, and the role's privileges stay the boundary.
