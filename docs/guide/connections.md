@@ -95,7 +95,7 @@ CREATE ROLE studio_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 
 GRANT CONNECT ON DATABASE appdb TO studio_reader;
 REVOKE TEMP ON DATABASE appdb FROM PUBLIC;       -- then GRANT TEMP ON DATABASE appdb to the roles that need it
--- PostgreSQL 14 and lower only:
+-- PostgreSQL 14 and lower only, run as a superuser (the owner of schema public; a non-owner's REVOKE has no effect):
 -- REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 ```
 
