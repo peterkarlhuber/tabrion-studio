@@ -1119,6 +1119,36 @@ describe('EditorView: scripts, format and completion (STU-020)', () => {
     );
   });
 
+  it('says how many names the script list left out', async () => {
+    const user = userEvent.setup();
+    const before = (url: string): Response | null =>
+      url === '/api/scripts'
+        ? json({ scripts: [{ path: 'a.sql', size: 1 }], truncated: false, skipped_invalid: 3 })
+        : null;
+    setup({ sql: 'select 0' }, { before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    expect(await screen.findByTestId('script-skipped-invalid')).toHaveTextContent(
+      '3 files or folders were left out',
+    );
+    expect(screen.queryByTestId('script-skipped-links')).not.toBeInTheDocument();
+  });
+
+  it('opens a script whose name has a zero-width non-joiner and shows the joiner escaped', async () => {
+    // E-1: the server accepts a ZWNJ between two letters (Persian); the page keeps it visible as an escape, so a
+    // name with one never looks like the same name without it.
+    const user = userEvent.setup();
+    const name = '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645';
+    const scripts = scriptServer({ [`${name}.sql`]: { content: 'select 1', digest: DIGEST_A } });
+    setup({ sql: 'select 0' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    const shown = '\u0645\u06cc\\u200C\u062e\u0648\u0627\u0647\u0645';
+    await user.click(await screen.findByRole('button', { name: `${shown}.sql` }));
+    await waitFor(() => expect(screen.getAllByTestId('editor-tab')[1]).toHaveTextContent(shown));
+    expect(screen.getAllByTestId('editor-tab')[1]?.textContent).not.toContain('\u200c');
+  });
+
   it('shows a script name with a bidi control escaped in its tab', async () => {
     const user = userEvent.setup();
     const scripts = scriptServer({ 'a\u202Eb.sql': { content: 'select 1', digest: DIGEST_A } });

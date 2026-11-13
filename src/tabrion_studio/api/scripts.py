@@ -1,7 +1,8 @@
 """Script routes (03 section 2 C, STU-020): ``.sql`` files in the project folder. Nothing here runs a script.
 
-* ``GET /api/scripts``: ``{scripts: [{path, size, modified_at}], truncated, skipped_links}``; ``path`` is relative to
-  the project folder, with ``/``.
+* ``GET /api/scripts``: ``{scripts: [{path, size, modified_at}], truncated, skipped_links, skipped_invalid}``;
+  ``path`` is relative to the project folder, with ``/``; ``skipped_invalid`` counts the folders and ``.sql`` files
+  whose name Studio refuses.
 * ``GET /api/scripts/file?path=``: ``{path, content, digest}`` (UTF-8 text, at most 1 MB).
 * ``PUT /api/scripts/file`` with ``{"path", "content", "digest": "<what the page read>" | null, "overwrite"?}``:
   200 ``{path, digest}``.

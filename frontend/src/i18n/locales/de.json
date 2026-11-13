@@ -1099,6 +1099,8 @@
       "more": "Nicht alle Skripte werden gezeigt. Grenze den Filter ein, um die anderen zu finden.",
       "skippedLinks_one": "{{count}} Link wurde ausgelassen: Studio öffnet kein Skript über einen Link oder einen Cloud-Platzhalter-Ordner.",
       "skippedLinks_other": "{{count}} Links wurden ausgelassen: Studio öffnet kein Skript über einen Link oder einen Cloud-Platzhalter-Ordner.",
+      "skippedInvalid_one": "{{count}} Datei oder Ordner wurde ausgelassen: Studio öffnet den Namen nicht (ein Gerätename, ein Name mit Punkt am Ende, ein unsichtbares Zeichen). Nach dem Umbenennen erscheint der Eintrag hier.",
+      "skippedInvalid_other": "{{count}} Dateien oder Ordner wurden ausgelassen: Studio öffnet diese Namen nicht (ein Gerätename, ein Name mit Punkt am Ende, ein unsichtbares Zeichen). Benenne sie um, um sie zu öffnen.",
       "opened": "{{path}} geöffnet.",
       "alreadyOpen": "{{path}} ist schon geöffnet: Das ist sein Tab.",
       "saveTitle": "Skript speichern",

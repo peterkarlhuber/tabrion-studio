@@ -287,6 +287,36 @@ test('a script with mixed line endings is saved byte for byte; Format runs under
   await expectNoViolations(page, violations);
 });
 
+test('script names in other scripts open and save; refused names are counted in Open…', async ({
+  page,
+}) => {
+  // E-1 of the STU-020 delta review: U+3000 inside a Japanese name, a ZWNJ between two Persian letters.
+  writeFileSync(join(root, 'project', 'sql', '\u58f2\u4e0a\u3000\u96c6\u8a08.sql'), 'select 1;\n');
+  writeFileSync(join(root, 'project', 'sql', 'nul.sql'), 'select 2;\n');
+  const violations = await signIn(page);
+  await openEditor(page);
+  await page.getByTestId('editor-open').click();
+  const open = page.getByRole('dialog', { name: 'Open script' });
+  await expect(open.getByTestId('script-skipped-invalid')).toHaveText(
+    /^1 file or folder was left out/,
+  );
+  await open.getByRole('button', { name: 'sql/\u58f2\u4e0a\u3000\u96c6\u8a08.sql' }).click();
+  await expect(page.locator('.cm-content')).toHaveText('select 1;');
+  await page.getByTestId('editor-new-tab').click();
+  await expect(page.locator('.cm-content')).toBeFocused();
+  await page.keyboard.insertText('select 3');
+  await page.keyboard.press('Control+s');
+  const name = '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645.sql';
+  const dialog = page.getByRole('dialog', { name: 'Save script' });
+  await dialog.getByTestId('script-path').fill(`sql/${name}`);
+  await dialog.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('editor-notice')).toContainText('Saved to sql/');
+  expect(readFileSync(join(root, 'project', 'sql', name), 'utf-8')).toBe('select 3');
+  // The tab shows the joiner escaped, so the name never looks like the same name without it.
+  await expect(page.getByTestId('editor-tab').last()).toContainText('\\u200C');
+  await expectNoViolations(page, violations);
+});
+
 test('completion: the columns of a table from the catalog of the open connection', async ({
   page,
 }) => {

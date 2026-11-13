@@ -94,7 +94,15 @@ describe('script answers (STU-020)', () => {
   it('reads the list and a file', () => {
     expect(
       parseScriptList({ scripts: [{ path: 'a.sql', size: 3 }, { path: 1 }], truncated: true }),
-    ).toEqual({ scripts: [{ path: 'a.sql', size: 3 }], truncated: true, skippedLinks: 0 });
+    ).toEqual({
+      scripts: [{ path: 'a.sql', size: 3 }],
+      truncated: true,
+      skippedLinks: 0,
+      skippedInvalid: 0,
+    });
+    expect(parseScriptList({ scripts: [], skipped_invalid: 3 })?.skippedInvalid).toBe(3);
+    expect(parseScriptList({ scripts: [], skipped_invalid: -1 })?.skippedInvalid).toBe(0);
+    expect(parseScriptList({ scripts: [], skipped_invalid: 1.5 })?.skippedInvalid).toBe(0);
     expect(parseScriptList({ scripts: [], truncated: false, skipped_links: 2 })?.skippedLinks).toBe(
       2,
     );
@@ -121,8 +129,16 @@ describe('script answers (STU-020)', () => {
       'console.sql',
       'com10.sql',
       'a~b.sql',
+      // E-1 of the delta review: ZWNJ and ZWJ between letters or marks, a ZWJ in an emoji sequence, U+3000 inside.
+      '\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645.sql',
+      '\u0915\u094d\u200d\u0937.sql',
+      '\u{1F468}\u200d\u{1F4BB}.sql',
+      '\u{1F468}\u{1F3FD}\u200d\u{1F4BB}.sql',
+      '\u2764\ufe0f\u200d\u{1F525}.sql',
+      '\u58f2\u4e0a\u3000\u96c6\u8a08.sql',
+      'sql\u3000reports/a.sql',
     ])
-      expect(validScriptPath(ok)).toBe(true);
+      expect(validScriptPath(ok), ok).toBe(true);
     for (const bad of [
       '',
       '.sql',
@@ -153,8 +169,22 @@ describe('script answers (STU-020)', () => {
       'a\u2800b.sql',
       'a\u00A0b.sql',
       'a\u034Fb.sql',
+      // A joiner out of place, U+3000 leading or trailing, other spaces (E-1).
+      '\u200ca.sql',
+      'a\u200c.sql',
+      'a\u200d.sql',
+      'a\u200c\u200cb.sql',
+      'a\u200d\u200db.sql',
+      'a\u200c b.sql',
+      'a \u200cb.sql',
+      '1\u200c2.sql',
+      '\u2606\u200c\u2606.sql',
+      '\u3000a.sql',
+      'a.sql\u3000',
+      'sql\u3000/a.sql',
+      'a\u2007b.sql',
     ]) {
-      expect(validScriptPath(bad)).toBe(false);
+      expect(validScriptPath(bad), bad).toBe(false);
     }
     expect(scriptTitle('sql/reports/b.SQL')).toBe('b');
   });
