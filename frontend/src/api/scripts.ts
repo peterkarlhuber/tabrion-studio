@@ -91,12 +91,15 @@ export function scriptTitle(path: string): string {
 const DEVICE =
   /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9\u00b9\u00b2\u00b3]|LPT[0-9\u00b9\u00b2\u00b3])$/i;
 
+/** Characters that look blank: every space but U+0020, the Hangul fillers, the braille blank, U+034F, U+17B4/5. */
+const BLANK = /(?! )\p{Zs}|\u034f|\u115f|\u1160|\u17b4|\u17b5|\u2800|\u3164|\uffa0/u;
+
 /** Whether one name of a script path is a plain name (the server's rules, `services/scripts.py`). */
 function plainName(part: string): boolean {
   if (part === '' || part.startsWith('.') || part.endsWith('.') || part !== part.trim())
     return false;
-  // An 8.3 short name (GIT~1), a format character (bidi, zero-width).
-  if (/~[0-9]/.test(part) || /\p{Cf}/u.test(part)) return false;
+  // An 8.3 short name (GIT~1), a format character (bidi, zero-width), a blank-looking character.
+  if (/~[0-9]/.test(part) || /\p{Cf}/u.test(part) || BLANK.test(part)) return false;
   return !DEVICE.test((part.split('.')[0] ?? '').replace(/ +$/, ''));
 }
 

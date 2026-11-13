@@ -5,6 +5,8 @@
  * - `GET /api/connections/{id}/table?schema=&name=`: columns, keys, constraints, indexes, the row estimate. The query
  *   form always, so a name with `/` works too (I-6 of stu-010-review.md).
  * - `GET /api/connections/{id}/extensions` (PostgreSQL) and `.../sqlite-info` (SQLite).
+ * - STU-023: `GET /api/connections/{id}/diagram?schema=`: the schema's tables with columns, primary key and outgoing
+ *   foreign keys in one answer, for the ER diagram (`views/explorer/er/`).
  * - STU-022, query form too: `.../ddl?schema=&name=` (the object's DDL), `.../policies?schema=&name=` (PostgreSQL's
  *   row-level security) and `.../row-count?schema=&name=` (SQLite's `count(*)` on request, stopped by the server after
  *   10 s with `db.timeout`).
@@ -186,6 +188,22 @@ export interface RowCount {
   name: string;
   count: number;
   elapsedMs: number | null;
+}
+
+/** One table of the ER diagram (STU-023): what a box shows and the keys that leave it. */
+export interface DiagramTable {
+  name: string;
+  kind: ObjectKind;
+  columns: { name: string; type: string | null; nullable: boolean | null }[];
+  primaryKey: string[];
+  foreignKeys: ForeignKey[];
+}
+
+/** The tables of one schema for the ER diagram (STU-023). */
+export interface Diagram {
+  schema: string;
+  engine: Engine;
+  tables: DiagramTable[];
 }
 
 /** The problem for an answer the page cannot read (fail closed). */
@@ -518,6 +536,84 @@ export function parseRowCount(body: unknown): RowCount | null {
   return { schema, name, count: rows, elapsedMs: count(root.elapsed_ms) };
 }
 
+/**
+ * The diagram answer, fail closed: a table without a name or a column list, a key without its referenced table, or a
+ * list of names that is not one is refused as a whole (a diagram that quietly drops a key would show a wrong schema).
+ */
+export function parseDiagram(body: unknown): Diagram | null {
+  const root = doc(body);
+  const schema = text(root?.schema);
+  const engine = root?.engine;
+  const tables = list(root?.tables);
+  if (schema === null || (engine !== 'sqlite' && engine !== 'postgresql') || tables === null) {
+    return null;
+  }
+  const names = (value: unknown): string[] | null =>
+    Array.isArray(value) && value.every((item) => typeof item === 'string')
+      ? (value as string[])
+      : null;
+  const parsed: DiagramTable[] = [];
+  for (const item of tables) {
+    const entry = doc(item);
+    const name = text(entry?.name);
+    const columns = list(entry?.columns);
+    const primaryKey = names(entry?.primary_key);
+    const keys = list(entry?.foreign_keys);
+    if (
+      entry === null ||
+      name === null ||
+      columns === null ||
+      primaryKey === null ||
+      keys === null
+    ) {
+      return null;
+    }
+    const tableColumns: DiagramTable['columns'] = [];
+    for (const column of columns) {
+      const field = doc(column);
+      const columnName = text(field?.name);
+      if (field === null || columnName === null) return null;
+      tableColumns.push({
+        name: columnName,
+        type: text(field.type),
+        nullable: flag(field.nullable),
+      });
+    }
+    const foreignKeys: ForeignKey[] = [];
+    for (const key of keys) {
+      const fk = doc(key);
+      const referredTable = text(fk?.referred_table);
+      const columnsOut = names(fk?.columns);
+      const referred = names(fk?.referred_columns);
+      const keyName = optionalText(fk?.name);
+      const referredSchema = optionalText(fk?.referred_schema);
+      if (
+        fk === null ||
+        referredTable === null ||
+        columnsOut === null ||
+        referred === null ||
+        keyName === INVALID ||
+        referredSchema === INVALID ||
+        columnsOut.length === 0 ||
+        // One referenced column per key column; none at all when SQLite names no target column (a referenced table
+        // without a primary key, or one that does not exist).
+        (referred.length > 0 && referred.length !== columnsOut.length)
+      ) {
+        return null;
+      }
+      foreignKeys.push({
+        name: keyName,
+        columns: columnsOut,
+        referredSchema: referredSchema ?? schema,
+        referredTable,
+        referredColumns: referred,
+      });
+    }
+    parsed.push({ name, kind: kind(entry.kind), columns: tableColumns, primaryKey, foreignKeys });
+  }
+  return { schema, engine, tables: parsed };
+}
+
 /** A GET of the API, parsed fail-closed (also used by the data viewer, `api/viewer.ts`). */
 export async function read<T>(
   fetcher: typeof fetch,
@@ -656,5 +752,25 @@ export function fetchRowCount(
     fetcher,
     objectPath(connectionId, 'row-count', schema, name),
     forObject(parseRowCount, connectionId, schema, name),
+  );
+}
+
+/** The ER diagram's tables of `schema` (STU-023); an answer for another connection or schema is refused (I-1). */
+export function fetchDiagram(
+  fetcher: typeof fetch,
+  connectionId: string,
+  schema: string,
+  signal?: AbortSignal,
+): Promise<Result<Diagram>> {
+  return read(
+    fetcher,
+    `${base(connectionId)}/diagram?${new URLSearchParams({ schema }).toString()}`,
+    (body) => {
+      const diagram = parseDiagram(body);
+      const connection = text(doc(body)?.connection_id) ?? '';
+      if (connection !== '' && connection !== connectionId) return null;
+      return diagram !== null && diagram.schema === schema ? diagram : null;
+    },
+    signal,
   );
 }

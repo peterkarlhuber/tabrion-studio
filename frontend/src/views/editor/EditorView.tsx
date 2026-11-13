@@ -1474,7 +1474,7 @@ export function EditorView({
           value={tab.sql}
           onChange={(value) => updateTab(tab.id, { sql: value })}
           dialect={dialect}
-          label={t('editor.textLabel', { name: tab.title })}
+          label={t('editor.textLabel', { name: visible(tab.title) })}
           description={t('editor.shortcuts', {
             run: keys('run'),
             script: keys('runScript'),

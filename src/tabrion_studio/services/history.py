@@ -19,8 +19,10 @@ whenever the history is read, when the settings are saved and when an entry is r
 keeps the entries already there until they expire or the user deletes them. A delete, the purge included, overwrites
 the rows (``secure_delete``) and checkpoints the write-ahead log.
 
-Recording waits at most :data:`RECORD_BUSY_MS` for another Studio instance's write lock and otherwise keeps no entry:
-the query has ended already (its state is published before), and a cancel is never held up by the history.
+Recording and the purge wait at most :data:`RECORD_BUSY_MS` for another Studio instance's write lock (recording then
+keeps no entry, the purge is left to the next one), and the checkpoint after them never waits for a reader (a
+checkpoint that cannot finish is tried again on the next purge): the query has ended already (its state is published
+before), and a cancel is never held up by the history.
 
 A history entry is the user's own SQL text, which can hold sensitive literals (asset A5): it lives only in the state
 database (0600), never in a log record (the engine logs no SQL), and is shown only to the session that owns the
@@ -38,7 +40,7 @@ import time
 from typing import Any
 
 from tabrion_studio.config.schema import Settings
-from tabrion_studio.services.state import StateStore, StateUnavailable, scope_of
+from tabrion_studio.services.state import CHECKPOINT_ATTEMPTS, StateStore, StateUnavailable, scope_of
 
 __all__ = ["DEFAULT_PAGE", "MAX_ENTRIES", "MAX_PAGE", "MAX_SQL_CHARS", "RECORD_BUSY_MS", "History", "HistoryError"]
 
@@ -157,8 +159,12 @@ class History:
                 self._warned = True
                 logger.warning("query history unavailable", extra={"event": "studio.history_unavailable"})
             return False
+        # Never waits for another connection (a reader keeps the log in use): a query's end is not held up, and a
+        # checkpoint that cannot finish now is tried again on the next purge.
         if deleted:
             self.store.checkpoint()
+        else:
+            self.store.retry_checkpoint()
         return True
 
     def purge(self) -> int:
@@ -172,14 +178,18 @@ class History:
                 self.store.write(
                     lambda connection: (
                         connection.execute("DELETE FROM history WHERE finished_at < ?", (cutoff,)).rowcount
-                    )
+                    ),
+                    busy_timeout_ms=RECORD_BUSY_MS,
                 )
             )
         except StateUnavailable:
+            # Another instance holds the write lock: the next purge (the next read, record or start) does it.
             return 0
         if deleted:
             self.store.checkpoint()
             logger.info("history expired", extra={"event": "studio.history_expired", "count": deleted})
+        else:
+            self.store.retry_checkpoint()
         return deleted
 
     # Reading
@@ -238,7 +248,7 @@ class History:
         args = (*self._scopes(), entry_id, entry_id, scope, scope, profile_id)
         deleted = self.store.write(lambda connection: connection.execute(_DELETE, args).rowcount)
         # The deleted pages are overwritten (secure_delete); the checkpoint empties the write-ahead log as well.
-        self.store.checkpoint()
+        self.store.checkpoint(attempts=CHECKPOINT_ATTEMPTS)
         logger.info("history deleted", extra={"event": "studio.history_deleted", "count": deleted})
         return int(deleted)
 

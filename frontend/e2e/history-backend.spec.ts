@@ -231,7 +231,7 @@ test('a script saved into the project folder opens again', async ({ page }) => {
   );
   // A path outside the project is refused by the page and by the server.
   await page.getByTestId('editor-new-tab').click();
-  // The new tab's editor is mounted and takes the focus after the click; the text is typed into it only then.
+  // The new tab's editor mounts and takes the focus; keys typed before that would be lost.
   await expect(page.locator('.cm-content')).toBeFocused();
   await page.keyboard.insertText('select 1');
   await page.keyboard.press('Control+s');
@@ -281,7 +281,7 @@ test('a script with mixed line endings is saved byte for byte; Format runs under
   );
   // Format loads sql-formatter on demand; the strict CSP allows it (no eval).
   await page.getByTestId('editor-new-tab').click();
-  // The new tab's editor is mounted and takes the focus after the click; the text is typed into it only then.
+  // The new tab's editor mounts and takes the focus; keys typed before that would be lost.
   await expect(page.locator('.cm-content')).toBeFocused();
   await page.keyboard.insertText('select id,material from parts where id=:id');
   await page.keyboard.press('Alt+Shift+F');

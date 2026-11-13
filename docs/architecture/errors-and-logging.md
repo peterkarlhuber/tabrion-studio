@@ -58,7 +58,8 @@ answer; `tabrion.errors.safe_message` is for the log only.
 
 The log handlers run Studio's `RedactionFilter` first (an exception becomes its types and frames, without any
 message) and then tabrion's `DbErrorRedactionFilter`, which rewrites database errors in the arguments and removes
-`DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts from the message. The other order would leave exception
+`DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts from the message where they start a line (a `DETAIL:` in the
+middle of a one-line message keeps its values; TD-056). The other order would leave exception
 messages in the traceback text (`tests/security/test_canary.py`).
 
 ## Logging
@@ -70,6 +71,18 @@ messages in the traceback text (`tests/security/test_canary.py`).
 |---|---|---|---|
 | file | JSON lines | INFO | `<log dir>/studio-<key>.log`, one file per project instance (named like its info file) |
 | console | one text line per record | WARNING | stderr of the `tabrion-studio` process |
+
+It also takes over the loggers that carry exception text, `uvicorn`, `uvicorn.error`, `uvicorn.access`,
+`uvicorn.asgi` and `asyncio` (`logs.OWNED_LOGGERS`, TD-055): their own handlers are removed, they propagate to the
+root logger again, and the redaction filters sit on the loggers themselves. Uvicorn's default `log_config` (any
+`uvicorn.Config` built without `log_config=None` in the same process, or another program's `dictConfig`) gives
+`uvicorn` a stderr handler and `propagate=False`; without the takeover, a failed lifespan's traceback text would
+bypass Studio's handlers and be printed as it is. A record logged *at* one of these loggers is scrubbed by the
+logger filters before any handler, also one that a later `dictConfig` adds to them. The limit: a logger filter does
+not run for records of child loggers (`uvicorn.error.x`) or of other loggers, so after a later `dictConfig` such a
+record reaches Uvicorn's re-added handler unredacted, and with `propagate=False` again Uvicorn's records no longer
+reach Studio's log file. `serve()` runs no `dictConfig` and Uvicorn logs only at the owned names, so the
+`tabrion-studio` command does not hit either case (TD-055). `LogSetup.close()` restores the earlier state.
 
 - **Log directory:** `--log-dir`, else `$TABRION_STUDIO_LOG_DIR`, else `<state dir>/logs` when the state directory
   was given with `--state-dir` or `$TABRION_STUDIO_STATE_DIR`, else the per-user log directory

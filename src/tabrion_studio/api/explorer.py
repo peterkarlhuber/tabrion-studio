@@ -8,6 +8,8 @@
   in (``referenced_by``), unique and check constraints, indexes and the row estimate (PostgreSQL). An object outside
   the catalog is ``studio.object_not_found``.
 * ``GET /api/connections/{id}/table?schema=&name=``: the same detail, for names with ``/`` (I-6).
+* ``GET /api/connections/{id}/diagram?schema=`` (STU-023): the schema's tables with columns, primary key and outgoing
+  foreign keys for the ER diagram, in one answer; ``studio.diagram_too_large`` past ``MAX_DIAGRAM_TABLES``.
 * ``GET /api/connections/{id}/extensions`` (PostgreSQL) and ``GET /api/connections/{id}/sqlite-info`` (SQLite); the
   other engine gets ``studio.explorer_engine``.
 
@@ -81,6 +83,10 @@ def add_explorer_routes(app: FastAPI, explorer: Explorer) -> None:
     ) -> Response:
         # I-6 of stu-010-review.md: a name with "/" cannot be a path segment (%2F is a separator to the router).
         return await answer(explorer.table, connection_id, schema, name)
+
+    @app.get("/api/connections/{connection_id}/diagram")
+    async def get_diagram(connection_id: str, schema: str = Query(..., max_length=MAX_NAME)) -> Response:
+        return await answer(explorer.diagram, connection_id, schema)
 
     @app.get("/api/connections/{connection_id}/extensions")
     async def get_extensions(connection_id: str) -> Response:

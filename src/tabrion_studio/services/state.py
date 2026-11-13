@@ -129,6 +129,7 @@ class StateStore:
         self._lock = threading.Lock()
         self._connection: sqlite3.Connection | None = None
         self._failed = False
+        self._checkpoint_pending = False
 
     def _get(self) -> sqlite3.Connection:
         if self._connection is not None:
@@ -184,25 +185,48 @@ class StateStore:
                 logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
                 raise StateUnavailable from None
 
-    def checkpoint(self) -> bool:
+    def checkpoint(self, *, attempts: int = 1) -> bool:
         """Move the write-ahead log into the file and truncate it (after a delete, no old page stays in the log).
 
-        True when the log is empty now. Another Studio instance that is reading at that moment keeps the log in use;
-        the checkpoint is tried again a few times and otherwise left to the next one (the log is 0600 like the file,
-        and closing the last connection removes it)."""
-        for attempt in range(CHECKPOINT_ATTEMPTS):
+        True when the log is empty now. A checkpoint never waits for another connection: each try runs with
+        ``busy_timeout = 0``, so SQLite's busy handler is not called and the store lock is held only for the try
+        itself. Another Studio instance (or any other program) that is reading at that moment keeps the log in use;
+        ``attempts`` tries are made :data:`CHECKPOINT_PAUSE_S` apart, the pause outside the lock. When the log is
+        still in use, the checkpoint is pending and :meth:`retry_checkpoint` (on every purge, so on every read of the
+        history and every recorded query) tries it again until it succeeds. The log is 0600 like the file, and
+        closing the last connection removes it."""
+        for attempt in range(attempts):
             if attempt:
                 time.sleep(CHECKPOINT_PAUSE_S)
             with self._lock:
                 try:
-                    row = self._get().execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                    connection = self._get()
+                    connection.execute("PRAGMA busy_timeout = 0")
+                    try:
+                        row = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                    finally:
+                        connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
                 except (sqlite3.Error, StateUnavailable):
-                    return False
-            # (busy, frames in the log, frames moved): busy 0 means the log was moved and truncated.
-            if row is not None and row[0] == 0:
-                return True
-        logger.info("state log still in use", extra={"event": "studio.state_checkpoint_partial"})
+                    row = None
+                # (busy, frames in the log, frames moved): busy 0 means the log was moved and truncated.
+                if row is not None and row[0] == 0:
+                    self._checkpoint_pending = False
+                    return True
+        with self._lock:
+            if not self._checkpoint_pending:
+                logger.info("state log still in use", extra={"event": "studio.state_checkpoint_partial"})
+            self._checkpoint_pending = True
         return False
+
+    @property
+    def checkpoint_pending(self) -> bool:
+        """A checkpoint after a delete found the log in use and has not succeeded since."""
+        return self._checkpoint_pending
+
+    def retry_checkpoint(self) -> None:
+        """Try a pending checkpoint again (never waits; see :meth:`checkpoint`)."""
+        if self._checkpoint_pending:
+            self.checkpoint()
 
     def close(self) -> None:
         with self._lock:

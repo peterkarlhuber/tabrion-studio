@@ -23,6 +23,7 @@ Status words: **Met** (the page says it and the check passed), **Partly** (what 
 | D-10 | Troubleshooting: installing, the browser, the views' problems, the terminal (also the `--stop` failures, I-5 of `stu-27-review.md`), logs | 03 §10, TD-023 | [Troubleshooting](../guide/troubleshooting.md) | messages read against `cli.py`, `hatch_build.py`, npm's behaviour without `engine-strict` (only the warning `EBADENGINE`) and `frontend/src/i18n/locales/en.json` | Met |
 | D-11 | Connections: profiles, the assistant, test and connect, trust dialog, passwords | TD-023 (STU-006..STU-009) | [Connections](../guide/connections.md) | `e2e/backend.spec.ts`, clean-install test | Met |
 | D-12 | Explorer with DDL, policies and row counts | TD-023 (STU-010, STU-022) | [Explorer](../guide/explorer.md) | `e2e/explorer*.spec.ts` (STU-050 check of the pages) | Met |
+| D-12a | ER diagram with its choice, keyboard path, table alternative and SVG/PNG export | STU-023 | [Explorer](../guide/explorer.md#er-diagram) | `e2e/er-diagram.spec.ts`, `e2e/backend.spec.ts` (STU-023) | Met |
 | D-13 | Data viewer | TD-023 (STU-013) | [Data viewer](../guide/data-viewer.md) | `e2e/viewer*.spec.ts`, clean-install test | Met |
 | D-14 | SQL editor with export | TD-023 (STU-012, STU-021) | [SQL editor](../guide/sql-editor.md) | `e2e/editor*.spec.ts`, `e2e/export.spec.ts` | Met |
 | D-15 | Diagnostics with backup hints and the report | TD-023 (STU-014, STU-025) | [Diagnostics](../guide/diagnostics.md) | `e2e/diagnostics.spec.ts` | Met |
@@ -35,8 +36,9 @@ Status words: **Met** (the page says it and the check passed), **Partly** (what 
 | D-22 | Clean-install test | 09 STU-017 | this page, [Building and testing](building.md#wheel) | below | Met on Linux (manual and automated); macOS and Windows through the automated test in CI, which uses its own commands, not the guide's. For 1.0, 03 §8 also asks for a clean install with pipx and uv on all three systems; neither is run yet (TD-023) |
 | D-23 | Tag `v0.1.0`, no publication | 09 STU-017, G-R | none yet | not done in this pull request | Open: a separate step after G-S1 |
 
-Out of scope here: the features of later packages that are not on `master` (STU-020 history and favorites, STU-023
-ER diagram, STU-026 data editor) get their pages with their own pull requests.
+Out of scope here: the features of later packages that are not on `master` (STU-020 history and favorites, STU-026
+data editor) get their pages with their own pull requests; the STU-023 ER diagram brought its section of the
+explorer page (D-12a).
 
 ## Clean-install test
 

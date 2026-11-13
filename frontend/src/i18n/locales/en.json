@@ -439,6 +439,66 @@
       "copy": "Copy name",
       "copied": "Name copied.",
       "copyFailed": "The name could not be copied."
+    },
+    "view": {
+      "label": "View",
+      "objects": "Objects",
+      "diagram": "ER diagram"
+    },
+    "er": {
+      "title": "ER diagram",
+      "schema": "Schema",
+      "loading": "Reading the tables…",
+      "loadFailed": "The ER diagram could not be loaded. Reload the page and try again.",
+      "noTables": "This schema has no tables.",
+      "status": "Tables: {{count}}, relationships: {{lines}}, layout: {{ms}} ms.",
+      "capped": "The schema has {{total}} tables; one diagram shows at most {{max}}. It shows the first {{max}} by name; choose others under “Tables”.",
+      "choose": {
+        "summary": "Tables: {{count}} of {{total}}",
+        "legend": "Tables in the diagram",
+        "filter": "Filter tables",
+        "all": "Choose the first {{max}}",
+        "none": "Clear",
+        "apply_one": "Show {{count}} table",
+        "apply_other": "Show {{count}} tables",
+        "limit": "At most {{max}} tables fit in one diagram.",
+        "empty": "Choose at least one table."
+      },
+      "layout": "Lay out again",
+      "svg": "Save as SVG",
+      "png": "Save as PNG",
+      "saved": "Saved {{name}}.",
+      "pngFailed": "The browser could not draw the PNG. Save the diagram as SVG.",
+      "fileTitle": "ER diagram of {{schema}}",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fit": "Fit to view",
+      "zoom": "{{percent}} %",
+      "minimap": "Overview of the diagram",
+      "canvas": "ER diagram of {{schema}} with {{count}} tables. The table below lists the same tables and relationships.",
+      "open": "Show {{name}} in the explorer",
+      "more_one": "+ {{count}} more column",
+      "more_other": "+ {{count}} more columns",
+      "pk": "primary key",
+      "fk": "foreign key",
+      "pkfk": "primary and foreign key",
+      "foreign": "(foreign)",
+      "unnamed": "unnamed key",
+      "aria": {
+        "node": "A table of the diagram.",
+        "edge": "A foreign key of the diagram.",
+        "controls": "Diagram controls"
+      },
+      "list": {
+        "caption": "Tables and relationships of {{schema}}",
+        "table": "Table",
+        "primaryKey": "Primary key",
+        "references": "References",
+        "referencedBy": "Referenced by",
+        "reference": "{{name}}: ({{columns}}) → {{target}} ({{referred}})",
+        "referenced": "{{table}} ({{columns}}), {{name}}",
+        "outside": "(not in the diagram)"
+      }
     }
   },
   "migrations": {
@@ -449,10 +509,11 @@
       "unavailable": "Studio could not read the trust state of the project's migration code.",
       "none": "The project has no Alembic configuration (alembic.ini with a script_location). Studio reads SQLite's user_version without it.",
       "untrusted": "The project's Alembic files are not trusted. Studio shows the version in the database, but not the revisions, until you trust them.",
-      "changed": "The project's Alembic files changed after you trusted them. Review them again to read the revisions.",
+      "changed": "The project's Alembic files changed after you trusted them, or this version of Studio checks more of them. Review them again to read the revisions.",
       "trusted_one": "You trust the project's Alembic files ({{count}} revision file).",
       "trusted_other": "You trust the project's Alembic files ({{count}} revision files).",
       "invalid": "Studio cannot trust the project's Alembic files: {{reason}}",
+      "invalidFile": "Studio cannot trust the project's Alembic files: {{reason}} The file: {{file}}",
       "review": "Review files",
       "revoke": "Stop trusting",
       "trustedNow": "The migration code is trusted.",
@@ -466,6 +527,9 @@
       "file_name": "a revision file has a name Studio does not accept.",
       "unreadable": "the files could not be read.",
       "changed": "the files changed while Studio read them.",
+      "too_many_modules": "the prepend_sys_path folders hold more project modules than Studio checks.",
+      "modules_too_large": "the project modules in the prepend_sys_path folders are larger than Studio checks.",
+      "link_outside": "a link in a prepend_sys_path folder points outside the project folder.",
       "other": "the check failed ({{code}})."
     },
     "status": {
@@ -733,10 +797,11 @@
     },
     "trustCode": {
       "title": "Run the project's migration code?",
-      "body": "To read the revisions, Studio imports the project's Alembic files, which runs their code on this computer, in a separate process that stops after 30 seconds. The code runs as you, as with alembic heads: it gets the open connection's address and password, so it can change the database, and it can read your files and Studio's settings. Trust it only if you would run it yourself. Studio asks again when alembic.ini or a revision file changes; the project modules that revision files import are trusted with them but not checked for changes.",
+      "body": "To read the revisions, Studio imports the project's Alembic files, which runs their code on this computer, in a separate process that stops after 30 seconds. The code runs as you, as with alembic heads: it gets the open connection's address and password, so it can change the database, and it can read your files and Studio's settings. Trust it only if you would run it yourself. Studio checks alembic.ini, the revision files and the project modules in the prepend_sys_path folders, which revision files can import, and asks again when any of them changes or a module is added.",
       "stale": "The files changed after they were shown. This is the new list: review it again before you trust it.",
       "config": "Alembic configuration",
       "files": "Revision files",
+      "modules": "Project modules (prepend_sys_path)",
       "reject": "Don't trust",
       "trust": "Trust and run"
     }
@@ -807,6 +872,7 @@
     "secret_file_unreadable": "The password file is missing, empty, larger than 4 KB or not UTF-8.",
     "object_not_found": "The object is no longer in the database's catalog. Refresh the catalog.",
     "explorer_engine": "This information exists only for the other database engine.",
+    "diagram_too_large": "The schema has more than 1000 tables, more than one diagram can read. Use the tree and the Relationships tab.",
     "db": {
       "connection": "Studio could not connect. Check the host and the port (a firewall may block it), the user and the password, and the TLS mode (verify-full needs the server certificate to be trusted; verify-ca or a CA file may help).",
       "auth": "The database refused the sign-in. Check the user and the password.",

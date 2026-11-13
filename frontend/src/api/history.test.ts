@@ -149,6 +149,10 @@ describe('script answers (STU-020)', () => {
       'a.sql.',
       'a\u202Eb.sql',
       'a\u200Bb.sql',
+      'a\u3164b.sql',
+      'a\u2800b.sql',
+      'a\u00A0b.sql',
+      'a\u034Fb.sql',
     ]) {
       expect(validScriptPath(bad)).toBe(false);
     }

@@ -1261,6 +1261,8 @@ describe('EditorView: scripts, format and completion (STU-020)', () => {
       expect(screen.getAllByTestId('editor-tab')[1]).toHaveTextContent('a\\u202Eb'),
     );
     expect(screen.getAllByTestId('editor-tab')[1]?.textContent).not.toContain('\u202E');
+    // The editor's accessible name escapes it too.
+    expect(await screen.findByRole('textbox', { name: 'SQL of a\\u202Eb' })).toBeInTheDocument();
   });
 
   it('asks for a path for a new script; a script that exists or changed is overwritten only on request', async () => {

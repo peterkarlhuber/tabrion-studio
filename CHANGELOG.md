@@ -38,6 +38,9 @@ All notable changes to this project are documented here. The format follows
   rules; the Open… dialog says how many links it left out; texts for the new script problems; a cut history entry
   says so in the editor; the delete-all dialog says it also clears the user's own profiles in every project; the
   settings say that retention deletes old statements also while the history is off.
+- STU-020 delta review (page): `visible()` also escapes zero-width and blank-looking characters (Hangul fillers,
+  the braille blank, U+034F), the editor's accessible name shows a script's name through it, and the save dialog
+  refuses blank-looking characters like the server.
 - STU-020 (backend): Studio's state database `state.sqlite` in the state folder (0600, opened through
   `tabrion.sqlite.connect`, links refused, `secure_delete`); the query history of every finished query, per profile
   and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,
@@ -58,6 +61,21 @@ All notable changes to this project are documented here. The format follows
   `studio.script_permission_denied`, `studio.script_locked`, `studio.script_disk_full` or
   `studio.script_write_failed` instead of an internal error. Recording a history entry waits at most 250 ms for
   another instance's write lock; the checkpoint result is checked and retried; the 100 favorites count per project.
+- STU-020 delta review fixes (backend): a checkpoint of the state database never waits for another connection
+  (`busy_timeout = 0`), so a reader holds up neither a query's end nor the store; a checkpoint that finds the log in
+  use is retried on every purge until it succeeds. The purge after a settings save runs off the event loop and, like
+  recording, waits at most 250 ms for another instance's write lock. Script names refuse blank-looking characters
+  (spaces other than U+0020, Hangul fillers, the braille blank, the combining grapheme joiner).
+- STU-023, the ER diagram: **ER diagram** next to **Objects** in the explorer draws the tables of one schema (at most
+  150; **Tables** chooses them) with their columns, keys and a line for each foreign key, laid out by dagre and shown
+  with @xyflow/react 12 (pan, zoom, overview map); 150 tables are laid out in under 2 s, and the page says how long
+  it took. A table under the diagram lists the same tables and keys as text; every box's name is a button in the
+  Tab order that shows the table in the tree. **Save as SVG** and **Save as PNG** (twice the size) are drawn in the
+  page from the diagram, without any remote resource. New read route `GET /api/connections/{id}/diagram?schema=`
+  (tables, columns, primary keys and keys out of a schema in three catalog reads; `studio.diagram_too_large` past
+  1000 tables). New frontend dependencies `@xyflow/react` 12.12.0 and `@dagrejs/dagre` 3.1.3 (MIT, named in the
+  plan). `npm test` runs the timed acceptance tests (`*.perf.test.ts`) after the unit tests, alone in one worker.
+  Open items: TD-052.
 - TD-008 (review C-2): the required CI job `T-2 path checks (windows-latest)` runs the T-2 path tests by name on
   Windows (no `nt._getfinalpathname` for a UNC value from the project file) and fails when one of them is missing,
   skipped or failed.
@@ -535,6 +553,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- TD-055: Studio's log redaction no longer depends on Uvicorn's loggers being unconfigured. `configure_logging`
+  takes over Uvicorn's and asyncio's loggers (their own handlers removed, propagation on, the redaction filters on the
+  loggers themselves) and restores them on close, so a `uvicorn.Config` with the default `log_config` or another
+  `dictConfig` in the same process cannot make Uvicorn print a failed lifespan's traceback text unredacted. The
+  `tabrion-studio` command was not affected (it passes `log_config=None`). Tests restore the logging state after
+  each one, which fixes the lifespan canary failing after `tests/unit/test_server.py`.
+
 - Security review F-6 / TD-031: the Python runtime dependencies are installed from the hashed lock
   `constraints/runtime-lock.txt` (exact versions, SHA-256 of every file, `pip --require-hashes --no-deps`, wheels
   only) in every `ci.yml` job, in `scripts/smoke_wheel.py` and in the installation guide; Tabrion stays pinned by its full
@@ -548,6 +573,19 @@ All notable changes to this project are documented here. The format follows
   PR #65 and PR #66). `security-review-prep.md` and `docs/TODO.md` record this and the owner decisions still open
   for G-S1 (F-5/TD-033, F-6/TD-031, F-7/T-16, TD-005, TD-002/TD-007, TD-003/TD-008, the PostgreSQL read-only model);
   G-S1 is not passed, and the human review before a public release (STU-028, G-R) stays required. New TD-053.
+- STU-016 review F-7 (T-16, TD-054): the migration code trust also covers the project modules under the
+  `prepend_sys_path` folders (every `*.py` in identifier-named folders, by path and bytes), so a changed or new
+  module asks for trust again. The digest is versioned: a project trusted before needs trust again. Over the caps
+  (5 000 modules, 32 MB, 256 KB per module) or with a link out of the project, the code cannot be trusted. The
+  worker runs only the hashed module bytes, and the trust dialog lists the modules and says what is checked (en/de).
+  Review C-1 of the fix: project folders on the interpreter's path are loaded through the hashed loader too. An
+  import guard first on `sys.meta_path` holds every finder (also those of an editable install in Studio's
+  environment) to the hashed bytes for any module in the project folder outside Studio's installation, and refuses
+  the rest; the worker starts with `-S` and runs `site.main()` under the guard. Studio running from a source
+  checkout inside the project does not read the revisions (fail closed). The page names the file when the trust
+  state is invalid because of one file (`issue_file`, review I-1). Delta review: the guard goes back to the front of
+  `sys.meta_path` after `site.main()`, and the worker fails closed when a finder is in front of it before the
+  revisions are read (C-2); a namespace package from Python's path finder is no longer refused (N-1).
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
   (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
   so numbers must be written in decimal) in the editor, the

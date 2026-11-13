@@ -11,8 +11,9 @@
  * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036;
  * editor: the profiles and a fake query engine for the SQL editor of STU-012, with `sql` as the first tab's draft,
  * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
- * catalogs and details of STU-010 and the data viewer's pages of STU-013), `path` (/, /connections, /explorer, /sql,
- * /history, /migrations, /diagnostics, /settings). In every scenario the fake answers STU-020's routes
+ * catalogs and details of STU-010 and the data viewer's pages of STU-013; `er=150` gives the PostgreSQL schema
+ * `audit` 150 tables for the ER diagram of STU-023), `path` (/, /connections, /explorer, /sql, /history, /migrations,
+ * /diagnostics, /settings). In every scenario the fake answers STU-020's routes
  * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
  * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
  * `theme` (light, dark) and `lang` (en, de). The editor's drafts (TD-033) go to a fake `/api/drafts` (`drafts.ts`) that
@@ -366,7 +367,9 @@ const fakeServer: typeof fetch = async (input, init) => {
     if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES), { status: 200 });
     const page = method === 'GET' ? viewer.answer(url) : null;
     if (page !== null) return page;
-    const answer = explorerAnswer(url, method, typeof init?.body === 'string' ? init.body : '');
+    const answer = explorerAnswer(url, method, typeof init?.body === 'string' ? init.body : '', {
+      largeDiagram: params.get('er') === '150',
+    });
     if (answer !== null) return answer;
   }
   const stu020 = historyServer.handle(String(input), init);
@@ -458,6 +461,7 @@ function HarnessDialog({ id }: { id: string }) {
         configFile="alembic.ini"
         scriptLocation="migrations"
         revisionFiles={['0001_parts.py', '0002_measurements.py', '0003_indexes.py']}
+        moduleFiles={['parts/__init__.py', 'parts/models.py']}
         onTrust={done('trust')}
         onReject={done('cancel')}
       />

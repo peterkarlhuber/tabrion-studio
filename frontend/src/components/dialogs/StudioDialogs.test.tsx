@@ -261,6 +261,8 @@ describe('D-01 with an untrusted project file (binding requirement U-1)', () => 
     expect(visible('a\\u202Eb')).toBe('a\\\\u202Eb'); // a literal escape cannot pass for a real one
     for (const code of [
       0x00, 0x1b, 0x7f, 0x85, 0x9f, 0x61c, 0x200e, 0x200f, 0x2028, 0x2029, 0x202a, 0x2066, 0x2069,
+      // Zero-width and blank-looking characters (STU-020 delta review D-5).
+      0x200b, 0x200d, 0x2060, 0xfeff, 0x34f, 0x115f, 0x1160, 0x17b4, 0x2800, 0x3164, 0xffa0,
     ]) {
       expect(visible(String.fromCodePoint(code))).toBe(
         `\\u${code.toString(16).toUpperCase().padStart(4, '0')}`,
@@ -428,6 +430,7 @@ describe('STU-015 trust dialog with project file names (U-1)', () => {
     expect(
       within(within(dialog).getByTestId('trust-code-config')).getAllByRole('listitem'),
     ).toHaveLength(1);
+    expect(within(dialog).queryByTestId('trust-code-modules')).toBeNull(); // no project modules
     const files = within(dialog).getByTestId('trust-code-files');
     expect(within(files).getByRole('heading')).toHaveTextContent(
       `Revision files (${names.length})`,

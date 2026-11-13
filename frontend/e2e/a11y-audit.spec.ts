@@ -15,8 +15,9 @@
  *   result grid scrolls inside its own region (data tables are exempt from 1.4.10, but the page must not move).
  *
  * The pages that landed after the first audit (TD-022, STU-053 second part): the SQL editor with a result, the cell
- * detail and the export dialog; the explorer's Data, DDL and Policies tabs and "Count rows"; the data viewer with
- * filters and the cell detail; the diagnostics result with its report buttons; D-02 from the connection manager.
+ * detail and the export dialog; the explorer's Data, DDL and Policies tabs, "Count rows" and the ER diagram (STU-023);
+ * the data viewer with filters and the cell detail; the diagnostics result with its report buttons; D-02 from the
+ * connection manager.
  *
  * axe itself (with color contrast, light and dark, en and de) is a11y.spec.ts and the page suites (editor, export,
  * explorer, explorer-definitions, viewer, diagnostics, connections); the dialogs' focus rules are dialogs.spec.ts.
@@ -90,6 +91,16 @@ const WORK_PAGES: State[] = [
       await expect(page.getByTestId('row-count-result')).toContainText('1');
       await page.getByRole('tab', { name: 'DDL' }).click();
       await expect(page.getByTestId('ddl-text')).toContainText('CREATE TABLE part');
+    },
+  ],
+  [
+    'explorer ER diagram with its choice and table alternative (STU-023)',
+    { scenario: 'explorer', path: '/explorer' },
+    async (page) => {
+      await page.getByTestId('explorer-open').click();
+      await page.getByTestId('explorer-view-diagram').click();
+      await expect(page.getByTestId('er-box')).toHaveCount(6);
+      await page.getByTestId('er-choose-toggle').click();
     },
   ],
   [

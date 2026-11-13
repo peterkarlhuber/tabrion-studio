@@ -6,8 +6,9 @@ as text first and then on the file system, with the same helpers as a project's 
 :mod:`tabrion_studio.config.locations`):
 
 * only a relative path of plain names: no drive, no root, no ``\\``, no ``..``, no ``.`` component, no control or
-  format character (bidi overrides, zero-width characters), no component that starts with ``.`` (hidden folders such
-  as ``.git`` or ``.tabrion`` are not script folders), at most :data:`MAX_PATH_CHARS` characters;
+  format character (bidi overrides, zero-width characters), no blank-looking character (a space other than U+0020,
+  the Hangul fillers, the braille blank, the combining grapheme joiner), no component that starts with ``.`` (hidden
+  folders such as ``.git`` or ``.tabrion`` are not script folders), at most :data:`MAX_PATH_CHARS` characters;
 * no name that Windows reads as something else, on every system alike (the same project is opened on all of them):
   a device name (``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM0``-``COM9``, ``LPT0``-``LPT9``, also with superscript
   digits, ``CONIN$``, ``CONOUT$``; also with an extension, ``nul.sql``), a name that ends in ``.`` or a blank (Win32
@@ -93,6 +94,10 @@ _CONTROL = re.compile("[\\x00-\\x1f\\x7f-\\x9f\\u2028\\u2029]")
 _FORBIDDEN = re.compile(r'[\\:*?"<>|]')
 #: Device names of Windows, with or without an extension (``nul.sql`` names the device too).
 _DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9¹²³]|LPT[0-9¹²³])", re.I)
+#: Characters that show as nothing (or as a blank) but are not format characters: the combining grapheme joiner, the
+#: Hangul fillers, the Khmer inherent vowels and the braille blank. With the format characters (category Cf) and every
+#: space but U+0020 (category Zs) they would let two names look alike.
+_BLANK = frozenset("\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\uffa0")
 #: An 8.3 short name (``GIT~1``) can name another file or folder, a hidden one too.
 _SHORT_NAME = re.compile(r"~[0-9]")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -126,14 +131,21 @@ def script_digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _invisible(char: str) -> bool:
+    if char in _BLANK:
+        return True
+    category = unicodedata.category(char)
+    return category == "Cf" or (category == "Zs" and char != " ")
+
+
 def _plain_name(name: str) -> bool:
     """Whether one path component is a name Studio accepts on every system."""
     if not name or name in (".", "..") or name.startswith(".") or name != name.strip() or name.endswith("."):
         return False
     if _CONTROL.search(name) or _FORBIDDEN.search(name) or _SHORT_NAME.search(name):
         return False
-    if any(unicodedata.category(char) == "Cf" for char in name):
-        return False  # bidi overrides and isolates, zero-width characters: a name must read as what it is
+    if any(_invisible(char) for char in name):
+        return False  # bidi overrides and isolates, zero-width and blank characters: a name must read as what it is
     return _DEVICE.fullmatch(name.split(".", 1)[0].rstrip(" ")) is None
 
 

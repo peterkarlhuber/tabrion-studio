@@ -136,6 +136,19 @@ def test_read_a_script(project: Path) -> None:
         "a\u200bb.sql",
         "a\u200fb.sql",
         "\ufeffa.sql",
+        # Characters that look blank but are not format characters (D-5 of the delta review).
+        "a\u3164b.sql",
+        "\u3164.sql",
+        "a\u115fb.sql",
+        "a\u1160b.sql",
+        "a\uffa0b.sql",
+        "a\u2800b.sql",
+        "a\u034fb.sql",
+        "a\u17b4b.sql",
+        "a\u00a0b.sql",
+        "a\u3000b.sql",
+        "a\u2007b.sql",
+        "sql\u3164/a.sql",
     ],
 )
 def test_refused_paths(project: Path, path: str) -> None:
@@ -185,7 +198,19 @@ def test_no_link_is_followed_on_the_way(project: Path, tmp_path: Path) -> None:
 
 def test_names_like_devices_are_fine_as_part_of_a_name(project: Path) -> None:
     scripts = Scripts(project)
-    for path in ("console.sql", "nullable.sql", "com10.sql", "lpt.sql", "my_aux.sql", "a~b.sql"):
+    # Names with a plain space, accents (also decomposed, as macOS stores them) and other scripts stay valid.
+    for path in (
+        "console.sql",
+        "nullable.sql",
+        "com10.sql",
+        "lpt.sql",
+        "my_aux.sql",
+        "a~b.sql",
+        "a b.sql",
+        "caf\u00e9.sql",
+        "re\u0301sume\u0301.sql",
+        "\ud55c\uae00.sql",
+    ):
         scripts.save(path, "SELECT 1", None)
         assert scripts.read(path)["content"] == "SELECT 1"
 

@@ -52,6 +52,8 @@ const PROBLEMS = new Set([
   // The explorer (STU-010), and an answer the page cannot read (STU-014 diagnostics, STU-010).
   'object_not_found',
   'explorer_engine',
+  // The ER diagram (STU-023).
+  'diagram_too_large',
   'answer_invalid',
   // The diagnosis report (STU-025, TD-036).
   'report_invalid',
