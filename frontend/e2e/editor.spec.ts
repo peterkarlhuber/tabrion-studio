@@ -360,7 +360,11 @@ test('D-02 asks before the first PROD connection; Cancel connects nothing', asyn
   expect((await log(page)).connections).toEqual(['user:measure-central']);
 });
 
-test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async ({ page }) => {
+test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'chromium only: the heap is measured through CDP');
   test.setTimeout(120_000);
   await openEditor(page, 'select * from generate_series(1, 100000)', { maxRows: 100_000 });
   await page.getByTestId('editor-run').click();
@@ -400,7 +404,9 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
 
 test('wide rows stay within the memory limit too: the cache is bounded in bytes (M-4)', async ({
   page,
+  browserName,
 }) => {
+  test.skip(browserName !== 'chromium', 'chromium only: the heap is measured through CDP');
   test.setTimeout(120_000);
   // 1 000 rows of three texts of 30 000 characters "€" (2 bytes each in V8): about 180 MB if all were held.
   await openEditor(page, 'select * from generate_series(1, 1000) wide(30000)');
