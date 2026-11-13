@@ -652,6 +652,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The accessibility audit's Tab-stop walk (STU-053) measures each stop one task after the focus moved, because WebKit
+  scrolls a newly focused element into view from a zero-delay timer; the explorer's selected tree row, below the
+  fold since the "View" group was added, read as out of view now and then in the WebKit job (TD-058). Test only.
 - Theme switch: buttons kept their old background for 120 ms (a transition) while their text took the new theme,
   so for that moment a primary button's label had too little contrast (TD-047, found by axe in WebKit). The theme now
   switches with transitions off, and text and background change together.
