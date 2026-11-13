@@ -472,6 +472,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Request bodies are capped while they stream in, before any route reads them (STU-016 review F-4): a
+  `Content-Length` over the route's cap is refused with 413 before a byte is read, a chunked body is stopped one chunk
+  past the cap, and the answer closes the connection. Caps: 4 KB for `/api/session` and the control endpoints, 2 MB
+  for `/api/queries` and `/api/exports` (`studio.query_too_large` as before), 16 KB for every other route (new
+  problem code `access.body_too_large`). The routes' own, smaller caps are unchanged; an oversized `/api/session` or
+  `/api/control/launch` body is now 413 `access.body_too_large` instead of 400 `access.bad_request`.
+- The access middleware checks the control token itself for every path under `/api/control/` except the proof, so a
+  control route added later is never reachable without it, and an `/api/*` path with a `.` or `..` segment is 404
+  before routing (STU-016 review F-8).
+- `docs/architecture/security-review-prep.md` records the outcome of the first independent security review (not
+  accepted at `e186178`): SQ-05, SQ-07, T-06 and T-13 are not met until the read-only hardening PR is merged and
+  re-reviewed, and F-5, F-6 and F-7 are owner decisions (STU-016 review F-9).
 - Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
   review). User SQL, the viewer and the exports keep the session's `search_path`.
 - Opening a PostgreSQL connection now runs the driver's and SQLAlchemy's setup queries under a fixed search_path;

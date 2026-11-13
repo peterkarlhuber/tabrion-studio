@@ -15,7 +15,7 @@ import pytest
 
 from tabrion_studio.security.access import CONTENT_SECURITY_POLICY, SECURITY_HEADERS, AccessMiddleware, session_cookie
 from tabrion_studio.security.sessions import CSRF_HEADER, Sessions
-from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, Studio, make_studio
+from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, TOKEN, Studio, make_studio
 
 pytestmark = pytest.mark.security
 
@@ -125,7 +125,7 @@ def _asgi_status(headers: list[tuple[bytes, bytes]], path: str = "/api/health", 
     async def receive() -> Any:
         return {"type": "http.request", "body": b""}
 
-    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions())
+    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions(), control_token=TOKEN)
     scope = {"type": "http", "method": method, "path": path, "headers": headers}
     asyncio.run(middleware(scope, receive, send))
     return 0 if reached else int(sent[0]["status"])
@@ -151,7 +151,7 @@ def test_websockets_are_refused() -> None:
     async def receive() -> Any:
         return {"type": "websocket.connect"}
 
-    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions())
+    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions(), control_token=TOKEN)
     scope = {"type": "websocket", "path": "/api/events", "headers": [(b"host", HOST.encode())]}
     asyncio.run(middleware(scope, receive, send))
     assert sent == [{"type": "websocket.close", "code": 1008}]
@@ -407,11 +407,16 @@ def test_unknown_launch_token_is_refused(static_dir: Path, token: object) -> Non
 
 def test_session_request_needs_a_json_object(static_dir: Path) -> None:
     studio = make_studio(static_dir)
-    for body in (b"[]", b"{", b"x" * 5000):
+    for body in (b"[]", b"{"):
         response = studio.client.post(
             "/api/session", content=body, headers={"Origin": ORIGIN, "Content-Type": "application/json"}
         )
         _assert_refused(response, 400, "access.bad_request")
+    # Over the 4 KB cap: refused while the body streams in (STU-016 review F-4, test_body_limits.py).
+    response = studio.client.post(
+        "/api/session", content=b"x" * 5000, headers={"Origin": ORIGIN, "Content-Type": "application/json"}
+    )
+    _assert_refused(response, 413, "access.body_too_large")
 
 
 def test_session_of_another_instance_does_not_count(static_dir: Path) -> None:

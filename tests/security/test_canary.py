@@ -27,7 +27,7 @@ import uvicorn
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets, register_secret
 from tabrion_studio.problems import CATALOG, PROBLEM_MEDIA_TYPE
-from tests.support.access import ORIGIN, TOKEN, Studio, make_studio
+from tests.support.access import CONTROL_AUTH, ORIGIN, TOKEN, Studio, make_studio
 
 pytestmark = pytest.mark.security
 
@@ -221,13 +221,17 @@ def test_request_log_has_no_query_string_header_or_body(static_dir: Path, logs: 
     studio.client.get(f"/api/heartbeat?csrf={CANARY}", headers={**headers, "X-Trace": CANARY})
     studio.client.get(f"/api/control/proof?nonce={CANARY}")
     studio.client.post(f"/api/control/{CANARY}", json={"secret": CANARY}, headers={"Authorization": f"Bearer {CANARY}"})
+    studio.client.post(f"/api/control/{CANARY}", json={"secret": CANARY}, headers=CONTROL_AUTH)
     studio.client.get(f"/assets/{CANARY}.js")
     studio.client.get(f"/nowhere/{CANARY}?x={CANARY}", headers={"Host": "rebind.test"})
     _assert_no_canary(logs.everything())
     routes = {(record["route"], record["status"]) for record in logs.records() if record.get("event") == "http.request"}
     assert ("/api/heartbeat", 204) in routes
     assert ("/api/control/proof", 400) in routes
-    assert ("/api/control/{action}", 401) in routes
+    # A wrong control token is refused by the access middleware before routing (STU-016 review F-8); with the token,
+    # the unknown action reaches the route and is logged by its template.
+    assert ("<unmatched>", 401) in routes
+    assert ("/api/control/{action}", 404) in routes
     assert ("static", 404) in routes
     assert ("<unmatched>", 403) in routes
 
