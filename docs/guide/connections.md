@@ -88,7 +88,7 @@ A file with errors is not loaded at all; Studio says so and lists the issues.
 
 | Source | Where the password is | Notes |
 |---|---|---|
-| System keyring | your operating system's keyring, service `tabrion-studio` | the entry belongs to the connection target: if a profile later points to another host, database or user, or a weaker TLS mode, the saved password is not used and Studio asks again |
+| System keyring | your operating system's keyring, service `tabrion-studio` | the entry belongs to the connection target, which is the profile's engine, host, port, database, user, path (SQLite) and `sslmode`: if any of them changes later (another host, database or user, or another TLS mode, for example), the saved password is not used and Studio asks again |
 | Environment variable | the variable of the `tabrion-studio` process | start Studio from a shell that has it; an empty variable counts as missing |
 | File | a file you own with mode 0600 or 0400, at most 4 KB, no link | a project profile's file must lie in the project folder or the configuration folder; `~` is not expanded |
 | This session | Studio's memory | gone when Studio stops |
