@@ -120,7 +120,9 @@ Studio. `-I` keeps out the `PYTHON*` variables, the user site and the current fo
 worker runs), so no file of the project is imported while the worker starts. `-S` keeps the interpreter from adding
 the environment's site folders on its own: the worker first puts its import guard in place (see below) and then runs
 `site.main()` itself, so the environment's `.pth` files, the import finders they install and `sitecustomize` are
-imported under the guard.
+imported under the guard. A `.pth` file may insert its finder in front of the guard (the editable installs of
+meson-python and scikit-build-core do), so the guard goes back to the front after `site.main()`, and the worker does
+not read the revisions if anything is in front of it then (review C-2).
 
 - **Only this connection's target.** The worker gets the target on standard input, never in its arguments or its
   environment: the target fields, the timeouts, and the password or the database file, read again for this run
@@ -149,7 +151,9 @@ imported under the guard.
   project folder on `sys.path` through a `.pth` file, the import finder of an editable install). Project code is
   loaded from its hashed bytes when it was hashed and refused otherwise: an extension module, bytecode without a
   source, a module that was not hashed (for example in a folder the scan skips), and a module of a loader without a
-  file whose package folders lie in the project. Before the scan, every project module is refused. Studio's
+  file whose package folders lie in the project. A namespace package (no `__init__.py`; Python's path finder gives
+  it no loader) runs no code and passes; each module in it is checked (review N-1). Before the scan, every project
+  module is refused. Studio's
   installation is `sys.prefix`, `sys.exec_prefix`, their base prefixes, the environment's site folders and the
   folder that holds `tabrion_studio`; they are read when a module is checked, after `site.main()` set the prefixes
   of a virtual environment. Folders are matched by real path and by identity (device and inode), so another
@@ -201,7 +205,9 @@ What the measure does not cover. Trusting the code means trusting it as you woul
   review C-1). What the trusted code reads or runs by other means (its own file reads, `exec` of a file, loading a
   file through `importlib.util.spec_from_file_location` itself, other processes) is part of the trusted code and is
   not checked again. Studio's own environment, also a virtual environment inside the project that Studio runs from,
-  keeps the usual import finder; its contents are trusted as Studio itself is.
+  keeps the usual import finder; its contents are trusted as Studio itself is. That includes its finders: one that
+  loads a module without a file (no origin) is trusted as the environment (review I-4); the editable installs of
+  setuptools, editables, pdm, flit, meson-python and scikit-build-core all give a file.
 - **Windows:** children of the project's code are bounded by the job object only when Windows lets Studio make one
   (see the worker).
 

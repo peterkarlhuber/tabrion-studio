@@ -19,7 +19,7 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 |---|---|---|
 | SQ-01..SQ-08 green, each with its STU-T tests | Ready for review | [SQ requirements](#sq-01sq-08) below |
 | SQ-01..SQ-08 after the independent review | Met in the review: SQ-05 and SQ-07 (review F-1, F-2) and SQ-06 (F-4) fixed (PR #65/#66), independent re-review accepted at `2a8a229` | [Re-review](#re-review-on-2a8a229) below |
-| Every threat-model measure (doc 03 section 7.3, T-01..T-16) proven by a test | Met in the review: T-06 and T-13 (review F-1, F-2) fixed (PR #65/#66), independent re-review accepted at `2a8a229`; T-16: F-7 fixed in PR #75 (TD-054), the re-check of its condition C-1 pending; the write-mode rows are G-S2 | [Threat model](#threat-model-t-01t-16) below |
+| Every threat-model measure (doc 03 section 7.3, T-01..T-16) proven by a test | Met in the review: T-06 and T-13 (review F-1, F-2) fixed (PR #66), independent re-review accepted at `2a8a229`; T-16: F-7 fixed in PR #75 (TD-054), the re-check of its condition C-2 pending; the write-mode rows are G-S2 | [Threat model](#threat-model-t-01t-16) below |
 | Review report "accepted": a first review, the fixes, a re-review on merged SHAs | Met: the first independent review (`e186178`) was not accepted; its findings were fixed (PR #65/#66), independent re-review accepted at `2a8a229`. G-S1 itself is the owner's decision, with the [open owner decisions](#open-owner-decisions-for-g-s1) | [Independent review](#independent-review-first-round), [re-review](#re-review-on-2a8a229) below |
 | `npm audit --omit=dev` without High | Met (0 findings at `e9df576`) | CI job `dependency audit` |
 | axe: 0 serious or critical | Met for the existing views (`e2e`, every view in light and dark, en and de) | `frontend/e2e/*.spec.ts`, `docs/architecture/accessibility.md`; the rest of STU-053 is TD-022 |
@@ -146,7 +146,7 @@ reproduction steps, stays outside the repository.
 | F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed (PR #65): caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)); independent re-review accepted at `2a8a229` |
 | F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | **Owner decision:** finish TD-033 before a public release, or accept the risk and say so in the user guide |
 | F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | Fixed in the f6-lock PR: CI and the installation guide install from the hashed lock `constraints/runtime-lock.txt` (`--require-hashes`), checked against the `pyproject.toml` ranges; Tabrion stays a full-SHA pin |
-| F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | Fixed in PR #75 (TD-054): the digest covers them, versioned (earlier trust is renewed), fail closed over its caps; the dialog lists them. Review of the fix accepted with condition C-1 (project folders on the interpreter's path); C-1 fixed in PR #75, its re-check pending |
+| F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | Fixed in PR #75 (TD-054): the digest covers them, versioned (earlier trust is renewed), fail closed over its caps; the dialog lists them. Review of the fix accepted with condition C-1 (project folders on the interpreter's path); C-1 fixed in PR #75, its delta review accepted with condition C-2 (a finder in front of the import guard), C-2 and N-1 fixed in PR #75, their re-check pending |
 | F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed (PR #65): every control request except GET/HEAD of the proof path needs the token; dot segments in `/api/*` paths reach no route; independent re-review accepted at `2a8a229` |
 | F-9 | Info | This page said "covered" for SQ-05, T-06 and T-13 | Fixed: this page (PR #65); the status after the re-review is recorded below |
 
@@ -172,7 +172,7 @@ reproducibility. The report stays outside the repository.
   lock in CI and the installation guide; table above); the owner confirms it with G-S1.
 - **F-7 / T-16:** the migration code-trust digest did not cover project modules that revision files import. Fixed
   in PR #75 (TD-054) by hashing them; the review of the fix is accepted with condition C-1, which is fixed in the
-  same PR and waits for its re-check.
+  same PR; its delta review is accepted with condition C-2, fixed in the same PR and waiting for its re-check.
 - Still open from this page: TD-005 (the spent launch URL in the browser history), TD-002 and TD-007 (the
   redirect-file launch path and the checks in a real browser), TD-003 and TD-008 (the file-permission model on
   Windows, which CI does not yet check), and the PostgreSQL read-only model for side-effect functions that the

@@ -508,7 +508,9 @@ All notable changes to this project are documented here. The format follows
   environment) to the hashed bytes for any module in the project folder outside Studio's installation, and refuses
   the rest; the worker starts with `-S` and runs `site.main()` under the guard. Studio running from a source
   checkout inside the project does not read the revisions (fail closed). The page names the file when the trust
-  state is invalid because of one file (`issue_file`, review I-1).
+  state is invalid because of one file (`issue_file`, review I-1). Delta review: the guard goes back to the front of
+  `sys.meta_path` after `site.main()`, and the worker fails closed when a finder is in front of it before the
+  revisions are read (C-2); a namespace package from Python's path finder is no longer refused (N-1).
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
   (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
   so numbers must be written in decimal) in the editor, the

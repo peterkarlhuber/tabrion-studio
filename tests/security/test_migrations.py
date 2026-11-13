@@ -998,7 +998,7 @@ class EditableFinder:
 
 
 def install():
-    sys.meta_path.append(EditableFinder)
+    {install}
 """
 
 
@@ -1013,7 +1013,9 @@ def environment(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> Path:
     venv.create(folder, with_pip=False, symlinks=os.name != "nt")
     purelib = Path(sysconfig.get_path("purelib", "venv", vars={"base": str(folder), "platbase": str(folder)}))
     purelib.mkdir(parents=True, exist_ok=True)
-    (purelib / "_studio_test_packages.pth").write_text("\n".join(site.getsitepackages()) + "\n")
+    # Each site folder of the test's environment with its own .pth files (an editable dependency included).
+    lines = [f"import site; site.addsitedir({folder!r})" for folder in site.getsitepackages()]
+    (purelib / "_studio_test_packages.pth").write_text("\n".join(lines) + "\n")
     python = folder / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     monkeypatch.setattr(sys, "executable", str(python))  # the worker runs with this environment's interpreter
     return purelib
@@ -1105,15 +1107,22 @@ def test_an_unhashed_package_on_the_environment_path_is_refused(shop: Shop, monk
     assert not ran_instead.exists()
 
 
-def test_an_editable_meta_path_finder_loads_only_hashed_modules(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A meta path finder of an editable install that maps packages to project folders: the hashed package is loaded
-    from its hashed bytes, a package the digest does not cover is refused."""
+@pytest.mark.parametrize("place", ["append", "front"])
+def test_an_editable_meta_path_finder_loads_only_hashed_modules(
+    shop: Shop, monkeypatch: pytest.MonkeyPatch, place: str
+) -> None:
+    """A meta path finder of an editable install that maps packages to project folders, added after the others
+    (setuptools, editables) or in front of them (meson-python, scikit-build-core; review C-2): the hashed package is
+    loaded from its hashed bytes, a package the digest does not cover is refused."""
     purelib = environment(shop, monkeypatch)
     package = shoplib(shop)
     library = shop.project / "packages" / "my-lib" / "src" / "mylib"
     library.mkdir(parents=True)
     mapping = {"shoplib": str(package), "mylib": str(library)}
-    (purelib / "__editable___studio_test_finder.py").write_text(EDITABLE_FINDER.format(mapping=mapping))
+    install = "sys.meta_path.append(EditableFinder)" if place == "append" else "sys.meta_path.insert(0, EditableFinder)"
+    (purelib / "__editable___studio_test_finder.py").write_text(
+        EDITABLE_FINDER.format(mapping=mapping, install=install)
+    )
     (purelib / "__editable___studio_test.pth").write_text(
         "import __editable___studio_test_finder; __editable___studio_test_finder.install()\n"
     )
@@ -1164,3 +1173,12 @@ def test_studio_from_a_source_checkout_inside_the_project_refuses_to_run(shop: S
     )
     assert json.loads(done.stdout) == {"error": "studio.migrations_failed"}
     assert shop.ran() is None
+
+
+def test_a_hashed_namespace_package_loads(shop: Shop) -> None:
+    """A package without ``__init__.py`` under an import root (review N-1): its hashed module loads."""
+    (shop.project / "nsp").mkdir()
+    (shop.project / "nsp" / "mod.py").write_text('NAME = "hashed"\n')
+    imports(shop, "nsp.mod", "nsp.late")
+    trust(shop)
+    assert read_status(shop) == {"nsp.mod": "hashed", "nsp.late": absent("nsp.late")}

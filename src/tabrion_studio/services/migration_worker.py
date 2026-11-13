@@ -14,7 +14,9 @@ pending, is_current, unknown}`` or ``{error: <problem code>}``. The order matter
 1. The interpreter starts without :mod:`site` (``-S``). Before any folder of the environment is added, the worker
    puts an import guard (:class:`_ProjectGuard`) at the front of ``sys.meta_path``; then it runs :func:`site.main`
    itself, so the environment's ``.pth`` files, the finders they install and ``sitecustomize`` are imported under
-   the guard (review C-1 of F-7).
+   the guard (review C-1 of F-7). Afterwards the guard goes back to the front, since a ``.pth`` file may insert its
+   finder before it (editable installs of meson-python and scikit-build-core), and the worker refuses to read the
+   revisions if anything is in front of it then (review C-2).
 2. The worker computes the digest of ``alembic.ini``, the revision files and the project modules under the import
    roots again and keeps the bytes it hashed; it refuses to run if the digest is not the trusted one. The folders it
    adds to ``sys.path`` are the import roots of its own scan.
@@ -196,8 +198,12 @@ class _ProjectGuard(importlib.abc.MetaPathFinder):
                     submodule_search_locations=spec.submodule_search_locations,
                 ) or self.refuse(spec)
             return self.refuse(spec)
-        if isinstance(spec.loader, importlib.machinery.NamespaceLoader):
-            return spec  # runs no code; each module in it is checked when it is imported
+        if isinstance(spec.loader, importlib.machinery.NamespaceLoader) or (
+            spec.loader is None and origin is None and spec.submodule_search_locations is not None
+        ):
+            # A namespace package (PathFinder gives it no loader; the import system adds one): it runs no code, and
+            # each module in it is checked when it is imported (review N-1).
+            return spec
         if any(self.in_project(str(location)) for location in spec.submodule_search_locations or ()):
             return self.refuse(spec)  # a loader without a file that would read from the project
         return spec
@@ -266,6 +272,10 @@ def _guarded(project: str) -> _ProjectGuard | None:
     guard = _ProjectGuard(project, str(Path(__file__).resolve().parents[2]))
     sys.meta_path.insert(0, guard)
     site.main()
+    # A .pth file may have put its finder in front (editable installs of meson-python, scikit-build-core): the guard
+    # goes back to the front, so it sees what every finder returns (review C-2).
+    sys.meta_path.remove(guard)
+    sys.meta_path.insert(0, guard)
     if guard.studio_in_project():  # with the prefixes of a virtual environment, which site.main sets
         return None
     return guard
@@ -320,6 +330,8 @@ def _status(request: dict[str, Any]) -> dict[str, Any]:
         for folder in reversed(folders):
             sys.path.insert(0, folder)
         try:
+            if not sys.meta_path or sys.meta_path[0] is not guard:
+                return {"error": "studio.migrations_failed"}  # a finder got in front of the guard: fail closed (C-2)
             result = status(db, script_location=request["script_location"])
         finally:
             with contextlib.suppress(OSError):
