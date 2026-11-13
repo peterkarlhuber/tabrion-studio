@@ -212,15 +212,34 @@ let codeTrusted = false;
  * TD-034, the lost connection: `window.harnessLose(id)` makes every request on the connection `id` answer
  * `db.connection` (the database does not answer), its health check included, until the page opens a connection of
  * that profile again. `check=<ms>` sets the page's connection check interval (off by default in the harness).
+ * `window.harnessDatabaseDown(true)` makes opening a connection fail with `db.connection` as well (the database is
+ * down, TD-062), and the lost connections stay lost, until `window.harnessDatabaseDown(false)`.
  */
 const lostConnections = new Set<string>();
+let databaseDown = false;
 (window as unknown as { harnessLose: (id: string) => void }).harnessLose = (id) => {
   lostConnections.add(id);
+};
+(window as unknown as { harnessDatabaseDown: (down: boolean) => void }).harnessDatabaseDown = (
+  down,
+) => {
+  databaseDown = down;
 };
 const connectionCheckMs = Number(params.get('check') ?? '0');
 
 function lostAnswer(url: string, method: string): Response | null {
   if (url === '/api/connections' && method === 'POST') {
+    if (databaseDown) {
+      return new Response(
+        JSON.stringify({
+          code: 'db.connection',
+          kind: 'connection',
+          status: 502,
+          sqlstate: '08001',
+        }),
+        { status: 502 },
+      );
+    }
     lostConnections.clear();
     return null;
   }
@@ -239,7 +258,14 @@ function lostAnswer(url: string, method: string): Response | null {
   return null;
 }
 
+/** The body of every `POST /api/connections` the page sent, failed ones included (e2e/connection-lost.spec.ts). */
+const opens = window as unknown as { connectionOpens: string[] };
+opens.connectionOpens = [];
+
 const fakeServer: typeof fetch = async (input, init) => {
+  if (String(input) === '/api/connections' && init?.method === 'POST') {
+    opens.connectionOpens.push(typeof init.body === 'string' ? init.body : '');
+  }
   const lost = lostAnswer(String(input), init?.method ?? 'GET');
   if (lost !== null) return lost;
   const drafts = draftsServer.handle(String(input), init);

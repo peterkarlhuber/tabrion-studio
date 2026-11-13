@@ -78,7 +78,7 @@
 | TD-057 Export slot race: a client that started the next export on a connection right after reading the previous one to its end could get `studio.export_busy` (the worker freed the slot only after its last log line) | P2 | Done (PR #80) |
 | TD-058 STU-053 audit walk in WebKit: "explorer Policies tab: every Tab stop ... is in view" failed once in CI (PR #80, run 43405250149) with the selected tree row out of view; WebKit scrolls a newly focused element into view from a zero-delay timer, and the walk measured in the same task. Test race, no product bug; the walk now measures one task later | P2 | Done (PR #81) |
 | TD-061 STU-028 release SBOM: the macOS and Windows license records and `scripts/release_bom.py --strict` as a CI step (a `.github/` change); the inherited SPDX parenthesis gap of `check_licenses.py` (review L-6); a license record of a package the lock does not pin is ignored by `release_bom.py` (re-check R-1) | P2 | Open (STU-028 PR; by hand until then) |
-| TD-062 JR-N1: an e2e test of the PROD case of "Reconnect" after a failed reconnect (the behavior is accepted, G-S1 decision 4) | P3 | Open |
+| TD-062 JR-N1: an e2e test of the PROD case of "Reconnect" after a failed reconnect (the behavior is accepted, G-S1 decision 4) | P3 | Done (TD-062 PR: `e2e/connection-lost-prod-retry.spec.ts`) |
 | TD-060 STU-054 UX acceptance 1.0: what stays open (owner decisions on the "403" wording of 03 section 8 (also for the STU-026 row), D-07, tabrion's English finding texts and the start page's 4.1 deviation; TD-032 as a dependency; TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR) |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
@@ -1393,7 +1393,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-062 · JR-N1: an e2e test of the PROD retry after a failed reconnect
 
-- **Priority:** P3 Low · **Status:** Open (recorded 2026-11-13 with the G-S1 decisions) · **Refs:**
+- **Priority:** P3 Low · **Status:** Done (TD-062 PR; recorded 2026-11-13 with the G-S1 decisions) · **Refs:**
   `joint-regression-2026-11-13.md` JR-N1, G-S1 decision 4, TD-034, TD-038, `docs/architecture/connections.md`
   ("Lost connections and 'Reconnect'")
 - **What:** after a lost connection, "Reconnect" on a PROD profile asks D-02. When that attempt fails (the database
@@ -1401,6 +1401,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   failed attempt does not. The owner accepted this documented behavior (decision 4, option A).
 - **To do:** an e2e test of the PROD case (D-02 on the first "Reconnect", none on the retry after a failed one, D-02
   again after a new loss), in light and dark, en and de like the other connection-lost specs.
+- **Done:** `frontend/e2e/connection-lost-prod-retry.spec.ts`, in Chromium against the e2e harness, in light and
+  dark, en and de, with axe: D-02 on the first "Reconnect" after the loss; that attempt fails
+  (`window.harnessDatabaseDown(true)`: opening a connection answers `db.connection`) and shows "Reconnecting failed";
+  the retry asks nothing and sends `confirmed_environment: "prod"` at once (it fails again); with the database back
+  the next retry asks nothing either and the explorer follows the new connection; a new loss asks D-02 again. Every
+  `POST /api/connections` body is checked (`window.connectionOpens`). Test only: the product behavior is unchanged,
+  and the test found no deviation from the documented behavior.
 
 ### TD-055 · Test order: Uvicorn's logging config leaked from `test_server.py` into the lifespan canary
 

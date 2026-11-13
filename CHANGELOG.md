@@ -590,6 +590,12 @@ All notable changes to this project are documented here. The format follows
   allowed (K-33), that the K-33 contract names every known Levuvo platform, and scans for imports of any `orkexa*`,
   `axentra*`, `nodestro*` or `levuvo*` package by prefix.
 
+- TD-062 (JR-N1, G-S1 decision 4): `e2e/connection-lost-prod-retry.spec.ts` tests the PROD case of **Reconnect** in
+  light and dark, English and German, with axe: after a lost connection the first **Reconnect** asks D-02; when it
+  fails (the database is down) the retry in the same page session does not ask again, also once the database is back;
+  a new loss asks D-02 again. The e2e harness gets `window.harnessDatabaseDown(down)` (opening a connection fails with
+  `db.connection`) and records every `POST /api/connections` body. Test only; the behavior is unchanged.
+
 ### Security
 
 - Drafts (G-S1 delta audit A-1): a draft text deleted while another connection was reading the state database (for
