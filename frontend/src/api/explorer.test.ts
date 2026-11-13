@@ -7,17 +7,21 @@ import {
   SQLITE_CATALOG,
   SQLITE_COUNTS,
   SQLITE_INFO,
+  largeDiagram,
 } from '../harness/explorer';
 import {
+  ANSWER_INVALID,
   count,
   epochMs,
   fetchCatalog,
+  fetchDiagram,
   fetchDdl,
   fetchPolicies,
   fetchRowCount,
   fetchTable,
   parseCatalog,
   parseDdl,
+  parseDiagram,
   parseExtensions,
   parsePolicies,
   parseRowCount,
@@ -385,5 +389,105 @@ describe('STU-022: parseDdl, parsePolicies and parseRowCount', () => {
       expect(call.init?.method).toBeUndefined();
       expect(call.init?.credentials).toBe('same-origin');
     }
+  });
+});
+
+describe('parseDiagram and fetchDiagram (STU-023)', () => {
+  const answer = largeDiagram(3);
+  const reply = (body: unknown) =>
+    (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;
+
+  it('reads the backend shape', () => {
+    const diagram = parseDiagram(answer);
+    expect(diagram?.schema).toBe('audit');
+    expect(diagram?.engine).toBe('postgresql');
+    expect(diagram?.tables.map((table) => table.name)).toEqual([
+      'audit_000',
+      'audit_001',
+      'audit_002',
+    ]);
+    expect(diagram?.tables[1]?.foreignKeys).toEqual([
+      {
+        name: 'audit_001_parent_fkey',
+        columns: ['parent_id'],
+        referredSchema: 'audit',
+        referredTable: 'audit_000',
+        referredColumns: ['id'],
+      },
+      {
+        name: 'audit_001_device_fkey',
+        columns: ['device_id'],
+        referredSchema: 'public',
+        referredTable: 'device',
+        referredColumns: ['id'],
+      },
+    ]);
+    expect(diagram?.tables[0]?.columns[0]).toEqual({ name: 'id', type: 'BIGINT', nullable: false });
+    // A key without a name or schema is kept: the name is null, the schema the diagram's.
+    const loose = parseDiagram({
+      ...answer,
+      tables: [
+        {
+          ...answer.tables[1],
+          foreign_keys: [{ columns: ['a'], referred_table: 't', referred_columns: ['id'] }],
+        },
+      ],
+    });
+    expect(loose?.tables[0]?.foreignKeys[0]).toMatchObject({ name: null, referredSchema: 'audit' });
+  });
+
+  const table = answer.tables[1] as Record<string, unknown>;
+  const key = (answer.tables[1]?.foreign_keys[0] ?? {}) as Record<string, unknown>;
+  it.each([
+    ['not an object', []],
+    ['no schema', { ...answer, schema: 1 }],
+    ['another engine', { ...answer, engine: 'mysql' }],
+    ['no tables', { ...answer, tables: null }],
+    ['a table without a name', { ...answer, tables: [{ ...table, name: 7 }] }],
+    ['a table without columns', { ...answer, tables: [{ ...table, columns: 'id' }] }],
+    ['a column without a name', { ...answer, tables: [{ ...table, columns: [{ type: 'x' }] }] }],
+    ['a primary key that is not names', { ...answer, tables: [{ ...table, primary_key: [1] }] }],
+    ['no key list', { ...answer, tables: [{ ...table, foreign_keys: {} }] }],
+    [
+      'a key without its table',
+      { ...answer, tables: [{ ...table, foreign_keys: [{ ...key, referred_table: null }] }] },
+    ],
+    [
+      'a key with a column that is not a name',
+      { ...answer, tables: [{ ...table, foreign_keys: [{ ...key, columns: [null] }] }] },
+    ],
+    [
+      'a key name that is not text',
+      { ...answer, tables: [{ ...table, foreign_keys: [{ ...key, name: 3 }] }] },
+    ],
+  ])('refuses %s (fail closed)', (_, body) => {
+    expect(parseDiagram(body)).toBeNull();
+  });
+
+  it('asks for the schema as a query value and refuses an answer for another schema or connection', async () => {
+    const asked: string[] = [];
+    const fetcher = (async (input: RequestInfo | URL) => {
+      asked.push(String(input));
+      return new Response(JSON.stringify({ ...answer, connection_id: undefined }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+    expect((await fetchDiagram(fetcher, 'c 1', 'audit')).ok).toBe(true);
+    await fetchDiagram(fetcher, 'c1', 'a/b&c');
+    expect(asked).toEqual([
+      '/api/connections/c%201/diagram?schema=audit',
+      '/api/connections/c1/diagram?schema=a%2Fb%26c',
+    ]);
+    expect(await fetchDiagram(reply(answer), 'c-pg', 'public')).toEqual({
+      ok: false,
+      problem: ANSWER_INVALID,
+    });
+    expect(await fetchDiagram(reply(answer), 'c-sqlite', 'audit')).toEqual({
+      ok: false,
+      problem: ANSWER_INVALID,
+    });
+    expect(
+      (await fetchDiagram(reply({ ...answer, connection_id: undefined }), 'x', 'audit')).ok,
+    ).toBe(true);
   });
 });

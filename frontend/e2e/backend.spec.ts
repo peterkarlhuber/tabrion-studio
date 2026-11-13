@@ -404,6 +404,80 @@ test('STU-014: the page runs the diagnosis of a prepared SQLite file and shows i
   await expectNoViolations(page, violations);
 });
 
+test('STU-023: the ER diagram of a real SQLite database, its exports, under the CSP', async ({
+  page,
+}) => {
+  // Three related tables, one key to itself and one table without keys.
+  const file = join(root, 'er-shop.db');
+  execFileSync(python as string, [
+    '-c',
+    [
+      'import sqlite3, sys',
+      'c = sqlite3.connect(sys.argv[1])',
+      'c.executescript("CREATE TABLE supplier (id INTEGER PRIMARY KEY, name TEXT NOT NULL);' +
+        ' CREATE TABLE part (id INTEGER PRIMARY KEY, supplier_id INTEGER REFERENCES supplier (id),' +
+        ' parent_id INTEGER REFERENCES part (id));' +
+        ' CREATE TABLE stock (part_id INTEGER NOT NULL REFERENCES part (id), qty INTEGER);' +
+        ' CREATE TABLE note (body TEXT);")',
+      'c.commit()',
+      'c.close()',
+    ].join('\n'),
+    file,
+  ]);
+  const foreign = foreignRequests(page, () => base);
+  links.push(newLink());
+  const violations = await signIn(page);
+  await page.getByRole('link', { name: 'Connections' }).click();
+  await page.getByRole('button', { name: 'New connection' }).click();
+  const wizard = page.getByRole('dialog', { name: 'New connection' });
+  await wizard.getByRole('textbox', { name: 'File' }).fill(file);
+  await wizard.getByRole('button', { name: 'Next' }).click();
+  await wizard.getByRole('button', { name: 'Next' }).click();
+  await wizard.getByLabel('Name').fill('e2e-er');
+  await wizard.getByRole('radio', { name: 'DEV' }).check();
+  await wizard.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByTestId('connections-status')).toHaveText('e2e-er saved.');
+
+  await page.getByRole('link', { name: 'Explorer' }).click();
+  await page.getByLabel('Connection profile').selectOption({ label: 'e2e-er (DEV)' });
+  await page.getByTestId('explorer-open').click();
+  await expect(page.getByTestId('explorer-workspace')).toBeVisible();
+  await page.getByTestId('explorer-view-diagram').click();
+  // The diagram's code loads from the server (script-src 'self'), the answer from the new route.
+  await expect(page.getByTestId('er-status')).toHaveText(
+    /^Tables: 4, relationships: 3, layout: \d+ ms\.$/,
+  );
+  await expect(page.getByTestId('er-box')).toHaveCount(4);
+  await expect(page.getByTestId('er-canvas').locator('.react-flow__edge-path')).toHaveCount(3);
+  await page.getByTestId('er-zoom-in').click();
+  await page.getByTestId('er-fit').click();
+  for (const scheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme: scheme });
+    expect(await seriousViolations(page)).toEqual([]);
+  }
+  await page.emulateMedia({ colorScheme: 'light' });
+  for (const [button, name] of [
+    ['er-svg', 'er-diagram-main.svg'],
+    ['er-png', 'er-diagram-main.png'],
+  ] as const) {
+    const saved = page.waitForEvent('download');
+    await page.getByTestId(button).click();
+    const download = await saved;
+    expect(download.suggestedFilename()).toBe(name);
+    const body = readFileSync(await download.path());
+    if (name.endsWith('.svg')) expect(body.toString('utf8')).toContain('>supplier<');
+    else expect([...body.subarray(1, 4)]).toEqual([0x50, 0x4e, 0x47]);
+  }
+  // A table of the diagram opens in the explorer.
+  await page
+    .getByTestId('er-list')
+    .getByRole('button', { name: 'Show stock in the explorer' })
+    .click();
+  await expect(page.getByRole('treeitem', { name: 'stock', exact: true })).toBeFocused();
+  expect(foreign).toEqual([]);
+  await expectNoViolations(page, violations);
+});
+
 test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
   const foreign = foreignRequests(page, () => base);
   const seen: string[] = [];

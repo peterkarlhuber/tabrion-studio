@@ -16,6 +16,7 @@ only reads. Each request gets its connection through `ConnectionRegistry.get` an
 | `GET /api/connections/{id}/tables/{schema}/{name}/ddl` | `statements`, `ddl` (the statements joined with `;`), `kind`, `engine`, `owner` (PostgreSQL), `notes` (STU-022, below) |
 | `GET /api/connections/{id}/tables/{schema}/{name}/policies` | PostgreSQL: `rls_enabled`, `rls_forced`, `owner`, `current_role` (`name`, `superuser`, `bypass_rls`, `owner`), `rls_applies`, `policies` (`name`, `permissive`, `command`, `roles`, `using`, `with_check`) |
 | `GET /api/connections/{id}/tables/{schema}/{name}/row-count` | SQLite: `count` and `elapsed_ms` of `count(*)` on a table or view, on request; `db.timeout` after 10 seconds or the profile's timeout, whichever is shorter |
+| `GET /api/connections/{id}/diagram?schema=` | STU-023: `{connection_id, engine, schema, tables: [{name, kind, columns: [{name, type, nullable}], primary_key, foreign_keys: [{name, columns, referred_schema, referred_table, referred_columns}]}]}`, the tables and foreign tables of one schema sorted by name, for the ER diagram (below) |
 | `GET /api/connections/{id}/row-estimates[?schema=]` | PostgreSQL: `estimates` (`schema`, `name`, `estimate`) of every table and materialized view, partitions counted in their table |
 
 The `ddl`, `policies` and `row-count` routes also take `/api/connections/{id}/<route>?schema=&name=`, for a name with
@@ -121,6 +122,20 @@ PostgreSQL 17 with the runner's own client (a pg_dump 18 or later on `ubuntu-26.
 compares with both the recorded output and that live dump. Locally the comparison was also run against PostgreSQL 17.10
 with pg_dump 17.10 (no rewrite) and 18.4.
 
+## ER diagram data (STU-023)
+
+`GET /api/connections/{id}/diagram?schema=` answers what the ER diagram draws for one schema in one request, instead
+of one table detail per table (150 requests, each with its own catalog reads): the schema's tables and foreign tables
+(views, materialized views and sequences have no keys and are left out), each with its columns (name, type, nullable),
+its primary key columns and its foreign keys out. Three catalog reads cover the whole schema: SQLAlchemy's
+`get_multi_columns` and `get_multi_pk_constraint` limited to the catalog's table names, and for the keys on
+PostgreSQL one fixed query on `pg_constraint` like the table detail's (every referenced schema named, a partitioned
+table's key once, `conparentid = 0`), on SQLite `get_multi_foreign_keys`. Keys into another schema are included; the
+page lists them in its table alternative. The schema must be one of the catalog's (else `studio.object_not_found`);
+it is a bound value, never part of a statement's text. A schema with more than 1000 tables (`MAX_DIAGRAM_TABLES`) is
+refused with `studio.diagram_too_large` (422) before anything is reflected, so one answer stays a few megabytes at
+most; the page draws at most 150 tables anyway (03 section 2 E).
+
 ## Reflection on tabrion 0.1
 
 The spec uses `Database.inspector()` (tabrion 0.2, TAB-033). Until then, `services/tabrion_compat.inspector` builds
@@ -187,8 +202,47 @@ and by the header.
   an earlier selection is dropped. Copy DDL empties its status before the new text, so a second copy is announced
   again.
 
+- **ER diagram (STU-023, `views/explorer/er/`):** **ER diagram** next to **Objects** above the workspace shows the
+  tables of one schema (picker; PostgreSQL starts with `public`) as boxes with their name, the first 20 columns (PK and
+  FK marked, the rest counted) and a line for each foreign key between two shown tables, from the key's table to the
+  one it references. One GET of the diagram route on the explorer's open connection per schema (and again after a
+  Refresh); a connection that is gone is dropped as for the data tab. The code (@xyflow/react 12 and dagre) loads
+  only when the diagram is opened (a separate chunk).
+  - **Layout:** `layout.ts` builds the scene once per choice: box sizes from the text lengths in the 12 px monospace
+    font (no measuring in the page), the connected tables through dagre (left to right, referenced tables first, the
+    line routes from dagre), tables without a line packed in rows below. The page measures that step and says it
+    ("Tables: 150, relationships: 170, layout: 120 ms."); the acceptance of 09 is 150 tables in under 2 s. The diagram
+    shows at most 150 tables (03 section 2 E): a larger schema shows its first 150 by name and says so; **Tables** lists
+    every table with a filter, and **Show N tables** applies a new choice (a click on a checkbox does not lay out
+    again). **Lay out again** runs the layout again and fits the view.
+  - **View:** pan with the mouse or touch, zoom with the wheel or the zoom buttons (**Zoom out**, the zoom level,
+    **Zoom in**, **Fit to view**), an overview map. Boxes cannot be dragged or connected, nothing is selectable: the
+    diagram only reads.
+  - **Keyboard and screen readers:** each box's name is a button "Show … in the explorer" in the Tab order, by name;
+    when it takes the keyboard focus the view centers on it. It switches to **Objects**, selects the table and puts
+    the focus on its tree row. The canvas is a group named after the schema and its table count. Below it, a table
+    lists the same tables with their primary keys, the keys they hold ("References", with keys to tables that are not
+    drawn marked) and the keys that point at them ("Referenced by"): the text alternative of 08 section 4.7.
+  - **Export:** **Save as SVG** and **Save as PNG** save the whole scene (not only the visible part) under
+    `er-diagram-<schema>.svg|png` (the schema's name reduced to letters, digits, `.`, `_` and `-`). Both are drawn in
+    the page from the scene, never fetched: the SVG is a standalone document with presentation attributes only (no
+    `style`, script, link, image or external font; the font families are local names), every text escaped for XML
+    after `visible()`. The PNG is drawn with the canvas 2D API at twice the size (08 section 8) or less where the
+    canvas would pass 16 million pixels or 16 000 pixels a side (WebKit's limits); it does not go through an `<img>`
+    of the SVG, which the CSP (`img-src 'self'`) refuses for `blob:` and `data:` URLs. The colors are the page's
+    tokens, so a dark page saves a dark diagram.
+  - **CSP:** xyflow and d3 set their inline styles through the CSSOM (`element.style`, `style.setProperty`), which
+    `style-src 'self'` allows; xyflow's style sheet is bundled into the page's CSS. `global.css` gives every `svg`
+    `max-width: 100%`; xyflow's edge layers sit in a box without width, and an `svg` of width 0 is not drawn, so the
+    diagram resets it for its own `svg` elements.
+  - **Fail closed and U-1:** a table without a name or column list, a column without a name, a primary key or key
+    column list that is not a list of names, or a key without its referenced table refuses the whole answer
+    (`studio.answer_invalid`); an answer for another schema or connection too. Every name is escaped and capped at 40
+    characters (types at 24) with a visible "…".
+
 Open: the tree's context menu (its actions are buttons above the tabs for now), the virtualized tree, the estimates
-of `row-estimates` in the tree, and following the header's connection; see TD-041.
+of `row-estimates` in the tree, and following the header's connection; see TD-041. What the ER diagram leaves is
+TD-052.
 
 ## Tests
 
@@ -202,4 +256,8 @@ of `row-estimates` in the tree, and following the header's connection; see TD-04
 | `frontend/src/views/explorer/ExplorerView.test.tsx`, `tree.test.ts`, `src/api/explorer.test.ts` | the page: D-02, the tree keyboard, the filter, the detail tabs, U-1 escaping and caps, stale answers, focus, fail-closed parsing, no write |
 | `frontend/src/views/explorer/Definitions.test.tsx` | STU-022 in the page: one GET on the given connection per panel, the DDL escaped per line with its line breaks, the cut note, Copy DDL (exact text, refused clipboard), the policies' facts, reasons and rows (escaped), fail-closed answers, an answer for another object or connection refused, late answers dropped, the row count on request and its timeout |
 | `frontend/e2e/explorer-definitions.spec.ts` | the DDL and policies tabs and the row count in Chromium with axe (light/dark, en/de); the DDL region takes the focus and keeps hostile text escaped; Copy DDL; no write but the connection open |
+| `tests/security/test_explorer.py` (STU-023) | the diagram of `main` (503 tables, the view left out; columns, composite and plain primary keys, the key out), unknown and hostile schema names refused, the bound of `MAX_DIAGRAM_TABLES` (refused before any reflection), the route; on PostgreSQL the 502 tables of a schema, the key with its schema, keys into `public` and another schema named, a partitioned table's key once |
+| `frontend/src/views/explorer/er/layout.test.ts` | STU-023 acceptance: 150 tables with 300 keys and up to 30 columns laid out in under 2 s, measured on the layout (`timedScene`); no two boxes overlap, every line routed, keys marked, 20 columns and a count, names escaped and capped, keys to tables not shown kept out of the drawing, loose tables packed in rows, at most 150 tables |
+| `frontend/src/views/explorer/er/exportImage.test.ts`, `ErDiagram.test.tsx` | the SVG (a well-formed standalone document; no `style`, script, link or outside URL; XML-escaped hostile names), file names, the PNG's scale limits and drawing; the view: one GET per schema, the table alternative, the choice and its 150 bound, both exports, a refused PNG, problems, a connection that is gone, fail-closed answers |
+| `frontend/e2e/er-diagram.spec.ts` | STU-023 in Chromium: axe (light/dark, en/de) on the diagram and its choice, 150 tables laid out in under 2 s as the page measures it, the SVG and PNG downloads (150 boxes, 170 lines, no remote reference, no request while saving), the keyboard path from a box to the tree; `e2e/backend.spec.ts` runs the diagram and both exports on a real server under the CSP |
 | `frontend/e2e/explorer.spec.ts` | the page in Chromium with axe (light/dark, en/de) and keyboard-only; `e2e/explorer-reference.spec.ts` against the parts and measurements reference apps (skipped without its variables, TD-041) |

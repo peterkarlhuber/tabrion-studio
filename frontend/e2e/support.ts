@@ -12,6 +12,8 @@ export interface HarnessOptions {
   check?: string;
   /** scenario=editor: the first tab's draft. */
   sql?: string;
+  /** scenario=explorer: `150` gives the PostgreSQL schema `audit` 150 tables for the ER diagram (STU-023). */
+  er?: string;
 }
 
 /** Open the e2e harness (src/harness/main.tsx) and wait until the shell or the notice is rendered. */
