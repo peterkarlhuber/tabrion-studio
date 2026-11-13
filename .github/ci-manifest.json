@@ -21,6 +21,7 @@
       "e2e (webkit)",
       "frontend lint and typecheck",
       "frontend unit",
+      "install (poisoned index)",
       "license and supply chain",
       "security tests",
       "T-2 path checks (windows-latest)"

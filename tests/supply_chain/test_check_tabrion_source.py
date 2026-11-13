@@ -2,7 +2,9 @@
 
 ``scripts/check_tabrion_source.py`` is the unchanged copy of nodestro-studio's canonical script (TABRION DC-NS-2); the
 same SHA-256 is pinned in every consumer, as for ``check_tabrion_api.py`` (QA-21). Its own tests live with the
-canonical copy; here the copy, the pin it reads and the CI job that runs it are checked."""
+canonical copy; here the copy, the pin it reads and the CI job that runs it are checked. The job's zero-request
+assertion is the proof that the pinned installs never ask an index for tabrion; ``check-installed``'s
+``direct_url.json`` check only detects an accidental index install (a wheel can forge the file)."""
 
 from __future__ import annotations
 
@@ -17,8 +19,8 @@ import yaml  # type: ignore[import-untyped]
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_tabrion_source.py"
 PIN = ROOT / "constraints" / "tabrion-integration.txt"
-#: SHA-256 of ``scripts/check_tabrion_source.py`` (nodestro-studio, branch of DC-NS-2 at ``f0b4d70``).
-SCRIPT_SHA256 = "f2516d5df948a554a3aa0261fd26611f00ec50cd62ffded710717aa2f980c40b"
+#: SHA-256 of ``scripts/check_tabrion_source.py`` (nodestro-studio, branch of DC-NS-2 at ``bf51022``).
+SCRIPT_SHA256 = "8496bd63327dbee897966bd9d99296d479e2c1c0c55baa9018ee8dba50ab177f"
 
 
 def _load() -> ModuleType:

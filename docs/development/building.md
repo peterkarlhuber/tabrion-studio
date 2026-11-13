@@ -17,7 +17,8 @@ python scripts/runtime_lock.py check-installed
 Always pass `-c constraints/tabrion-integration.txt`: tabrion is not on PyPI, and the name is not registered there
 (owner decision of 2026-11-13), so an install without the pin, or a later `pip install -U` without it, would ask a
 package index for `tabrion` and take whatever a third party registered under that name (dependency confusion).
-`check-installed` fails when the installed tabrion is not the pinned Git commit. pip 24.0 to 26.0 crash on the
+`check-installed` fails when the installed tabrion's `direct_url.json` is not the pinned Git commit; that detects an
+accidental index install, but it is no proof (a wheel can forge the file), so never skip the `-c`. pip 24.0 to 26.0 crash on the
 constraint with extras, hence the floor.
 
 ## Frontend

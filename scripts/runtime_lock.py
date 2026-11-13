@@ -21,8 +21,11 @@ another version, and a lock entry that applies here but is not part of the closu
 lock cannot pin, must come from the commit of ``constraints/tabrion-integration.txt``: its ``direct_url.json`` must
 name that Git URL and that full commit (``vcs_info.commit_id``). A tabrion without ``direct_url.json`` came from a
 package index, where the name is not ours (dependency confusion, DC-TS-1); a local directory or another commit is
-refused too. CI runs it after installing the development tools, so a tool that moved a runtime dependency fails the
-job.
+refused too. This detects an accidental index install; it is no proof of origin, because a wheel can ship a forged
+``direct_url.json``. The protection is the Git pin of the install command (``-c``/``-r``
+``constraints/tabrion-integration.txt``), and the CI job ``install (poisoned index)`` proves that it never asks an
+index for tabrion. CI runs it after installing the development tools, so a tool that moved a runtime dependency
+fails the job.
 
 ``update`` writes the lock from the ranges of ``pyproject.toml`` and the tabrion pin with ``uv pip compile --universal
 --generate-hashes``. It keeps every current pin that still fits and adds what is missing; ``update -- --upgrade``
