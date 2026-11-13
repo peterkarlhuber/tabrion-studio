@@ -637,6 +637,12 @@ All notable changes to this project are documented here. The format follows
   record of a package that the lock does not pin (other than `tabrion-studio`), also without `--strict`, instead of
   ignoring it.
 
+- B-1 and B-2 of the security assessment (TD-063): the read-only statement check now recognizes every call form of
+  refused functions, and also refuses pg_surgery's `heap_force_kill` and `heap_force_freeze` and pg_visibility's
+  `pg_truncate_visibility_map`. The PostgreSQL check-in reset closes the session's dblink connections. A column named
+  like a refused function can no longer be written as `table.column` (the bare name and aliases still work). The
+  database role stays the boundary; the check is defense in depth.
+
 - `tabrion-studio diagnose --output`: hardened against a folder swap. On POSIX the output folder is opened once and
   the checks, the temporary file and the final move all act on that opened folder; the guide now says that a folder
   link in the path is followed and what Windows does (review D-1 of PR #85). The final move never follows a link

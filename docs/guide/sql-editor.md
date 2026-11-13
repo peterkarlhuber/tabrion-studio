@@ -23,8 +23,10 @@ a table; write a column named `into` as `"into"`. The word `into` inside a dolla
 refused too; use a `'...'` string there. Write numbers in decimal (`31`, `1000`, `1.5e3`): `0x1f`, `1_000` and a
 number written directly before a word are refused. So are calls of functions that act
 outside the statement's read-only transaction, such as `pg_terminate_backend`, `pg_cancel_backend`, `pg_notify`,
-`set_config`, `txid_current`, `pg_logical_emit_message` or `dblink`, and on SQLite every function that is not one of
-SQLite's built-in reading functions (for example `fts3_tokenizer` or `load_extension`).
+`set_config`, `txid_current`, `pg_logical_emit_message` or `dblink`, in every way PostgreSQL can call them (also
+`value.function`), and on SQLite every function that is not one of SQLite's built-in reading functions (for example
+`fts3_tokenizer` or `load_extension`). A column named like such a function can be selected by its bare name or an
+alias, but not as `table.column`.
 
 Tab moves the focus out of the editor. In the editor, ⌘/ / Ctrl+/ comments lines out; use the header button for the
 shortcut list there.

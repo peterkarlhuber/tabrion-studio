@@ -223,7 +223,9 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 - Since the STU-011 fix round, every other first word too: only `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a
   query, `SHOW` and `PRAGMA` pass (an allowlist; see [Query engine](queries.md), "Statements and session state").
   PostgreSQL connections also get Studio's session settings as startup options and run `RESET ALL` on check-in
-  (after `DISCARD TEMP`, which drops temporary tables a statement may have left: F-1 of the STU-016 review).
+  (after `DISCARD TEMP`, which drops temporary tables a statement may have left: F-1 of the STU-016 review), then
+  close the session's dblink connections when the database has dblink (B-1 of the security assessment); a connection
+  whose dblink connections cannot be closed leaves the pool.
 
 **One statement, enforced by the server (H-1 of `stu-009-review.md`):** every PostgreSQL connection uses
 `prepare_threshold=0` (`driver_options`). So every statement is a prepared statement on the extended query protocol,
@@ -236,7 +238,9 @@ refuses `SET standard_conforming_strings` and `SET backslash_quote`, and a call 
 `_shared` forms, which would stay held on the pooled connection) anywhere in the statement. That check reads tokens:
 comments and literals are left out and quoted identifiers unquoted, and `'...'` is lexed both with and without
 backslash escapes, so `"set_config"(`, `set_config/**/(` and `pg_catalog.set_config (` are caught (R-L1 and I-R1 of
-the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. `DO` blocks and the functions that run a query given as text (`query_to_xml`,
+the re-review). A refused name right after `.` counts as a call as well, with or without `(`, since PostgreSQL reads
+`x.name` and `(x).name` as `name(x)` (attribute notation; B-1 of the security assessment); a column or table of that
+name written after a `.` is refused too, while the bare name stays allowed. A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. `DO` blocks and the functions that run a query given as text (`query_to_xml`,
 `query_to_xmlschema`, `query_to_xml_and_xmlschema`, `cursor_to_xml`, `cursor_to_xmlschema`, `ts_stat`, `ts_rewrite`,
 `crosstab`, `connectby`, `xpath_table`, `dblink` and its forms) are refused as well, since the check cannot see inside a literal (R2-L1 of
 re-review 2). Since the STU-016 review (F-3), so are the functions whose effect a read-only transaction does not stop
@@ -249,7 +253,8 @@ and the replication slot functions that create, drop, copy, advance or consume a
 resume, `pg_import_system_collations`, every `pg_stat_reset*` function and `pg_stat_statements_reset` (the server);
 `lo_import`, `lo_export` and adminpack's `pg_file_*` writers (server files); `brin_summarize_new_values`,
 `brin_summarize_range`, `brin_desummarize_range` and `gin_clean_pending_list` (index changes outside the
-transaction's data); every `dblink*` function; and every
+transaction's data); pg_surgery's `heap_force_kill` and `heap_force_freeze` and pg_visibility's
+`pg_truncate_visibility_map` (a table's storage, B-2 of the security assessment); every `dblink*` function; and every
 `pg_replication_origin_*` function. The large-object writers (`lo_create`, `lo_put`, ...), `nextval` and `setval` are
 left to the database, which refuses them in a read-only transaction; the transaction-level advisory locks end with
 Studio's transaction and stay allowed. This is still a best-effort check, not the boundary: a database function that calls `set_config`, or
