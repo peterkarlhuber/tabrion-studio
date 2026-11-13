@@ -578,6 +578,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Theme switch: buttons kept their old background for 120 ms (a transition) while their text took the new theme,
+  so for that moment a primary button's label had too little contrast (TD-047, found by axe in WebKit). The theme now
+  switches with transitions off, and text and background change together.
 - The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
   WCAG 2.5.8).
 - SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still

@@ -1215,6 +1215,19 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `csp.spec.ts` adds a `<select>` with a refused `style` attribute, which must count in every browser. F-4, the Tab
   test also presses Tab without a result (the editor is then the page's last control) and checks it is not
   prevented and the text unchanged.
+- **Follow-up (branch `td047b`): a product bug, low contrast for 120 ms after a theme switch.** `e2e (webkit)` of PR #69
+  failed once in `editor-backend.spec.ts` "runs a query under the CSP…": axe right after "Theme: Dark" through the
+  palette found color contrast on the editor toolbar's button labels. Cause: `.button` has
+  `transition: background-color var(--tb-duration-fast)` (120 ms) and no transition on `color`, so on a theme switch
+  the label took the new theme at once while the background faded from the old one; the real-server suites run with
+  motion on (the harness emulates reduced motion), and whether axe's color rule ran within the 120 ms decided the
+  result. Measured in Chromium right after the switch: the primary button at `rgb(140, 151, 209)` behind the dark
+  theme's `rgb(14, 16, 19)` label, on its way from the light theme's `rgb(57, 73, 171)`. Fix in the product
+  (`src/theme.ts`, `global.css`): the theme attribute changes while `data-theme-switching` turns every transition off
+  and a forced style flush computes the new values, so no transition starts. Tests: `a11y-audit.spec.ts` "a theme
+  switch starts no transition…" (motion on, both directions: no `transitionrun`, no serious axe violation; it fails
+  without the fix) and a Vitest of the attribute sequence. The other axe checks after a theme switch run in the
+  harness under reduced motion, and `editor-backend.spec.ts` is the only real-server spec that switches the theme.
 
 ### TD-043 · STU-021 page: the export dialog, and what it leaves for later
 
