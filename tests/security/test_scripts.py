@@ -21,6 +21,9 @@ from tests.support.access import ORIGIN, make_studio
 
 pytestmark = pytest.mark.security
 
+# Every file here is written and read as bytes: a text-mode write would turn "\n" into "\r\n" on Windows, and the
+# service is byte-exact on every system (test_line_endings_are_kept_byte_exact).
+
 POSIX = sys.platform != "win32"
 
 
@@ -28,14 +31,14 @@ POSIX = sys.platform != "win32"
 def project(tmp_path: Path) -> Path:
     folder = tmp_path / "project"
     (folder / "sql" / "reports").mkdir(parents=True)
-    (folder / "sql" / "a.sql").write_text("SELECT 1;\n")
-    (folder / "sql" / "reports" / "b.SQL").write_text("SELECT 2;\n")
-    (folder / "top.sql").write_text("SELECT 3;\n")
-    (folder / "notes.txt").write_text("not a script")
+    (folder / "sql" / "a.sql").write_bytes(b"SELECT 1;\n")
+    (folder / "sql" / "reports" / "b.SQL").write_bytes(b"SELECT 2;\n")
+    (folder / "top.sql").write_bytes(b"SELECT 3;\n")
+    (folder / "notes.txt").write_bytes(b"not a script")
     (folder / ".git").mkdir()
-    (folder / ".git" / "hidden.sql").write_text("SELECT 'hidden';")
+    (folder / ".git" / "hidden.sql").write_bytes(b"SELECT 'hidden';")
     (folder / "node_modules" / "pkg").mkdir(parents=True)
-    (folder / "node_modules" / "pkg" / "x.sql").write_text("SELECT 'tool';")
+    (folder / "node_modules" / "pkg" / "x.sql").write_bytes(b"SELECT 'tool';")
     return folder
 
 
@@ -50,7 +53,7 @@ def test_list_finds_the_project_scripts_only(project: Path) -> None:
 def test_list_follows_no_link(project: Path, tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "secret.sql").write_text("SELECT 'outside';")
+    (outside / "secret.sql").write_bytes(b"SELECT 'outside';")
     (project / "linked").symlink_to(outside)
     (project / "link.sql").symlink_to(outside / "secret.sql")
     paths = [item["path"] for item in Scripts(project).list()["scripts"]]
@@ -134,7 +137,7 @@ def test_read_refusals(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 def test_no_link_is_followed_on_the_way(project: Path, tmp_path: Path) -> None:
     outside = tmp_path / "outside"
     outside.mkdir()
-    (outside / "secret.sql").write_text("SELECT 'outside';")
+    (outside / "secret.sql").write_bytes(b"SELECT 'outside';")
     (project / "out.sql").symlink_to(outside / "secret.sql")
     (project / "inside.sql").symlink_to(project / "top.sql")
     (project / "outdir").symlink_to(outside)
@@ -145,9 +148,9 @@ def test_no_link_is_followed_on_the_way(project: Path, tmp_path: Path) -> None:
             scripts.read(path)
         with pytest.raises(ScriptError, match=r"studio\.script_invalid"):
             scripts.save(path, "SELECT 'replaced'", None, overwrite=True)
-    assert (outside / "secret.sql").read_text() == "SELECT 'outside';"
+    assert (outside / "secret.sql").read_bytes() == b"SELECT 'outside';"
     assert not (outside / "new.sql").exists()
-    assert (project / "top.sql").read_text() == "SELECT 3;\n"
+    assert (project / "top.sql").read_bytes() == b"SELECT 3;\n"
 
 
 @pytest.mark.skipif(not POSIX, reason="file modes")
@@ -155,7 +158,7 @@ def test_save_new_and_replace(project: Path) -> None:
     scripts = Scripts(project)
     saved = scripts.save("sql/new.sql", "SELECT 'new';\n", None)
     assert saved == {"path": "sql/new.sql", "digest": script_digest(b"SELECT 'new';\n")}
-    assert (project / "sql" / "new.sql").read_text() == "SELECT 'new';\n"
+    assert (project / "sql" / "new.sql").read_bytes() == b"SELECT 'new';\n"
     umask = os.umask(0)
     os.umask(umask)
     assert stat.S_IMODE((project / "sql" / "new.sql").stat().st_mode) == 0o666 & ~umask
@@ -166,10 +169,28 @@ def test_save_new_and_replace(project: Path) -> None:
     assert [p.name for p in (project / "sql").iterdir() if p.name.startswith(".")] == []
 
 
+def test_line_endings_are_kept_byte_exact(project: Path) -> None:
+    """Reading and saving never translate line endings: a CRLF script reads as CRLF, its digest is that of its bytes,
+    and what the page saves is written as it is, on every system."""
+    crlf = b"SELECT 1;\r\nSELECT 2;\r\n"
+    (project / "crlf.sql").write_bytes(crlf)
+    scripts = Scripts(project)
+    read = scripts.read("crlf.sql")
+    assert read["content"] == "SELECT 1;\r\nSELECT 2;\r\n"
+    assert read["digest"] == script_digest(crlf)
+    sizes = {item["path"]: item["size"] for item in Scripts(project).list()["scripts"]}
+    assert sizes["crlf.sql"] == len(crlf)
+    saved = scripts.save("crlf.sql", "SELECT 3;\r\n", read["digest"])
+    assert (project / "crlf.sql").read_bytes() == b"SELECT 3;\r\n"
+    assert saved["digest"] == script_digest(b"SELECT 3;\r\n")
+    scripts.save("lf.sql", "SELECT 4;\n", None)
+    assert (project / "lf.sql").read_bytes() == b"SELECT 4;\n"
+
+
 def test_save_is_bound_to_what_the_page_read(project: Path) -> None:
     scripts = Scripts(project)
     read = scripts.read("sql/a.sql")
-    (project / "sql" / "a.sql").write_text("SELECT 'changed on disk';")
+    (project / "sql" / "a.sql").write_bytes(b"SELECT 'changed on disk';")
     with pytest.raises(ScriptError, match=r"studio\.script_stale"):
         scripts.save("sql/a.sql", "SELECT 'mine';", read["digest"])
     with pytest.raises(ScriptError, match=r"studio\.script_exists"):
@@ -177,7 +198,7 @@ def test_save_is_bound_to_what_the_page_read(project: Path) -> None:
     with pytest.raises(ScriptError, match=r"studio\.script_stale"):
         scripts.save("sql/gone.sql", "SELECT 'mine';", read["digest"])
     scripts.save("sql/a.sql", "SELECT 'mine';", None, overwrite=True)
-    assert (project / "sql" / "a.sql").read_text() == "SELECT 'mine';"
+    assert (project / "sql" / "a.sql").read_bytes() == b"SELECT 'mine';"
 
 
 def test_save_refusals(project: Path) -> None:
@@ -222,7 +243,7 @@ def test_script_routes(static_dir: Path, project: Path) -> None:
         "/api/scripts/file", json={"path": "large.sql", "content": large, "digest": None}, headers=headers
     )
     assert saved_large.status_code == 200, saved_large.text
-    assert (project / "large.sql").read_text() == large
+    assert (project / "large.sql").read_bytes() == large.encode()
     unknown = studio.client.put(
         "/api/scripts/file", json={"path": "a.sql", "content": "", "digest": None, "mode": 1}, headers=headers
     )

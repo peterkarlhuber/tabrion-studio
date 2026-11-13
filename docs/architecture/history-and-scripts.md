@@ -105,6 +105,9 @@ helpers of the project's database paths (threat T-08, `config/locations.py`):
   way is refused, even one that stays inside. `safe_realpath` never touches a network or device path.
 - **Size and encoding.** A script is a regular file of at most 1 MB of UTF-8. A byte order mark is dropped when
   reading.
+- **Line endings.** Files are read and written as bytes, never in text mode, so a script and its digest are
+  byte-exact on every system: a CRLF script reads as CRLF, and what the page sends is written as it is. The page keeps
+  a script's CRLF line endings when it saves it back.
 
 **Listing.** The listing walks the project without following links. It skips hidden folders and tool folders
 (`node_modules`, virtual environments, caches, `dist`, `build`) and goes 8 folders deep. It stops after 1,000

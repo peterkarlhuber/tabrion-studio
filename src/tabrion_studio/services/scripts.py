@@ -13,6 +13,8 @@ as text first and then on the file system, with the same helpers as a project's 
   (``safe_realpath``, which never touches a network or device path); a folder that is a link out of the project is
   refused;
 * a script has at most :data:`MAX_SCRIPT_BYTES` bytes and is UTF-8 (a byte order mark is dropped when reading).
+* files are read and written as bytes (``O_BINARY`` on Windows), never in text mode: content, size and digest are
+  byte-exact on every system, and line endings are kept as they are (CRLF stays CRLF).
 
 **Listing** walks the project folder without following links, skips hidden folders and the usual tool folders
 (``node_modules``, virtual environments, caches), goes :data:`MAX_DEPTH` folders deep and stops after

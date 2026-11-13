@@ -12,8 +12,8 @@ All notable changes to this project are documented here. The format follows
   and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,
   `DELETE /api/history`; settings `[history] enabled` and `retention_days`, 30 days by default, at most 5,000
   entries); favorite and recently opened profiles (`GET`/`PUT /api/favorites`); `.sql` scripts in the project folder
-  (`GET /api/scripts`, `GET`/`PUT /api/scripts/file`: only `.sql` files inside the project, no links, atomic and
-  bound to what the page read); `?cached_only=true` on the catalog, so completion never reads a PROD catalog
+  (`GET /api/scripts`, `GET`/`PUT /api/scripts/file`: only `.sql` files inside the project, no links, atomic,
+  byte-exact with the line endings kept, and bound to what the page read); `?cached_only=true` on the catalog, so completion never reads a PROD catalog
   unasked. New problem codes `studio.state_unavailable`, `studio.favorites_full`, `studio.catalog_not_loaded` and
   `studio.script_*`.
 - STU-017 docs (no tag, no release): the documentation checklist `docs/development/docs-checklist.md` maps every
