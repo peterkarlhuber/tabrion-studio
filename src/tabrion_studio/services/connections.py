@@ -307,6 +307,23 @@ def _close_after_dispose(db: tabrion.Database) -> Callable[[Any, Any], None]:
     return close_if_disposed
 
 
+@dataclass(frozen=True)
+class ConnectionCheck:
+    """The outcome of :meth:`OpenConnection.check`: ``open``, ``busy`` or ``lost`` (with the failed health)."""
+
+    state: str
+    latency_ms: float | None
+    failed: tabrion.Health | None
+
+
+def _pool_full(health: tabrion.Health) -> bool:
+    pool = health.pool
+    if pool is None:
+        return False
+    size = pool.get("size", 0) + max(pool.get("overflow", 0), 0)
+    return size > 0 and pool.get("checked_out", 0) >= size
+
+
 @dataclass
 class OpenConnection:
     """One open, read-only connection. The engine is private; only reading is offered."""
@@ -425,6 +442,19 @@ class OpenConnection:
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))
+
+    def check(self) -> ConnectionCheck:
+        """Whether the database still answers on this connection (TD-034, the page's "Connection lost" banner).
+
+        A failed check while every session of the pool is lent out (a long query, an export) is ``busy``, not lost:
+        the check could not get a session, and the database may be fine.
+        """
+        health = self.health()
+        if health.ok:
+            return ConnectionCheck("open", health.latency_ms, None)
+        if _pool_full(health):
+            return ConnectionCheck("busy", None, None)
+        return ConnectionCheck("lost", None, health)
 
     def close(self) -> None:
         self._db.close()
@@ -555,7 +585,12 @@ class ConnectionRegistry:
         if connection is not None:
             existing = self.get(connection.id)
             require_prod_confirmation(existing.environment, confirmed_environment)
-            return existing
+            # TD-034: a connection whose database no longer answers (it restarted, or ended Studio's sessions) is not
+            # returned again; "Reconnect" opens a new one in its place.
+            if existing.check().state != "lost":
+                return existing
+            logger.info("connection lost", extra={"event": "studio.connection_lost", "profile_id": profile_id})
+            self.close(existing.id)
         connection = self._connect(profile_id, confirmed_environment)
         with self._lock:
             if len(self._open) >= self.max_open:
@@ -591,6 +626,18 @@ class ConnectionRegistry:
         except Exception:  # gone, no longer trusted, damaged: the connection must not be used
             return False
         return True
+
+    def check(self, connection_id: object) -> dict[str, Any]:
+        """``GET /api/connections/{id}/health``: ``{"state": "open", "latency_ms"}`` or ``{"state": "busy"}``.
+
+        Raises :class:`RegistryError` (gone or stale, as :meth:`get`) or :class:`HealthError` when the database does
+        not answer (``db.connection`` and the like). The connection stays registered: the page offers "Reconnect".
+        """
+        outcome = self.get(connection_id).check()
+        if outcome.failed is not None:
+            raise _health_error(outcome.failed)
+        latency = None if outcome.latency_ms is None else round(outcome.latency_ms, 1)
+        return {"state": outcome.state, "latency_ms": latency}
 
     def list(self) -> list[OpenConnection]:
         with self._lock:

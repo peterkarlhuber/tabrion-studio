@@ -62,7 +62,8 @@ import { visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
-import { prodKey } from '../../workspace';
+import { LOST_CODES } from '../../connectionWatch';
+import { prodKey, useConnectionSession, useReconnected } from '../../workspace';
 import { CellDetail, type OpenCell } from './CellDetail';
 import { takeHandoff } from './handoff';
 import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
@@ -300,6 +301,22 @@ export function EditorView({
   const { guard: prodGuard, dialog: prodDialog } = useConnect(fetcher);
   /** The open connection of each profile used in this page (profile id to connection id). */
   const connections = useRef(new Map<string, string>());
+  const { markLost } = useConnectionSession();
+  // TD-034: "Reconnect" in the banner replaced a connection: the next run, "Load more" and the export use the new one.
+  useReconnected(({ from, to }) => {
+    for (const [profileId, id] of connections.current) {
+      if (id === from) connections.current.set(profileId, to);
+    }
+    setRuns((all) => {
+      if (!Object.values(all).some((run) => run.connectionId === from)) return all;
+      return Object.fromEntries(
+        Object.entries(all).map(([id, run]) => [
+          id,
+          run.connectionId === from ? { ...run, connectionId: to } : run,
+        ]),
+      );
+    });
+  });
 
   // Profiles, the drafts of this project and the row limit setting.
   useEffect(() => {
@@ -598,9 +615,11 @@ export function EditorView({
           maxRows,
         });
         // The server closed the connection (its profile changed, Studio restarted it): open it once more, through the
-        // same checks as a first connection (`connect` reads the profile again; a changed one stops the run).
+        // same checks as a first connection (`connect` reads the profile again; a changed one stops the run). Not for
+        // PROD: a new PROD connection needs D-02 again (TD-034), so the run stops and the banner offers "Reconnect".
         if (
           !started.ok &&
+          item.environment !== 'prod' &&
           (started.problem.code === 'studio.connection_not_found' ||
             started.problem.code === 'studio.connection_stale')
         ) {
@@ -639,6 +658,11 @@ export function EditorView({
           controller.abort.signal,
         );
         controller.queryId = null;
+        // TD-034: a query that failed because the database stopped answering ends in its stream, which the page's
+        // fetcher does not see: report it here, so the banner offers "Reconnect".
+        const failedCode = final.ok ? final.value.problem?.code : final.problem.code;
+        if (failedCode !== undefined && LOST_CODES.has(failedCode))
+          markLost(connectionId, failedCode);
         if (!final.ok) {
           patchResult(tabId, key, { state: 'failed', problem: final.problem });
           last = { ...(fresh[index] as StatementResult), state: 'failed', problem: final.problem };
@@ -678,7 +702,7 @@ export function EditorView({
         return { ...current, running: false, view, announce };
       });
     },
-    [connect, fetcher, locale, patchResult, patchRun, t],
+    [connect, fetcher, locale, markLost, patchResult, patchRun, t],
   );
 
   /** Drop a tab's results (their row caches too). */

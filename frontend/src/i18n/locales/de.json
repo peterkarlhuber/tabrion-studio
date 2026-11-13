@@ -1071,5 +1071,15 @@
       "tooLarge": "Die Datei ist größer als {{size}} und zu groß, um sie im Browser zusammenzusetzen; der Export wurde daher gestoppt und nichts wurde gespeichert. Exportiere weniger Zeilen oder Spalten.",
       "connectionGone": "Die Verbindung ist nicht mehr offen. Führe die Anweisung erneut aus und exportiere dann."
     }
+  },
+  "connectionLost": {
+    "title": "Verbindung getrennt: {{name}}",
+    "database": "Die Datenbank antwortet nicht. Studio liest auf dieser Verbindung nichts mehr, bis du neu verbindest.",
+    "stale": "Das Profil wurde geändert, gelöscht oder ist nicht mehr vertrauenswürdig, deshalb hat Studio die Verbindung geschlossen.",
+    "closed": "Studio hat diese Verbindung nicht mehr; sie wurde geschlossen.",
+    "nothingLost": "Nichts ging verloren: Studio liest nur.",
+    "reconnect": "Neu verbinden",
+    "reconnecting": "Verbinde neu …",
+    "failed": "Neu verbinden fehlgeschlagen: {{problem}}"
   }
 }

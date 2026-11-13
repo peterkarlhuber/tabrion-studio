@@ -5,6 +5,7 @@
  *   profile. The backend checks it before it answers, so a wrong password or an unreachable host is the answer (a
  *   `db.<kind>` problem).
  * - `GET /api/connections` lists the open ones; `DELETE /api/connections {connection_id}` closes one.
+ * - `GET /api/connections/{id}/health` says whether the database still answers on one (TD-034).
  * - `POST /api/connection-tests {profile_id, confirmed_environment}` is the connection test: it connects, reads a few
  *   facts and closes again.
  * - D-02 on the server (TD-038): `confirmed_environment` is the environment the page confirmed for, the profile's
@@ -16,8 +17,9 @@
  * never an exception. Names, versions and settings come from the database, so the page shows them escaped.
  */
 import type { EnvironmentTag } from './profiles';
-import { OFFLINE } from './problem';
+import { OFFLINE, readProblem } from './problem';
 import { getJson, send, type Result } from './profiles';
+import { apiHeaders } from '../session';
 
 export interface OpenedConnection {
   connectionId: string;
@@ -165,4 +167,43 @@ export async function fetchOpenConnections(
   fetcher: typeof fetch,
 ): Promise<OpenedConnection[] | null> {
   return parseOpenList(await getJson(fetcher, '/api/connections'));
+}
+
+/** `GET /api/connections/{id}/health` (TD-034): the database answers (`open`), or every pooled session is in use. */
+export interface ConnectionHealth {
+  state: 'open' | 'busy';
+  latencyMs: number | null;
+}
+
+export function parseHealth(body: unknown): ConnectionHealth | null {
+  const doc = record(body);
+  if (doc.state !== 'open' && doc.state !== 'busy') return null;
+  const latency = doc.latency_ms;
+  return {
+    state: doc.state,
+    latencyMs: typeof latency === 'number' && Number.isFinite(latency) ? latency : null,
+  };
+}
+
+/**
+ * Whether the database still answers on the open connection `connectionId`. A refusal is the problem:
+ * `db.connection` when the database does not answer, `studio.connection_not_found` or `studio.connection_stale`
+ * when the server closed the connection.
+ */
+export async function checkConnection(
+  fetcher: typeof fetch,
+  connectionId: string,
+): Promise<Result<ConnectionHealth>> {
+  try {
+    const response = await fetcher(`/api/connections/${encodeURIComponent(connectionId)}/health`, {
+      cache: 'no-store',
+      credentials: 'same-origin',
+      headers: apiHeaders(),
+    });
+    if (!response.ok) return { ok: false, problem: await readProblem(response) };
+    const health = parseHealth(await response.json());
+    return health === null ? { ok: false, problem: OFFLINE } : { ok: true, value: health };
+  } catch {
+    return { ok: false, problem: OFFLINE };
+  }
 }

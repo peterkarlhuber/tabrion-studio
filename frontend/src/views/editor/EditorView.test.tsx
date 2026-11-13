@@ -17,6 +17,12 @@ import { handToEditor } from './handoff';
 import { EditorView, queryProblemText, scriptFileName } from './EditorView';
 import type { SqlEditorHandle, SqlEditorProps } from './SqlEditor';
 import i18n from '../../i18n';
+import {
+  ConnectionSessionContext,
+  NO_CONNECTION_SESSION,
+  type ConnectionSession,
+  type Reconnected,
+} from '../../workspace';
 
 vi.mock('./SqlEditor', () => ({
   SqlEditor: forwardRef<SqlEditorHandle, SqlEditorProps>(function FakeEditor(props, ref) {
@@ -59,6 +65,8 @@ interface Options {
   before?: (url: string, init?: RequestInit) => Response | null;
   /** Where an export goes (TD-043). */
   saveExport?: SaveFile;
+  /** The page's connection session (TD-034); none by default. */
+  session?: ConnectionSession;
 }
 
 function setup(draft?: { sql: string; profile?: string }, options: Options = {}) {
@@ -112,7 +120,16 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
     if (url === '/api/settings') return new Response(JSON.stringify(SETTINGS));
     return (await server.handle(url, init)) ?? new Response(null, { status: 404 });
   };
-  render(<EditorView fetcher={fetcher} saveExport={options.saveExport} />);
+  const view = <EditorView fetcher={fetcher} saveExport={options.saveExport} />;
+  render(
+    options.session === undefined ? (
+      view
+    ) : (
+      <ConnectionSessionContext.Provider value={options.session}>
+        {view}
+      </ConnectionSessionContext.Provider>
+    ),
+  );
   return { log: server.log as QueryLog, requests };
 }
 
@@ -787,5 +804,135 @@ describe('EditorView: export (TD-043)', () => {
       'Another export is running on this connection, or two are running already.',
     );
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+describe('EditorView: a lost connection (TD-034)', () => {
+  function session() {
+    const listeners = new Set<(event: Reconnected) => void>();
+    const value: ConnectionSession = {
+      ...NO_CONNECTION_SESSION,
+      markLost: vi.fn(),
+      prodConfirmed: () => true,
+      onReconnected: (listener) => {
+        listeners.add(listener);
+        return () => listeners.delete(listener);
+      },
+    };
+    const reconnect = (event: Reconnected) => {
+      for (const listener of listeners) listener(event);
+    };
+    return { value, reconnect };
+  }
+
+  it('reports a query that failed because the database stopped answering', async () => {
+    const user = userEvent.setup();
+    const { value } = session();
+    setup({ sql: 'select connection_lost()' }, { session: value });
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() =>
+      expect(value.markLost).toHaveBeenCalledWith('c-project:parts-dev', 'db.connection'),
+    );
+  });
+
+  it('runs on the new connection after Reconnect replaced the old one', async () => {
+    const user = userEvent.setup();
+    const { value, reconnect } = session();
+    const starts: string[] = [];
+    setup(
+      { sql: 'select 1' },
+      {
+        session: value,
+        before: (url, init) => {
+          if (url === '/api/queries' && init?.method === 'POST') {
+            starts.push((JSON.parse(String(init.body)) as { connection_id: string }).connection_id);
+          }
+          return null;
+        },
+      },
+    );
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(starts).toEqual(['c-project:parts-dev']));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('3 rows · 25 ms'),
+    );
+    act(() =>
+      reconnect({ profileId: 'project:parts-dev', from: 'c-project:parts-dev', to: 'c-new' }),
+    );
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(starts).toEqual(['c-project:parts-dev', 'c-new']));
+  });
+
+  it('does not open a PROD connection again by itself when the server closed it: D-02 belongs to Reconnect', async () => {
+    const user = userEvent.setup();
+    const { value } = session();
+    let closed = false;
+    const { log } = setup(
+      { sql: 'select 1', profile: 'user:measure-central' },
+      {
+        session: value,
+        before: (url, init) =>
+          closed && url === '/api/queries' && init?.method === 'POST'
+            ? new Response(
+                JSON.stringify({
+                  code: 'studio.connection_not_found',
+                  kind: 'not_found',
+                  status: 404,
+                }),
+                { status: 404 },
+              )
+            : null,
+      },
+    );
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(log.connections).toEqual(['user:measure-central']));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('3 rows · 25 ms'),
+    );
+    closed = true;
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(screen.getByTestId('result-status')).not.toHaveTextContent('25 ms'));
+    expect(log.connections).toEqual(['user:measure-central']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('opens a DEV connection again by itself, as before', async () => {
+    const user = userEvent.setup();
+    const { value } = session();
+    let closed = false;
+    const { log } = setup(
+      { sql: 'select 1' },
+      {
+        session: value,
+        before: (url, init) => {
+          if (closed && url === '/api/queries' && init?.method === 'POST') {
+            closed = false;
+            return new Response(
+              JSON.stringify({
+                code: 'studio.connection_not_found',
+                kind: 'not_found',
+                status: 404,
+              }),
+              { status: 404 },
+            );
+          }
+          return null;
+        },
+      },
+    );
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(log.connections).toEqual(['project:parts-dev']));
+    await waitFor(() =>
+      expect(screen.getByTestId('result-status')).toHaveTextContent('3 rows · 25 ms'),
+    );
+    closed = true;
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() =>
+      expect(log.connections).toEqual(['project:parts-dev', 'project:parts-dev']),
+    );
   });
 });

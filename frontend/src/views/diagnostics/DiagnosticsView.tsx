@@ -49,6 +49,7 @@ import { capped, visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
+import { useReconnected } from '../../workspace';
 import viewStyles from '../Views.module.css';
 import styles from './Diagnostics.module.css';
 
@@ -298,6 +299,11 @@ export function DiagnosticsView({
     shownNow.current = next;
     setShownState(next);
   };
+  // TD-034: "Reconnect" in the banner replaced the diagnosis's connection; "Run again" and the report use the new one.
+  useReconnected((event) => {
+    const current = shownNow.current;
+    if (current?.connectionId === event.from) setShown({ ...current, connectionId: event.to });
+  });
   const [problem, setProblem] = useState<Problem | null>(null);
   const [phase, setPhaseState] = useState<Phase>('idle');
   /** The phase as of now, for a click that lands before the next render (review I-5). */

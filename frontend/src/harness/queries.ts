@@ -6,7 +6,8 @@
  *   row limit (`max_rows`, 1 000 by default) cuts the result with `truncated_by: "rows"`; row 2 has a cut cell.
  * - `pg_sleep` runs until it is canceled.
  * - a first word that is not a reading one (`INSERT`, `DELETE`, ...) is refused with `studio.statement_refused`;
- *   `missing_table` fails with `db.undefined_object`; `read_only_violation` with `db.read_only`.
+ *   `missing_table` fails with `db.undefined_object`; `read_only_violation` with `db.read_only`; `connection_lost`
+ *   with `db.connection` (the database stopped answering, TD-034).
  * - `:name` placeholders come back as the column `param` of every row.
  * - `wide(C)` fills the text columns with C characters "€" (a string V8 holds with 2 bytes per character), for the
  *   memory bound in bytes (M-4 of stu-012-review.md).
@@ -296,6 +297,9 @@ export function createQueryServer(
         setTimeout(() => {
           if (/missing_table/i.test(body.sql)) {
             query.problem = { code: 'db.undefined_object', kind: 'database', status: 404 };
+            finish(query, 'failed');
+          } else if (/connection_lost/i.test(body.sql)) {
+            query.problem = { code: 'db.connection', kind: 'connection', status: 502 };
             finish(query, 'failed');
           } else if (/read_only_violation/i.test(body.sql)) {
             query.problem = { code: 'db.read_only', kind: 'database', status: 403 };

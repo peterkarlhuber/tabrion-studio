@@ -1071,5 +1071,15 @@
       "tooLarge": "The file is larger than {{size}}, too large to assemble in the browser, so the export was stopped and nothing was saved. Export fewer rows or columns.",
       "connectionGone": "The connection is no longer open. Run the statement again, then export."
     }
+  },
+  "connectionLost": {
+    "title": "Connection lost: {{name}}",
+    "database": "The database does not answer. Studio reads nothing more on this connection until you reconnect.",
+    "stale": "The profile was changed, removed or is no longer trusted, so Studio closed the connection.",
+    "closed": "Studio no longer has this connection; it was closed.",
+    "nothingLost": "Nothing was lost: Studio only reads.",
+    "reconnect": "Reconnect",
+    "reconnecting": "Reconnecting…",
+    "failed": "Reconnecting failed: {{problem}}"
   }
 }

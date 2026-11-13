@@ -416,7 +416,15 @@ function byName(query: string | undefined, answers: Record<string, object>): Res
 export function explorerAnswer(url: string, method: string, body?: string): Response | null {
   if (url === '/api/connections' && method === 'POST') {
     const sqlite = body?.includes('"project:parts-dev"') ?? false;
-    return json({ connection_id: sqlite ? 'c-sqlite' : 'c-pg' }, 201);
+    // The server's answer names the profile and its environment (the page's connection watch keys on them, TD-034).
+    return json(
+      {
+        connection_id: sqlite ? 'c-sqlite' : 'c-pg',
+        profile_id: sqlite ? 'project:parts-dev' : 'user:measure',
+        environment: sqlite ? 'dev' : 'prod',
+      },
+      201,
+    );
   }
   const match = /^\/api\/connections\/(c-sqlite|c-pg)\/([a-z-]+)(?:\?(.*))?$/.exec(url);
   if (match === null || method !== 'GET') return null;

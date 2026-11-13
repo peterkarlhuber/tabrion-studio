@@ -7,6 +7,7 @@ only after trust, through ``ProjectConfig.database_file`` (review T-1). Engines 
 from __future__ import annotations
 
 from collections.abc import Iterator
+import dataclasses
 import io
 import logging
 from pathlib import Path
@@ -14,7 +15,10 @@ import sqlite3
 from typing import Any
 import uuid
 
+import psycopg
 import pytest
+import tabrion
+from tabrion.errors import classify
 
 from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.project import ProjectConfig, TrustError
@@ -188,6 +192,7 @@ def test_the_routes_need_a_session_csrf_and_json(env: Env) -> None:
         ("POST", "/api/connections"),
         ("DELETE", "/api/connections"),
         ("POST", "/api/connection-tests"),
+        ("GET", "/api/connections/c_x/health"),
     ):
         response = env.studio.client.request(method, path, json={"profile_id": "user:parts"}, headers=no_csrf)
         assert response.status_code in (401, 403), (method, path)
@@ -294,3 +299,76 @@ def test_shutdown_disposes_every_engine(tmp_path: Path, static_dir: Path) -> Non
         assert environment.send("POST", "/api/connections", {"profile_id": "user:parts"}).status_code == 201
         assert len(environment.registry.list()) == 1
     assert environment.registry.list() == []
+
+
+def _lost_health() -> tabrion.Health:
+    """What tabrion's health check says when the database ended the session (a restart, pg_terminate_backend)."""
+    classification = classify(psycopg.OperationalError("server closed the connection unexpectedly"))
+    return tabrion.Health(False, "sqlite", None, None, {"checked_out": 0, "size": 2, "overflow": -2}, classification)
+
+
+def test_td034_health_says_open_with_the_latency(env: Env) -> None:
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    opened = env.send("POST", "/api/connections", {"profile_id": "user:parts"}).json()["connection_id"]
+    response = env.send("GET", f"/api/connections/{opened}/health")
+    assert response.status_code == 200, response.text
+    doc = response.json()
+    assert doc["state"] == "open" and isinstance(doc["latency_ms"], float) and set(doc) == {"state", "latency_ms"}
+
+
+def test_td034_health_of_a_gone_or_stale_connection(env: Env) -> None:
+    gone = env.send("GET", "/api/connections/c_nothing/health")
+    assert gone.status_code == 404 and gone.json()["code"] == "studio.connection_not_found"
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    opened = env.send("POST", "/api/connections", {"profile_id": "user:parts"}).json()["connection_id"]
+    other = env.db.with_name("moved.db")
+    _database(other)
+    # Changed on disk behind Studio's back: the connection is closed only when it is used next.
+    file = env.config_dir / "profiles.toml"
+    file.write_text(file.read_text(encoding="utf-8").replace(str(env.db), str(other)), encoding="utf-8")
+    stale = env.send("GET", f"/api/connections/{opened}/health")
+    assert stale.json()["code"] == "studio.connection_stale"
+    assert env.registry.list() == []
+
+
+def test_td034_a_lost_database_is_a_db_problem_and_open_replaces_the_connection(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    first = env.send("POST", "/api/connections", {"profile_id": "user:parts"}).json()["connection_id"]
+    lost = env.registry.get(first)
+    monkeypatch.setattr(lost, "health", _lost_health)
+    response = env.send("GET", f"/api/connections/{first}/health")
+    assert response.status_code == 502 and response.json()["code"] == "db.connection"
+    # The connection stays registered until the page reconnects: the banner names it.
+    assert [c.id for c in env.registry.list()] == [first]
+    again = env.send("POST", "/api/connections", {"profile_id": "user:parts"})
+    assert again.status_code == 201, again.text
+    second = again.json()["connection_id"]
+    assert second != first
+    assert [c.id for c in env.registry.list()] == [second]
+    assert env.send("GET", f"/api/connections/{first}/health").json()["code"] == "studio.connection_not_found"
+    assert env.send("GET", f"/api/connections/{second}/health").json()["state"] == "open"
+
+
+def test_td034_a_full_pool_is_busy_not_lost(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every session lent out (a long query, an export): the check got no session, which says nothing about the
+    database. The page must not offer "Reconnect", and "open" keeps the connection."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    first = env.send("POST", "/api/connections", {"profile_id": "user:parts"}).json()["connection_id"]
+    busy = env.registry.get(first)
+    full = dataclasses.replace(_lost_health(), pool={"checked_out": 2, "size": 2, "overflow": -2})
+    monkeypatch.setattr(busy, "health", lambda: full)
+    assert env.send("GET", f"/api/connections/{first}/health").json() == {"state": "busy", "latency_ms": None}
+    assert env.send("POST", "/api/connections", {"profile_id": "user:parts"}).json()["connection_id"] == first
+
+
+def test_td034_a_lost_prod_connection_is_replaced_only_with_d02(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    env.create({"name": "live", "engine": "sqlite", "path": str(env.db), "environment": "prod"})
+    body = {"profile_id": "user:live", "confirmed_environment": "prod"}
+    first = env.send("POST", "/api/connections", body).json()["connection_id"]
+    monkeypatch.setattr(env.registry.get(first), "health", _lost_health)
+    refused = env.send("POST", "/api/connections", {"profile_id": "user:live"})
+    assert refused.status_code == 409 and refused.json()["code"] == "studio.prod_confirmation_required"
+    assert [c.id for c in env.registry.list()] == [first]  # nothing closed or opened without D-02
+    assert env.send("POST", "/api/connections", body).json()["connection_id"] != first

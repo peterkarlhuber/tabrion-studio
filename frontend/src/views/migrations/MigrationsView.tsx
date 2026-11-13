@@ -34,7 +34,7 @@ import { ProdConnectDialog, TrustCodeDialog } from '../../components/dialogs/Stu
 import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import { capped, visible } from '../../lib/visible';
-import { useConnectionSession } from '../../workspace';
+import { useConnectionSession, useReconnected } from '../../workspace';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { prodTimeoutSeconds } from '../connections/useConnect';
@@ -322,6 +322,12 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
   const [status, setStatus] = useState<MigrationStatus | null>(null);
+  // TD-034: "Reconnect" in the banner replaced the status's connection; "Read again" uses the new one.
+  useReconnected((event) =>
+    setStatus((current) =>
+      current?.connectionId === event.from ? { ...current, connectionId: event.to } : current,
+    ),
+  );
   /** The environment of the profile whose status is shown (marked next to it, and in the header). */
   const [statusEnv, setStatusEnv] = useState<ProfileItem['environment'] | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);

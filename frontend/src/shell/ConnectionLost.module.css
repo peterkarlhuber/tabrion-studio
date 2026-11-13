@@ -1,0 +1,28 @@
+.banner {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  margin: 0 0 var(--tb-space-3);
+  padding: var(--tb-space-2) var(--tb-space-3);
+  border: 1px solid var(--tb-color-danger);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-danger-bg);
+  color: var(--tb-color-text);
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+
+.title {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.text {
+  margin: 0;
+}
