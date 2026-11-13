@@ -140,10 +140,15 @@ jobs:
               admin.execute("CREATE DATABASE studio_test OWNER studio_owner")
               print(admin.execute("SELECT version()").fetchone()[0])
           PY
+      # STU-022 (TD-035): the DDL test compares with the runner's own pg_dump; it must be there and not older than
+      # the server (pg_dump refuses a newer server), so its version is logged and the live comparison is required.
+      - run: pg_dump --version
       - run: pytest -m "postgres or postgres_superuser" -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/postgres.xml"
         env:
           # The throwaway server's own superuser, for the tests that make roles (marker postgres_superuser, CI-1).
           TABRION_STUDIO_TEST_POSTGRES_SUPERUSER: postgresql://postgres:ci-admin-pw@127.0.0.1:5432/studio_test
+          # A missing or refusing pg_dump fails the DDL test instead of skipping its live comparison (L-2, #38).
+          TABRION_STUDIO_TEST_LIVE_PG_DUMP: "1"
       - name: Every PostgreSQL test ran and none was skipped
         env:
           JUNIT: ${{ runner.temp }}/postgres.xml
@@ -203,10 +208,12 @@ jobs:
 
   e2e:
     name: e2e
-    # Review U-3: the Playwright suites in Chromium on every pull request. a11y (axe, WCAG 2.0-2.2 A/AA with color
-    # contrast, light/dark x en/de), contrast, dialogs and status run against the e2e harness; backend.spec.ts runs
-    # the built wheel in a real tabrion-studio process under the CSP of STU-003. The screenshot suite is skipped
-    # (STUDIO_SCREENSHOTS unset).
+    # Review U-3: the Playwright suites in Chromium on every pull request. The harness suites (a11y with axe, WCAG
+    # 2.0-2.2 A/AA with color contrast, light/dark x en/de, and the others) run against the e2e harness; the
+    # *-backend.spec.ts suites run the built wheel in a real tabrion-studio process under the CSP of STU-003, and
+    # explorer-reference.spec.ts runs it against tabrion's reference apps (STU-010; their SQLite part, the PostgreSQL
+    # part needs URLs this job does not set). That part is an `if` inside the test, not a skip, so the gate below does
+    # not see that it did not run (TD-041). The screenshot suite is skipped (STUDIO_SCREENSHOTS unset).
     runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
@@ -232,6 +239,21 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/studio"
           "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+      # explorer-reference.spec.ts (TD-041) creates tabrion's reference apps with their own code: the examples of the
+      # very tabrion commit the constraints pin, so they match the tabrion installed above.
+      - name: The tabrion commit the constraints pin
+        id: tabrion
+        run: |
+          sha=$(sed -n 's|^tabrion @ git+https://github.com/peterkarlhuber/tabrion@\([0-9a-f]\{40\}\)$|\1|p' constraints/tabrion-integration.txt)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "no full-SHA tabrion pin in constraints/tabrion-integration.txt"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: peterkarlhuber/tabrion
+          ref: ${{ steps.tabrion.outputs.sha }}
+          path: tabrion
+          sparse-checkout: examples
+          persist-credentials: false
       # The Chromium build that the locked @playwright/test expects (U-5), with its system libraries.
       - run: npm run e2e:install
         working-directory: frontend
@@ -239,13 +261,14 @@ jobs:
         working-directory: frontend
         env:
           TABRION_STUDIO_E2E_PYTHON: ${{ runner.temp }}/studio/bin/python
+          TABRION_STUDIO_E2E_EXAMPLES: ${{ github.workspace }}/tabrion/examples
           PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/e2e.json
       - name: Every suite ran and none was skipped
         env:
           E2E_REPORT: ${{ runner.temp }}/e2e.json
         run: |
           python -I - <<'PY'
-          import collections, json, os
+          import collections, json, os, re
           report = json.load(open(os.environ["E2E_REPORT"]))
           counts = collections.Counter()
           def walk(suite, file):
@@ -258,7 +281,19 @@ jobs:
           for suite in report["suites"]:
               walk(suite, None)
           print(dict(counts))
-          required = ["a11y.spec.ts", "backend.spec.ts", "contrast.spec.ts", "dialogs.spec.ts", "status.spec.ts"]
+          # Every test file Playwright runs (its default testMatch under testDir frontend/e2e, subfolders included, named
+          # as in the report) must pass with none of its tests skipped, so a new one is required as soon as it is
+          # added; only these may skip, each for its reason.
+          optional = {"screenshots.spec.ts": "takes screenshots only when STUDIO_SCREENSHOTS names a folder"}
+          root = "frontend/e2e"
+          specs = {
+              os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/")
+              for folder, _, names in os.walk(root)
+              for name in names
+              if re.search(r"\.(spec|test)\.[cm]?[jt]sx?$", name)
+          }
+          required = sorted(specs - set(optional))
+          assert len(required) >= 19 and set(optional) <= specs, (required, optional)
           for file in required:
               assert counts[(file, "expected")] > 0, f"{file}: no test passed"
               bad = {s: n for (f, s), n in counts.items() if f == file and s != "expected"}
