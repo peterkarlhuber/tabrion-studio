@@ -24,6 +24,7 @@ import pytest
 import sqlalchemy
 import tabrion
 from tabrion.errors import TabrionError
+from tabrion.sql import split_statements
 
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Settings
 from tabrion_studio.config.secrets import SecretError
@@ -231,9 +232,140 @@ def test_the_authorizer_is_an_allowlist() -> None:
     assert sqlite_authorizer(sqlite3.SQLITE_PRAGMA, "query_only", "off", None, None) == deny
     assert sqlite_authorizer(sqlite3.SQLITE_PRAGMA, "optimize", None, None, None) == deny
     assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, "LOAD_EXTENSION", None, None) == deny
+    # F-2 of the STU-016 review: the function branch is an allowlist too.
+    assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, "fts3_tokenizer", None, None) == deny
+    assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, "FTS3_TOKENIZER", None, None) == deny
+    assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, "some_function_sqlite_adds_later", None, None) == deny
+    assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, None, None, None) == deny
+    assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, "count", None, None) == ok
+    assert sqlite_authorizer(sqlite3.SQLITE_FUNCTION, None, "JSON_EXTRACT", None, None) == ok
     assert sqlite_authorizer(sqlite3.SQLITE_ATTACH, "x.db", None, None, None) == deny
     assert sqlite_authorizer(sqlite3.SQLITE_DETACH, "x", None, None, None) == deny
     assert sqlite_authorizer(9999, None, None, None, None) == deny  # an action SQLite adds later
+
+
+#: SQLite functions a read-only Studio connection must not call (F-2 of the STU-016 review): both forms of
+#: fts3_tokenizer (a native pointer out, a native pointer in), FTS5's API pointer, the FTS4 maintenance function, the
+#: R-tree debugging functions and the error log.
+DENIED_SQLITE_FUNCTIONS = [
+    ("fts3_tokenizer", "SELECT fts3_tokenizer('simple')"),
+    ("fts3_tokenizer", "SELECT fts3_tokenizer('simple', x'0000000000000000')"),
+    ("fts3_tokenizer", "SELECT hex(fts3_tokenizer('porter'))"),
+    ("fts5", "SELECT fts5(NULL)"),
+    ("optimize", "SELECT optimize(1)"),
+    ("rtreenode", "SELECT rtreenode(2, x'00')"),
+    ("rtreedepth", "SELECT rtreedepth(x'00')"),
+    ("sqlite_log", "SELECT sqlite_log(1, 'x')"),
+    ("load_extension", "SELECT load_extension('x')"),
+]
+
+
+def _sqlite_has_function(name: str) -> bool:
+    """Whether this Python's SQLite build has the function ``name`` (FTS and R-tree are compile options)."""
+    connection = sqlite3.connect(":memory:")
+    try:
+        row = connection.execute("SELECT count(*) FROM pragma_function_list WHERE name = ?", (name,)).fetchone()
+        return int(row[0]) > 0
+    finally:
+        connection.close()
+
+
+@pytest.mark.parametrize(("name", "sql"), DENIED_SQLITE_FUNCTIONS)
+def test_f2_sqlite_functions_outside_the_allowlist_are_denied(
+    sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source], name: str, sql: str
+) -> None:
+    """The statement passes Studio's text check (it is a SELECT); the authorizer on the connection denies the call.
+    A build without the function refuses it as unknown."""
+    connection, _, _ = sqlite_connection
+    check_statement(sql)
+    expected = "not authorized" if _sqlite_has_function(name) else "no such function"
+    for _ in range(3):  # whichever of the pool's connections it lands on
+        with pytest.raises(TabrionError) as raised:
+            connection.fetch(sql)
+        assert expected in str(raised.value.original)
+        with pytest.raises(TabrionError):
+            below_the_check(connection, sql)
+    assert connection.fetch("SELECT count(*) FROM part") == [(2,)]
+
+
+def test_f2_fts_and_json_reads_still_work(tmp_path: Path) -> None:
+    """The allowlist keeps what read queries use: FTS MATCH with its auxiliary functions (where the build has FTS4),
+    JSON, dates, window functions and the ``->>`` operator."""
+    fts = _sqlite_has_function("matchinfo")
+    path = tmp_path / "docs.db"
+    writer = sqlite3.connect(path)
+    if fts:
+        writer.executescript(
+            "CREATE VIRTUAL TABLE ft USING fts4(body); INSERT INTO ft (body) VALUES ('hello world'), ('other text');"
+        )
+    writer.executescript(
+        "CREATE TABLE doc (id INTEGER PRIMARY KEY, data TEXT, at TEXT);"
+        "INSERT INTO doc VALUES (1, '{\"a\": [1, 2]}', '2026-01-02');"
+        "CREATE VIEW doc_view AS SELECT id, json_extract(data, '$.a[1]') AS second, upper(at) AS at FROM doc;"
+    )
+    writer.commit()
+    writer.close()
+    path.chmod(0o600)
+    source = Source(
+        profiles={"project:docs": Profile("docs", "sqlite", "dev", path="docs.db")}, files={"project:docs": path}
+    )
+    registry = ConnectionRegistry(source)
+    try:
+        connection = registry.open("project:docs")
+        if fts:
+            assert connection.fetch(
+                "SELECT snippet(ft), length(offsets(ft)) > 0, length(matchinfo(ft)) > 0 FROM ft WHERE ft MATCH 'hello'"
+            ) == [("<b>hello</b> world", 1, 1)]
+        assert connection.fetch(
+            "SELECT data ->> '$.a[0]', json_array_length(data, '$.a'), date(at, '+1 day'), round(abs(-4.4)), "
+            "row_number() OVER (ORDER BY id), coalesce(NULL, typeof(id)) FROM doc"
+        ) == [(1, 2, "2026-01-03", 4.0, 1, "integer")]
+        assert connection.fetch("SELECT second, at FROM doc_view") == [(2, "2026-01-02")]
+        assert connection.fetch("SELECT count(*), group_concat(name, ',') FROM pragma_table_info('doc')") == [
+            (3, "id,data,at")
+        ]
+    finally:
+        registry.close_all()
+
+
+def test_f2_trusted_schema_is_off_on_every_sqlite_session(
+    sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source],
+) -> None:
+    connection, _, _ = sqlite_connection
+    assert {connection.fetch("PRAGMA trusted_schema")[0][0] for _ in range(4)} == {0}
+    with pytest.raises(TabrionError):  # a setting pragma: the authorizer denies it
+        below_the_check(connection, "PRAGMA trusted_schema = ON")
+    raw = connection._db.engine.raw_connection()
+    try:
+        driver = raw.driver_connection
+        assert isinstance(driver, sqlite3.Connection)
+        assert driver.execute("PRAGMA trusted_schema").fetchone() == (0,)
+    finally:
+        raw.close()
+
+
+def test_f2_the_trusted_schema_pragma_runs_before_the_authorizer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Studio sets trusted_schema itself (not only through tabrion's profile), before its authorizer denies pragmas."""
+    calls: list[str] = []
+
+    class Recorder(sqlite3.Connection):
+        def execute(self, sql: str, *args: Any) -> sqlite3.Cursor:
+            calls.append(sql)
+            return super().execute(sql, *args)
+
+        def set_authorizer(self, authorizer: Any) -> None:
+            calls.append("set_authorizer")
+            super().set_authorizer(authorizer)
+
+    connection = sqlite3.connect(":memory:", factory=Recorder)
+    connection.execute("PRAGMA trusted_schema = ON")
+    calls.clear()
+    try:
+        connections_module._install_authorizer(connection, None)
+        assert calls == ["PRAGMA trusted_schema = OFF", "set_authorizer"]
+        assert connection.execute("PRAGMA trusted_schema").fetchone() == (0,)
+    finally:
+        connection.close()
 
 
 @pytest.mark.parametrize(
@@ -316,6 +448,50 @@ def test_the_authorizer_is_an_allowlist() -> None:
         ("EXPLAIN (ANALYZE, BUFFERS) INSERT INTO part VALUES (1)", "studio.statement_refused"),
         ("EXPLAIN DECLARE c CURSOR FOR SELECT 1", "studio.statement_refused"),
         ("EXPLAIN", "studio.statement_refused"),
+        # F-1 of the STU-016 review: statement forms that create a table on the read-only path.
+        ("SELECT * INTO t2 FROM part", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT * INTO t2 FROM part", "studio.statement_refused"),
+        ("explain (analyze, costs off) select 1 as a into unlogged t2", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT 1 AS a INTO TEMPORARY t2", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT 1 AS a INTO TEMP t2", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE WITH a AS (SELECT 1 AS x) SELECT * INTO t2 FROM a", "studio.statement_refused"),
+        ("EXPLAIN ANALYSE VERBOSE (SELECT 1 AS a INTO t2)", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT 1 AS a /* c */ INTO/**/t2", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT 1 AS a\nINTO\tt2", "studio.statement_refused"),
+        ("SELECT 'x' AS v, $$y$$ AS w INTO t2", "studio.statement_refused"),
+        ("SELECT 'a\\' INTO t2 --'", "studio.statement_refused"),  # INTO outside the literal in one reading
+        # SQLite has no dollar quoting: in its reading, INTO is a word (fail closed, also for PostgreSQL).
+        ("SELECT $q$ INTO t2 $q$", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE CREATE TABLE t2 AS SELECT 1", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE CREATE MATERIALIZED VIEW m AS SELECT 1", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE EXECUTE p", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE MERGE INTO part USING part p2 ON true WHEN MATCHED THEN DELETE", "studio.statement_refused"),
+        ("COPY (SELECT 1) TO STDOUT", "studio.statement_refused"),
+        ("COPY part FROM STDIN", "studio.statement_refused"),
+        # F-3 of the STU-016 review: functions with effects outside Studio's read-only transaction.
+        ("SELECT pg_terminate_backend(pid) FROM pg_stat_activity", "studio.statement_refused"),
+        ("SELECT pg_catalog.pg_cancel_backend(1)", "studio.statement_refused"),
+        ("SELECT pg_logical_emit_message(false, 'p', 'm')", "studio.statement_refused"),
+        ("SELECT txid_current()", "studio.statement_refused"),
+        ("SELECT pg_current_xact_id()", "studio.statement_refused"),
+        ("SELECT pg_reload_conf()", "studio.statement_refused"),
+        ("SELECT pg_rotate_logfile()", "studio.statement_refused"),
+        ("SELECT pg_switch_wal()", "studio.statement_refused"),
+        ("SELECT pg_create_restore_point('x')", "studio.statement_refused"),
+        ("SELECT pg_promote()", "studio.statement_refused"),
+        ("SELECT pg_stat_reset()", "studio.statement_refused"),
+        ("SELECT pg_stat_reset_shared('bgwriter')", "studio.statement_refused"),
+        ("SELECT pg_stat_statements_reset()", "studio.statement_refused"),
+        ("SELECT pg_replication_origin_create('x')", "studio.statement_refused"),
+        ("SELECT pg_replication_origin_session_setup('x')", "studio.statement_refused"),
+        ("SELECT * FROM pg_create_logical_replication_slot('s', 'test_decoding')", "studio.statement_refused"),
+        ("SELECT pg_drop_replication_slot('s')", "studio.statement_refused"),
+        ("SELECT * FROM pg_logical_slot_get_changes('s', NULL, NULL)", "studio.statement_refused"),
+        ("SELECT lo_export(1, '/tmp/x')", "studio.statement_refused"),
+        ("SELECT lo_import('/etc/hostname')", "studio.statement_refused"),
+        ("SELECT dblink_connect('c', 'dbname=x')", "studio.statement_refused"),
+        ('SELECT "pg_terminate_backend"(1)', "studio.statement_refused"),
+        ("SELECT PG_TERMINATE_BACKEND /* x */ (1)", "studio.statement_refused"),
     ],
 )
 def test_statements_studio_refuses(sql: str, code: str) -> None:
@@ -348,6 +524,16 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
         'SELECT "SET_CONFIG"(1)',
         "SELECT pg_advisory_xact_lock(1)",
         "SELECT current_setting('role')",
+        # F-1 and F-3: INTO as a name, in a literal or a comment, and the functions that only read.
+        'SELECT "into" FROM t',
+        "SELECT 'select 1 into t2' AS text",
+        "SELECT 1 -- into t2",
+        "SELECT 1 /* into t2 */",
+        "SELECT intox, x_into FROM t",
+        "SELECT txid_current_if_assigned(), pg_current_xact_id_if_assigned()",
+        "SELECT pg_backend_pid(), pg_stat_get_activity(NULL)",
+        "SELECT * FROM pg_stat_activity",
+        "SELECT pg_stat_reset_time FROM t",
     ],
 )
 def test_statements_studio_passes_on(sql: str) -> None:
@@ -936,6 +1122,117 @@ def test_the_known_gap_of_multiple_statements_is_closed_by_the_text_check(
     assert _rows(admin) == 1
 
 
+#: F-1 of the STU-016 review: statement forms that would create a table through the read-only session; Studio's check
+#: refuses them. ``{t}`` is a name made for the test.
+INTO_FORMS = [
+    "EXPLAIN ANALYZE SELECT * INTO {t} FROM studio_ro_probe",
+    "explain (analyze, costs off) select g, repeat('x', 10) as pad into unlogged {t} from generate_series(1, 10) g",
+    "EXPLAIN ANALYZE SELECT 1 AS a INTO TEMPORARY {t}",
+    "EXPLAIN ANALYZE WITH a AS (SELECT 1 AS x) SELECT * INTO {t} FROM a",
+    "EXPLAIN ANALYZE SELECT 1 AS a INTO public.{t}",
+    "SELECT 1 AS a INTO {t}",
+]
+
+
+def _relations(admin: sqlalchemy.Engine, name: str) -> int:
+    """How many relations of any schema, temporary ones included, have the name ``name``."""
+    with admin.connect() as c:
+        return int(
+            c.exec_driver_sql("SELECT count(*) FROM pg_catalog.pg_class WHERE relname = %s", (name,)).scalar_one()
+        )
+
+
+def _drop_test_tables(admin: sqlalchemy.Engine, name: str) -> None:
+    """Drops what a failing run of the test made (tables of the test's own name, in the test role's schemas)."""
+    with admin.begin() as c:
+        c.exec_driver_sql(f"DROP TABLE IF EXISTS public.{name}")
+
+
+@pytest.mark.postgres
+@postgres
+@pytest.mark.parametrize("form", INTO_FORMS)
+def test_f1_statements_that_create_a_table_are_refused(pg: tuple[OpenConnection, sqlalchemy.Engine], form: str) -> None:
+    connection, admin = pg
+    name = f"studio_into_{secrets.token_hex(4)}"
+    sql = form.format(t=name)
+    try:
+        for _ in range(3):  # whichever of the pool's connections it lands on
+            with pytest.raises(StatementRefused) as raised:
+                connection.fetch(sql, catalog=False)  # the session's search_path, as for the editor
+            assert raised.value.code == "studio.statement_refused"
+        assert _relations(admin, name) == 0
+    finally:
+        _drop_test_tables(admin, name)
+    assert _rows(admin) == 1
+
+
+@pytest.mark.postgres
+@postgres
+def test_f1_a_write_under_explain_analyze_fails_in_the_database(pg: tuple[OpenConnection, sqlalchemy.Engine]) -> None:
+    """A writable CTE passes the text check (its first word is a query's); PostgreSQL refuses it in the read-only
+    transaction, also under EXPLAIN ANALYZE."""
+    connection, admin = pg
+    for sql in (
+        "EXPLAIN ANALYZE WITH d AS (DELETE FROM studio_ro_probe RETURNING *) SELECT * FROM d",
+        "EXPLAIN ANALYZE WITH u AS (UPDATE studio_ro_probe SET id = 7 RETURNING *) SELECT * FROM u",
+        "EXPLAIN ANALYZE SELECT * FROM studio_ro_probe FOR UPDATE",
+    ):
+        assert check_statement(sql)
+        with pytest.raises(TabrionError) as raised:
+            connection.fetch(sql, catalog=False)
+        assert raised.value.classification is not None
+        assert raised.value.classification.kind.value == "read_only"
+    assert _rows(admin) == 1
+
+
+@pytest.mark.postgres
+@postgres
+def test_f1_check_in_drops_temporary_tables(pg: tuple[OpenConnection, sqlalchemy.Engine]) -> None:
+    """Past the text check (what a function of the database could do): a temporary table made in a Studio session
+    does not stay on the pooled connection, where it would come before pg_catalog in the next statements."""
+    connection, admin = pg
+    name = f"studio_temp_{secrets.token_hex(4)}"
+    for _ in range(3):  # whichever of the pool's connections it lands on
+        below_the_check(connection, f"EXPLAIN ANALYZE SELECT 1 AS a INTO TEMPORARY {name}")
+        assert connection.fetch("SELECT count(*) FROM pg_catalog.pg_class WHERE relname = :n", {"n": name}) == [(0,)]
+    assert _relations(admin, name) == 0
+    # Nor one named like a catalog (pg_temp comes first for user SQL).
+    below_the_check(connection, "EXPLAIN ANALYZE SELECT 1 AS nspname INTO TEMPORARY pg_namespace")
+    for _ in range(4):
+        assert connection.fetch("SELECT count(*) > 1 FROM pg_namespace", catalog=False) == [(True,)]
+
+
+@pytest.mark.postgres
+@postgres
+def test_f3_functions_that_reach_other_sessions_or_the_wal_are_refused(
+    pg: tuple[OpenConnection, sqlalchemy.Engine],
+) -> None:
+    """F-3 of the STU-016 review: a session of the same role (an application sharing it) is not ended or canceled
+    through a Studio connection; no WAL message and no transaction ID come from it."""
+    connection, admin = pg
+    application = f"studio-f3-{secrets.token_hex(4)}"
+    other = admin.connect()
+    try:
+        other.exec_driver_sql(f"SET application_name = '{application}'")
+        other.commit()
+        where = f"FROM pg_stat_activity WHERE application_name = '{application}'"
+        for sql in (
+            f"SELECT pg_terminate_backend(pid) {where}",
+            f"SELECT pg_cancel_backend(pid) {where}",
+            "SELECT pg_logical_emit_message(false, 'studio', 'x')",
+            "SELECT pg_logical_emit_message(true, 'studio', 'x')",
+            "SELECT txid_current()",
+            "SELECT pg_current_xact_id()",
+        ):
+            with pytest.raises(StatementRefused):
+                connection.fetch(sql)
+        assert other.exec_driver_sql("SELECT 1").scalar_one() == 1  # still alive
+        assert connection.fetch("SELECT pg_current_xact_id_if_assigned() IS NULL") == [(True,)]
+    finally:
+        other.invalidate()  # never back into the admin pool, whatever happened to the session
+        other.close()
+
+
 def _pg_facts(url_text: str) -> dict[str, Any]:
     """The connection test of a TEST profile for ``url_text`` (any role), through a registry of its own."""
     url = sqlalchemy.make_url(url_text)
@@ -1039,12 +1336,13 @@ def test_h1_the_standard_conforming_strings_escape_does_not_write(pg: tuple[Open
     # ... and past it, the server refuses the text: every statement is a prepared statement (extended protocol).
     with connection._read() as transaction:
         transaction.fetch_all(sqlalchemy.text("SELECT set_config('standard_conforming_strings','off',false)"))
-    assert check_statement(ESCAPE)  # the splitter sees one statement
+    assert len(split_statements(ESCAPE)) == 1  # the splitter sees one statement
     for _ in range(3):
         with pytest.raises(TabrionError) as raised, connection._read() as transaction:
             transaction.fetch_all(sqlalchemy.text(ESCAPE))
         assert raised.value.classification is not None and raised.value.classification.sqlstate == "42601"
-    with pytest.raises(TabrionError):
+    # Since F-1 of the STU-016 review the text check refuses it too: one lexing sees the INSERT's INTO.
+    with pytest.raises(StatementRefused):
         connection.fetch(ESCAPE)
     assert _rows(admin) == 1
 

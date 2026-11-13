@@ -8,10 +8,13 @@ re-checked by tabrion before ``COMMIT``). The role's privileges stay the only li
 
 This module adds two guards:
 
-* :func:`sqlite_authorizer`, an allowlist for ``sqlite3.Connection.set_authorizer``: reading, transactions, functions
-  other than ``load_extension``, and pragmas that only read (or set ``query_only`` on). ``ATTACH``, ``DETACH`` (and
-  so ``VACUUM INTO``, which attaches its target), every write, every schema change (also of temporary objects),
-  ``ANALYZE`` and ``REINDEX`` are denied (STU-T-024).
+* :func:`sqlite_authorizer`, an allowlist for ``sqlite3.Connection.set_authorizer``: reading, transactions, SQLite's
+  built-in functions that only compute a value (:data:`_SQLITE_FUNCTIONS`), and pragmas that only read (or set
+  ``query_only`` on). ``ATTACH``, ``DETACH`` (and so ``VACUUM INTO``, which attaches its target), every write, every
+  schema change (also of temporary objects), ``ANALYZE``, ``REINDEX`` and every other function are denied
+  (STU-T-024): ``load_extension``, ``fts3_tokenizer`` (it hands out and takes native pointers; F-2 of
+  ``stu-016-security-review.md``), the FTS and R-tree maintenance and debugging functions, and whatever a build or a
+  later SQLite adds.
 * :func:`check_statement`, which allows one statement by its first word (an allowlist, M-1/M-2/I-2 of
   ``stu-011-review.md``: ``SELECT``, ``WITH``, ``VALUES``, ``TABLE``, ``EXPLAIN`` of a query, ``SHOW``, ``PRAGMA``)
   and refuses a text with more than one statement and every statement of the transaction-control classes
@@ -19,14 +22,19 @@ This module adds two guards:
   ``SET default_transaction_read_only``, ...). PostgreSQL runs a multi-statement text in one round trip,
   so ``COMMIT; BEGIN READ WRITE; INSERT ...`` would end Studio's read-only transaction and write: the probe in the
   STU-009 tests shows it. With one statement per ``read()``, a write fails in the database. ``COPY``, ``LOAD``,
-  ``NOTIFY``, ``LISTEN``, ``LOCK``, ``VACUUM``, ``CHECKPOINT`` and ``CLUSTER`` are refused too.
+  ``NOTIFY``, ``LISTEN``, ``LOCK``, ``VACUUM``, ``CHECKPOINT`` and ``CLUSTER`` are refused too, and so is any
+  statement with the word ``INTO`` outside a literal or quoted identifier (F-1 of ``stu-016-security-review.md``):
+  ``SELECT ... INTO`` creates a table, and the read-only transaction is not a reliable boundary for every form of
+  it, so the check is.
 
 The text checks are a user-experience layer (03 section 5.1). The boundary is in the database and the protocol: every
 PostgreSQL statement is a prepared statement (``prepare_threshold=0``, extended query protocol), so the server refuses
 a text with several commands whatever the split thinks (H-1 of ``stu-009-review.md``: with
 ``standard_conforming_strings = off`` the split saw one statement where the server ran six); SQLite's ``execute``
 refuses several statements itself. ``SET standard_conforming_strings`` and ``SET backslash_quote`` are refused too,
-and so is a call of ``set_config``, ``pg_notify`` or a session-level advisory lock function anywhere in the statement:
+and so is a call of ``set_config``, ``pg_notify``, a session-level advisory lock function or another function of
+:data:`_REFUSED_FUNCTIONS` (effects outside Studio's transaction, F-3 of ``stu-016-security-review.md``) anywhere in
+the statement:
 the check reads the statement's tokens (comments and literals left out, quoted identifiers unquoted, both ways of
 lexing ``'...'``), so ``"set_config"(`` and ``set_config/**/(`` are caught (R-L1 of the re-review). It remains a
 best-effort check: a function of the database's own that calls ``set_config`` is not visible in the text, and only
@@ -75,6 +83,49 @@ _READING_PRAGMAS = frozenset(
 #: Pragmas that do something even without an argument.
 _ACTING_PRAGMAS = frozenset({"optimize", "wal_checkpoint", "incremental_vacuum", "shrink_memory", "analysis_limit"})
 _ON = frozenset({"on", "1", "true", "yes"})
+#: The SQL functions a Studio SQLite connection may call (F-2 of ``stu-016-security-review.md``): SQLite's built-in
+#: scalar, aggregate, window, date, math and JSON functions, and the FTS3/4/5 and R-tree functions that only read.
+#: An allowlist, so a function a build or a later SQLite adds is denied until it is looked at. Left out on purpose:
+#: ``load_extension``; ``fts3_tokenizer`` (returns a native pointer and registers one as a tokenizer: an address
+#: leak and memory corruption in Studio's process where the build has ``SQLITE_ENABLE_FTS3_TOKENIZER``); ``fts5``
+#: (hands out the FTS5 API pointer); ``optimize`` (FTS4 maintenance, a write); ``rtreenode`` and ``rtreedepth``
+#: (debugging functions that decode a blob given as text); ``sqlite_log`` (writes to the error log); SQLite's
+#: internal ``sqlite_rename_*``/``sqlite_drop_column``; and the shell's ``readfile``, ``writefile`` and ``edit``.
+#: A function a database file's view calls is checked too: the view fails to read rather than call something else.
+_SQLITE_FUNCTIONS = frozenset(
+    {
+        # core scalar functions
+        "abs", "changes", "char", "coalesce", "concat", "concat_ws", "format", "glob", "hex", "if", "ifnull", "iif",
+        "instr", "last_insert_rowid", "length", "like", "likelihood", "likely", "lower", "ltrim", "max", "min",
+        "nullif", "octet_length", "printf", "quote", "random", "randomblob", "replace", "round", "rtrim", "sign",
+        "soundex", "sqlite_compileoption_get", "sqlite_compileoption_used", "sqlite_offset", "sqlite_source_id",
+        "sqlite_version", "substr", "substring", "subtype", "total_changes", "trim", "typeof", "unhex", "unicode",
+        "unistr", "unistr_quote", "unlikely", "upper", "zeroblob", "->", "->>",
+        # aggregate functions (also as window functions)
+        "avg", "count", "group_concat", "median", "percentile", "percentile_cont", "percentile_disc", "string_agg",
+        "sum", "total",
+        # window functions
+        "cume_dist", "dense_rank", "first_value", "lag", "last_value", "lead", "nth_value", "ntile", "percent_rank",
+        "rank", "row_number",
+        # date and time
+        "current_date", "current_time", "current_timestamp", "date", "datetime", "julianday", "strftime", "time",
+        "timediff", "unixepoch",
+        # math (SQLITE_ENABLE_MATH_FUNCTIONS)
+        "acos", "acosh", "asin", "asinh", "atan", "atan2", "atanh", "ceil", "ceiling", "cos", "cosh", "degrees", "exp",
+        "floor", "ln", "log", "log10", "log2", "mod", "pi", "pow", "power", "radians", "sin", "sinh", "sqrt", "tan",
+        "tanh", "trunc",
+        # JSON
+        "json", "json_array", "json_array_length", "json_error_position", "json_extract", "json_group_array",
+        "json_group_object", "json_insert", "json_object", "json_patch", "json_pretty", "json_quote", "json_remove",
+        "json_replace", "json_set", "json_type", "json_valid", "jsonb", "jsonb_array", "jsonb_extract",
+        "jsonb_group_array", "jsonb_group_object", "jsonb_insert", "jsonb_object", "jsonb_patch", "jsonb_remove",
+        "jsonb_replace", "jsonb_set",
+        # full-text search (FTS3/4 and FTS5 auxiliary functions) and R-tree / Geopoly functions that only read
+        "match", "matchinfo", "offsets", "snippet", "bm25", "highlight", "fts5_source_id", "rtreecheck",
+        "geopoly_area", "geopoly_bbox", "geopoly_blob", "geopoly_ccw", "geopoly_contains_point", "geopoly_group_bbox",
+        "geopoly_json", "geopoly_overlap", "geopoly_regular", "geopoly_svg", "geopoly_within", "geopoly_xform",
+    }
+)  # fmt: skip
 
 
 def sqlite_authorizer(action: int, arg1: str | None, arg2: str | None, _db: str | None, _trigger: str | None) -> int:
@@ -82,8 +133,8 @@ def sqlite_authorizer(action: int, arg1: str | None, arg2: str | None, _db: str 
     if action in _ALLOWED_ACTIONS:
         return sqlite3.SQLITE_OK
     if action == sqlite3.SQLITE_FUNCTION:
-        # tabrion disables extension loading; denying the function as well keeps it off if that ever changes.
-        return sqlite3.SQLITE_DENY if (arg2 or "").lower() == "load_extension" else sqlite3.SQLITE_OK
+        # An allowlist (F-2): load_extension and fts3_tokenizer among the functions it leaves out.
+        return sqlite3.SQLITE_OK if (arg2 or "").lower() in _SQLITE_FUNCTIONS else sqlite3.SQLITE_DENY
     if action == sqlite3.SQLITE_PRAGMA:
         name = (arg1 or "").lower()
         if name in _ACTING_PRAGMAS:
@@ -129,6 +180,24 @@ _SESSION_SETTINGS = frozenset(
 #: Functions that run a query given as text are refused too, since the check cannot see inside a literal (R2-L1 of
 #: re-review 2): ``query_to_xml`` and ``cursor_to_xml`` with their schema forms, ``ts_stat`` and ``ts_rewrite``
 #: (core), ``crosstab`` (tablefunc) and ``dblink`` (dblink).
+#:
+#: F-3 of ``stu-016-security-review.md``: functions whose effect a read-only transaction does not stop, refused on the
+#: same reasoning as ``pg_notify`` (Studio's connection reads; the role's privileges stay the boundary below this):
+#:
+#: * other sessions: ``pg_terminate_backend`` and ``pg_cancel_backend`` (a role may end its own other sessions, the
+#:   application's among them when it shares the role);
+#: * the WAL and its consumers: ``pg_logical_emit_message`` (a message logical decoding and CDC receive),
+#:   ``pg_switch_wal``, ``pg_create_restore_point``, ``pg_log_standby_snapshot``, the backup functions, and the
+#:   replication slot functions that create, drop, copy, advance or consume a slot;
+#: * transaction IDs: ``txid_current`` and ``pg_current_xact_id`` assign one (their ``_if_assigned`` forms do not);
+#: * the server: ``pg_reload_conf``, ``pg_rotate_logfile``, ``pg_log_backend_memory_contexts``, ``pg_promote``, the
+#:   WAL replay pause and resume, ``pg_import_system_collations`` (catalog rows), the statistics resets and
+#:   ``pg_stat_statements_reset``;
+#: * server files: ``lo_import`` and ``lo_export`` (``lo_export`` writes a file, which no read-only check covers),
+#:   adminpack's ``pg_file_*`` writers.
+#:
+#: The large-object writers (``lo_create``, ``lo_put``, ...), ``nextval`` and ``setval`` are left to the database: a
+#: read-only transaction refuses them. :data:`_REFUSED_PREFIXES` covers families by name.
 _REFUSED_FUNCTIONS = frozenset(
     {
         "set_config",
@@ -153,8 +222,57 @@ _REFUSED_FUNCTIONS = frozenset(
         "dblink_open",
         "dblink_fetch",
         "dblink_send_query",
+        # F-3: other sessions
+        "pg_terminate_backend",
+        "pg_cancel_backend",
+        # F-3: the WAL, backups and replication slots
+        "pg_logical_emit_message",
+        "pg_switch_wal",
+        "pg_switch_xlog",
+        "pg_create_restore_point",
+        "pg_log_standby_snapshot",
+        "pg_backup_start",
+        "pg_backup_stop",
+        "pg_start_backup",
+        "pg_stop_backup",
+        "pg_create_physical_replication_slot",
+        "pg_create_logical_replication_slot",
+        "pg_drop_replication_slot",
+        "pg_copy_physical_replication_slot",
+        "pg_copy_logical_replication_slot",
+        "pg_replication_slot_advance",
+        "pg_logical_slot_get_changes",
+        "pg_logical_slot_get_binary_changes",
+        "pg_sync_replication_slots",
+        # F-3: transaction IDs
+        "txid_current",
+        "pg_current_xact_id",
+        # F-3: the server
+        "pg_reload_conf",
+        "pg_rotate_logfile",
+        "pg_rotate_logfile_old",
+        "pg_log_backend_memory_contexts",
+        "pg_promote",
+        "pg_wal_replay_pause",
+        "pg_wal_replay_resume",
+        "pg_xlog_replay_pause",
+        "pg_xlog_replay_resume",
+        "pg_import_system_collations",
+        "pg_stat_statements_reset",
+        # F-3: server files
+        "lo_import",
+        "lo_export",
+        "pg_file_write",
+        "pg_file_rename",
+        "pg_file_unlink",
+        "pg_file_sync",
     }
 )
+#: Function families refused by name (F-3): every ``dblink`` function (``dblink_connect`` keeps a connection open past
+#: the transaction), every statistics reset (``pg_stat_reset``, ``pg_stat_reset_shared``, ...), and the replication
+#: origin functions (``pg_replication_origin_create``, ``_drop``, ``_advance``, ``_session_setup``, ...; a read-only
+#: editor needs none of them, so the few that only read go too).
+_REFUSED_PREFIXES = ("dblink", "pg_stat_reset", "pg_replication_origin_")
 #: A run of white space (:data:`_SPACE`) and ``--`` comments; such a comment ends at ``\n`` or ``\r`` in PostgreSQL,
 #: only at ``\n`` in SQLite.
 #: Possessive, so the match never backtracks.
@@ -316,7 +434,7 @@ def _calls_refused_function(sql: str) -> bool:
         if _UNICODE_IDENTIFIER in tokens:
             return True
         for position, token in enumerate(tokens[:-1]):
-            if token in _REFUSED_FUNCTIONS and tokens[position + 1] == "(":
+            if tokens[position + 1] == "(" and (token in _REFUSED_FUNCTIONS or token.startswith(_REFUSED_PREFIXES)):
                 return True
     return False
 
@@ -362,6 +480,20 @@ def _explains_a_query(tokens: list[str]) -> bool:
     return index < len(tokens) and tokens[index] in _QUERY_WORDS
 
 
+def _writes_into(sql: str) -> bool:
+    """Whether ``sql`` has the word ``INTO`` in any reading of :data:`_READINGS` (F-1 of the STU-016 review).
+
+    A read-only statement never needs it: ``INSERT INTO``, ``MERGE INTO``, ``REPLACE INTO`` and ``VACUUM INTO`` are
+    refused anyway, and ``SELECT ... INTO`` creates a table, which the read-only transaction does not reliably stop
+    in every form. A quoted identifier (``"into"``) is a name, not the keyword, and stays allowed.
+    """
+    return any(
+        word == "into" and not quoted
+        for backslash, sqlite in _READINGS
+        for word, quoted in _lex(sql, backslash_strings=backslash, sqlite=sqlite)
+    )
+
+
 def _check_words(words: list[str]) -> None:
     first = words[0]
     if first in _CONTROL:
@@ -386,8 +518,9 @@ def _explains_a_query_or_is_none(tokens: list[str]) -> bool:
 
 
 def check_statement(sql: str) -> str:
-    """The one statement of ``sql``; :class:`StatementRefused` for none, several, a transaction-control statement or
-    one whose first word is not in the allowlist (:data:`_FIRST_WORDS`)."""
+    """The one statement of ``sql``; :class:`StatementRefused` for none, several, a transaction-control statement,
+    one whose first word is not in the allowlist (:data:`_FIRST_WORDS`), one that calls a refused function, or one
+    with the word ``INTO``."""
     if "\0" in sql:  # libpq ends the text at NUL, so the server would run less than was checked (R2-I2)
         raise StatementRefused("studio.statement_refused")
     statements = split_statements(sql)
@@ -400,7 +533,7 @@ def check_statement(sql: str) -> str:
         raise StatementRefused(
             "studio.statement_empty" if not _tokens(statement, backslash_strings=False) else "studio.statement_refused"
         )
-    if _calls_refused_function(statement):
+    if _calls_refused_function(statement) or _writes_into(statement):
         raise StatementRefused("studio.statement_refused")
     for backslash, sqlite in _READINGS:
         _check_words(_leading_words(statement, backslash_strings=backslash, sqlite=sqlite))

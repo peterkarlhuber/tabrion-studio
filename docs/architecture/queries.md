@@ -94,9 +94,15 @@ Writes (`INSERT`, `CREATE`, ...) are refused by the same rule; the read-only ses
 which the STU-T-010 tests prove by sending them below the check. As a second layer, every PostgreSQL connection
 gets Studio's session settings (`statement_timeout`, `lock_timeout`, `idle_in_transaction_session_timeout`,
 `TimeZone`, `default_transaction_read_only=on`, `extra_float_digits=3` (exact float text for the viewer's keys), `application_name`) as startup options too, and runs `CLOSE ALL`,
-`pg_advisory_unlock_all()` and `RESET ALL` when it goes back to the pool: whatever a statement left on the session
-(for example through a function of the database: a setting, a held cursor, a session-level advisory lock), the next
-statement gets the profile's values and none of it. A connection that cannot be reset leaves the pool. A
+`pg_advisory_unlock_all()`, the role resets, `DISCARD TEMP` and `RESET ALL` when it goes back to the pool: whatever a
+statement left on the session (for example through a function of the database: a setting, a held cursor, a
+session-level advisory lock, a temporary table), the next statement gets the profile's values and none of it.
+`DISCARD TEMP` came with F-1 of the STU-016 review: `pg_temp` comes before `pg_catalog` for user SQL, so a temporary
+table left behind could shadow a catalog name. `DISCARD ALL` cannot run in a transaction block.
+
+The word `INTO` is refused too (outside literals, comments and quoted identifiers): `SELECT ... INTO` creates a table,
+and the read-only transaction does not stop every form of it (F-1 of the STU-016 review). The editor and the export route run
+the same check (see [Connections](connections.md), "Statement check", also for the side-effect functions it refuses). A connection that cannot be reset leaves the pool. A
 `search_path` or `transaction_timeout` in the session settings is refused for now: the startup options would not
 quote the one the way tabrion does, and an older server refuses the other at startup (R-I1; Studio sets neither).
 
