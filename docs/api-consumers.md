@@ -37,7 +37,7 @@ is used.
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.safe_url` | `src/tabrion_studio/services/connections.py` |
-| `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py`, `tests/security/test_definitions.py` |
+| `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py`, `tests/security/test_definitions.py`, `tests/security/test_read_only.py` |
 | `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py` |
 | `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py` |

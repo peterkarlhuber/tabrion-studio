@@ -18,7 +18,13 @@ read-only transaction, and there is no write mode.
 
 Studio runs only statements that read: `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a query, `SHOW`, and
 SQLite's `PRAGMA`. Anything else is refused before it reaches the database, and the database refuses a change too
-("This connection is read-only").
+("This connection is read-only"). A statement with `INTO` (`SELECT ... INTO`) is refused as well, since it creates
+a table; write a column named `into` as `"into"`. The word `into` inside a dollar-quoted string (`$$...$$`) is
+refused too; use a `'...'` string there. Write numbers in decimal (`31`, `1000`, `1.5e3`): `0x1f`, `1_000` and a
+number written directly before a word are refused. So are calls of functions that act
+outside the statement's read-only transaction, such as `pg_terminate_backend`, `pg_cancel_backend`, `pg_notify`,
+`set_config`, `txid_current`, `pg_logical_emit_message` or `dblink`, and on SQLite every function that is not one of
+SQLite's built-in reading functions (for example `fts3_tokenizer` or `load_extension`).
 
 Tab moves the focus out of the editor. In the editor, ⌘/ / Ctrl+/ comments lines out; use the header button for the
 shortcut list there.

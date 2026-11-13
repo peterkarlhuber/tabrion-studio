@@ -27,6 +27,17 @@ All notable changes to this project are documented here. The format follows
   byte-exact with the line endings kept, and bound to what the page read); `?cached_only=true` on the catalog, so completion never reads a PROD catalog
   unasked. New problem codes `studio.state_unavailable`, `studio.favorites_full`, `studio.catalog_not_loaded` and
   `studio.script_*`.
+- STU-020 review fixes (backend): the history's retention period now holds on disk while nothing is recorded (the
+  history off, an idle project): expired entries are deleted, with a checkpoint, when Studio starts, when the history
+  is read and when the settings are saved. Script paths refuse Windows device names (also with an extension), 8.3
+  short names, names that end in a dot and format characters (bidi, zero-width) on every system; the file is reached
+  through folder descriptors with `O_NOFOLLOW` on POSIX (07 TM-04), and on Windows the opened handle must be the
+  checked file; hard-linked files are refused. A save keeps the file's byte order mark and holds one lock from the
+  digest check to the replace. Links, hard links and reparse-point folders (OneDrive placeholders) answer the new
+  `studio.script_link`, and the listing counts what it skipped (`skipped_links`); refusals of the file system answer
+  `studio.script_permission_denied`, `studio.script_locked`, `studio.script_disk_full` or
+  `studio.script_write_failed` instead of an internal error. Recording a history entry waits at most 250 ms for
+  another instance's write lock; the checkpoint result is checked and retried; the 100 favorites count per project.
 - STU-017 docs (no tag, no release): the documentation checklist `docs/development/docs-checklist.md` maps every
   requirement of the package (installation, start, security model, troubleshooting, the feature pages of TD-023) to
   its page and check, and records the clean-install test: on Linux by hand from a locally built wheel (start without
@@ -500,6 +511,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
+  (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
+  so numbers must be written in decimal) in the editor, the
+  export route and every other path; PostgreSQL sessions drop temporary tables when they go back to the pool
+  (`DISCARD TEMP`); the diagnostic `STU-DX-003` also reports `CREATE` on a schema (warning, error on PROD) and `TEMP`
+  on the database (an info on its own). (F-1)
+- STU-016 review, SQLite: the authorizer's function branch is an allowlist of SQLite's built-in reading functions,
+  so `fts3_tokenizer`, `fts5`, the FTS4 maintenance and R-tree debugging functions and anything a build adds are
+  denied; every SQLite session sets `trusted_schema = OFF` before the authorizer. (F-2)
+- STU-016 review, PostgreSQL side-effect functions: the statement check also refuses functions whose effect a
+  read-only transaction does not stop (other sessions, the WAL, replication slots and origins, transaction IDs,
+  server reloads and resets, server files, index maintenance, every `dblink` function, and `connectby` and
+  `xpath_table`, which run a query given as text); the list and the reason for each are in
+  `docs/architecture/connections.md`. (F-3)
 - Request bodies are capped while they stream in, before any route reads them (STU-016 review F-4). A body over the
   route's cap gets 413 without any of it being kept: a chunked body is stopped one chunk past the cap, and a declared
   `Content-Length` over the cap is never read into memory. Before the 413, the rest of the body is read and discarded
@@ -595,6 +620,8 @@ All notable changes to this project are documented here. The format follows
   After the review: the watcher also counts the page's own `securitypolicyviolation` events in every browser (WebKit's
   select exempt once per element), `connection-lost-backend.spec.ts` uses it too, and the Tab test also checks Tab
   without a result.
+- CI (TD-047, PR #67): the jobs `e2e (firefox)` and `e2e (webkit)` are required. They lost `continue-on-error` and
+  their `advisory` entries in `.github/ci-manifest.json`, so `ci-ok` fails when either fails, like `e2e`.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a

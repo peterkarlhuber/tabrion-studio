@@ -18,16 +18,20 @@ from pathlib import Path
 import sqlite3
 import stat
 import sys
+import time
 from typing import Any
 import uuid
 
 import pytest
 
-from tabrion_studio.api.config import form_settings
+from tabrion_studio.api.config import Configuration, form_settings
 from tabrion_studio.config.files import parse_toml
+from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.schema import Profile, Settings, validate_settings
+from tabrion_studio.config.user import UserConfig
 from tabrion_studio.config.writer import checked_settings
 from tabrion_studio.logs import configure_logging
+from tabrion_studio.services import favorites as favorites_module
 from tabrion_studio.services import history as history_module
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.explorer import Explorer, ExplorerError
@@ -288,6 +292,97 @@ def test_entries_older_than_the_retention_go(env: Env) -> None:
     assert texts == ["SELECT 2 AS new"]
 
 
+def test_retention_holds_on_disk_with_the_history_off(env: Env, state_dir: Path) -> None:
+    """F-1 of the STU-020 review: an expired entry leaves the file although nothing new is recorded."""
+    marker = f"expired_{uuid.uuid4().hex}"
+    _record(env.history, f"SELECT '{marker}'")
+    env.settings["value"] = Settings(history_enabled=False, history_retention_days=30)  # type: ignore[attr-defined]
+    env.clock.now += 31 * 86_400
+    # Nothing reads the history and nothing is recorded: the purge (at start, on read, on a settings save) does it.
+    assert env.history.purge() == 1
+    assert marker.encode() not in _state_bytes(state_dir)
+    assert env.history.purge() == 0
+
+
+def test_reading_the_history_purges_expired_entries(env: Env, state_dir: Path) -> None:
+    marker = f"expired_{uuid.uuid4().hex}"
+    _record(env.history, f"SELECT '{marker}'")
+    env.settings["value"] = Settings(history_enabled=False, history_retention_days=1)  # type: ignore[attr-defined]
+    env.clock.now += 2 * 86_400
+    assert env.get("/api/history").json()["entries"] == []
+    assert marker.encode() not in _state_bytes(state_dir)
+
+
+def test_saving_the_settings_purges_expired_entries(static_dir: Path, state_dir: Path, tmp_path: Path) -> None:
+    """Turning the history off or shortening the retention drops what the new settings expire, at once."""
+    project = tmp_path / "project"
+    project.mkdir()
+    config_dir = tmp_path / "config"
+    configuration = Configuration(
+        project=ProjectConfig(project, state_dir, "projkey1", config_dir), user=UserConfig(config_dir)
+    )
+    clock = Clock()
+    store = StateStore(state_dir)
+    history = History(store, "projkey1", configuration.limits, clock=clock)
+    studio = make_studio(static_dir, config=configuration, history=history, favorites=Favorites(store, "projkey1", set))
+    try:
+        marker = f"expired_{uuid.uuid4().hex}"
+        _record(history, f"SELECT '{marker}'")
+        clock.now += 5 * 86_400
+        headers = {**studio.sign_in(), "Origin": ORIGIN}
+        saved = studio.client.put(
+            "/api/settings",
+            json={"settings": {"history": {"enabled": False, "retention_days": 1}}, "digest": None},
+            headers=headers,
+        )
+        assert saved.status_code == 200, saved.text
+        assert marker.encode() not in _state_bytes(state_dir)
+    finally:
+        store.close()
+
+
+def test_recording_waits_only_briefly_for_another_writer(env: Env, state_dir: Path) -> None:
+    """F-8: another instance's write lock keeps no query from ending; the entry is left out instead."""
+    _record(env.history, "SELECT 'first'")
+    other = sqlite3.connect(state_dir / STATE_FILE, timeout=0)
+    try:
+        other.execute("BEGIN IMMEDIATE")
+        started = time.monotonic()
+        kept = env.history.record(
+            profile_id="project:parts",
+            environment="dev",
+            engine="sqlite",
+            sql="SELECT 'blocked'",
+            param_names=[],
+            state="done",
+            row_count=0,
+            elapsed_ms=0.5,
+            code=None,
+        )
+        assert time.monotonic() - started < 1.0
+        assert kept is False
+    finally:
+        other.rollback()
+        other.close()
+    # The usual wait is back for the next write.
+    _record(env.history, "SELECT 'after'")
+
+
+def test_the_checkpoint_says_whether_the_log_is_empty(env: Env, state_dir: Path) -> None:
+    _record(env.history, "SELECT 1")
+    assert env.store.checkpoint() is True
+    reader = sqlite3.connect(state_dir / STATE_FILE)
+    try:
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM history").fetchall()
+        _record(env.history, "SELECT 2")
+        assert env.store.checkpoint() is False
+    finally:
+        reader.rollback()
+        reader.close()
+    assert env.store.checkpoint() is True
+
+
 def test_a_long_statement_is_cut(env: Env) -> None:
     sql = "SELECT 1 AS x" + " " * MAX_SQL_CHARS + "-- end"
     env.run(sql)
@@ -431,6 +526,18 @@ def test_project_favorites_stay_in_their_project(env: Env) -> None:
     env.favorites.set_favorite("user:mine", True)
     other = Favorites(env.store, "otherproject", lambda: {"project:parts", "user:mine"})
     assert [f["profile_id"] for f in other.state()["favorites"]] == ["user:mine"]
+
+
+def test_the_favorites_limit_counts_what_this_project_shows(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(favorites_module, "MAX_FAVORITES", 1)
+    other = Favorites(env.store, "otherproject", lambda: {"project:parts"})
+    other.set_favorite("project:parts", True)
+    # A favorite of a profile that is gone takes no place either.
+    gone = Favorites(env.store, "projkey1", lambda: {"project:old", "project:parts", "user:mine"})
+    gone.set_favorite("project:old", True)
+    env.favorites.set_favorite("project:parts", True)
+    with pytest.raises(FavoritesError, match=r"studio\.favorites_full"):
+        env.favorites.set_favorite("user:mine", True)
 
 
 def test_opening_a_connection_makes_the_profile_recent(env: Env) -> None:

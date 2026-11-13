@@ -279,7 +279,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         return _problem("studio.not_found")
 
     if runtime.config is not None:
-        add_config_routes(app, runtime.config)
+        add_config_routes(
+            app, runtime.config, settings_saved=None if runtime.history is None else runtime.history.purge
+        )
     if runtime.connections is not None:
         opened = None if runtime.favorites is None else runtime.favorites.opened
         add_connection_routes(app, runtime.connections, opened=opened)

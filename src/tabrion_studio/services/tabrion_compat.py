@@ -180,11 +180,14 @@ def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
 
 #: ``RESET ALL`` leaves ``role`` and ``session_authorization`` alone (both are ``GUC_NO_RESET_ALL``), so a ``SET ROLE``
 #: that a database function made is taken back first (R2-I1 of delta re-review 2 of ``stu-011-review.md``).
+#: ``DISCARD TEMP`` drops the session's temporary tables (F-1 of ``stu-016-security-review.md``), so none outlives
+#: the statement that made it.
 _RESET_STATEMENTS = (
     "CLOSE ALL",
     "SELECT pg_catalog.pg_advisory_unlock_all()",
     "SET SESSION AUTHORIZATION DEFAULT",
     "RESET ROLE",
+    "DISCARD TEMP",
     "RESET ALL",
 )
 
@@ -195,9 +198,12 @@ def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
     Studio gives its session settings as startup options too (``connections.startup_options``), so this restores
     the profile's timeouts and ``default_transaction_read_only`` and drops any other setting a statement changed.
     ``CLOSE ALL`` and ``pg_advisory_unlock_all()`` drop held cursors and session-level advisory locks too (defense in
-    depth for R-H1 of the delta re-review: the statement check refuses both), and ``SET SESSION AUTHORIZATION
-    DEFAULT`` and ``RESET ROLE`` take back a role change, which ``RESET ALL`` keeps (R2-I1). ``DISCARD ALL`` would
-    cover them, but it cannot run in a transaction block.
+    depth for R-H1 of the delta re-review: the statement check refuses both), ``SET SESSION AUTHORIZATION
+    DEFAULT`` and ``RESET ROLE`` take back a role change, which ``RESET ALL`` keeps (R2-I1), and ``DISCARD TEMP``
+    drops temporary tables (F-1 of ``stu-016-security-review.md``; the check refuses the statements that make them).
+    ``DISCARD ALL`` would cover them, but it cannot run in a transaction block; ``DISCARD TEMP`` can, also in a
+    read-only one. The engine is Studio's own (tabrion's rule of no ``RESET ALL``/``DISCARD`` is
+    for a host's shared pool).
     A connection that cannot be reset leaves the pool. tabrion 0.2: a session reset of tabrion's own (TD-013).
     """
     if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
