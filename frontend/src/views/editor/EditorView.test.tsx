@@ -4,6 +4,8 @@
  * under the real CSP, in e2e/editor-backend.spec.ts.
  */
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { CompletionContext, type CompletionResult } from '@codemirror/autocomplete';
+import { EditorState } from '@codemirror/state';
 import userEvent from '@testing-library/user-event';
 import { forwardRef, useImperativeHandle, useRef } from 'react';
 import { vi } from 'vitest';
@@ -24,9 +26,15 @@ import {
   type Reconnected,
 } from '../../workspace';
 
+/** How often the page closed the editor's completion list (B-6 of ux-acceptance.md). */
+const completionClosed = vi.hoisted(() => ({ count: 0 }));
+/** The props the editor got last (STU-020: the completion namespace and source). */
+const lastProps = vi.hoisted(() => ({ current: null as SqlEditorProps | null }));
+
 vi.mock('./SqlEditor', () => ({
   SqlEditor: forwardRef<SqlEditorHandle, SqlEditorProps>(function FakeEditor(props, ref) {
     const area = useRef<HTMLTextAreaElement>(null);
+    lastProps.current = props;
     useImperativeHandle(ref, () => ({
       selection: () => {
         const el = area.current as HTMLTextAreaElement;
@@ -35,6 +43,13 @@ vi.mock('./SqlEditor', () => ({
       select: (from: number, to: number) => {
         area.current?.focus();
         area.current?.setSelectionRange(from, to);
+      },
+      replace: (from: number, to: number, text: string) => {
+        props.onChange(`${props.value.slice(0, from)}${text}${props.value.slice(to)}`);
+        area.current?.focus();
+      },
+      closeCompletion: () => {
+        completionClosed.count += 1;
       },
       focus: () => area.current?.focus(),
     }));
@@ -959,5 +974,362 @@ describe('EditorView: a lost connection (TD-034)', () => {
     await waitFor(() =>
       expect(log.connections).toEqual(['project:parts-dev', 'project:parts-dev']),
     );
+  });
+});
+
+const json = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+const DIGEST_A = 'a'.repeat(64);
+const DIGEST_B = 'b'.repeat(64);
+
+/** A fake script folder of the project (STU-020): `GET /api/scripts`, `GET`/`PUT /api/scripts/file`. */
+function scriptServer(files: Record<string, { content: string; digest: string }>) {
+  const puts: Record<string, unknown>[] = [];
+  const before = (url: string, init?: RequestInit): Response | null => {
+    if (url === '/api/scripts') {
+      return json({
+        scripts: Object.entries(files).map(([path, file]) => ({ path, size: file.content.length })),
+        truncated: false,
+      });
+    }
+    if (url.startsWith('/api/scripts/file?')) {
+      const path = new URLSearchParams(url.split('?')[1]).get('path') ?? '';
+      const file = files[path];
+      return file === undefined
+        ? json({ code: 'studio.script_not_found', status: 404 }, 404)
+        : json({ path, ...file });
+    }
+    if (url === '/api/scripts/file' && init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body)) as {
+        path: string;
+        content: string;
+        digest: string | null;
+        overwrite: boolean;
+      };
+      puts.push(body);
+      const current = files[body.path];
+      if (!body.overwrite && current !== undefined && body.digest === null) {
+        return json({ code: 'studio.script_exists', status: 409 }, 409);
+      }
+      if (!body.overwrite && current !== undefined && body.digest !== current.digest) {
+        return json({ code: 'studio.script_stale', status: 409 }, 409);
+      }
+      if (body.path.startsWith('missing/')) {
+        return json({ code: 'studio.script_folder_missing', status: 404 }, 404);
+      }
+      files[body.path] = { content: body.content, digest: DIGEST_B };
+      return json({ path: body.path, digest: DIGEST_B });
+    }
+    return null;
+  };
+  return { before, puts, files };
+}
+
+describe('EditorView: scripts, format and completion (STU-020)', () => {
+  beforeEach(() => {
+    completionClosed.count = 0;
+    lastProps.current = null;
+  });
+
+  it('opens a project script in a new tab and saves it back, bound to the digest it read', async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({
+      'sql/report.sql': { content: 'select 1;\n', digest: DIGEST_A },
+    });
+    const { log } = setup({ sql: 'select 2' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    const dialog = screen.getByRole('dialog', { name: 'Open script' });
+    // The filter takes the first focus; the list names the scripts by their path in the project.
+    await waitFor(() => expect(within(dialog).getByTestId('script-filter')).toHaveFocus());
+    await user.click(await within(dialog).findByRole('button', { name: 'sql/report.sql' }));
+    const text = await screen.findByRole('textbox', { name: 'SQL of report' });
+    expect(text).toHaveValue('select 1;\n');
+    expect(screen.getByTestId('editor-notice')).toHaveTextContent('sql/report.sql opened.');
+    // Opening runs nothing.
+    expect(log.starts).toEqual([]);
+    fireEvent.change(text, { target: { value: 'select 10;\n' } });
+    fireEvent.keyDown(text, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(scripts.puts).toHaveLength(1));
+    expect(scripts.puts[0]).toEqual({
+      path: 'sql/report.sql',
+      content: 'select 10;\n',
+      digest: DIGEST_A,
+      overwrite: false,
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('editor-notice')).toHaveTextContent('Saved to sql/report.sql.'),
+    );
+    expect(screen.getAllByTestId('editor-tab')[1]).not.toHaveTextContent('not saved');
+    // The tab remembers its script (and the new digest) in the drafts.
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    });
+    expect(localStorage.getItem(DRAFTS_KEY)).toContain(`"script_digest":"${DIGEST_B}"`);
+  });
+
+  it('keeps the CRLF line endings of a script: the tab shows lines, the save writes CRLF back', async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({
+      'win.sql': { content: 'select 1;\r\nselect 2;\r\n', digest: DIGEST_A },
+    });
+    setup({ sql: 'select 0' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    await user.click(await screen.findByRole('button', { name: 'win.sql' }));
+    const text = await screen.findByRole('textbox', { name: 'SQL of win' });
+    expect(text).toHaveValue('select 1;\nselect 2;\n');
+    // Not changed by opening.
+    expect(screen.getAllByTestId('editor-tab')[1]).not.toHaveTextContent('not saved');
+    fireEvent.change(text, { target: { value: 'select 3;\nselect 4;\n' } });
+    fireEvent.keyDown(text, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(scripts.puts).toHaveLength(1));
+    expect(scripts.puts[0]).toMatchObject({
+      content: 'select 3;\r\nselect 4;\r\n',
+      digest: DIGEST_A,
+    });
+  });
+
+  it('keeps mixed line endings of a script byte for byte: nothing is made uniform on save', async () => {
+    const user = userEvent.setup();
+    const mixed = 'select 1;\r\nselect 2;\nselect 3;\rselect 4;';
+    const scripts = scriptServer({ 'mixed.sql': { content: mixed, digest: DIGEST_A } });
+    setup({ sql: 'select 0' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    await user.click(await screen.findByRole('button', { name: 'mixed.sql' }));
+    const text = await screen.findByRole('textbox', { name: 'SQL of mixed' });
+    expect(screen.getAllByTestId('editor-tab')[1]).not.toHaveTextContent('not saved');
+    fireEvent.keyDown(text, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(scripts.puts).toHaveLength(1));
+    expect(scripts.puts[0]).toMatchObject({ content: mixed, digest: DIGEST_A });
+  });
+
+  it('says how many links the script list left out', async () => {
+    const user = userEvent.setup();
+    const before = (url: string): Response | null =>
+      url === '/api/scripts'
+        ? json({ scripts: [{ path: 'a.sql', size: 1 }], truncated: false, skipped_links: 2 })
+        : null;
+    setup({ sql: 'select 0' }, { before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    expect(await screen.findByTestId('script-skipped-links')).toHaveTextContent(
+      '2 links were left out',
+    );
+  });
+
+  it('shows a script name with a bidi control escaped in its tab', async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({ 'a\u202Eb.sql': { content: 'select 1', digest: DIGEST_A } });
+    setup({ sql: 'select 0' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    await user.click(await screen.findByRole('button', { name: 'a\\u202Eb.sql' }));
+    await waitFor(() =>
+      expect(screen.getAllByTestId('editor-tab')[1]).toHaveTextContent('a\\u202Eb'),
+    );
+    expect(screen.getAllByTestId('editor-tab')[1]?.textContent).not.toContain('\u202E');
+    // The editor's accessible name escapes it too.
+    expect(await screen.findByRole('textbox', { name: 'SQL of a\\u202Eb' })).toBeInTheDocument();
+  });
+
+  it('asks for a path for a new script; a script that exists or changed is overwritten only on request', async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({ 'taken.sql': { content: 'old', digest: DIGEST_A } });
+    setup({ sql: 'select 3' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-save'));
+    const dialog = screen.getByRole('dialog', { name: 'Save script' });
+    const path = within(dialog).getByTestId('script-path');
+    await waitFor(() => expect(path).toHaveFocus());
+    expect(path).toHaveValue('Query 1.sql');
+    // A path the server would refuse is refused here already.
+    await user.clear(path);
+    await user.type(path, '../outside.sql');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(path).toHaveAttribute('aria-invalid', 'true');
+    expect(scripts.puts).toEqual([]);
+    await user.clear(path);
+    await user.type(path, 'taken.sql');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    const overwrite = await screen.findByRole('dialog', { name: 'Overwrite script?' });
+    expect(overwrite).toHaveTextContent('taken.sql already exists.');
+    // The safe option has the focus (08 section 6).
+    expect(within(overwrite).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.click(within(overwrite).getByRole('button', { name: 'Overwrite' }));
+    await waitFor(() => expect(scripts.puts).toHaveLength(2));
+    expect(scripts.puts[1]).toMatchObject({ path: 'taken.sql', digest: null, overwrite: true });
+    expect(await screen.findByRole('textbox', { name: 'SQL of taken' })).toHaveValue('select 3');
+    expect(scripts.files['taken.sql']?.content).toBe('select 3');
+  });
+
+  it('shows why a save was refused in the save dialog, and keeps the download', async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({});
+    setup({ sql: 'select 4' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-save'));
+    const path = screen.getByTestId('script-path');
+    await user.clear(path);
+    await user.type(path, 'missing/x.sql{Enter}');
+    expect(await screen.findByTestId('script-save-problem')).toHaveTextContent(
+      'The folder does not exist. Studio creates no folders.',
+    );
+    expect(screen.getByRole('button', { name: 'Download instead' })).toBeInTheDocument();
+  });
+
+  it("D-06's Save writes the script and then closes the tab", async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({});
+    setup({ sql: 'select 5' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByRole('button', { name: 'Close Query 1' }));
+    await user.click(
+      within(screen.getByRole('dialog', { name: 'Script not saved' })).getByRole('button', {
+        name: 'Save',
+      }),
+    );
+    const path = await screen.findByTestId('script-path');
+    await user.clear(path);
+    await user.type(path, 'five.sql{Enter}');
+    await waitFor(() => expect(scripts.files['five.sql']?.content).toBe('select 5'));
+    await waitFor(() =>
+      expect(screen.getByRole('textbox', { name: 'SQL of Query 1' })).toHaveValue(''),
+    );
+  });
+
+  it('formats the text with :name placeholders kept, as one change; an incomplete text stays as it is', async () => {
+    const user = userEvent.setup();
+    setup({ sql: "select a, b from t where id = :id and note = ':no'" });
+    const text = await editor();
+    await user.click(screen.getByTestId('editor-format'));
+    await waitFor(() =>
+      expect(text).toHaveValue(
+        "SELECT\n  a,\n  b\nFROM\n  t\nWHERE\n  id = :id\n  AND note = ':no'",
+      ),
+    );
+    expect(screen.getByTestId('editor-notice')).toHaveTextContent('Formatted.');
+    fireEvent.change(text, { target: { value: 'select (((' } });
+    fireEvent.keyDown(text, { key: 'F', code: 'KeyF', altKey: true, shiftKey: true });
+    await waitFor(() =>
+      expect(screen.getByTestId('editor-notice')).toHaveTextContent(
+        'The statement could not be formatted',
+      ),
+    );
+    expect(text).toHaveValue('select (((');
+  });
+
+  it('formats only the selection when there is one', async () => {
+    const user = userEvent.setup();
+    setup({ sql: 'select 1;\nselect x from y' });
+    const text = (await editor()) as HTMLTextAreaElement;
+    text.setSelectionRange(10, 26);
+    await user.click(screen.getByTestId('editor-format'));
+    await waitFor(() => expect(text).toHaveValue('select 1;\nSELECT\n  x\nFROM\n  y'));
+    expect(screen.getByTestId('editor-notice')).toHaveTextContent('Selection formatted.');
+  });
+
+  it('closes the completion list when a missing parameter takes the focus (B-6)', async () => {
+    const user = userEvent.setup();
+    setup({ sql: 'select :wanted' });
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(screen.getByRole('textbox', { name: ':wanted' })).toHaveFocus());
+    expect(completionClosed.count).toBe(1);
+  });
+
+  it('completes the names of the catalog once the connection is open, and columns after table.', async () => {
+    const user = userEvent.setup();
+    const asked: string[] = [];
+    setup(
+      { sql: 'select 1' },
+      {
+        before: (url) => {
+          if (url.includes('/catalog')) {
+            asked.push(url);
+            return json({
+              connection_id: 'c-project:parts-dev',
+              engine: 'sqlite',
+              schemas: ['main'],
+              objects: [
+                { schema: 'main', name: 'parts', kind: 'table' },
+                { schema: 'main', name: 'parts_idx', kind: 'other' },
+              ],
+              built_at: 1,
+              cached: false,
+            });
+          }
+          if (url.includes('/table?')) {
+            asked.push(url);
+            return json({
+              schema: 'main',
+              name: 'parts',
+              kind: 'table',
+              columns: [{ name: 'id' }, { name: 'label' }],
+            });
+          }
+          return null;
+        },
+      },
+    );
+    await editor();
+    // No connection yet: no catalog is read for completion.
+    expect(lastProps.current?.schema).toBeUndefined();
+    await user.click(screen.getByTestId('editor-run'));
+    await waitFor(() => expect(lastProps.current?.schema).toEqual({ main: { parts: [] } }));
+    expect(asked).toEqual(['/api/connections/c-project%3Aparts-dev/catalog']);
+    expect(lastProps.current?.defaultSchema).toBe('main');
+    const source = lastProps.current?.completionSource;
+    expect(source).toBeDefined();
+    const state = EditorState.create({ doc: 'select Parts.la' });
+    const result = (await source?.(
+      new CompletionContext(state, state.doc.length, false),
+    )) as CompletionResult | null;
+    expect(result?.from).toBe('select Parts.'.length);
+    expect(result?.options.map((option) => option.label)).toEqual(['id', 'label']);
+    expect(asked[1]).toBe('/api/connections/c-project%3Aparts-dev/table?schema=main&name=parts');
+  });
+
+  it('on PROD asks only for a catalog already read, and reads it in full after the click', async () => {
+    const user = userEvent.setup();
+    const asked: string[] = [];
+    setup(
+      { sql: 'select 1', profile: 'user:measure-central' },
+      {
+        before: (url) => {
+          if (!url.includes('/catalog')) return null;
+          asked.push(url);
+          return url.endsWith('cached_only=true')
+            ? json({ code: 'studio.catalog_not_loaded', status: 404 }, 404)
+            : json({
+                connection_id: 'c-user:measure-central',
+                engine: 'postgresql',
+                schemas: ['public'],
+                objects: [{ schema: 'public', name: 'measurement', kind: 'table' }],
+                built_at: 1,
+                cached: false,
+              });
+        },
+      },
+    );
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: /Connect/ }),
+    );
+    const load = await screen.findByTestId('editor-load-names');
+    expect(asked).toEqual(['/api/connections/c-user%3Ameasure-central/catalog?cached_only=true']);
+    expect(lastProps.current?.schema).toBeUndefined();
+    // No column is read on PROD by typing.
+    expect(lastProps.current?.completionSource).toBeUndefined();
+    await user.click(load);
+    // Through the shared D-02 guard (this test has no page session that remembers the first confirmation).
+    await user.click(
+      within(await screen.findByRole('dialog')).getByRole('button', { name: /Connect/ }),
+    );
+    await waitFor(() => expect(lastProps.current?.schema).toEqual({ public: { measurement: [] } }));
+    expect(asked[1]).toBe('/api/connections/c-user%3Ameasure-central/catalog');
+    expect(screen.queryByTestId('editor-load-names')).toBeNull();
   });
 });

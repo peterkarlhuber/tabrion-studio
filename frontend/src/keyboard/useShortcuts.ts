@@ -1,17 +1,19 @@
 /**
  * The page-wide shortcuts (08 section 7): ⌘K / Ctrl+K the command palette, ⌘/ / Ctrl+/ the shortcut help, F6 and
- * Shift+F6 the next and previous area. While a modal dialog is open (a confirmation, the palette itself) the page
- * shortcuts do nothing: the dialog owns the keyboard.
+ * Shift+F6 the next and previous area, ⌘Y / Ctrl+H the query history (STU-020). While a modal dialog is open (a
+ * confirmation, the palette itself) the page shortcuts do nothing: the dialog owns the keyboard.
  */
 import { useEffect, useRef } from 'react';
 
 import { useKeyboardPlatform } from './platform';
 import { moveRegion } from './regions';
-import { matches, SHORTCUTS } from './shortcuts';
+import { matches, shortcutFor, SHORTCUTS } from './shortcuts';
 
 export interface ShortcutHandlers {
   openPalette: () => void;
   openHelp: () => void;
+  /** The query history (STU-020): ⌘Y on a Mac, Ctrl+H elsewhere. */
+  openHistory?: () => void;
 }
 
 function dialogOpen(): boolean {
@@ -34,6 +36,12 @@ export function useShortcuts(handlers: ShortcutHandlers): void {
       } else if (matches(event, SHORTCUTS.help, platform)) {
         event.preventDefault();
         current.current.openHelp();
+      } else if (
+        current.current.openHistory !== undefined &&
+        matches(event, shortcutFor('history', platform), platform)
+      ) {
+        event.preventDefault();
+        current.current.openHistory();
       } else if (matches(event, SHORTCUTS.nextRegion, platform)) {
         event.preventDefault();
         moveRegion(1);

@@ -8,7 +8,8 @@ import userEvent from '@testing-library/user-event';
 
 import { readProblem } from '../../api/problem';
 import { parseProfiles } from '../../api/profiles';
-import { SettingsView } from '../Views';
+import { SettingsView, StartView } from '../Views';
+import { requestConnect } from './pending';
 import { ConnectionsView } from './ConnectionsView';
 
 const DIGEST = 'b'.repeat(64);
@@ -401,7 +402,11 @@ describe('server settings', () => {
     expect(await screen.findByTestId('settings-saved')).toBeVisible();
     const [put] = writes(calls);
     expect(put?.body).toEqual({
-      settings: { log_sql: true, limits: { max_rows: 500, statement_timeout_ms: 30000 } },
+      settings: {
+        log_sql: true,
+        limits: { max_rows: 500, statement_timeout_ms: 30000 },
+        history: { enabled: true, retention_days: 30 },
+      },
       digest: null,
       overwrite: false,
     });
@@ -432,5 +437,124 @@ describe('parsing', () => {
       ]),
     );
     expect(problemDoc.issues).toEqual([{ pointer: 'profile.host', code: 'config.required' }]);
+  });
+});
+
+describe('favorites and recently opened profiles (STU-020)', () => {
+  const favoritesAnswer = (favorites: string[], recent: string[] = []) =>
+    new Response(
+      JSON.stringify({
+        favorites: favorites.map((id) => ({ profile_id: id, added_at: 1 })),
+        recent: recent.map((id) => ({ profile_id: id, opened_at: 2 })),
+      }),
+      { status: 200 },
+    );
+
+  it('marks a profile as a favorite with a toggle button, and says so', async () => {
+    let favorites: string[] = [];
+    const { fetcher, calls } = server({
+      'GET /api/favorites': () => favoritesAnswer(favorites),
+      'PUT /api/favorites': (call) => {
+        const body = call.body as { profile_id: string; favorite: boolean };
+        favorites = body.favorite ? [body.profile_id] : [];
+        return favoritesAnswer(favorites);
+      },
+    });
+    render(<ConnectionsView fetcher={fetcher} />);
+    const star = await screen.findByTestId('connection-favorite');
+    expect(star).toHaveAccessibleName('Favorite');
+    expect(star).toHaveAttribute('aria-pressed', 'false');
+    await userEvent.click(star);
+    await waitFor(() => expect(star).toHaveAttribute('aria-pressed', 'true'));
+    expect(writes(calls).at(-1)?.body).toEqual({ profile_id: 'project:parts-dev', favorite: true });
+    expect(
+      screen.getByText('parts-dev is a favorite now. It is listed on the start page.'),
+    ).toBeVisible();
+    // The list marks it for screen readers too.
+    expect(screen.getAllByTestId('connection-item')[0]).toHaveTextContent('favorite');
+  });
+
+  it('shows no favorite toggle when the state database is not available', async () => {
+    const { fetcher } = server({
+      'GET /api/favorites': () =>
+        new Response(JSON.stringify({ code: 'studio.state_unavailable', status: 503 }), {
+          status: 503,
+        }),
+    });
+    render(<ConnectionsView fetcher={fetcher} />);
+    await screen.findByTestId('connection-detail');
+    expect(screen.queryByTestId('connection-favorite')).toBeNull();
+  });
+
+  it('the start page lists favorites and recent profiles; Connect goes through the manager', async () => {
+    const { fetcher } = server({
+      'GET /api/favorites': () =>
+        favoritesAnswer(['project:parts-dev'], [`user:${HOSTILE}`, 'user:gone']),
+    });
+    render(<StartView fetcher={fetcher} />);
+    const favorites = await screen.findByTestId('start-favorites');
+    expect(within(favorites).getByRole('heading', { name: 'Favorite connections' })).toBeVisible();
+    expect(favorites).toHaveTextContent('parts-dev');
+    const recent = screen.getByTestId('start-recent');
+    // Names from files are shown escaped; a profile that is gone is left out.
+    expect(recent).toHaveTextContent('evil\\u202Egpj.exe');
+    expect(within(recent).getAllByTestId('quick-connect')).toHaveLength(1);
+    await userEvent.click(within(favorites).getByRole('button', { name: /^Connect\s*parts-dev$/ }));
+    expect(window.location.pathname).toBe('/connections');
+    window.history.replaceState(null, '', '/');
+  });
+
+  it('the manager takes the start page request: the profile is selected and connected', async () => {
+    const { fetcher, calls } = server({
+      'GET /api/favorites': () => favoritesAnswer([]),
+      'GET /api/connections': () => new Response(JSON.stringify({ connections: [] })),
+      'POST /api/connections': () =>
+        new Response(
+          JSON.stringify({
+            connection_id: 'c1',
+            profile_id: 'project:parts-dev',
+            environment: 'dev',
+            engine: 'sqlite',
+          }),
+          { status: 201 },
+        ),
+    });
+    requestConnect('project:parts-dev');
+    render(<ConnectionsView fetcher={fetcher} />);
+    await waitFor(() =>
+      expect(writes(calls).map((call) => `${call.method} ${call.url}`)).toContain(
+        'POST /api/connections',
+      ),
+    );
+  });
+});
+
+describe('history settings (STU-020)', () => {
+  it('turns the history off, sets the retention and deletes the history after the confirmation', async () => {
+    const { fetcher, calls } = server({
+      'PUT /api/settings': () =>
+        new Response(JSON.stringify({ digest: DIGEST, settings: {} }), { status: 200 }),
+      'DELETE /api/history': () => new Response(JSON.stringify({ deleted: 4 }), { status: 200 }),
+    });
+    render(<SettingsView fetcher={fetcher} />);
+    const enabled = await screen.findByRole('checkbox', { name: 'Keep the statements I run' });
+    expect(enabled).toBeChecked();
+    await userEvent.click(enabled);
+    const days = screen.getByLabelText('Keep statements for (days)');
+    await userEvent.clear(days);
+    await userEvent.type(days, '7');
+    await userEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+    await screen.findByTestId('settings-saved');
+    expect(writes(calls)[0]?.body).toMatchObject({
+      settings: { history: { enabled: false, retention_days: 7 } },
+    });
+    await userEvent.click(screen.getByTestId('settings-history-delete'));
+    const dialog = screen.getByRole('dialog', { name: 'Delete the whole history?' });
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByTestId('settings-history-note')).toHaveTextContent(
+      '4 statements deleted.',
+    );
+    expect(writes(calls).at(-1)).toMatchObject({ method: 'DELETE', url: '/api/history', body: {} });
   });
 });

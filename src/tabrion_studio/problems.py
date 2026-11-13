@@ -583,6 +583,93 @@ CATALOG: dict[str, Entry] = {
         "Studio could not ask the server for the names the report hides, so it made no report.",
         "Try again when the connection is free, or reconnect.",
     ),
+    # History, favorites, scripts and completion (STU-020).
+    "studio.state_unavailable": Entry(
+        503,
+        ProblemKind.INTERNAL,
+        "Studio state not available",
+        "Studio cannot use its state database, which keeps the history and the favorites.",
+        "The log names the reason; queries still run without a history entry.",
+    ),
+    "studio.favorites_full": Entry(
+        409, ProblemKind.REQUEST, "Too many favorites", "Studio keeps at most 100 favorite profiles."
+    ),
+    "studio.catalog_not_loaded": Entry(
+        404,
+        ProblemKind.NOT_FOUND,
+        "Catalog not loaded",
+        "The connection's catalog has not been read yet.",
+        "Load the names for completion, or open the explorer.",
+    ),
+    "studio.script_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Not a script path",
+        "A script is a .sql file inside the project folder, named by a relative path of plain names: no hidden"
+        " folder, no device name such as NUL or COM1, no short name such as GIT~1, no name that ends in a dot.",
+    ),
+    "studio.script_link": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Script behind a link",
+        "The script or a folder on its path is a link: a symbolic link, a junction, a hard-linked file or a cloud"
+        " placeholder such as a OneDrive Files On-Demand folder. Studio opens and saves only plain files in plain"
+        " folders of the project.",
+        "Copy the script into a plain folder of the project, or move the project out of the synced folder.",
+    ),
+    "studio.script_not_found": Entry(404, ProblemKind.NOT_FOUND, "Script not found", "There is no such script."),
+    "studio.script_unreadable": Entry(422, ProblemKind.REQUEST, "Script not readable", "The script is not UTF-8 text."),
+    "studio.script_too_large": Entry(
+        413, ProblemKind.REQUEST, "Script too large", "Studio opens and saves scripts of at most 1 MB."
+    ),
+    "studio.script_exists": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Script exists",
+        "A script with this name exists already.",
+        "Choose another name, or confirm to replace it.",
+    ),
+    "studio.script_stale": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Script changed",
+        "The script changed on disk after Studio opened it.",
+        "Open it again, or confirm to replace it.",
+    ),
+    "studio.script_folder_missing": Entry(
+        404,
+        ProblemKind.NOT_FOUND,
+        "Folder not found",
+        "The folder of the script does not exist; Studio creates no folders.",
+    ),
+    "studio.script_permission_denied": Entry(
+        403,
+        ProblemKind.REQUEST,
+        "Script not accessible",
+        "The system does not let Studio read or write this script or its folder.",
+        "Check the permissions of the file and its folder, or whether the drive is read-only.",
+    ),
+    "studio.script_locked": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Script in use",
+        "Another program holds the script open, so Studio cannot replace it.",
+        "Close the script in the other program and save again.",
+    ),
+    "studio.script_disk_full": Entry(
+        507,
+        ProblemKind.REQUEST,
+        "Disk full",
+        "There is no room left on the drive for the script.",
+        "Free some space and save again; the script on disk is unchanged.",
+    ),
+    "studio.script_write_failed": Entry(
+        500,
+        ProblemKind.REQUEST,
+        "Script not saved",
+        "The system refused to write the script; the script on disk is unchanged.",
+        "Try again, or save it somewhere else with Download.",
+    ),
     "studio.internal_error": Entry(
         500,
         ProblemKind.INTERNAL,

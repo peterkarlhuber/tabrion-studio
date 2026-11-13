@@ -6,7 +6,8 @@ each one ``Database.read()``), and always through ``ConnectionRegistry.get``. Re
 fixed texts with bound parameters (names from the request are values, never part of the text).
 
 * **Catalog:** schemas and their objects (tables, views, materialized views, sequences, foreign tables), flat and
-  sorted, cached per connection until ``refresh`` (03 section 6: "flach, gecacht"). PostgreSQL's ``pg_*`` and
+  sorted, cached per connection until ``refresh`` (03 section 6: "flach, gecacht"); ``cached_only`` answers only a
+  catalog that is cached already (the SQL editor's completion on a PROD connection, STU-020). PostgreSQL's ``pg_*`` and
   ``information_schema`` schemas are left out. SQLite has the one schema ``main``.
 * **Table detail:** columns (type, nullable, default, comment), primary key, foreign keys out and in, unique and
   check constraints, indexes and, for PostgreSQL, the row estimate (``pg_class.reltuples``). An object that is not in
@@ -225,7 +226,10 @@ class Explorer:
 
     # Catalog
 
-    def catalog(self, connection_id: object, *, refresh: bool = False) -> dict[str, Any]:
+    def catalog(self, connection_id: object, *, refresh: bool = False, cached_only: bool = False) -> dict[str, Any]:
+        """The catalog, built once per connection. ``cached_only`` (STU-020: the SQL editor's names for completion on
+        a PROD connection, 03 section 5.4) answers only a catalog built already, else ``studio.catalog_not_loaded``,
+        so that it never reads a large catalog without the user's click."""
         connection = self.registry.get(connection_id)
         with self._lock:
             # Entries of connections that are gone are dropped here, so the cache cannot grow without bound.
@@ -240,6 +244,8 @@ class Explorer:
                     del self._columns[key]
         if cached is not None:
             return {**cached.doc, "cached": True}
+        if cached_only:
+            raise ExplorerError("studio.catalog_not_loaded")
         doc = {"connection_id": connection.id, **connection.inspect(lambda found: self._catalog(connection, found))}
         doc["built_at"] = self.clock()
         with self._lock:

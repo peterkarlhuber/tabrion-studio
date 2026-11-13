@@ -256,6 +256,9 @@ export interface ServerSettings {
   logSql: boolean;
   maxRows: number;
   statementTimeoutMs: number;
+  /** The query history (STU-020): on or off, and how many days its entries are kept. */
+  historyEnabled: boolean;
+  historyRetentionDays: number;
 }
 
 export interface SettingsState {
@@ -270,10 +273,13 @@ export function parseSettings(body: unknown): ServerSettings | null {
   if (typeof limits.max_rows !== 'number' || typeof limits.statement_timeout_ms !== 'number') {
     return null;
   }
+  const history = (doc.history ?? {}) as Record<string, unknown>;
   return {
     logSql: doc.log_sql === true,
     maxRows: limits.max_rows,
     statementTimeoutMs: limits.statement_timeout_ms,
+    historyEnabled: history.enabled !== false,
+    historyRetentionDays: typeof history.retention_days === 'number' ? history.retention_days : 30,
   };
 }
 
@@ -298,6 +304,7 @@ export function saveSettings(
     settings: {
       log_sql: settings.logSql,
       limits: { max_rows: settings.maxRows, statement_timeout_ms: settings.statementTimeoutMs },
+      history: { enabled: settings.historyEnabled, retention_days: settings.historyRetentionDays },
     },
     digest,
     overwrite,

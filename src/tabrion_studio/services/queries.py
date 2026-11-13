@@ -31,6 +31,9 @@ same cancel.
 
 **What is logged:** one ``studio.query_finished`` record per query with its state, row count, duration, engine and
 problem code. Never the SQL text, a parameter value or a row (03 section 4.5, T-05).
+
+**History (STU-020):** a finished query is handed to :class:`.history.History` with its text and the *names* of its
+placeholders; the values stay in the bound statement and are never passed on.
 """
 
 from __future__ import annotations
@@ -55,7 +58,8 @@ from tabrion.errors import Kind, TabrionError
 from tabrion_studio.config.schema import Settings
 from tabrion_studio.problems import Problem, db_kind_problem, db_problem, new_log_id, problem
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection, pool_busy
-from tabrion_studio.services.sqltext import BoundStatement
+from tabrion_studio.services.history import History
+from tabrion_studio.services.sqltext import BoundStatement, placeholders
 from tabrion_studio.services.tabrion_compat import Cancel, Cancelled, Column, ResultCursor
 
 __all__ = [
@@ -268,6 +272,8 @@ class QueryEngine:
     per_connection: int = PER_CONNECTION
     #: The byte cap of a result; ``None``: the ``max_result_mb`` setting (20 MB by default, at most 200 MB).
     max_bytes: int | None = None
+    #: The query history (STU-020): each finished query's text and placeholder *names*, never its values.
+    history: History | None = None
     _queries: dict[str, Query] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _closed: bool = False
@@ -382,7 +388,28 @@ class QueryEngine:
                 "code": None if found is None else found.code,
             },
         )
+        self._remember(query, connection, statement)
         query.done.set()  # last: whoever waits for it may close the log
+
+    def _remember(self, query: Query, connection: OpenConnection, statement: BoundStatement) -> None:
+        """One history entry (STU-020): the statement as written and its placeholder names. ``statement.values``
+        is never read here: the history has no place for a parameter value (08 section 5)."""
+        if self.history is None:
+            return
+        try:
+            self.history.record(
+                profile_id=connection.profile_id,
+                environment=connection.environment,
+                engine=connection.engine,
+                sql=statement.sql,
+                param_names=placeholders(statement.sql, "sqlite" if connection.engine == "sqlite" else "postgresql"),
+                state=query.state.value,
+                row_count=len(query.rows),
+                elapsed_ms=query.elapsed_ms,
+                code=None if query.problem is None else query.problem.code,
+            )
+        except Exception:
+            logger.warning("history entry not kept", exc_info=True, extra={"event": "studio.history_error"})
 
     @staticmethod
     def _stopped(query: Query) -> tuple[State, Problem]:

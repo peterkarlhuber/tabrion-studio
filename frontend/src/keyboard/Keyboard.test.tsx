@@ -65,8 +65,8 @@ describe('command palette', () => {
     await user.keyboard('{Control>}k{/Control}');
     const dialog = palette() as HTMLElement;
     const input = within(dialog).getByRole('combobox');
-    expect(within(dialog).getAllByRole('option')).toHaveLength(15);
-    expect(within(dialog).getByRole('status')).toHaveTextContent('15 commands');
+    expect(within(dialog).getAllByRole('option')).toHaveLength(16);
+    expect(within(dialog).getByRole('status')).toHaveTextContent('16 commands');
     await user.type(input, 'go to');
     const options = within(dialog).getAllByRole('option');
     // Every page of the activity bar is offered, in its order, the explorer, SQL editor, migrations and diagnostics
@@ -76,18 +76,21 @@ describe('command palette', () => {
       'Go to Connections',
       'Go to Explorer',
       'Go to SQL editor',
+      'Go to Query historyCtrlHCtrl+H',
       'Go to Migrations',
       'Go to Diagnostics',
       'Go to Settings',
     ]);
     expect(options[0]).toHaveAttribute('aria-selected', 'true');
     expect(input).toHaveAttribute('aria-activedescendant', options[0]?.id);
-    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}');
-    expect(input).toHaveAttribute('aria-activedescendant', options[6]?.id);
+    await user.keyboard(
+      '{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}{ArrowDown}',
+    );
+    expect(input).toHaveAttribute('aria-activedescendant', options[7]?.id);
     await user.keyboard('{ArrowDown}'); // wraps around
     expect(input).toHaveAttribute('aria-activedescendant', options[0]?.id);
     await user.keyboard('{ArrowUp}'); // and back
-    expect(input).toHaveAttribute('aria-activedescendant', options[6]?.id);
+    expect(input).toHaveAttribute('aria-activedescendant', options[7]?.id);
     await user.keyboard('{Enter}');
     expect(palette()).toBeNull();
     expect(window.location.pathname).toBe('/settings');
@@ -242,12 +245,14 @@ describe('shortcut help', () => {
       'Ctrl/Ctrl+/',
       'F6F6',
       'ShiftF6Shift+F6',
+      'CtrlHCtrl+H',
       'CtrlEnterCtrl+Enter',
       'CtrlShiftEnterCtrl+Shift+Enter',
       'Ctrl.Ctrl+.',
       'AltTAlt+T',
       'AltWAlt+W',
       'CtrlSCtrl+S',
+      'AltShiftFAlt+Shift+F',
       'CtrlPCtrl+P',
     ]);
     await user.keyboard('{Escape}');

@@ -647,12 +647,17 @@ export function base(connectionId: string): string {
   return `/api/connections/${encodeURIComponent(connectionId)}`;
 }
 
+/**
+ * The catalog. `refresh` reads it again; `'cached'` (STU-020, the SQL editor's completion on a PROD profile) answers
+ * only a catalog the server has read already, else `studio.catalog_not_loaded`.
+ */
 export function fetchCatalog(
   fetcher: typeof fetch,
   connectionId: string,
-  refresh = false,
+  refresh: boolean | 'cached' = false,
 ): Promise<Result<Catalog>> {
-  return read(fetcher, `${base(connectionId)}/catalog${refresh ? '?refresh=true' : ''}`, (body) => {
+  const query = refresh === 'cached' ? '?cached_only=true' : refresh ? '?refresh=true' : '';
+  return read(fetcher, `${base(connectionId)}/catalog${query}`, (body) => {
     const catalog = parseCatalog(body);
     // The catalog of another connection is refused (I-1); an answer without the field is the asked one.
     return catalog !== null && catalog.connectionId !== '' && catalog.connectionId !== connectionId

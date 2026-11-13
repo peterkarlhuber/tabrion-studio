@@ -9,6 +9,10 @@ export interface EditorActions {
   newTab: () => void;
   closeTab: () => void;
   save: () => void;
+  /** STU-020: open a `.sql` script of the project. */
+  openScript: () => void;
+  /** STU-020: format the selection, or the whole text (sql-formatter). */
+  format: () => void;
   /** Whether a query runs now (only then is "Cancel" offered). */
   running: () => boolean;
 }

@@ -28,6 +28,7 @@ describe('buildCommands', () => {
       'Go to Connections',
       'Go to Explorer',
       'Go to SQL editor',
+      'Go to Query history',
       'Go to Migrations',
       'Go to Diagnostics',
       'Go to Settings',
@@ -56,11 +57,12 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 8)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 9)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
       'Gehe zu Explorer',
       'Gehe zu SQL-Editor',
+      'Gehe zu Abfrageverlauf',
       'Gehe zu Migrationen',
       'Gehe zu Diagnose',
       'Gehe zu Einstellungen',
@@ -144,22 +146,35 @@ describe('SQL editor commands (STU-012)', () => {
       newTab: () => ran.push('newTab'),
       closeTab: () => ran.push('closeTab'),
       save: () => ran.push('save'),
+      openScript: () => ran.push('openScript'),
+      format: () => ran.push('format'),
       running: () => running,
     });
     const onEditor = { ...context(), path: '/sql' };
     expect(labels(buildCommands(context())).filter((l) => l.startsWith('Run'))).toEqual([]);
-    expect(labels(buildCommands(onEditor)).slice(0, 5)).toEqual([
+    expect(labels(buildCommands(onEditor)).slice(0, 7)).toEqual([
       'Run',
       'Run script',
       'New editor tab',
       'Close editor tab',
-      'Save as .sql',
+      'Save',
+      'Open…',
+      'Format',
     ]);
     running = true;
     const commands = buildCommands(onEditor);
     expect(labels(commands)).toContain('Cancel query');
     for (const command of commands.filter((c) => c.group === 'editor')) command.run();
-    expect(ran).toEqual(['run', 'runScript', 'cancel', 'newTab', 'closeTab', 'save']);
+    expect(ran).toEqual([
+      'run',
+      'runScript',
+      'cancel',
+      'newTab',
+      'closeTab',
+      'save',
+      'openScript',
+      'format',
+    ]);
     setEditorActions(null);
     expect(labels(buildCommands(onEditor))).not.toContain('Run');
   });

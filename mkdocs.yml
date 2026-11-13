@@ -62,6 +62,7 @@ nav:
       - Migration status: guide/migrations.md
       - Explorer: guide/explorer.md
       - SQL editor: guide/sql-editor.md
+      - Query history and favorites: guide/history.md
       - Data viewer: guide/data-viewer.md
       - Settings and keyboard: guide/settings.md
       - How Studio protects your data: guide/security.md
@@ -79,6 +80,7 @@ nav:
       - Diagnostics: architecture/diagnostics.md
       - Migration status: architecture/migrations.md
       - Export: architecture/exports.md
+      - History, favorites and scripts: architecture/history-and-scripts.md
       - App shell and design system: architecture/frontend.md
       - Accessibility audit: architecture/accessibility.md
       - UX acceptance: architecture/ux-acceptance.md

@@ -12,6 +12,9 @@ export interface HarnessOptions {
   check?: string;
   /** scenario=editor: the first tab's draft. */
   sql?: string;
+  /** STU-020: favorite and recently opened profile ids, separated by commas. */
+  favorites?: string;
+  recent?: string;
   /** scenario=explorer: `150` gives the PostgreSQL schema `audit` 150 tables for the ER diagram (STU-023). */
   er?: string;
 }

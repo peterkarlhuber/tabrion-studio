@@ -8,7 +8,7 @@ only reads. Each request gets its connection through `ConnectionRegistry.get` an
 
 | Route | Answer |
 |---|---|
-| `GET /api/connections/{id}/catalog[?refresh=true]` | `{connection_id, engine, schemas, objects: [{schema, name, kind}], built_at, cached}`, flat and sorted; `kind` is `table`, `view`, `materialized_view`, `sequence` or `foreign_table` |
+| `GET /api/connections/{id}/catalog[?refresh=true \| ?cached_only=true]` | `{connection_id, engine, schemas, objects: [{schema, name, kind}], built_at, cached}`, flat and sorted; `kind` is `table`, `view`, `materialized_view`, `sequence` or `foreign_table` |
 | `GET /api/connections/{id}/tables/{schema}/{name}` | `columns` (name, type, nullable, default, comment), `primary_key`, `foreign_keys` (out), `referenced_by` (in), `unique_constraints`, `check_constraints`, `indexes`, `row_estimate` (PostgreSQL `pg_class.reltuples`) |
 | `GET /api/connections/{id}/table?schema=&name=` | the same detail, for a name with `/` (the router reads `%2F` in a path as a separator) |
 | `GET /api/connections/{id}/extensions` | PostgreSQL: name, version, schema, the default available version, `update_available` |
@@ -22,7 +22,9 @@ only reads. Each request gets its connection through `ConnectionRegistry.get` an
 The `ddl`, `policies` and `row-count` routes also take `/api/connections/{id}/<route>?schema=&name=`, for a name with
 `/`. The other engine gets `studio.explorer_engine` from the engine-specific ones.
 
-The catalog is cached per connection until `refresh=true`. PostgreSQL's `pg_*` schemas and `information_schema` are
+The catalog is cached per connection until `refresh=true`. `cached_only=true` (STU-020) answers only a catalog that
+is cached already, else `studio.catalog_not_loaded`: the SQL editor's completion never reads a PROD catalog unasked
+(03 section 5.4). PostgreSQL's `pg_*` schemas and `information_schema` are
 left out, and so a detail of their objects is refused too. SQLite has the single schema `main`. A cache entry goes
 away when its connection closes (the registry tells the explorer).
 

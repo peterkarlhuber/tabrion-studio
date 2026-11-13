@@ -45,8 +45,12 @@ from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
+from tabrion_studio.services.favorites import Favorites
+from tabrion_studio.services.history import History
 from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.scripts import Scripts
+from tabrion_studio.services.state import StateStore
 from tabrion_studio.services.viewer import Viewer
 from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, TOKEN, Studio, make_studio
 
@@ -72,6 +76,9 @@ FAMILIES = (
     "/api/connections/x1/rows",
     "/api/connections/x1/diagnostics",
     "/api/connections/x1/migrations",
+    "/api/history",
+    "/api/favorites",
+    "/api/scripts",
 )
 
 
@@ -84,16 +91,21 @@ def _full_studio(static_dir: Path, tmp_path: Path) -> Studio:
     configuration = Configuration(project=ProjectConfig(project, state, "k1", config_dir), user=UserConfig(config_dir))
     registry = ConnectionRegistry(configuration)
     explorer = Explorer(registry)
+    store = StateStore(state)
+    history = History(store, "k1", configuration.limits)
     return make_studio(
         static_dir,
         config=configuration,
         connections=registry,
-        queries=QueryEngine(registry, configuration.limits),
+        queries=QueryEngine(registry, configuration.limits, history=history),
         explorer=explorer,
         viewer=Viewer(explorer, configuration.limits),
         diagnostics=Diagnostics(registry),
         migrations=Migrations(registry, CodeTrust(project, state, "k1")),
         exports=Exports(registry, explorer),
+        history=history,
+        favorites=Favorites(store, "k1", lambda: {entry.id for entry in configuration.entries()}),
+        scripts=Scripts(project),
     )
 
 

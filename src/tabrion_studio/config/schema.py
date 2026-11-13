@@ -348,6 +348,9 @@ def validate_profiles(doc: dict[str, Any]) -> ProfileFile:
 LANGUAGES = ("system", "en", "de")
 THEMES = ("system", "light", "dark")
 DENSITIES = ("compact", "normal")
+#: The query history (STU-020): kept this many days by default, at most ten years.
+HISTORY_RETENTION_DAYS = 30
+MAX_HISTORY_RETENTION_DAYS = 3650
 
 
 @dataclass(frozen=True)
@@ -362,6 +365,9 @@ class Settings:
     statement_timeout_ms: int = 30_000
     #: 03 section 5.3: bytes per result in the backend, 20 MB by default, configurable up to 200 MB.
     max_result_mb: int = 20
+    #: The query history (03 section 2 C, STU-020): local, per profile, never with parameter values; can be turned off.
+    history_enabled: bool = True
+    history_retention_days: int = HISTORY_RETENTION_DAYS
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -375,6 +381,7 @@ class Settings:
                 "statement_timeout_ms": self.statement_timeout_ms,
                 "max_result_mb": self.max_result_mb,
             },
+            "history": {"enabled": self.history_enabled, "retention_days": self.history_retention_days},
         }
 
 
@@ -412,7 +419,27 @@ def validate_settings(doc: dict[str, Any]) -> tuple[Settings, list[Issue]]:
                 issues.append(Issue(f"settings.limits.{_key(str(key))}", "config.unknown_key", "warning"))
     else:
         issues.append(Issue("settings.limits", "config.type"))
+    _history_settings(doc, values, issues)
     for key in doc:
-        if key not in ("version", "language", "theme", "density", "log_sql", "telemetry", "limits"):
+        if key not in ("version", "language", "theme", "density", "log_sql", "telemetry", "limits", "history"):
             issues.append(Issue(f"settings.{_key(str(key))}", "config.unknown_key", "warning"))
     return Settings(**values), issues
+
+
+def _history_settings(doc: dict[str, Any], values: dict[str, Any], issues: list[Issue]) -> None:
+    """``[history]``: ``enabled`` (bool) and ``retention_days`` (1 to 3650)."""
+    history = doc.get("history", {})
+    if not isinstance(history, dict):
+        issues.append(Issue("settings.history", "config.type"))
+        return
+    if "enabled" in history:
+        if isinstance(history["enabled"], bool):
+            values["history_enabled"] = history["enabled"]
+        else:
+            issues.append(Issue("settings.history.enabled", "config.type"))
+    days = _integer(history, "retention_days", "settings.history", 1, MAX_HISTORY_RETENTION_DAYS, issues)
+    if days is not None:
+        values["history_retention_days"] = days
+    for key in history:
+        if key not in ("enabled", "retention_days"):
+            issues.append(Issue(f"settings.history.{_key(str(key))}", "config.unknown_key", "warning"))
