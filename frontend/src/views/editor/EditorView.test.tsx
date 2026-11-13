@@ -61,6 +61,8 @@ interface Options {
   connectDelayMs?: number;
   projectPath?: string;
   profileTimeoutMs?: number;
+  /** Delays the answer to starting a query (a cancel while it is on its way). */
+  startDelayMs?: number;
   /** Answers before the fake server (a changed profile, a stale connection, the connection's environment). */
   before?: (url: string, init?: RequestInit) => Response | null;
   /** Where an export goes (TD-043). */
@@ -91,6 +93,7 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
   let seen: { profiles: { id: string; environment: string }[] } | null = null;
   const server = createQueryServer({
     connectDelayMs: options.connectDelayMs ?? 0,
+    startDelayMs: options.startDelayMs ?? 0,
     environmentOf: (id) => seen?.profiles.find((item) => item.id === id)?.environment,
   });
   const profiles = {
@@ -259,6 +262,28 @@ describe('EditorView', () => {
       expect(screen.getByTestId('result-status')).toHaveTextContent(/^Canceled after \d\.\d s\.$/),
     );
     expect(log.cancels).toHaveLength(1);
+  });
+
+  it('a cancel while the start request is on its way cancels the query once it has an id', async () => {
+    const user = userEvent.setup();
+    const { log, requests } = setup({ sql: 'select pg_sleep(60)' }, { startDelayMs: 500 });
+    await editor();
+    await user.click(screen.getByTestId('editor-run'));
+    // The statement shows as running while POST /api/queries is still unanswered.
+    await waitFor(() => expect(log.starts).toHaveLength(1));
+    await waitFor(() => expect(screen.getByTestId('editor-cancel')).toBeEnabled());
+    await user.click(screen.getByTestId('editor-cancel'));
+    expect(log.cancels).toEqual([]);
+    await waitFor(
+      () =>
+        expect(screen.getByTestId('result-status')).toHaveTextContent(
+          /^Canceled after \d\.\d s\.$/,
+        ),
+      { timeout: 3_000 },
+    );
+    expect(log.cancels).toHaveLength(1);
+    expect(requests.filter((r) => r.url.endsWith('/cancel'))).toHaveLength(1);
+    expect(editorActions()?.running()).toBe(false);
   });
 
   it('clears PROD results when the tab changes to another profile (M-1, L-1)', async () => {
