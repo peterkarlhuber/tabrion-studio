@@ -554,7 +554,11 @@
       "pending_one": "{{count}} Revision ist noch nicht angewendet.",
       "pending_other": "{{count}} Revisionen sind noch nicht angewendet.",
       "others_one": "{{count}} weiteres Migrationsformat wurde gefunden, wird hier aber noch nicht angezeigt.",
-      "others_other": "{{count}} weitere Migrationsformate wurden gefunden, werden hier aber noch nicht angezeigt."
+      "others_other": "{{count}} weitere Migrationsformate wurden gefunden, werden hier aber noch nicht angezeigt.",
+      "commandHint": "Studio führt keine Migrationen aus. Um die ausstehenden Revisionen anzuwenden, führe diesen Befehl im Projektordner aus:",
+      "copyCommand": "Befehl kopieren",
+      "commandCopied": "Der Befehl ist in der Zwischenablage.",
+      "commandCopyFailed": "Der Befehl konnte nicht kopiert werden. Markiere ihn und kopiere ihn von Hand."
     },
     "levuvo": {
       "current": "Die Datenbank ist auf dem Stand der Dateien.",

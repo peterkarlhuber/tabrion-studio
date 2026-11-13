@@ -1,6 +1,6 @@
 /**
  * STU-015: the migration status view in Chromium. The view, the code trust dialog and both status results (code not
- * trusted, then trusted) have no serious or critical axe violation in light and dark, English and German; trusting
+ * trusted, then trusted, with the upgrade command of TD-046 B-3) have no serious or critical axe violation in light and dark, English and German; trusting
  * sends the digest the dialog showed and every write is JSON, DELETE included.
  */
 import { test, expect, type Page } from '@playwright/test';
@@ -49,6 +49,8 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       await dialog.getByRole('button', { name: text.trust }).click();
       await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(page.getByTestId('migrations-unknown')).toContainText('ghost-1');
+      // TD-046 B-3: the pending revision gets the command that applies it, with Copy.
+      await expect(page.getByTestId('migrations-command-text')).toHaveText('alembic upgrade head');
       expect(await seriousViolations(page)).toEqual([]);
     });
   }

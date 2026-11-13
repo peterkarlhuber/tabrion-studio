@@ -12,6 +12,7 @@
  * Every value from the project or the database (names, paths, revision ids) is escaped (`lib/visible.ts`, U-1).
  */
 import type { TFunction } from 'i18next';
+import { Copy } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -75,6 +76,52 @@ function Ids({ ids, empty }: { ids: string[]; empty: string }) {
   );
 }
 
+/** How long "Copy command" leaves its status empty before the new one, so that a second copy is announced again. */
+const ANNOUNCE_DELAY_MS = 100;
+
+/**
+ * 08 section 4.8 (TD-046 B-3): Studio never migrates, so a database with pending revisions gets the command that
+ * applies them, to run in the project folder, with a copy button. `heads` when the project has more than one head.
+ */
+function UpgradeCommand({ heads }: { heads: string[] }) {
+  const { t } = useTranslation();
+  const command = heads.length > 1 ? 'alembic upgrade heads' : 'alembic upgrade head';
+  const [copied, setCopied] = useState('');
+  const announce = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(announce.current), []);
+  const copy = async () => {
+    let message: string;
+    try {
+      await navigator.clipboard.writeText(command);
+      message = t('migrations.status.commandCopied');
+    } catch {
+      message = t('migrations.status.commandCopyFailed');
+    }
+    setCopied('');
+    window.clearTimeout(announce.current);
+    announce.current = window.setTimeout(() => setCopied(message), ANNOUNCE_DELAY_MS);
+  };
+  return (
+    <div className={styles.command} data-testid="migrations-command">
+      <p className={connectionStyles.hint}>{t('migrations.status.commandHint')}</p>
+      <p className={styles.commandLine}>
+        <code data-testid="migrations-command-text">{command}</code>
+        <Button
+          size="sm"
+          icon={<Copy />}
+          onClick={() => void copy()}
+          data-testid="migrations-command-copy"
+        >
+          {t('migrations.status.copyCommand')}
+        </Button>
+      </p>
+      <p role="status" className={connectionStyles.hint} data-testid="migrations-command-status">
+        {copied}
+      </p>
+    </div>
+  );
+}
+
 function AlembicResult({ status }: { status: AlembicStatus }) {
   const { t } = useTranslation();
   const read = status.revisions === 'read';
@@ -132,6 +179,9 @@ function AlembicResult({ status }: { status: AlembicStatus }) {
           )}
         </dd>
       </dl>
+      {read && status.isCurrent === false && (status.pending?.length ?? 0) > 0 ? (
+        <UpgradeCommand heads={status.heads ?? []} />
+      ) : null}
       {status.unknown !== null && status.unknown.length > 0 ? (
         <div className={connectionStyles.warning} data-testid="migrations-unknown">
           <p>{t('migrations.status.unknownRevisions')}</p>

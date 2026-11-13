@@ -1,10 +1,11 @@
-# UX acceptance of the MVP (STU-050)
+# UX acceptance of the MVP (STU-050) and of 1.0 (STU-054)
 
 STU-050 accepts the MVP's user interface against planning document 08: the wireframes of sections 4.1 to 4.5, 4.8
 and 4.9 are built, the flows of section 5 run as Playwright scenarios, and the acceptance is "every flow green in
 E2E on Chromium, Firefox and WebKit; axe without serious or critical violations" (08 section 11, 09 STU-050). This
 page turns that into a checklist: each criterion names the automated test that checks it, or the manual check and
-who does it. A criterion that is not met names its open item.
+who does it. A criterion that is not met names its open item. The section [Studio 1.0](#studio-10-stu-054) does the
+same for STU-054, the acceptance of Studio 1.0 without the Data Editor.
 
 **Acceptance run:** 2026-11-13, branch of the STU-050 pull request started on master `e9df576`, the built frontend in
 a real `tabrion-studio` (editable install with `scripts/build_frontend.py`), SQLite and a throwaway PostgreSQL 16.15
@@ -24,7 +25,8 @@ TABRION_STUDIO_E2E_EXAMPLES=<tabrion checkout at the pinned commit>/examples \
 npm run e2e
 ```
 
-`e2e/ux-acceptance.spec.ts` holds the flows no other suite runs end to end; the other suites are named per
+`e2e/ux-acceptance.spec.ts` holds the MVP flows no other suite runs end to end, `e2e/ux-acceptance-1-0.spec.ts`
+the 1.0 flows and the negative tests of STU-054; the other suites are named per
 criterion below. The PostgreSQL part of `e2e/explorer-reference.spec.ts` also runs where
 `TABRION_STUDIO_E2E_PG_PARTS`, `TABRION_STUDIO_E2E_PG_MEASUREMENTS` and, for a server with passwords,
 `TABRION_STUDIO_E2E_PG_PASSWORD` are set (CI does not set them, TD-041). Backend criteria with PostgreSQL run in the
@@ -96,12 +98,15 @@ after the MVP; marked ¹ in 08).
 
 ## Open items
 
-Found or confirmed by this acceptance; each is in TD-046 unless another item already holds it.
+Found or confirmed by this acceptance; each is in TD-046 unless another item already holds it. STU-054 decided each
+B item for 1.0; what stays open moved to TD-060 (see [Open for 1.0](#open-for-10)).
 
 - **B-1** 4.1: no project chooser, recently opened list or "Open SQLite file" on the start page. Studio serves one
   project folder per process (`docs/architecture/process-model.md`); "recently opened" is 1.0 (03 section 2 A).
   The STU-020 page PR adds favorite and recently opened *connections* to the start page; a project chooser and
-  "Open SQLite file" stay open.
+  "Open SQLite file" stay open. **1.0 decision:** not built. A project chooser does not fit one project per process;
+  "Open SQLite file" is the connection manager's SQLite path (New connection, File), which the start page links to.
+  Recorded as a deviation from the 4.1 wireframe in TD-060 for the owner to confirm.
 - **B-2** Firefox and WebKit (TD-047; done: the jobs came with PR #59, the tests were fixed in PR #63 and the jobs are
   required since PR #67). First CI run on `9741eb7`: Firefox 251
   passed, 3 failed; WebKit 236 passed, 7 failed (the rest did not run or are the screenshots and the five "chromium
@@ -111,13 +116,151 @@ Found or confirmed by this acceptance; each is in TD-046 unless another item alr
   editor (the text changes after Tab), a possible keyboard trap (WCAG 2.1.2) to be confirmed and fixed; (3) the
   tooltip test reaches `:focus-visible` with `Shift` plus `focus()`, which only Chromium treats as keyboard focus; (4)
   `grantPermissions` for the clipboard exists only in Chromium; (5) WebKit saves "Query 2.sql" as "Query_2.sql".
+  **1.0:** done; `ux-acceptance-1-0.spec.ts` runs in both jobs like every suite under `frontend/e2e`.
 - **B-3** 4.8: the hint "Studio does not run migrations. Command: `alembic upgrade head`" with a copy button.
+  **Done in the STU-054 PR:** an Alembic status with pending revisions shows "Studio does not run migrations. To apply
+  the pending revisions, run this command in the project folder:" with `alembic upgrade head` (`heads` when the
+  project has more than one head) and **Copy command** (en/de; `MigrationsView.test.tsx`, axe in light/dark × en/de
+  in `e2e/migrations.spec.ts`). Levuvo formats get no command: their runners are the platforms' own.
 - **B-4** 08 section 3: the switcher can show a latency, but showed none after Connect in the walk-through; the status
   bar's running queries (count, list with cancel) and the last query's rows and time (role and database are TD-034).
-- **B-5** QA-S1 usability session (needs the owner).
+  **1.0 decision:** open (TD-060). The connection watch of TD-034 reads the latency but does not hand it to the header,
+  and the status bar facts need a workspace-wide query state that the views do not share yet; both are more than a
+  fix in this PR.
+- **B-5** QA-S1 usability session (needs the owner). **1.0:** open; 08 section 11 asks for a session per release
+  (STU-050 and STU-054), so one session with the owner on the 1.0 build covers both (TD-060).
 - **B-6** SQL editor: after a run stops at a missing parameter, the focus moves to the parameter field, but
   CodeMirror's completion list stays open over the editor. Done in the STU-020 page PR: the list closes when the
   field takes the focus (`EditorView.test.tsx`).
 - **B-7** Explorer at 1280 × 800: the connection card takes the upper half of the page, so the tree and the detail
-  start below the fold; 08 section 4.3 keeps the explorer as a sidebar beside the detail.
+  start below the fold; 08 section 4.3 keeps the explorer as a sidebar beside the detail. **1.0 decision:** open
+  (TD-060); it belongs to the workspace layout with the routes `/c/:conn/...` (TD-041, TD-052), not to a CSS fix
+  that would move the profile picker the other views share.
 - TD-032, TD-033, TD-034, TD-041, TD-042, TD-043, TD-020, TD-022 as named in the tables.
+
+## Studio 1.0 (STU-054)
+
+STU-054 accepts Studio 1.0 **without the Data Editor**: "Flows 1.0 E2E ohne Data Editor; Schreibfunktionen gesperrt
+(Negativtest); de/en vollständig" (09 STU-054; 08 section 11 adds section 4.7, D-07, the 1.0 settings and the
+languages). Its prerequisites STU-020 to STU-025 are merged. The Data Editor (STU-026, 08 section 4.6, D-03 to D-05)
+stays locked behind G-S2 and is outside this acceptance; the checks below prove that it stays locked.
+
+**Acceptance run:** 2026-11-13, the STU-054 branch started on master `d72a14f`, the built frontend in a real
+`tabrion-studio` (`scripts/build_frontend.py`, the package from the branch's `src`), SQLite, Chromium 1243 (headless
+shell); Firefox and WebKit run the same suites in CI (jobs `e2e (firefox)` and `e2e (webkit)`). PostgreSQL criteria
+(Levuvo formats, DDL against `pg_dump`) run in the `backend integration` job. Result: every 1.0 criterion that 1.0
+builds is met except the German diagnosis texts (UX-10-L4), which wait on TD-032; STU-054 is accepted once TD-032
+is merged and the owner has decided the items under [Open for 1.0](#open-for-10).
+
+`e2e/ux-acceptance-1-0.spec.ts` runs:
+
+- **the 1.0 tour, in English and in German:** the DDL of a table (read from the real database), the ER diagram with
+  its table alternative, a query with a `:name` parameter, Format, the export dialog, the query history (the
+  parameter's name, never its value), the migration status and a diagnosis with its backup hints and report buttons;
+  axe (WCAG 2.0 to 2.2 A and AA, colour contrast included) in light and dark at every step, so the 1.0 views pass in
+  light/dark × en/de against the real server; on the German pages no text of the English catalog and no raw i18n key
+  (text marked `lang="en"`, the findings' own texts, is left out: TD-032);
+- **the page offers no data editing (STU-026 locked):** on a DEV and on a PROD connection the data viewer's grid has
+  no field and no editable cell, a double click edits nothing, no control is named edit, insert, delete row, save
+  changes, commit, roll back, discard, unlock or write mode; the access chip is text (no role, no tab stop), says
+  "Read-only" or, on PROD, "Writing locked" with its tooltip, and a click on it opens no dialog; on PROD the SQL
+  editor refuses a write before it runs;
+- **the API refuses every write, on DEV and on PROD:** a write mode (`mode: "write"`) is `403
+  studio.query_write_unsupported`; 16 writing statements (DML, DDL, `ATTACH`, `VACUUM`, `REINDEX`, `ANALYZE`,
+  `SELECT … INTO`, transaction control) are refused by the query and the export route before they run (`400
+  studio.statement_*`); the statements the text check lets through (`WITH … DELETE`, writing `PRAGMA`s) fail in the
+  database, which is read-only for every Studio connection (`db.*`); every changing method on the data viewer's routes
+  and on the Data Editor's planned `changesets` route is `405 studio.method_not_allowed`; afterwards the database file
+  is byte for byte the same and its schema, rows and `user_version` are unchanged;
+- **no route writes to a database:** every changing route of the server's OpenAPI document is on a list with the
+  reason it never writes to a database (Studio's own files and state, opening or closing read-only connections,
+  read-only work); a new changing route fails the test until it is reviewed and listed.
+
+### History, favorites, scripts, format, completion (08 sections 2, 4.4, 4.10 and 7; STU-020)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-H1 | 09 STU-020: "E2E: Favorit anlegen/öffnen, Historie ohne Parameterwerte, Skript speichern/öffnen, Autocomplete aus Katalog" | `e2e/history-backend.spec.ts` (real server: favorite from the manager to the start page, the history without the parameter value in the page, the API and every file of the state folder, a script saved and opened, completion of columns from the catalog), `e2e/history.spec.ts` (keyboard, axe light/dark × en/de), `tests/security/test_history.py` (canary) | met |
+| UX-10-H2 | 08 section 2 "Historie¹" `/history`, 08 section 7 ⌘Y / Ctrl+H | `e2e/history.spec.ts`, `e2e/history-backend.spec.ts`, `e2e/ux-acceptance-1-0.spec.ts` (Ctrl+H in both languages) | met; 08 section 4.4 sketches the history as a tab beside the results, Studio has it as its own view opened from the editor (TD-060 notes the deviation) |
+| UX-10-H3 | 08 section 4.10 "Historie¹ (an/aus, Aufbewahrung, löschen)" | `src/views/connections/ConnectionsView.test.tsx` ("history settings (STU-020)": off, retention, delete after the confirmation), `e2e/history.spec.ts` (delete dialog with the safe focus), `tests/security/test_history.py` (retention) | met |
+| UX-10-H4 | 08 section 7 "Formatieren¹" ⌥⇧F / Alt+Shift+F | `e2e/history.spec.ts` (format, undo), `e2e/history-backend.spec.ts` (under the strict CSP), `e2e/ux-acceptance-1-0.spec.ts` | met |
+| UX-10-H5 | Drafts of the editor tabs in the state database (08 section 4.4, F-5) | `e2e/drafts-backend.spec.ts`, `tests/security/test_drafts.py` | met (PR #77) |
+| UX-10-H6 | 08 section 4.1 "zuletzt geöffnet" | `e2e/history-backend.spec.ts` (recent after Connect) | met for connections; the project chooser is B-1 |
+
+### Export (08 sections 4.4 and 5; STU-021)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-E1 | 09 STU-021: "Export 1 Mio. Zeilen ohne RAM-Spitze > 100 MB" | `tests/security/test_exports.py` (tracemalloc) | met |
+| UX-10-E2 | 08 section 5 "Export¹": CSV or JSON, the fetched rows or again up to a limit, a note when cut | `e2e/editor-backend.spec.ts` (TD-043: CSV and JSON through the real route, cut at a limit), `e2e/export.spec.ts` (keyboard, cancel, a broken stream, axe), `e2e/ux-acceptance-1-0.spec.ts` (the dialog in en/de, light/dark) | met in the SQL editor; from the data viewer open (TD-043) |
+
+### DDL, policies, row estimates (08 sections 2 and 4.3; STU-022)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-D1 | 09 STU-022: "DDL-Vergleich mit `pg_dump --schema-only` für Referenz-Apps" | `tests/security/test_definitions.py` (recorded and live `pg_dump`, both reference apps; PostgreSQL job) | met (TD-035 lists what Studio's DDL leaves out) |
+| UX-10-D2 | 08 section 4.3 "DDL¹" tab, policies, row estimate | `e2e/explorer-definitions.spec.ts` (focus, escaping, Copy DDL), `e2e/a11y-audit.spec.ts` (DDL, Policies, row count), `e2e/ux-acceptance-1-0.spec.ts` (the DDL of a real SQLite table in en/de) | met |
+
+### ER diagram (08 sections 2, 4.7, 9 and 10; STU-023)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-R1 | 09 STU-023: "150 Tabellen < 2 s Layout; SVG/PNG-Export" | `src/views/explorer/er/layout.perf.test.ts`, `e2e/er-diagram.spec.ts`, `e2e/backend.spec.ts` (STU-023, real server under the CSP) | met |
+| UX-10-R2 | 08 section 4.7: choice of tables, layout again, SVG, overview map, zoom, a click opens the table; the table alternative (section 9, mandatory) | `src/views/explorer/er/ErDiagram.test.tsx`, `e2e/er-diagram.spec.ts` (keyboard), `e2e/ux-acceptance-1-0.spec.ts` (axe light/dark × en/de with the table alternative) | met; the route `/c/:conn/schema`, column-to-column lines and cardinality marks are open (TD-052) |
+| UX-10-R3 | 08 section 10: PNG at 2× | `src/views/explorer/er/exportImage.test.ts` (`pngScale`) | met |
+
+### Migration status of the Levuvo formats (08 section 4.8; STU-024)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-M1 | 09 STU-024: "Fixtures der drei Repos (kopiert, keine Abhängigkeit) korrekt erkannt" | `tests/security/test_levuvo_migrations.py` with `tests/security/levuvo_fixtures` (PostgreSQL job) | met |
+| UX-10-M2 | 08 section 4.8 for every format: state, pending steps, database newer than the code, changed checksums; Studio never migrates | `src/views/migrations/MigrationsView.test.tsx`, `e2e/migrations.spec.ts` (axe light/dark × en/de), `e2e/ux-acceptance-1-0.spec.ts` (SQLite's `user_version` from the real server in en/de) | met; the Levuvo formats need PostgreSQL, which the e2e jobs do not run (TD-041), so the page shows them from the harness and the backend is checked in the PostgreSQL job |
+| UX-10-M3 | 08 section 4.8 "Befehl: alembic upgrade head [⧉]" | `src/views/migrations/MigrationsView.test.tsx` (TD-046 B-3), `e2e/migrations.spec.ts` | met (fixed in this PR) |
+
+### Diagnosis report and backup hints (08 section 4.9; STU-025)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-G1 | 09 STU-025: "Bericht ohne Secrets (Kanarientest)" | `tests/security/test_diagnosis_report.py` | met |
+| UX-10-G2 | 08 section 4.9 "⤓ Bericht¹" and the backup hints | `e2e/backend.spec.ts` (STU-014: both reports from the real route, without the file's name or path; the backup hint), `e2e/diagnostics.spec.ts` (keyboard download, refused report, axe), `e2e/ux-acceptance-1-0.spec.ts` (en/de, light/dark) | met; the report from the command line is open (TD-036) |
+
+### Writing stays locked (03 sections 5.2 and 9, 08 sections 3, 4.6 and 5; STU-054 negative test)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-W1 | No data editing in the page: no editable grid, no editing control, no write mode, no D-03, D-04, D-05 | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD), `e2e/editor.spec.ts` ("the page offers no write control"), `src/components/dialogs/StudioDialogs.tsx` (D-03 to D-05 and D-07 not built) | met |
+| UX-10-W2 | 08 section 5 "Schreibmodus entsperren¹": "PROD: Chip zeigt ⛔ mit Tooltip, kein Dialog"; 08 section 3: the unlock dialog only after G-S2 | `e2e/ux-acceptance-1-0.spec.ts` (the chip is text with its tooltip; a click opens nothing; DEV says "Read-only" and has no unlock either), `e2e/backend.spec.ts` ("Writing locked"), `e2e/a11y-audit.spec.ts` (tooltip) | met |
+| UX-10-W3 | 03 section 9 for 1.0: "Schreibfunktionen gesperrt: alle Schreibversuche über API 403 (Negativtest)" | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD, the file unchanged), `tests/security/test_every_route.py` (write mode refused), `tests/security/test_queries.py`, `tests/security/test_read_only.py` (STU-T-010 to STU-T-012: the database refuses a write that passes the check), `tests/security/test_exports.py` | met in substance: every write is refused and nothing changes. The status is 403 only for the write mode; a writing statement is 400 (`studio.statement_*`) and a changing method on a read route 405. The owner confirms that this meets "403" (TD-060) |
+| UX-10-W4 | 03 section 5.2: "Für `prod` ist Schreiben in 1.0 technisch nicht möglich (Backend verweigert, kein UI-Pfad)" | `e2e/ux-acceptance-1-0.spec.ts` (PROD), `e2e/connections.spec.ts`, `e2e/editor-backend.spec.ts` (TD-038: no PROD connection without D-02, on the server) | met |
+| UX-10-W5 | No changing API route writes to a database | `e2e/ux-acceptance-1-0.spec.ts` (the OpenAPI document against the reviewed list) | met |
+
+### Languages: de/en complete (08 section 0, E-S3; STU-054)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-L1 | en.json and de.json have the same keys, no empty value, the same placeholders and tags, every text translated that is not a name, German typography | `src/i18n/i18n.test.ts` | met |
+| UX-10-L2 | Every key the page names exists; every plural has both forms in both languages; no visible text is written into the markup outside the catalog | `src/i18n/coverage.test.ts` (new: the page source parsed with the TypeScript compiler; `t()`, `<Trans i18nKey>` and key tables; JSX text and `aria-label`, `title`, `placeholder`, `alt`, `label`; a short list of names that are the same in every language: SQL keywords, pragma names, `NULL`, the key badges) | met |
+| UX-10-L3 | A German page shows no English catalog text and no raw key, in every 1.0 view, against the real server | `e2e/ux-acceptance-1-0.spec.ts` (the German tour) | met |
+| UX-10-L4 | The diagnosis' findings in German | depends on TD-032 (German details and remedies of the `STU-DX-*` checks, localized in another lane); the titles, details and remedies of tabrion's own `TAB-*` checks come from tabrion in English and are marked `lang="en"` | open: **dependency TD-032**, whose decision says the `STU-DX-*` texts must be en/de before STU-054 is accepted; that tabrion's `TAB-*` texts stay English and labelled until tabrion has a catalog needs the owner's confirmation (TD-032, TD-060) |
+| UX-10-L5 | Problem texts of the server in both languages | the page shows its own en/de text per problem code (`src/views/connections/messages.ts`; `i18n.test.ts`) | met |
+
+### Settings and dialogs of 1.0 (08 sections 4.10 and 6)
+
+| ID | Criterion | Check | Result |
+|---|---|---|---|
+| UX-10-S1 | D-07 "EXPLAIN-Kostenwarnung prod¹" and the setting "EXPLAIN-Warnung prod an/aus¹" | not built; 03 section 5.3 calls the warning optional for 1.0 | open: the owner decides whether 1.0 needs it (TD-060) |
+| UX-10-S2 | "Schreibmodus-Ablauf¹" (write mode expiry) | belongs to STU-026 (G-S2) | not in 1.0 |
+| UX-10-S3 | Every flow green on Chromium, Firefox and WebKit | CI jobs `e2e`, `e2e (firefox)`, `e2e (webkit)`; every spec under `frontend/e2e` is required and may not skip (the CI step "Every suite ran and none was skipped" finds new specs by itself, so `ux-acceptance-1-0.spec.ts` needs no change in `.github/`) | met in Chromium locally; Firefox and WebKit by the CI run of the STU-054 pull request |
+| UX-10-S4 | QA-S1 for 1.0 (08 section 11) | manual, the owner | open (TD-060, B-5) |
+
+### Open for 1.0
+
+All in TD-060.
+
+- **Owner decisions:** whether 400/405 for refused writes meets 03 section 9's "403" (UX-10-W3; recommended: yes,
+  the substance is "every write refused, nothing written"); D-07 for 1.0 or later (UX-10-S1; recommended: later, as
+  03 section 5.3 calls it optional); tabrion's own finding texts in English in 1.0 (UX-10-L4); the B-1 deviation.
+- **Dependency:** TD-032 (German `STU-DX-*` details and remedies), in another lane.
+- **Open from the MVP:** B-4, B-5 (QA-S1, now for 1.0), B-7; TD-043 (export from the data viewer), TD-052 (the ER
+  route and line details), TD-036 (the report from the command line), TD-034 (status bar facts).
+- **Deviation noted:** the query history is its own view, not a tab beside the results (UX-10-H2).

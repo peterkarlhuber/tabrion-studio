@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-054 (UX acceptance of Studio 1.0 without the Data Editor): the 1.0 section of
+  `docs/architecture/ux-acceptance.md` maps every 1.0 criterion of the UX blueprint and of the backlog to its test or
+  manual check. New `e2e/ux-acceptance-1-0.spec.ts` against a real server: the 1.0 tour (DDL, ER diagram, a query with
+  a parameter, Format, the export dialog, the history, the migration status, a diagnosis) in English and German with
+  axe in light and dark, and no English catalog text on the German pages; negative tests that writing stays locked
+  (no data editing in the page, the access chip opens nothing, every write refused by the API on DEV and PROD with
+  the database file unchanged, every changing API route on a reviewed list). New `src/i18n/coverage.test.ts`: every
+  key the page names exists, both plural forms in both languages, no visible text written into the markup. Open
+  items in TD-060; the German diagnosis texts wait on TD-032.
+- The migration status shows the command that applies pending Alembic revisions (`alembic upgrade head`, or `heads`
+  with more than one head) with **Copy command**; Studio still runs no migration (TD-046 B-3).
 - TD-033 drafts part (security review F-5): the SQL editor's drafts (each tab's title, profile, text and script
   binding, and the open tab) are kept in Studio's state database `state.sqlite` (0600) behind the authenticated
   `GET`/`PUT /api/drafts` (session cookie and CSRF header; a tab with any field but the known ones is refused, so a
