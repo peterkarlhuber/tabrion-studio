@@ -22,7 +22,8 @@
       "frontend lint and typecheck",
       "frontend unit",
       "license and supply chain",
-      "security tests"
+      "security tests",
+      "T-2 path checks (windows-latest)"
     ]
   },
   "pull_request_path_filtered": {},

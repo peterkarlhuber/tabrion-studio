@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 import pytest
+import yaml  # type: ignore[import-untyped]
 
 pytestmark = pytest.mark.security
 
@@ -22,6 +23,27 @@ PUBLISHING = re.compile(
 
 def test_there_are_workflows() -> None:
     assert {p.name for p in WORKFLOWS} >= {"ci.yml", "ci-ok.yml", "nightly.yml"}
+
+
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
+def test_every_workflow_is_valid_yaml_with_jobs(workflow: Path) -> None:
+    """PR #76 review B-1/M-1: GitHub runs no job of a workflow that does not parse, and the text checks here and in
+    ci_ok.py --self-check do not notice. YAML reads the key ``on`` as ``True``."""
+    data = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+    assert isinstance(data, dict), workflow.name
+    assert data.get("on", data.get(True)), f"{workflow.name} has no triggers"
+    jobs = data.get("jobs")
+    assert isinstance(jobs, dict) and jobs, f"{workflow.name} has no jobs"
+    for job_id, job in jobs.items():
+        assert isinstance(job, dict) and ("steps" in job or "uses" in job), f"{workflow.name}: job {job_id}"
+
+
+def test_the_yaml_check_catches_an_unquoted_colon_in_a_step() -> None:
+    """The broken form of PR #76: a plain scalar with ': ' inside is a mapping, so the file does not parse."""
+    text = "jobs:\n  a:\n    steps:\n      - run: pip install --only-binary :all: -r x.txt\n"
+    with pytest.raises(yaml.YAMLError):
+        yaml.safe_load(text)
+    yaml.safe_load(text.replace(":all:", '":all:"'))
 
 
 @pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)

@@ -43,6 +43,10 @@ All notable changes to this project are documented here. The format follows
   `studio.script_permission_denied`, `studio.script_locked`, `studio.script_disk_full` or
   `studio.script_write_failed` instead of an internal error. Recording a history entry waits at most 250 ms for
   another instance's write lock; the checkpoint result is checked and retried; the 100 favorites count per project.
+- TD-008 (review C-2): the required CI job `T-2 path checks (windows-latest)` runs the T-2 path tests by name on
+  Windows (no `nt._getfinalpathname` for a UNC value from the project file) and fails when one of them is missing,
+  skipped or failed.
+
 - STU-017 docs (no tag, no release): the documentation checklist `docs/development/docs-checklist.md` maps every
   requirement of the package (installation, start, security model, troubleshooting, the feature pages of TD-023) to
   its page and check, and records the clean-install test: on Linux by hand from a locally built wheel (start without
@@ -516,6 +520,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Security review F-6 / TD-031: the Python runtime dependencies are installed from the hashed lock
+  `constraints/runtime-lock.txt` (exact versions, SHA-256 of every file, `pip --require-hashes --no-deps`, wheels
+  only) in every `ci.yml` job, in `scripts/smoke_wheel.py` and in the installation guide; Tabrion stays pinned by its full
+  commit SHA. `scripts/runtime_lock.py check` keeps the lock inside the unchanged `pyproject.toml` ranges and in step
+  with `build-constraints.txt`, `check-installed` fails a CI job whose runtime closure differs from the lock, and
+  `update` regenerates it (`docs/development/ci.md`, "Hashed runtime pins"). The CI wheel builds now take the build
+  backend from the hashed `build-constraints.txt`. `tests/security/test_workflows.py` now loads every workflow with PyYAML
+  (a dev dependency), because an unparsable `ci.yml` ran no job and no check noticed (review of PR #76, B-1/M-1).
+
+- STU-016: the independent security review was re-run on master `2a8a229` and accepted (F-1..F-4, F-8, F-9 fixed in
+  PR #65 and PR #66). `security-review-prep.md` and `docs/TODO.md` record this and the owner decisions still open
+  for G-S1 (F-5/TD-033, F-6/TD-031, F-7/T-16, TD-005, TD-002/TD-007, TD-003/TD-008, the PostgreSQL read-only model);
+  G-S1 is not passed, and the human review before a public release (STU-028, G-R) stays required. New TD-053.
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
   (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
   so numbers must be written in decimal) in the editor, the

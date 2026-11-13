@@ -1,5 +1,6 @@
 """The user guide (STU-017) has a table row for every command-line option, is in the site navigation, and every
-documented install command carries the Tabrion pin (the clean-install test found a README command without it)."""
+documented install command carries the Tabrion pin (the clean-install test found a README command without it) or is
+the hashed install of the runtime lock (TD-031, security review F-6)."""
 
 from __future__ import annotations
 
@@ -49,10 +50,11 @@ def test_every_guide_page_is_in_the_navigation() -> None:
 
 
 INSTALL_DOCS = ("README.md", "docs/guide/installation.md")
-PIN = "-c constraints/tabrion-integration.txt"
-
-
-PIN_WINDOWS = "-c constraints\\tabrion-integration.txt"
+#: The Tabrion pin, as a constraint (``-c``) or, with ``--no-deps``, as a requirement (``-r``).
+PINS = tuple(
+    f"{option} constraints{separator}tabrion-integration.txt" for option in ("-c", "-r") for separator in ("/", "\\")
+)
+LOCKS = ("-r constraints/runtime-lock.txt", "-r constraints\\runtime-lock.txt")
 #: The fence languages the install docs use; a new one must be added here, so that its block is checked too.
 FENCE_LANGUAGES = {"", "bash", "powershell"}
 
@@ -80,10 +82,24 @@ def test_the_install_docs_use_only_known_fence_languages() -> None:
 
 def test_every_install_command_carries_the_tabrion_pin() -> None:
     commands = [command for name in INSTALL_DOCS for command in _install_commands((ROOT / name).read_text("utf-8"))]
+    studio = [command for command in commands if not any(lock in command for lock in LOCKS)]
     # README, the guide's commit install (bash and PowerShell), the wheel install (both) and the update were read.
-    assert len(commands) >= 6
-    assert [command for command in commands if PIN not in command and PIN_WINDOWS not in command] == []
+    assert len(studio) >= 6
+    assert [command for command in studio if not any(pin in command for pin in PINS)] == []
     assert (ROOT / "constraints" / "tabrion-integration.txt").is_file()
+
+
+def test_every_studio_install_without_dependencies_follows_the_hashed_lock() -> None:
+    """TD-031: the dependencies come from the lock with hashes required; Studio itself then with ``--no-deps``."""
+    for name in INSTALL_DOCS:
+        commands = _install_commands((ROOT / name).read_text("utf-8"))
+        locks = [i for i, command in enumerate(commands) if any(lock in command for lock in LOCKS)]
+        assert locks, name
+        for i in locks:
+            assert "--require-hashes --no-deps --only-binary :all:" in commands[i], commands[i]
+            # The next install is Studio (or its wheel) with the Tabrion pin, without resolving dependencies.
+            assert "--no-deps" in commands[i + 1] and any(pin in commands[i + 1] for pin in PINS), commands[i + 1]
+    assert (ROOT / "constraints" / "runtime-lock.txt").is_file()
 
 
 def test_the_docs_checklist_is_in_the_navigation() -> None:
