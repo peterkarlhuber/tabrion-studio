@@ -4,6 +4,7 @@ from collections.abc import Iterator
 import gc
 import importlib
 import importlib.util
+import logging
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,35 @@ def collect_garbage_after_each_test() -> Iterator[None]:
     during some later test's setup (the ResourceWarning flake of stu-013-review.md)."""
     yield
     gc.collect()
+
+
+#: The loggers whose state a test may change through Uvicorn or ``configure_logging``: those of
+#: ``tabrion_studio.logs.OWNED_LOGGERS`` (repeated here: the packaging tests cannot import Studio).
+_GUARDED_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi", "asyncio")
+
+
+@pytest.fixture(autouse=True)
+def restore_logging_state() -> Iterator[None]:
+    """Every test leaves the logging state as it found it (TD-055).
+
+    A ``uvicorn.Config`` built with its default ``log_config`` runs ``logging.config.dictConfig``: the ``uvicorn``
+    logger gets its own stderr handler and ``propagate=False`` for the rest of the process, so that a later test's
+    Uvicorn records never reach the handlers its ``configure_logging`` put on the root logger. The root logger's
+    handlers are left alone (pytest's own capture handlers come and go there); its level is restored.
+    """
+    loggers = [logging.getLogger(name) for name in _GUARDED_LOGGERS]
+    saved = [(lg, list(lg.handlers), list(lg.filters), lg.level, lg.propagate, lg.disabled) for lg in loggers]
+    root_level = logging.root.level
+    disabled = logging.root.manager.disable
+    yield
+    logging.disable(disabled)
+    logging.root.setLevel(root_level)
+    for logger, handlers, filters, level, propagate, was_disabled in saved:
+        logger.handlers[:] = handlers
+        logger.filters[:] = filters
+        logger.setLevel(level)
+        logger.propagate = propagate
+        logger.disabled = was_disabled
 
 
 @pytest.fixture

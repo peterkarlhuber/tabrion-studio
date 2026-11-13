@@ -72,6 +72,8 @@
 | TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | Done (PR #66; independent re-review accepted at `2a8a229`) |
 | TD-052 STU-023 ER diagram: what it leaves for later (the route `/c/:conn/schema` with the workspace, a diagram across schemas, column-to-column lines and cardinality marks, moving boxes, schemas of more than 1000 tables, the diagram in the reference-app E2E, Firefox and WebKit runs of the new specs only in CI) | P3 | Open (STU-023 PR) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
+| TD-055 Test order: the canary `test_a_failing_lifespan_of_any_app_logs_no_traceback_text` failed after `tests/unit/test_server.py`, whose default `uvicorn.Config` left Uvicorn's own logging config (stderr handler, `propagate=False`) in the process; Studio's redaction now takes over Uvicorn's and asyncio's loggers, and every test restores their state; left: records of child loggers after a later `dictConfig` (not hit by `serve()`) | P2 | Done (PR #78) |
+| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Open |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
@@ -363,7 +365,7 @@ merge after OA-004.
 | WP | Title | Priority | Depends on | Note |
 |---|---|---|---|---|
 | TABRION STU-003 | Access protection (launch token, cookie, Host/Origin, CSP, `no-store`) | P0 | STU-002 | Done (PR #4, review accepted) |
-| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | Done (PR #7, OA-007 accepted; C-1 done in PR #9): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001) |
+| TABRION STU-004 | Problem JSON and logging | P1 | STU-001, TAB-038 | Done (PR #7, OA-007 accepted; C-1 done in PR #9): Problem JSON for every error, redacting rotating logs, request log without query strings; canary tests STU-T-008/-009. No tabrion dependency (RC-8): database kinds mirrored until STU-009 (TS-001). TD-055 (PR #78): redaction takes over Uvicorn's and asyncio's loggers |
 | TABRION STU-005 | App shell, design system, i18n de/en | P1 | STU-001 | Done (PR #5, review accepted): shell, `--tb-` tokens, de/en, logo; axe without serious/critical (jsdom in `frontend unit`, Chromium with contrast in `e2e`) and the token contrast test light/dark |
 | TABRION QA-9 | E2E framework (Playwright + axe) | P1 | STU-001 | Acceptance met in the QA-9 PR: smoke and axe green, and the network log shows 0 foreign hosts (SQ-08; `e2e/network.spec.ts` over every harness view, dialog and notice, and the real server in `backend.spec.ts`). QA-9 is closed with this PR (`stu-pr12-14-review.md`: accepted with condition C-1, the merge of master with CI green). The listener sits on the browser context (review L-1). The platforms e2e smoke (05 §3.5, `platforms.yml`), Firefox and WebKit belong to STU-050 (doc 07, doc 09); both change `.github/` and need a workflow-change review (TD-007). Review I-1 (visit the wizard steps, the settings forms after a change and the delete dialog too) is open |
 | TABRION STU-006 | Configuration, profiles, project trust | P1 | STU-004 | Done (PR #8, OA-008 accepted; C-1, C-2 done in PR #9): TOML schema v1, project trust (STU-T-016/-017), D-01 wired and meeting U-1. Reads only; writing profiles and settings comes with STU-008, `log_sql` takes effect with STU-011 |
@@ -1283,6 +1285,52 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   switch starts no transition…" (motion on, both directions: no `transitionrun`, no serious axe violation; it fails
   without the fix) and a Vitest of the attribute sequence. The other axe checks after a theme switch run in the
   harness under reduced motion, and `editor-backend.spec.ts` is the only real-server spec that switches the theme.
+
+### TD-055 · Test order: Uvicorn's logging config leaked from `test_server.py` into the lifespan canary
+
+- **Priority:** P2 Medium · **Status:** Done (PR #78) · **Refs:** TABRION STU-004 (T-05, STU-T-009),
+  `tests/security/test_canary.py`, `docs/architecture/errors-and-logging.md` ("Logging")
+- **What:** `test_a_failing_lifespan_of_any_app_logs_no_traceback_text` passed alone and in CI's order but failed
+  after `tests/unit` (1 failed / 528 passed on `36702c6`). Cause: `test_info_file_is_withdrawn_before_the_shutdown`
+  in `tests/unit/test_server.py` built `uvicorn.Config(app=...)` with Uvicorn's default `log_config`, which runs
+  `logging.config.dictConfig(uvicorn.config.LOGGING_CONFIG)`: the `uvicorn` logger got its own stderr handler and
+  `propagate=False` (and `uvicorn.access` a stdout handler) for the rest of the process. Later Uvicorn records never
+  reached the redacting handlers that `configure_logging` puts on the root logger, so the canary found no
+  `[traceback text redacted]` in Studio's log, and Uvicorn's own handler printed the lifespan traceback with the
+  canary to stderr.
+- **Production:** the `tabrion-studio` command was not affected (`serve()` builds its `uvicorn.Config` with
+  `log_config=None` and nothing else in the process configures logging), but its redaction depended on that: any
+  `uvicorn.Config` with the default `log_config`, or a `dictConfig` of a program that embeds Studio, before or after
+  `configure_logging`, would have let Uvicorn print a failed lifespan's traceback text unredacted.
+- **Done:** `configure_logging` takes over `logs.OWNED_LOGGERS` (Uvicorn's and asyncio's loggers): removes their own
+  handlers, turns propagation on and puts the redaction filters on the loggers themselves, so a handler added later
+  only sees redacted records; `LogSetup.close()` restores the earlier state. New canaries
+  `test_uvicorns_own_logging_config_from_earlier_does_not_bypass_redaction` and `..._from_later_...` fail without
+  the change. Test isolation: the autouse fixture `restore_logging_state` in `tests/conftest.py` restores those
+  loggers (handlers, filters, level, propagation, disabled), the root level and `logging.disable` after every test;
+  `test_server.py` builds its `uvicorn.Config` with `log_config=None` like `serve()`. The canary passes after
+  `tests/unit/test_server.py` and after all of `tests/unit`, and before them; the canary itself is unchanged.
+- **Limit (PR #78 review F-1, F-8):** a logger filter runs only for records created at that logger. After a later
+  `dictConfig`, a record of a child logger below an owned name (`uvicorn.error.x`, `uvicorn.other`) reaches
+  Uvicorn's re-added handler unredacted (pinned by the strict xfail
+  `test_a_child_loggers_record_after_a_later_dictconfig_is_not_redacted_by_uvicorns_handler`), and so does a handler
+  attached later to a non-owned logger with `propagate=False`. In that scenario `uvicorn` has `propagate=False` again,
+  so Uvicorn's records (redacted) no longer reach Studio's log file. Studio's runtime does not hit any of this today:
+  `serve()` runs no `dictConfig`, Uvicorn 0.54 logs only at `uvicorn.error`, `uvicorn.access` and `uvicorn.asgi`, and
+  asyncio only at `asyncio`. Before TD-055 every `uvicorn.*` record leaked in that scenario. Hardening (a record
+  factory, or wrapping the owned loggers' handlers) would be a follow-up TD.
+
+### TD-056 · tabrion's `DbErrorRedactionFilter` keeps `DETAIL` values in the middle of a line
+
+- **Priority:** P2 Medium · **Status:** Open · **Owner:** tabrion (`tabrion.errors.DbErrorRedactionFilter`) ·
+  **Refs:** PR #78 review F-9, TS-001, STU-009, `docs/architecture/errors-and-logging.md`
+- **What:** the filter removes `DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts only where they start a line.
+  A one-line message such as `... DETAIL: Key (email)=(...)` that carries no database exception object keeps the
+  values; with a line break before `DETAIL:` they are removed. Pre-existing (the same on `e93c4f3`), not part of
+  TD-055. Studio's own `RedactionFilter` still never formats an exception's message, so this concerns text that a
+  caller puts into the message itself.
+- **Next step:** in tabrion, also strip these parts in the middle of a line (with a test); Studio then takes the new
+  tabrion pin. Not fixed in Studio.
 
 ### TD-053 · SQLite: a denied function surfaces as `db.unknown`, not `db.permission`
 
