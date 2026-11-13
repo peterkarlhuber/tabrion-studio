@@ -233,7 +233,10 @@ this way for PROD and reads the catalog in full only after the user's click.
   Ctrl+S, and D-06's Save) writes a tab back to its script with the digest it read, or asks for a path for a new one
   (checked on the page like on the server); `studio.script_stale` and `studio.script_exists` ask before
   `overwrite: true`; "Download instead" keeps STU-012's download. A tab remembers its script path and digest in its
-  draft. CodeMirror works with `\n`: a script read with CRLF line endings is shown with `\n` and saved with CRLF again.
+  draft. CodeMirror works with `\n`: a script whose lines all end in CRLF is shown with `\n` and saved with CRLF again.
+  A script with mixed line endings (or a lone CR) is edited with `\n` as the only line separator, so every CR stays in
+  the text (shown as a marked character) and the script is saved byte for byte. The tab title shows the script's name
+  through `visible()`, like the dialogs. A history entry that was cut opens with a notice that says so.
 - **Format** (`editor/formatSql.ts`): sql-formatter (MIT, named in 03 section 3.2), loaded on first use, in the
   PostgreSQL or SQLite language, upper-case keywords, `:name` parameters kept. The selection or the whole text is
   replaced in one undoable change; a text the formatter cannot parse stays unchanged.

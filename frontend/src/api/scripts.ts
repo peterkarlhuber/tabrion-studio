@@ -18,6 +18,8 @@ export interface ScriptItem {
 export interface ScriptList {
   scripts: ScriptItem[];
   truncated: boolean;
+  /** Links and reparse-point folders (OneDrive placeholders) the listing left out. */
+  skippedLinks: number;
 }
 
 export interface ScriptFile {
@@ -38,6 +40,10 @@ export function parseScriptList(body: unknown): ScriptList | null {
         : [];
     }),
     truncated: doc.truncated === true,
+    skippedLinks:
+      typeof doc.skipped_links === 'number' && Number.isInteger(doc.skipped_links)
+        ? Math.max(0, doc.skipped_links)
+        : 0,
   };
 }
 
@@ -81,14 +87,26 @@ export function scriptTitle(path: string): string {
   return name.replace(/\.sql$/i, '') || name;
 }
 
-/** Whether `path` has the form the server accepts (checked again there): relative names ending in `.sql`. */
+/** Windows device names, also with an extension (`nul.sql`); refused on every system (the server does the same). */
+const DEVICE =
+  /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9\u00b9\u00b2\u00b3]|LPT[0-9\u00b9\u00b2\u00b3])$/i;
+
+/** Whether one name of a script path is a plain name (the server's rules, `services/scripts.py`). */
+function plainName(part: string): boolean {
+  if (part === '' || part.startsWith('.') || part.endsWith('.') || part !== part.trim())
+    return false;
+  // An 8.3 short name (GIT~1), a format character (bidi, zero-width).
+  if (/~[0-9]/.test(part) || /\p{Cf}/u.test(part)) return false;
+  return !DEVICE.test((part.split('.')[0] ?? '').replace(/ +$/, ''));
+}
+
+/** Whether `path` has the form the server accepts (checked again there): relative plain names ending in `.sql`. */
 export function validScriptPath(path: string): boolean {
   if (path.length === 0 || path.length > 512 || path.startsWith('/')) return false;
   // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001f\u007f\\:*?"<>|]/.test(path)) return false;
+  if (/[\u0000-\u001f\u007f-\u009f\u2028\u2029\\:*?"<>|]/.test(path)) return false;
   const parts = path.split('/');
-  if (parts.some((part) => part === '' || part.startsWith('.') || part !== part.trim()))
-    return false;
+  if (!parts.every(plainName)) return false;
   const last = parts[parts.length - 1] ?? '';
   return last.length > 4 && last.toLowerCase().endsWith('.sql');
 }

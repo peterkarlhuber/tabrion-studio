@@ -141,6 +141,7 @@ export function HistoryView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       profileId: names.has(entry.profileId) ? entry.profileId : '',
       title: t('history.tabTitle'),
       sql: entry.sql,
+      ...(entry.sqlTruncated ? { notice: t('history.truncatedTab') } : {}),
     });
     navigate('/sql');
   };

@@ -253,6 +253,36 @@ test('a script saved into the project folder opens again', async ({ page }) => {
   await expectNoViolations(page, violations);
 });
 
+test('a script with mixed line endings is saved byte for byte; Format runs under the strict CSP', async ({
+  page,
+}) => {
+  const mixed = 'select id\r\nfrom parts\nwhere id = 1;\r\n';
+  writeFileSync(join(root, 'project', 'sql', 'mixed.sql'), mixed);
+  const violations = await signIn(page);
+  await openEditor(page);
+  await page.getByTestId('editor-open').click();
+  await page
+    .getByRole('dialog', { name: 'Open script' })
+    .getByRole('button', { name: 'sql/mixed.sql' })
+    .click();
+  await expect(page.getByTestId('editor-tab').last()).toContainText('mixed');
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+End');
+  await page.keyboard.insertText('-- checked');
+  await page.keyboard.press('Control+s');
+  await expect(page.getByTestId('editor-notice')).toHaveText('Saved to sql/mixed.sql.');
+  expect(readFileSync(join(root, 'project', 'sql', 'mixed.sql'), 'utf-8')).toBe(
+    `${mixed}-- checked`,
+  );
+  // Format loads sql-formatter on demand; the strict CSP allows it (no eval).
+  await page.getByTestId('editor-new-tab').click();
+  await page.keyboard.insertText('select id,material from parts where id=:id');
+  await page.keyboard.press('Alt+Shift+F');
+  await expect(page.getByTestId('editor-notice')).toContainText('Formatted.');
+  await expect(page.locator('.cm-line').first()).toHaveText('SELECT');
+  await expectNoViolations(page, violations);
+});
+
 test('completion: the columns of a table from the catalog of the open connection', async ({
   page,
 }) => {

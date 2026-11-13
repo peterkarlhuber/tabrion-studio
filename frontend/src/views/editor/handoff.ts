@@ -10,6 +10,8 @@ export interface Handoff {
   profileId: string;
   title: string;
   sql: string;
+  /** Said in the editor's notice when the tab opens (a statement the history kept only in part). */
+  notice?: string;
 }
 
 let pending: Handoff | null = null;

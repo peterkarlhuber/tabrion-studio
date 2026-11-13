@@ -122,6 +122,11 @@ export function OpenScriptDialog({
       {list !== null && list !== 'loading' && (list.truncated || matching.length > shown.length) ? (
         <p className={connectionStyles.hint}>{t('editor.scripts.more')}</p>
       ) : null}
+      {list !== null && list !== 'loading' && list.skippedLinks > 0 ? (
+        <p className={connectionStyles.hint} data-testid="script-skipped-links">
+          {t('editor.scripts.skippedLinks', { count: list.skippedLinks })}
+        </p>
+      ) : null}
     </Dialog>
   );
 }

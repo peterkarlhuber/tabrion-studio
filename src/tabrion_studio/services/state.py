@@ -45,6 +45,8 @@ STATE_FILE = "state.sqlite"
 SCHEMA_VERSION = 2
 #: How long a write waits for another instance's write lock.
 BUSY_TIMEOUT_MS = 5_000
+#: The pause between two tries of a write that waits briefly (:meth:`StateStore.write` with ``busy_timeout_ms``).
+BUSY_PAUSE_S = 0.025
 CHECKPOINT_ATTEMPTS = 3
 CHECKPOINT_PAUSE_S = 0.05
 
@@ -101,6 +103,14 @@ class StateUnavailable(Exception):
         super().__init__(self.code)
 
 
+def _busy(exc: sqlite3.OperationalError) -> bool:
+    """Whether SQLite refused because another connection holds the lock (``SQLITE_BUSY``, ``SQLITE_LOCKED``)."""
+    code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(code, int):
+        return code & 0xFF in (5, 6)
+    return "locked" in str(exc) or "busy" in str(exc)
+
+
 def scope_of(profile_id: str, project_key: str) -> str | None:
     """The scope of a profile's rows: ``""`` for a user profile, the project key for a project's; None otherwise."""
     if profile_id.startswith("user:"):
@@ -148,18 +158,28 @@ class StateStore:
         """Run ``call`` in one write transaction (``BEGIN IMMEDIATE``; rolled back on any error).
 
         ``busy_timeout_ms`` waits less than the usual :data:`BUSY_TIMEOUT_MS` for another instance's write lock (a
-        query's history entry must not hold up the query's end)."""
+        query's history entry must not hold up the query's end). That wait is Studio's own loop with short pauses,
+        not SQLite's busy handler: a SQLite built without ``usleep`` (as on some macOS builds) sleeps whole seconds
+        there."""
         with self._lock:
             connection = self._get()
             try:
-                if busy_timeout_ms is not None:
-                    connection.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
-                try:
+                if busy_timeout_ms is None:
                     with write_transaction(connection):
                         return call(connection)
+                deadline = time.monotonic() + busy_timeout_ms / 1000
+                connection.execute("PRAGMA busy_timeout = 0")
+                try:
+                    while True:
+                        try:
+                            with write_transaction(connection):
+                                return call(connection)
+                        except sqlite3.OperationalError as exc:
+                            if not _busy(exc) or time.monotonic() + BUSY_PAUSE_S > deadline:
+                                raise
+                        time.sleep(BUSY_PAUSE_S)
                 finally:
-                    if busy_timeout_ms is not None:
-                        connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
+                    connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
             except sqlite3.Error:
                 logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
                 raise StateUnavailable from None
