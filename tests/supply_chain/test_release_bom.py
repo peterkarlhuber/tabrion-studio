@@ -6,7 +6,9 @@ which a unit test cannot pin), so every case runs on the real lockfiles without 
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Callable
+import importlib.metadata
 import json
 import os
 from pathlib import Path
@@ -29,6 +31,7 @@ sys.path.remove(str(SCRIPTS))
 pytestmark = pytest.mark.security
 
 Record = dict[str, object]
+TABRION_COMMIT = "d5821faa8742dea012abda3b663549c038d76543"
 
 
 def lock_records(*, with_markers: bool = True) -> list[Record]:
@@ -45,7 +48,15 @@ def lock_records(*, with_markers: bool = True) -> list[Record]:
                 "license_expression": "LGPL-3.0-only" if lgpl else "MIT",
             }
         )
-    records.append({"name": "tabrion", "version": "0.1.0", "license_expression": "MIT"})
+    records.append(
+        {
+            "name": "tabrion",
+            "version": "0.1.0",
+            "license_expression": "MIT",
+            "vcs_url": "https://github.com/peterkarlhuber/tabrion",
+            "vcs_commit": TABRION_COMMIT,
+        }
+    )
     return records
 
 
@@ -220,3 +231,119 @@ def test_a_malformed_lock_is_refused() -> None:
         rb.read_lock("fastapi>=0.1\n")
     with pytest.raises(ValueError, match="git pin"):
         rb.read_git_pins("tabrion @ git+https://github.com/peterkarlhuber/tabrion@master\n")
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        (lambda r: r.update(vcs_commit="546d254a27df9f6b539d57c307ad3022d0ee3a4a"), "the commit 546d254a27df"),
+        (lambda r: r.pop("vcs_commit"), "the commit (none)"),
+        (lambda r: r.update(vcs_url="https://github.com/someone-else/tabrion"), f"the commit {TABRION_COMMIT}"),
+    ],
+)
+def test_the_tabrion_record_must_be_of_the_pinned_commit(change: Callable[[Record], None], expected: str) -> None:
+    """Review M-2: a record of another Tabrion build must not lend its version and license to the pinned commit."""
+    records = lock_records()
+    change(next(r for r in records if r["name"] == "tabrion"))
+    bom, _, failures = build(records)
+    assert len(failures) == 1, failures
+    assert failures[0].startswith(f"python tabrion {TABRION_COMMIT}: (none): no license record of the pinned commit")
+    assert expected in failures[0]
+    tabrion = next(c for c in components(bom).values() if c["name"] == "tabrion")
+    assert prop(tabrion, "tabrion-studio:license-policy") == ["DISALLOWED"]
+
+
+def test_a_stale_record_of_a_marker_pin_fails_unless_another_pin_explains_it() -> None:
+    """Review L-1: a record exists, so the marker applied there; another version than the lock's is a failure."""
+    records = lock_records()
+    marked = next(c for c in rb.read_lock(LOCK.read_text(encoding="utf-8")) if c.marker)
+    next(r for r in records if r["name"] == marked.name)["version"] = "0.0.1"
+    _, _, failures = build(records)
+    assert len(failures) == 1 and failures[0].startswith(f"python {marked.name} {marked.version}:"), failures
+
+    # One name pinned at two versions under two markers: the record of one pin leaves the other "not verified".
+    hashes = " --hash=sha256:" + "0" * 64
+    lock = f"demo==1.0 ; python_version < '3.12'{hashes}\ndemo==2.0 ; python_version >= '3.12'{hashes}\n"
+    npm = {"lockfileVersion": 3, "packages": {"": {"name": "x"}}}
+    record: Record = {"name": "demo", "version": "2.0", "license_expression": "MIT"}
+    _, report, failures = rb.build([[record]], lock, "", npm, "1.0.0", False)
+    assert failures == [] and "| demo | 1.0 | (none) | not verified |" in report
+    _, _, strict = rb.build([[record]], lock, "", npm, "1.0.0", True)
+    assert [f.split(":")[0] for f in strict] == ["python demo 1.0"]
+
+
+def _npm(packages: dict[str, object]) -> dict[str, object]:
+    return {"lockfileVersion": 3, "packages": {"": {"name": "x"}, **packages}}
+
+
+def test_npm_duplicates_multi_hash_integrity_and_workspaces() -> None:
+    """Review L-4: one component per name and version, every SRI hash, a workspace member by its own name."""
+    sha512 = base64.b64encode(bytes(range(64))).decode()
+    sha1 = base64.b64encode(bytes(20)).decode()
+    lock = _npm(
+        {
+            "node_modules/a": {"version": "1.0.0", "license": "MIT", "integrity": f"sha512-{sha512} sha1-{sha1}"},
+            "node_modules/b/node_modules/a": {"version": "1.0.0", "license": "MIT"},
+            "node_modules/c/node_modules/a": {"version": "1.0.0", "license": "GPL-3.0-only"},
+            "packages/ui": {"name": "@demo/ui", "version": "0.1.0", "license": "MIT"},
+        }
+    )
+    listed, dev = rb.npm_components(lock)
+    assert dev == 0
+    by_name = {c.name: c for c in listed}
+    assert sorted(by_name) == ["@demo/ui", "a"]
+    a = by_name["a"]
+    assert a.status == rb.DISALLOWED and a.license == "GPL-3.0-only"
+    assert [v for n, v in a.properties if n == "tabrion-studio:npm-path"] == [
+        "node_modules/a",
+        "node_modules/b/node_modules/a",
+        "node_modules/c/node_modules/a",
+    ]
+    assert a.hashes == [("SHA-1", "00" * 20), ("SHA-512", bytes(range(64)).hex())]
+    assert by_name["@demo/ui"].purl == "pkg:npm/%40demo/ui@0.1.0"
+    bom = rb.sbom("1.0.0", listed)
+    refs = [c["bom-ref"] for c in bom["components"]]
+    assert len(refs) == len(set(refs))
+
+    for bad in ("sha512-not*base64", f"sha512-{sha1}"):
+        with pytest.raises(ValueError, match="integrity"):
+            rb.npm_components(_npm({"node_modules/a": {"version": "1", "license": "MIT", "integrity": bad}}))
+
+
+def test_malformed_records_and_an_unwritable_folder_exit_2(tmp_path: Path) -> None:
+    """Review L-5: exit code 1 means "policy failed"; bad input and output problems are 2, without a traceback."""
+    env = {k: v for k, v in os.environ.items() if k != "SOURCE_DATE_EPOCH"}
+    for content in ('["a"]', '{"name": "x"}', '[{"name": "x"}]', "not json"):
+        bad = tmp_path / "bad.json"
+        bad.write_text(content, encoding="utf-8")
+        result = run("--licenses", str(bad), "--out", str(tmp_path / "out"), env=env)
+        assert result.returncode == 2 and "Traceback" not in result.stderr, (content, result.stderr)
+        assert result.stderr.startswith("release_bom: ")
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps(lock_records()), encoding="utf-8")
+    blocker = tmp_path / "a-file"
+    blocker.write_text("", encoding="utf-8")
+    result = run("--licenses", str(good), "--out", str(blocker / "out"), env=env)
+    assert result.returncode == 2 and "Traceback" not in result.stderr, result.stderr
+
+
+def test_the_collector_records_the_commit_of_a_git_install(tmp_path: Path) -> None:
+    """Review M-2: collect_licenses.py writes ``vcs_url`` and ``vcs_commit`` from PEP 610, never a file URL."""
+    sys.path.insert(0, str(SCRIPTS))
+    import collect_licenses as cl
+
+    sys.path.remove(str(SCRIPTS))
+
+    def dist(name: str, direct_url: object) -> importlib.metadata.Distribution:
+        info = tmp_path / f"{name}-1.0.dist-info"
+        info.mkdir()
+        (info / "METADATA").write_text(f"Metadata-Version: 2.4\nName: {name}\nVersion: 1.0\n", encoding="utf-8")
+        if direct_url is not None:
+            (info / "direct_url.json").write_text(json.dumps(direct_url), encoding="utf-8")
+        return importlib.metadata.PathDistribution(info)
+
+    git = {"url": "https://github.com/o/r", "vcs_info": {"vcs": "git", "commit_id": TABRION_COMMIT}}
+    assert cl._vcs(dist("git", git)) == {"vcs_url": "https://github.com/o/r", "vcs_commit": TABRION_COMMIT}
+    assert cl._vcs(dist("wheel", {"url": "file:///home/me/x.whl", "archive_info": {}})) == {}
+    assert cl._vcs(dist("local", {"url": "file:///home/me/repo", "vcs_info": {"commit_id": "a" * 40}})) == {}
+    assert cl._vcs(dist("plain", None)) == {}
