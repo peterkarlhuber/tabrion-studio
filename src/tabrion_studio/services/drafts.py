@@ -26,6 +26,8 @@ authenticated API, one document per project (``scope`` is the project key), as b
 
 * **Deleted text.** ``secure_delete`` overwrites freed pages; after a save or read that removed text (a closed tab, a
   tab left out by the caps, an expired document) and after a purge, the write-ahead log is checkpointed (TRUNCATE).
+  The checkpoint never waits for another connection; one that a reader kept from finishing is tried again on every
+  later read and save of the drafts (and by the history), so it does not depend on the history being on.
 
 No log record holds a draft's text, a title or a script path.
 """
@@ -162,6 +164,8 @@ class Drafts:
             return 0
         if deleted:
             self.store.checkpoint()
+        else:
+            self.store.retry_checkpoint()
         return deleted
 
     def read(self) -> dict[str, Any]:
@@ -183,6 +187,10 @@ class Drafts:
             # The deleted text must not stay in the write-ahead log (review finding 2).
             self.store.checkpoint()
             row = None
+        else:
+            # A checkpoint an earlier delete could not finish (a reader kept the log in use) is tried again here,
+            # whether or not the history is on (A-1 of the G-S1 delta audit); it never waits either.
+            self.store.retry_checkpoint()
         if row is None:
             return {"drafts": None}
         tabs = _stored(row[0])
@@ -252,4 +260,7 @@ class Drafts:
             # secure_delete overwrites the freed pages of the file; the checkpoint empties the write-ahead log, which
             # would otherwise keep the old document until the next checkpoint (review finding 2).
             self.store.checkpoint()
+        else:
+            # A pending checkpoint is tried again on every drafts access, not only by the history (A-1).
+            self.store.retry_checkpoint()
         return {"tabs": count}

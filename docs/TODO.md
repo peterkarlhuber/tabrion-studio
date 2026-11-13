@@ -31,13 +31,13 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open) |
-| TD-003 Windows: DACL check inside the profile (review R-6) | P3 | Open |
+| TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
+| TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
-| TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented) |
+| TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented; confirmed in the owner's G-S1 decisions of 2026-11-13, decision 5) |
 | TD-006 who may set the label `workflow-change-reviewed` (review S-3) | P3 | Open |
-| TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; STU-050) |
-| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Done in the f6-lock PR (job `T-2 path checks (windows-latest)`, required); needs the workflow-change review and its label before merge |
+| TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; STU-050); the Firefox and WebKit launch check is a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
+| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Done (PR #76: job `T-2 path checks (windows-latest)`, required; workflow-change review accepted, `pr76-f6-lock-workflow-review.md`; G-S1 decision 7) |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR #42) | P2 | Open |
@@ -59,9 +59,9 @@
 | TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR #54), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI: its SQLite part runs and is required since the CI e2e-list PR, its PostgreSQL part not yet) | P2 | Open (STU-010 page PR #43) |
 | TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced; the viewer suites are required in CI since the CI e2e-list PR) | P2 | Open (STU-013 page PR #52) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
-| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8); install and test against a hashed runtime lock (security review F-6) | P2 | Done in the f6-lock PR (`constraints/runtime-lock.txt`, `scripts/runtime_lock.py`; every CI install and build uses the hashed pins); needs the workflow-change review and its label before merge; open: refreshing the lock (by hand, about monthly), a non-required scheduled job that tests the newest versions inside the ranges (review of PR #76), the lock install on macOS and Windows only with Python 3.13 (review L-7, accepted) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8); install and test against a hashed runtime lock (security review F-6) | P2 | Done (PR #76: `constraints/runtime-lock.txt`, `scripts/runtime_lock.py`; every CI install and build uses the hashed pins; workflow-change review accepted); open: refreshing the lock (by hand, about monthly), the nightly non-blocking job without the lock that tests the newest versions inside the ranges (G-S1 decision 2; its own PR with a workflow-change review), the lock install on macOS and Windows only with Python 3.13 (review L-7, accepted) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
-| TD-033 STU-012 SQL editor MVP: what it leaves for later (the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream; drafts in the state database done) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done; drafts part done in the F-5 drafts PR, review F-5) |
+| TD-033 STU-012 SQL editor MVP: what it leaves for later (the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream; drafts in the state database done) | P2 | Open, usability only (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done; drafts part done in PR #77, review F-5; G-S1 decision 1: the rest is ordinary P2 usability work, no security item) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
@@ -69,16 +69,17 @@
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Done (decided for 1.0 in the STU-054 PR: B-2, B-3, B-6 done; B-1, B-4, B-5, B-7 moved to TD-060) |
-| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | Done (PR #66; independent re-review accepted at `2a8a229`) |
-| TD-054 STU-016 review F-7 (T-16): the code-trust digest covers the project modules under the `prepend_sys_path` folders (versioned digest, earlier trust renewed; caps, links and Windows paths fail closed; the worker runs only hashed modules, also those reached through Studio's environment, review C-1; the trust dialog lists them) | P2 | Done (PR #75; review accepted with condition C-1, delta review with condition C-2; C-1, C-2 and N-1 fixed; re-check accepted at `d33f89d`) |
+| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | Done (PR #66; independent re-review accepted at `2a8a229`); G-S1 decisions 8 (side-effect functions the database defines: accepted residual risk, the role is the boundary), 9 (hexadecimal and underscore number forms stay refused) and 10 (a report to the PostgreSQL security team only as a confidential draft for the owner) |
+| TD-054 STU-016 review F-7 (T-16): the code-trust digest covers the project modules under the `prepend_sys_path` folders (versioned digest, earlier trust renewed; caps, links and Windows paths fail closed; the worker runs only hashed modules, also those reached through Studio's environment, review C-1; the trust dialog lists them) | P2 | Done (PR #75; review accepted with condition C-1, delta review with condition C-2; C-1, C-2 and N-1 fixed; re-check accepted at `d33f89d`); the T-16 residual (trusted code runs with the user's rights) accepted, G-S1 decision 3 |
 | TD-052 STU-023 ER diagram: what it leaves for later (the route `/c/:conn/schema` with the workspace, a diagram across schemas, column-to-column lines and cardinality marks, moving boxes, schemas of more than 1000 tables, the diagram in the reference-app E2E, Firefox and WebKit runs of the new specs only in CI) | P3 | Open (STU-023 PR) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
 | TD-055 Test order: the canary `test_a_failing_lifespan_of_any_app_logs_no_traceback_text` failed after `tests/unit/test_server.py`, whose default `uvicorn.Config` left Uvicorn's own logging config (stderr handler, `propagate=False`) in the process; Studio's redaction now takes over Uvicorn's and asyncio's loggers, and every test restores their state; left: records of child loggers after a later `dictConfig` (not hit by `serve()`) | P2 | Done (PR #78) |
-| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Open |
+| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Open; a G-R precondition (G-S1 decision 13: fix in tabrion, then the new tabrion pin in Studio) |
 | TD-057 Export slot race: a client that started the next export on a connection right after reading the previous one to its end could get `studio.export_busy` (the worker freed the slot only after its last log line) | P2 | Done (PR #80) |
 | TD-058 STU-053 audit walk in WebKit: "explorer Policies tab: every Tab stop ... is in view" failed once in CI (PR #80, run 43405250149) with the selected tree row out of view; WebKit scrolls a newly focused element into view from a zero-delay timer, and the walk measured in the same task. Test race, no product bug; the walk now measures one task later | P2 | Done (PR #81) |
+| TD-061 STU-028 release SBOM: the macOS and Windows license records and `scripts/release_bom.py --strict` as a CI step (a `.github/` change); the inherited SPDX parenthesis gap of `check_licenses.py` (review L-6); a license record of a package the lock does not pin is ignored by `release_bom.py` (re-check R-1) | P2 | Open (STU-028 PR; by hand until then) |
+| TD-062 JR-N1: an e2e test of the PROD case of "Reconnect" after a failed reconnect (the behavior is accepted, G-S1 decision 4) | P3 | Open |
 | TD-060 STU-054 UX acceptance 1.0: what stays open (owner decisions on the "403" wording of 03 section 8 (also for the STU-026 row), D-07, tabrion's English finding texts and the start page's 4.1 deviation; TD-032 as a dependency; TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR) |
-| TD-061 STU-028 release SBOM: the macOS and Windows license records and `scripts/release_bom.py --strict` as a CI step (a `.github/` change); the inherited SPDX parenthesis gap of `check_licenses.py` (review L-6) | P2 | Open (STU-028 PR; by hand until then) |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
@@ -393,8 +394,8 @@ merge after OA-004.
 | TABRION STU-020 | Favorites, history, scripts, format, autocomplete | P1 | STU-017 (plan), STU-012 | Done (backend PR #71, page PR #73, delta review 2 and E-1 in PR #82; started before STU-017 under the owner's allowance of normal ordering decisions; the backend needs only STU-011 and STU-012). Backend PR: the state database `state.sqlite` (0600 through `tabrion.sqlite.connect`, STU-T-007), the query history (`GET`/`DELETE /api/history`, per profile, `[history]` settings `enabled` and `retention_days`, never a parameter value: canary test), favorite and recently opened profiles (`GET`/`PUT /api/favorites`), `.sql` scripts in the project folder (`GET /api/scripts`, `GET`/`PUT /api/scripts/file`) and the cached-only catalog for completion on PROD (`?cached_only=true`); `docs/architecture/history-and-scripts.md`. Backend PR #71. The fixes of the independent review (`stu-020-review.md`: retention on disk, Windows names, descriptor-anchored access, hard links, byte order mark, save lock, file-system problem codes) are in #71; the page part (mixed line endings kept, escaped tab titles, the new problems, a hint for a cut history entry) is in the page PR #73. The delta review's D-1 to D-3 and D-5 (a checkpoint never waits for a reader and a partial one is retried on the next purge, the settings purge off the event loop with a short wait, blank-looking characters refused in script names and escaped on the page) are fixed in #71 and #73. **Owner item for G-S1 (D-4):** reparse-point folders, including OneDrive placeholders, are refused pending the owner's decision (listed in `security-review-prep.md`); that case and the device names still need a check on a real Windows machine. Page PR #73: the history view (`/history`, ⌘Y / Ctrl+H), favorites in the connection manager and favorite and recent connections on the start page, open and save project scripts in the SQL editor (line endings kept), Format with sql-formatter 15.9.0 (MIT, 03 section 3.2), completion from the catalog of the open connection (PROD: cached only or after "Load names"), the history settings; Vitest, `e2e/history.spec.ts` (keyboard, axe light/dark × en/de) and `e2e/history-backend.spec.ts` (the acceptance flows against a real server). Delta review 2, E-1 and the Info item (PR #82, no new TD): ZWNJ/ZWJ accepted between two letters or marks (ZWJ also in an emoji sequence) and U+3000 like U+0020 in script names, server and save dialog alike; the page keeps the joiners escaped in the Open… list and tab titles (decision recorded in `history-and-scripts.md`); the listing counts refused names (`skipped_invalid`) and the Open… dialog shows the count; a busy state database is logged at info level without a traceback. The reviews of #71, #73 and #82 are done; the owner item D-4 stays with G-S1 (`security-review-prep.md`). STU-054 checks the 1.0 flows again (`ux-acceptance.md`, UX-10-H1..H6) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress: the shell (first PR #20, F-1..F-5) and the work pages (editor, grid, export, explorer, data viewer, DDL, Policies, row count, diagnostics, D-02; second PR #61, F-6) are audited in `docs/architecture/accessibility.md` and `e2e/a11y-audit.spec.ts`, with no open AA violation. The rest is TD-022. TD-058 (PR #81): the Tab-stop walk measures each stop after WebKit's deferred scroll into view. Open: the screen-reader sample (VoiceOver, NVDA) and the final report (TD-022); the 1.0 views pass axe in light/dark × en/de against a real server (STU-054, `ux-acceptance-1-0.spec.ts`) |
 | TABRION STU-050 | UX acceptance | P1 | STU-008..STU-015, STU-051, QA-9 | Done (PR #62; the Firefox and WebKit jobs in PR #59, green in PR #63 and required since PR #67; the "Connection lost" banner in PR #64): the checklist `docs/architecture/ux-acceptance.md` (every criterion of 08 sections 3 to 6 and of the plan's acceptance, each with its test or manual check), run on 2026-11-13 against the built app with SQLite and PostgreSQL 16 (scram) in Chromium: met for what the MVP covers. New `e2e/ux-acceptance.spec.ts` (08 section 5 "First start" under 60 s and "Connect" with the remedy, against a real server). Fixed: the start page leads to the views (it said they "arrive with the next versions"), eight connection failures name the remedy, the migration view's empty status box. The acceptance ("Alle Flows E2E auf Chromium/Firefox/WebKit; axe ohne serious/critical") is met. STU-054 decided TD-046 for 1.0: B-3 done there, B-1 (a deviation for the owner to confirm), B-4, B-5 (QA-S1, the owner) and B-7 moved to TD-060 |
+| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Independent review done and accepted (re-review at `2a8a229`). On 2026-11-13 the owner accepted all 13 recommendations of the G-S1 decision package, each option A (recorded in `security-review-prep.md`, "Owner decisions on 2026-11-13": F-5/TD-033 rest, F-6/TD-031 with a nightly unlocked job, F-7/T-16 residual, JR-N1 with an e2e test (TD-062), TD-005 accepted, TD-002/TD-007 and TD-003 with the real-Windows check before G-R, side-effect functions the database defines accepted, hexadecimal and underscore number forms stay refused, the upstream report only as a confidential draft, D-4 and E-1 of STU-020 accepted, TD-056 before G-R); the formal G-S1 confirmation on a concrete master SHA is pending, so G-S1 is not yet granted. Preparation done (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). Independent review done and accepted: the first round at `e186178` was not accepted, its fixes (PR #65, PR #66) were re-reviewed and the review accepted at `2a8a229`. F-7/T-16 fixed in PR #75 (TD-054, re-check accepted at `d33f89d`). The G-R preconditions from the decisions are in `docs/development/release-checklist.md` (GR-1..GR-5); a human security review before a public release (STU-028, G-R) stays mandatory, and STU-026 stays locked behind G-S2 |
 | TABRION STU-054 | UX acceptance 1.0 (without the Data Editor) | P1 | STU-020..STU-025 | In progress (STU-054 PR): the 1.0 section of `docs/architecture/ux-acceptance.md` maps every 1.0 criterion of 08 (history, scripts, format, export, DDL, ER diagram, Levuvo status, diagnosis report, the locked writing, the 1.0 settings and dialogs, de/en) and 09's acceptance to its test or manual check, run on 2026-11-13 against the built app (SQLite, Chromium; Firefox and WebKit in CI). New `e2e/ux-acceptance-1-0.spec.ts` against a real server: the 1.0 tour in English and German with axe in light and dark at every step and no English catalog text or raw key on the German pages; the negative tests (no data editing in the page on DEV and PROD, the access chip is no control, every write refused by the API on DEV and PROD with the database file unchanged, every changing API route on a reviewed list); new `src/i18n/coverage.test.ts` (every key the source names exists, both plural forms, no visible text written into the markup). TD-046 B-3 done (the `alembic upgrade head` command with Copy). Not accepted yet: waits on TD-032 (German `STU-DX-*` texts, another lane) and the owner decisions in TD-060; STU-026 stays locked behind G-S2 |
-| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Independent review done and accepted (re-review at `2a8a229`); waiting on the owner's decision G-S1. Preparation done (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). Independent review done and accepted: the first round at `e186178` was not accepted, its fixes (PR #65, PR #66) were re-reviewed and the review accepted at `2a8a229`. Waiting on the owner's decision G-S1 (open owner decisions F-5/TD-033, F-6/TD-031 and the rest listed in `security-review-prep.md`; F-7/T-16 fixed in PR #75, TD-054, re-check accepted at `d33f89d`); a human security review before a public release (STU-028, G-R) stays mandatory |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27; the docs part in the STU-017 docs PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The docs PR adds the documentation checklist `docs/development/docs-checklist.md` (every requirement of 03 §10 and 09 mapped to its page and check, D-1..D-23), the clean-install test (manual on Linux on 2026-11-13 from a locally built wheel of master `7093bea`: install with the Tabrion pin, start without Node.js, sign-in link, a SQLite profile saved, tested and connected read-only, the explorer and the data viewer, `--stop`; passed. Automated: `scripts/smoke_wheel.py` now installs with the pin and signs in, connects a SQLite profile and reads its rows, in the `packaging` job on Linux, macOS and Windows), install from a wheel, troubleshooting for installing, the views and the `--stop` failures (I-5), the residual risks on the security page, the README status and install command (it had no Tabrion pin and failed), and the settings page (the timeout applies on connect; `log_sql` is saved but not used, TD-013). Open: the tag `v0.1.0` (a separate step after G-S1; no publication, G-R) and the build-only release workflow; the rest is TD-023 |
 | TABRION STU-028 | Docs 1.0, clean install, release preparation | P1 | STU-054 | In progress, **preparation only** (STU-028 PR; G-R not granted: no tag, no GitHub Release, no PyPI or npm upload, no announcement). `docs/development/release-checklist.md`: every step of a 1.0 release with its check and state, and the hard stops G-S1 (owner decision pending), the human security review before any public release (E-QA2, mandatory) and G-R (per publication). `scripts/release_bom.py` (standard library): the release SBOM (CycloneDX 1.5) and the third-party license report (with the psycopg LGPL-3.0 notice and the frontend licenses) from `constraints/runtime-lock.txt`, the Tabrion pin and the non-dev packages of `frontend/package-lock.json`, judged by the STU-031 policy (copyleft, unknown, missing or stale records fail; `--strict` for the release run); same bytes for the same inputs; tested offline by `tests/supply_chain/test_release_bom.py`. `collect_licenses.py` also records the commit of a Git install (PEP 610), and the Tabrion record must be of the pinned commit (review M-2). Run on 2026-11-13 for master `d72a14f` with the license records of Linux (Python 3.13 and 3.11): policy ok, 103 components; `--strict` lists the two Windows-only pins. Clean install on Linux from a wheel of `d72a14f`: `scripts/smoke_wheel.py` passed; `uv tool install` (lock versions) and pipx with pip and the Tabrion pin only passed, neither checks the lock's hashes (the first pipx form with the lock failed with pip, review H-1). Review `pr83-stu028-review.md`: ACCEPTED WITH CONDITIONS; H-1, M-1, M-2, L-1..L-5 and I-4 fixed, L-6 tracked in TD-061; delta review at `730e19a` ACCEPTED WITH CONDITIONS, D-1 (every record of a name judged, in any file order), D-2 (no URL with user information recorded), D-3 (only input errors exit 2) and D-4 (shared npm license helpers) fixed. Docs 1.0: guide index and README list the 1.0 features, `guide/installation.md` gains "pipx or uv", the Git-URL wording of 03 §4.6 is corrected (also ADR 0001), docs checklist D-24..D-26. Open: STU-054 and the rest of A-1 (STU-020..STU-025 are merged; open are the Windows checks and owner decision D-4 of STU-020, TD-052 of STU-023 and the CLI report of TD-036), the macOS and Windows license records and the CI step (TD-061), pipx/uv and the guide by hand on macOS and Windows (TD-023), and every owner step (G-S1, the human security review, the trademark check, the tag, G-R) |
 
@@ -463,6 +464,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   (`src/tabrion_studio/browser.py`, `tests/unit/test_browser.py`).
 - **Next step:** the fix itself: place the redirect file (only that file) in a private folder the sandbox can read,
   for example a non-hidden 0700 folder below the user's home, with the same checks as the state directory.
+- **Owner decision (G-S1, 2026-11-13, decision 6, option A):** accepted for now; the fix is a G-R precondition
+  (GR-1 in `docs/development/release-checklist.md`).
 
 ### TD-003 · Windows: check the DACL inside the profile too (review R-6)
 
@@ -471,6 +474,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   synced or shared profile folder (for example `%USERPROFILE%\OneDrive\…`) would put the control token, and now the
   redirect files, there. The default (`%LOCALAPPDATA%`) is not synced.
 - **Next step:** run `dacl_problem` inside the profile as well, or warn about known sync folders (STU-006 or STU-016).
+- **Owner decision (G-S1, 2026-11-13, decision 7, option A):** accepted as a residual risk until G-R; the fix is a
+  G-R precondition (GR-3). So is a check on a real Windows machine (GR-4) of what so far only CI and tests cover: the
+  refused device names of script files (for example `CON.sql`) and OneDrive-synced and other reparse-point folders,
+  which Studio refuses for scripts (STU-020 D-4, kept for 1.0 by decision 11). TD-008 is done with PR #76.
 
 ### TD-004 · Fork pull requests in the workflow-change gate (review R-7)
 
@@ -489,6 +496,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   redirect file's path. The token is worthless once redeemed; if the page's script never ran, it stays valid for up to
   120 s (`LAUNCH_TTL_SECONDS`).
 - **Next step:** shorten `LAUNCH_TTL_SECONDS` once real-browser start times are known (QA-9 measures them).
+- **Owner decision (G-S1, 2026-11-13, decision 5, option A):** stays an accepted risk; no work before G-S1 or G-R.
 
 ### TD-006 · Who may set the label `workflow-change-reviewed` (review S-3)
 
@@ -513,11 +521,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   macOS and Windows (05 §3.5), both STU-050 (review I-2 of `stu-pr12-14-review.md`). Both add CI jobs (a
   workflow-change review, OA-003) and browser installs; the network check of QA-9 (0 foreign hosts) is done in
   Chromium.
+- **Owner decision (G-S1, 2026-11-13, decision 6, option A):** accepted for now; the Firefox and WebKit launch
+  check is a G-R precondition (GR-2).
 
 ### TD-008 · Add a windows-latest CI job for the T-2 checks (review C-2 of `stu-006-review.md`)
 
-- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Done in the f6-lock PR
-  (needs the workflow-change review and the label `workflow-change-reviewed` before merge, OA-003) · **Refs:**
+- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Done (PR #76; its
+  workflow-change review accepted, `pr76-f6-lock-workflow-review.md`; G-S1 decision 7) · **Refs:**
   `stu-006-review.md` T-2 and C-2, `config/locations.py`
 - **What:** the review asks for a test in a Windows CI job that patches `nt._getfinalpathname` and asserts that it is
   never called for a UNC value from the project file. The test exists
@@ -530,7 +540,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   (`test_windows_never_resolves_a_unc_path_from_the_project_file` among them) must have passed at least once, and
   nothing may fail or skip, except the link tests of `test_config_locations.py`, which skip on Windows with the reason
   "symlinks". A renamed test or a new skip condition fails the job.
-- **Next step:** the workflow-change review of the f6-lock PR and the label.
+- **Next step:** none; the review is done and PR #76 is merged.
 
 ### TD-009 · STU-004 review: remaining Low and Info items
 
@@ -1100,7 +1110,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-033 · STU-012 SQL editor MVP: what it leaves for later
 
-- **Priority:** P2 Medium · **Status:** Open (STU-012 PR #41) · **Refs:** 03 section 2 C, 08 sections 4.4, 5 and 7,
+- **Priority:** P2 Medium · **Status:** Open (STU-012 PR #41); usability only since the drafts part (F-5) is done:
+  the owner's G-S1 decision 1 (2026-11-13, option A) keeps the rest (splitter, error positions, column widths, the
+  workspace tabs) as ordinary P2 follow-up work · **Refs:** 03 section 2 C, 08 sections 4.4, 5 and 7,
   `docs/architecture/frontend.md` ("SQL editor (STU-012)"), `stu-012-review.md`
 - **Done in the review fix round (`stu-012-review.md`, accepted with conditions):** C-1/M-1 and L-1, a profile change
   clears the tab's results, so PROD rows never show under another badge and "Load more" runs only on the profile the
@@ -1226,6 +1238,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   refused, since the PostgreSQL lexings read them as the keyword); `TEMP` stays an info, not a warning, since
   PostgreSQL grants it to `PUBLIC` by default; hexadecimal, octal, binary and underscore number forms are refused
   (write numbers in decimal).
+- **Owner decisions (G-S1, 2026-11-13, option A each):** decision 8, side-effect functions that the database itself
+  defines (for example one a view calls) are an accepted residual risk: the database role is the boundary, the
+  guide shows how to create a really read-only role (`guide/connections.md`, "A read-only role for PostgreSQL") and
+  the diagnostics warn about a role that can write; no check of the database's function definitions. Decision 9,
+  the hexadecimal and underscore number forms stay refused (a usability limit with a clear message). Decision 10,
+  a non-public report to the PostgreSQL security team about the cause of F-1 is prepared only as a confidential
+  draft for the owner, kept with the planning documents; nothing is sent without the owner's approval and under the
+  owner's name or account, and no details go into this repository or GitHub.
 
 ### TD-047 · STU-050: the e2e suites on Firefox and WebKit
 
@@ -1367,6 +1387,20 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   guard while the revisions are read, is documented in T-16 as part of the trusted-code residual.
 - **Open:** nothing for F-7. Residual (T-16): what trusted code runs by other means than an import is not
   checked.
+- **Owner decision (G-S1, 2026-11-13, decision 3, option A):** the residual is accepted: trusted project code runs
+  with the user's rights, as the trust dialog and the guide say; no sandbox (that would be a new work package after
+  1.0).
+
+### TD-062 · JR-N1: an e2e test of the PROD retry after a failed reconnect
+
+- **Priority:** P3 Low · **Status:** Open (recorded 2026-11-13 with the G-S1 decisions) · **Refs:**
+  `joint-regression-2026-11-13.md` JR-N1, G-S1 decision 4, TD-034, TD-038, `docs/architecture/connections.md`
+  ("Lost connections and 'Reconnect'")
+- **What:** after a lost connection, "Reconnect" on a PROD profile asks D-02. When that attempt fails (the database
+  is down), the next attempt in the same page session does not ask again: only a loss resets the confirmation, a
+  failed attempt does not. The owner accepted this documented behavior (decision 4, option A).
+- **To do:** an e2e test of the PROD case (D-02 on the first "Reconnect", none on the retry after a failed one, D-02
+  again after a new loss), in light and dark, en and de like the other connection-lost specs.
 
 ### TD-055 · Test order: Uvicorn's logging config leaked from `test_server.py` into the lifespan canary
 
@@ -1385,8 +1419,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `uvicorn.Config` with the default `log_config`, or a `dictConfig` of a program that embeds Studio, before or after
   `configure_logging`, would have let Uvicorn print a failed lifespan's traceback text unredacted.
 - **Done:** `configure_logging` takes over `logs.OWNED_LOGGERS` (Uvicorn's and asyncio's loggers): removes their own
-  handlers, turns propagation on and puts the redaction filters on the loggers themselves, so a handler added later
-  only sees redacted records; `LogSetup.close()` restores the earlier state. New canaries
+  handlers, turns propagation on and puts the redaction filters on the loggers themselves, so a record logged at an
+  owned logger is redacted before any handler sees it, also one added later (records of child loggers and of other
+  loggers: see "Limit"); `LogSetup.close()` restores the earlier state. New canaries
   `test_uvicorns_own_logging_config_from_earlier_does_not_bypass_redaction` and `..._from_later_...` fail without
   the change. Test isolation: the autouse fixture `restore_logging_state` in `tests/conftest.py` restores those
   loggers (handlers, filters, level, propagation, disabled), the root level and `logging.disable` after every test;
@@ -1444,6 +1479,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   caller puts into the message itself.
 - **Next step:** in tabrion, also strip these parts in the middle of a line (with a test); Studio then takes the new
   tabrion pin. Not fixed in Studio.
+- **Owner decision (G-S1, 2026-11-13, decision 13, option A):** fixed in tabrion, no second filter in Studio; the
+  residual risk is accepted until then, and the fix with the pin update is a G-R precondition (GR-5).
 
 ### TD-060 · STU-054 UX acceptance 1.0: what stays open
 
@@ -1689,8 +1726,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
 
-- **Priority:** P2 Medium · **Status:** Done in the f6-lock PR (needs the workflow-change review and its label before
-  merge) · **Refs:** TABRION QA-8, security review F-6 (`security-review-prep.md`), `build-constraints.txt`,
+- **Priority:** P2 Medium · **Status:** Done (PR #76; its workflow-change review accepted,
+  `pr76-f6-lock-workflow-review.md`); open: the nightly job below · **Refs:** TABRION QA-8, security review F-6 (`security-review-prep.md`), `build-constraints.txt`,
   `constraints/runtime-lock.txt`, `docs/development/ci.md` ("Hashed runtime pins"), tabrion TODO TB-130 and TB-133
   (the same build pins)
 - **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
@@ -1712,6 +1749,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   reports an advisory against a pin; Dependabot is not relied on for it. The `pip install --upgrade "pip>=26.1"` step
   of the guide and of `smoke_wheel.py` is not hashed, and pip builds Studio and Tabrion with build backends fetched
   without hashes (build time only; review L-1).
+- **Owner decision (G-S1, 2026-11-13, decision 2, option A):** keep the lock and add the nightly, non-blocking
+  "newest dependencies" job described below. It is a `.github/` change, so it comes as its own pull request with its
+  own workflow-change review. Not a G-R precondition. The remaining install risks (the `uv tool` and pipx paths do
+  not check the lock's hashes) are listed in `docs/development/release-checklist.md`.
 - **Later (review of PR #76):** CI now tests only the locked set, so a newer release inside the `pyproject.toml`
   ranges that breaks Studio shows up only at the next lock update. Add a non-required scheduled job (nightly, Linux
   with Python 3.11 and 3.14) that installs without the lock, prints `pip freeze` and runs `pytest -m "not
@@ -1828,3 +1869,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `scripts/check_licenses.py` flattens parentheses, so `(MIT OR GPL-3.0-only) AND LGPL-2.1-only` passes. The release
   report relies on it. Fix with a small recursive-descent parser for SPDX `OR`, `AND`, `WITH` and parentheses, with
   that expression as a negative test.
+- **Note (review R-1 of the re-check on `d833d6f`, Low, not fixed in the STU-028 PR):** `release_bom.py` looks up
+  license records only by the names of the pins, so a record of a package that the lock does not pin is ignored: no
+  failure and no line in the report, even with `--strict`. The CI job's `check_licenses.py` run still judges every
+  installed package, so only the release report is affected. Fix: fail on (or at least list as "not in the lock")
+  every record whose canonical name is neither a pin nor `tabrion-studio`, with a test.

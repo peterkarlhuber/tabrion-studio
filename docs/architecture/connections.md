@@ -177,6 +177,16 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 
 ## Read-only, engine by engine
 
+!!! warning "PostgreSQL: the role is the boundary"
+    Every layer below (the read-only session and transaction, one statement per transaction, `check_statement`) is
+    defense in depth. A database role that is really read-only (no write privileges, no ownership, no functions with
+    side effects it can call) is what makes write protection reliable. Functions the database defines (for example
+    one a view calls) are invisible to `check_statement`, and `READ ONLY` does not stop every side effect of a
+    function; the owner accepted this residual risk for G-S1 (decision 8 in
+    [Security review preparation](security-review-prep.md#owner-decisions-on-2026-11-13)). The diagnostics warn about
+    a role that can write (`STU-DX-003`, `STU-DX-006`, `STU-DX-007`); the user guide shows how to create a read-only
+    role ([Connections](../guide/connections.md#a-read-only-role-for-postgresql)).
+
 | Engine | In the database | Studio's own layer |
 |---|---|---|
 | SQLite | `file:...?mode=ro`, `PRAGMA query_only=ON`, no attached database (tabrion) | authorizer allowlist on every DBAPI connection; `check_statement` |
