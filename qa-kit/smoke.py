@@ -12,6 +12,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from pathlib import Path
@@ -59,32 +60,44 @@ def main() -> None:
     env = dict(os.environ, BROWSER=env_browser)
     server = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True, encoding="utf-8", errors="replace", cwd=KIT, env=env)
-    for _ in range(120):
-        if CAPTURE.exists() and CAPTURE.read_text().strip():
+    lines: list[str] = []
+    reader = threading.Thread(target=lambda: lines.extend(server.stdout), daemon=True)  # type: ignore[arg-type]
+    reader.start()
+    base = ""
+    for _ in range(180):
+        found = re.search(r"running at (http://127\.0\.0\.1:\d+/)", "".join(lines))
+        if found:
+            base = found.group(1)
             break
         time.sleep(0.5)
-    else:
-        server.kill()
-        print(server.stdout.read() if server.stdout else "")
-        raise SystemExit("Studio did not open its launch page")
-    launch = CAPTURE.read_text().strip()
-    print("launch page:", re.sub(r"[0-9a-f]{16,}", "…", launch))
-    page = Path(urllib.request.url2pathname(launch.removeprefix("file://").removeprefix("/" if WINDOWS else "")))
-    html = page.read_text(encoding="utf-8")
-    match = re.search(r"http://127\.0\.0\.1:\d+/[^\"'<>\s]*", html)
-    assert match, "no sign-in link in the launch page"
-    base = re.match(r"http://127\.0\.0\.1:\d+/", match.group()).group()
+    print("".join(lines), flush=True)
+    if not base:
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(server.pid)] if WINDOWS else ["kill", str(server.pid)])
+        raise SystemExit("Studio did not start")
     with urllib.request.urlopen(base, timeout=10) as response:
         assert response.status == 200, response.status
     print("server answers on", base)
+    for _ in range(60):  # the browser launch: captured where BROWSER is honored, else a real browser opened it
+        if CAPTURE.exists() and CAPTURE.read_text().strip():
+            launch = CAPTURE.read_text().strip()
+            print("launch page:", re.sub(r"[0-9a-f]{16,}", "…", launch))
+            page = Path(urllib.request.url2pathname(launch.removeprefix("file://").removeprefix("/" if WINDOWS else "")))
+            assert re.search(r"http://127\.0\.0\.1:\d+/", page.read_text(encoding="utf-8")), "no sign-in link"
+            break
+        time.sleep(0.5)
+    else:
+        print("BROWSER was not used; the system's default browser opened the launch page instead")
 
     run("3 - Studio beenden")
+    assert server.stdin is not None
+    server.stdin.write("\n\n")
+    server.stdin.close()
     try:
-        server.communicate(input="\n\n", timeout=60)
+        server.wait(timeout=60)
     except subprocess.TimeoutExpired:
-        server.kill()
         raise SystemExit("Studio did not stop")
-    print("start script ended with", server.returncode)
+    reader.join(timeout=10)
+    print("start script ended with", server.returncode, "".join(lines[-3:]))
 
     run("4 - Deinstallieren", answer="j")
     leftovers = [p.name for p in (KIT / "_kit").iterdir() if p.name in {"env", "python", "cache", "studio-daten"}]
