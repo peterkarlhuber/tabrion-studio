@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import os
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import time
 
@@ -12,7 +14,7 @@ import pytest
 
 from tabrion_studio.instance import InstanceInfo, InstanceLock, InstancePaths
 from tests.support.session import heartbeat, sign_in
-from tests.support.studio import get, get_json, run_cli, start_studio
+from tests.support.studio import NO_KEYRING, get, get_json, run_cli, start_studio, studio_command
 
 pytestmark = pytest.mark.process
 
@@ -217,3 +219,38 @@ def test_fixed_port(project: Path, state_dir: Path) -> None:
         assert isinstance(info, InstanceInfo)
         _stop(project, state_dir)
         assert studio.wait_exit() == 0
+
+
+def test_a_closed_stdout_does_not_turn_a_clean_stop_into_a_traceback(project: Path, state_dir: Path) -> None:
+    """JR-1 of joint-regression-2026-11-12.md: the terminal or parent stops reading before Studio stops."""
+    # Buffered as from a shell pipe: the interpreter's own flush at exit must not report the broken pipe either.
+    env = {**{k: v for k, v in os.environ.items() if k != "PYTHONUNBUFFERED"}, **NO_KEYRING}
+    errors = state_dir.parent / "stderr.log"
+    with errors.open("wb") as stderr:
+        process = subprocess.Popen(
+            studio_command(str(project), "--no-browser", "--state-dir", str(state_dir)),
+            stdout=subprocess.PIPE,
+            stderr=stderr,
+            env=env,
+        )
+        try:
+            assert process.stdout is not None
+            seen = b""
+            deadline = time.monotonic() + 15
+            while b"Press Ctrl+C" not in seen and time.monotonic() < deadline:
+                line = process.stdout.readline()
+                if not line:
+                    break
+                seen += line
+            assert b"Press Ctrl+C" in seen, seen
+            process.stdout.close()  # the reader is gone
+            _stop(project, state_dir)
+            assert process.wait(timeout=20) == 0
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=10)
+    text = errors.read_text(encoding="utf-8", errors="replace")
+    assert "Traceback" not in text, text
+    assert "BrokenPipeError" not in text, text
+    assert not InstancePaths.for_project(state_dir, project).info.exists()
