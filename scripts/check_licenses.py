@@ -151,6 +151,8 @@ def _tokens(expression: str) -> list[str]:
         else:
             start, end = match.start(), match.end()
     if start >= 0:
+        if depth:  # a parenthesis left open inside a name (workflow review L-1 of PR #90)
+            return []
         tokens.append(expression[start:end])
     return tokens
 

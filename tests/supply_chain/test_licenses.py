@@ -52,6 +52,8 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
         ("Apache-2.0 WITH LLVM-exception AND MIT", True),
         # Malformed expressions are not allowed.
         ("(MIT", False),
+        ("MIT OR Foo (x", False),
+        ("MIT OR GPL-3.0-only (x", False),
         ("MIT)", False),
         ("MIT AND", False),
         ("OR MIT", False),
