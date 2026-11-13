@@ -65,7 +65,7 @@
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Open (needs a `.github/` pull request; does not block STU-012) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, `export.spec.ts` in the e2e job's required list, no server-side size estimate) | P2 | Open (export dialog PR) |
-| TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and exit status 1 when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (JR-1 PR; `joint-regression-2026-11-12.md`) |
+| TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
