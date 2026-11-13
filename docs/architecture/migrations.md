@@ -207,7 +207,9 @@ What the measure does not cover. Trusting the code means trusting it as you woul
   not checked again. Studio's own environment, also a virtual environment inside the project that Studio runs from,
   keeps the usual import finder; its contents are trusted as Studio itself is. That includes its finders: one that
   loads a module without a file (no origin) is trusted as the environment (review I-4); the editable installs of
-  setuptools, editables, pdm, flit, meson-python and scikit-build-core all give a file.
+  setuptools, editables, pdm, flit, meson-python and scikit-build-core all give a file. The guard sees imports
+  while it is the first finder: a finder that the trusted code, or a module of the environment, puts in front of the
+  guard while the revisions are read is trusted as that code (review I-5).
 - **Windows:** children of the project's code are bounded by the job object only when Windows lets Studio make one
   (see the worker).
 
