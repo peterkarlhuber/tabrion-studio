@@ -36,10 +36,13 @@ git checkout <commit SHA>               # the commit you pin
 python scripts/build_frontend.py        # npm ci + npm run build, copies the result into the package (Node 22.22+)
 python -m venv ~/.venvs/tabrion-studio
 ~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
-~/.venvs/tabrion-studio/bin/python -m pip install . -c constraints/tabrion-integration.txt   # Tabrion's pin
+~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --no-deps . -r constraints/tabrion-integration.txt   # Tabrion's pin
+~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 
-Tabrion is not on PyPI either, so the install needs the constraints file; a plain `pip install .` fails. The
+The dependencies come from the hashed lock `constraints/runtime-lock.txt` (exact versions, every file's SHA-256
+checked). Tabrion is not on PyPI either, so the install needs its pin file; a plain `pip install .` fails. The
 [installation guide](docs/guide/installation.md) also covers building a wheel, updating and uninstalling, and gives
 PowerShell commands for Windows.
 

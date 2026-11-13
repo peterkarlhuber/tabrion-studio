@@ -66,7 +66,8 @@ python scripts/smoke_wheel.py dist/tabrion_studio-*.whl   # fresh venv, runs wit
 ```
 
 `smoke_wheel.py` is the automated clean-install test (STU-018, STU-017): it installs the wheel into a fresh virtual
-environment with the Tabrion pin of `constraints/tabrion-integration.txt` (`--constraint` names another file), starts
+environment: the runtime dependencies from the hashed lock `constraints/runtime-lock.txt` (`--lock`, TD-031), then the
+wheel and the Tabrion pin of `constraints/tabrion-integration.txt` (`--constraint`) with `--no-deps`, and `pip check`; it starts
 `tabrion-studio --no-browser --print-url` without Node.js on `PATH`, checks the health endpoint and the served page,
 signs in with the printed one-time link, saves a SQLite profile, connects it read-only and reads its catalog and the
 rows of a table, then checks the second start and `--stop`. CI runs it in the `packaging` job on Linux, macOS and

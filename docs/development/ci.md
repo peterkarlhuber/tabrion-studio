@@ -4,7 +4,7 @@
 
 | Workflow | Trigger | Content |
 |---|---|---|
-| `ci.yml` (`CI`) | pull request, push to master, nightly | backend lint, backend tests (Python 3.11 to 3.14 on Linux, 3.13 on macOS and Windows), security tests, frontend lint/typecheck and unit tests, e2e (Playwright in Chromium: axe with color contrast in light/dark and en/de, contrast, dialogs, status, and the built wheel in a real server under the CSP), the same suites in Firefox and WebKit (`e2e (firefox)`, `e2e (webkit)`; required, TD-047; the CDP heap measurements are Chromium only), build and install on Linux, macOS and Windows (wheel with the frontend, fresh venv, run without Node), license and supply chain, dependency audit, docs |
+| `ci.yml` (`CI`) | pull request, push to master, nightly | backend lint, backend tests (Python 3.11 to 3.14 on Linux, 3.13 on macOS and Windows), security tests, the T-2 path checks on Windows (`T-2 path checks (windows-latest)`, TD-008), frontend lint/typecheck and unit tests, e2e (Playwright in Chromium: axe with color contrast in light/dark and en/de, contrast, dialogs, status, and the built wheel in a real server under the CSP), the same suites in Firefox and WebKit (`e2e (firefox)`, `e2e (webkit)`; required, TD-047; the CDP heap measurements are Chromium only), build and install on Linux, macOS and Windows (wheel with the frontend, fresh venv, run without Node), license and supply chain, dependency audit, docs |
 | `ci-ok.yml` | `workflow_run` of CI | evaluates the mandatory checks of `.github/ci-manifest.json` on the PR head SHA (`ci_ok.py`, byte-identical to the canonical copy in nodestro-studio) and posts the verdict as the commit status `ci-ok` on that SHA (`ci_ok_status.py`), so that branch protection can require it |
 | `nightly.yml` (`Nightly`) | cron 03:30 UTC, manual | the whole CI on master plus a test-ID inventory; a red run opens or updates the issue "Nightly failed" |
 
@@ -85,7 +85,48 @@ The same job writes CycloneDX SBOMs and uploads them as the artifact `sbom`:
 
 ## Dependency audit
 
-`pip-audit` over the development environment and `npm audit --omit=dev --audit-level=high`.
+`pip-audit` over the development environment (the runtime dependencies at the versions of the lock) and `npm audit --omit=dev --audit-level=high`.
+
+## Hashed runtime pins
+
+Security review F-6 (TD-031): `pyproject.toml` declares ranges (`fastapi>=0.115,<1`, ...), so a plain install takes
+whatever PyPI serves that day, unhashed. `constraints/runtime-lock.txt` pins the whole runtime closure of Studio and
+Tabrion (Python 3.11 to 3.14, Linux, macOS and Windows, with environment markers) to exact versions with the SHA-256
+of every file. Tabrion itself stays in `constraints/tabrion-integration.txt`, pinned by its full commit SHA, because
+pip cannot hash a Git checkout. The [installation guide](../guide/installation.md) installs from the lock, and so
+does every CI job that installs Studio:
+
+```bash
+pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
+pip install -e ".[dev]" -c constraints/tabrion-integration.txt   # or --no-deps <wheel> -r constraints/tabrion-integration.txt
+pip check
+python scripts/runtime_lock.py check-installed                     # jobs with the development tools
+```
+
+- **Install:** `--no-deps` and `--only-binary :all:` keep pip from resolving or building anything; it installs exactly
+  the hashed wheels for this platform. The development tools come afterwards (unhashed, development only); they find
+  the runtime dependencies installed and keep them.
+- **`check-installed`** walks the requirements of the installed `tabrion-studio` and everything they pull in, and fails
+  when a runtime package is missing from the lock, installed at another version (a development tool moved it), or a
+  pin applies but nothing needs it (stale). The wheel jobs (`e2e`, `e2e (<browser>)`, `license and supply chain`, the
+  smoke test of `build and install`) install the wheel with `--no-deps` after the lock, so `pip check` proves the lock
+  complete for that platform.
+- **In step with the ranges:** `python scripts/runtime_lock.py check` (job `backend lint`, and
+  `tests/unit/test_runtime_lock.py`) fails when a line is not `name==version [; marker] --hash=...`, a runtime
+  dependency of `pyproject.toml` has no pin or a pin outside its range (`psycopg[binary]` needs `psycopg-binary`), a
+  name is pinned twice for one marker, Tabrion appears in the lock, or a package is pinned to another version in the
+  second hashed pin set, `build-constraints.txt` (the build backend; it is kept in step with `pyproject.toml`'s
+  `hatchling==` by `tests/unit/test_build_constraints.py`). `tests/security/test_dependencies.py` also reads the lock
+  as a pin file (no options, URLs or line continuations).
+- **Update:** `python scripts/runtime_lock.py update` regenerates the lock with `uv pip compile --universal
+  --generate-hashes` (uv on `PATH`, network access) from the ranges of `pyproject.toml` and the Tabrion pin. It keeps
+  every pin that still fits; `update -- --upgrade` moves all pins to the newest versions inside the ranges,
+  `update -- --upgrade-package fastapi` only that one. Then run `python scripts/runtime_lock.py check` and the tests,
+  and commit the lock with the change that needed it. Update the lock when a range in `pyproject.toml` or the
+  Tabrion pin changes (the check fails until it is), when `dependency audit` reports an advisory against a pin (the
+  job audits the locked versions), and otherwise about once a month. Do not rely on Dependabot for this file; update it with this recipe.
+- **The pins are not the supported versions:** the ranges in `pyproject.toml` stay what Studio supports; the lock is
+  the one set that CI tests and the guide installs.
 
 ## Reproducible builds
 
@@ -104,7 +145,7 @@ as its own wheel (`tests/packaging/test_artifacts.py::test_two_builds_give_the_s
 `tests/unit/test_build_constraints.py` checks that the two pins agree. The test removes `SOURCE_DATE_EPOCH` for
 those builds, as the job builds its own wheel without it, and
 `test_two_builds_with_source_date_epoch_match` builds twice with a fixed epoch (the zip entries then carry that
-date). The CI build steps do not use the hashed pins yet (TODO TD-031).
+date). Every `python -m build` step in CI runs with these two variables (TD-031).
 
 Those builds package one frontend build. Whether Vite's output depends only on the sources and the lockfile is a
 separate check, run by hand (not in CI):

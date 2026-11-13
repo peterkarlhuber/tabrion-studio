@@ -37,7 +37,7 @@
 | TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented) |
 | TD-006 who may set the label `workflow-change-reviewed` (review S-3) | P3 | Open |
 | TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; STU-050) |
-| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
+| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Done in the f6-lock PR (job `T-2 path checks (windows-latest)`, required); needs the workflow-change review and its label before merge |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR #42) | P2 | Open |
@@ -59,7 +59,7 @@
 | TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR #54), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI: its SQLite part runs and is required since the CI e2e-list PR, its PostgreSQL part not yet) | P2 | Open (STU-010 page PR #43) |
 | TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced; the viewer suites are required in CI since the CI e2e-list PR) | P2 | Open (STU-013 page PR #52) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
-| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8); install and test against a hashed runtime lock (security review F-6) | P2 | Done in the f6-lock PR (`constraints/runtime-lock.txt`, `scripts/runtime_lock.py`; every CI install and build uses the hashed pins); needs the workflow-change review and its label before merge; open: refreshing the lock (by hand, about monthly) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
 | TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
@@ -243,7 +243,7 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
     from the project file (`test_config_locations.py` with `PureWindowsPath` and `PurePosixPath`;
     `test_network_paths_are_refused_before_any_file_system_access`; on Windows
     `test_windows_never_resolves_a_unc_path_from_the_project_file`, which patches `nt._getfinalpathname` and runs in
-    the `windows-latest` leg of the test matrix). The dedicated Windows CI job is TD-008.
+    the `windows-latest` leg of the test matrix). The dedicated Windows CI job is TD-008 (`T-2 path checks (windows-latest)`).
   - **T-3:** deeply nested TOML is `config.too_deep`; a damaged or deeply nested trust record means untrusted; an
     unexpected load error makes the project `invalid` and `/api/profiles` still lists the user's profiles.
   - **T-4:** loopback by `ipaddress` plus the literal `localhost` (and socket folders), so `127.evil.example` gets
@@ -502,16 +502,21 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-008 · Add a windows-latest CI job for the T-2 checks (review C-2 of `stu-006-review.md`)
 
-- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Open (needs a
-  workflow-change review, OA-003) · **Refs:** `stu-006-review.md` T-2 and C-2, `config/locations.py`
+- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Done in the f6-lock PR
+  (needs the workflow-change review and the label `workflow-change-reviewed` before merge, OA-003) · **Refs:**
+  `stu-006-review.md` T-2 and C-2, `config/locations.py`
 - **What:** the review asks for a test in a Windows CI job that patches `nt._getfinalpathname` and asserts that it is
   never called for a UNC value from the project file. The test exists
   (`tests/security/test_project_trust.py::test_windows_never_resolves_a_unc_path_from_the_project_file`) and the pure
   path tests use `PureWindowsPath` on every platform; today the Windows test runs in the `windows-latest` leg of the
   test matrix. The conditions PR does not change `.github/`.
-- **Next step:** add a windows-latest CI job (or a required step in the existing leg) that runs the T-2 tests by name
-  and fails if they are skipped, like the `e2e` job's required-suite check; then the workflow-change review and the
-  label.
+- **Done:** the CI job `T-2 path checks (windows-latest)` (required in `.github/ci-manifest.json`) installs from the
+  hashed runtime lock (TD-031), runs `tests/unit/test_config_locations.py` and the two T-2 tests of
+  `test_project_trust.py` by name, and its gate step reads the JUnit report: each of the eight T-2 tests
+  (`test_windows_never_resolves_a_unc_path_from_the_project_file` among them) must have passed at least once, and
+  nothing may fail or skip, except the link tests of `test_config_locations.py`, which skip on Windows with the reason
+  "symlinks". A renamed test or a new skip condition fails the job.
+- **Next step:** the workflow-change review of the f6-lock PR and the label.
 
 ### TD-009 · STU-004 review: remaining Low and Info items
 
@@ -1413,16 +1418,28 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
 
-- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
-  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **Priority:** P2 Medium · **Status:** Done in the f6-lock PR (needs the workflow-change review and its label before
+  merge) · **Refs:** TABRION QA-8, security review F-6 (`security-review-prep.md`), `build-constraints.txt`,
+  `constraints/runtime-lock.txt`, `docs/development/ci.md` ("Hashed runtime pins"), tabrion TODO TB-130 and TB-133
+  (the same build pins)
 - **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
   `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
   `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
   The CI jobs still build with the unhashed `pyproject.toml` pin.
-- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
-  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
-  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
-  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Done (build):** the four `python -m build` steps (jobs `e2e`, `e2e (<browser>)`, `build and install`, `license
+  and supply chain`) run with `PIP_CONSTRAINT` set to `build-constraints.txt` and `PIP_REQUIRE_HASHES: "1"`.
+- **Done (runtime, F-6):** `constraints/runtime-lock.txt` pins the runtime closure of Studio and Tabrion (Python 3.11
+  to 3.14, Linux, macOS, Windows) exactly, with the SHA-256 of every file; Tabrion stays a full-SHA Git pin. Every CI
+  job that installs Studio installs the lock first (`pip install --require-hashes --no-deps --only-binary :all:`),
+  then Studio and Tabrion; `pip check` and `scripts/runtime_lock.py check-installed` fail when the installed runtime
+  closure differs from the lock. `scripts/runtime_lock.py check` (job `backend lint`, `tests/unit/test_runtime_lock.py`)
+  keeps the lock inside the `pyproject.toml` ranges and in step with `build-constraints.txt`; `scripts/smoke_wheel.py`
+  and the installation guide install the same way. The ranges in `pyproject.toml` are unchanged.
+- **Next step:** after the first hatchling release, check that the Dependabot pull request updates both build pins;
+  if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request. Refresh the runtime
+  lock (`python scripts/runtime_lock.py update -- --upgrade`) about once a month and whenever `dependency audit`
+  reports an advisory against a pin; Dependabot is not relied on for it. The `pip install --upgrade "pip>=26.1"` step
+  of the guide and of `smoke_wheel.py` is not hashed.
 - **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
   (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
   `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.

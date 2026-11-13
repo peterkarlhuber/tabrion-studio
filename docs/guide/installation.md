@@ -23,7 +23,9 @@ git checkout <commit SHA>
 python scripts/build_frontend.py      # npm ci + npm run build; copies the frontend into the package
 python -m venv ~/.venvs/tabrion-studio
 ~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
-~/.venvs/tabrion-studio/bin/python -m pip install . -c constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --no-deps . -r constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 
 On Windows, in PowerShell (the virtual environment's programs are in `Scripts`, not `bin`):
@@ -36,12 +38,22 @@ python scripts\build_frontend.py
 python -m venv $env:USERPROFILE\.venvs\tabrion-studio
 $py = "$env:USERPROFILE\.venvs\tabrion-studio\Scripts\python.exe"
 & $py -m pip install --upgrade "pip>=26.1"
-& $py -m pip install . -c constraints\tabrion-integration.txt
+& $py -m pip install --require-hashes --no-deps --only-binary :all: -r constraints\runtime-lock.txt
+& $py -m pip install --no-deps . -r constraints\tabrion-integration.txt
+& $py -m pip check
 ```
 
+The first install takes every runtime dependency from `constraints/runtime-lock.txt`: exact versions, and pip checks
+the SHA-256 of every file it downloads (`--require-hashes`; wheels only, so nothing is built on your computer). The
+second installs Studio and Tabrion without dependencies, so nothing else comes from PyPI, and `pip check` confirms
+that the lock was complete. CI installs the same way and tests exactly these versions (security review F-6,
+[CI](../development/ci.md#hashed-runtime-pins)). The lock is one tested set inside the ranges of `pyproject.toml`;
+`pip install . -c constraints/tabrion-integration.txt` works too, but resolves the dependencies afresh from PyPI,
+without hashes.
+
 Tabrion is not on PyPI either. `constraints/tabrion-integration.txt` pins the Tabrion commit this Studio commit is
-built and tested against (Tabrion v0.1.0), so always install with `-c constraints/tabrion-integration.txt`. A plain
-`pip install .` fails, because pip cannot find Tabrion.
+built and tested against (Tabrion v0.1.0) by its full SHA (pip cannot hash a Git checkout, so Tabrion is not in the
+lock), so always install with that file. A plain `pip install .` fails, because pip cannot find Tabrion.
 
 The install needs pip 26.1 or later. Older pip versions (24.0 to 26.0, for example the pip 24.0 of a fresh
 Ubuntu 24.04 virtual environment) stop with `AssertionError: Candidate is not for this requirement`, because they
@@ -64,10 +76,12 @@ python scripts/build_frontend.py
 python -m venv ~/.venvs/tabrion-build
 ~/.venvs/tabrion-build/bin/python -m pip install "build==1.6.1"
 PIP_CONSTRAINT=build-constraints.txt PIP_REQUIRE_HASHES=1 ~/.venvs/tabrion-build/bin/python -m build --wheel --outdir dist
-# then, on each computer, with the wheel and constraints/tabrion-integration.txt copied there:
+# then, on each computer, with the wheel and the constraints folder copied there:
 python -m venv ~/.venvs/tabrion-studio
 ~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
-~/.venvs/tabrion-studio/bin/python -m pip install dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 
 On Windows, in PowerShell. Neither PowerShell nor `cmd.exe` expands `*` for pip, so name the wheel's full file name
@@ -83,11 +97,13 @@ Remove-Item Env:PIP_CONSTRAINT, Env:PIP_REQUIRE_HASHES
 python -m venv $env:USERPROFILE\.venvs\tabrion-studio
 $py = "$env:USERPROFILE\.venvs\tabrion-studio\Scripts\python.exe"
 & $py -m pip install --upgrade "pip>=26.1"
-& $py -m pip install dist\<wheel file name> -c constraints\tabrion-integration.txt
+& $py -m pip install --require-hashes --no-deps --only-binary :all: -r constraints\runtime-lock.txt
+& $py -m pip install --no-deps dist\<wheel file name> -r constraints\tabrion-integration.txt
+& $py -m pip check
 ```
 
-The wheel needs the same constraints file as `pip install .`; without it pip stops with `No matching distribution
-found for tabrion`. `PIP_CONSTRAINT` and `PIP_REQUIRE_HASHES` pin the build backend to the hashed versions of
+The wheel needs the same two files as `pip install .`; without the Tabrion pin pip stops with `No matching
+distribution found for tabrion`. `PIP_CONSTRAINT` and `PIP_REQUIRE_HASHES` pin the build backend to the hashed versions of
 `build-constraints.txt`, so the same sources give the same wheel. In bash they apply to the build command only; in
 PowerShell they stay set, so the block removes them before installing (the install would require hashes too).
 
@@ -116,12 +132,15 @@ Check out the new commit, build the frontend again and reinstall:
 ```bash
 git fetch && git checkout <new commit SHA>
 python scripts/build_frontend.py
-~/.venvs/tabrion-studio/bin/python -m pip install --force-reinstall . -c constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --force-reinstall --no-deps . -r constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 
-On Windows, use `& $py -m pip install --force-reinstall . -c constraints\tabrion-integration.txt` with `$py` as above.
+On Windows, run the same three commands with `& $py` as above and `\` in the paths.
 
-Do not add `--no-deps`: a newer Studio commit can move the Tabrion pin, and `--no-deps` would keep the old Tabrion.
+The first command moves the dependencies to the pins of the new commit. The second names the Tabrion pin itself, so
+a newer Studio commit that moves it also installs the new Tabrion.
 
 Stop a running Studio first (`tabrion-studio --stop` in the project folder); a running server keeps the old code.
 
