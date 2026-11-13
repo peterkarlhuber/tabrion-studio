@@ -268,7 +268,7 @@ test('text spacing of 1.4.12 cuts no control text', async ({ page }) => {
         .map((el) => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}"`),
     );
     // A name cut with "…" (connection, tab) must show in full in a title (1.4.10 without loss of information).
-    const untitled = await page.evaluate(untitledEllipses);
+    const untitled = await page.evaluate(untitledEllipses, false);
     const page_ = await page.evaluate(() => [
       document.documentElement.scrollWidth,
       document.documentElement.clientWidth,
@@ -406,14 +406,14 @@ test('a long connection name is cut with "…" and shown in full in its title (1
     el.setAttribute('title', text);
   }, long);
   expect(await name.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
-  expect(await page.evaluate(untitledEllipses)).toEqual([]);
+  expect(await page.evaluate(untitledEllipses, false)).toEqual([]);
   const width = await page.evaluate(() => [
     document.documentElement.scrollWidth,
     document.documentElement.clientWidth,
   ]);
   expect(width[0]).toBeLessThanOrEqual(width[1] ?? 0);
   await name.evaluate((el) => el.removeAttribute('title'));
-  expect(await page.evaluate(untitledEllipses)).toEqual([
+  expect(await page.evaluate(untitledEllipses, false)).toEqual([
     expect.stringContaining('measure-central'),
   ]);
 });
