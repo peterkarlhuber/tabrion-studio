@@ -3,19 +3,30 @@
  *
  * Connection names, hosts and paths come from a project file that may be hostile. Rendered as they are, a newline,
  * a tab or a bidi override (U+202E) can make a list look different from what it is. `visible()` shows every C0 and
- * C1 control character, the line and paragraph separators and the bidi controls (U+061C, U+200E, U+200F,
- * U+202A..U+202E, U+2066..U+2069) as `\uXXXX`, and a backslash as `\\`, so an escape can never be faked. `capped()`
+ * C1 control character, the line and paragraph separators, the bidi controls (U+061C, U+200E, U+200F,
+ * U+202A..U+202E, U+2066..U+2069), the zero-width characters (U+200B..U+200D, U+2060..U+2064, U+FEFF) and the
+ * characters that show as a blank (U+034F, the Hangul fillers U+115F, U+1160, U+3164, U+FFA0, the Khmer inherent
+ * vowels U+17B4, U+17B5, the braille blank U+2800) as `\uXXXX`, and a backslash as `\\`, so an escape can never be
+ * faked and two values never look alike. `capped()`
  * cuts the result to a fixed number of code points and says whether it did.
  */
 
-/** C0, C1, U+061C, U+200E..U+200F, U+2028..U+202E (separators and bidi), U+2066..U+2069. */
+/** C0, C1, bidi controls, separators, zero-width and blank-looking characters (see above). */
 const INVISIBLE: [number, number][] = [
   [0x00, 0x1f],
   [0x7f, 0x9f],
+  [0x34f, 0x34f],
   [0x61c, 0x61c],
-  [0x200e, 0x200f],
+  [0x115f, 0x1160],
+  [0x17b4, 0x17b5],
+  [0x200b, 0x200f],
   [0x2028, 0x202e],
+  [0x2060, 0x2064],
   [0x2066, 0x2069],
+  [0x2800, 0x2800],
+  [0x3164, 0x3164],
+  [0xfeff, 0xfeff],
+  [0xffa0, 0xffa0],
 ];
 const BACKSLASH = 0x5c;
 

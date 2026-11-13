@@ -23,6 +23,9 @@ All notable changes to this project are documented here. The format follows
   rules; the Open… dialog says how many links it left out; texts for the new script problems; a cut history entry
   says so in the editor; the delete-all dialog says it also clears the user's own profiles in every project; the
   settings say that retention deletes old statements also while the history is off.
+- STU-020 delta review (page): `visible()` also escapes zero-width and blank-looking characters (Hangul fillers,
+  the braille blank, U+034F), the editor's accessible name shows a script's name through it, and the save dialog
+  refuses blank-looking characters like the server.
 - STU-020 (backend): Studio's state database `state.sqlite` in the state folder (0600, opened through
   `tabrion.sqlite.connect`, links refused, `secure_delete`); the query history of every finished query, per profile
   and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,
