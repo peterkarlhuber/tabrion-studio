@@ -64,11 +64,15 @@ const sent = window as unknown as {
 sent.writes = [];
 
 /** The fake query engine of the editor scenario; e2e/editor.spec.ts reads what the page sent (`window.queryLog`). */
-// `connectDelay` (ms) delays opening a connection (e2e/editor.spec.ts: run, cancel and close while connecting).
 /** The data viewer of the explorer scenario (STU-013 page); e2e reads what the page asked for. */
 const viewer = createViewer();
 (window as unknown as { viewerLog: unknown }).viewerLog = viewer.log;
-const queryServer = createQueryServer({ connectDelayMs: Number(params.get('connectDelay') ?? 0) });
+// `connectDelay` (ms) delays opening a connection (e2e/editor.spec.ts: run, cancel and close while connecting);
+// `startDelay` (ms) delays the answer to starting a query (a cancel while the start request is on its way).
+const queryServer = createQueryServer({
+  connectDelayMs: Number(params.get('connectDelay') ?? 0),
+  startDelayMs: Number(params.get('startDelay') ?? 0),
+});
 (window as unknown as { queryLog: unknown }).queryLog = queryServer.log;
 const draft = params.get('sql');
 /** The project folder of the editor scenario: its drafts are stored under that project's key (L-5). */
