@@ -115,6 +115,7 @@ pip cannot hash a Git checkout. The [installation guide](../guide/installation.m
 does every CI job that installs Studio:
 
 ```bash
+python -m pip install "pip>=26.1"                                  # jobs that use -c (DC-TS-1)
 pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
 pip install -e ".[dev]" -c constraints/tabrion-integration.txt   # or --no-deps <wheel> -r constraints/tabrion-integration.txt
 pip check
@@ -126,7 +127,19 @@ python scripts/runtime_lock.py check-installed                     # jobs with t
   the runtime dependencies installed and keep them.
 - **`check-installed`** walks the requirements of the installed `tabrion-studio` and everything they pull in, and fails
   when a runtime package is missing from the lock, installed at another version (a development tool moved it), or a
-  pin applies but nothing needs it (stale). The wheel jobs (`e2e`, `e2e (<browser>)`, `license and supply chain`, the
+  pin applies but nothing needs it (stale). It also fails when the installed tabrion is not the Git commit of
+  `constraints/tabrion-integration.txt` (its `direct_url.json`: no file means it came from a package index, where
+  the name `tabrion` is not ours; a local directory, an archive or another commit fail too; DC-TS-1).
+- **pip floor:** pip 24.0 to 26.0 crash on a `-c` Git pin once the requirement has extras (`.[dev]`); every job that
+  installs with `-c constraints/tabrion-integration.txt` raises pip to `>=26.1` first
+  (`tests/security/test_workflows.py`).
+- **`install (poisoned index)`** (DC-TS-1): the development install and the documented runtime install run with
+  every installer's index replaced by a local poisoned one (`scripts/check_tabrion_source.py`, the unchanged copy of
+  nodestro-studio's script, SHA-256 pinned in `tests/supply_chain/test_check_tabrion_source.py`). It serves a
+  tabrion 0.1.99 that runs code and redirects every other name to PyPI; the job fails when pip asks it for `tabrion`
+  at all, when the poisoned code ran, or when the installed tabrion is not the pinned commit. A positive control
+  shows first that a plain install would take the poisoned release. Not in `.github/ci-manifest.json` yet.
+- The wheel jobs (`e2e`, `e2e (<browser>)`, `license and supply chain`, the
   smoke test of `build and install`) install the wheel with `--no-deps` after the lock, so `pip check` proves the lock
   complete for that platform.
 - **In step with the ranges:** `python scripts/runtime_lock.py check` (job `backend lint`, and

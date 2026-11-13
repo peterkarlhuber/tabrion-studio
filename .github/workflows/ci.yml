@@ -46,6 +46,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check
@@ -86,6 +88,8 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       # STU-001: the editable install on every OS (without the built frontend).
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check
@@ -106,6 +110,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check
@@ -133,6 +139,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check
@@ -208,6 +216,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check
@@ -651,6 +661,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: python -m pip install --upgrade pip
       # The runtime dependencies as locked (TD-031) and the development toolchain.
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install "pip-audit==2.10.1" -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check
@@ -660,6 +672,48 @@ jobs:
         working-directory: frontend
       - run: npm audit --omit=dev --audit-level=high
         working-directory: frontend
+
+  # DC-TS-1 (dependency confusion; owner decision of 2026-11-13 22:37Z: tabrion is not registered on PyPI). Both install
+  # paths run with every installer's index replaced by a poisoned one (scripts/check_tabrion_source.py, the unchanged
+  # copy of nodestro-studio's script, SHA-256 pinned by tests/supply_chain/test_check_tabrion_source.py). It serves
+  # tabrion 0.1.99 (a wheel and an sdist that run code) and redirects every other name to PyPI. Red when pip asks that
+  # index for tabrion at all, when poisoned code ran, or when the installed tabrion is not the commit of
+  # constraints/tabrion-integration.txt; a positive control first shows that a plain "pip install tabrion" would take
+  # the poisoned release. No pip cache, so every request reaches the index.
+  install-poisoned-index:
+    name: install (poisoned index)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: The CI development install (-e ".[dev]" -c the pin), then check-installed
+        run: |
+          python -m venv "$RUNNER_TEMP/dev"
+          python -I scripts/check_tabrion_source.py --lock constraints/tabrion-integration.txt \
+            --python "$RUNNER_TEMP/dev/bin/python" -- bash -euo pipefail -c '
+            py="$RUNNER_TEMP/dev/bin/python"
+            "$py" -m pip install --no-cache-dir "pip>=26.1"
+            "$py" -m pip install --no-cache-dir --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+            "$py" -m pip install --no-cache-dir -e ".[dev]" -c constraints/tabrion-integration.txt
+            "$py" -m pip check
+            "$py" scripts/runtime_lock.py check-installed'
+      # README and docs/guide/installation.md install "--no-deps . -r the pin"; "." needs the built frontend (Node),
+      # so this runs the same command on an editable install, which skips that check and resolves tabrion the same way.
+      - name: The documented runtime install (--no-deps -r the pin)
+        run: |
+          python -m venv "$RUNNER_TEMP/runtime"
+          python -I scripts/check_tabrion_source.py --lock constraints/tabrion-integration.txt \
+            --python "$RUNNER_TEMP/runtime/bin/python" -- bash -euo pipefail -c '
+            py="$RUNNER_TEMP/runtime/bin/python"
+            "$py" -m pip install --no-cache-dir "pip>=26.1"
+            "$py" -m pip install --no-cache-dir --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+            "$py" -m pip install --no-cache-dir --no-deps -e . -r constraints/tabrion-integration.txt
+            "$py" -m pip check'
 
   docs:
     name: docs
@@ -673,6 +727,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
+      - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
       - run: pip check

@@ -620,6 +620,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- DC-TS-1 (dependency confusion; tabrion and tabrion-studio are not registered on PyPI, owner decision of
+  2026-11-13): `scripts/runtime_lock.py check-installed` no longer skips tabrion. The installed tabrion's
+  `direct_url.json` must name the Git URL and the full commit of `constraints/tabrion-integration.txt`; a tabrion
+  without one (from a package index), from a local directory or archive, or at another commit fails the CI jobs.
+  Every CI job that installs with `-c constraints/tabrion-integration.txt` first raises pip to `>=26.1` (pip 24.0 to
+  26.0 crash on that constraint with extras), and a test keeps it so. `docs/development/building.md` installs with
+  the pin and the hashed lock instead of a bare `pip install -e ".[dev]"`. New CI job `install (poisoned index)`: the
+  development and the documented runtime install run against a local index that serves a poisoned tabrion 0.1.99
+  (`scripts/check_tabrion_source.py`, the SHA-256-pinned copy of nodestro-studio's script) and must make no request
+  for tabrion, run no poisoned code and end with the pinned commit (TD-064).
 - TD-013: a SQLite `path` with a `?`, `#` or `%` in a profile file (`.tabrion/studio.toml` or `profiles.toml`) is
   the error `config.url_character`, as in tabrion 0.2's profile file reader (`profilefile.value`, tabrion G-T2 review
   B-1: in a SQLAlchemy URL `%` is unquoted, so `%2F%2Fhost/share/x.db` would become a network path). Such a project

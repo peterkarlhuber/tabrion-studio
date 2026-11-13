@@ -17,8 +17,12 @@ to another version in ``build-constraints.txt`` (the second hashed pin set, the 
 
 ``check-installed`` walks the requirements of the installed ``tabrion-studio`` (without extras) and of everything they
 pull in, with the markers of this interpreter, and refuses a distribution that is not in the lock or installed at
-another version, and a lock entry that applies here but is not part of the closure (a stale pin). CI runs it after
-installing the development tools, so a tool that moved a runtime dependency fails the job.
+another version, and a lock entry that applies here but is not part of the closure (a stale pin). tabrion, which the
+lock cannot pin, must come from the commit of ``constraints/tabrion-integration.txt``: its ``direct_url.json`` must
+name that Git URL and that full commit (``vcs_info.commit_id``). A tabrion without ``direct_url.json`` came from a
+package index, where the name is not ours (dependency confusion, DC-TS-1); a local directory or another commit is
+refused too. CI runs it after installing the development tools, so a tool that moved a runtime dependency fails the
+job.
 
 ``update`` writes the lock from the ranges of ``pyproject.toml`` and the tabrion pin with ``uv pip compile --universal
 --generate-hashes``. It keeps every current pin that still fits and adds what is missing; ``update -- --upgrade``
@@ -32,6 +36,7 @@ import argparse
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 import importlib.metadata
+import json
 import os
 from pathlib import Path
 import re
@@ -166,6 +171,68 @@ def check(root: Path = ROOT) -> list[str]:
 Lookup = Callable[[str], "tuple[str, list[str]] | None"]
 
 
+#: The text of an installed distribution's ``direct_url.json`` (PEP 610), or None when it has none or is not installed.
+Source = Callable[[str], "str | None"]
+#: ``tabrion @ git+<url>@<full commit>``, the one requirement line of TABRION_PIN.
+_TABRION_PIN = re.compile(r"tabrion\s*@\s*git\+(?P<url>https://\S+?)@(?P<commit>[0-9a-f]{40})")
+
+
+def installed_direct_url(name: str) -> str | None:
+    try:
+        return importlib.metadata.distribution(name).read_text("direct_url.json")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def tabrion_pin(root: Path = ROOT) -> tuple[str, str] | None:
+    """The Git URL and full commit that TABRION_PIN pins, or None when it has no single such line."""
+    found = [
+        match
+        for raw in (root / TABRION_PIN).read_text(encoding="utf-8").splitlines()
+        if (match := _TABRION_PIN.fullmatch(raw.strip())) is not None
+    ]
+    return (found[0]["url"], found[0]["commit"]) if len(found) == 1 else None
+
+
+def _same_repository(a: str, b: str) -> bool:
+    def norm(url: str) -> str:
+        url = url.strip().rstrip("/").lower()
+        return url.removesuffix(".git")
+
+    return norm(a) == norm(b)
+
+
+def check_tabrion_source(root: Path = ROOT, source: Source = installed_direct_url) -> list[str]:
+    """Problems with where the installed tabrion came from (empty list = the commit TABRION_PIN pins)."""
+    pin = tabrion_pin(root)
+    if pin is None:
+        return [f"{TABRION_PIN} has no single 'tabrion @ git+https://...@<full commit>' line"]
+    url, commit = pin
+    text = source("tabrion")
+    if text is None:
+        return [
+            f"tabrion has no direct_url.json: it was not installed from {TABRION_PIN} (for example from a package "
+            "index, where the name tabrion is not ours); reinstall with -c or -r constraints/tabrion-integration.txt"
+        ]
+    try:
+        data = json.loads(text)
+    except ValueError:
+        return ["tabrion's direct_url.json is not valid JSON"]
+    if not isinstance(data, dict):
+        return ["tabrion's direct_url.json is not a JSON object"]
+    vcs = data.get("vcs_info")
+    if not isinstance(vcs, dict):
+        kind = next((key for key in ("dir_info", "archive_info") if key in data), "no vcs_info")
+        origin = f"tabrion was installed from {data.get('url')!r} ({kind})"
+        return [f"{origin}, not from the Git commit {commit} of {TABRION_PIN}"]
+    problems: list[str] = []
+    if vcs.get("vcs") != "git" or not _same_repository(str(data.get("url", "")), url):
+        problems.append(f"tabrion was installed from {data.get('url')!r}, {TABRION_PIN} pins {url}")
+    if vcs.get("commit_id") != commit:
+        problems.append(f"tabrion is installed at commit {vcs.get('commit_id')!r}, {TABRION_PIN} pins {commit}")
+    return problems
+
+
 def installed_distribution(name: str) -> tuple[str, list[str]] | None:
     try:
         distribution = importlib.metadata.distribution(name)
@@ -202,8 +269,11 @@ def _closure(root_name: str, lookup: Lookup) -> tuple[dict[str, str], set[str]]:
     return found, missing
 
 
-def check_installed(root: Path = ROOT, lookup: Lookup = installed_distribution) -> list[str]:
-    """Problems between this environment's runtime closure of tabrion-studio and the lock (empty list = equal)."""
+def check_installed(
+    root: Path = ROOT, lookup: Lookup = installed_distribution, source: Source = installed_direct_url
+) -> list[str]:
+    """Problems between this environment's runtime closure of tabrion-studio and the lock, and with the source of the
+    installed tabrion (empty list = equal)."""
     pins, problems = read_lock((root / LOCK).read_text(encoding="utf-8"))
     applicable = {pin.name: pin for pin in pins if pin.applies()}
     installed, missing = _closure("tabrion-studio", lookup)
@@ -220,6 +290,8 @@ def check_installed(root: Path = ROOT, lookup: Lookup = installed_distribution) 
         # A required pin that is not installed is reported above, not as stale (review L-5).
         if name not in installed and name not in missing:
             problems.append(f"{LOCK}:{pin.line}: {name} applies here but nothing requires it (stale pin)")
+    if "tabrion" in installed:
+        problems += check_tabrion_source(root, source)
     return problems
 
 

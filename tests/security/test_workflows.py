@@ -91,3 +91,24 @@ def test_the_probe_catches_an_unpinned_action() -> None:
     ref = USES.search(probe)
     assert ref is not None
     assert not re.fullmatch(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}", ref.group("ref"))
+
+
+#: DC-TS-1 (dependency confusion): pip 24.0 to 26.0 crash on a constraint with a direct URL once the requirement
+#: carries extras (``-e ".[dev]" -c constraints/tabrion-integration.txt``); 26.1 and newer take the Git pin and never
+#: ask an index for tabrion. A job that installs that way raises pip to the floor first.
+PIP_FLOOR = re.compile(r"""pip install (?:--[\w-]+ )*(?:--upgrade pip|"pip>=26\.1")""")
+TABRION_CONSTRAINT = "-c constraints/tabrion-integration.txt"
+
+
+@pytest.mark.parametrize("workflow", WORKFLOWS, ids=lambda p: p.name)
+def test_jobs_with_the_tabrion_constraint_raise_pip_first(workflow: Path) -> None:
+    jobs = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]
+    for job_id, job in jobs.items():
+        floor = False
+        for step in job.get("steps", []):
+            run = str(step.get("run", ""))
+            if TABRION_CONSTRAINT in run:
+                raised = PIP_FLOOR.search(run)
+                ok = floor or (raised is not None and raised.start() < run.index(TABRION_CONSTRAINT))
+                assert ok, f'{workflow.name}: job {job_id} uses {TABRION_CONSTRAINT} before pip install "pip>=26.1"'
+            floor = floor or bool(PIP_FLOOR.search(run))
