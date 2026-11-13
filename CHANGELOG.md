@@ -19,6 +19,20 @@ All notable changes to this project are documented here. The format follows
   as well as English. The diagnostics route sends each one's facts as `params` (counts, setting names, the `sslmode`,
   the checks that did not run), and the page words them from its translations; tabrion's `TAB-*` texts stay English
   and marked as such. The JSON diagnosis report carries the `params` too.
+- STU-054 (UX acceptance of Studio 1.0 without the Data Editor): the 1.0 section of
+  `docs/architecture/ux-acceptance.md` maps every 1.0 criterion of the UX blueprint and of the backlog to its test or
+  manual check. New `e2e/ux-acceptance-1-0.spec.ts` against a real server: the 1.0 tour (DDL, ER diagram, a query with
+  a parameter, Format, the export dialog, the history, the migration status, a diagnosis) in English and German with
+  axe in light and dark, and no English catalog text on the German pages; negative tests that writing stays locked
+  (no data editing in the page, the access chip opens nothing, every write refused by the API on DEV and PROD with
+  the database file unchanged, every changing route of the documented API on a reviewed list).
+  `tests/security/test_every_route.py` asserts the same reviewed list over every route of the app, including those
+  left out of the OpenAPI document (`POST /api/session`, `POST /api/control/{action}`). New `src/i18n/coverage.test.ts`: every
+  key the page names exists, both plural forms in both languages, no visible text written into the markup. Open
+  items in TD-060; the German diagnosis texts wait on TD-032.
+- The migration status shows the command that applies pending Alembic revisions (`alembic upgrade head`, or `heads`
+  with more than one head) with **Copy command**, unless the database names a revision the project does not know
+  (Alembic would stop there); Studio still runs no migration (TD-046 B-3).
 - STU-028 (release preparation only; G-R not granted, nothing is tagged or published): the 1.0 release checklist
   `docs/development/release-checklist.md` (every step with its check and state; hard stops G-S1, the mandatory human
   security review before any public release, E-QA2, and G-R per publication), and `scripts/release_bom.py`, which

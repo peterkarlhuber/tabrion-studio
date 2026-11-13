@@ -7,7 +7,7 @@
  * (start, prod, test, dialog-d01, dialog-d01-hostile, dialog-d01-stale, dialog-d02, dialog-d06, dialog-d08, ended,
  * used, project-invalid, connections: profiles of both groups, the connection manager's writes answered, a connection
  * test and opening a connection answered (STU-008; parts-pg's test fails with `db.connection`);
- * migrations: the code trust and migration status of STU-015; dialog-trust-code; diagnostics: the findings of
+ * migrations: the code trust and migration status of STU-015 (`unknown=none`: no unknown revision, TD-046 B-3); dialog-trust-code; diagnostics: the findings of
  * STU-014, `?slow=1` keeps a run open until it is canceled, `?report=unavailable` refuses the report of TD-036;
  * editor: the profiles and a fake query engine for the SQL editor of STU-012, with `sql` as the first tab's draft,
  * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
@@ -294,7 +294,10 @@ const fakeServer: typeof fetch = async (input, init) => {
       return new Response(JSON.stringify({ connection_id: 'c1' }), { status: 201 });
     }
     if (url === '/api/connections/c1/migrations') {
-      return new Response(JSON.stringify(migrationStatus(codeTrusted)), { status: 200 });
+      return new Response(
+        JSON.stringify(migrationStatus(codeTrusted, params.get('unknown') === 'none')),
+        { status: 200 },
+      );
     }
   }
   if (scenario === 'editor') {

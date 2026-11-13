@@ -157,6 +157,57 @@ def test_the_full_app_has_every_route_family(studio: Studio) -> None:
     assert len(_api_routes(studio)) >= 40
 
 
+#: STU-054 (03 section 8, 1.0: "Schreibfunktionen gesperrt"): every route of the application that takes a changing
+#: method, hidden from the OpenAPI document or not, with why it never writes to a database. A new one fails
+#: ``test_every_changing_route_is_reviewed`` until it is reviewed and added here.
+CHANGING_ROUTES: dict[str, str] = {
+    "POST /api/session": "turns the one-time launch secret into a session cookie (Studio's own sessions)",
+    "POST /api/control/{action}": "the command line's control requests (stop, new launch link), with the control token",
+    "POST /api/project/trust": "the project trust record in Studio's state folder",
+    "POST /api/profiles": "a profile in the user's profiles.toml",
+    "PUT /api/profiles": "a profile in the user's profiles.toml",
+    "DELETE /api/profiles": "a profile in the user's profiles.toml",
+    "PUT /api/settings": "Studio's settings.toml",
+    "PUT /api/profiles/{profile_id:path}/secret": "a password in the system's keyring",
+    "DELETE /api/profiles/{profile_id:path}/secret": "a password in the system's keyring",
+    "POST /api/project/code-trust": "the code trust record in Studio's state folder",
+    "DELETE /api/project/code-trust": "the code trust record in Studio's state folder",
+    "POST /api/connections": "opens a read-only connection",
+    "DELETE /api/connections": "closes a connection",
+    "POST /api/connection-tests": "opens a read-only connection and closes it again",
+    "POST /api/queries": "runs one read-only statement (a write mode is refused)",
+    "POST /api/queries/{query_id}/cancel": "cancels a running query",
+    "POST /api/exports": "streams a read-only query as a file",
+    "POST /api/connections/{connection_id}/diagnostics": "reads the catalog and settings",
+    "POST /api/connections/{connection_id}/diagnostics/cancel": "cancels a running diagnosis",
+    "POST /api/connections/{connection_id}/diagnostics/report": "the report of a read-only diagnosis",
+    "DELETE /api/history": "Studio's state database",
+    "PUT /api/favorites": "Studio's state database",
+    "PUT /api/scripts/file": "a .sql file in the project folder (Studio's own scripts)",
+    "PUT /api/drafts": "Studio's state database",
+}
+
+
+def test_every_changing_route_is_reviewed(studio: Studio) -> None:
+    """Review M-1 of PR #84: the list covers every route of the app, also those with ``include_in_schema=False``,
+    which the OpenAPI check of ``e2e/ux-acceptance-1-0.spec.ts`` cannot see."""
+    changing = set()
+    for route in studio.client.app.routes:  # type: ignore[attr-defined]
+        for method in getattr(route, "methods", None) or set():
+            if method in UNSAFE:
+                changing.add(f"{method} {route.path}")
+    assert changing == set(CHANGING_ROUTES)
+
+
+def test_a_hidden_changing_route_is_seen(studio: Studio) -> None:
+    """The check above sees a route that is left out of the OpenAPI document (the mutation of review M-1)."""
+    app = studio.client.app
+    assert isinstance(app, FastAPI)
+    app.add_api_route("/api/connections/{connection_id}/edit", lambda: None, methods=["POST"], include_in_schema=False)
+    with pytest.raises(AssertionError):
+        test_every_changing_route_is_reviewed(studio)
+
+
 def test_every_other_api_route_is_known(studio: Studio) -> None:
     """A route or mount under ``/api/`` that is not a FastAPI route would be missed by the tests below (L-2 of
     stu-016-prep-review.md)."""
