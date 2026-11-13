@@ -1293,6 +1293,18 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   (harness, axe light/dark, en/de) and `e2e/connection-lost-backend.spec.ts` (real server; with a throwaway
   PostgreSQL, the database stops answering). Still open: the check covers the header's connection only (another
   view's connection is seen on its next request), and the banner is not yet tested in Firefox and WebKit (STU-050).
+- **Review `td-034-review.md`** (C-1, C-2, L-1..L-6) done in the TD-034 PR. Kept as limits, documented in
+  `docs/architecture/connections.md`:
+  - "D-02 again" holds in the page that saw the loss; another tab keeps its confirmation, and its next open of the
+    PROD profile replaces the lost connection without a dialog (the D-02 model of TD-038).
+  - While both pool sessions are lent out and the database is down, the check says "busy"; the loss shows when
+    those statements fail.
+- **The PostgreSQL part of `e2e/connection-lost-backend.spec.ts`** (the database stops answering) runs only when
+  `TABRION_STUDIO_TEST_POSTGRES` and `TABRION_STUDIO_TEST_POSTGRES_SUPERUSER` are set. It is an `if` inside the test,
+  not a skip, so the CI job `e2e` (no PostgreSQL) passes it without running it, and the "none skipped" gate cannot
+  see that (like TD-041). The same flow on the server is required in CI through `tests/security/test_connection_loss.py`
+  (PostgreSQL job). Run it locally with a throwaway database, or give the e2e job a PostgreSQL service (a `.github/`
+  change).
 - **The status bar** (08 §3: server version, role, database or file) still shows only the local server. The test's
   facts are not kept for the open connection; `POST /api/connections` could answer them as well.
 - **Several open connections:** the header shows the last one opened; the others stay open in the backend (the list

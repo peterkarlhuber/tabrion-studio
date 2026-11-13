@@ -135,6 +135,48 @@ describe('the connection check finds the database gone (DEV)', () => {
   });
 });
 
+describe("the connection check and the tab's visibility", () => {
+  let visibility: DocumentVisibilityState = 'visible';
+  beforeEach(() => {
+    visibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => visibility,
+    });
+  });
+  afterEach(() => {
+    // The jsdom default comes back from the prototype.
+    delete (document as unknown as { visibilityState?: unknown }).visibilityState;
+  });
+  const checks = (calls: Call[]) =>
+    sent(calls).filter((call) => call === 'GET /api/connections/c-sqlite/health').length;
+
+  it('asks nothing while the tab is hidden', async () => {
+    const { fetcher, calls } = server();
+    await openExplorer(fetcher, 'sqlite', 25);
+    await waitFor(() => expect(checks(calls)).toBeGreaterThan(0));
+    visibility = 'hidden';
+    const before = checks(calls);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(checks(calls)).toBe(before);
+  });
+
+  it('asks at once when the tab becomes visible again, not only at the next interval', async () => {
+    const { fetcher, calls } = server();
+    await openExplorer(fetcher, 'sqlite', 60_000);
+    visibility = 'hidden';
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(checks(calls)).toBe(0);
+    visibility = 'visible';
+    act(() => {
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await waitFor(() => expect(checks(calls)).toBe(1));
+  });
+});
+
 describe('a request finds a PROD database gone', () => {
   it('asks D-02 again on Reconnect, and the explorer goes on with the new connection', async () => {
     let opens = 0;

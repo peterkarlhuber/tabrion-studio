@@ -65,13 +65,24 @@ too.
 its data and definition tabs, SQL editor, diagnostics, migration status) shows the banner "Connection lost" with
 "Reconnect" above the view. Studio only reads, so nothing was lost with the connection; the banner says so.
 
-- **Server.** `OpenConnection.check()` runs `Database.health()` and says `open`, `busy` (the pool has every
-  connection checked out: a pool timeout classifies as a connection problem too, so a busy pool is told apart by the
-  pool's counts, not by the error) or `lost`. `GET /api/connections/{id}/health` answers it; a lost connection is its
-  `db.<kind>` problem and stays registered, so the page can name it. `POST /api/connections` checks an already open
-  connection of the profile before it returns it: a lost one is logged (`studio.connection_lost`), closed, and a new
-  one is opened. D-02 (`confirmed_environment`) is checked first, as for every open. A database that only ended
-  Studio's sessions and accepts new ones is not lost: tabrion's pool (`pool_pre_ping`) reconnects on the next request.
+- **Server.** `OpenConnection.check()` says `open`, `busy`, `lost` or `failed`.
+  - `busy`: every session of the pool (2) is lent out, read from the pool's counts *before* the check. The check
+    then does not run at all: it would only wait for a session (the pool timeout, 10 s) and learn nothing. Read after
+    a failed check, the counts would include the check's own session and make a dead database look busy.
+  - Otherwise `Database.health()` runs. Only a failure of the connection kind (the database does not answer) is
+    `lost`. Any other failure (the check's 5 s statement timeout on a loaded server, a permission or authentication
+    problem) is `failed`: reported as its `db.<kind>` problem, but the connection is kept.
+  - `GET /api/connections/{id}/health` answers it; a lost or failed connection is its `db.<kind>` problem and stays
+    registered, so the page can name it. `POST /api/connections` checks an already open connection of the profile
+    before it returns it: only a `lost` one is logged (`studio.connection_lost`), closed and replaced by a new one, so
+    a slow check never closes a connection under the queries and exports of other views. D-02
+    (`confirmed_environment`) is checked first, as for every open. Two opens of the same profile at once (a
+    "Reconnect" and another view's open) both connect; the second to register closes its own and returns the first,
+    so no connection is left open and unlisted.
+  - A database that only ended Studio's sessions and accepts new ones is not lost: tabrion's pool (`pool_pre_ping`)
+    reconnects on the next request.
+  - Limit: while both sessions are lent out and the database is down, the check says `busy`; the loss is seen when
+    those statements fail (their requests answer `db.connection`).
 - **Seeing the loss.** `connectionWatch.ts` wraps the page's fetcher, so it sees every answer of every view without
   a change to the views: a request on an open connection (`/api/connections/{id}/…`, or `POST /api/queries` and
   `POST /api/exports` with `connection_id` in the body) answered with `db.connection`, `studio.connection_not_found`
@@ -90,6 +101,10 @@ its data and definition tabs, SQL editor, diagnostics, migration status) shows t
   a connection the server closed), the SQL editor's tabs and runs move to it, diagnostics and the migration status
   use it for their next request. The focus moves to the main area. The SQL editor no longer reopens a PROD
   connection silently when the server says it is gone; DEV and TEST still reopen as before.
+- **What "D-02 again" covers.** The confirmation is forgotten in the page that saw the loss. D-02 stays "once per
+  profile and page session" (TD-038: the server cannot tell who confirmed), so another tab that has not seen the loss
+  yet still holds its confirmation: its next open of that PROD profile sends `"prod"`, and the server replaces the
+  lost connection without a new dialog in that tab. Before TD-034 that open got the dead connection back and failed.
 
 ## The connection test (STU-008)
 

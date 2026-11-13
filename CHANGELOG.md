@@ -12,8 +12,9 @@ All notable changes to this project are documented here. The format follows
   request finds the database gone or the connection closed, or when the header connection's check (every 30 seconds
   while the tab is visible; new route `GET /api/connections/{id}/health`) fails. **Reconnect** reads the profile
   again and asks D-02 again for PROD; the page goes on with the new connection. The server now replaces a lost
-  connection on open instead of returning it, and tells a busy pool apart from a lost database. The SQL editor no
-  longer reopens a PROD connection without D-02 when the server says it is gone.
+  connection on open instead of returning it; a busy pool (checked without waiting for a session) or a check that
+  fails otherwise (a timeout) keeps the connection. The SQL editor no longer reopens a PROD connection without D-02
+  when the server says it is gone.
 - STU-022 in the explorer page: a **DDL** tab for every object (a sequence shows its DDL on its own) with **Copy
   DDL**, a **Policies** tab for a PostgreSQL table (row-level security on and forced, the owner and the connection's
   role, whether the policies bind that role and why not, a warning when RLS is on without a policy, every policy with
