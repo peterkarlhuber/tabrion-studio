@@ -48,8 +48,9 @@ from tabrion_studio.problems import problem_response
 logger = logging.getLogger("tabrion_studio.config")
 _MAX_BODY = 4096
 _MAX_FORM_BODY = 16 * 1024
-_SETTINGS_KEYS = frozenset({"language", "theme", "density", "log_sql", "limits"})
+_SETTINGS_KEYS = frozenset({"language", "theme", "density", "log_sql", "limits", "history"})
 _LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms", "max_result_mb"})
+_HISTORY_KEYS = frozenset({"enabled", "retention_days"})
 
 
 class FormError(Exception):
@@ -195,10 +196,19 @@ def _form_pointer(pointer: str) -> str:
 
 def form_settings(raw: object, current: Settings) -> Settings:
     """``current`` with the values of the form; :class:`FormError` if one is not valid."""
-    if not isinstance(raw, dict) or not isinstance(raw.get("limits", {}), dict):
+    if (
+        not isinstance(raw, dict)
+        or not isinstance(raw.get("limits", {}), dict)
+        or not isinstance(raw.get("history", {}), dict)
+    ):
         raise FormError("studio.settings_invalid", [("settings", "config.type")])
     limits = raw.get("limits", {})
-    if any(key not in _SETTINGS_KEYS for key in raw) or any(key not in _LIMIT_KEYS for key in limits):
+    history = raw.get("history", {})
+    if (
+        any(key not in _SETTINGS_KEYS for key in raw)
+        or any(key not in _LIMIT_KEYS for key in limits)
+        or any(key not in _HISTORY_KEYS for key in history)
+    ):
         raise FormError("studio.settings_invalid", [("settings", "config.unknown_key")])
     doc: dict[str, Any] = {
         "version": SCHEMA_VERSION,
@@ -210,6 +220,10 @@ def form_settings(raw: object, current: Settings) -> Settings:
             "max_rows": limits.get("max_rows", current.max_rows),
             "statement_timeout_ms": limits.get("statement_timeout_ms", current.statement_timeout_ms),
             "max_result_mb": limits.get("max_result_mb", current.max_result_mb),
+        },
+        "history": {
+            "enabled": history.get("enabled", current.history_enabled),
+            "retention_days": history.get("retention_days", current.history_retention_days),
         },
     }
     settings, issues = validate_settings(doc)

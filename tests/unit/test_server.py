@@ -75,8 +75,12 @@ def test_info_file_is_withdrawn_before_the_shutdown(monkeypatch: pytest.MonkeyPa
         events.append("uvicorn shutdown")
 
     monkeypatch.setattr(uvicorn.Server, "shutdown", fake_shutdown)
+    # log_config=None like the product: Uvicorn's default logging config would stop its loggers from propagating for
+    # every later test of the run (test_canary's lifespan test then saw no Uvicorn record when it ran after this one).
     studio = server._StudioServer(
-        uvicorn.Config(app=lambda: None), on_ready=lambda: None, on_stopping=lambda: events.append("info removed")
+        uvicorn.Config(app=lambda: None, log_config=None),
+        on_ready=lambda: None,
+        on_stopping=lambda: events.append("info removed"),
     )
     asyncio.run(studio.shutdown())
     assert events == ["info removed", "uvicorn shutdown"]

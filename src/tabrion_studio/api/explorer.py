@@ -2,7 +2,8 @@
 
 * ``GET /api/connections/{id}/catalog[?refresh=true]``: ``{connection_id, engine, schemas, objects: [{schema, name,
   kind}], built_at, cached}``; ``kind`` is ``table``, ``view``, ``materialized_view``, ``sequence`` or
-  ``foreign_table``. Cached per connection until ``refresh``.
+  ``foreign_table``. Cached per connection until ``refresh``. ``?cached_only=true`` (STU-020) answers only a cached
+  catalog, else ``studio.catalog_not_loaded`` (404): the SQL editor's completion never reads a PROD catalog unasked.
 * ``GET /api/connections/{id}/tables/{schema}/{name}``: columns, primary key, foreign keys out (``foreign_keys``) and
   in (``referenced_by``), unique and check constraints, indexes and the row estimate (PostgreSQL). An object outside
   the catalog is ``studio.object_not_found``.
@@ -61,8 +62,10 @@ def add_explorer_routes(app: FastAPI, explorer: Explorer) -> None:
             return refused
 
     @app.get("/api/connections/{connection_id}/catalog")
-    async def get_catalog(connection_id: str, refresh: bool = False) -> Response:
-        return await answer(explorer.catalog, connection_id, refresh=refresh)
+    async def get_catalog(connection_id: str, refresh: bool = False, cached_only: bool = False) -> Response:
+        if refresh and cached_only:
+            return problem_response("studio.invalid_request")
+        return await answer(explorer.catalog, connection_id, refresh=refresh, cached_only=cached_only)
 
     @app.get("/api/connections/{connection_id}/tables/{schema}/{name}")
     async def get_table(connection_id: str, schema: str, name: str) -> Response:

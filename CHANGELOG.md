@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-020 (backend): Studio's state database `state.sqlite` in the state folder (0600, opened through
+  `tabrion.sqlite.connect`, links refused, `secure_delete`); the query history of every finished query, per profile
+  and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,
+  `DELETE /api/history`; settings `[history] enabled` and `retention_days`, 30 days by default, at most 5,000
+  entries); favorite and recently opened profiles (`GET`/`PUT /api/favorites`); `.sql` scripts in the project folder
+  (`GET /api/scripts`, `GET`/`PUT /api/scripts/file`: only `.sql` files inside the project, no links, atomic and
+  bound to what the page read); `?cached_only=true` on the catalog, so completion never reads a PROD catalog
+  unasked. New problem codes `studio.state_unavailable`, `studio.favorites_full`, `studio.catalog_not_loaded` and
+  `studio.script_*`.
 - TD-034: the banner **Connection lost** with **Reconnect** (08 section 5 "error recovery") above every page that
   holds a connection (explorer with its data and definition tabs, SQL editor, diagnostics, migration status), when a
   request finds the database gone or the connection closed, or when the header connection's check (every 30 seconds
@@ -563,6 +572,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Tests: `tests/unit/test_server.py` built a `uvicorn.Config` with Uvicorn's default logging config, which stops the
+  `uvicorn` loggers from propagating for the rest of the run; when it ran before `tests/security/test_canary.py`
+  (`pytest tests/unit tests/security`), the lifespan test there saw no Uvicorn record and failed. It now passes
+  `log_config=None`, like the product.
 - The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
   WCAG 2.5.8).
 - SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still

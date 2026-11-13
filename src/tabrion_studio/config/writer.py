@@ -130,6 +130,14 @@ def dump_settings(settings: Settings) -> bytes:
     if limits:
         lines.append("\n[limits]\n")
         lines += [f"{key} = {_value(value)}\n" for key, value in limits]
+    history = [
+        (key, getattr(settings, f"history_{key}"))
+        for key in ("enabled", "retention_days")
+        if getattr(settings, f"history_{key}") != getattr(defaults, f"history_{key}")
+    ]
+    if history:
+        lines.append("\n[history]\n")
+        lines += [f"{key} = {_value(value)}\n" for key, value in history]
     return "".join(lines).encode("utf-8")
 
 
