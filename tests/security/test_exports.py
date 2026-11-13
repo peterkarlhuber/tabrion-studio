@@ -265,6 +265,67 @@ def test_one_export_per_connection_and_closing_frees_it(shop: tuple[Exports, Con
     assert not [thread for thread in threading.enumerate() if thread.name == "studio-export"]
 
 
+@pytest.fixture
+def held_worker(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[threading.Event, threading.Event]]:
+    """Holds an export worker at the start of its last step (``timer.cancel()`` in ``_produce``'s ``finally``),
+    after the client could already see the end or the error of its export, until the test opens the gate (at most
+    10 s): ``(held, gate)``. A deterministic stand-in for a worker that is slow to finish (TD-057)."""
+    held, gate = threading.Event(), threading.Event()
+
+    class Timer(threading.Timer):
+        def cancel(self) -> None:
+            if threading.current_thread().name == "studio-export" and not gate.is_set():
+                held.set()
+                gate.wait(10)
+            super().cancel()
+
+    monkeypatch.setattr(threading, "Timer", Timer)
+    try:
+        yield held, gate
+    finally:
+        gate.set()
+
+
+def test_td057_a_finished_export_frees_its_slot_before_the_client_sees_its_end(
+    shop: tuple[Exports, ConnectionRegistry, str], held_worker: tuple[threading.Event, threading.Event]
+) -> None:
+    """The next export on the same connection may start as soon as the previous one was read to its end, even while
+    that export's worker is still finishing (it was ``studio.export_busy`` in that gap); the earlier worker's end
+    never frees the later export's slot, and two exports at once on one connection are still refused."""
+    exports, _, connection_id = shop
+    held, gate = held_worker
+    first = exports.start(connection_id, "csv", sql="SELECT 1 AS one")
+    assert b"".join(first.chunks()) == b"one\r\n1\r\n"
+    assert held.wait(5)  # the first worker has not finished yet
+    second = exports.start(connection_id, "csv", sql=MILLION)
+    next(second.chunks())  # running, and waiting for the client
+    gate.set()
+    assert first._done.wait(5)
+    assert exports._running == {connection_id: second}
+    with pytest.raises(ExportError) as raised:
+        exports.start(connection_id, "csv", sql="SELECT 1")
+    assert raised.value.code == "studio.export_busy"
+    second.close()
+    assert second._done.wait(5)
+    assert not exports._running
+
+
+def test_td057_a_failed_export_frees_its_slot_before_the_client_sees_its_error(
+    shop: tuple[Exports, ConnectionRegistry, str], held_worker: tuple[threading.Event, threading.Event]
+) -> None:
+    exports, _, connection_id = shop
+    held, gate = held_worker
+    failing = exports.start(connection_id, "csv", sql="SELECT abs(-9223372036854775807 - 1) AS x")
+    with pytest.raises(Exception) as failed:
+        b"".join(failing.chunks())
+    assert not isinstance(failed.value, ExportError)  # the database's error, not a stop
+    assert held.wait(5)  # the failed worker has not finished yet
+    assert b"".join(exports.start(connection_id, "csv", sql="SELECT 1 AS one").chunks()) == b"one\r\n1\r\n"
+    gate.set()
+    assert failing._done.wait(5)
+    assert not exports._running
+
+
 def test_the_timeout_stops_an_export(
     shop: tuple[Exports, ConnectionRegistry, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
