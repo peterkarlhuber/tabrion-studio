@@ -536,6 +536,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- e2e (TD-050, joint regression JR-N2, PR #@@): `backend.spec.ts` removes its `studio-e2e-*` temp directory after
+  the server has exited, like the other real-server suites; before, every run left one behind.
 - CI (STU-050, TD-047): the e2e suites also run in Firefox and WebKit, in the jobs `e2e (firefox)` and
   `e2e (webkit)` with the browsers of the locked Playwright version; advisory in `ci-manifest.json` until both are
   green. `STUDIO_E2E_BROWSERS` picks the browsers locally (Chromium by default); the heap measurements through CDP
