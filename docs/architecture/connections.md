@@ -77,8 +77,9 @@ its data and definition tabs, SQL editor, diagnostics, migration status) shows t
     before it returns it: only a `lost` one is logged (`studio.connection_lost`), closed and replaced by a new one, so
     a slow check never closes a connection under the queries and exports of other views. D-02
     (`confirmed_environment`) is checked first, as for every open. Two opens of the same profile at once (a
-    "Reconnect" and another view's open) both connect; the second to register closes its own and returns the first,
-    so no connection is left open and unlisted.
+    "Reconnect" and another view's open) both connect; the second to register closes its own and returns the first
+    (after the D-02 check, since the profile may have become PROD meanwhile), so no connection is left open and
+    unlisted.
   - A database that only ended Studio's sessions and accepts new ones is not lost: tabrion's pool (`pool_pre_ping`)
     reconnects on the next request.
   - Limit: while both sessions are lent out and the database is down, the check says `busy`; the loss is seen when

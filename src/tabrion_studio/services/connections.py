@@ -622,6 +622,9 @@ class ConnectionRegistry:
                 self._open[connection.id] = connection
         if raced is not None:
             connection.close()
+            # D-02 as for any connection already open (D-1 of td-034-review.md): the profile may have become PROD
+            # meanwhile, and the request that registered first confirmed it; this one may not have.
+            require_prod_confirmation(raced.environment, confirmed_environment)
             return raced
         logger.info(
             "connection opened", extra={"event": "studio.connection_opened", "profile_id": connection.profile_id}

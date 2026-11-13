@@ -435,6 +435,34 @@ def test_td034_two_opens_at_once_leave_one_connection(env: Env, monkeypatch: pyt
     assert [c.id for c in registry.list()] == [winner.id]
 
 
+def test_td034_a_raced_open_is_returned_only_with_d02(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """D-1 of td-034-review.md (delta d73f6c2): while a request confirmed as DEV connects, the profile becomes PROD
+    and a page that confirmed PROD registers its connection first. The DEV request must not get that PROD connection:
+    409, as for any open of a PROD profile without D-02, and its own connection is closed."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    registry = env.registry
+    connect = registry._connect
+    mine: list[OpenConnection] = []
+
+    def racing(profile_id: str, confirmed: str | None) -> OpenConnection:
+        connection = connect(profile_id, confirmed)
+        if not mine:
+            mine.append(connection)
+            digest = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+            prod = {"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "prod"}
+            saved = env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": prod, "digest": digest})
+            assert saved.status_code == 200, saved.text
+            assert registry.open(profile_id, "prod").environment == "prod"  # the confirmed page, registered first
+        return connection
+
+    monkeypatch.setattr(registry, "_connect", racing)
+    refused = env.send("POST", "/api/connections", {"profile_id": "user:parts", "confirmed_environment": "dev"})
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["code"] == "studio.prod_confirmation_required"
+    assert [c.environment for c in registry.list()] == ["prod"]
+    assert mine[0].id not in [c.id for c in registry.list()]
+
+
 def test_td034_a_lost_prod_connection_is_replaced_only_with_d02(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     env.create({"name": "live", "engine": "sqlite", "path": str(env.db), "environment": "prod"})
     body = {"profile_id": "user:live", "confirmed_environment": "prod"}
