@@ -18,6 +18,11 @@ All notable changes to this project are documented here. The format follows
   change. **Completion** of schemas, tables and views from the catalog of the open connection and of columns after
   `table.` (DEV and TEST); on PROD only a catalog already read, or after "Load names". The completion list now closes
   when a missing parameter takes the focus (TD-046 B-6). A history step on the start page.
+- STU-020 review fixes (page): a script with mixed line endings is saved byte for byte (only an all-CRLF script is
+  edited with LF); the tab title escapes invisible and bidi characters; the save dialog checks the server's new path
+  rules; the Open… dialog says how many links it left out; texts for the new script problems; a cut history entry
+  says so in the editor; the delete-all dialog says it also clears the user's own profiles in every project; the
+  settings say that retention deletes old statements also while the history is off.
 - STU-020 (backend): Studio's state database `state.sqlite` in the state folder (0600, opened through
   `tabrion.sqlite.connect`, links refused, `secure_delete`); the query history of every finished query, per profile
   and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,

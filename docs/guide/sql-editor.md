@@ -96,8 +96,15 @@ Studio opens and saves `.sql` scripts in the project folder (the folder you star
   text as a download, like before.
 - If the script changed on disk since the tab read it, or a script with that path exists already, Studio asks
   before it overwrites it (the default is Cancel).
-- Studio follows no link and writes only `.sql` files inside the project, up to 1 MB of UTF-8. A script whose lines
-  end in CRLF keeps them.
+- Studio follows no link and writes only `.sql` files inside the project, up to 1 MB of UTF-8. A script keeps its line
+  endings and its byte order mark: a script whose lines all end in CRLF is shown with ordinary lines and saved with
+  CRLF again; a script with mixed line endings shows each CR as a marked character and is saved byte for byte.
+- A path is a plain name on every system: no device name such as `NUL` or `COM1` (also not `nul.sql`), no short name
+  such as `GIT~1`, no name that ends in a dot. A script in a folder that is a link, or a OneDrive "Files On-Demand"
+  folder, does not open or save; the Open… list says how many it left out. Keep the project in a folder that
+  OneDrive does not sync.
+- When the system refuses the file (no permission, a read-only or full drive, the file open in another program),
+  Studio says which, and the script on disk is unchanged.
 
 ## Format and completion
 
