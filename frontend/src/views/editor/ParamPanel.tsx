@@ -34,6 +34,7 @@ export function ParamPanel({
       className={styles.params}
       aria-labelledby={`${prefix}-params-title`}
       data-testid="param-panel"
+      data-region="parameters"
     >
       <h2 id={`${prefix}-params-title`} className={styles.sectionTitle}>
         {t('editor.params.title')}
@@ -88,6 +89,7 @@ export function ParamPanel({
                   id={fieldId}
                   className={connectionStyles.input}
                   aria-labelledby={`${fieldId}-name`}
+                  data-region-entry=""
                   value={input?.value === 'false' ? 'false' : 'true'}
                   onChange={(event) => set({ value: event.target.value })}
                 >
@@ -99,6 +101,7 @@ export function ParamPanel({
                   id={fieldId}
                   className={connectionStyles.input}
                   aria-labelledby={`${fieldId}-name`}
+                  data-region-entry=""
                   aria-invalid={invalid ? true : undefined}
                   aria-describedby={invalid ? errorId : undefined}
                   inputMode={type === 'number' ? 'decimal' : undefined}
