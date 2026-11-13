@@ -127,6 +127,26 @@ async function ready() {
 }
 
 describe('migration status view: code trust (T-16)', () => {
+  it('STU-050: the status region shows no empty box before its first message', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'GET /api/project/code-trust': [
+        () => json(trust()),
+        () => json(trust({ state: 'trusted', trusted: true })),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    const status = screen.getByTestId('migrations-message');
+    expect(status).toHaveAttribute('role', 'status');
+    expect(status).toBeEmptyDOMElement();
+    expect(status).toHaveClass('tb-sr-only');
+    await user.click(await screen.findByRole('button', { name: 'Review files' }));
+    await user.click(screen.getByRole('button', { name: 'Trust and run' }));
+    await waitFor(() => expect(status).toHaveTextContent('The migration code is trusted.'));
+    expect(status).not.toHaveClass('tb-sr-only');
+  });
+
   it('opens the trust dialog on "Don\'t trust" and sends the digest it showed', async () => {
     const user = userEvent.setup();
     const { fetcher, calls } = server({
