@@ -21,6 +21,10 @@
   display: inline-flex;
   align-items: center;
   gap: var(--tb-space-2);
+  /* The label is the target of its radio button or checkbox: at least 24 px high (WCAG 2.5.8, STU-053 F-6), as in
+     the connection manager. */
+  min-height: var(--tb-control-height);
+  cursor: pointer;
 }
 .limitRow {
   display: flex;
