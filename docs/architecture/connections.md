@@ -186,11 +186,9 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 - It allows reading, transactions and savepoints, recursive queries, pragmas that only read (or set `query_only`
   on), and SQLite's built-in functions that only compute a value: an allowlist (`readonly._SQLITE_FUNCTIONS`: the
   core scalar, aggregate, window, date, math and JSON functions, and the FTS3/4/5 and R-tree functions that only
-  read). Since the STU-016 review (F-2), every other function is denied: `load_extension`; `fts3_tokenizer`, which
-  returns a native pointer and registers one as a tokenizer (an address leak and memory corruption in Studio's
-  process on builds with `SQLITE_ENABLE_FTS3_TOKENIZER`, which many Linux distributions have); `fts5` (the API
-  pointer); `optimize` (FTS4 maintenance); `rtreenode`, `rtreedepth` (debugging decoders); `sqlite_log`; and any
-  function a build or a later SQLite adds. A view of the file that calls a denied function fails to read.
+  read). Since the STU-016 review (F-2), every other function is denied, since reading needs none of them:
+  `load_extension`, `fts3_tokenizer`, `fts5`, `optimize` (FTS4 maintenance), `rtreenode` and `rtreedepth`
+  (debugging), `sqlite_log`, and any function a build or a later SQLite adds. A view of the file that calls a denied function fails to read.
 - Every SQLite connection sets `PRAGMA trusted_schema = OFF` before the authorizer is installed (tabrion's default
   profile sets it too), so views and triggers of a file can call only functions marked innocuous.
 - It denies everything else: every write, every schema change (temporary objects included), `ATTACH`, `DETACH`
@@ -206,10 +204,11 @@ different environment, or if `database_file` now resolves elsewhere, the connect
   default_transaction_read_only | transaction_read_only | ROLE | SESSION AUTHORIZATION`.
 - So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT`, `CLUSTER` and `DO`.
 - So is every statement with the word `INTO` outside a literal, a comment or a quoted identifier, in any of the
-  lexings the check reads (F-1 of the STU-016 review). `SELECT ... INTO` creates a table, the read-only transaction
-  is not a reliable boundary for every form of it (`EXPLAIN` included), and a read-only editor never needs `INTO` (`INSERT INTO`, `MERGE INTO`, `REPLACE INTO` and
-  `VACUUM INTO` are refused anyway). A column named `into` must be written as a quoted identifier (`"into"`; in
-  SQLite also `[into]` is read as the keyword by the PostgreSQL lexings, so it is refused).
+  lexings the check reads (F-1 of the STU-016 review). `SELECT ... INTO` creates a table, and a read-only editor
+  never needs `INTO` (`INSERT INTO`, `MERGE INTO`, `REPLACE INTO` and `VACUUM INTO` are refused anyway). A numeric
+  literal is one token, so a word written right after a number is still seen as a word. A column named `into` must be written as a quoted identifier (`"into"`; in
+  SQLite also `[into]` is read as the keyword by the PostgreSQL lexings, so it is refused). `into` inside a
+  dollar-quoted string (`$$...$$`) is refused too, since SQLite has no dollar quoting; use `'...'` there.
 - Since the STU-011 fix round, every other first word too: only `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a
   query, `SHOW` and `PRAGMA` pass (an allowlist; see [Query engine](queries.md), "Statements and session state").
   PostgreSQL connections also get Studio's session settings as startup options and run `RESET ALL` on check-in
@@ -228,7 +227,7 @@ comments and literals are left out and quoted identifiers unquoted, and `'...'` 
 backslash escapes, so `"set_config"(`, `set_config/**/(` and `pg_catalog.set_config (` are caught (R-L1 and I-R1 of
 the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. `DO` blocks and the functions that run a query given as text (`query_to_xml`,
 `query_to_xmlschema`, `query_to_xml_and_xmlschema`, `cursor_to_xml`, `cursor_to_xmlschema`, `ts_stat`, `ts_rewrite`,
-`crosstab`, `dblink` and its forms) are refused as well, since the check cannot see inside a literal (R2-L1 of
+`crosstab`, `connectby`, `xpath_table`, `dblink` and its forms) are refused as well, since the check cannot see inside a literal (R2-L1 of
 re-review 2). Since the STU-016 review (F-3), so are the functions whose effect a read-only transaction does not stop
 (`readonly._REFUSED_FUNCTIONS` and `_REFUSED_PREFIXES`, each justified there): `pg_terminate_backend` and
 `pg_cancel_backend` (a role may end its own other sessions, the application's among them when it shares the role);
@@ -237,7 +236,9 @@ and the replication slot functions that create, drop, copy, advance or consume a
 `txid_current` and `pg_current_xact_id` (they assign a transaction ID; the `_if_assigned` forms stay allowed);
 `pg_reload_conf`, `pg_rotate_logfile`, `pg_log_backend_memory_contexts`, `pg_promote`, the WAL replay pause and
 resume, `pg_import_system_collations`, every `pg_stat_reset*` function and `pg_stat_statements_reset` (the server);
-`lo_import`, `lo_export` and adminpack's `pg_file_*` writers (server files); every `dblink*` function; and every
+`lo_import`, `lo_export` and adminpack's `pg_file_*` writers (server files); `brin_summarize_new_values`,
+`brin_summarize_range`, `brin_desummarize_range` and `gin_clean_pending_list` (index changes outside the
+transaction's data); every `dblink*` function; and every
 `pg_replication_origin_*` function. The large-object writers (`lo_create`, `lo_put`, ...), `nextval` and `setval` are
 left to the database, which refuses them in a read-only transaction; the transaction-level advisory locks end with
 Studio's transaction and stay allowed. This is still a best-effort check, not the boundary: a database function that calls `set_config`, or
@@ -265,8 +266,8 @@ lookup runs at connect time and hstore values are the server's text. User SQL, t
 session's path.
 
 **Known limits** (documented in 03 section 5.1 and ADR R-S3):
-- `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function),
-  nor every form of `SELECT ... INTO` (refused by the statement check, F-1). Only the role's
+- `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function).
+  Only the role's
   privileges are a hard boundary, so production profiles should use a role without write privileges, without
   `CREATE` on any schema and without `TEMP` on the database. The diagnostics (STU-014) check this (`read_only_role`,
   `STU-DX-003`).

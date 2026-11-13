@@ -473,7 +473,7 @@ All notable changes to this project are documented here. The format follows
 ### Security
 
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
-  (any `INTO` outside literals, comments and quoted identifiers, also under `EXPLAIN ANALYZE`) in the editor, the
+  (any `INTO` outside literals, comments and quoted identifiers) in the editor, the
   export route and every other path; PostgreSQL sessions drop temporary tables when they go back to the pool
   (`DISCARD TEMP`); the diagnostic `STU-DX-003` also reports `CREATE` on a schema (warning, error on PROD) and `TEMP`
   on the database (an info on its own). (F-1)
@@ -482,7 +482,8 @@ All notable changes to this project are documented here. The format follows
   denied; every SQLite session sets `trusted_schema = OFF` before the authorizer. (F-2)
 - STU-016 review, PostgreSQL side-effect functions: the statement check also refuses functions whose effect a
   read-only transaction does not stop (other sessions, the WAL, replication slots and origins, transaction IDs,
-  server reloads and resets, server files, every `dblink` function); the list and the reason for each are in
+  server reloads and resets, server files, index maintenance, every `dblink` function, and `connectby` and
+  `xpath_table`, which run a query given as text); the list and the reason for each are in
   `docs/architecture/connections.md`. (F-3)
 - Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
   review). User SQL, the viewer and the exports keep the session's `search_path`.

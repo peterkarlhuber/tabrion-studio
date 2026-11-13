@@ -12,9 +12,8 @@ This module adds two guards:
   built-in functions that only compute a value (:data:`_SQLITE_FUNCTIONS`), and pragmas that only read (or set
   ``query_only`` on). ``ATTACH``, ``DETACH`` (and so ``VACUUM INTO``, which attaches its target), every write, every
   schema change (also of temporary objects), ``ANALYZE``, ``REINDEX`` and every other function are denied
-  (STU-T-024): ``load_extension``, ``fts3_tokenizer`` (it hands out and takes native pointers; F-2 of
-  ``stu-016-security-review.md``), the FTS and R-tree maintenance and debugging functions, and whatever a build or a
-  later SQLite adds.
+  (STU-T-024, F-2 of ``stu-016-security-review.md``): ``load_extension``, ``fts3_tokenizer``, the FTS and R-tree
+  maintenance and debugging functions, and whatever a build or a later SQLite adds.
 * :func:`check_statement`, which allows one statement by its first word (an allowlist, M-1/M-2/I-2 of
   ``stu-011-review.md``: ``SELECT``, ``WITH``, ``VALUES``, ``TABLE``, ``EXPLAIN`` of a query, ``SHOW``, ``PRAGMA``)
   and refuses a text with more than one statement and every statement of the transaction-control classes
@@ -24,8 +23,7 @@ This module adds two guards:
   STU-009 tests shows it. With one statement per ``read()``, a write fails in the database. ``COPY``, ``LOAD``,
   ``NOTIFY``, ``LISTEN``, ``LOCK``, ``VACUUM``, ``CHECKPOINT`` and ``CLUSTER`` are refused too, and so is any
   statement with the word ``INTO`` outside a literal or quoted identifier (F-1 of ``stu-016-security-review.md``):
-  ``SELECT ... INTO`` creates a table, and the read-only transaction is not a reliable boundary for every form of
-  it, so the check is.
+  ``SELECT ... INTO`` creates a table, and a read-only editor never needs it.
 
 The text checks are a user-experience layer (03 section 5.1). The boundary is in the database and the protocol: every
 PostgreSQL statement is a prepared statement (``prepare_threshold=0``, extended query protocol), so the server refuses
@@ -85,12 +83,10 @@ _ACTING_PRAGMAS = frozenset({"optimize", "wal_checkpoint", "incremental_vacuum",
 _ON = frozenset({"on", "1", "true", "yes"})
 #: The SQL functions a Studio SQLite connection may call (F-2 of ``stu-016-security-review.md``): SQLite's built-in
 #: scalar, aggregate, window, date, math and JSON functions, and the FTS3/4/5 and R-tree functions that only read.
-#: An allowlist, so a function a build or a later SQLite adds is denied until it is looked at. Left out on purpose:
-#: ``load_extension``; ``fts3_tokenizer`` (returns a native pointer and registers one as a tokenizer: an address
-#: leak and memory corruption in Studio's process where the build has ``SQLITE_ENABLE_FTS3_TOKENIZER``); ``fts5``
-#: (hands out the FTS5 API pointer); ``optimize`` (FTS4 maintenance, a write); ``rtreenode`` and ``rtreedepth``
-#: (debugging functions that decode a blob given as text); ``sqlite_log`` (writes to the error log); SQLite's
-#: internal ``sqlite_rename_*``/``sqlite_drop_column``; and the shell's ``readfile``, ``writefile`` and ``edit``.
+#: An allowlist, so a function a build or a later SQLite adds is denied until it is looked at. Left out on purpose,
+#: since reading needs none of them: ``load_extension``, ``fts3_tokenizer``, ``fts5``, ``optimize`` (FTS4
+#: maintenance), ``rtreenode`` and ``rtreedepth`` (debugging), ``sqlite_log``, SQLite's internal
+#: ``sqlite_rename_*``/``sqlite_drop_column``, and the shell's ``readfile``, ``writefile`` and ``edit``.
 #: A function a database file's view calls is checked too: the view fails to read rather than call something else.
 _SQLITE_FUNCTIONS = frozenset(
     {
@@ -179,7 +175,7 @@ _SESSION_SETTINGS = frozenset(
 #: transaction-level ``pg_advisory_xact_lock*`` functions end with Studio's transaction and stay allowed.
 #: Functions that run a query given as text are refused too, since the check cannot see inside a literal (R2-L1 of
 #: re-review 2): ``query_to_xml`` and ``cursor_to_xml`` with their schema forms, ``ts_stat`` and ``ts_rewrite``
-#: (core), ``crosstab`` (tablefunc) and ``dblink`` (dblink).
+#: (core), ``crosstab`` and ``connectby`` (tablefunc), ``xpath_table`` (xml2) and ``dblink`` (dblink).
 #:
 #: F-3 of ``stu-016-security-review.md``: functions whose effect a read-only transaction does not stop, refused on the
 #: same reasoning as ``pg_notify`` (Studio's connection reads; the role's privileges stay the boundary below this):
@@ -194,7 +190,9 @@ _SESSION_SETTINGS = frozenset(
 #:   WAL replay pause and resume, ``pg_import_system_collations`` (catalog rows), the statistics resets and
 #:   ``pg_stat_statements_reset``;
 #: * server files: ``lo_import`` and ``lo_export`` (``lo_export`` writes a file, which no read-only check covers),
-#:   adminpack's ``pg_file_*`` writers.
+#:   adminpack's ``pg_file_*`` writers;
+#: * index maintenance: ``brin_summarize_new_values``, ``brin_summarize_range``, ``brin_desummarize_range`` and
+#:   ``gin_clean_pending_list`` change an index outside the transaction's data; reading never needs them.
 #:
 #: The large-object writers (``lo_create``, ``lo_put``, ...), ``nextval`` and ``setval`` are left to the database: a
 #: read-only transaction refuses them. :data:`_REFUSED_PREFIXES` covers families by name.
@@ -217,6 +215,8 @@ _REFUSED_FUNCTIONS = frozenset(
         "crosstab2",
         "crosstab3",
         "crosstab4",
+        "connectby",
+        "xpath_table",
         "dblink",
         "dblink_exec",
         "dblink_open",
@@ -266,6 +266,11 @@ _REFUSED_FUNCTIONS = frozenset(
         "pg_file_rename",
         "pg_file_unlink",
         "pg_file_sync",
+        # index maintenance
+        "brin_summarize_new_values",
+        "brin_summarize_range",
+        "brin_desummarize_range",
+        "gin_clean_pending_list",
     }
 )
 #: Function families refused by name (F-3): every ``dblink`` function (``dblink_connect`` keeps a connection open past
@@ -279,6 +284,12 @@ _REFUSED_PREFIXES = ("dblink", "pg_stat_reset", "pg_replication_origin_")
 _BLANK = re.compile(r"[ \t\n\r\f\v]*+(?:--[^\n\r]*+[ \t\n\r\f\v]*+)*+")
 _SQLITE_BLANK = re.compile(r"[ \t\n\r\f\v]*+(?:--[^\n]*+[ \t\n\r\f\v]*+)*+")
 _DOLLAR_TAG = re.compile(r"\$(?:[A-Za-z_\u0080-\U0010ffff][A-Za-z0-9_\u0080-\U0010ffff]*)?\$")
+#: A numeric literal as one token: hexadecimal, octal and binary integers (PostgreSQL 16), or digits with ``_``
+#: separators, a decimal point and an exponent (also ``.5``).
+_NUMBER = re.compile(
+    r"0[xX][0-9a-fA-F_]++|0[oO][0-7_]++|0[bB][01_]++"
+    r"|(?:[0-9][0-9_]*+(?:\.[0-9_]*+)?+|\.[0-9][0-9_]*+)(?:[eE][+-]?[0-9]++)?+"
+)
 #: A Unicode-escaped quoted identifier (``U&"\0073et_config"``): Studio does not decode them, so it refuses them.
 _UNICODE_IDENTIFIER = "\x00u&"
 
@@ -370,6 +381,10 @@ def _lex(sql: str, *, backslash_strings: bool, sqlite: bool = False) -> list[tup
         elif not sqlite and char == "$" and (match := _DOLLAR_TAG.match(sql, index)) is not None:
             close = sql.find(match.group(), match.end())
             index = size if close < 0 else close + len(match.group())
+        elif (number := _NUMBER.match(sql, index)) is not None:
+            # A numeric literal is one token, and a letter right after it starts a new word.
+            tokens.append((number.group(), False))
+            index = number.end()
         elif _is_word_start(char):
             end = index + 1
             while end < size and _is_word_char(sql[end]):
@@ -399,10 +414,15 @@ def _tokens(sql: str, *, backslash_strings: bool, sqlite: bool = False) -> list[
     return [token for token, _ in _lex(sql, backslash_strings=backslash_strings, sqlite=sqlite)]
 
 
-def _leading_words(sql: str, *, backslash_strings: bool, sqlite: bool) -> list[str]:
-    """The first words of ``sql`` after leading ``(``, from the lexer (R-H1); a word that is a quoted identifier or a
-    symbol ends them, and ``[]`` means the text does not start with a word."""
-    tokens = _lex(sql, backslash_strings=backslash_strings, sqlite=sqlite)
+def _lexings(sql: str) -> list[list[tuple[str, bool]]]:
+    """``sql`` lexed once in each reading of :data:`_READINGS`, in that order; every check reads these (one lexing per
+    reading, so the checks stay linear and cheap on long texts: R2-L1 of re-review 2)."""
+    return [_lex(sql, backslash_strings=backslash, sqlite=sqlite) for backslash, sqlite in _READINGS]
+
+
+def _leading_words(tokens: list[tuple[str, bool]]) -> list[str]:
+    """The first words of a lexed text after leading ``(`` (R-H1); a word that is a quoted identifier or a symbol ends
+    them, and ``[]`` means the text does not start with a word."""
     index = 0
     while index < len(tokens) and tokens[index] == ("(", False):
         index += 1
@@ -417,20 +437,23 @@ def _leading_words(sql: str, *, backslash_strings: bool, sqlite: bool) -> list[s
 def first_word(sql: str) -> str:
     """The first word of ``sql`` as every reading of :data:`_READINGS` sees it, ``""`` if they disagree or there is
     none. ``connections`` uses it to choose the cursor; :func:`check_statement` refuses a text without one."""
-    seen = {
-        tuple(_leading_words(sql, backslash_strings=backslash, sqlite=sqlite)[:1]) for backslash, sqlite in _READINGS
-    }
+    return _first_word(_lexings(sql))
+
+
+def _first_word(lexings: list[list[tuple[str, bool]]]) -> str:
+    seen = {tuple(_leading_words(tokens)[:1]) for tokens in lexings}
     return seen.pop()[0] if len(seen) == 1 and () not in seen else ""
 
 
-def _calls_refused_function(sql: str) -> bool:
-    """Whether ``sql`` calls a function of :data:`_REFUSED_FUNCTIONS` (or holds a Unicode-escaped identifier).
+def _calls_refused_function(lexings: list[list[tuple[str, bool]]]) -> bool:
+    """Whether the text of ``lexings`` (:func:`_lexings`) calls a function of :data:`_REFUSED_FUNCTIONS` or
+    :data:`_REFUSED_PREFIXES` (or holds a Unicode-escaped identifier).
 
     The text is read twice, with and without backslash escapes in ``'...'``, so a literal cannot hide a call from
     whichever way the server lexes it (R-L1 of the re-review: ``"set_config"(`` and ``set_config/**/(``).
     """
-    for backslash_strings in (False, True):  # PostgreSQL's functions, so PostgreSQL's readings
-        tokens = _tokens(sql, backslash_strings=backslash_strings)
+    for lexed in lexings[:2]:  # PostgreSQL's functions, so PostgreSQL's readings (the first two of _READINGS)
+        tokens = [token for token, _ in lexed]
         if _UNICODE_IDENTIFIER in tokens:
             return True
         for position, token in enumerate(tokens[:-1]):
@@ -480,18 +503,15 @@ def _explains_a_query(tokens: list[str]) -> bool:
     return index < len(tokens) and tokens[index] in _QUERY_WORDS
 
 
-def _writes_into(sql: str) -> bool:
-    """Whether ``sql`` has the word ``INTO`` in any reading of :data:`_READINGS` (F-1 of the STU-016 review).
+def _writes_into(lexings: list[list[tuple[str, bool]]]) -> bool:
+    """Whether the text of ``lexings`` (:func:`_lexings`) has the word ``INTO`` in any reading (F-1 of the STU-016
+    review).
 
     A read-only statement never needs it: ``INSERT INTO``, ``MERGE INTO``, ``REPLACE INTO`` and ``VACUUM INTO`` are
-    refused anyway, and ``SELECT ... INTO`` creates a table, which the read-only transaction does not reliably stop
-    in every form. A quoted identifier (``"into"``) is a name, not the keyword, and stays allowed.
+    refused anyway, and ``SELECT ... INTO`` creates a table. A quoted identifier (``"into"``) is a name, not the
+    keyword, and stays allowed.
     """
-    return any(
-        word == "into" and not quoted
-        for backslash, sqlite in _READINGS
-        for word, quoted in _lex(sql, backslash_strings=backslash, sqlite=sqlite)
-    )
+    return any(word == "into" and not quoted for lexed in lexings for word, quoted in lexed)
 
 
 def _check_words(words: list[str]) -> None:
@@ -529,14 +549,13 @@ def check_statement(sql: str) -> str:
     if len(statements) > 1:
         raise StatementRefused("studio.statement_multiple")
     statement = statements[0]
-    if not first_word(statement):  # no word, or the readings disagree where the statement starts (R-H1)
-        raise StatementRefused(
-            "studio.statement_empty" if not _tokens(statement, backslash_strings=False) else "studio.statement_refused"
-        )
-    if _calls_refused_function(statement) or _writes_into(statement):
+    lexings = _lexings(statement)  # once per reading; every check below reads these
+    if not _first_word(lexings):  # no word, or the readings disagree where the statement starts (R-H1)
+        raise StatementRefused("studio.statement_empty" if not lexings[0] else "studio.statement_refused")
+    if _calls_refused_function(lexings) or _writes_into(lexings):
         raise StatementRefused("studio.statement_refused")
-    for backslash, sqlite in _READINGS:
-        _check_words(_leading_words(statement, backslash_strings=backslash, sqlite=sqlite))
-        if not _explains_a_query_or_is_none(_tokens(statement, backslash_strings=backslash, sqlite=sqlite)):
+    for lexed in lexings:
+        _check_words(_leading_words(lexed))
+        if not _explains_a_query_or_is_none([token for token, _ in lexed]):
             raise StatementRefused("studio.statement_refused")
     return statements[0]

@@ -180,9 +180,8 @@ def _discard(connection: sqlalchemy.Connection, dbapi: Any) -> None:
 
 #: ``RESET ALL`` leaves ``role`` and ``session_authorization`` alone (both are ``GUC_NO_RESET_ALL``), so a ``SET ROLE``
 #: that a database function made is taken back first (R2-I1 of delta re-review 2 of ``stu-011-review.md``).
-#: ``DISCARD TEMP`` drops the session's temporary tables (F-1 of ``stu-016-security-review.md``): ``pg_temp`` comes
-#: before ``pg_catalog`` for user SQL, so a temporary table left on a pooled session would shadow a catalog name in
-#: the next user's statements.
+#: ``DISCARD TEMP`` drops the session's temporary tables (F-1 of ``stu-016-security-review.md``), so none outlives
+#: the statement that made it.
 _RESET_STATEMENTS = (
     "CLOSE ALL",
     "SELECT pg_catalog.pg_advisory_unlock_all()",

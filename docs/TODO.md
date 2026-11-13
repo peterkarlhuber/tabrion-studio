@@ -1139,16 +1139,15 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
   documents), SQ-05, SQ-07, T-06, T-13, `docs/architecture/connections.md`, `docs/architecture/diagnostics.md`
 - **Done in the PR:** F-1: `check_statement` refuses any `INTO` outside literals, comments and quoted identifiers in
-  every lexing (`SELECT ... INTO` in every form, `EXPLAIN` included);
+  every lexing, numeric literals lexed as one token;
   the PostgreSQL pool reset runs `DISCARD TEMP`; `STU-DX-003` reports schema `CREATE` (warning, error on PROD) and
   database `TEMP` (info on its own). F-2: the SQLite authorizer allows only SQLite's built-in reading functions
   (`fts3_tokenizer` and the rest denied), and every SQLite session sets `trusted_schema = OFF`. F-3: the statement
-  check refuses the PostgreSQL functions with effects outside the transaction (list and reasons in
-  `connections.md`). The prep page's SQ-05, T-06 and T-13 rows and its residual-risk line say what the review
+  check refuses the PostgreSQL functions with effects outside the transaction, plus `connectby`, `xpath_table` and
+  the BRIN/GIN index maintenance functions (list and reasons in `connections.md`). The prep page's SQ-05, T-06 and T-13 rows and its residual-risk line say what the review
   found. Tests in `test_read_only.py`, `test_queries.py`, `test_exports.py` and `test_diagnostics.py`, the
   PostgreSQL ones in the PostgreSQL 17 CI job.
-- **Open:** the re-review on merged SHAs (G-S1). The owner's choice whether to report the F-1 engine
-  behavior to the PostgreSQL project (a read-only-transaction gap, not a privilege escalation). Limits that stay:
+- **Open:** the re-review on merged SHAs (G-S1); the owner's decisions recorded with the review. Limits that stay:
   the text check is best effort, so a function of the database or of an unknown extension with side effects is
   still limited only by the role; a SQLite column named `into` must be written `"into"` (`[into]` and backticks are
   refused, since the PostgreSQL lexings read them as the keyword); `TEMP` stays an info, not a warning, since

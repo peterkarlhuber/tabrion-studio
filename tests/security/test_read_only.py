@@ -244,9 +244,8 @@ def test_the_authorizer_is_an_allowlist() -> None:
     assert sqlite_authorizer(9999, None, None, None, None) == deny  # an action SQLite adds later
 
 
-#: SQLite functions a read-only Studio connection must not call (F-2 of the STU-016 review): both forms of
-#: fts3_tokenizer (a native pointer out, a native pointer in), FTS5's API pointer, the FTS4 maintenance function, the
-#: R-tree debugging functions and the error log.
+#: SQLite functions outside the authorizer's allowlist (F-2 of the STU-016 review): both forms of fts3_tokenizer,
+#: fts5, the FTS4 maintenance function, the R-tree debugging functions and the error log.
 DENIED_SQLITE_FUNCTIONS = [
     ("fts3_tokenizer", "SELECT fts3_tokenizer('simple')"),
     ("fts3_tokenizer", "SELECT fts3_tokenizer('simple', x'0000000000000000')"),
@@ -492,6 +491,24 @@ def test_f2_the_trusted_schema_pragma_runs_before_the_authorizer(monkeypatch: py
         ("SELECT dblink_connect('c', 'dbname=x')", "studio.statement_refused"),
         ('SELECT "pg_terminate_backend"(1)', "studio.statement_refused"),
         ("SELECT PG_TERMINATE_BACKEND /* x */ (1)", "studio.statement_refused"),
+        # N-1 of the fix review: a number right before INTO is its own token in every reading.
+        ("EXPLAIN ANALYZE SELECT 1e1into t2", "studio.statement_refused"),
+        ("SELECT 1E1INTO public.t2 FROM part", "studio.statement_refused"),
+        ("SELECT 1, 2e0into temp t2", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT 1.5e-3into t2", "studio.statement_refused"),
+        ("EXPLAIN ANALYZE SELECT .5e1into t2", "studio.statement_refused"),
+        ("SELECT 1.into t2", "studio.statement_refused"),
+        ("SELECT 0x1finto t2", "studio.statement_refused"),
+        ("SELECT 0o17into t2", "studio.statement_refused"),
+        ("SELECT 0b101into t2", "studio.statement_refused"),
+        ("SELECT 1_000into t2", "studio.statement_refused"),
+        # N-2 and N-3 of the fix review: a query given as text, and index maintenance.
+        ("SELECT * FROM connectby('t', 'k', 'p', '1', 0) AS t(k int, p int, l int)", "studio.statement_refused"),
+        ("SELECT * FROM xpath_table('k', 'd', 't', '/a', 'true') AS t(k int, a text)", "studio.statement_refused"),
+        ("SELECT brin_summarize_new_values('i')", "studio.statement_refused"),
+        ("SELECT brin_summarize_range('i', 0)", "studio.statement_refused"),
+        ("SELECT brin_desummarize_range('i', 0)", "studio.statement_refused"),
+        ("SELECT pg_catalog.gin_clean_pending_list('i')", "studio.statement_refused"),
     ],
 )
 def test_statements_studio_refuses(sql: str, code: str) -> None:
@@ -534,6 +551,9 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
         "SELECT pg_backend_pid(), pg_stat_get_activity(NULL)",
         "SELECT * FROM pg_stat_activity",
         "SELECT pg_stat_reset_time FROM t",
+        # Numbers in every form still pass.
+        "SELECT 1e1 AS a, 1.5e-3, .5, 1., 0x1f, 0o17, 0b101, 1_000 FROM t",
+        "SELECT 1e1intox FROM t",
     ],
 )
 def test_statements_studio_passes_on(sql: str) -> None:
@@ -642,6 +662,24 @@ def test_r2_l1_line_comments_are_lexed_in_linear_time(name: str) -> None:
     placeholders(sql, "postgresql")
     placeholders(sql, "sqlite")
     assert time.perf_counter() - started < 2.0  # about 0.3 s; it was 10 s before the fix
+
+
+@pytest.mark.parametrize(
+    ("sql", "tokens"),
+    [
+        ("select 1e1into x", ["select", "1e1", "into", "x"]),
+        ("select 1.5E-3into x", ["select", "1.5E-3", "into", "x"]),
+        ("select .5e1into x", ["select", ".5e1", "into", "x"]),
+        ("select 1.into x", ["select", "1.", "into", "x"]),
+        ("select 1einto x", ["select", "1", "einto", "x"]),
+        ("select 0x1finto, 0o17into, 0b1into", ["select", "0x1f", "into", ",", "0o17", "into", ",", "0b1", "into"]),
+        ("select t.a, 1_000, a1e1", ["select", "t", ".", "a", ",", "1_000", ",", "a1e1"]),
+    ],
+)
+def test_n1_a_numeric_literal_is_one_token_in_every_reading(sql: str, tokens: list[str]) -> None:
+    """N-1 of the fix review: a letter right after a number starts a new word, in each of the three readings."""
+    for backslash, sqlite in readonly_module._READINGS:
+        assert readonly_module._tokens(sql, backslash_strings=backslash, sqlite=sqlite) == tokens
 
 
 @pytest.mark.parametrize(
