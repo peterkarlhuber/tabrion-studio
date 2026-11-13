@@ -17,8 +17,8 @@ migration states and Tabrion profiles.
 > and row-level security policies and the ER diagram, the data viewer, the SQL editor (reading statements only) with
 > CSV and JSON export, project scripts, formatting and completion, the query history and favorite connections, the
 > migration status, the diagnostics with backup hints and the report, the settings, the keyboard and the command
-> palette, in English and German. Studio never writes to a database. The independent security review of the
-> MVP (G-S1) is still open.
+> palette, in English and German. Studio never writes to a database. The MVP's security gate G-S1
+> passed on 2026-11-13 (master `9a5d4fa`); the mandatory human security review before any public release is open.
 > There is no release; nothing is published to PyPI, and no PyPI release is needed for now: distribution is by Git
 > SHA pin (owner decision 2026-11-08). A later publication would need a new decision and the owner's approval G-R.
 > See [docs/TODO.md](docs/TODO.md) for what comes next.

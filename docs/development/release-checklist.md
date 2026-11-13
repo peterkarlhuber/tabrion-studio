@@ -19,7 +19,7 @@ cleared it, in this page and in `docs/TODO.md`.
 
 | Stop | What clears it | Who | Source | State |
 |---|---|---|---|---|
-| **H-1 G-S1** | The owner's decision on the MVP security review: the independent review is accepted (re-review at `2a8a229`); the owner's decisions are recorded in [Security review preparation](../architecture/security-review-prep.md#owner-decisions-on-2026-11-13) | owner | 03 §8, 09 STU-016 | **Owner**: the owner accepted the 13 recommendations on 2026-11-13 (each option A); the formal G-S1 confirmation on a concrete master SHA is pending |
+| **H-1 G-S1** | The owner's decision on the MVP security review: the independent review is accepted (re-review at `2a8a229`); the owner's decisions are recorded in [Security review preparation](../architecture/security-review-prep.md#owner-decisions-on-2026-11-13) | owner | 03 §8, 09 STU-016 | **Cleared 2026-11-13 by the owner**: the 13 recommendations accepted (each option A); **G-S1 passed** for master `9a5d4faa69f1c974999d258b36258fbc10b3323f`, on the condition that all 21 required CI jobs are green on that SHA, met on 2026-11-13 (run 43457105100). G-R is not granted; H-2 remains mandatory |
 | **H-2 Human security review (E-QA2)** | A security review by a **human** reviewer of the release candidate (not an agent review; agent reviews count for internal use only), its findings fixed or accepted by the owner, the report filed. Mandatory before any public release of Studio; possible costs need the owner's approval | owner, human reviewer | 00 §13 E-QA2, 09 §1 and STU-028, 07 §5 G-R, 10 STU-ADR-0002 | **Open**: not started |
 | **H-3 G-R** | The owner's approval for **this** publication (every publication, pre-releases included; there is no standing approval). G-R reads: the license and third-party license report (with the psycopg LGPL-3.0 notice and the frontend licenses), the trademark check, the SBOM, the release notes, AC-4 green, and for Studio the result of H-2 | owner | 07 §5, 12 §1 and §11, 10 TAB-ADR-0009 | **Owner**: not granted |
 
@@ -120,7 +120,7 @@ and the release notes (E-4) name this:
 
 | # | Step | How it is verified | State |
 |---|---|---|---|
-| G-1 | H-1 cleared (G-S1) | recorded above | **Owner** |
+| G-1 | H-1 cleared (G-S1) | recorded above | **Done** (2026-11-13, master `9a5d4fa`) |
 | G-2 | H-2 cleared (human security review) | the review report and its findings | **Open** |
 | G-3 | Annotated tag `v1.0.0` on the master merge commit of the release pull request, never moved (10 TAB-ADR-0009). A tag is allowed without G-R, but only by the owner's decision after G-S1 | `git tag -v` / the tag's commit equals the release commit | **Owner**: not done |
 | G-4 | **H-3 G-R** for this publication | the owner's approval, recorded here; GR-1..GR-5 ([G-R preconditions](#g-r-preconditions-from-g-s1)) met | **Owner**: not granted |

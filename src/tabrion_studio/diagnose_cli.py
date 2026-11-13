@@ -21,7 +21,9 @@ needs no running Studio and starts no server; it reads the same configuration as
   opened with ``O_EXCL`` and ``O_NOFOLLOW``, then moved into place). An existing file is refused unless ``--force``
   is given; a link or anything but a regular file is always refused, and so are the profile's own database file and
   its ``-wal``, ``-shm`` and ``-journal`` files (also through a link or a hard link), since Studio never changes a
-  database (M-1 of the PR #85 review).
+  database (M-1 of the PR #85 review). On POSIX the folder is opened once and every later step acts on that opened
+  folder (``dir_fd``), so a folder link in the path that changes meanwhile cannot redirect the write (D-1); on
+  Windows the path is used again for each step.
 * **State directory:** checked like the server's (owner only, no link, not writable by others), never created or
   changed.
 
@@ -152,10 +154,85 @@ def _check_output(target: Path, *, force: bool, protected: set[str]) -> None:
                 )
 
 
+#: POSIX: the write acts on one opened folder (``dir_fd``), so a folder link swapped meanwhile cannot redirect it
+#: (D-1 of the PR #85 review). Windows has no ``dir_fd``; there the checked path is used again.
+_IN_FOLDER = sys.platform != "win32" and {os.open, os.stat, os.rename, os.link, os.unlink} <= os.supports_dir_fd
+
+
+def _folder_opened(folder: int) -> None:
+    """A seam for the tests: called right after the output's folder is opened, before anything is written."""
+
+
 def _write_output(target: Path, body: bytes, *, force: bool, protected: set[str]) -> None:
     """Write ``body`` to ``target`` atomically: a new 0600 file in the same folder (``O_EXCL``, ``O_NOFOLLOW``), then
     moved into place. Without ``force`` the move never replaces a file that appeared meanwhile."""
     _check_output(target, force=force, protected=protected)
+    if _IN_FOLDER:
+        _write_in_folder(target, body, force=force, protected=protected)
+    else:
+        _write_by_path(target, body, force=force)
+
+
+def _check_in_folder(folder: int, target: Path, *, force: bool, protected: set[str]) -> None:
+    """``_check_output`` again, on the opened folder: the database's files by the folder's identity and the name,
+    and the existing entry without following a link."""
+    name = target.name
+    here = os.fstat(folder)
+    database = f"{target} is the profile's database or one of its files; Studio never changes a database"
+    for path in protected:
+        with contextlib.suppress(OSError):
+            parent = os.stat(os.path.dirname(path))
+            if (parent.st_dev, parent.st_ino) == (here.st_dev, here.st_ino) and os.path.normcase(
+                os.path.basename(path)
+            ) == os.path.normcase(name):
+                raise OutputError(database)
+    try:
+        info = os.stat(name, dir_fd=folder, follow_symlinks=False)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise OutputError(f"{target} is a link or not a regular file; give another file name")
+    if not force:
+        raise OutputError(f"{target} exists; pass --force to replace it")
+    for path in protected:  # a hard link to the database is the database too
+        with contextlib.suppress(OSError):
+            known = os.stat(path)
+            if (known.st_dev, known.st_ino) == (info.st_dev, info.st_ino):
+                raise OutputError(database)
+
+
+def _write_in_folder(target: Path, body: bytes, *, force: bool, protected: set[str]) -> None:
+    """POSIX: open the folder once (its real path, ``O_NOFOLLOW``), check it, then create, move and clean up
+    relative to that folder only."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+    folder = os.open(os.path.realpath(target.parent), flags)
+    try:
+        _folder_opened(folder)
+        name = target.name
+        _check_in_folder(folder, target, force=force, protected=protected)
+        tmp = f".{name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+        create = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0)
+        fd = os.open(tmp, create, 0o600, dir_fd=folder)
+        try:
+            with os.fdopen(fd, "wb") as file:
+                file.write(body)
+                file.flush()
+                os.fsync(file.fileno())
+            if force:
+                os.replace(tmp, name, src_dir_fd=folder, dst_dir_fd=folder)  # replaces a link itself
+            else:
+                os.link(tmp, name, src_dir_fd=folder, dst_dir_fd=folder, follow_symlinks=False)  # fails if name exists
+                os.unlink(tmp, dir_fd=folder)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp, dir_fd=folder)
+            raise
+    finally:
+        os.close(folder)
+
+
+def _write_by_path(target: Path, body: bytes, *, force: bool) -> None:
+    """Without ``dir_fd`` (Windows): the same steps by path; a folder link in the path is followed each time."""
     folder = target.parent
     tmp = folder / f".{target.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
@@ -170,7 +247,7 @@ def _write_output(target: Path, body: bytes, *, force: bool, protected: set[str]
         elif sys.platform == "win32":
             os.rename(tmp, target)  # fails when target exists
         else:
-            os.link(tmp, target)  # fails when target exists, atomically
+            os.link(tmp, target, follow_symlinks=False)  # fails when target exists, atomically
             os.unlink(tmp)
     except BaseException:
         with contextlib.suppress(OSError):

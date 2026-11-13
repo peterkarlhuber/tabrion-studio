@@ -14,6 +14,19 @@ All notable changes to this project are documented here. The format follows
 - TD-061: the nightly collects the license records of fresh runtime environments on Linux (Python 3.13 and 3.11),
   macOS and Windows and runs `scripts/release_bom.py --strict` over them (job `release SBOM (strict)`, artifact
   `release-sbom` with the SBOM, the license report and the records).
+- STU-016: G-S1 passed for master `9a5d4faa69f1c974999d258b36258fbc10b3323f`. The owner granted it on the condition
+  that all 21 required CI jobs are green on that SHA, which was met on 2026-11-13 (run 43457105100); recorded in
+  `docs/TODO.md`, `docs/architecture/security-review-prep.md`, `docs/guide/security.md`, the README and
+  `docs/development/release-checklist.md` (H-1, G-1). G-R is **not** granted: the mandatory human security review
+  before any public release remains, STU-026 stays locked behind G-S2, and nothing is tagged or published.
+- STU-054 owner decisions (2026-11-13, all four recommendations accepted, option A), recorded in
+  `docs/architecture/ux-acceptance.md` and TD-060: refused writes answer HTTP 400/405 rather than 403 everywhere (a
+  decision on error semantics only, not a release or security acceptance of STU-026, which stays locked behind
+  G-S2); D-07 after 1.0; tabrion's `TAB-*` finding texts stay English (marked `lang="en"`); no project chooser on
+  the start page. TD-032's dependency is resolved by PR #85. STU-054 is not accepted yet: it waits on the manual
+  QA-S1 session (TD-046 B-5).
+- `src/i18n/coverage.test.ts` also reads the text on the right side of `&&` in the markup, and its self-test runs
+  the same function as the real check (notes N-1 and N-2 of the PR #84 review); no hard-coded text was found.
 
 - TD-036 (STU-025): `tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE
   [--force]] [--confirm-prod]` writes the diagnosis report of one profile from the command line, for scripts, CI and agents,
@@ -21,8 +34,9 @@ All notable changes to this project are documented here. The format follows
   host, port, user or database name, path or value). Project profiles count only after you trusted them in Studio;
   a PROD profile needs `--confirm-prod` on every run, and the connection checks it again on the profile it opens. No
   password prompt; refusals are Studio's fixed texts; exit codes 0 (written), 1 (not made), 2 (usage).
-  `--output` writes a new file with mode 0600 in one step, replaces an existing file only with `--force`, and never
-  follows a link or touches the profile's database files; the JSON report escapes every non-ASCII character.
+  `--output` writes a new file with mode 0600 in one step, replaces an existing file only with `--force`, never
+  writes through a link in the file name and never touches the profile's database files; the JSON report escapes
+  every non-ASCII character.
 - TD-032: Studio's own findings and backup hints (`STU-DX-*`, `STU-BK-*`) show their details and remedies in German
   as well as English. The diagnostics route sends each one's facts as `params` (counts, setting names, the `sslmode`,
   the checks that did not run), and the page words them from its translations; tabrion's `TAB-*` texts stay English
@@ -37,7 +51,7 @@ All notable changes to this project are documented here. The format follows
   `tests/security/test_every_route.py` asserts the same reviewed list over every route of the app, including those
   left out of the OpenAPI document (`POST /api/session`, `POST /api/control/{action}`). New `src/i18n/coverage.test.ts`: every
   key the page names exists, both plural forms in both languages, no visible text written into the markup. Open
-  items in TD-060; the German diagnosis texts wait on TD-032.
+  items in TD-060; the German diagnosis texts come with TD-032 (PR #85).
 - The migration status shows the command that applies pending Alembic revisions (`alembic upgrade head`, or `heads`
   with more than one head) with **Copy command**, unless the database names a revision the project does not know
   (Alembic would stop there); Studio still runs no migration (TD-046 B-3).
@@ -612,6 +626,10 @@ All notable changes to this project are documented here. The format follows
   record of a package that the lock does not pin (other than `tabrion-studio`), also without `--strict`, instead of
   ignoring it.
 
+- `tabrion-studio diagnose --output`: hardened against a folder swap. On POSIX the output folder is opened once and
+  the checks, the temporary file and the final move all act on that opened folder; the guide now says that a folder
+  link in the path is followed and what Windows does (review D-1 of PR #85). The final move never follows a link
+  at the temporary file's name, and a failed move leaves no temporary file (review L-1, L-2 of PR #88).
 - Drafts (G-S1 delta audit A-1): a draft text deleted while another connection was reading the state database (for
   example a second Studio instance on the same state folder) could stay in `state.sqlite-wal` until the next history
   activity, settings save, start or close, and with `[history] enabled = false` longer. Every read and save of the

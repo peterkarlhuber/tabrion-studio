@@ -8,7 +8,8 @@
  *   fixed prefix;
  * - no visible text is written into the markup: a JSX text, or the fixed text of an expression in a JSX child or in
  *   `aria-label`, `aria-description`, `aria-roledescription`, `aria-valuetext`, `title`, `placeholder`, `alt` or
- *   `label` (strings, the static parts of templates, both sides of a condition, `??` and `||`), is either from the
+ *   `label` (strings, the static parts of templates, both sides of a condition, `??` and `||`, the right side of
+ *   `&&`), is either from the
  *   catalog or on the short list below of names that are the same in every language (SQL keywords, pragma names);
  *   not seen: a module constant or a state value rendered later, and component text props under other names
  *   (recorded in TD-060);
@@ -138,8 +139,9 @@ const TEXT_ATTRIBUTES = new Set([
 ]);
 
 /**
- * The fixed text an expression can show: a string, every static part of a template, and both sides of a condition,
- * `??` or `||` (review L-1 of PR #84). A call (`t(...)`), a name or a property is not text the markup writes.
+ * The fixed text an expression can show: a string, every static part of a template, both sides of a condition, `??`
+ * or `||` (review L-1 of PR #84), and the right side of `&&` (its left side is the condition; review N-1 of PR #84).
+ * A call (`t(...)`), a name or a property is not text the markup writes.
  */
 function staticTexts(node: ts.Expression): string[] {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
@@ -155,7 +157,46 @@ function staticTexts(node: ts.Expression): string[] {
     )
   )
     return [...staticTexts(node.left), ...staticTexts(node.right)];
+  if (
+    ts.isBinaryExpression(node) &&
+    node.operatorToken.kind === ts.SyntaxKind.AmpersandAmpersandToken
+  )
+    return staticTexts(node.right);
   return [];
+}
+
+/**
+ * The visible text a source file writes into its markup outside the catalog: JSX text, and the fixed text of a JSX
+ * child expression or of a text attribute, without the names on {@link NOT_TRANSLATED}. The real check and its
+ * self-test both call this (review N-2 of PR #84).
+ */
+function writtenTexts(file: ts.SourceFile): { node: ts.Node; text: string }[] {
+  const found: { node: ts.Node; text: string }[] = [];
+  walk(file, (node) => {
+    let texts: string[] = [];
+    if (ts.isJsxText(node)) texts = [node.text];
+    else if (
+      ts.isJsxExpression(node) &&
+      node.expression !== undefined &&
+      !ts.isJsxAttribute(node.parent)
+    )
+      texts = staticTexts(node.expression);
+    else if (
+      ts.isJsxAttribute(node) &&
+      TEXT_ATTRIBUTES.has(node.name.getText(file)) &&
+      node.initializer !== undefined
+    ) {
+      const value = ts.isJsxExpression(node.initializer)
+        ? node.initializer.expression
+        : node.initializer;
+      if (value !== undefined) texts = staticTexts(value);
+    }
+    for (const raw of texts) {
+      const text = raw.trim();
+      if (/\p{L}{2,}/u.test(text) && !NOT_TRANSLATED.has(text)) found.push({ node, text });
+    }
+  });
+  return found;
 }
 
 describe('the page source against the catalogs (STU-054)', () => {
@@ -204,39 +245,15 @@ describe('the page source against the catalogs (STU-054)', () => {
   });
 
   it('writes no visible text into the markup', () => {
-    const written: string[] = [];
-    for (const { file } of SOURCES) {
-      walk(file, (node) => {
-        let texts: string[] = [];
-        if (ts.isJsxText(node)) texts = [node.text];
-        else if (
-          ts.isJsxExpression(node) &&
-          node.expression !== undefined &&
-          !ts.isJsxAttribute(node.parent)
-        )
-          texts = staticTexts(node.expression);
-        else if (
-          ts.isJsxAttribute(node) &&
-          TEXT_ATTRIBUTES.has(node.name.getText(file)) &&
-          node.initializer !== undefined
-        ) {
-          const value = ts.isJsxExpression(node.initializer)
-            ? node.initializer.expression
-            : node.initializer;
-          if (value !== undefined) texts = staticTexts(value);
-        }
-        for (const raw of texts) {
-          const text = raw.trim();
-          if (/\p{L}{2,}/u.test(text) && !NOT_TRANSLATED.has(text))
-            written.push(`${where(file, node)} ${JSON.stringify(text)}`);
-        }
-      });
-    }
+    const written = SOURCES.flatMap(({ file }) =>
+      writtenTexts(file).map(({ node, text }) => `${where(file, node)} ${JSON.stringify(text)}`),
+    );
     expect(written).toEqual([]);
   });
 
   it('sees text in conditions, fallbacks, templates and the aria text attributes', () => {
-    // The shapes review L-1 of PR #84 found unseen, written into a small component of their own.
+    // The shapes reviews L-1 and N-1 of PR #84 found unseen, written into a small component of their own, through
+    // the same function as the real check (N-2).
     const sample = ts.createSourceFile(
       'sample.tsx',
       [
@@ -244,6 +261,8 @@ describe('the page source against the catalogs (STU-054)', () => {
         '  <div aria-description="Several heads" aria-label={`Close the ${x} box`}>',
         "    {x ? 'Several heads found' : null}",
         "    {x ?? 'Nothing here'}",
+        "    {x && 'Only with x'}",
+        "    {x === Boolean('no text') && 'Shown when true'}",
         '  </div>',
         ');',
       ].join('\n'),
@@ -251,28 +270,14 @@ describe('the page source against the catalogs (STU-054)', () => {
       true,
       ts.ScriptKind.TSX,
     );
-    const seen: string[] = [];
-    walk(sample, (node) => {
-      if (
-        ts.isJsxExpression(node) &&
-        node.expression !== undefined &&
-        !ts.isJsxAttribute(node.parent)
-      )
-        seen.push(...staticTexts(node.expression));
-      if (ts.isJsxAttribute(node) && node.initializer !== undefined) {
-        const value = ts.isJsxExpression(node.initializer)
-          ? node.initializer.expression
-          : node.initializer;
-        if (value !== undefined && TEXT_ATTRIBUTES.has(node.name.getText(sample)))
-          seen.push(...staticTexts(value));
-      }
-    });
-    expect(seen.map((text) => text.trim())).toEqual([
+    expect(writtenTexts(sample).map(({ text }) => text)).toEqual([
       'Several heads',
       'Close the',
       'box',
       'Several heads found',
       'Nothing here',
+      'Only with x',
+      'Shown when true',
     ]);
   });
 
