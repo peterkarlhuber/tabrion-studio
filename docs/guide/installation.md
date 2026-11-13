@@ -17,6 +17,12 @@ that version and, before the first public release, a human security review
 
 ## Install from a commit
 
+!!! tip "The secured install path: pip with `--require-hashes`"
+    The pip commands right below and in [Or: build a wheel first](#or-build-a-wheel-first) are the secured main
+    path. pip installs every runtime dependency at the exact version of `constraints/runtime-lock.txt` and checks
+    the SHA-256 of every file against the lock (`--require-hashes`), so a changed or replaced file is refused. The
+    [pipx or uv](#pipx-or-uv) paths further down are less secured: neither checks the lock's hashes.
+
 Pick the commit you want, for example the head of `master` after a check you trust, and note its full SHA.
 
 ```bash
@@ -114,11 +120,17 @@ PowerShell they stay set, so the block removes them before installing (the insta
 
 ### pipx or uv
 
-`uv tool` and `pipx` install Studio into an environment of their own and put the `tabrion-studio` command on your
-`PATH`. Neither checks the SHA-256 of the files it downloads, so use them only if you accept that; the main path
-above (pip with `--require-hashes`) is the one that checks every file. Both install the wheel built above.
+!!! warning "Less secured: no hash check"
+    `uv tool install` and `pipx install` do **not** check the SHA-256 hashes of the lock. `uv tool install` takes
+    the lock's exact versions but does not verify their hashes. pipx gets only the Tabrion pin and resolves every
+    other dependency afresh from PyPI, without the lock's versions and without hashes. Use them only if you accept
+    that; the secured path is pip with `--require-hashes` ([above](#install-from-a-commit)).
 
-**uv (recommended of the two):** it takes the lock's exact versions and the Tabrion pin.
+`uv tool` and `pipx` install Studio into an environment of their own and put the `tabrion-studio` command on your
+`PATH`. Both install the wheel built above.
+
+**uv (the better of the two, still without a hash check):** it takes the lock's exact versions and the Tabrion
+pin.
 
 ```bash
 uv tool install dist/tabrion_studio-*.whl -c constraints/runtime-lock.txt -c constraints/tabrion-integration.txt

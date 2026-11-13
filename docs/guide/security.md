@@ -32,22 +32,39 @@ Studio is a tool for one person on one computer. In short:
 - **Nothing leaves the computer.** The page loads nothing from other sites, there is no telemetry, and the browser
   page is protected by a strict Content Security Policy.
 
+!!! warning "On PostgreSQL, a read-only role is what makes write protection reliable"
+    Studio's read-only checks are defense in depth, not the boundary. A database role that is really read-only (no
+    write privileges, no ownership, no functions with side effects it can call) is what reliably keeps a database
+    from being changed through Studio. Studio's diagnostics warn about a role that can write when the profile is
+    marked **read-only role**. How to create such a role:
+    [A read-only role for PostgreSQL](connections.md#a-read-only-role-for-postgresql).
+
 ## What Studio does not protect against
 
 - **Programs running as you.** Malware or any other program with your user's rights can read what you can: the
   keyring, Studio's folders, the browser's storage and the memory of the `tabrion-studio` process. Studio does not
   defend against it.
 - **Functions with side effects on PostgreSQL.** Studio runs every statement in a read-only transaction, but a
-  function can still have effects outside it (for example through `dblink` or an extension that calls out). Only the role's
-  rights are a hard boundary: connect with a role that has no write privileges, at least for PROD. The diagnostics
-  report a role that can write although the profile says it should not.
+  function can still have effects outside it (for example through `dblink` or an extension that calls out), and a
+  function the database itself defines, for example one a view calls, is invisible to Studio's statement check.
+  Only the role's rights are a hard boundary: connect with a really read-only role, at least for PROD (see the box
+  above). The diagnostics report a role that can write although the profile says it should not.
+- **Migration code you trust.** When you trust a project's migration files, Studio runs them as you, with your
+  rights: such code can do more than Studio checks (read files, open its own database connection). Studio asks
+  again whenever a trusted file changes, but trust only projects whose code you would also run with `alembic` yourself.
+- **The sign-in link in the browser history.** The one-time link that opens Studio stays in the browser's history.
+  It is worthless once used, and otherwise expires within 120 seconds.
+- **Windows: Studio's folders in a synced profile folder.** On Windows, Studio does not check the permissions of its
+  state folder inside your user profile. The default (`%LOCALAPPDATA%`) is not synced; do not move Studio's folders
+  into OneDrive or another synced folder.
 - **Warnings are not protection.** Refusing `BEGIN`, `SET` and similar statements, and every warning before a
   statement, help you avoid mistakes; they are not the security boundary.
 - **Drafts are SQL text on disk.** The SQL editor keeps your tabs' text in Studio's private state database (0600, in
   the state folder), never in the browser's storage. It is kept until you close the tab, or until the project's
   editor has not been opened or changed for the history's retention days. Do not type secrets into the SQL itself; give them as parameters.
-- **Not reviewed for publication yet.** The independent security review of the MVP (G-S1) and a human security review
-  before a public release are still open; Studio is not released.
+- **Not reviewed for publication yet.** The independent security review of the MVP is accepted, and the owner accepted
+  the recommendations for G-S1 on 2026-11-13; the formal G-S1 confirmation and a human security review before a
+  public release are still open. Studio is not released.
 
 The technical details and their tests are in [Access protection](../architecture/access-protection.md),
 [Configuration and project trust](../architecture/configuration.md), [Secret management](../architecture/secrets.md)

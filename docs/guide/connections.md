@@ -35,11 +35,9 @@ the time zone; for SQLite foreign keys, the journal mode and the encoding. A sup
 row-level security, gets a warning: Studio stays read-only, but only a role without write privileges is a hard
 boundary.
 
-For a PostgreSQL profile, and above all a PROD one, use a role of its own that has only `SELECT` (and `USAGE` on
-the schemas): no write privileges, no `CREATE` on any schema, no `TEMP` on the database (PostgreSQL grants `TEMP` to
-`PUBLIC` by default; `REVOKE TEMP ON DATABASE ... FROM PUBLIC` takes it back), and not the role your application uses,
-since a role can end its own other sessions. With **read-only role** set on the profile, the diagnostics report what
-the role can still write or create (`STU-DX-003`).
+For a PostgreSQL profile, and above all a PROD one, use a role of its own that can only read; see
+[A read-only role for PostgreSQL](#a-read-only-role-for-postgresql) below. With **read-only role** set on the
+profile, the diagnostics report what the role can still write or create (`STU-DX-003`).
 
 **Connect** opens the profile's read-only connection; the header then shows it with its environment, and a PROD
 connection marks the whole window. The first PROD connection of a profile in a browser session asks first
@@ -67,6 +65,72 @@ If you edit `profiles.toml` by hand, Studio keeps your file as it is: a file wit
 and never rewritten, and a valid file with comments is rewritten only after you confirm it ("Rewrite file and save";
 the comments are not kept). If the file changed since the page read it, Studio shows the current state and you make
 the change again.
+
+## A read-only role for PostgreSQL
+
+!!! warning "The database role is the boundary, not Studio"
+    Studio's read-only checks (a read-only session and transaction, one statement at a time, and a statement check
+    that refuses writing statements and the side-effect functions it knows) are **defense in depth**. What makes
+    write protection reliable is a database role that is really read-only: no write privileges, no ownership of
+    tables or schemas, and no function with side effects that it can call. Studio's diagnostics warn about a role
+    that can write when the profile says **read-only role** (`STU-DX-003`, and `STU-DX-006` for ownership).
+
+Functions that the database itself defines can have side effects that Studio cannot see. When a view calls such a
+function, your SQL names only the view, so Studio's statement check has nothing to refuse, and PostgreSQL's
+read-only mode does not stop every effect of a function (for example one that calls out of the database or writes
+through an extension). Only the role's rights limit what such a function can do.
+
+A role of its own, separate from the role your application uses (a role can end its own other sessions), with only
+`SELECT` and `USAGE`. A generic example; replace `appdb`, `app` and `app_owner` with your database, your schema and
+the role that owns the schema's tables. The example has two parts, because each part needs a different role.
+
+First, as a superuser, or as a role that has `CREATEROLE` and owns the database (`CREATE ROLE` needs the first, the
+database grants need the second): create the role, let it connect, and take back the rights PostgreSQL gives every
+role:
+
+```sql
+CREATE ROLE studio_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+-- in psql, set the password without writing it into the SQL text (and your shell history):
+\password studio_reader
+
+GRANT CONNECT ON DATABASE appdb TO studio_reader;
+REVOKE TEMP ON DATABASE appdb FROM PUBLIC;       -- then GRANT TEMP ON DATABASE appdb to the roles that need it
+-- PostgreSQL 14 and lower only, run as a superuser (the owner of schema public; a non-owner's REVOKE has no effect):
+-- REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+```
+
+Then as `app_owner` (the role that owns the schema and its tables) or a superuser. Granting on the existing tables
+needs their owner, and `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner` needs membership in `app_owner`; the database
+owner alone gets "permission denied":
+
+```sql
+GRANT USAGE ON SCHEMA app TO studio_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA app TO studio_reader;      -- the tables and views that exist now
+
+-- tables that app_owner creates later in that schema:
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO studio_reader;
+-- functions that app_owner creates later are not executable by every role:
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+```
+
+- **Nothing else:** no `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE` or sequence `UPDATE`, no ownership, and no
+  membership in another role (`GRANT other_role TO studio_reader`): a role it is a member of counts too.
+  `NOINHERIT` is not enough, because a member can still `SET ROLE` to that role; the reading role must be a member
+  of no other role.
+- **Default privileges:** `GRANT ... ON ALL TABLES` covers only the tables that exist now; `ALTER DEFAULT PRIVILEGES`
+  covers those the named role creates later. Check that no default privilege grants write access to the role or to
+  `PUBLIC` (the diagnostics report one, `STU-DX-007`).
+- **`PUBLIC`:** PostgreSQL grants some rights to every role. `TEMP` on the database is granted to `PUBLIC` by default,
+  and before PostgreSQL 15 so is `CREATE` on the schema `public`; the first part of the example takes both back.
+  Without that, the diagnosis reports the role (`STU-DX-003`).
+- **Functions:** `EXECUTE` on functions is granted to `PUBLIC` by default, and a function declared
+  `SECURITY DEFINER` runs with its owner's rights. The `REVOKE EXECUTE ON FUNCTIONS` default above covers only
+  functions `app_owner` creates later (grant `EXECUTE` again to the roles that need it). For the functions that
+  exist now: know which ones have side effects, and revoke `EXECUTE` on them from `PUBLIC` where the reading role
+  must not call them. Studio does not check this.
+
+Run the diagnosis on the profile with **read-only role** set afterwards; a role that can still write or create is
+reported.
 
 ## The project's profiles and the trust dialog
 
