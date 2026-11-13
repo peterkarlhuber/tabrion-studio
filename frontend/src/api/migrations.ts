@@ -27,6 +27,8 @@ export interface CodeTrust {
   moduleFiles: string[];
   /** A fixed issue code of the server when the layout cannot be trusted (`state: 'invalid'`). */
   issue: string | null;
+  /** The file that issue is about, relative to the project, when it is about one file (an untrusted name). */
+  issueFile: string | null;
 }
 
 export interface SqliteVersionStatus {
@@ -157,6 +159,7 @@ export function parseCodeTrust(body: unknown): CodeTrust | null {
     revisionFiles: texts(doc.revision_files) ?? [],
     moduleFiles: texts(doc.module_files) ?? [],
     issue: text(doc.issue),
+    issueFile: text(doc.issue_file),
   };
 }
 

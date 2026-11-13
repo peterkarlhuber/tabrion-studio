@@ -28,6 +28,7 @@ function trust(extra: Record<string, unknown> = {}) {
     import_roots: ['.'],
     module_files: ['shop/models.py', `shop/${HOSTILE_FILE}`],
     issue: null,
+    issue_file: null,
     notice: 'server text that the page does not show',
     ...extra,
   };
@@ -334,6 +335,25 @@ describe('migration status view: code trust (T-16)', () => {
     );
     third.unmount();
 
+    const named = server({
+      'GET /api/project/code-trust': () =>
+        json(
+          trust({
+            state: 'invalid',
+            digest: null,
+            issue: 'migrations.modules_too_large',
+            issue_file: `shop/big${BIDI}.py`,
+          }),
+        ),
+    });
+    const fourth = render(<MigrationsView fetcher={named.fetcher} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('code-trust-state')).toHaveTextContent(
+        'are larger than Studio checks. The file: shop/big\\u202E.py',
+      ),
+    );
+    fourth.unmount();
+
     const down = server({ 'GET /api/project/code-trust': () => problem(500, 'studio.internal') });
     render(<MigrationsView fetcher={down.fetcher} />);
     await waitFor(() =>
@@ -498,6 +518,7 @@ describe('migration API parsing', () => {
       revisionFiles: ['a.py'],
       moduleFiles: [],
       issue: null,
+      issueFile: null,
     });
     expect(parseCodeTrust({ state: 'trusted', module_files: ['m.py', null] })?.moduleFiles).toEqual(
       ['m.py'],

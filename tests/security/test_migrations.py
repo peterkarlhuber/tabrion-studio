@@ -297,7 +297,7 @@ def test_a_revision_file_that_fails_is_a_problem_not_a_crash(shop: Shop) -> None
 
 
 @posix
-@pytest.mark.parametrize("case", ["outside", "link", "too_many"])
+@pytest.mark.parametrize("case", ["outside", "link", "too_many", "name"])
 def test_invalid_alembic_files_cannot_be_trusted(
     shop: Shop, tmp_path: Path, case: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -310,10 +310,14 @@ def test_invalid_alembic_files_cannot_be_trusted(
         target = tmp_path / "outside.py"
         target.write_text(revision("0003", "0002"))
         (versions / "0003_link.py").symlink_to(target)
+    elif case == "name":
+        (versions / "0003 parts.py").write_text(revision("0003", "0002"))
     else:
         monkeypatch.setattr("tabrion_studio.config.code_trust.MAX_REVISION_FILES", 1)
     state = shop.code.load()
     assert state.state == "invalid" and state.issue is not None
+    named = {"link": "migrations/versions/0003_link.py", "name": "migrations/versions/0003 parts.py"}
+    assert state.issue_file == named.get(case)  # the file the issue is about, when there is one (I-1)
     found = alembic(shop.migrations.status(shop.connection_id))
     assert found["code_trust"] == "invalid" and found["revisions"] == "unknown (migrations folder not valid)"
     with pytest.raises(Exception) as raised:
@@ -476,9 +480,8 @@ def test_nothing_of_the_project_code_runs_after_the_answer(shop: Shop) -> None:
         "digest": state.scan.digest,
     }
     # The worker on its own, waited for to its end (run_worker kills it once the answer is in).
-    package_root = str(Path(migrations_module.__file__).resolve().parents[2])
     done = subprocess.run(
-        [sys.executable, "-I", "-B", "-c", migrations_module._BOOT, package_root],
+        migrations_module.worker_command(),
         input=json.dumps(request).encode(),
         capture_output=True,
         cwd=shop.project,
@@ -870,6 +873,7 @@ def test_project_modules_over_the_caps_cannot_be_trusted(
         monkeypatch.setattr(f"tabrion_studio.config.code_trust.{cap}", value)
     state = shop.code.load()
     assert (state.state, state.issue) == ("invalid", issue)  # fail closed: the earlier trust does not hold
+    assert state.issue_file == ("shop_big.py" if cap is None else None)  # named when the issue is about one file
     found = alembic(shop.migrations.status(shop.connection_id))
     assert found["code_trust"] == "invalid" and found["heads"] is None
     with pytest.raises(Exception) as raised:
@@ -893,6 +897,8 @@ def test_a_link_out_of_the_project_cannot_be_trusted(shop: Shop, tmp_path: Path,
         (shop.project / "shared.py").symlink_to(outside / "gone.py")
     state = shop.code.load()
     assert (state.state, state.issue) == ("invalid", "migrations.link_outside")
+    assert state.issue_file == ("shared" if kind == "folder" else "shared.py")
+    assert state.to_dict(shop.project)["issue_file"] == state.issue_file
     assert alembic(shop.migrations.status(shop.connection_id))["heads"] is None
     assert shop.ran() is None
 
@@ -953,3 +959,208 @@ def test_import_roots_and_module_names_on_windows() -> None:
     assert sys_path_entries("src:lib vendor,tools", windows=False) == ["src", "lib", "vendor", "tools"]
     assert _relative(r"C:\Proj\src\pkg\models.py", r"C:\Proj", ntpath) == "src/pkg/models.py"
     assert module_key(r"C:\Proj\SRC\Models.py", ntpath) == module_key(r"c:/proj/src/models.py", ntpath)
+
+
+# Review C-1 of F-7: project folders that reach the worker through Studio's own environment (an editable install's
+# ``.pth`` file or meta path finder) are held to the hashed loader as well. Each test runs the worker with the
+# interpreter of a throwaway virtual environment inside the project (``.venv``, skipped by the scan), whose site
+# folder holds the ``.pth`` files; the environment is removed with the test's temporary folder.
+
+#: Imports ``name`` from the trusted revision file and records the module's ``NAME`` or the refusal.
+ENVIRONMENT_IMPORTS = """
+import importlib, json, pathlib
+here = pathlib.Path(__file__).resolve().parents[2]
+found = {}
+for name in NAMES:
+    try:
+        found[name] = getattr(importlib.import_module(name), "NAME", "imported")
+    except ImportError as exc:
+        found[name] = "refused: " + str(exc)
+here.joinpath("ran.json").write_text(json.dumps(found))
+"""
+REFUSED = "refused: not a trusted project module"
+#: A meta path finder as an editable install puts into the environment: it maps package names to project folders.
+EDITABLE_FINDER = """
+import importlib.util, sys
+
+MAPPING = {mapping!r}
+
+
+class EditableFinder:
+    @classmethod
+    def find_spec(cls, fullname, path=None, target=None):
+        folder = MAPPING.get(fullname)
+        if folder is None:
+            return None
+        return importlib.util.spec_from_file_location(
+            fullname, folder + "/__init__.py", submodule_search_locations=[folder]
+        )
+
+
+def install():
+    sys.meta_path.append(EditableFinder)
+"""
+
+
+def environment(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """A virtual environment in ``<project>/.venv`` that sees the test's packages; the worker runs with its
+    interpreter. Returns its site folder."""
+    import site
+    import sysconfig
+    import venv
+
+    folder = shop.project / ".venv"
+    venv.create(folder, with_pip=False, symlinks=os.name != "nt")
+    purelib = Path(sysconfig.get_path("purelib", "venv", vars={"base": str(folder), "platbase": str(folder)}))
+    purelib.mkdir(parents=True, exist_ok=True)
+    (purelib / "_studio_test_packages.pth").write_text("\n".join(site.getsitepackages()) + "\n")
+    python = folder / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    monkeypatch.setattr(sys, "executable", str(python))  # the worker runs with this environment's interpreter
+    return purelib
+
+
+def imports(shop: Shop, *names: str) -> None:
+    body = f"NAMES = {list(names)!r}\n" + ENVIRONMENT_IMPORTS
+    (shop.project / "migrations" / "versions" / "0001_parts.py").write_text(revision("0001", None, body))
+
+
+def shoplib(shop: Shop) -> Path:
+    package = shop.project / "src" / "shoplib"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "models.py").write_text('NAME = "hashed"\n')
+    return package
+
+
+def read_status(shop: Shop) -> dict[str, Any] | None:
+    shop.canary.unlink(missing_ok=True)
+    found = alembic(shop.migrations.status(shop.connection_id))
+    assert found["code_trust"] == "trusted" and found["heads"] == ["0002"] and found["problem"] is None
+    return shop.ran()
+
+
+def absent(name: str) -> str:
+    return f"refused: No module named {name!r}"
+
+
+@pytest.mark.parametrize("prepend", [".", None])
+def test_a_project_folder_on_the_environment_path_loads_only_hashed_modules(
+    shop: Shop, monkeypatch: pytest.MonkeyPatch, prepend: str | None
+) -> None:
+    """Extension modules (one next to a hashed module) and bytecode without a source, in a project folder that a
+    ``.pth`` file of Studio's environment puts on ``sys.path``: never run. Under an import root (``prepend_sys_path =
+    .``) the folder gets the finder for hashed sources, so the hashed module is what loads; outside the import roots
+    the import guard refuses every module there, since none was hashed."""
+    import importlib.machinery
+
+    if prepend is None:
+        (shop.project / "alembic.ini").write_text("[alembic]\nscript_location = %(here)s/migrations\n")
+    purelib = environment(shop, monkeypatch)
+    package = shoplib(shop)
+    (purelib / "__editable__.shoplib.pth").write_text(str(shop.project / "src") + "\n")
+    names = ("shoplib.models", "shoplib.optional", "flat", "flatopt")
+    imports(shop, *names)
+    trust(shop)
+    scanned = shop.code.load().scan
+    first = read_status(shop)
+    if prepend is None:
+        assert first == dict.fromkeys(names[:2], REFUSED) | {"flat": absent("flat"), "flatopt": absent("flatopt")}
+    else:
+        assert first == {"shoplib.models": "hashed", **{name: absent(name) for name in names[1:]}}
+    ran_instead = shop.project / "unhashed-ran"
+    suffix = importlib.machinery.EXTENSION_SUFFIXES[0]
+    for module in (package / f"models{suffix}", shop.project / "src" / f"flat{suffix}"):
+        module.write_bytes(b"\x7fELF not a module")
+    for module in (package / "optional.pyc", shop.project / "src" / "flatopt.pyc"):
+        bytecode(probe(ran_instead) + 'NAME = "bytecode"\n', module, shop.project / "scratch-pyc")
+    state = shop.code.load()
+    assert state.state == "trusted" and state.scan == scanned  # none of them is a module the digest covers
+    if prepend is None:
+        assert read_status(shop) == dict.fromkeys(names, REFUSED)
+    else:
+        assert read_status(shop) == first  # the hashed module, and only sources are looked for
+    assert not ran_instead.exists()
+
+
+def test_an_unhashed_package_on_the_environment_path_is_refused(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A package in a folder the scan skips (not an identifier), put on ``sys.path`` by a second ``.pth`` file, and
+    modules there that the environment imports when it starts (``sitecustomize``, an import line of a ``.pth``
+    file)."""
+    purelib = environment(shop, monkeypatch)
+    shoplib(shop)
+    (purelib / "__editable__.shoplib.pth").write_text(str(shop.project / "src") + "\n")
+    library = shop.project / "packages" / "my-lib" / "src" / "mylib"
+    library.mkdir(parents=True)
+    (purelib / "__editable__.mylib.pth").write_text(str(library.parent) + "\n")
+    imports(shop, "shoplib.models", "mylib")
+    trust(shop)
+    ran_instead = shop.project / "unhashed-ran"
+    (library / "__init__.py").write_text(probe(ran_instead) + 'NAME = "unhashed"\n')
+    # Imported when the environment starts: a sitecustomize, and a module a .pth file of the environment imports.
+    (library.parent / "sitecustomize.py").write_text(probe(ran_instead))
+    (library.parent / "mylib_startup.py").write_text(probe(ran_instead))
+    (purelib / "zz_mylib_startup.pth").write_text("import mylib_startup\n")
+    assert shop.code.load().state == "trusted"  # the scan skips packages/my-lib
+    assert read_status(shop) == {"shoplib.models": "hashed", "mylib": REFUSED}
+    assert not ran_instead.exists()
+
+
+def test_an_editable_meta_path_finder_loads_only_hashed_modules(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A meta path finder of an editable install that maps packages to project folders: the hashed package is loaded
+    from its hashed bytes, a package the digest does not cover is refused."""
+    purelib = environment(shop, monkeypatch)
+    package = shoplib(shop)
+    library = shop.project / "packages" / "my-lib" / "src" / "mylib"
+    library.mkdir(parents=True)
+    mapping = {"shoplib": str(package), "mylib": str(library)}
+    (purelib / "__editable___studio_test_finder.py").write_text(EDITABLE_FINDER.format(mapping=mapping))
+    (purelib / "__editable___studio_test.pth").write_text(
+        "import __editable___studio_test_finder; __editable___studio_test_finder.install()\n"
+    )
+    imports(shop, "shoplib.models", "mylib")
+    trust(shop)
+    ran_instead = shop.project / "unhashed-ran"
+    (library / "__init__.py").write_text(probe(ran_instead) + 'NAME = "unhashed"\n')
+    assert shop.code.load().state == "trusted"
+    assert read_status(shop) == {"shoplib.models": "hashed", "mylib": REFUSED}
+    (package / "models.py").write_text(probe(ran_instead) + 'NAME = "changed"\n')
+    assert shop.code.load().state == "changed"  # a hashed module changed: nothing runs until it is trusted again
+    assert alembic(shop.migrations.status(shop.connection_id))["heads"] is None
+    assert not ran_instead.exists()
+
+
+def test_studio_from_a_source_checkout_inside_the_project_refuses_to_run(shop: Shop) -> None:
+    """Fail closed: when the folder that holds ``tabrion_studio`` lies in the project folder (not in an environment),
+    the worker cannot tell Studio's modules from the project's and does not run."""
+    import shutil
+
+    import tabrion_studio
+
+    checkout = shop.project / "studio-checkout" / "src"  # not an identifier: the scan skips it
+    shutil.copytree(
+        Path(tabrion_studio.__file__).resolve().parent,
+        checkout / "tabrion_studio",
+        ignore=shutil.ignore_patterns("__pycache__", "static"),
+    )
+    trust(shop)
+    state = shop.code.load()
+    assert state.scan is not None
+    request = {
+        "target": shop.registry.worker_target(shop.connection_id),
+        "project": str(shop.project),
+        "script_location": str(state.scan.script_location),
+        "sys_path": [str(path) for path in state.scan.sys_path],
+        "digest": state.scan.digest,
+    }
+    command = migrations_module.worker_command()
+    done = subprocess.run(
+        [*command[:-1], str(checkout)],
+        input=json.dumps(request).encode(),
+        capture_output=True,
+        cwd=shop.project,
+        env=worker_environment(),
+        timeout=30,
+        check=False,
+    )
+    assert json.loads(done.stdout) == {"error": "studio.migrations_failed"}
+    assert shop.ran() is None

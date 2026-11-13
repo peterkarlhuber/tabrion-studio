@@ -441,6 +441,7 @@
       "trusted_one": "Du vertraust den Alembic-Dateien des Projekts ({{count}} Revisionsdatei).",
       "trusted_other": "Du vertraust den Alembic-Dateien des Projekts ({{count}} Revisionsdateien).",
       "invalid": "Studio kann den Alembic-Dateien des Projekts nicht vertrauen: {{reason}}",
+      "invalidFile": "Studio kann den Alembic-Dateien des Projekts nicht vertrauen: {{reason}} Die Datei: {{file}}",
       "review": "Dateien prüfen",
       "revoke": "Nicht mehr vertrauen",
       "trustedNow": "Dem Migrationscode wird vertraut.",

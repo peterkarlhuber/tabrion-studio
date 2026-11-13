@@ -294,7 +294,13 @@ function CodeTrustCard({
   let body: string;
   if (trust === null) body = t('migrations.code.unavailable');
   else if (trust.state === 'invalid')
-    body = t('migrations.code.invalid', { reason: issueReason(t, trust.issue) });
+    body =
+      trust.issueFile === null
+        ? t('migrations.code.invalid', { reason: issueReason(t, trust.issue) })
+        : t('migrations.code.invalidFile', {
+            reason: issueReason(t, trust.issue),
+            file: cutText(trust.issueFile),
+          });
   else body = t(`migrations.code.${trust.state}`, { count: trust.revisionFiles.length });
   return (
     <section className={viewStyles.card} aria-labelledby="migrations-code" data-testid="code-trust">

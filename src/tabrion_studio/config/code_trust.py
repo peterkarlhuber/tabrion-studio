@@ -110,6 +110,8 @@ class CodeTrustState:
     state: CodeState
     scan: Scan | None = None
     issue: str | None = None
+    #: The file the issue is about (relative to the project, ``/``-separated), when it is about one file (I-1).
+    issue_file: str | None = None
 
     def to_dict(self, project: Path) -> dict[str, Any]:
         location = None
@@ -126,6 +128,7 @@ class CodeTrustState:
             "import_roots": [] if self.scan is None else [_relative(path, project) for path in self.scan.sys_path],
             "module_files": [] if self.scan is None else list(self.scan.module_files),
             "issue": self.issue,
+            "issue_file": self.issue_file,
         }
 
 
@@ -141,9 +144,10 @@ def module_key(path: str | os.PathLike[str], flavor: Any = os.path) -> str:
 
 
 class _Invalid(Exception):
-    def __init__(self, issue: str) -> None:
+    def __init__(self, issue: str, file: str | None = None) -> None:
         super().__init__(issue)
         self.issue = issue
+        self.file = file
 
 
 def _ini_values(data: bytes, project: Path) -> tuple[str, list[str]] | None:
@@ -213,12 +217,13 @@ def scan(project: Path, *, keep: bool = False) -> Scan | None:
     digest.update(len(ini).to_bytes(8, "big") + ini)
     contents: dict[str, bytes] = {}
     for name in names:
+        shown = _relative(versions / name, os.path.realpath(project))
         if _REVISION_NAME.fullmatch(name) is None:
-            raise _Invalid("migrations.file_name")
+            raise _Invalid("migrations.file_name", shown)
         try:
             data = read_plain_file(versions / name)
         except ConfigFileError as exc:
-            raise _Invalid(exc.code) from exc
+            raise _Invalid(exc.code, shown) from exc
         if data is None:
             raise _Invalid("migrations.changed")
         encoded = name.encode("utf-8")
@@ -285,7 +290,7 @@ def _modules(real_project: Path, roots: list[Path]) -> dict[str, tuple[Path, byt
                     if (is_module or entry.is_dir()) and not Path(os.path.realpath(entry.path)).is_relative_to(
                         real_project
                     ):
-                        raise _Invalid("migrations.link_outside")
+                        raise _Invalid("migrations.link_outside", _relative(entry.path, real_project))
                     continue
                 if not is_module:
                     if entry.is_dir(follow_symlinks=False):
@@ -300,9 +305,8 @@ def _modules(real_project: Path, roots: list[Path]) -> dict[str, tuple[Path, byt
                 try:
                     data = read_plain_file(path)
                 except ConfigFileError as exc:
-                    raise _Invalid(
-                        "migrations.modules_too_large" if exc.code == "config.too_large" else exc.code
-                    ) from exc
+                    too_large = exc.code == "config.too_large"
+                    raise _Invalid("migrations.modules_too_large" if too_large else exc.code, name) from exc
                 if data is None:
                     raise _Invalid("migrations.changed")
                 total += len(data)
@@ -329,7 +333,7 @@ class CodeTrust:
         try:
             found = scan(self.project)
         except _Invalid as exc:
-            return CodeTrustState("invalid", issue=exc.issue)
+            return CodeTrustState("invalid", issue=exc.issue, issue_file=exc.file)
         except (OSError, RecursionError, ValueError):
             return CodeTrustState("invalid", issue="migrations.unreadable")
         if found is None:

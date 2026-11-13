@@ -37,7 +37,12 @@ after you trusted these files:
   once as well. **Stop trusting** takes the trust back.
 - A folder Studio cannot check (a `script_location` outside the project, a revision file that is a link, a link in a
   `prepend_sys_path` folder that points outside the project, too many or too large files) cannot be trusted; the
-  section names the reason.
+  section names the reason, and the file when the reason is about one file.
+- If the project is installed into the environment Studio runs from (for example an editable install), its modules
+  are still held to the files you trusted: a project module outside the `prepend_sys_path` folders, a compiled
+  module or bytecode in the project is not imported while Studio reads the revisions, even when the environment
+  points to it. Studio's own environment, also a virtual environment inside the project folder, is not affected.
+  If Studio itself runs from a source checkout inside the project folder, it does not read the revisions.
 
 ## When something goes wrong
 

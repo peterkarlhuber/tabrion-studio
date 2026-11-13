@@ -1,10 +1,11 @@
 """Migration status and code trust routes (03 sections 2 F and 6, STU-015, threat T-16).
 
 * ``GET /api/project/code-trust``: whether Studio may run the project's Alembic revision files: ``{state, trusted,
-  format, config_file, digest, script_location, revision_files, import_roots, module_files, issue, notice}``;
-  ``state`` is ``none``, ``untrusted``, ``changed``, ``trusted`` or ``invalid``. ``import_roots`` are the
+  format, config_file, digest, script_location, revision_files, import_roots, module_files, issue, issue_file,
+  notice}``; ``state`` is ``none``, ``untrusted``, ``changed``, ``trusted`` or ``invalid``. ``import_roots`` are the
   ``prepend_sys_path`` folders and ``module_files`` the project modules under them that the digest covers (F-7).
-  ``notice`` is the fixed text the trust dialog shows.
+  ``issue_file`` names the file an ``invalid`` state is about, when it is about one (a module over the size cap, a
+  link out of the project, a revision file name; review I-1). ``notice`` is the fixed text the trust dialog shows.
 * ``POST /api/project/code-trust`` with ``{"digest": "<the digest the dialog showed>"}``: 204, or a problem
   (``studio.trust_stale`` when the files changed meanwhile, ``studio.migrations_invalid``, ``studio.no_migrations``).
 * ``DELETE /api/project/code-trust`` (with a JSON body, like every changing request): 204; the code is not trusted

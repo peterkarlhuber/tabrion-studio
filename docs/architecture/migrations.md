@@ -8,7 +8,7 @@ STU-024 adds the Levuvo formats Nodestro, Axentra and Orkexa on PostgreSQL. Stud
 | Route | Answer |
 |---|---|
 | `GET /api/connections/{id}/migrations` | `{connection_id, engine, formats: [...]}`, one entry per format found (and per schema and namespace for the Levuvo formats) |
-| `GET /api/project/code-trust` | `{state, trusted, format, config_file, digest, script_location, revision_files, import_roots, module_files, issue, notice}` |
+| `GET /api/project/code-trust` | `{state, trusted, format, config_file, digest, script_location, revision_files, import_roots, module_files, issue, issue_file, notice}` |
 | `POST /api/project/code-trust` | `{"digest": "<the digest the dialog showed>"}`: 204, or `studio.trust_stale`, `studio.migrations_invalid`, `studio.no_migrations` |
 | `DELETE /api/project/code-trust` | 204: the project's code is not trusted any more |
 
@@ -115,9 +115,12 @@ repository (AT4) could put any code into a revision file. So:
 ## The worker
 
 When the code is trusted, `services/migrations.py` starts `services/migration_worker.py` as its own process:
-`python -I -B -c <boot> <package folder>`. The boot code loads the worker from the same `tabrion_studio` package as
+`python -I -S -B -c <boot> <package folder>`. The boot code loads the worker from the same `tabrion_studio` package as
 Studio. `-I` keeps out the `PYTHON*` variables, the user site and the current folder (the project folder, where the
-worker runs), so no file of the project is imported while the worker starts.
+worker runs), so no file of the project is imported while the worker starts. `-S` keeps the interpreter from adding
+the environment's site folders on its own: the worker first puts its import guard in place (see below) and then runs
+`site.main()` itself, so the environment's `.pth` files, the import finders they install and `sitecustomize` are
+imported under the guard.
 
 - **Only this connection's target.** The worker gets the target on standard input, never in its arguments or its
   environment: the target fields, the timeouts, and the password or the database file, read again for this run
@@ -139,7 +142,23 @@ worker runs), so no file of the project is imported while the worker starts.
 - **No bytecode of the project.** The worker writes no bytecode, and from the moment the project's folders are on
   `sys.path` it reads none: `sys.pycache_prefix` points to an empty private folder, so no `__pycache__` file is used,
   and the `prepend_sys_path` folders get an import finder for `.py` sources only (no `.pyc` or extension module).
-  Folders that were on `sys.path` before (Studio's own environment) keep the usual finder.
+  Folders of Studio's installation (below) keep the usual finder, also when they lie under a root.
+- **Project modules from anywhere (review C-1 of F-7).** An import guard sits first on `sys.meta_path`. For every
+  import it asks the other finders for the module and checks where the module's file lies, by its real path: a
+  module in the project folder but outside Studio's installation is project code, whichever finder found it (a
+  project folder on `sys.path` through a `.pth` file, the import finder of an editable install). Project code is
+  loaded from its hashed bytes when it was hashed and refused otherwise: an extension module, bytecode without a
+  source, a module that was not hashed (for example in a folder the scan skips), and a module of a loader without a
+  file whose package folders lie in the project. Before the scan, every project module is refused. Studio's
+  installation is `sys.prefix`, `sys.exec_prefix`, their base prefixes, the environment's site folders and the
+  folder that holds `tabrion_studio`; they are read when a module is checked, after `site.main()` set the prefixes
+  of a virtual environment. Folders are matched by real path and by identity (device and inode), so another
+  spelling of the project folder is still the project. Walking up from a module's file, the guard stops at the
+  first folder that is the project or part of the installation; an installation folder that holds the project
+  folder (or is it) therefore never makes project code Studio's, while a virtual environment inside the project
+  stays Studio's. **Fail closed:** when the folder that holds `tabrion_studio` lies in the project and in none of
+  the other installation folders (Studio runs from a source checkout inside the project), the worker cannot tell
+  Studio's modules from the project's and does not run (`studio.migrations_failed`).
 - **Studio's modules first.** The worker opens the connection once before the `prepend_sys_path` folders are put on
   `sys.path`. The database driver, the dialect and what they import are
   therefore loaded from Studio's environment, never from a module of the same name in the project.
@@ -164,7 +183,7 @@ worker runs), so no file of the project is imported while the worker starts.
 
 | ID | STRIDE | Threat | Measure | Test |
 |---|---|---|---|---|
-| T-16 | E/I | AT4: a revision file of a cloned project runs code when Studio reads the Alembic revision graph (`ScriptDirectory` imports `versions/*.py`). That code could read Studio's secrets or act with them. | The revision graph is read only when the project's code is trusted, which is off by default and bound to the digest of `alembic.ini`, the revision files and the project modules under the `prepend_sys_path` folders (review F-7; versioned, so an earlier trust needs renewing); no other project code runs before the user trusts it. The worker runs the hashed bytes of the revision files and the modules and loads no other module from those folders, reads no bytecode of the project and loads the driver before the project's folders are on `sys.path`. It is a separate process that gets only the open connection's target on standard input, with a minimal environment and closed standard streams, and its process group is killed after the answer or after 30 s (POSIX). Without trust, the revisions are `unknown (project not trusted)`, and `current` comes from plain SQL. Once trusted, the code runs as the user: the separate process and the read-only connection protect against mistakes, not against the trusted code (see below). | `tests/security/test_migrations.py` |
+| T-16 | E/I | AT4: a revision file of a cloned project runs code when Studio reads the Alembic revision graph (`ScriptDirectory` imports `versions/*.py`). That code could read Studio's secrets or act with them. | The revision graph is read only when the project's code is trusted, which is off by default and bound to the digest of `alembic.ini`, the revision files and the project modules under the `prepend_sys_path` folders (review F-7; versioned, so an earlier trust needs renewing); no other project code runs before the user trusts it. The worker runs the hashed bytes of the revision files and the modules and loads no other module of the project folder, whichever finder finds it (also through Studio's environment, review C-1), reads no bytecode of the project and loads the driver before the project's folders are on `sys.path`. It is a separate process that gets only the open connection's target on standard input, with a minimal environment and closed standard streams, and its process group is killed after the answer or after 30 s (POSIX). Without trust, the revisions are `unknown (project not trusted)`, and `current` comes from plain SQL. Once trusted, the code runs as the user: the separate process and the read-only connection protect against mistakes, not against the trusted code (see below). | `tests/security/test_migrations.py` |
 
 What the measure does not cover. Trusting the code means trusting it as you would trust `alembic heads`:
 
@@ -177,10 +196,12 @@ What the measure does not cover. Trusting the code means trusting it as you woul
   environment and the separate process keep Studio's own reads from writing and keep secrets out of the worker by
   accident. They do not stop code that sets out to do otherwise. The worker runs no user SQL, so Studio's SQL checks
   (STU-011) play no part here.
-- **Only imports from the roots are checked.** The digest covers what Python imports from the import roots (F-7).
-  What the trusted code reads, runs or imports by other means (its own file reads, its own changes to `sys.path`,
-  other processes) is part of the trusted code and is not checked again. Studio's own environment, also a virtual
-  environment inside the project that Studio runs from, keeps the usual import finder.
+- **Only imports are checked.** The digest covers what Python imports from the import roots (F-7), and the worker
+  imports no other module of the project folder, also not through Studio's environment (an editable install;
+  review C-1). What the trusted code reads or runs by other means (its own file reads, `exec` of a file, loading a
+  file through `importlib.util.spec_from_file_location` itself, other processes) is part of the trusted code and is
+  not checked again. Studio's own environment, also a virtual environment inside the project that Studio runs from,
+  keeps the usual import finder; its contents are trusted as Studio itself is.
 - **Windows:** children of the project's code are bounded by the job object only when Windows lets Studio make one
   (see the worker).
 
@@ -195,7 +216,8 @@ the status. It only reads; there is no button that migrates.
 
 - **Migration code.** The state of `GET /api/project/code-trust` in words: no Alembic configuration, not trusted,
   changed since it was trusted, trusted (with the number of revision files), or not valid (with the reason for the
-  fixed `issue` code; an unknown code is shown escaped). An answer without a known state reads as "could not read".
+  fixed `issue` code and, when it names one, the file (`issue_file`, escaped and cut like the file lists; review
+  I-1); an unknown code is shown escaped). An answer without a known state reads as "could not read".
 - **Trust dialog** (`TrustCodeDialog` in `components/dialogs/StudioDialogs.tsx`). "Review files" opens it for the
   states `untrusted` and `changed`. It names what trusting means, in the page's own de/en text rather than the
   server's `notice`: the code runs as the user in a separate process for at most 30 seconds, it gets the open
