@@ -297,7 +297,11 @@ test('a connection closed elsewhere: the explorer drops it', async ({ page }) =>
   expect(violations).toEqual([]);
 });
 
-test('wide rows at max_result_mb = 200 stay within the memory limit', async ({ page }) => {
+test('wide rows at max_result_mb = 200 stay within the memory limit', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'chromium only: the heap is measured through CDP');
   test.setTimeout(180_000);
   const violations = await signIn(page);
   const limits: number[] = [];

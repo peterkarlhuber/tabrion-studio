@@ -13,10 +13,30 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Playwright looks for one exact Chromium build; where another build is preinstalled (and downloads are off), set
  * PLAYWRIGHT_CHROMIUM_EXECUTABLE to it instead of reinstalling (docs/development/building.md, review U-5). CI runs
- * these tests in the job `e2e` (.github/workflows/ci.yml); QA-9 adds the platforms smoke, Firefox and WebKit.
+ * these tests in the job `e2e` (.github/workflows/ci.yml), and in Firefox and WebKit in the jobs `e2e (firefox)` and
+ * `e2e (webkit)` (STUDIO_E2E_BROWSERS, below); QA-9 adds the platforms smoke.
  */
 const port = Number(process.env.STUDIO_E2E_PORT ?? 5175);
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
+
+/**
+ * The browsers to run (STU-050, TD-047): Chromium by default; STUDIO_E2E_BROWSERS=firefox or =webkit (or a comma list)
+ * for the CI jobs "e2e (firefox)" and "e2e (webkit)", which install that browser of the locked Playwright version.
+ */
+const BROWSERS = {
+  chromium: { ...devices['Desktop Chrome'], launchOptions: { executablePath } },
+  firefox: { ...devices['Desktop Firefox'] },
+  webkit: { ...devices['Desktop Safari'] },
+} as const;
+type Browser = keyof typeof BROWSERS;
+// Each browser once, in the order given; an unknown name (also an inherited one such as "toString") throws.
+const wanted = [
+  ...new Set((process.env.STUDIO_E2E_BROWSERS ?? 'chromium').split(',').map((name) => name.trim())),
+];
+for (const name of wanted) {
+  if (!Object.hasOwn(BROWSERS, name))
+    throw new Error(`STUDIO_E2E_BROWSERS: unknown browser ${name}`);
+}
 
 export default defineConfig({
   testDir: './e2e',
@@ -28,12 +48,7 @@ export default defineConfig({
     locale: 'en-US',
     trace: 'retain-on-failure',
   },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'], launchOptions: { executablePath } },
-    },
-  ],
+  projects: (wanted as Browser[]).map((name) => ({ name, use: BROWSERS[name] })),
   webServer: {
     command: `npx vite --host 127.0.0.1 --port ${port} --strictPort`,
     url: `http://127.0.0.1:${port}/harness.html`,

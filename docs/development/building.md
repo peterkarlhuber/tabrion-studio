@@ -34,6 +34,7 @@ npm run e2e:install                                              # once: the Chr
 npm run e2e                                                      # = npx playwright test
 TABRION_STUDIO_E2E_PYTHON=../.venv/bin/python npm run e2e        # with the real-server test
 STUDIO_SCREENSHOTS=/tmp/shots npx playwright test e2e/screenshots.spec.ts   # light and dark, 2x
+STUDIO_E2E_BROWSERS=firefox,webkit npm run e2e                  # Firefox and WebKit (npx playwright install firefox webkit)
 ```
 
 **Browser build (review U-5).** Each Playwright release expects one Chromium build: `@playwright/test` 1.64.1 (pinned
