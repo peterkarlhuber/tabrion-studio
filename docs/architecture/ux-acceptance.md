@@ -81,7 +81,7 @@ after the MVP; marked ¹ in 08).
 | UX-X2 | Keyboard: palette, shortcuts, F6 areas, keyboard-only main flows | `e2e/keyboard.spec.ts`, `e2e/explorer.spec.ts`, `e2e/viewer.spec.ts`, `e2e/export.spec.ts` | met for the flows that exist; the rest is STU-052's (TD-020, PR #58) |
 | UX-X3 | No request leaves the local server | `e2e/network.spec.ts`, `e2e/backend.spec.ts`, `e2e/ux-acceptance.spec.ts` | met |
 | UX-X4 | Every flow green on **Chromium** | CI job `e2e` | met |
-| UX-X5 | Every flow green on **Firefox and WebKit** | jobs `e2e (firefox)` and `e2e (webkit)`, workflow-change PR #59 (advisory until green) | open (B-2, TD-047) |
+| UX-X5 | Every flow green on **Firefox and WebKit** | jobs `e2e (firefox)` and `e2e (webkit)`, workflow-change PR #59, merged (advisory until green) | open (B-2, TD-047) |
 | UX-X6 | Screen-reader sample (VoiceOver, NVDA) and the final accessibility report | manual, STU-053 | open (TD-022) |
 
 ## Manual checks
@@ -99,13 +99,13 @@ Found or confirmed by this acceptance; each is in TD-046 unless another item alr
 
 - **B-1** 4.1: no project chooser, recently opened list or "Open SQLite file" on the start page. Studio serves one
   project folder per process (`docs/architecture/process-model.md`); "recently opened" is 1.0 (03 section 2 A).
-- **B-2** Firefox and WebKit (TD-047, PR #59, advisory jobs). First CI run on `9741eb7`: Firefox 251 passed, 3
-  failed; WebKit 236 passed, 7 failed (the rest did not run or are the screenshots and the five "chromium only" heap
-  tests). Root causes as far as known: (1) WebKit logs "Refused to apply a stylesheet" under the CSP each time a
-  `<select>` is created (5 real-server tests; none in Chromium or Firefox), probably the select's own user-agent
-  styles, to be confirmed with a minimal page; (2) Firefox: Tab in the SQL editor appears to stay in the editor
-  (the text changes after Tab), a possible keyboard trap (WCAG 2.1.2) to be confirmed and fixed; (3) the tooltip
-  test reaches `:focus-visible` with `Shift` plus `focus()`, which only Chromium treats as keyboard focus; (4)
+- **B-2** Firefox and WebKit (TD-047; the advisory jobs came with PR #59). First CI run on `9741eb7`: Firefox 251
+  passed, 3 failed; WebKit 236 passed, 7 failed (the rest did not run or are the screenshots and the five "chromium
+  only" heap tests). Root causes as far as known: (1) WebKit logs "Refused to apply a stylesheet" under the CSP each
+  time a `<select>` is created (5 real-server tests; none in Chromium or Firefox), probably the select's own
+  user-agent styles, to be confirmed with a minimal page; (2) Firefox: Tab in the SQL editor appears to stay in the
+  editor (the text changes after Tab), a possible keyboard trap (WCAG 2.1.2) to be confirmed and fixed; (3) the
+  tooltip test reaches `:focus-visible` with `Shift` plus `focus()`, which only Chromium treats as keyboard focus; (4)
   `grantPermissions` for the clipboard exists only in Chromium; (5) WebKit saves "Query 2.sql" as "Query_2.sql".
 - **B-3** 4.8: the hint "Studio does not run migrations. Command: `alembic upgrade head`" with a copy button.
 - **B-4** 08 section 3: the switcher can show a latency, but showed none after Connect in the walk-through; the status

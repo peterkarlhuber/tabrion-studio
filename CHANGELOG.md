@@ -505,6 +505,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- CI (STU-050, TD-047): the e2e suites also run in Firefox and WebKit, in the jobs `e2e (firefox)` and
+  `e2e (webkit)` with the browsers of the locked Playwright version; advisory in `ci-manifest.json` until both are
+  green. `STUDIO_E2E_BROWSERS` picks the browsers locally (Chromium by default); the heap measurements through CDP
+  skip outside Chromium with a "chromium only:" reason, the only skip those jobs accept.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a
