@@ -155,6 +155,19 @@ def check_python(entries: list[dict[str, object]]) -> list[Finding]:
     return findings
 
 
+def npm_license(meta: dict[str, object]) -> str:
+    """The declared license of one npm lockfile entry ("" if none); the legacy ``{"type": ...}`` form too."""
+    declared = meta.get("license")
+    if isinstance(declared, dict):  # legacy {"type": "MIT"}
+        declared = declared.get("type")
+    return str(declared or "")
+
+
+def npm_allowed(declared: str, dev: bool) -> bool:
+    """The policy for one npm package: the shipped allowlist, plus the dev-only licenses for ``dev`` packages."""
+    return expression_allowed(declared, ALLOWED_SHIPPED | ALLOWED_DEV_ONLY if dev else ALLOWED_SHIPPED)
+
+
 def check_npm(lock: dict[str, object]) -> list[Finding]:
     packages = lock.get("packages")
     if not isinstance(packages, dict) or int(str(lock.get("lockfileVersion", 0))) < 2:
@@ -164,20 +177,16 @@ def check_npm(lock: dict[str, object]) -> list[Finding]:
         if not path or not isinstance(meta, dict) or meta.get("link"):
             continue  # the root project and workspace links
         name = path.rsplit("node_modules/", 1)[-1]
-        declared = meta.get("license")
-        if isinstance(declared, dict):  # legacy {"type": "MIT"}
-            declared = declared.get("type")
-        declared = str(declared or "")
+        declared = npm_license(meta)
         # Conservative: only "dev" packages count as tools; "devOptional" ones may be installed in production.
         dev = bool(meta.get("dev"))
-        allowed = ALLOWED_SHIPPED | ALLOWED_DEV_ONLY if dev else ALLOWED_SHIPPED
         findings.append(
             Finding(
                 "npm",
                 name,
                 str(meta.get("version", "")),
                 declared or "(none)",
-                expression_allowed(declared, allowed),
+                npm_allowed(declared, dev),
                 "dev" if dev else "shipped",
             )
         )
