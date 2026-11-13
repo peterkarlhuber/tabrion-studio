@@ -20,9 +20,16 @@ Threats (03 section 7.3) and review findings, in the order of the checks:
 6. **JSON only (T-02).** Unsafe ``/api/*`` requests need ``Content-Type: application/json`` (``access.json_only``,
    415), which a form or a ``fetch`` without preflight cannot send.
 7. **Session and CSRF header (T-03, SQ-03, F-09).** Every ``/api/*`` route except :data:`OPEN_API_PATHS` and the
-   control endpoints (which check their own bearer token) needs the session cookie (``access.session_required``,
-   401) **and** the session's CSRF value in ``X-Tabrion-CSRF`` (``access.csrf_invalid``, 403). A valid session
-   counts as activity for the idle timeout (F-06).
+   control endpoints needs the session cookie (``access.session_required``, 401) **and** the session's CSRF value in
+   ``X-Tabrion-CSRF`` (``access.csrf_invalid``, 403). A valid session counts as activity for the idle timeout (F-06).
+8. **Control token (STU-016 review F-8).** Every request under ``/api/control/`` except ``GET`` and ``HEAD`` of
+   exactly :data:`CONTROL_PROOF_PATH` needs the instance's control token as ``Authorization: Bearer``
+   (``access.control_denied``, 401), checked here in constant time and again by the route. A route added under the
+   prefix later is therefore never reachable without the token, and the prefix is never a way around the session.
+
+Right after the Origin check, an ``/api/*`` path with a ``.`` or ``..`` segment (also percent-encoded, as the
+server decodes it) is refused as ``studio.not_found`` (404): no route has one, and a later mount or path
+normalization must not turn ``/api/control/../x`` into a route outside the control prefix (F-8).
 
 A refusal is a problem document (``application/problem+json``, :mod:`tabrion_studio.problems`, STU-004) with the
 code named above and fixed texts. Every answer, including refusals and errors of the routes, gets the security
@@ -37,6 +44,7 @@ single-user tool on loopback (STU-ADR-0002).
 from __future__ import annotations
 
 from collections.abc import Callable
+import hmac
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -46,6 +54,8 @@ from tabrion_studio.security.sessions import CSRF_HEADER, Sessions, cookie_name
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip")
 CONTROL_PREFIX = "/api/control/"
+#: The one control path without the control token: a second start proves the server knows the token (review F-01).
+CONTROL_PROOF_PATH = "/api/control/proof"
 #: API routes that need no session: the health check (the CLI and the page use it) and the launch exchange.
 OPEN_API_PATHS = frozenset({"/api/health", "/api/session"})
 
@@ -88,9 +98,17 @@ class AccessMiddleware:
     """Applies the checks of this module to every HTTP request and the security headers to every answer."""
 
     def __init__(
-        self, app: ASGIApp, *, port: int, sessions: Sessions, on_activity: Callable[[], None] = lambda: None
+        self,
+        app: ASGIApp,
+        *,
+        port: int,
+        sessions: Sessions,
+        control_token: str,
+        on_activity: Callable[[], None] = lambda: None,
     ) -> None:
         self.app = app
+        # An empty token opens nothing: every control path but the proof is then refused.
+        self.control_token = control_token.encode("utf-8")
         self.port = port
         self.origin = loopback_origin(port)
         self.host = self.origin.removeprefix("http://")
@@ -128,6 +146,8 @@ class AccessMiddleware:
             return "access.origin_not_allowed"
         api = path == "/api" or path.startswith("/api/")
         control = path.startswith(CONTROL_PREFIX)
+        if api and any(segment in (".", "..") for segment in path.split("/")):
+            return "studio.not_found"
         unsafe = method not in SAFE_METHODS
         if control:
             if origins or any(key.startswith("sec-fetch-") for key, _ in headers):
@@ -143,6 +163,9 @@ class AccessMiddleware:
             content_types = [value.split(";", 1)[0].strip().lower() for key, value in headers if key == "content-type"]
             if content_types != ["application/json"]:
                 return "access.json_only"
+        proof = path == CONTROL_PROOF_PATH and method in ("GET", "HEAD")
+        if control and not proof and not self._control_authorized(headers):
+            return "access.control_denied"
         if api and not control and path not in OPEN_API_PATHS:
             candidates = session_cookie(headers, self.cookie)
             known = [value for value in candidates if self.sessions.known(value)]
@@ -153,6 +176,13 @@ class AccessMiddleware:
                 return "access.csrf_invalid"
             self.on_activity()
         return None
+
+    def _control_authorized(self, headers: list[tuple[str, str]]) -> bool:
+        values = [value for key, value in headers if key == "authorization"]
+        if len(values) != 1 or not self.control_token:
+            return False
+        scheme, _, token = values[0].partition(" ")
+        return scheme.lower() == "bearer" and hmac.compare_digest(token.encode("utf-8"), self.control_token)
 
 
 def with_security_headers(send: Send) -> Send:

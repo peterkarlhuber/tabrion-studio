@@ -5,8 +5,9 @@ internal pre-review pass, **not** the gate: G-S1 is decided by the owner after a
 re-review, and a human security review before a public release stays mandatory (STU-028, gate G-R). Nothing here
 replaces either review.
 
-State: master `e9df576` plus this page's pull request. Sensitive specifics of the pre-review are kept outside the
-repository, with the planning documents.
+State: prepared at master `e9df576`; updated after the first independent review of master `e186178` (section
+[Independent review](#independent-review-first-round)). Sensitive specifics of the pre-review and of the review, such
+as reproduction steps, are kept outside the repository, with the planning documents.
 
 ## What G-S1 asks
 
@@ -15,8 +16,9 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 | G-S1 criterion | State | Evidence |
 |---|---|---|
 | SQ-01..SQ-08 green, each with its STU-T tests | Ready for review | [SQ requirements](#sq-01sq-08) below |
-| Every threat-model measure (doc 03 section 7.3, T-01..T-16) proven by a test | Ready for review, except the write-mode rows (G-S2) | [Threat model](#threat-model-t-01t-16) below |
-| Review report "accepted": a first review, the fixes, a re-review on merged SHAs | **Open** (the independent review has not started) | - |
+| SQ-01..SQ-08 after the independent review | **Not met at `e186178`:** SQ-05 and SQ-07 (review F-1, F-2); SQ-06 met with F-4 | Fixes in the read-only hardening PR and the request-limits PR; re-review pending |
+| Every threat-model measure (doc 03 section 7.3, T-01..T-16) proven by a test | **Not met at `e186178`** for T-06 and T-13 (review F-1, F-2); the write-mode rows are G-S2 | [Threat model](#threat-model-t-01t-16) below |
+| Review report "accepted": a first review, the fixes, a re-review on merged SHAs | **Open:** the first independent review (`e186178`) is **not accepted**; fixes in progress, re-review pending | [Independent review](#independent-review-first-round) below |
 | `npm audit --omit=dev` without High | Met (0 findings at `e9df576`) | CI job `dependency audit` |
 | axe: 0 serious or critical | Met for the existing views (`e2e`, every view in light and dark, en and de) | `frontend/e2e/*.spec.ts`, `docs/architecture/accessibility.md`; the rest of STU-053 is TD-022 |
 
@@ -28,9 +30,9 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 | SQ-02 | Host and Origin allowlist (DNS rebinding) | `security/access.py`: `127.0.0.1:<port>` only, the own Origin and same-origin fetch metadata on every API request | STU-T-001..003: `tests/security/test_access.py`; every API route: `tests/security/test_every_route.py` |
 | SQ-03 | Launch token, then an HttpOnly SameSite=Strict cookie and a CSRF header | `security/launch.py`, `security/sessions.py` | STU-T-004..006: `test_access.py`, `test_launch.py`; every API route: `test_every_route.py` |
 | SQ-04 | Secrets only in the backend | `config/secrets.py` (keyring without plain-text fallback, `env:`, `file:`), `tabrion.safe_url()`, log redaction in `logs.py` | STU-T-008/-009: `test_canary.py`, `test_secrets_api.py`, `test_log_process.py`, `test_diagnosis_report.py`; through the routes of the editor, viewer, export and diagnosis: `test_canary_flows.py` |
-| SQ-05 | Read-only enforced by the database | `services/connections.py`, `services/readonly.py` (SQLite `mode=ro`, `query_only`, authorizer; PostgreSQL read-only session and transactions), text check as a second layer | STU-T-010..013, -024: `tests/security/test_read_only.py` (PostgreSQL part in the `backend integration (PostgreSQL 17)` CI job) |
-| SQ-06 | Limits and cancel | `services/queries.py`, `viewer.py`, `exports.py`; limits in the configuration | STU-T-018..020: `test_queries.py`, `test_viewer.py`, `test_exports.py`, `frontend/e2e/editor-backend.spec.ts` |
-| SQ-07 | PROD marking; no writes before G-S2 | Environment badge, frame and title (STU-051); D-02 on the server (`confirmed_environment`, TD-038); no write route exists (STU-026 is locked) | `test_read_only.py::test_td_038_*`, `test_connections_api.py`, frontend D-02 tests; `test_every_route.py` lists every route |
+| SQ-05 | Read-only enforced by the database | `services/connections.py`, `services/readonly.py` (SQLite `mode=ro`, `query_only`, authorizer; PostgreSQL read-only session and transactions), text check as a second layer. **Not met at `e186178`** (review F-1: a PostgreSQL statement form wrote despite the read-only transaction; F-2: the SQLite authorizer allowed a native function that must be refused); fixed in the read-only hardening PR, re-review pending | STU-T-010..013, -024: `tests/security/test_read_only.py` (PostgreSQL part in the `backend integration (PostgreSQL 17)` CI job) |
+| SQ-06 | Limits and cancel | `services/queries.py`, `viewer.py`, `exports.py`; limits in the configuration; request body caps enforced while the body streams in, before any route reads it (`security/body.py`, review F-4) | STU-T-018..020: `test_queries.py`, `test_viewer.py`, `test_exports.py`, `frontend/e2e/editor-backend.spec.ts`; body caps: `tests/security/test_body_limits.py` |
+| SQ-07 | PROD marking; no writes before G-S2 | Environment badge, frame and title (STU-051); D-02 on the server (`confirmed_environment`, TD-038); no write route exists (STU-026 is locked). **Not met at `e186178`** until F-1 is fixed (the server-side D-02 itself is met) | `test_read_only.py::test_td_038_*`, `test_connections_api.py`, frontend D-02 tests; `test_every_route.py` lists every route |
 | SQ-08 | Strict CSP, no foreign hosts | `CONTENT_SECURITY_POLICY` in `security/access.py`; no CDN, fonts or telemetry | STU-T-014: `test_access.py::test_csp_is_strict`; `frontend/e2e/network.spec.ts` (0 foreign hosts) |
 
 ## Threat model T-01..T-16
@@ -44,23 +46,25 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-03 Token theft | One-time launch token in the fragment, redirect file 0600, session cookie | STU-T-005, -006 | Covered; TD-005 (spent URL in history) is an accepted risk |
 | T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. No state database or history yet (1.0); editor drafts are in browser storage (TD-033) |
 | T-05 Secret leaks | Redaction, canaries, safe URLs, Problem JSON without server text | STU-T-008, -009; `test_canary_flows.py` | Covered |
-| T-06 Accidental writes | Read-only in the database, prod marking | STU-T-010..013 (`test_read_only.py`) | Covered for the MVP; the write mode is G-S2 |
+| T-06 Accidental writes | Read-only in the database, prod marking | STU-T-010..013 (`test_read_only.py`) | **Not met at `e186178`** (review F-1); fixed with tests in the read-only hardening PR, re-review pending. The write mode is G-S2 |
 | T-07 XSS through database text | React text only, ESLint rule against `dangerouslySetInnerHTML`, CSP | STU-T-014; no STU-T-015 label, in substance `test_access.py::test_eslint_forbids_dangerously_set_inner_html` and hostile-value tests of the views | Covered |
 | T-08 Hostile project | Project trust (D-01), bound to digests | STU-T-016, -017 (`test_project_trust.py`) | Covered |
-| T-09 Resource exhaustion | Row, byte and cell caps, timeouts, cancel, parallel limits | STU-T-018..020 | Covered |
+| T-09 Resource exhaustion | Row, byte and cell caps, timeouts, cancel, parallel limits; request body caps while streaming (review F-4) | STU-T-018..020; `test_body_limits.py` | Covered |
 | T-10 TLS downgrade | `STU-DX-002` for PROD without verify-full | STU-T-021 (`test_diagnostics.py`) | Covered as a finding; Studio does not refuse such a profile |
 | T-11 Supply chain | Locked dependencies, license policy, SBOM, audits | No STU-T-022 label; CI jobs `license and supply chain`, `dependency audit` | Covered; TD-030 (dev-only advisory), TD-031 (hashed pins in CI) |
 | T-12 Change log | Writes logged | STU-T-023 | Not applicable before G-S2 (no write mode) |
-| T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist | STU-T-024 (`test_read_only.py`) | Covered |
+| T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist | STU-T-024 (`test_read_only.py`) | **Not met at `e186178`** (review F-2: the authorizer allowed a function it must refuse); fixed with tests in the read-only hardening PR, re-review pending |
 | T-14 Network exposure | No `--host` | STU-T-025 | Covered |
 | T-15 Cached answers | `Cache-Control: no-store` | STU-T-026; every refusal in `test_every_route.py` | Covered |
-| T-16 Trusted project code (Alembic) | Code trust bound to file digests, isolated worker | `test_migrations.py` | Covered |
+| T-16 Trusted project code (Alembic) | Code trust bound to file digests, isolated worker | `test_migrations.py` | Covered; the digest does not cover project modules that revision files import (documented; review F-7, owner decision) |
 
 ## The pages and their API
 
 Every API route except `/api/health`, `/api/session` and the CLI's control endpoints needs the session, the CSRF
 header, refuses a foreign Origin and cross-site or same-site fetch metadata, and, for unsafe methods, needs the own
-Origin and a JSON body. `test_every_route.py` reads the routes from the application built with every service, so a
+Origin and a JSON body. Every path under `/api/control/` except the proof needs the control token in the access
+middleware, so a control route added later is never open (review F-8); every request body is capped while it streams
+in (review F-4). `test_every_route.py` reads the routes from the application built with every service, so a
 route added later is checked without a change to the test; at `e9df576` there are 45 routes. The only other route
 under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fails if another appears.
 
@@ -114,20 +118,46 @@ under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fai
 
 - Malware running as the same user can read everything the user can; Studio does not defend against it.
 - PostgreSQL `READ ONLY` is not a boundary against functions with side effects; the role's rights are. Diagnostics
-  report a read-only role that can write (`STU-DX-003`).
+  report a read-only role that can write (`STU-DX-003`). The functions the independent review named (review F-3:
+  functions that act on other sessions of the same role, write to the WAL or manage replication) are refused by
+  Studio's statement check in the read-only hardening PR; other side-effect functions stay bounded by the role.
 - The warning before a destructive statement is UX, not protection.
+
+## Independent review (first round)
+
+The first independent security review (2026-11-13, master `e186178`, tabrion `d5821fa`) is **not accepted**. It
+confirms the access layer (launch, session, CSRF, Host, Origin and fetch metadata, the security headers, D-02 on the
+server, secret handling, problem documents) and found gaps the internal pre-review had missed. The report, with its
+reproduction steps, stays outside the repository.
+
+| Finding | Severity | Subject | State |
+|---|---|---|---|
+| F-1 | High | PostgreSQL: a statement form passed the text check and wrote despite the read-only transaction (SQ-05, SQ-07, T-06) | Fixed in the read-only hardening PR, with tests; re-review pending |
+| F-2 | Medium | SQLite: the authorizer allowed a native function that must be refused (SQ-05, T-13) | Fixed in the read-only hardening PR, with tests; re-review pending |
+| F-3 | Low | PostgreSQL side-effect functions outside the statement check's denylist | Fixed in the read-only hardening PR (refused); see the residual risks |
+| F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed in the request-limits PR: caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)) |
+| F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | **Owner decision:** finish TD-033 before a public release, or accept the risk and say so in the user guide |
+| F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | **Owner decision:** hashed pins used in CI and documented, before G-R |
+| F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | **Owner decision:** hash those modules too, or say so in the trust dialog |
+| F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed in the request-limits PR: the control token is checked in the middleware for every control path but the proof; dot segments in `/api/*` paths reach no route |
+| F-9 | Info | This page said "covered" for SQ-05, T-06 and T-13 | Fixed: this page |
+
+Re-review conditions: F-1 and F-2 fixed with tests, merged and re-reviewed; F-3 and F-4 fixed or accepted by the
+owner; F-5, F-6 and F-7 recorded as owner decisions. G-S1 stays the owner's decision after the re-review, and the
+human security review before a public release (STU-028, G-R) stays mandatory.
 
 ## For the human reviewer
 
-The internal pre-review found no gap in the product code. Its additions are two tests (`test_every_route.py`,
-`test_canary_flows.py`). These points need a person's judgment:
+The internal pre-review added two tests (`test_every_route.py`, `test_canary_flows.py`); the independent review then
+found the gaps listed above. These points need a person's judgment:
 
 1. TD-005: whether the spent launch URL in the browser history stays an accepted risk.
 2. TD-002 and TD-007: the redirect-file launch path and the checks in a real browser.
 3. TD-003 and TD-008: the file-permission model on Windows, which CI does not yet check.
-4. The PostgreSQL read-only model: Studio relies on the role's rights for functions with side effects.
-5. TD-033: SQL text in browser storage, outside the private state folder.
+4. The PostgreSQL read-only model: Studio relies on the role's rights for functions with side effects beyond the
+   ones it refuses (review F-3).
+5. TD-033: SQL text in browser storage, outside the private state folder (review F-5).
 6. The keyring backends Studio accepts and refuses, per operating system.
-7. The CI workflow-change gate (TD-004, TD-006) and the supply chain (TD-030, TD-031).
-8. Code trust for migrations (T-16): the worker's isolation and what the digest binds.
-9. The open independent review itself: first review, fixes and a re-review on merged SHAs.
+7. The CI workflow-change gate (TD-004, TD-006) and the supply chain (TD-030, TD-031; review F-6).
+8. Code trust for migrations (T-16): the worker's isolation and what the digest binds (review F-7).
+9. The re-review of the independent review's fixes on merged SHAs.
