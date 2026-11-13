@@ -12,6 +12,13 @@ html {
   text-size-adjust: 100%;
 }
 
+/* While the theme switches (src/theme.ts): no transition, so text and backgrounds change together (TD-047). */
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+  transition: none !important;
+}
+
 html,
 body,
 #root {
