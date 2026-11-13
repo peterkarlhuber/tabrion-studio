@@ -7,7 +7,8 @@
  * TABRION_STUDIO_E2E_PG_PARTS and TABRION_STUDIO_E2E_PG_MEASUREMENTS (URLs of two empty databases the test may fill,
  * as their owner) and TABRION_STUDIO_E2E_PG_USER (the role Studio reads with; the URLs' user when unset). A spec of
  * its own, so that backend.spec.ts, which CI requires to run without a skip, stays complete without these
- * variables. CI sets none of them yet (TD-041: the wiring needs a reviewed `.github/` pull request).
+ * variables. CI (job `e2e`) sets TABRION_STUDIO_E2E_PYTHON and TABRION_STUDIO_E2E_EXAMPLES, so the SQLite part runs
+ * there; it sets no PostgreSQL URL, so the PostgreSQL part does not run in CI (TD-041).
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync } from 'node:fs';
