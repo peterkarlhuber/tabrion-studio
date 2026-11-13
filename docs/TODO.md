@@ -65,7 +65,7 @@
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
-| TD-047 STU-050: the e2e suites on Firefox and WebKit (08 section 11, 09 STU-050; a `.github/` change) | P1 | Done (PR #59 merged: jobs `e2e (firefox)` and `e2e (webkit)`; PR #63: both green, no product bug, the tests fixed; PR #@@: both jobs required, after its workflow-change review) |
+| TD-047 STU-050: the e2e suites on Firefox and WebKit (08 section 11, 09 STU-050; a `.github/` change) | P1 | Done (PR #59 merged: jobs `e2e (firefox)` and `e2e (webkit)`; PR #63: both green, no product bug, the tests fixed; PR #67: both jobs required, after its workflow-change review) |
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
@@ -967,7 +967,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **With STU-023 and STU-016:** the ER diagram's table alternative and the STU-016 pages. Add their states to the
   pages' axe tests and to `WORK_PAGES` in `a11y-audit.spec.ts`.
 - **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts`: done in the jobs `e2e (firefox)` and
-  `e2e (webkit)` (PR #59, green with PR #63, required with PR #@@; TD-047).
+  `e2e (webkit)` (PR #59, green with PR #63, required with PR #67; TD-047).
 - **Required e2e suite:** done in the CI e2e-list PR: `a11y-audit.spec.ts` must pass without a skip, like every spec
   in `frontend/e2e` but `screenshots.spec.ts`.
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
@@ -1135,14 +1135,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-047 · STU-050: the e2e suites on Firefox and WebKit
 
-- **Priority:** P1 High · **Status:** Done (PR #59, PR #63, PR #@@) · **Refs:** 08 sections 10 and 11 (STU-050: every flow green in
+- **Priority:** P1 High · **Status:** Done (PR #59, PR #63, PR #67) · **Refs:** 08 sections 10 and 11 (STU-050: every flow green in
   E2E on Chromium, Firefox and WebKit), 09 STU-050, QA-9 row, TD-007, `ci-firefox-webkit-workflow-review.md`
 - **Done in PR #59:** `playwright.config.ts` picks the browsers from `STUDIO_E2E_BROWSERS` (default `chromium`, so the
   job `e2e` is unchanged); the CI matrix job `e2e (firefox)` / `e2e (webkit)` runs the same suites against the same
   wheel with the browser of the locked Playwright version. Its gate is the e2e job's, except that a test may skip
   with a `chromium only:` reason (the five heap measurements through CDP) and never with a fixme or fail annotation.
-  Both jobs were `continue-on-error` and listed as advisory in `.github/ci-manifest.json` until PR #@@.
-- **Done in PR #@@ (a `.github/` change with its own workflow-change review):** both jobs are required. They have no
+  Both jobs were `continue-on-error` and listed as advisory in `.github/ci-manifest.json` until PR #67.
+- **Done in PR #67 (a `.github/` change with its own workflow-change review):** both jobs are required. They have no
   `continue-on-error` any more and left the `advisory` list of `.github/ci-manifest.json`, so `ci-ok` counts them
   like `e2e`; timeouts and secrets are unchanged. The step summary shows the "Chromium only"
   count per suite (expected 2 in `editor.spec.ts`, 2 in `editor-backend.spec.ts`, 1 in `viewer-backend.spec.ts`).
