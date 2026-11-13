@@ -1385,6 +1385,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   before the statement ran, and `start()` frees the slot if the worker thread cannot start. Two exports running at
   once on one connection (and a third in Studio) are still refused. Tests: `test_td057_*` hold the worker at the
   start of its last step (a gated `Timer.cancel`), no sleeps; both failed with `studio.export_busy` before the fix.
+- **Review F-1 (PR #80):** the export worker started its timeout timer before its `try`, so a timer thread that
+  could not start (no more threads) left the slot taken until restart, never set `_done`, and the client's
+  `chunks()` polled forever. The timer now starts inside the `try` (the slot is freed, then the client gets the
+  error). The query engine had the same shape: a worker thread that could not start left a `running` query holding a
+  slot, and a timer that could not start killed the worker before the query's state was set. `start()` now drops a
+  query whose worker did not start, and `_run` starts its timer inside the `try` (the query ends as failed). Tests:
+  `test_td057_f1_*` in `test_exports.py` and `test_queries.py` force `Thread.start` or `Timer.start` to fail.
 - **Same pattern elsewhere (checked):** the query engine counts a query as running while its `state` is `running`,
   and the worker sets the final state (what the page sees) after `stream` has ended, so a query's slot and its end
   are one change. The data viewer (`Viewer`) and the diagnosis free their slots in `finally` before they return the

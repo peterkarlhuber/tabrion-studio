@@ -656,6 +656,9 @@ All notable changes to this project are documented here. The format follows
   be refused with `studio.export_busy`, because the finished export freed its slot only after its last log line.
   The slot is now freed as soon as the export's transaction has ended, before the end or the error reaches the
   client; an earlier export can no longer free a later one's slot (TD-057).
+- Export and query engine: when a worker or its timeout timer could not start (no more threads), the export's slot
+  or a `running` query stayed taken until restart, and the export's download waited forever. Both now end with an
+  error and free their slot (TD-057, review F-1 of PR #80).
 - Theme switch: buttons kept their old background for 120 ms (a transition) while their text took the new theme,
   so for that moment a primary button's label had too little contrast (TD-047, found by axe in WebKit). The theme now
   switches with transitions off, and text and background change together.

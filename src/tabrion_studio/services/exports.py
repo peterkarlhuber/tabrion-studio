@@ -343,7 +343,6 @@ class Exports:
     ) -> None:
         timer = threading.Timer(EXPORT_TIMEOUT_S, export.close)
         timer.daemon = True
-        timer.start()
 
         def put(item: object) -> None:
             while not export._stopped.is_set():
@@ -384,6 +383,7 @@ class Exports:
 
         try:
             try:
+                timer.start()  # inside the try (TD-057 review F-1): a thread that cannot start must not leak the slot
                 rows = connection.stream(statement, consume, cancel=export._hook)
             finally:
                 # TD-057: ``stream`` has closed the cursor and ended the transaction, whether it returned or raised,

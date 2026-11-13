@@ -307,7 +307,13 @@ class QueryEngine:
         worker = threading.Thread(
             target=self._run, args=(query, connection, statement), name=f"studio-query-{query.id}", daemon=True
         )
-        worker.start()
+        try:
+            worker.start()
+        except BaseException:
+            # TD-057 review F-1: a query whose worker never ran must not keep its slot (it counts while RUNNING).
+            with self._lock:
+                self._queries.pop(query.id, None)
+            raise
         return query
 
     def _max_rows(self, value: object) -> int:
@@ -332,9 +338,9 @@ class QueryEngine:
     def _run(self, query: Query, connection: OpenConnection, statement: BoundStatement) -> None:
         timer = threading.Timer(connection.timeout_s, self._expire, args=(query,))
         timer.daemon = True
-        timer.start()
         state, found = State.DONE, None
         try:
+            timer.start()  # inside the try (TD-057 review F-1): if it fails, the query still ends as failed
             connection.stream(statement, lambda cursor: self._collect(query, cursor), cancel=query.hook)
         except Cancelled:
             state, found = self._stopped(query)

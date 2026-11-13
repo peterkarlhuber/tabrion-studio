@@ -326,6 +326,48 @@ def test_td057_a_failed_export_frees_its_slot_before_the_client_sees_its_error(
     assert not exports._running
 
 
+def test_td057_f1_a_timer_that_cannot_start_frees_the_slot_and_ends_with_an_error(
+    shop: tuple[Exports, ConnectionRegistry, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """TD-057 review F-1: when the export's timer thread cannot start (no more threads), the worker frees its slot
+    and the client gets an error, instead of a slot taken until restart and a ``chunks()`` that polls forever."""
+    exports, _, connection_id = shop
+    start = threading.Timer.start
+
+    def failing_start(self: threading.Timer) -> None:
+        if threading.current_thread().name == "studio-export":
+            raise RuntimeError("can't start new thread")
+        start(self)
+
+    monkeypatch.setattr(threading.Timer, "start", failing_start)
+    export = exports.start(connection_id, "csv", sql="SELECT 1 AS one")
+    assert export._done.wait(5)  # the worker ended (without the fix it died before setting it)
+    assert not exports._running
+    with pytest.raises(RuntimeError):
+        next(export.chunks())
+    monkeypatch.setattr(threading.Timer, "start", start)
+    assert b"".join(exports.start(connection_id, "csv", sql="SELECT 1 AS one").chunks()) == b"one\r\n1\r\n"
+
+
+def test_td057_f1_a_worker_that_cannot_start_frees_the_slot(
+    shop: tuple[Exports, ConnectionRegistry, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    exports, _, connection_id = shop
+    start = threading.Thread.start
+
+    def failing_start(self: threading.Thread) -> None:
+        if self.name == "studio-export":
+            raise RuntimeError("can't start new thread")
+        start(self)
+
+    monkeypatch.setattr(threading.Thread, "start", failing_start)
+    with pytest.raises(RuntimeError):
+        exports.start(connection_id, "csv", sql="SELECT 1 AS one")
+    assert not exports._running
+    monkeypatch.setattr(threading.Thread, "start", start)
+    assert b"".join(exports.start(connection_id, "csv", sql="SELECT 1 AS one").chunks()) == b"one\r\n1\r\n"
+
+
 def test_the_timeout_stops_an_export(
     shop: tuple[Exports, ConnectionRegistry, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
