@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   connection on open instead of returning it; a busy pool (checked without waiting for a session) or a check that
   fails otherwise (a timeout) keeps the connection. The SQL editor no longer reopens a PROD connection without D-02
   when the server says it is gone.
+- STU-052 (rest of TD-020): F6 and Shift+F6 also step through the panes of the main area (08 section 7,
+  "Explorer/Editor/Ergebnis"): in the explorer the tree (its current item) and the details (the selected tab), in the
+  SQL editor the SQL text, the first parameter value and the result grid. On other pages F6 stops at the main area as
+  before. Keyboard-only end-to-end tests for every main flow of the MVP from the page's start, without a click:
+  connect with the test and D-02 for PROD, the explorer, and a query with a parameter, then a cancel with Escape in
+  the result and with Ctrl+. in the SQL text (`e2e/keyboard.spec.ts`).
 - Accessibility audit of the work pages (STU-053, second part; `docs/architecture/accessibility.md`): the SQL
   editor with its grid, cell detail and export dialog, the explorer's tree, Data, DDL and Policies tabs and Count
   rows, the diagnostics report and D-02 in the connection manager. For each, `e2e/a11y-audit.spec.ts` checks target

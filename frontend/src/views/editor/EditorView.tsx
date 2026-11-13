@@ -1121,7 +1121,7 @@ export function EditorView({
         </Button>
       </div>
 
-      <div className={styles.editorArea}>
+      <div className={styles.editorArea} data-region="editor">
         <SqlEditor
           key={tab.id}
           ref={editor}
@@ -1168,6 +1168,7 @@ export function EditorView({
         aria-labelledby={`${prefix}-results-title`}
         onKeyDown={onResultsKeyDown}
         data-testid="results"
+        data-region="result"
       >
         <h2 id={`${prefix}-results-title`} className="tb-sr-only">
           {t('editor.result.title')}
@@ -1271,7 +1272,7 @@ export function EditorView({
                 ))}
               </ol>
             ) : shown !== null && shown.cache !== null && shown.status !== null ? (
-              <div className={styles.gridArea} ref={grid}>
+              <div className={styles.gridArea} ref={grid} data-region-entry="">
                 {shown.cache.problem !== null ? (
                   <p role="alert" className={connectionStyles.problem}>
                     {queryProblemText(t, shown.cache.problem)}
