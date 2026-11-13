@@ -97,9 +97,12 @@ export function AppShell({
   path,
   pageTitle,
   server,
+  banner = null,
   children,
 }: {
   path: string;
+  /** Shown above the view, on every page: the "Connection lost" banner (TD-034). */
+  banner?: ReactNode;
   /** The current view's title for the window title, null on the start page. */
   pageTitle: string | null;
   server: ServerState;
@@ -243,6 +246,7 @@ export function AppShell({
             role={activeTab ? 'tabpanel' : undefined}
             aria-labelledby={activeTab ? `tab-${activeTab.id}` : undefined}
           >
+            {banner}
             {children}
           </main>
         </div>

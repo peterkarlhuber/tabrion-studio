@@ -166,7 +166,40 @@ let cancelRun: (() => void) | null = null;
 /** Whether the migrations scenario's project code is trusted (the trust dialog and "Stop trusting" change it). */
 let codeTrusted = false;
 
+/**
+ * TD-034, the lost connection: `window.harnessLose(id)` makes every request on the connection `id` answer
+ * `db.connection` (the database does not answer), its health check included, until the page opens a connection of
+ * that profile again. `check=<ms>` sets the page's connection check interval (off by default in the harness).
+ */
+const lostConnections = new Set<string>();
+(window as unknown as { harnessLose: (id: string) => void }).harnessLose = (id) => {
+  lostConnections.add(id);
+};
+const connectionCheckMs = Number(params.get('check') ?? '0');
+
+function lostAnswer(url: string, method: string): Response | null {
+  if (url === '/api/connections' && method === 'POST') {
+    lostConnections.clear();
+    return null;
+  }
+  const match = /^\/api\/connections\/([^/?]+)\/([a-z-]+)/.exec(url);
+  if (match === null) return null;
+  const [, id = '', route] = match;
+  if (lostConnections.has(id)) {
+    return new Response(
+      JSON.stringify({ code: 'db.connection', kind: 'connection', status: 502, sqlstate: '08006' }),
+      { status: 502 },
+    );
+  }
+  if (route === 'health' && method === 'GET') {
+    return new Response(JSON.stringify({ state: 'open', latency_ms: 1.2 }), { status: 200 });
+  }
+  return null;
+}
+
 const fakeServer: typeof fetch = async (input, init) => {
+  const lost = lostAnswer(String(input), init?.method ?? 'GET');
+  if (lost !== null) return lost;
   if (scenario === 'connections') {
     const url = String(input);
     const method = init?.method ?? 'GET';
@@ -412,6 +445,7 @@ createRoot(root).render(
       fetcher={fakeServer}
       session={session}
       workspace={WORKSPACES[scenario === 'dialog-d02' ? 'prod' : scenario]}
+      connectionCheckMs={connectionCheckMs}
     />
     {scenario.startsWith('dialog-') ? <HarnessDialog id={scenario} /> : null}
   </StrictMode>,

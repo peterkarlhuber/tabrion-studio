@@ -54,7 +54,7 @@
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
 | TD-035 STU-022 DDL: what pg_dump writes and Studio's DDL does not (owner, privileges, tablespace, access method, functions, types and domains, foreign-table column options, security labels; PostgreSQL 18 forms) | P3 | Open (STU-022 PR #38) |
 | TD-039 STU-022 review: the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (PR #45) |
-| TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the header learns of a connection the server closed only when the manager reloads, no reconnect banner, the status bar's role and database) | P2 | Open (STU-008 connect PR #42) |
+| TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the status bar's role and database, a connection switcher; the "Connection lost" banner with "Reconnect" is done) | P2 | Partly done (TD-034 PR: the banner) |
 | TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 was enforced only in the page, from its loaded list, so a profile changed to `prod` in another tab or on disk after the list loaded was connected without D-02 (the connection manager too). Done in the D-02 server PR: `POST /api/connections` and `POST /api/connection-tests` take `confirmed_environment` and refuse a PROD profile that was not confirmed for PROD with 409 `studio.prod_confirmation_required` (missing means not confirmed); the manager reads the profile again and asks D-02, the migration status and diagnostics views read their list again (`docs/architecture/connections.md`, "D-02 on the server"). The explorer (#43) and the SQL editor (#41) send it too and read their list again after a 409; `confirmed_environment` is a required argument of the page's `openConnection` and `testConnection`, so a new caller cannot leave it out (#48 review C-2). For a SQLite user profile the server resolves the file from the same profile read that passed the check (#48 review C-1). The diagnostics view uses the shared D-02 gate since TD-036 (#47). The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time. The delta review's leftovers are fixed in the STU-008 follow-up PR: L-10 (the header could stay "connecting…" after a slow connect and a newer one that failed), a refused URL's `password` query parameter staying in the field (and `sslpassword`, from the #44 review), the other order of L-10 (the older request answers first, then the newer one fails; #44 review R-1), a connection that was open before two connects that both failed (#44 delta review R-2), tests for the two surviving mutants (the busy click guard, the open-list read after a failed connect), and the cause of a `backend.spec.ts` failure under load (the switcher did not appear after Connect): a list of the open connections read while the connect ran, and answered after it, cleared the header; the manager also read that list again on every header change. A list now clears only what the header showed when it was read (`headerVersion`), and the session's functions keep their identity | P2 | Open (STU-008 connect PR #42) |
 | TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR #54), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI: its SQLite part runs and is required since the CI e2e-list PR, its PostgreSQL part not yet) | P2 | Open (STU-010 page PR #43) |
 | TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced; the viewer suites are required in CI since the CI e2e-list PR) | P2 | Open (STU-013 page PR #52) |
@@ -1316,16 +1316,31 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-034 · STU-008 connect: what the page does not do yet
 
-- **Priority:** P2 Medium · **Status:** Open (STU-008 connect PR #42, 2026-11-12) · **Refs:** 08 §3, §5 ("Connect",
-  "error recovery"), `src/views/connections/useConnect.tsx`
+- **Priority:** P2 Medium · **Status:** Partly done (TD-034 PR, 2026-11-13: the banner) · **Refs:** 08 §3, §5 ("Connect",
+  "error recovery"), `src/views/connections/useConnect.tsx`, `src/shell/ConnectionLost.tsx`
 - **After "Connect"** 08 §5 goes on to the workspace overview. There is no workspace view yet (explorer page,
   STU-010/STU-012 frontend lane), so the page stays in the connection manager and the header shows the connection.
   Navigate there once the workspace route exists.
-- **A connection the server closed** (its profile changed, was removed or is no longer trusted;
-  `studio.connection_stale`) leaves the header only when the connection manager reads `GET /api/connections` again
-  (on load and after each change it makes). Another view keeps showing it as connected until its next request fails.
-  08 §5's banner "Connection lost" with "Reconnect" is not built; it belongs with the heartbeat move of STU-012
-  (TD-013, "The page's heartbeat").
+- **A lost connection: done** in the TD-034 PR (`docs/architecture/connections.md`, "Lost connections and
+  'Reconnect'"). 08 §5's banner "Connection lost" with "Reconnect" shows on every page that holds a connection when a
+  request on it answers `db.connection`, `studio.connection_not_found` or `studio.connection_stale`, or when the
+  header's connection check (`GET /api/connections/{id}/health`, every 30 s while the tab is visible) finds it gone.
+  "Reconnect" asks D-02 again for PROD; the views go on with the new connection. Vitest, `e2e/connection-lost.spec.ts`
+  (harness, axe light/dark, en/de) and `e2e/connection-lost-backend.spec.ts` (real server; with a throwaway
+  PostgreSQL, the database stops answering). Still open: the check covers the header's connection only (another
+  view's connection is seen on its next request), and the banner is not yet tested in Firefox and WebKit (STU-050).
+- **Review `td-034-review.md`** (C-1, C-2, L-1..L-6) done in the TD-034 PR. Kept as limits, documented in
+  `docs/architecture/connections.md`:
+  - "D-02 again" holds in the page that saw the loss; another tab keeps its confirmation, and its next open of the
+    PROD profile replaces the lost connection without a dialog (the D-02 model of TD-038).
+  - While both pool sessions are lent out and the database is down, the check says "busy"; the loss shows when
+    those statements fail.
+- **The PostgreSQL part of `e2e/connection-lost-backend.spec.ts`** (the database stops answering) runs only when
+  `TABRION_STUDIO_TEST_POSTGRES` and `TABRION_STUDIO_TEST_POSTGRES_SUPERUSER` are set. It is an `if` inside the test,
+  not a skip, so the CI job `e2e` (no PostgreSQL) passes it without running it, and the "none skipped" gate cannot
+  see that (like TD-041). The same flow on the server is required in CI through `tests/security/test_connection_loss.py`
+  (PostgreSQL job). Run it locally with a throwaway database, or give the e2e job a PostgreSQL service (a `.github/`
+  change).
 - **The status bar** (08 §3: server version, role, database or file) still shows only the local server. The test's
   facts are not kept for the open connection; `POST /api/connections` could answer them as well.
 - **Several open connections:** the header shows the last one opened; the others stay open in the backend (the list

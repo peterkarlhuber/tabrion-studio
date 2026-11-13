@@ -41,6 +41,12 @@ connection marks the whole window. The first PROD connection of a profile in a b
 the test connects too. A reload asks again, and so does a profile you edited or created again, or a project file you
 trusted again. **Disconnect** closes the connection.
 
+When the database stops answering, or the connection was closed (another tab's **Disconnect**, a profile you
+changed), a banner "Connection lost" with **Reconnect** shows above the page you are on. Nothing was lost: Studio
+only reads. **Reconnect** reads the profile again and opens a new connection, and the page goes on with it. For a
+PROD profile it asks "Production database" again first. While the database is still down, the banner says why
+reconnecting failed; try again once it is back.
+
 When the profile's password is not stored yet, the password dialog opens, and the test or the connection runs again
 after you saved it. A failure says what to check (host, port and firewall; user and password; the TLS mode; a file
 that is no SQLite database), never the database server's own message.

@@ -40,9 +40,10 @@ import weakref
 
 import sqlalchemy
 from sqlalchemy import event
+from sqlalchemy.pool import QueuePool
 import tabrion
 from tabrion.check import Finding
-from tabrion.errors import ConfigurationError, UnsafePath
+from tabrion.errors import ConfigurationError, Kind, UnsafePath
 from tabrion.postgres import SessionSettings
 
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, target_fingerprint
@@ -307,6 +308,32 @@ def _close_after_dispose(db: tabrion.Database) -> Callable[[Any, Any], None]:
     return close_if_disposed
 
 
+@dataclass(frozen=True)
+class ConnectionCheck:
+    """The outcome of :meth:`OpenConnection.check`: ``open``, ``busy``, ``lost`` or ``failed`` (the last two with the
+    failed health)."""
+
+    state: str
+    latency_ms: float | None
+    failed: tabrion.Health | None
+
+
+def _no_free_session(engine: sqlalchemy.Engine) -> bool:
+    """Whether every session of the engine's pool is lent out now (a long query, an export), read without a checkout.
+
+    Read before the check (TD-034, L-2 of td-034-review.md): read after a failed check, the counts would include the
+    check's own session, and a dead database would pass for a busy pool.
+    """
+    pool = engine.pool
+    if not isinstance(pool, QueuePool):
+        return False
+    try:
+        size = pool.size() + max(pool.overflow(), 0)
+        return size > 0 and pool.checkedout() >= size
+    except Exception:  # pool status is a hint; without it the check runs
+        return False
+
+
 @dataclass
 class OpenConnection:
     """One open, read-only connection. The engine is private; only reading is offered."""
@@ -425,6 +452,28 @@ class OpenConnection:
 
     def health(self) -> tabrion.Health:
         return self._db.health(timeout=min(self.timeout_s, 5.0))
+
+    def _no_free_session(self) -> bool:
+        return _no_free_session(self._db.engine)
+
+    def check(self) -> ConnectionCheck:
+        """Whether the database still answers on this connection (TD-034, the page's "Connection lost" banner).
+
+        When every session of the pool is lent out (a long query, an export) the check does not run and the answer is
+        ``busy``: it would only wait for a session (up to the pool timeout) and learn nothing about the database.
+        Only a failure of the connection kind (the database does not answer) is ``lost``; any other failure (the
+        check's statement timeout on a loaded server, a permission or authentication problem) is ``failed``:
+        reported, but the connection is not replaced, so the queries and exports other views run on it go on.
+        """
+        if self._no_free_session():
+            return ConnectionCheck("busy", None, None)
+        health = self.health()
+        if health.ok:
+            return ConnectionCheck("open", health.latency_ms, None)
+        classification = health.classification
+        if classification is not None and classification.kind is Kind.CONNECTION:
+            return ConnectionCheck("lost", None, health)
+        return ConnectionCheck("failed", None, health)
 
     def close(self) -> None:
         self._db.close()
@@ -555,13 +604,28 @@ class ConnectionRegistry:
         if connection is not None:
             existing = self.get(connection.id)
             require_prod_confirmation(existing.environment, confirmed_environment)
-            return existing
+            # TD-034: a connection whose database no longer answers (it restarted, or ended Studio's sessions) is not
+            # returned again; "Reconnect" opens a new one in its place.
+            if existing.check().state != "lost":
+                return existing
+            logger.info("connection lost", extra={"event": "studio.connection_lost", "profile_id": profile_id})
+            self.close(existing.id)
         connection = self._connect(profile_id, confirmed_environment)
         with self._lock:
-            if len(self._open) >= self.max_open:
+            # Another request (a "Reconnect" and another view's open at once) may have registered a connection of
+            # the profile meanwhile: that one is returned and this one closed, so none is left orphaned.
+            raced = next((c for c in self._open.values() if c.profile_id == profile_id), None)
+            if raced is None and len(self._open) >= self.max_open:
                 connection.close()
                 raise RegistryError("studio.connection_limit")
-            self._open[connection.id] = connection
+            if raced is None:
+                self._open[connection.id] = connection
+        if raced is not None:
+            connection.close()
+            # D-02 as for any connection already open (D-1 of td-034-review.md): the profile may have become PROD
+            # meanwhile, and the request that registered first confirmed it; this one may not have.
+            require_prod_confirmation(raced.environment, confirmed_environment)
+            return raced
         logger.info(
             "connection opened", extra={"event": "studio.connection_opened", "profile_id": connection.profile_id}
         )
@@ -591,6 +655,18 @@ class ConnectionRegistry:
         except Exception:  # gone, no longer trusted, damaged: the connection must not be used
             return False
         return True
+
+    def check(self, connection_id: object) -> dict[str, Any]:
+        """``GET /api/connections/{id}/health``: ``{"state": "open", "latency_ms"}`` or ``{"state": "busy"}``.
+
+        Raises :class:`RegistryError` (gone or stale, as :meth:`get`) or :class:`HealthError` when the database does
+        not answer (``db.connection`` and the like). The connection stays registered: the page offers "Reconnect".
+        """
+        outcome = self.get(connection_id).check()
+        if outcome.failed is not None:
+            raise _health_error(outcome.failed)
+        latency = None if outcome.latency_ms is None else round(outcome.latency_ms, 1)
+        return {"state": outcome.state, "latency_ms": latency}
 
     def list(self) -> list[OpenConnection]:
         with self._lock:
