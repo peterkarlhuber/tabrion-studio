@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { App } from './App';
@@ -39,6 +39,62 @@ describe('App', () => {
     expect(screen.getByRole('navigation', { name: 'Main navigation' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /No connection/ })).toBeInTheDocument();
     expect(document.title).toBe('Tabrion Studio');
+  });
+
+  it.each(['en', 'de'])(
+    'STU-050 (%s): the start page leads to every view that exists, each link named once',
+    async (lang) => {
+      await act(async () => {
+        await i18n.changeLanguage(lang);
+      });
+      render(<App fetcher={server()} />);
+      await screen.findByTestId('start-steps');
+      expect(
+        screen.queryByText(/arrive with the next versions|folgen mit den nächsten/),
+      ).toBeNull();
+      const steps = within(screen.getByTestId('start-steps')).getAllByRole('link');
+      expect(steps.map((link) => link.getAttribute('href'))).toEqual([
+        '/connections',
+        '/explorer',
+        '/sql',
+        '/migrations',
+        '/diagnostics',
+      ]);
+      // No step shares a name with the activity bar in either language (review L-2 of stu-050-review.md): a
+      // locator by name, which matches substrings and ignores case, finds exactly one link.
+      const nav = within(screen.getByRole('navigation', { name: i18n.t('nav.label') }));
+      for (const link of steps) {
+        const name = link.textContent ?? '';
+        expect(nav.queryAllByRole('link', { name: new RegExp(name, 'i') })).toHaveLength(0);
+        for (const other of nav.getAllByRole('link')) {
+          const label = (other.getAttribute('aria-label') ?? other.textContent ?? '').trim();
+          expect(label).not.toBe('');
+          expect(name.toLowerCase()).not.toContain(label.toLowerCase());
+        }
+      }
+    },
+  );
+
+  it('STU-050: a start-page link navigates in the page, but leaves modifier and middle clicks to the browser', async () => {
+    const user = userEvent.setup();
+    render(<App fetcher={server()} />);
+    await screen.findByText('Local server 0.1.0.dev0');
+    expect(screen.getByRole('heading', { level: 2, name: 'Get started' })).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: 'Run a query' });
+    // Review L-1: like the activity bar, Ctrl/Cmd/Shift/Alt-click and the middle button are not taken over.
+    for (const init of [
+      { ctrlKey: true },
+      { metaKey: true },
+      { shiftKey: true },
+      { altKey: true },
+    ]) {
+      expect(fireEvent.click(link, init)).toBe(true); // not prevented
+      expect(window.location.pathname).toBe('/');
+    }
+    expect(fireEvent.click(link, { button: 1 })).toBe(true);
+    expect(window.location.pathname).toBe('/');
+    await user.click(link);
+    expect(window.location.pathname).toBe('/sql');
   });
 
   it('asks to run tabrion-studio again when the sign-in link was used', async () => {

@@ -288,7 +288,7 @@ test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "C
   await dialog.getByRole('radio', { name: 'TEST' }).check();
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByTestId('connection-outcome')).toHaveText(
-    'Test failed: The file is not a SQLite database, or the database is damaged.',
+    "Test failed: The file is not a SQLite database, or the database is damaged. Check that the profile's path names the database file.",
   );
   // TD-038, D-02 on the server: another tab makes e2e-dev PROD. This page still shows it as DEV, so it connects
   // without D-02; the server refuses, the page reads the profile again and asks D-02.

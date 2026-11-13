@@ -5,7 +5,8 @@
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python with Studio installed (as for backend.spec.ts) and
  * TABRION_STUDIO_E2E_EXAMPLES names tabrion's `examples` folder; the PostgreSQL part also needs
  * TABRION_STUDIO_E2E_PG_PARTS and TABRION_STUDIO_E2E_PG_MEASUREMENTS (URLs of two empty databases the test may fill,
- * as their owner) and TABRION_STUDIO_E2E_PG_USER (the role Studio reads with; the URLs' user when unset). A spec of
+ * as their owner), TABRION_STUDIO_E2E_PG_USER (the role Studio reads with; the URLs' user when unset) and, for a
+ * server with password authentication, TABRION_STUDIO_E2E_PG_PASSWORD (that role's password). A spec of
  * its own, so that backend.spec.ts, which CI requires to run without a skip, stays complete without these
  * variables. CI (job `e2e`) sets TABRION_STUDIO_E2E_PYTHON and TABRION_STUDIO_E2E_EXAMPLES, so the SQLite part runs
  * there; it sets no PostgreSQL URL, so the PostgreSQL part does not run in CI (TD-041).
@@ -237,6 +238,11 @@ test('STU-010: the explorer against the parts and measurements reference apps', 
         database: target.pathname.slice(1),
         user: process.env.TABRION_STUDIO_E2E_PG_USER ?? decodeURIComponent(target.username),
         sslmode: 'disable',
+        // A server with password authentication (STU-050 ran it on scram-sha-256): the server reads the password
+        // from this variable, which it inherits; without it the profile has no password, for a trust-auth server.
+        ...(process.env.TABRION_STUDIO_E2E_PG_PASSWORD
+          ? { password: 'env:TABRION_STUDIO_E2E_PG_PASSWORD' }
+          : {}),
       });
     }
     await page.reload();

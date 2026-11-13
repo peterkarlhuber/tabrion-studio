@@ -59,6 +59,7 @@ nav:
       - Starting and stopping: guide/starting.md
       - Connections: guide/connections.md
       - Diagnostics: guide/diagnostics.md
+      - Migration status: guide/migrations.md
       - Explorer: guide/explorer.md
       - SQL editor: guide/sql-editor.md
       - Data viewer: guide/data-viewer.md
@@ -80,6 +81,7 @@ nav:
       - Export: architecture/exports.md
       - App shell and design system: architecture/frontend.md
       - Accessibility audit: architecture/accessibility.md
+      - UX acceptance: architecture/ux-acceptance.md
       - Security review preparation: architecture/security-review-prep.md
   - Development:
       - Building and testing: development/building.md

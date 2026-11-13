@@ -11,6 +11,14 @@ Studio is a tool for one person on one computer. In short:
   session.
 - **Read-only towards databases.** Studio 1.0 does not write to databases. SQLite files are opened read-only. Writing
   stays locked behind a separate gate; for a `PROD` profile it stays locked always.
+- **Production databases are marked and confirmed.** A profile's environment (`DEV`, `TEST`, `PROD`) is always shown
+  as text: in the header, on every tab and in the window title (`[PROD] name – Tabrion Studio`); a PROD connection
+  also gets a red frame at the top of the window. Before Studio first connects to a PROD profile in a page session
+  (Connect, the connection test, the explorer, the SQL editor, the migration status or the diagnostics), it asks
+  "Production database"; the default is **Cancel**, which connects nothing. One confirmation counts for the whole
+  page session; a reload, or a profile you edited, asks again, and the server refuses a PROD connection the page did
+  not confirm. Queries on a PROD profile stop after 15 seconds, or after the profile's own statement timeout when
+  it has one (the question names the limit).
 - **Your files only.** Studio writes only in its own private folders: its `settings.toml` and `profiles.toml`
   (0600), its trust records, the instance files of a running Studio, the one-time sign-in files and its logs. It never writes a project's `.tabrion/studio.toml`, and never rewrites a file of yours that
   has issues or comments without asking.

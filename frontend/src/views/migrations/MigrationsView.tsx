@@ -447,7 +447,12 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
         <h1 className={viewStyles.title}>{t('migrations.title')}</h1>
         <p className={viewStyles.lead}>{t('migrations.lead')}</p>
       </div>
-      <p role="status" className={connectionStyles.status} data-testid="migrations-message">
+      {/* STU-050: an empty message is no empty coloured box; the live region stays in place for the next one. */}
+      <p
+        role="status"
+        className={message === '' ? 'tb-sr-only' : connectionStyles.status}
+        data-testid="migrations-message"
+      >
         {message}
       </p>
       <CodeTrustCard
