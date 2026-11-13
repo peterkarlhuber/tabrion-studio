@@ -127,7 +127,7 @@ export function ObjectTree({
   };
 
   return (
-    <ul role="tree" aria-label={label} className={styles.tree}>
+    <ul role="tree" aria-label={label} className={styles.tree} data-region-entry="">
       {rows.map((row, index) => {
         const selectable =
           row.type === 'object' || row.type === 'extensions' || row.type === 'file';

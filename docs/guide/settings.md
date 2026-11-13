@@ -28,7 +28,7 @@ with "Rewrite file and save".
 |---|---|---|
 | ⌘K | Ctrl+K | open the **command palette** |
 | ⌘/ | Ctrl+/ | show the keyboard shortcuts |
-| F6 | F6 | move to the next area: header, navigation, tabs, main area, status bar |
+| F6 | F6 | move to the next area: header, navigation, tabs, main area, status bar. In the explorer the main area is two areas (the tree, the details), in the SQL editor three (the SQL text, the parameters, the result) |
 | Shift+F6 | Shift+F6 | move to the previous area |
 | Esc | Esc | close the palette or a dialog |
 

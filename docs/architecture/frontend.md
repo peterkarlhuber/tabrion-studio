@@ -107,7 +107,7 @@ for matching and for display, so the palette, the help and the header buttons al
 |---|---|---|---|
 | Command palette | ⌘K | Ctrl+K | opens the palette (also the header button) |
 | Keyboard shortcuts | ⌘/ | Ctrl+/ | opens the help with this table (also the header button and the palette) |
-| Next / previous area | F6 / ⇧F6 | F6 / Shift+F6 | header, activity bar, tabs, main area, status bar, wrapping around |
+| Next / previous area | F6 / ⇧F6 | F6 / Shift+F6 | header, activity bar, tabs, main area (or its panes), status bar, wrapping around |
 | Run (SQL editor) | ⌘↵ | Ctrl+Enter | the selection, or the statement at the cursor |
 | Run script (SQL editor) | ⇧⌘↵ | Shift+Ctrl+Enter | every statement of the tab, in turn |
 | Cancel query (SQL editor) | ⌘. | Ctrl+. | also Escape in the results |
@@ -123,14 +123,20 @@ for matching and for display, so the palette, the help and the header buttons al
   word, without case and accents. No command writes to a database; theme, density and language are saved to
   `settings.toml` like in the settings view (`src/appearance.ts`, TD-021). The SQL editor adds its commands while its
   page is shown; the history adds its own when it arrives.
-- **Areas** (`regions.ts`): each area carries `data-region`; F6 focuses its current item (the active navigation link,
-  the selected tab), else its first control, else the area itself, which then shows the focus ring
+- **Areas** (`regions.ts`): each area carries `data-region`. A page can split the main area into panes with areas of
+  their own (08 section 7, "Explorer/Editor/Ergebnis"): the explorer's `explorer` (the tree) and `detail`, the SQL
+  editor's `editor`, `parameters` (only with `:name` placeholders) and `result`. F6 stops at the areas that hold no
+  other area, so on those pages it steps through the panes instead of the main area. A focus outside every stop (the
+  main area itself after "Go to …", a toolbar between two panes) moves to the next stop after it in the page's order,
+  or with Shift+F6 to the last one before it. F6 focuses an area's entry (`data-region-entry`: the tree's current
+  item, the result grid, the first parameter value, the SQL text inside the editor's shadow root), else its current item (the active
+  navigation link, the selected tab), else its first control, else the area itself, which then shows the focus ring
   (`data-region-focus`, WCAG 2.4.7).
 - While any modal dialog is open, the page shortcuts do nothing: the dialog owns the keyboard.
 - The SQL editor's shortcuts work on its page; the help lists them in a group of their own and the palette offers
   its commands (`src/keyboard/editorActions.ts`) while the page is shown. A shortcut with ⌥ matches the physical key
   too, because ⌥T types "†" on a Mac. The explorer filter (⌘P / Ctrl+P) works on the explorer page and has a help
-  group of its own. The history and F6 between the editor's own areas are still open (`docs/TODO.md`, TD-020, TD-033).
+  group of its own. Formatting and the history come with 1.0 (`docs/TODO.md`, TD-020).
 
 ## SQL editor (STU-012)
 

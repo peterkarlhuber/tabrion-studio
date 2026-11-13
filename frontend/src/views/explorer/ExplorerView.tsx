@@ -690,7 +690,12 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
       </section>
       {catalog !== null && opened !== null && tree !== null ? (
         <div className={styles.workspace} data-testid="explorer-workspace">
-          <section className={styles.treePanel} aria-labelledby="explorer-objects" aria-busy={busy}>
+          <section
+            className={styles.treePanel}
+            aria-labelledby="explorer-objects"
+            aria-busy={busy}
+            data-region="explorer"
+          >
             <div className={styles.treeHead}>
               <h2 id="explorer-objects" className={styles.panelTitle}>
                 <Database aria-hidden="true" className={styles.titleIcon} />
@@ -807,6 +812,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             aria-labelledby="explorer-detail"
             aria-busy={detail?.status === 'loading'}
             data-testid="explorer-detail"
+            data-region="detail"
           >
             <div className={styles.detailHead}>
               <h2
