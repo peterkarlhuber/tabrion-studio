@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-033 drafts part (security review F-5): the SQL editor's drafts (each tab's title, profile, text and script
+  binding, and the open tab) are kept in Studio's state database `state.sqlite` (0600) behind the authenticated
+  `GET`/`PUT /api/drafts` (session cookie and CSRF header; a tab with any field but the known ones is refused, so a
+  draft has no place for a parameter value; at most 32 tabs, 512 K characters per text and 2 M in all,
+  `studio.drafts_too_large`). Nothing is written to browser storage any more, and drafts now survive a restart on
+  another port. Drafts an earlier version kept in `localStorage` for this project (its own key and the unscoped key)
+  are moved to the server once and those keys are then removed; other projects' keys stay until that project's
+  editor moves them, and the keys stay while the server cannot store them or not all of them fit the caps.
+  `[history] retention_days` also applies to drafts (counted from the project's last save; opening the editor saves);
+  `enabled = false` and "Delete history" leave them. A save or read that removed text checkpoints the write-ahead
+  log; a lone surrogate is refused (`studio.invalid_request`; the page replaces it with U+FFFD), and a body with far
+  more values than a drafts document is refused before it is parsed, by a scan that reads each byte once. Old drafts
+  stay in browser storage unless both of this project's keys together fit the caps. The state database moves to schema version 2
+  (table `drafts`; a file with data is copied 0600 before the migration and the copy removed after it; after a
+  failed migration it stays until a later one succeeds; no downgrade to an older Studio).
 - STU-020 (page): **Query history** (`/history`, ⌘Y / Ctrl+H): the statements you ran with their profile,
   environment, state and parameter names, never the values; filter by profile, search, "Open in editor" (runs
   nothing; the values are asked again), delete one or all after a confirmation; history settings and "Delete history"

@@ -156,7 +156,7 @@ the editor's write mode (STU-026, D-03..D-05) stay locked behind G-S2.
 | Events | `api/queries.ts` | `POST /api/queries`, the SSE stream read with `fetch` (the CSRF header), `GET /api/queries/{id}` every 250 ms when the stream breaks, row pages, cancel |
 | Grid | `ResultGrid.tsx`, `rowCache.ts` | TanStack Virtual in both directions; rows in chunks of 50, at most 10 000 rows and 64 MB (estimated) in the browser, least recently used dropped; a failed or wrong page is asked for again (3 times); WAI-ARIA grid with `aria-activedescendant` |
 | Detail | `CellDetail.tsx`, `format.ts` | the whole value as plain text, JSON indented, bytes as hex; invisible and bidi characters shown as marks |
-| Drafts | `drafts.ts` | title, profile and text of every tab in `localStorage` under a key per project (a hash of its folder), merged by tab with other pages (never parameter values or results); D-06 before closing a changed tab, "Save" downloads a `.sql` file |
+| Drafts | `drafts.ts` | title, profile and text of every tab in Studio's state database through `GET`/`PUT /api/drafts` (TD-033, review F-5), merged by tab with other pages on the server (never parameter values or results, nothing in browser storage; this project's drafts of earlier versions in `localStorage` are moved once and removed, lone surrogates replaced with U+FFFD); D-06 before closing a changed tab |
 
 **CSP and CodeMirror.** CodeMirror writes its styles through `style-mod`, which adds a `<style>` element to the
 document; the CSP of STU-003 (`style-src 'self'`) refuses that, and Studio keeps its CSP. In a shadow root

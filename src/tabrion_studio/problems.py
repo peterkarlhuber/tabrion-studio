@@ -588,8 +588,14 @@ CATALOG: dict[str, Entry] = {
         503,
         ProblemKind.INTERNAL,
         "Studio state not available",
-        "Studio cannot use its state database, which keeps the history and the favorites.",
+        "Studio cannot use its state database, which keeps the history, the favorites and the editor drafts.",
         "The log names the reason; queries still run without a history entry.",
+    ),
+    "studio.drafts_too_large": Entry(
+        413,
+        ProblemKind.REQUEST,
+        "Drafts too large",
+        "Studio keeps at most 32 editor tabs, 512 K characters per text and 2 M characters in all as drafts.",
     ),
     "studio.favorites_full": Entry(
         409, ProblemKind.REQUEST, "Too many favorites", "Studio keeps at most 100 favorite profiles."

@@ -1,4 +1,5 @@
-"""Studio's own state database: query history, favorite and recently opened profiles (03 section 4.3, STU-020).
+"""Studio's own state database (03 section 4.3): query history, favorite and recently opened profiles (STU-020) and the
+SQL editor's drafts (TD-033, review F-5).
 
 ``<state_dir>/state.sqlite`` is opened with ``tabrion.sqlite.connect`` (threat T-04): a new file is created 0600 with
 ``O_CREAT | O_EXCL | O_NOFOLLOW`` whatever the umask, a link at the file or at its ``-wal``, ``-shm`` or
@@ -8,7 +9,9 @@ tabrion's defaults (WAL, ``synchronous=FULL``, ``foreign_keys``, ``trusted_schem
 deleted history entries are overwritten in the file, not only unlinked from the b-tree.
 
 The schema is versioned with ``PRAGMA user_version`` and migrated with ``tabrion.sqlite.migrate`` in one write
-transaction. Every statement here is a fixed text with bound values.
+transaction. Every statement here is a fixed text with bound values. Version 2 adds the ``drafts`` table. Before a file
+that holds data is migrated, ``tabrion.sqlite.backup`` copies it to ``state.sqlite.v<n>.bak`` (0600, same folder); the
+copy is removed once the migration succeeded, so no second copy of the history stays behind.
 
 One store is shared by every Studio instance of this user (one per project folder): SQLite's locking and the busy
 timeout serialize the writers. Rows of project profiles carry the project's key (``scope``), so the history and the
@@ -31,7 +34,7 @@ import threading
 import time
 from typing import TypeVar
 
-from tabrion.sqlite import SQLiteProfile, connect, migrate, write_transaction
+from tabrion.sqlite import SQLiteProfile, backup, connect, migrate, write_transaction
 
 __all__ = ["SCHEMA_VERSION", "STATE_FILE", "StateStore", "StateUnavailable", "scope_of"]
 
@@ -39,7 +42,7 @@ logger = logging.getLogger("tabrion_studio.state")
 _T = TypeVar("_T")
 
 STATE_FILE = "state.sqlite"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 #: How long a write waits for another instance's write lock.
 BUSY_TIMEOUT_MS = 5_000
 #: The pause between two tries of a write that waits briefly (:meth:`StateStore.write` with ``busy_timeout_ms``).
@@ -77,8 +80,17 @@ _V1 = (
 )
 
 
+#: The SQL editor's drafts (TD-033): one document per project (``scope`` is the project key).
+_V2 = ("CREATE TABLE drafts (scope TEXT PRIMARY KEY, doc TEXT NOT NULL, updated_at REAL NOT NULL)",)
+
+
 def _migrate_v1(connection: sqlite3.Connection) -> None:
     for statement in _V1:
+        connection.execute(statement)
+
+
+def _migrate_v2(connection: sqlite3.Connection) -> None:
+    for statement in _V2:
         connection.execute(statement)
 
 
@@ -242,11 +254,22 @@ class StateStore:
 
 def _open(path: Path) -> sqlite3.Connection:
     connection = connect(path, profile=SQLiteProfile(secure_delete=True, busy_timeout=BUSY_TIMEOUT_MS / 1000))
+    copies: list[Path] = []
+
+    def keep_copy(found: int, target: int) -> None:
+        # A file with data (an older version) is copied before it is migrated; tabrion.sqlite.backup writes the copy
+        # 0600 through a temporary file and refuses a link.
+        copy = path.with_name(f"{path.name}.v{found}.bak")
+        backup(connection, copy, overwrite=True)
+        copies.append(copy)
+
     try:
-        # A fresh file is version 0; no older version exists yet, so a backup is never needed (backup=None makes a
-        # future step that finds data refuse with BackupRequired instead of migrating without one).
-        migrate(connection, {1: _migrate_v1}, target=SCHEMA_VERSION, backup=None)
+        migrate(connection, {1: _migrate_v1, 2: _migrate_v2}, target=SCHEMA_VERSION, backup=keep_copy)
     except BaseException:
         connection.close()
         raise
+    # The steps only add tables: once they are in, the copy is not needed, and it would keep deleted history text.
+    for copy in copies:
+        with contextlib.suppress(OSError):
+            copy.unlink()
     return connection

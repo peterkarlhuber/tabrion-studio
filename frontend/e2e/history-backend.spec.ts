@@ -122,6 +122,9 @@ async function api(page: Page, method: string, path: string, body: unknown): Pro
 }
 
 async function openEditor(page: Page): Promise<void> {
+  // The drafts live in Studio's state database now (TD-033), not in this test's fresh browser context: each test starts
+  // without the tabs an earlier test left, on the first profile.
+  expect(await api(page, 'PUT', '/api/drafts', { tabs: [], active_tab: null })).toBe(200);
   await page.getByRole('link', { name: 'SQL editor' }).click();
   await expect(page.locator('.cm-content')).toBeVisible();
   await expect(page.getByTestId('editor-profile')).toHaveValue(/e2e-parts/);

@@ -348,6 +348,14 @@ test('a result cut at its row limit loads up to the max_rows setting', async ({ 
   await expect(page.getByRole('grid')).toHaveAttribute('aria-rowcount', '5001');
 });
 
+/** The last document the page sent with `PUT /api/drafts` to the harness's fake server, as JSON text ('' before any). */
+async function lastDraftPut(page: Page): Promise<string> {
+  return page.evaluate(() => {
+    const puts = (window as unknown as { draftsLog: { puts: unknown[] } }).draftsLog.puts;
+    return puts.length === 0 ? '' : JSON.stringify(puts.at(-1));
+  });
+}
+
 test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab', async ({
   page,
   browserName,
@@ -360,7 +368,8 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
   await expect(page.locator('.cm-content')).toBeFocused();
   await page.keyboard.type('select 2');
   await expect(tabs.nth(1)).toContainText('not saved');
-  await page.waitForTimeout(600);
+  // The draft reached the (fake) server before the page goes.
+  await expect.poll(() => lastDraftPut(page)).toContain('select 2');
   // A new page load of the harness without a draft of its own (a reload would leave the harness).
   await page.goto('/harness.html?scenario=editor&path=/sql');
   await expect(page.getByTestId('editor-tab')).toHaveCount(2);
@@ -397,15 +406,47 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
   expect(file.suggestedFilename()).toBe(browserName === 'webkit' ? 'Query_2.sql' : 'Query 2.sql');
   expect(readFileSync(await file.path(), 'utf-8')).toBe('select 2');
   await expect(page.getByTestId('editor-tab')).toHaveCount(1);
-  // The drafts are stored under the project's key, never the shared one; parameter values are never part of them.
-  const stored = await page.evaluate(() =>
-    Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
+  // The drafts go to the server (TD-033, review F-5), never to localStorage; parameter values are never part of them.
+  // The save after the tab closed holds one tab.
+  await expect
+    .poll(
+      async () =>
+        (JSON.parse((await lastDraftPut(page)) || '{"tabs":[]}') as { tabs: unknown[] }).tabs
+          .length,
+    )
+    .toBe(1);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
+    ),
+  ).toEqual([]);
+  const puts = await page.evaluate(
+    () => (window as unknown as { draftsLog: { puts: unknown[] } }).draftsLog.puts,
   );
-  expect(stored).toHaveLength(1);
-  expect(stored[0]).toMatch(/^tabrion-studio\.editor-drafts\.[0-9a-z]+$/);
-  const text = await page.evaluate((key) => localStorage.getItem(key) ?? '', stored[0] ?? '');
+  const text = JSON.stringify(puts.at(-1));
   expect(text).toContain('select 1');
   expect(text).not.toContain('params');
+});
+
+test('drafts an earlier version kept in localStorage move to the server and leave the browser', async ({
+  page,
+}) => {
+  await page.goto(
+    '/harness.html?scenario=editor&path=/sql&sql=select%201&legacyDraft=select%20old',
+  );
+  await expect(page.getByTestId('editor-tab')).toHaveCount(2);
+  await expect(page.getByTestId('editor-tab').nth(1)).toContainText('Old draft');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
+      ),
+    )
+    .toEqual([]);
+  const puts = await page.evaluate(
+    () => (window as unknown as { draftsLog: { puts: unknown[] } }).draftsLog.puts,
+  );
+  expect(JSON.stringify(puts.at(-1))).toContain('select old');
 });
 
 test('D-02 asks before the first PROD connection; Cancel connects nothing', async ({ page }) => {

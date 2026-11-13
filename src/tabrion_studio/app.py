@@ -41,6 +41,8 @@ from tabrion_studio._version import __version__
 from tabrion_studio.api.config import MAX_FORM_BODY, Configuration, add_config_routes
 from tabrion_studio.api.connections import add_connection_routes
 from tabrion_studio.api.diagnostics import add_diagnostics_routes
+from tabrion_studio.api.drafts import MAX_BODY as MAX_DRAFTS_BODY
+from tabrion_studio.api.drafts import add_draft_routes
 from tabrion_studio.api.explorer import add_explorer_routes
 from tabrion_studio.api.exports import add_export_routes
 from tabrion_studio.api.history import add_history_routes
@@ -61,6 +63,7 @@ from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
+from tabrion_studio.services.drafts import Drafts
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.favorites import Favorites
@@ -83,7 +86,7 @@ _MAX_BODY = 4096
 #: The body cap of every request (STU-016 review F-4): enforced while the body streams in, before a route reads it
 #: (:mod:`tabrion_studio.security.body`). The default is the largest cap of a JSON route's own check; each route keeps
 #: its own, often smaller, check. The SQL editor and the export take a statement of up to 512 K characters, and a
-#: script save (STU-020) a `.sql` file of up to 1 MB as JSON.
+#: script save (STU-020) a `.sql` file of up to 1 MB as JSON, and the editor's drafts (TD-033) 2 M characters of text.
 DEFAULT_BODY_LIMIT = BodyLimit(MAX_FORM_BODY)
 BODY_LIMITS: dict[str, BodyLimit] = {
     "/api/session": BodyLimit(_MAX_BODY),  # reached before a session exists
@@ -92,6 +95,7 @@ BODY_LIMITS: dict[str, BodyLimit] = {
     "/api/queries": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
     "/api/exports": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
     "/api/scripts/file": BodyLimit(MAX_SCRIPT_BODY, "studio.script_too_large"),
+    "/api/drafts": BodyLimit(MAX_DRAFTS_BODY, "studio.drafts_too_large"),
 }
 
 _NOT_BUILT = """<!doctype html>
@@ -136,6 +140,8 @@ class Runtime:
     favorites: Favorites | None = None
     #: The project's ``.sql`` scripts (STU-020); None serves no script route.
     scripts: Scripts | None = None
+    #: The SQL editor's drafts in the state database (TD-033, review F-5); None serves no draft route.
+    drafts: Drafts | None = None
 
 
 def _problem(code: str) -> Response:
@@ -279,9 +285,14 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         return _problem("studio.not_found")
 
     if runtime.config is not None:
-        add_config_routes(
-            app, runtime.config, settings_saved=None if runtime.history is None else runtime.history.purge
-        )
+        # A new retention period applies to the history and the editor drafts at once (TD-033).
+        expire = [store.purge for store in (runtime.history, runtime.drafts) if store is not None]
+
+        def settings_saved() -> None:
+            for purge in expire:
+                purge()
+
+        add_config_routes(app, runtime.config, settings_saved=settings_saved if expire else None)
     if runtime.connections is not None:
         opened = None if runtime.favorites is None else runtime.favorites.opened
         add_connection_routes(app, runtime.connections, opened=opened)
@@ -301,6 +312,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_history_routes(app, runtime.history, runtime.favorites)
     if runtime.scripts is not None:
         add_script_routes(app, runtime.scripts)
+    if runtime.drafts is not None:
+        add_draft_routes(app, runtime.drafts)
 
     index = static_dir / "index.html"
     if index.is_file():

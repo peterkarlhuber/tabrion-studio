@@ -137,12 +137,16 @@ def _cases(studio: Studio) -> list[tuple[str, list[tuple[str, str]], BodyLimit]]
 
 def test_the_caps_are_the_routes_own_caps() -> None:
     """The caps are no looser than the routes' own: 4 KB before a session, 2 MB for a statement, 6 MB plus 8 KB for a
-    script save (a 1 MB file as JSON, STU-020), 16 KB for every other route."""
+    script save (a 1 MB file as JSON, STU-020), 12 MB plus about 700 KB for the editor's drafts (2 M characters of
+    text as JSON with the tabs' other fields, TD-033), 16 KB for every other route."""
     assert BODY_LIMITS["/api/session"] == BodyLimit(4096, "access.body_too_large")
     assert BODY_LIMITS["/api/control/launch"].max_bytes == 4096
     assert BODY_LIMITS["/api/queries"] == BodyLimit(2 * 1024 * 1024, "studio.query_too_large")
     assert BODY_LIMITS["/api/exports"] == BodyLimit(2 * 1024 * 1024, "studio.query_too_large")
     assert BODY_LIMITS["/api/scripts/file"] == BodyLimit(6 * 1024 * 1024 + 8 * 1024, "studio.script_too_large")
+    assert BODY_LIMITS["/api/drafts"] == BodyLimit(
+        6 * 2 * 1024 * 1024 + 6 * (32 * 1400 + 1024 * 70), "studio.drafts_too_large"
+    )
     assert BodyLimit(16 * 1024, "access.body_too_large") == DEFAULT_BODY_LIMIT
 
 

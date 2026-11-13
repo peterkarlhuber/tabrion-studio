@@ -46,7 +46,7 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-01 DNS rebinding | Host allowlist on every route | STU-T-001, -002 (`test_access.py`, `test_launch.py`) | Covered |
 | T-02 CSRF from another site | Origin, fetch metadata, JSON only, CSRF header | STU-T-003, -004; every API route in `test_every_route.py` | Covered |
 | T-03 Token theft | One-time launch token in the fragment, redirect file 0600, session cookie | STU-T-005, -006 | Covered; TD-005 (spent URL in history) is an accepted risk |
-| T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. The state database with the history (STU-020): `tests/security/test_history.py` (0600, link and shared-file refusal, no parameter value in any byte); editor drafts are in browser storage (TD-033) |
+| T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. The state database with the history (STU-020): `tests/security/test_history.py` (0600, link and shared-file refusal, no parameter value in any byte); the editor drafts too (TD-033, F-5): `tests/security/test_drafts.py` (only in the state database), `e2e/drafts-backend.spec.ts` (none in browser storage) |
 | T-05 Secret leaks | Redaction, canaries, safe URLs, Problem JSON without server text | STU-T-008, -009; `test_canary_flows.py` | Covered |
 | T-06 Accidental writes | Read-only in the database, prod marking; the text check refuses `INTO` (F-1) and side-effect functions (F-3); `STU-DX-003` reports schema `CREATE` and database `TEMP` | STU-T-010..013 and the F-1/F-3 tests (`test_read_only.py`, `test_queries.py`, `test_exports.py`, `test_diagnostics.py`) | Covered: review F-1 fixed (PR #65/#66), independent re-review accepted at `2a8a229`. Residual: side-effect functions the database itself defines (see the residual risks). The write mode is G-S2 |
 | T-07 XSS through database text | React text only, ESLint rule against `dangerouslySetInnerHTML`, CSP | STU-T-014; no STU-T-015 label, in substance `test_access.py::test_eslint_forbids_dangerously_set_inner_html` and hostile-value tests of the views | Covered |
@@ -113,7 +113,7 @@ under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fai
 | TD-008 | P1 | A `windows-latest` CI job for the T-2 checks |
 | TD-027 | P3 | Two concurrent opens of one profile can both connect |
 | TD-030, TD-031 | P3, P2 | Dev-only npm advisory; hashed pins in CI |
-| TD-033 | P2 | Editor drafts (SQL text) in browser storage, not in the 0600 state folder |
+| TD-033 | P2 | SQL editor leftovers (splitter, error positions, column resizing); the drafts part (SQL text in browser storage, F-5) is done |
 | TD-038 | P2 | Remaining limits of the D-02 gate and of the connect error states |
 
 ## Residual risks (doc 03 section 7.3)
@@ -144,7 +144,7 @@ reproduction steps, stays outside the repository.
 | F-2 | Medium | SQLite: the authorizer allowed a native function that must be refused (SQ-05, T-13) | Fixed (PR #66), with tests; independent re-review accepted at `2a8a229` |
 | F-3 | Low | PostgreSQL side-effect functions outside the statement check's denylist | Fixed (PR #66, refused); independent re-review accepted at `2a8a229`; see the residual risks |
 | F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed (PR #65): caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)); independent re-review accepted at `2a8a229` |
-| F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | **Owner decision:** finish TD-033 before a public release, or accept the risk and say so in the user guide |
+| F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | Fixed in the F-5 drafts PR #77: drafts in `state.sqlite` (0600) behind `/api/drafts`, none in browser storage, this project's old keys migrated and removed (`test_drafts.py`, `drafts-backend.spec.ts`); review `f5-drafts-review.md` accepted with conditions, findings 1 to 7 fixed; delta review on 3feb437 not accepted for N-1 (Medium, the structure scan before parsing was not linear in the worst case), fixed with a linear scan tested at the body cap, and N-2 (Info, fit check of both old keys together) fixed |
 | F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | Fixed in the f6-lock PR: CI and the installation guide install from the hashed lock `constraints/runtime-lock.txt` (`--require-hashes`), checked against the `pyproject.toml` ranges; Tabrion stays a full-SHA pin |
 | F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | Fixed in PR #75 (TD-054): the digest covers them, versioned (earlier trust is renewed), fail closed over its caps; the dialog lists them. Review of the fix accepted with condition C-1 (project folders on the interpreter's path); C-1 fixed in PR #75, its delta review accepted with condition C-2 (a finder in front of the import guard), C-2 and N-1 fixed in PR #75, re-check accepted at `d33f89d` |
 | F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed (PR #65): every control request except GET/HEAD of the proof path needs the token; dot segments in `/api/*` paths reach no route; independent re-review accepted at `2a8a229` |
@@ -166,8 +166,8 @@ reproducibility. The report stays outside the repository.
 
 ### Open owner decisions for G-S1
 
-- **F-5 / TD-033:** editor drafts (SQL text) in the browser storage of the port-scoped origin. Finish TD-033 before
-  a public release, or accept the risk and say so in the user guide.
+- **F-5 / TD-033:** editor drafts (SQL text) in the browser storage of the port-scoped origin. Addressed by the F-5
+  drafts PR #77 (drafts in the state database; table above); the owner confirms it with G-S1.
 - **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock. Addressed by the f6-lock PR (hashed
   lock in CI and the installation guide; table above); the owner confirms it with G-S1.
 - **F-7 / T-16:** the migration code-trust digest did not cover project modules that revision files import. Fixed
@@ -195,7 +195,9 @@ found the gaps listed above. These points need a person's judgment:
 3. TD-003 and TD-008: the file-permission model on Windows, which CI does not yet check.
 4. The PostgreSQL read-only model: Studio relies on the role's rights for functions with side effects beyond the
    ones it refuses (review F-3).
-5. TD-033: SQL text in browser storage, outside the private state folder (review F-5).
+5. TD-033 / review F-5 (fixed): the editor drafts moved from browser storage into the state database; other
+   projects' old draft keys stay in the browser until that project's editor moves them (`f5-drafts-review.md`
+   finding 3, the safer option).
 6. The keyring backends Studio accepts and refuses, per operating system.
 7. The CI workflow-change gate (TD-004, TD-006) and the supply chain (TD-030, TD-031; review F-6).
 8. Code trust for migrations (T-16): the worker's isolation and what the digest binds (review F-7).
