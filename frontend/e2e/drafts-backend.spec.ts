@@ -107,6 +107,17 @@ async function openEditor(page: Page): Promise<void> {
   await expect(page.locator('.cm-content')).toBeVisible();
 }
 
+/** The appearance choices in Studio's `settings.toml`, as the server reads them now. */
+async function savedAppearance(page: Page): Promise<{ language?: string; theme?: string }> {
+  return page.evaluate(async () => {
+    const response = await fetch('/api/settings', {
+      headers: { 'X-Tabrion-CSRF': sessionStorage.getItem('tabrion-studio.csrf') ?? '' },
+    });
+    const body = (await response.json()) as { settings?: { language?: string; theme?: string } };
+    return { language: body.settings?.language, theme: body.settings?.theme };
+  });
+}
+
 /** Wait for the next `PUT /api/drafts` that the server accepted. */
 function draftSaved(page: Page) {
   return page.waitForResponse(
@@ -187,6 +198,10 @@ test('a draft survives a reload and a restart on another port, and is in no brow
   await page.keyboard.type('English');
   await page.keyboard.press('Enter');
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+  // Each choice is applied at once and saved to settings.toml after the ones before it. The next test's page reads
+  // that file, so this test ends only when its last choice is on the server: otherwise a save still queued when the
+  // page closes leaves "Deutsch" behind, and the next sign-in is in German.
+  await expect.poll(() => savedAppearance(page)).toEqual({ language: 'en', theme: 'light' });
   await expectNoViolations(page, violations);
 });
 
