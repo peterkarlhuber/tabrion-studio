@@ -106,7 +106,8 @@ B item for 1.0; what stays open moved to TD-060 (see [Open for 1.0](#open-for-10
   The STU-020 page PR adds favorite and recently opened *connections* to the start page; a project chooser and
   "Open SQLite file" stay open. **1.0 decision:** not built. A project chooser does not fit one project per process;
   "Open SQLite file" is the connection manager's SQLite path (New connection, File), which the start page links to.
-  Recorded as a deviation from the 4.1 wireframe in TD-060 for the owner to confirm.
+  Recorded as a deviation from the 4.1 wireframe in TD-060; the owner accepted it on 2026-11-13 (STU-054 decision
+  (d), see [Owner decisions](#owner-decisions-on-2026-11-13-stu-054)).
 - **B-2** Firefox and WebKit (TD-047; done: the jobs came with PR #59, the tests were fixed in PR #63 and the jobs are
   required since PR #67). First CI run on `9741eb7`: Firefox 251
   passed, 3 failed; WebKit 236 passed, 7 failed (the rest did not run or are the screenshots and the five "chromium
@@ -154,8 +155,10 @@ shell); Firefox and WebKit run the same suites in CI (jobs `e2e (firefox)` and `
 because the shared machine's disk was full during the run (`ENOSPC` when the browser context closed), and both
 passed alone afterwards; Vitest 1 993 passed. PostgreSQL criteria
 (Levuvo formats, DDL against `pg_dump`) run in the `backend integration` job. Result: every 1.0 criterion that 1.0
-builds is met except the German diagnosis texts (UX-10-L4), which wait on TD-032; STU-054 is accepted once TD-032
-is merged and the owner has decided the items under [Open for 1.0](#open-for-10).
+builds is met. The German diagnosis texts (UX-10-L4) come with PR #85 (TD-032), which resolves that dependency, and
+the owner decided the four open items on 2026-11-13 ([Owner decisions](#owner-decisions-on-2026-11-13-stu-054)).
+STU-054 is **not accepted yet**: acceptance waits on the manual QA-S1 session (UX-10-S4, TD-046 B-5) and the other
+remaining prerequisites under [Open for 1.0](#open-for-10).
 
 `e2e/ux-acceptance-1-0.spec.ts` runs:
 
@@ -164,8 +167,8 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
   parameter's name, never its value), the migration status and a diagnosis with its backup hints and report buttons;
   axe (WCAG 2.0 to 2.2 A and AA, color contrast included) in light and dark at every step, so the 1.0 views pass in
   light/dark × en/de against the real server; on the German pages no text of the English catalog and no raw i18n key
-  (text marked `lang="en"`, the findings' own texts, is left out: TD-032; once PR #85 merges, only tabrion's
-  `TAB-*` texts keep that mark and the exclusion narrows to them, TD-060);
+  (text marked `lang="en"` is left out; with PR #85 (TD-032) only tabrion's `TAB-*` texts keep that mark, owner
+  decision (c));
 - **the page offers no data editing (STU-026 locked):** on a DEV and on a PROD connection the data viewer's grid has
   no field and no editable cell, a double click edits nothing, no control is named edit, insert, delete row, save
   changes, commit, roll back, discard, unlock or write mode; the access chip is text (no role, no tab stop), says
@@ -239,7 +242,7 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
 |---|---|---|---|
 | UX-10-W1 | No data editing in the page: no editable grid, no editing control, no write mode, no D-03, D-04, D-05 | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD), `e2e/editor.spec.ts` ("the page offers no write control"), `src/components/dialogs/StudioDialogs.tsx` (D-03 to D-05 and D-07 not built) | met |
 | UX-10-W2 | 08 section 5 "Schreibmodus entsperren¹": "PROD: Chip zeigt ⛔ mit Tooltip, kein Dialog"; 08 section 3: the unlock dialog only after G-S2 | `e2e/ux-acceptance-1-0.spec.ts` (the chip is text with its tooltip; a click opens nothing; DEV says "Read-only" and has no unlock either), `e2e/backend.spec.ts` ("Writing locked"), `e2e/a11y-audit.spec.ts` (tooltip) | met |
-| UX-10-W3 | 03 section 8, the 1.0 row: "Schreibfunktionen gesperrt: alle Schreibversuche über API 403 (Negativtest)" | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD, the file unchanged), `tests/security/test_queries.py` (line 400: write mode refused, `studio.query_write_unsupported`), `tests/security/test_read_only.py` (STU-T-010 to STU-T-012: the database refuses a write that passes the check), `tests/security/test_exports.py` | met in substance: every write is refused and nothing changes. The status is 403 only for the write mode; a writing statement is 400 (`studio.statement_*`) and a changing method on a read route 405. The owner confirms that this meets "403" (TD-060) |
+| UX-10-W3 | 03 section 8, the 1.0 row: "Schreibfunktionen gesperrt: alle Schreibversuche über API 403 (Negativtest)" | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD, the file unchanged), `tests/security/test_queries.py` (line 400: write mode refused, `studio.query_write_unsupported`), `tests/security/test_read_only.py` (STU-T-010 to STU-T-012: the database refuses a write that passes the check), `tests/security/test_exports.py` | met: every write is refused and nothing changes. The status is 403 only for the write mode; a writing statement is 400 (`studio.statement_*`) and a changing method on a read route 405. The owner decided on 2026-11-13 that 400/405 meets "403" (decision (a), error semantics only) |
 | UX-10-W4 | 03 section 5.2: "Für `prod` ist Schreiben in 1.0 technisch nicht möglich (Backend verweigert, kein UI-Pfad)" | `e2e/ux-acceptance-1-0.spec.ts` (PROD), `e2e/connections.spec.ts`, `e2e/editor-backend.spec.ts` (TD-038: no PROD connection without D-02, on the server) | met |
 | UX-10-W5 | No changing API route writes to a database | `tests/security/test_every_route.py` (`CHANGING_ROUTES`: every route of the app with a changing method, hidden ones included, such as `POST /api/session` and `POST /api/control/{action}`, each with its reason; a hidden route added in the test is caught), `e2e/ux-acceptance-1-0.spec.ts` (the documented API of the running server against the same list) | met (review M-1 of PR #84: the list first read only the OpenAPI document) |
 
@@ -248,31 +251,41 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
 | ID | Criterion | Check | Result |
 |---|---|---|---|
 | UX-10-L1 | en.json and de.json have the same keys, no empty value, the same placeholders and tags, every text translated that is not a name, German typography | `src/i18n/i18n.test.ts` | met |
-| UX-10-L2 | Every key the page names exists; every plural has both forms in both languages; no visible text is written into the markup outside the catalog | `src/i18n/coverage.test.ts` (new: the page source parsed with the TypeScript compiler; `t()`, `<Trans i18nKey>` and key tables; JSX text and the fixed text of JSX expressions and of `aria-label`, `aria-description`, `aria-roledescription`, `aria-valuetext`, `title`, `placeholder`, `alt`, `label`: strings, static parts of templates, both sides of conditions, `??` and `||`; a short list of names that are the same in every language: SQL keywords, pragma names, `NULL`, the key badges, a JSON example) | met. Not seen by the scan: a module constant or a state value rendered later, component text props under other names, and `t(variable)` (TD-060) |
+| UX-10-L2 | Every key the page names exists; every plural has both forms in both languages; no visible text is written into the markup outside the catalog | `src/i18n/coverage.test.ts` (new: the page source parsed with the TypeScript compiler; `t()`, `<Trans i18nKey>` and key tables; JSX text and the fixed text of JSX expressions and of `aria-label`, `aria-description`, `aria-roledescription`, `aria-valuetext`, `title`, `placeholder`, `alt`, `label`: strings, static parts of templates, both sides of conditions, `??` and `||`, the right side of `&&`; a short list of names that are the same in every language: SQL keywords, pragma names, `NULL`, the key badges, a JSON example) | met. Not seen by the scan: a module constant or a state value rendered later, component text props under other names, and `t(variable)` (TD-060) |
 | UX-10-L3 | A German page shows no English catalog text and no raw key, in every 1.0 view, against the real server | `e2e/ux-acceptance-1-0.spec.ts` (the German tour; it compares phrases, catalog texts with a space and at least 12 characters, so a single English word such as a button label is left to the key parity of UX-10-L1) | met |
-| UX-10-L4 | The diagnosis' findings in German | depends on TD-032 (German details and remedies of the `STU-DX-*` checks, localized in another lane); the titles, details and remedies of tabrion's own `TAB-*` checks come from tabrion in English and are marked `lang="en"` | open: **dependency TD-032**, whose decision says the `STU-DX-*` texts must be en/de before STU-054 is accepted; that tabrion's `TAB-*` texts stay English and labeled until tabrion has a catalog needs the owner's confirmation (TD-032, TD-060) |
+| UX-10-L4 | The diagnosis' findings in German | TD-032 (German details and remedies of the `STU-DX-*` and `STU-BK-*` checks, PR #85); the titles, details and remedies of tabrion's own `TAB-*` checks come from tabrion in English and are marked `lang="en"` | met: the `STU-DX-*` and `STU-BK-*` texts are en/de with PR #85 (TD-032, the dependency is resolved); the owner decided on 2026-11-13 that tabrion's `TAB-*` texts stay English and marked `lang="en"` (decision (c)) |
 | UX-10-L5 | Problem texts of the server in both languages | the page shows its own en/de text per problem code (`src/views/connections/messages.ts`; `i18n.test.ts`) | met |
 
 ### Settings and dialogs of 1.0 (08 sections 4.10 and 6)
 
 | ID | Criterion | Check | Result |
 |---|---|---|---|
-| UX-10-S1 | D-07 "EXPLAIN-Kostenwarnung prod¹" and the setting "EXPLAIN-Warnung prod an/aus¹" | not built; 03 section 5.3 calls the warning optional for 1.0 | open: the owner decides whether 1.0 needs it (TD-060) |
+| UX-10-S1 | D-07 "EXPLAIN-Kostenwarnung prod¹" and the setting "EXPLAIN-Warnung prod an/aus¹" | not built; 03 section 5.3 calls the warning optional for 1.0 | not in 1.0: the owner decided on 2026-11-13 that D-07 comes after 1.0 (decision (b)) |
 | UX-10-S2 | "Schreibmodus-Ablauf¹" (write mode expiry) | belongs to STU-026 (G-S2) | not in 1.0 |
 | UX-10-S3 | Every flow green on Chromium, Firefox and WebKit | CI jobs `e2e`, `e2e (firefox)`, `e2e (webkit)`; every spec under `frontend/e2e` is required and may not skip (the CI step "Every suite ran and none was skipped" finds new specs by itself, so `ux-acceptance-1-0.spec.ts` needs no change in `.github/`) | met in Chromium locally; Firefox and WebKit by the CI run of the STU-054 pull request |
 | UX-10-S4 | QA-S1 for 1.0 (08 section 11) | manual, the owner | open (TD-060, B-5) |
 
+### Owner decisions on 2026-11-13 (STU-054)
+
+On 2026-11-13 the owner accepted all four recommendations of TD-060, each **option A**:
+
+- **(a) Refused writes (UX-10-W3):** a refused write answers HTTP 400 (a writing statement, `studio.statement_*`)
+  or 405 (a changing method on a read route) rather than 403, everywhere; only the write mode answers 403
+  (`studio.query_write_unsupported`). This meets 03 section 8's "403" for the 1.0 row and is recorded for the
+  STU-026 row too. It is **only** a decision on the error semantics of refused write operations. It is **not** a
+  release or security acceptance of STU-026: the Data Editor stays fully locked behind G-S2.
+- **(b) D-07 (UX-10-S1):** the EXPLAIN cost warning on PROD and its setting come after 1.0.
+- **(c) tabrion's finding texts (UX-10-L4):** tabrion's own `TAB-*` finding texts stay English, marked `lang="en"`,
+  until tabrion has a catalog.
+- **(d) Start page (B-1):** no project chooser on the start page; the deviation from the 4.1 wireframe is accepted.
+
 ### Open for 1.0
 
-All in TD-060.
+All in TD-060. STU-054 stays **not accepted** until these are done.
 
-- **Owner decisions:** whether 400/405 for refused writes meets 03 section 8's "403" (UX-10-W3; recommended: yes,
-  the substance is "every write refused, nothing written"); D-07 for 1.0 or later (UX-10-S1; recommended: later, as
-  03 section 5.3 calls it optional); tabrion's own finding texts in English in 1.0 (UX-10-L4); the B-1 deviation.
-- **Dependency:** TD-032 (German `STU-DX-*` details and remedies), in another lane (PR #85); then the German tour's
-  exclusion narrows to tabrion's `TAB-*` texts.
-- **Owner decision for STU-026 too:** 03 section 8 asks for 403 for PROD writes in the Data Editor row as well; the
-  decision on UX-10-W3 is recorded for STU-026.
+- **QA-S1 (manual):** the usability session with the owner on the 1.0 build (UX-10-S4, TD-046 B-5).
+- **Dependency resolved:** TD-032 (German `STU-DX-*` and `STU-BK-*` details and remedies) comes with PR #85; with
+  it only tabrion's `TAB-*` texts keep `lang="en"`, which the German tour leaves out.
 - **Source scan limits:** UX-10-L2 (module constants, state, other text props, `t(variable)`).
 - **Open from the MVP:** B-4, B-5 (QA-S1, now for 1.0), B-7; TD-043 (export from the data viewer), TD-052 (the ER
   route and line details), TD-036 (the report from the command line), TD-034 (status bar facts).

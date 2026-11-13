@@ -110,10 +110,14 @@ the connection. The report leaves out the same things as the downloaded one. The
   so that no keyring is asked.
 
 The output file is written whole or not at all: the report goes to a temporary file in the same folder, which then
-takes the file's name. `--output` never follows a link, never writes to a folder or a device, and always refuses the
-profile's database file and its `-wal`, `-shm` and `-journal` files, even with `--force`. The JSON report escapes
-every character outside ASCII (`\u...`), and the Markdown report leaves out control and direction characters, so
-neither can change how a terminal or an editor shows the text around it.
+takes the file's name. The file name itself is never a link: `--output` refuses a link, a folder or a device there,
+and always refuses the profile's database file and its `-wal`, `-shm` and `-journal` files, even with `--force`. A
+folder link earlier in the path is followed. On Linux and macOS the command opens the output folder once, checks it
+again, and does every later step in that opened folder, so a folder link that changes while the command runs cannot
+move the report somewhere else. On Windows each step uses the path again; there, write the report only to a path
+whose folders no one else can change, including any folder link along the path. The JSON report escapes every
+character outside ASCII (`\u...`), and the Markdown report leaves out control and direction characters, so neither
+can change how a terminal or an editor shows the text around it.
 
 The command reads the folder given by `--state-dir` (or Studio's default one) only when it is private, as Studio
 does: owned by you and not writable by others. If not, it stops with exit code 1 and says why. When the profile is
