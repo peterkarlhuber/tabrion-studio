@@ -68,7 +68,7 @@
       },
       "explorer": {
         "link": "Browse tables and views",
-        "hint": "Their columns, keys, indexes, DDL and data."
+        "hint": "Columns, keys, indexes, DDL and data."
       },
       "sql": {
         "link": "Run a query",
@@ -772,7 +772,7 @@
     "migrations_timeout": "Reading the revisions took too long and was stopped.",
     "migrations_busy": "Studio is already reading the revisions for another migration status. Try again when it has finished.",
     "migrations_failed": "Reading the revisions failed. Run alembic heads in the project to see whether its revision files load.",
-    "connection_failed": "Studio could not reach the database. Check the host and the port of the profile, and that the database server runs.",
+    "connection_failed": "Studio could not reach the database. Check the host and the port of the profile, and that the database server is running.",
     "connection_config": "The driver did not accept the profile's settings. Check the profile under Connections.",
     "connection_tls": "The profile's TLS mode is weaker than the host needs.",
     "connection_limit": "Studio keeps at most 8 connections open. Close one first.",
@@ -800,7 +800,7 @@
       "permission": "The database role has no permission for this. Ask the database owner.",
       "read_only": "The database refused a change: Studio connections are read-only.",
       "corrupt": "The file is not a SQLite database, or the database is damaged. Check that the profile's path names the database file.",
-      "disk_full": "The database ran out of disk space. Free some disk space where the database lies, then try again.",
+      "disk_full": "The database ran out of disk space. Free some disk space where the database is stored, then try again.",
       "resource": "The database ran out of memory or another resource. Try again later.",
       "other": "The database reported an error ({{kind}})."
     },

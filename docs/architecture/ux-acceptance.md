@@ -40,7 +40,7 @@ after the MVP; marked ¹ in 08).
 |---|---|---|---|
 | UX-S1 | Environment badge as text in the header, on every tab and in the title; PROD adds the 3 px frame | `e2e/status.spec.ts`, `e2e/contrast.spec.ts` (frame 3:1), `e2e/backend.spec.ts` (real server) | met |
 | UX-S2 | Access mode chip: "Read-only", "Writing locked" on PROD; no write control before G-S2 | `e2e/backend.spec.ts` (STU-008 Connect), `e2e/editor.spec.ts` ("the page offers no write control") | met |
-| UX-S3 | Transaction chip | `e2e/status.spec.ts` ("No transaction" only; transactions come with STU-026) | met for the MVP |
+| UX-S3 | Transaction chip | `src/shell/AppShell.test.tsx` (`tx-state`: "No transaction" only; transactions come with STU-026) | met for the MVP |
 | UX-S4 | Connection state in the switcher (connected, connecting, disconnected, error) | `src/shell/AppShell.test.tsx`, `e2e/connections.spec.ts` | met; after Connect the switcher shows no latency (B-4) |
 | UX-S5 | Status bar: server version, role, database or file, last query's rows and time, running queries with cancel, language | `e2e/a11y-audit.spec.ts` (landmark), `src/App.test.tsx` | open: only server and language (TD-034, B-4) |
 | UX-S6 | D-01, D-02, D-06, D-08: modal, named, safe option focused, Tab trapped, Escape cancels, focus returns | `e2e/dialogs.spec.ts`, `src/components/dialogs/StudioDialogs.test.tsx` | met |
@@ -53,7 +53,7 @@ after the MVP; marked ¹ in 08).
 | UX-W1 | 4.1 Start: welcome, what to do next, how Studio is started | `src/App.test.tsx` (STU-050 test), `e2e/ux-acceptance.spec.ts` | met (fixed in this PR: the page said the views "arrive with the next versions"); project chooser, recently opened, "Open SQLite file" are not in the MVP (B-1) |
 | UX-W2 | 4.2 Connection manager: list by project and user, search, detail, Test / Connect / Edit / Delete | `e2e/connections.spec.ts`, `e2e/backend.spec.ts` (STU-008) | met |
 | UX-W3 | 4.2 Assistant in 3 steps (SQLite path or PostgreSQL fields, pasted URL without password, password source, name and required environment, test) | `src/views/connections/*.test.tsx`, `e2e/connections.spec.ts`, `e2e/backend.spec.ts` | met; "Browse…" and "Save in: Project" are not offered (TD in the STU-008 section of TODO) |
-| UX-W4 | 4.2 Error states of the test say what to check (host/port/firewall, sign-in, TLS, file missing, link, not readable, not a SQLite database) | `src/views/connections/Connect.test.tsx`, `e2e/ux-acceptance.spec.ts` ("Connect"), `e2e/backend.spec.ts` | met (fixed in this PR: seven texts named only the failure) |
+| UX-W4 | 4.2 Error states of the test say what to check (host/port/firewall, sign-in, TLS, file missing, link, not readable, not a SQLite database) | `src/views/connections/Connect.test.tsx`, `e2e/ux-acceptance.spec.ts` ("Connect"), `e2e/backend.spec.ts` | met (fixed in this PR: eight texts named only the failure) |
 | UX-W5 | 4.3 Explorer: tree by schema and type with keyboard (↑↓←→), filter (⌘P / Ctrl+P), detail tabs Columns, Constraints, Indexes, Relationships, Data, DDL; SQLite tab; states loading, empty, more than 2 000 objects | `e2e/explorer.spec.ts`, `e2e/explorer-reference.spec.ts` (both reference apps, SQLite and PostgreSQL), `src/views/explorer/*.test.tsx` | met; context menu, virtualized tree, route `/c/:conn/t/...` open (TD-041) |
 | UX-W6 | 4.3 DDL and policies (STU-022) | `e2e/explorer-definitions.spec.ts`, `tests/security/test_definitions.py` | met |
 | UX-W7 | 4.4 SQL editor: run the statement or selection (⌘↵), script (⇧⌘↵), cancel (⌘.) with "Canceled after x s", parameters, one result per statement, messages with "Go to statement", read-only refusal, NULL and cut values, cell detail, drafts, D-06 | `e2e/editor.spec.ts`, `e2e/editor-backend.spec.ts`, `src/views/editor/*.test.ts(x)` | met; error positions, column resizing, formatting¹, history¹ open (TD-033) |
@@ -77,7 +77,7 @@ after the MVP; marked ¹ in 08).
 
 | ID | Criterion | Check | Result |
 |---|---|---|---|
-| UX-X1 | axe without serious or critical violations, light and dark, English and German, in every suite | `e2e/a11y.spec.ts` and the axe call in every view suite, `e2e/ux-acceptance.spec.ts` | met |
+| UX-X1 | axe without serious or critical violations: every view, dialog and notice in light and dark, English and German; and in every view suite | `e2e/a11y.spec.ts` (the light/dark × en/de matrix), the axe call in every view suite (most in light and English; several suites run the matrix too), `e2e/ux-acceptance.spec.ts` | met |
 | UX-X2 | Keyboard: palette, shortcuts, F6 areas, keyboard-only main flows | `e2e/keyboard.spec.ts`, `e2e/explorer.spec.ts`, `e2e/viewer.spec.ts`, `e2e/export.spec.ts` | met for the flows that exist; the rest is STU-052's (TD-020, PR #58) |
 | UX-X3 | No request leaves the local server | `e2e/network.spec.ts`, `e2e/backend.spec.ts`, `e2e/ux-acceptance.spec.ts` | met |
 | UX-X4 | Every flow green on **Chromium** | CI job `e2e` | met |

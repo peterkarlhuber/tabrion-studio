@@ -84,6 +84,15 @@ export function StartView() {
                   <a
                     href={path}
                     onClick={(event) => {
+                      // Like the activity bar: a modifier or middle click opens the link the browser's way.
+                      if (
+                        event.button !== 0 ||
+                        event.metaKey ||
+                        event.ctrlKey ||
+                        event.shiftKey ||
+                        event.altKey
+                      )
+                        return;
                       event.preventDefault();
                       navigate(path);
                     }}

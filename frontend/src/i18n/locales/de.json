@@ -68,7 +68,7 @@
       },
       "explorer": {
         "link": "Tabellen und Views ansehen",
-        "hint": "Ihre Spalten, Schlüssel, Indizes, DDL und Daten."
+        "hint": "Spalten, Schlüssel, Indizes, DDL und Daten."
       },
       "sql": {
         "link": "Abfrage ausführen",
@@ -79,7 +79,7 @@
         "hint": "Welche Migrationen die Datenbank hat und welche ausstehen."
       },
       "diagnostics": {
-        "link": "Diagnose starten",
+        "link": "Datenbank untersuchen",
         "hint": "Rollen, Timeouts, TLS, Dateirechte und Backups."
       }
     }
