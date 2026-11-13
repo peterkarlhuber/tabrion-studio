@@ -8,7 +8,9 @@ replaces either review.
 State: prepared at master `e9df576`; updated after the first independent review of master `e186178` (section
 [Independent review](#independent-review-first-round)) and after its re-review on master `2a8a229`, which accepted
 the review (section [Re-review](#re-review-on-2a8a229)). The accepted review is the input to G-S1, not the gate.
-Sensitive specifics of the pre-review and of the review, such as reproduction steps, are kept outside the
+On 2026-11-13 the owner accepted every recommendation of the G-S1 decision package (13 points, each option A,
+section [Owner decisions](#owner-decisions-on-2026-11-13)); the formal G-S1 confirmation on a concrete master SHA is
+still pending. Sensitive specifics of the pre-review and of the review, such as reproduction steps, are kept outside the
 repository, with the planning documents.
 
 ## What G-S1 asks
@@ -20,9 +22,39 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 | SQ-01..SQ-08 green, each with its STU-T tests | Ready for review | [SQ requirements](#sq-01sq-08) below |
 | SQ-01..SQ-08 after the independent review | Met in the review: SQ-05 and SQ-07 (review F-1, F-2) and SQ-06 (F-4) fixed (PR #65/#66), independent re-review accepted at `2a8a229` | [Re-review](#re-review-on-2a8a229) below |
 | Every threat-model measure (doc 03 section 7.3, T-01..T-16) proven by a test | Met in the review: T-06 and T-13 (review F-1, F-2) fixed (PR #66), independent re-review accepted at `2a8a229`; T-16: F-7 fixed in PR #75 (TD-054), re-check accepted at `d33f89d`; the write-mode rows are G-S2 | [Threat model](#threat-model-t-01t-16) below |
-| Review report "accepted": a first review, the fixes, a re-review on merged SHAs | Met: the first independent review (`e186178`) was not accepted; its findings were fixed (PR #65/#66), independent re-review accepted at `2a8a229`. G-S1 itself is the owner's decision, with the [open owner decisions](#open-owner-decisions-for-g-s1) | [Independent review](#independent-review-first-round), [re-review](#re-review-on-2a8a229) below |
+| Review report "accepted": a first review, the fixes, a re-review on merged SHAs | Met: the first independent review (`e186178`) was not accepted; its findings were fixed (PR #65/#66), independent re-review accepted at `2a8a229`. G-S1 itself is the owner's decision: the 13 recommendations were accepted on 2026-11-13 ([Owner decisions](#owner-decisions-on-2026-11-13)); the formal confirmation on a master SHA is pending | [Independent review](#independent-review-first-round), [re-review](#re-review-on-2a8a229) below |
 | `npm audit --omit=dev` without High | Met (0 findings at `e9df576`) | CI job `dependency audit` |
 | axe: 0 serious or critical | Met for the existing views (`e2e`, every view in light and dark, en and de) | `frontend/e2e/*.spec.ts`, `docs/architecture/accessibility.md`; the rest of STU-053 is TD-022 |
+
+## Owner decisions on 2026-11-13
+
+!!! warning "G-S1 status"
+    The owner accepted the recommendations on 2026-11-13; formal G-S1 confirmation on a concrete master SHA
+    pending. Until it is recorded here and in `docs/TODO.md` (STU-016), G-S1 is **not** granted. G-R stays locked,
+    the human security review before any publication (STU-028, E-QA2) stays mandatory, STU-026 (Data Editor) stays
+    locked behind G-S2, and nothing is tagged or published.
+
+The G-S1 decision package (planning documents, `g-s1/g-s1-entscheidungspaket.md`, state master `d72a14f`) put 13
+points to the owner. On 2026-11-13 (14:18 UTC) the owner accepted every recommendation, each **option A**. The table
+records the decision, the residual risk that is accepted with it, the follow-up work and whether the follow-up is a
+precondition of G-R (the owner's approval of a publication). The G-R preconditions are listed in the gate section of
+the [Release checklist](../development/release-checklist.md#g-r-preconditions-from-g-s1).
+
+| # | Point | Decision (option A) | Accepted residual risk | Follow-up | G-R precondition |
+|---|---|---|---|---|---|
+| 1 | F-5 / TD-033 rest: SQL editor drafts | Keep PR #77 (drafts in the state database, none in browser storage); the rest of TD-033 is ordinary follow-up work | Drafts are SQL text in Studio's private state database (0600); old draft keys of *other* projects stay in the browser until that project's Studio moves them (the reviewer's safer option) | TD-033 rest (splitter, error positions, column widths, workspace tabs) stays open as P2 usability work, no security item | No |
+| 2 | F-6 / TD-031: pinned dependencies | Keep PR #76 (hashed runtime lock in CI and in the guide) and add a nightly, non-blocking "newest dependencies" job without the lock | Until that job exists, a newer release inside the `pyproject.toml` ranges that breaks Studio shows only at the next lock update; the pipx and `uv tool` paths of the guide do not check the lock's hashes (the pip path with `--require-hashes` is the secured one) | The nightly job, as its own pull request with a workflow-change review (TD-031) | No |
+| 3 | F-7 / T-16 rest: trusted migration code | Keep PR #75 (the digest covers imported project modules); no sandbox | Trusted project code runs with the user's rights and can do more than import modules; this is the intended model ("trust it like `alembic heads`"), said in the trust dialog and the guide | None now; a sandbox would be a new work package after 1.0 | No |
+| 4 | JR-N1: PROD retry after a failed reconnect | Keep the behavior: a lost connection resets the D-02 confirmation, a failed reconnect attempt does not | After a failed "Reconnect" on a PROD profile, the next attempt in the same page session does not ask D-02 again (the user confirmed already) | An e2e test of the PROD case (TD-062) | No |
+| 5 | TD-005: launch URL in the browser history | Accepted risk stays | The spent one-time URL stays in the browser history; the token is worthless once redeemed and otherwise valid for at most 120 s | Shorten the lifetime once real browser start times are measured | No |
+| 6 | TD-002 / TD-007: sandboxed browsers, real-browser launch | Accept now, fix both before G-R | Sandboxed browsers (Firefox snap, Flatpak) cannot open the redirect file (Studio prints a hint); the launch flow is checked in Chrome only; the development proxy is not for shared machines | TD-002: the redirect-file fix; TD-007: the launch check in Firefox and WebKit | **Yes** (both) |
+| 7 | TD-003 / TD-008: Windows | TD-008 done with PR #76 (Windows CI job for the path checks); TD-003 accepted now, fixed before G-R | On Windows the state folder's permissions inside the user profile are not checked (for example a OneDrive-synced folder; the default is not synced) | TD-003 fix; a check on a **real Windows machine** of the refused device names and of OneDrive folders (so far CI and tests only) | **Yes** (TD-003 and the real-Windows check) |
+| 8 | Side-effect functions the database itself defines | Accept the residual risk | A function defined in the database (for example used by a view) is invisible to Studio's statement check, and PostgreSQL's read-only mode does not stop its effects; the risk is bounded by the rights of the database role, which is the real boundary | None in code; the guide recommends a separate, really read-only role and the diagnostics warn about a role that can write ([Connections](../guide/connections.md#a-read-only-role-for-postgresql)) | No |
+| 9 | Hexadecimal and underscore number literals refused | Keep refusing them | A usability limit only: numbers must be written in decimal, with a clear error message | None | No |
+| 10 | Optional report to the PostgreSQL security team | Prepare a non-public report as a draft | None for Studio (F-1 is fixed in Studio) | A confidential draft for the owner only; nothing is sent without the owner's approval, under the owner's name or account, and no details go into this repository or GitHub | No |
+| 11 | D-4: scripts in OneDrive and other reparse-point folders | Keep refusing them for 1.0; say so in the guide | None for security (refusing is the safe side); projects under a OneDrive-synced "Documents" folder must be moved to use scripts | None for 1.0; allowing OneDrive's cloud reparse tags only if users need it (a new work package with a real-Windows test and a review). The real-Windows check of item 7 covers the refusal | No (its real-Windows check is part of item 7) |
+| 12 | E-1: script names with invisible characters | Keep the rules of PR #82 (ZWNJ/ZWJ only between two letters, U+3000 as a space, refused names counted) | A permitted joiner between Latin letters can make two names look alike; Studio shows it visibly masked | None | No |
+| 13 | TD-056: log redaction in tabrion | Fix it in tabrion (small PR with a test), then take the new tabrion pin in Studio; accept the residual risk until then | Values from database errors could stay in local logs when a caller writes such a part in the middle of a one-line message | The tabrion PR (owner: tabrion) and the pin update in Studio (TD-056) | **Yes** |
 
 ## SQ-01..SQ-08
 
@@ -105,21 +137,26 @@ under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fai
 
 | Row | Priority | Subject |
 |---|---|---|
-| TD-002 | P2 | Sandboxed browsers cannot open the redirect file (in progress) |
-| TD-003 | P3 | Windows: DACL check inside the profile |
+| TD-002 | P2 | Sandboxed browsers cannot open the redirect file (in progress; G-R precondition, decision 6) |
+| TD-003 | P3 | Windows: DACL check inside the profile (G-R precondition, with the real-Windows check, decision 7) |
 | TD-004, TD-006 | P3 | Workflow-change gate: fork pull requests, who may set the label |
-| TD-005 | P3 | Spent launch URL in the browser history (accepted risk) |
-| TD-007 | P3 | Development proxy and real-browser launch checks |
-| TD-008 | P1 | A `windows-latest` CI job for the T-2 checks |
+| TD-005 | P3 | Spent launch URL in the browser history (accepted risk, decision 5) |
+| TD-007 | P3 | Development proxy and real-browser launch checks (G-R precondition, decision 6) |
+| TD-008 | P1 | A `windows-latest` CI job for the T-2 checks (done with PR #76, decision 7) |
 | TD-027 | P3 | Two concurrent opens of one profile can both connect |
-| TD-030, TD-031 | P3, P2 | Dev-only npm advisory; hashed pins in CI |
-| TD-033 | P2 | SQL editor leftovers (splitter, error positions, column resizing); the drafts part (SQL text in browser storage, F-5) is done |
+| TD-030, TD-031 | P3, P2 | Dev-only npm advisory; hashed pins in CI (done with PR #76; the nightly unlocked job is a follow-up, decision 2) |
+| TD-033 | P2 | SQL editor leftovers (splitter, error positions, column resizing, workspace tabs): usability only; the drafts part (F-5) is done (decision 1) |
 | TD-038 | P2 | Remaining limits of the D-02 gate and of the connect error states |
+| TD-056 | P2 | tabrion's log redaction in the middle of a line (owner: tabrion; G-R precondition, decision 13) |
+| TD-062 | P3 | JR-N1: an e2e test of the PROD retry after a failed reconnect (decision 4) |
 
 ## Residual risks (doc 03 section 7.3)
 
 - Malware running as the same user can read everything the user can; Studio does not defend against it.
-- PostgreSQL `READ ONLY` is not a boundary against functions with side effects; the role's rights are. Diagnostics
+- PostgreSQL `READ ONLY` is not a boundary against functions with side effects; the role's rights are. Studio's
+  read-only checks are defense in depth; a database role that is really read-only (no write privileges, no
+  ownership, no functions with side effects it can call) is what makes write protection reliable (owner decision 8,
+  accepted; how to create such a role: [Connections](../guide/connections.md#a-read-only-role-for-postgresql)). Diagnostics
   report a read-only role that can write (`STU-DX-003`, since F-1 also schema `CREATE` and database `TEMP`). Since
   F-3 of the STU-016 review, the text check refuses the side-effect functions it knows: `pg_terminate_backend`,
   `pg_cancel_backend`, `pg_logical_emit_message`, `txid_current`, `pg_current_xact_id`, the WAL, backup, replication
@@ -166,6 +203,9 @@ reproducibility. The report stays outside the repository.
 
 ### Open owner decisions for G-S1
 
+Decided on 2026-11-13: the owner accepted the recommendation (option A) for each of these points; see
+[Owner decisions](#owner-decisions-on-2026-11-13). The list below is kept as it stood before the decision.
+
 - **F-5 / TD-033:** editor drafts (SQL text) in the browser storage of the port-scoped origin. Addressed by the F-5
   drafts PR #77 (drafts in the state database; table above); the owner confirms it with G-S1.
 - **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock. Addressed by the f6-lock PR (hashed
@@ -188,7 +228,9 @@ reproducibility. The report stays outside the repository.
 ## For the human reviewer
 
 The internal pre-review added two tests (`test_every_route.py`, `test_canary_flows.py`); the independent review then
-found the gaps listed above. These points need a person's judgment:
+found the gaps listed above. These points need a person's judgment. The owner's decisions of 2026-11-13 (points 1
+to 5, 7 and 8 below correspond to decisions 5, 6, 7, 8, 1, 2 and 3) settle what G-S1 accepts; they do not replace this
+review before a publication:
 
 1. TD-005: whether the spent launch URL in the browser history stays an accepted risk.
 2. TD-002 and TD-007: the redirect-file launch path and the checks in a real browser.

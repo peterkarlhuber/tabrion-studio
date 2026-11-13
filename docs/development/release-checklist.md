@@ -19,12 +19,43 @@ cleared it, in this page and in `docs/TODO.md`.
 
 | Stop | What clears it | Who | Source | State |
 |---|---|---|---|---|
-| **H-1 G-S1** | The owner's decision on the MVP security review: the independent review is accepted (re-review at `2a8a229`); the open owner decisions are listed in [Security review preparation](../architecture/security-review-prep.md) | owner | 03 §8, 09 STU-016 | **Owner**: pending |
+| **H-1 G-S1** | The owner's decision on the MVP security review: the independent review is accepted (re-review at `2a8a229`); the owner's decisions are recorded in [Security review preparation](../architecture/security-review-prep.md#owner-decisions-on-2026-11-13) | owner | 03 §8, 09 STU-016 | **Owner**: the owner accepted the 13 recommendations on 2026-11-13 (each option A); the formal G-S1 confirmation on a concrete master SHA is pending |
 | **H-2 Human security review (E-QA2)** | A security review by a **human** reviewer of the release candidate (not an agent review; agent reviews count for internal use only), its findings fixed or accepted by the owner, the report filed. Mandatory before any public release of Studio; possible costs need the owner's approval | owner, human reviewer | 00 §13 E-QA2, 09 §1 and STU-028, 07 §5 G-R, 10 STU-ADR-0002 | **Open**: not started |
 | **H-3 G-R** | The owner's approval for **this** publication (every publication, pre-releases included; there is no standing approval). G-R reads: the license and third-party license report (with the psycopg LGPL-3.0 notice and the frontend licenses), the trademark check, the SBOM, the release notes, AC-4 green, and for Studio the result of H-2 | owner | 07 §5, 12 §1 and §11, 10 TAB-ADR-0009 | **Owner**: not granted |
 
 G-S2 (STU-026, the Data Editor) is no stop for 1.0: 1.0 ships **without** the Data Editor (03 §8), and STU-026 stays
 locked.
+
+### G-R preconditions from G-S1
+
+With the G-S1 recommendations (2026-11-13) the owner made these items preconditions of G-R: H-3 is not cleared
+while one of them is open. Each is tracked in `docs/TODO.md`; the decision numbers are those of
+[Security review preparation](../architecture/security-review-prep.md#owner-decisions-on-2026-11-13).
+
+| # | Precondition | Decision | Tracked in | State |
+|---|---|---|---|---|
+| GR-1 | Sandboxed browsers (Firefox snap, Flatpak) can open Studio: the redirect-file fix | 6 | TD-002 | **Open** (the hint is done, the fix is not) |
+| GR-2 | The launch flow checked in Firefox and WebKit against the built wheel | 6 | TD-007 | **Open** |
+| GR-3 | Windows: the state folder's permissions checked inside the user profile too | 7 | TD-003 | **Open** |
+| GR-4 | A check on a real Windows machine of the refused device names (for example `CON.sql`) and of OneDrive-synced and other reparse-point folders (STU-020 decision D-4); so far CI and tests only | 7 (and 11) | TD-003 | **Open** |
+| GR-5 | tabrion's log redaction also strips database details in the middle of a line, and Studio takes the new tabrion pin | 13 | TD-056 (owner: tabrion) | **Open** |
+
+These are in addition to the human security review (H-2) and to every step below. The other decisions accept a
+residual risk or name follow-up work that is not a G-R precondition (TD-031's nightly job, TD-033's usability rest,
+TD-062).
+
+### Install paths and their remaining risks
+
+The secured install path is pip with `--require-hashes` from `constraints/runtime-lock.txt`
+([Installation](../guide/installation.md#install-from-a-commit), D-1). The other documented paths are less secured,
+and the release notes (E-4) name this:
+
+- **`uv tool install`** takes the lock's exact versions but does **not** verify the lock's hashes (step 3a of the
+  [clean install](#clean-install-2026-11-13-linux)).
+- **pipx** installs with the Tabrion pin only and resolves every other dependency afresh from PyPI, without the
+  lock's versions and without hashes.
+- Also on the pip path: the `pip install --upgrade "pip>=26.1"` step is not hashed, and pip builds Studio and
+  Tabrion with build backends fetched without hashes (build time only; TD-031).
 
 ## Steps
 
@@ -92,7 +123,7 @@ locked.
 | G-1 | H-1 cleared (G-S1) | recorded above | **Owner** |
 | G-2 | H-2 cleared (human security review) | the review report and its findings | **Open** |
 | G-3 | Annotated tag `v1.0.0` on the master merge commit of the release pull request, never moved (10 TAB-ADR-0009). A tag is allowed without G-R, but only by the owner's decision after G-S1 | `git tag -v` / the tag's commit equals the release commit | **Owner**: not done |
-| G-4 | **H-3 G-R** for this publication | the owner's approval, recorded here | **Owner**: not granted |
+| G-4 | **H-3 G-R** for this publication | the owner's approval, recorded here; GR-1..GR-5 ([G-R preconditions](#g-r-preconditions-from-g-s1)) met | **Owner**: not granted |
 | G-5 | Only after G-R: a GitHub Release with the wheel, the sdist, the SBOM and the license report (SHA-256 of each in the notes) | the release page; the hashes equal C-2 and C-6 | **Blocked by G-R**; there is no release workflow yet (`tests/security/test_workflows.py` refuses publish steps) |
 | G-6 | Only after G-R and a new owner decision: PyPI. Distribution is by Git SHA pin for now (owner decision 2026-11-08); PyPI refuses a direct Git dependency, so Studio on PyPI also needs Tabrion on PyPI (TAB-043, its own G-R) and Trusted Publishing from a reviewed release workflow | the decision and TAB-043 | **Blocked by G-R** and the owner decision |
 | G-7 | Only after G-R: any announcement | the owner | **Blocked by G-R** |
@@ -146,6 +177,12 @@ Run on 2026-11-13 for `master` `d72a14f`, with the license records of fresh runt
 
 Open: the macOS and Windows records (a CI step that collects them is a `.github/` change and needs its workflow
 review; until then by hand on those systems), and attaching the files to a release (G-5, after G-R).
+
+Note (TD-061, review R-1 of the re-check on `d833d6f`): a license record of a package that the lock does not pin is
+ignored by `release_bom.py`; it gives no failure and does not appear in the report, even with `--strict`. The CI
+job's `check_licenses.py` run still judges every installed package, so the policy as a whole holds; only the
+release report does not list such a package. Until TD-061 fixes it, read the records of each release run for names
+outside the lock.
 
 ## Clean install, 2026-11-13 (Linux)
 
