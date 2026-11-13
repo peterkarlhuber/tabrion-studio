@@ -142,7 +142,12 @@ class FakeConnection:
     def fetch(self, sql: str, params: Any = None, *, cancel: Any = None) -> list[tuple[Any, ...]]:
         if "pg_db_role_setting" in sql:
             return list(self.facts.get("settings", ALL_SET))
-        key = "default" if "pg_default_acl" in sql else "owned" if "relowner" in sql else "writable"
+        if "has_schema_privilege" in sql:
+            key = "creatable"
+        elif "has_database_privilege" in sql:
+            key = "temporary"
+        else:
+            key = "default" if "pg_default_acl" in sql else "owned" if "relowner" in sql else "writable"
         return [(self.facts.get(key, 0),)]
 
 
@@ -211,6 +216,28 @@ def test_read_only_role_and_default_privileges() -> None:
     assert run_fake("prod", facts={"writable": 1000}, read_only_role=True) == {"STU-DX-003": "error"}
     assert run_fake("dev", facts={"default": 1}, read_only_role=True) == {"STU-DX-007": "info"}
     assert run_fake("dev", facts={"writable": 3, "default": 1}, read_only_role=None) == {}  # no expectation
+
+
+def test_f1_schema_create_and_database_temp_are_stu_dx_003() -> None:
+    """F-1 of the STU-016 review: CREATE on a schema is a write (warning, error on prod); TEMP on the database alone,
+    which PostgreSQL grants to PUBLIC by default, is an info."""
+    assert run_fake("dev", facts={"creatable": 2}, read_only_role=True) == {"STU-DX-003": "warning"}
+    assert run_fake("prod", facts={"creatable": 1}, read_only_role=True) == {"STU-DX-003": "error"}
+    assert run_fake("dev", facts={"temporary": 1}, read_only_role=True) == {"STU-DX-003": "info"}
+    assert run_fake("prod", facts={"temporary": 1}, read_only_role=True) == {"STU-DX-003": "info"}
+    assert run_fake("prod", facts={"writable": 1, "temporary": 1}, read_only_role=True) == {"STU-DX-003": "error"}
+    assert run_fake("dev", facts={"creatable": 2, "temporary": 1}, read_only_role=None) == {}  # no expectation
+    base = Profile("pg", "postgresql", "dev", host="db.example.internal", database="app", sslmode="verify-full")
+
+    def detail(facts: dict[str, Any]) -> str:
+        connection = FakeConnection("postgresql", "dev", [], facts)
+        registry = FakeRegistry(connection, replace(base, read_only_role=True))
+        doc = Diagnostics(registry).run("c_fake")  # type: ignore[arg-type]
+        return str(next(item for item in doc["findings"] if item["code"] == "STU-DX-003")["detail"])
+
+    both = detail({"writable": 3, "creatable": 1000, "temporary": 1})
+    assert "3 table(s)" in both and "1000+ schema(s)" in both and "temporary tables" in both
+    assert "TEMP on the database" in detail({"temporary": 1})
 
 
 @pytest.mark.parametrize(
@@ -372,12 +399,16 @@ def _run_as(user: str, password: str, **profile: Any) -> dict[str, str]:
         ("GRANT {p}_writer TO {p}_ro", "REVOKE {p}_writer FROM {p}_ro"),  # INHERIT membership
         ("ALTER ROLE {p}_ro NOINHERIT; GRANT {p}_writer TO {p}_ro",  # one SET ROLE away
          "REVOKE {p}_writer FROM {p}_ro; ALTER ROLE {p}_ro INHERIT"),
+        ("GRANT CREATE ON SCHEMA {p} TO {p}_ro", "REVOKE CREATE ON SCHEMA {p} FROM {p}_ro"),  # F-1: new tables
+        ("GRANT CREATE ON SCHEMA {p} TO {p}_writer; ALTER ROLE {p}_ro NOINHERIT; GRANT {p}_writer TO {p}_ro",
+         "REVOKE {p}_writer FROM {p}_ro; ALTER ROLE {p}_ro INHERIT; REVOKE CREATE ON SCHEMA {p} FROM {p}_writer"),
     ],
 )  # fmt: skip
 def test_pg_read_only_role_write_paths(pg_roles: tuple[sqlalchemy.Engine, str, str], grant: str, revoke: str) -> None:
-    """M-2: every way the "read-only" role can write is STU-DX-003; SELECT alone is not."""
+    """M-2: every way the "read-only" role can write is STU-DX-003; SELECT alone is not (at most the info for TEMP
+    on the database, F-1 of the STU-016 review)."""
     admin, prefix, password = pg_roles
-    assert "STU-DX-003" not in _run_as(f"{prefix}_ro", password, read_only_role=True)
+    assert _run_as(f"{prefix}_ro", password, read_only_role=True).get("STU-DX-003") == _temp_only(admin, prefix)
     with admin.begin() as connection:
         connection.exec_driver_sql(grant.format(p=prefix))
     try:
@@ -389,6 +420,47 @@ def test_pg_read_only_role_write_paths(pg_roles: tuple[sqlalchemy.Engine, str, s
             connection.exec_driver_sql(revoke.format(p=prefix))
 
 
+def _temp_only(admin: sqlalchemy.Engine, prefix: str) -> str | None:
+    """STU-DX-003 for the ``_ro`` role without write privileges: an info when it may create temporary tables."""
+    with admin.connect() as connection:
+        temp = connection.exec_driver_sql(
+            "SELECT has_database_privilege(%s, current_database(), 'TEMP')", (f"{prefix}_ro",)
+        ).scalar_one()
+    return "info" if temp else None
+
+
+@pytest.mark.postgres_superuser
+def test_pg_f1_database_temp_is_an_info_and_its_revoke_clears_it(pg_roles: tuple[sqlalchemy.Engine, str, str]) -> None:
+    """F-1 of the STU-016 review: TEMP on the database (PUBLIC's by default) is an info of STU-DX-003; without it, and
+    without CREATE on a schema, the role has no STU-DX-003. The grant to PUBLIC is put back as it was."""
+    admin, prefix, password = pg_roles
+    database = sqlalchemy.make_url(PG_URL or "").database
+    with admin.connect() as connection:
+        public_temp = connection.exec_driver_sql(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database d, pg_catalog.aclexplode("
+            "coalesce(d.datacl, pg_catalog.acldefault('d', d.datdba))) a "
+            "WHERE d.datname = current_database() AND a.grantee = 0 AND a.privilege_type = 'TEMPORARY')"
+        ).scalar_one()
+    with admin.begin() as connection:
+        connection.exec_driver_sql(f'GRANT TEMP ON DATABASE "{database}" TO {prefix}_ro')
+    try:
+        assert _run_as(f"{prefix}_ro", password, read_only_role=True)["STU-DX-003"] == "info"
+        assert _run_as(f"{prefix}_ro", password, read_only_role=True, environment="prod")["STU-DX-003"] == "info"
+        with admin.begin() as connection:
+            connection.exec_driver_sql(f'REVOKE TEMP ON DATABASE "{database}" FROM {prefix}_ro')
+            if public_temp:
+                connection.exec_driver_sql(f'REVOKE TEMP ON DATABASE "{database}" FROM PUBLIC')
+        try:
+            assert "STU-DX-003" not in _run_as(f"{prefix}_ro", password, read_only_role=True)
+        finally:
+            if public_temp:
+                with admin.begin() as connection:
+                    connection.exec_driver_sql(f'GRANT TEMP ON DATABASE "{database}" TO PUBLIC')
+    finally:
+        with admin.begin() as connection:
+            connection.exec_driver_sql(f'REVOKE TEMP ON DATABASE "{database}" FROM {prefix}_ro')
+
+
 @pytest.mark.postgres_superuser
 def test_pg_default_privileges_are_an_info(pg_roles: tuple[sqlalchemy.Engine, str, str]) -> None:
     admin, prefix, password = pg_roles
@@ -397,7 +469,8 @@ def test_pg_default_privileges_are_an_info(pg_roles: tuple[sqlalchemy.Engine, st
         connection.exec_driver_sql(statement.format(p=prefix, verb="GRANT", to="TO"))
     try:
         found = _run_as(f"{prefix}_ro", password, read_only_role=True)
-        assert found["STU-DX-007"] == "info" and "STU-DX-003" not in found  # no table is writable yet
+        assert found["STU-DX-007"] == "info"
+        assert found.get("STU-DX-003") == _temp_only(admin, prefix)  # no table is writable yet
     finally:
         with admin.begin() as connection:
             connection.exec_driver_sql(statement.format(p=prefix, verb="REVOKE", to="FROM"))

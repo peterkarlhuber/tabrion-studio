@@ -5,7 +5,7 @@ name: CI
 # commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
 # them: "openapi in sync" (STU-008, TD-011). The "e2e" job (Chromium
 # and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke; Firefox and WebKit run
-# the same suites in the job "e2e (<browser>)" (STU-050, TD-047), advisory in the manifest until both are green.
+# the same suites in the job "e2e (<browser>)" (STU-050, TD-047), required like "e2e" since both are green (PR #63).
 # Nothing here releases or publishes anything (G-R).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): every install of Studio takes the tabrion
 # commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py).
@@ -314,12 +314,11 @@ jobs:
   e2e-browsers:
     name: e2e (${{ matrix.browser }})
     # STU-050 (08 section 11, TD-047): the same suites in Firefox and WebKit, against the same built wheel. The browser
-    # is the one the locked @playwright/test installs. Advisory (continue-on-error, ci-manifest "advisory") until both
-    # have been green; then the entry leaves "advisory" and the job counts like "e2e". The gate below is the e2e job's,
+    # is the one the locked @playwright/test installs. Required like "e2e" since both have been green (PR #63; they
+    # were advisory before). The gate below is the e2e job's,
     # except that a test may skip with a "chromium only:" reason (the heap measurements through CDP).
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:

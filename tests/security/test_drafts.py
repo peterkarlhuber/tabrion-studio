@@ -24,8 +24,11 @@ import uuid
 import pytest
 from tabrion.sqlite import SQLiteProfile, connect, migrate
 
+from tabrion_studio.api.config import Configuration
 from tabrion_studio.app import BODY_LIMITS
+from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.schema import Settings
+from tabrion_studio.config.user import UserConfig
 from tabrion_studio.logs import configure_logging
 from tabrion_studio.services import state as state_module
 from tabrion_studio.services.drafts import MAX_TABS, MAX_TEXT_CHARS, MAX_TOTAL_CHARS, Drafts, DraftsError
@@ -267,6 +270,51 @@ def test_the_history_retention_applies_to_drafts(env: Env, state_dir: Path) -> N
         scopes = [row[0] for row in connection.execute("SELECT scope FROM drafts")]
     assert scopes == ["projkey1"]
     assert other.read() == {"drafts": None}
+
+
+def test_purge_deletes_expired_drafts_of_every_project(env: Env, state_dir: Path) -> None:
+    """At start and after a settings save (``server.py``, ``app.py``), like the history: the retention holds on disk."""
+    marker = f"expired_{uuid.uuid4().hex}"
+    other = Drafts(env.drafts.store, "projkey2", lambda: env.settings["value"], clock=env.clock)
+    other.save([_tab("o", f"select '{marker}'")], "o")
+    env.put({"tabs": [_tab("a", f"select '{marker}'")], "active_tab": "a"})
+    assert env.drafts.purge() == 0
+    env.settings["value"] = Settings(history_retention_days=1)
+    env.clock.now += 2 * 86_400
+    assert env.drafts.purge() == 2
+    with env.drafts.store.connection() as connection:
+        assert connection.execute("SELECT count(*) FROM drafts").fetchone()[0] == 0
+    # secure_delete and the checkpoint: the expired text is gone from the file and its write-ahead log.
+    assert marker.encode() not in _state_bytes(state_dir)
+
+
+def test_saving_the_settings_purges_expired_drafts(static_dir: Path, state_dir: Path, tmp_path: Path) -> None:
+    """A shorter retention drops the drafts it expires at once, together with the history (``app.py``)."""
+    project = tmp_path / "project"
+    project.mkdir()
+    config_dir = tmp_path / "config"
+    configuration = Configuration(
+        project=ProjectConfig(project, state_dir, "projkey1", config_dir), user=UserConfig(config_dir)
+    )
+    clock = Clock()
+    store = StateStore(state_dir)
+    drafts = Drafts(store, "projkey1", configuration.limits, clock=clock)
+    history = History(store, "projkey1", configuration.limits, clock=clock)
+    studio = make_studio(
+        static_dir, config=configuration, history=history, favorites=Favorites(store, "projkey1", set), drafts=drafts
+    )
+    try:
+        marker = f"expired_{uuid.uuid4().hex}"
+        drafts.save([_tab("a", f"select '{marker}'")], "a")
+        clock.now += 5 * 86_400
+        headers = {**studio.sign_in(), "Origin": ORIGIN}
+        saved = studio.client.put(
+            "/api/settings", json={"settings": {"history": {"retention_days": 1}}, "digest": None}, headers=headers
+        )
+        assert saved.status_code == 200, saved.text
+        assert marker.encode() not in _state_bytes(state_dir)
+    finally:
+        store.close()
 
 
 def test_history_off_and_delete_history_leave_the_drafts(env: Env) -> None:

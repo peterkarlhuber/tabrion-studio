@@ -496,3 +496,42 @@ def test_pg_a_server_side_cursor_export(tmp_path: Path) -> None:
             exports.start(connection_id, "csv", sql="COPY (SELECT 1) TO STDOUT")
     finally:
         registry.close_all()
+
+
+@pytest.mark.postgres
+@pytest.mark.skipif(PG_URL is None, reason="TABRION_STUDIO_TEST_POSTGRES is not set")
+def test_pg_f1_the_export_route_refuses_statements_that_create_a_table(tmp_path: Path) -> None:
+    """F-1 of the STU-016 review, through ``POST /api/exports`` with ``sql``: refused, and no table exists."""
+    assert PG_URL is not None
+    url = sqlalchemy.make_url(PG_URL)
+    profile = Profile(
+        "pg", "postgresql", "dev", host=url.host, port=url.port, database=url.database, user=url.username,
+        password=SecretRef("keyring", ""), sslmode="prefer",
+    )  # fmt: skip
+    registry = ConnectionRegistry(Source(profiles={"user:pg": profile}, passwords={"user:pg": url.password or ""}))
+    name = f"studio_into_{os.urandom(4).hex()}"
+    admin = sqlalchemy.create_engine(url.set(drivername="postgresql+psycopg"))
+    try:
+        exports = Exports(registry, Explorer(registry))
+        connection_id = registry.open("user:pg").id
+        studio = make_studio(tmp_path / "static", connections=registry, exports=exports)
+        headers = {**studio.sign_in(), "Origin": ORIGIN}
+        for sql in (
+            f"explain analyze select 'x' as v into {name}",
+            f"EXPLAIN ANALYZE SELECT 'x' AS v INTO TEMPORARY {name}",
+            f"SELECT 'x' AS v INTO {name}",
+        ):
+            with pytest.raises(StatementRefused):
+                exports.start(connection_id, "csv", sql=sql)
+            answer = studio.client.post(
+                "/api/exports", json={"connection_id": connection_id, "format": "csv", "sql": sql}, headers=headers
+            )
+            assert answer.status_code == 400 and answer.json()["code"] == "studio.statement_refused", answer.text
+        with admin.connect() as c:
+            found = c.exec_driver_sql("SELECT count(*) FROM pg_catalog.pg_class WHERE relname = %s", (name,))
+            assert found.scalar_one() == 0
+    finally:
+        registry.close_all()
+        with admin.begin() as c:  # what a failing run made, in the test role's own schema
+            c.exec_driver_sql(f"DROP TABLE IF EXISTS public.{name}")
+        admin.dispose()

@@ -32,11 +32,18 @@ header and, for a change, the Origin check and JSON only.
   profiles; version 2 adds `drafts`. A file that holds data is copied with `tabrion.sqlite.backup` to
   `state.sqlite.v<n>.bak` (0600) before it is migrated; the steps only add tables, so the copy is removed once the
   migration succeeded (it would otherwise keep history text that a later delete removes).
-- **When it fails.** The store opens on first use. If it cannot be opened (a refused link, a corrupt file, a full
-  disk), the routes answer `studio.state_unavailable` (503), the log has one `studio.state_unavailable` record, and
-  queries run on without a history entry.
+- **When it fails.** The store opens on first use. If it cannot be opened (a refused link, a corrupt file, a schema of
+  a newer Studio, a full disk), the routes answer `studio.state_unavailable` (503) for the life of the process, the
+  log has one `studio.state_unavailable` record, and queries run on without a history entry. To recover, stop Studio
+  and move `state.sqlite` (with its `-wal` and `-shm` files) out of the state folder; the next start creates an empty
+  one, and the history, the favorites and the editor drafts start over.
 - **Sharing.** Every Studio instance of the user (one per project folder) shares the file; SQLite's locking
-  serializes the writers.
+  serializes the writers. A write waits up to 5 s for another instance's lock; recording a query's entry waits only
+  250 ms and otherwise keeps no entry, so a query's end and its cancel are never held up by the history.
+- **Checkpoint.** After a delete or a purge, `PRAGMA wal_checkpoint(TRUNCATE)` moves the write-ahead log into the
+  file and empties it. When another instance is reading at that moment, the log stays in use; the checkpoint is tried
+  three times and otherwise left to the next one (`studio.state_checkpoint_partial` in the log). The log is 0600 like
+  the file, and closing the last connection removes it.
 - **Scopes.** Rows of a project profile carry the project's key, so `project:parts` in one project is not
   `project:parts` in another. Rows of the user's own profiles hold in every project.
 
@@ -62,8 +69,11 @@ no log record.
 
 **Settings** (`[history]` in `settings.toml`, see [Configuration](configuration.md)):
 
-- `enabled` (default `true`): `false` records nothing. Entries already kept stay until they expire or are deleted.
-- `retention_days` (default 30, 1 to 3650): older entries are not shown and are deleted at the next recording.
+- `enabled` (default `true`): `false` records nothing from then on. The entries already kept are not deleted by
+  turning it off: they stay until their retention period ends, or until the user deletes them on the history page.
+- `retention_days` (default 30, 1 to 3650): an older entry is deleted from the file, also while the history is off.
+  The purge runs when Studio starts, whenever the history is read, when the settings are saved and when an entry is
+  recorded. It deletes the expired entries of every project, with `secure_delete` and a checkpoint like a delete.
 
 At most 5,000 entries are kept, and the oldest go first. An entry keeps at most 64 KB of a statement
 (`sql_truncated`). A delete is followed by `PRAGMA wal_checkpoint(TRUNCATE)`, so no deleted text stays in the
@@ -94,8 +104,9 @@ folder. They now live in the state database, one document per project (the proje
 - **Merge by tab.** `known` is every tab id the page has had. Stored tabs it does not name (another page of the same
   project added them) are kept after the page's own, within the caps; the tabs it closed go. Without `known`, the
   page's tabs replace the stored ones; no tabs at all delete the project's drafts. One write transaction.
-- **Settings.** `[history] retention_days` applies: drafts not saved for that many days are deleted when they are
-  read, and every save deletes other projects' drafts that old. `[history] enabled = false` does not stop drafts:
+- **Settings.** `[history] retention_days` applies: drafts not saved for that many days are deleted at start, after a
+  settings save (with the history's purge) and when they are read, and every save deletes other projects' drafts that
+  old. `[history] enabled = false` does not stop drafts:
   they are the tabs the user has open and sees, not a record of what ran; closing a tab deletes its text. "Delete
   history" leaves the drafts.
 - **PROD.** A tab on a PROD profile keeps its draft like any other tab, as the history keeps PROD statements: the text
@@ -123,7 +134,8 @@ or secret.
 
 - Only profiles that exist now are answered or accepted: the user's, and the project's while its file is trusted.
   An unknown id is `studio.profile_not_found`.
-- At most 100 favorites (`studio.favorites_full`).
+- At most 100 favorites per project (`studio.favorites_full`): the project's own profiles and the user's that exist
+  now. Favorites of other projects and of profiles that are gone take no place.
 - A profile becomes "recent" when `POST /api/connections` answers a connection of it. The 10 newest per scope are
   kept.
 - Opening a favorite is an ordinary connect: D-02 for a PROD profile, on the page and on the server (TD-038).
@@ -134,23 +146,46 @@ or secret.
 
 | Route | Answer |
 |---|---|
-| `GET /api/scripts` | `{scripts: [{path, size, modified_at}], truncated}` |
+| `GET /api/scripts` | `{scripts: [{path, size, modified_at}], truncated, skipped_links}` |
 | `GET /api/scripts/file?path=` | `{path, content, digest}` |
 | `PUT /api/scripts/file` | `{"path", "content", "digest": <what the page read> \| null, "overwrite"?}`; `{path, digest}` |
 
 A path is relative to the project folder, with `/`. It is judged as text first, then on the file system, with the
 helpers of the project's database paths (threat T-08, `config/locations.py`):
 
-- **Text.** No drive, no root, no `\`, no `..` or `.`, no empty component, no control character, no component that
+- **Text.** No drive, no root, no `\`, no `..` or `.`, no empty component, no control character, no format
+  character (bidi overrides and isolates, zero-width characters: a name must read as what it is), no component that
   starts with `.` (so `.git` and `.tabrion` are not script folders), no leading or trailing blank, at most 512
   characters. The last name ends in `.sql`, in any case.
+- **Names Windows reads as something else.** Refused on every system alike, because the same project is opened on
+  all of them: device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`, `LPT0`-`LPT9`, also with the superscript
+  digits ¹²³, `CONIN$`, `CONOUT$`), also with an extension (`nul.sql`) and as a folder; a component that ends in `.`
+  (Win32 drops it, so `sub.` names `sub`); and a `~` followed by a digit (an 8.3 short name such as `GIT~1` can name
+  `.git`). The listing leaves such names out as well.
 - **File system.** The path must stay inside the project, and it must be its own real path: a link anywhere on the
-  way is refused, even one that stays inside. `safe_realpath` never touches a network or device path.
-- **Size and encoding.** A script is a regular file of at most 1 MB of UTF-8. A byte order mark is dropped when
-  reading.
-- **Line endings.** Files are read and written as bytes, never in text mode, so a script and its digest are
-  byte-exact on every system: a CRLF script reads as CRLF, and what the page sends is written as it is. The page keeps
-  a script's CRLF line endings when it saves it back.
+  way is refused, even one that stays inside (`studio.script_link`). `safe_realpath` never touches a network or device
+  path. A hard-linked file (more than one name) is refused for reading and for saving, because its other name may lie
+  outside the project.
+- **No check-then-use (07 TM-04).** On POSIX the file is reached from the project folder one name at a time through
+  folder descriptors (`openat`-style, `dir_fd`): each folder is opened with `O_DIRECTORY | O_NOFOLLOW`, the file with
+  `O_NOFOLLOW`, and the temporary file, the rename and the clean-up use the same folder descriptor. A folder swapped
+  for a link after the text checks is never followed. On Windows, Python has no such calls: the folders are checked
+  with `lstat` (no link, no reparse point) and, after the file is opened, the handle must be the file that the checked
+  path names (same volume and file index). **Residual on Windows:** a folder swapped for a junction between that check
+  and the rename of a save. It needs a program of the user's own that writes in the project folder at that moment,
+  which has the user's rights anyway.
+- **Reparse-point folders (Windows).** Every folder with a reparse point is refused as a link (`studio.script_link`),
+  and the listing leaves it out and counts it (`skipped_links`, which the page shows). That includes OneDrive "Files
+  On-Demand" placeholder folders (Documents under Known Folder Move on many company machines): keep the project, or at
+  least its scripts, in a folder that OneDrive does not sync. This is checked by tests on Linux only; it still needs a
+  check on a real Windows machine with OneDrive.
+- **Size and encoding.** A script is a regular file of at most 1 MB of UTF-8.
+- **Byte-exact.** Files are read and written as bytes, never in text mode, so a script and its digest are byte-exact
+  on every system: CRLF, LF, CR and mixed line endings are kept as they are, and what the page sends is written as it
+  is. A UTF-8 byte order mark is left out of the content the page gets (the digest covers it) and is written again when
+  the page saves over that file; a new file gets none. On the page, a CRLF script is edited with LF and saved with CRLF
+  again; a script with mixed line endings is edited as it is (a CR shows as a marked character), so it is saved byte
+  for byte.
 
 **Listing.** The listing walks the project without following links. It skips hidden folders and tool folders
 (`node_modules`, virtual environments, caches, `dist`, `build`) and goes 8 folders deep. It stops after 1,000
@@ -161,15 +196,20 @@ scripts or 20,000 entries (`truncated`).
 - `digest` is the SHA-256 of the file the page read, or `null` for a new file;
 - a file that changed meanwhile is `studio.script_stale`, and one that appeared is `studio.script_exists`. The page
   asks the user before it sends `overwrite: true`;
+- the digest check and the replace run under one lock, so two saves of the same Studio (two tabs, a double click)
+  never both pass the check: the second one is `studio.script_stale`;
 - the folder must exist (`studio.script_folder_missing`): Studio creates no folders;
-- the write is atomic: a temporary file with `O_CREAT | O_EXCL | O_NOFOLLOW` in the same folder, `fsync`,
-  `os.replace`, then `fsync` of the folder.
+- the write is atomic: a temporary file with `O_CREAT | O_EXCL | O_NOFOLLOW` in the same folder, `fsync`, a rename
+  over the script, then `fsync` of the folder.
 
 A new script gets the usual mode of a project file (0666 less the umask), because such files are meant to be checked
 in. A replaced one keeps its mode. Nothing runs a script, and no log record names a path or holds a script's text.
 
-The other refusals are `studio.script_invalid`, `studio.script_not_found`, `studio.script_unreadable` (not UTF-8) and
-`studio.script_too_large`.
+The other refusals are `studio.script_invalid`, `studio.script_link`, `studio.script_not_found`,
+`studio.script_unreadable` (not UTF-8) and `studio.script_too_large`. A refusal of the file system has its own code,
+never `studio.internal_error`: `studio.script_permission_denied` (also a read-only drive),
+`studio.script_locked` (another program holds the file open, Windows), `studio.script_disk_full`, and otherwise
+`studio.script_write_failed`.
 
 ## The catalog for completion
 
@@ -207,8 +247,8 @@ this way for PROD and reads the catalog in full only after the user's click.
 
 | Test | What it shows |
 |---|---|
-| `tests/security/test_history.py` | `state.sqlite` is 0600 and opened lazily; a link or a file others may write is refused (`studio.state_unavailable`, queries run on); the canary value of a parameter is in no answer, no file byte and no log record; off, retention, the entry and size caps; paging, search and the profile filter; project scopes; deletes leave no text in the file; favorites and recent profiles; `cached_only` |
-| `tests/security/test_scripts.py` | only `.sql` files in the project; every refused path form (traversal, drive, UNC, automount, hidden folder, control character); no link is followed, inside or out; atomic save with the mode kept; stale, exists, folder missing, size and encoding |
+| `tests/security/test_history.py` | `state.sqlite` is 0600 and opened lazily; a link or a file others may write is refused (`studio.state_unavailable`, queries run on); the canary value of a parameter is in no answer, no file byte and no log record; off, retention on disk (also while off: at start, on read, on a settings save), the entry and size caps; recording waits only briefly for another writer; the checkpoint result; the favorites limit per project; paging, search and the profile filter; project scopes; deletes leave no text in the file; favorites and recent profiles; `cached_only` |
+| `tests/security/test_scripts.py` | only `.sql` files in the project; every refused path form (traversal, drive, UNC, automount, hidden folder, control and format characters, device names, 8.3 names, trailing dots); no link is followed, inside or out, also when a folder is swapped after the check; hard links; atomic save with the mode kept; the byte order mark and mixed line endings kept; two saves under one lock; stale, exists, folder missing, size and encoding; file-system refusals with their own codes |
 | `tests/security/test_drafts.py` | a canary draft text is only in `state.sqlite*` (0600) and in no other file or log record; a tab with a parameter value or another field is refused; the caps and the body cap; merge by tab; projects apart; retention, history off and "Delete history"; `studio.state_unavailable`; the migration from version 1 keeps the history and leaves no copy |
 | `tests/security/test_every_route.py` | the new routes need a session and the CSRF header, refuse other sites and need JSON |
 | `frontend/src/views/history/HistoryView.test.tsx`, `src/views/editor/EditorView.test.tsx` (STU-020 block), `src/views/editor/completion.test.ts`, `src/api/history.test.ts`, `src/views/connections/ConnectionsView.test.tsx` | the page: history list, filters, open and delete; scripts open, save, overwrite, CRLF; format; completion and its PROD rule; favorites, start page, history settings |

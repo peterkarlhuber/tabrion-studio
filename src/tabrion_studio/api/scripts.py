@@ -1,15 +1,17 @@
 """Script routes (03 section 2 C, STU-020): ``.sql`` files in the project folder. Nothing here runs a script.
 
-* ``GET /api/scripts``: ``{scripts: [{path, size, modified_at}], truncated}``; ``path`` is relative to the project
-  folder, with ``/``.
+* ``GET /api/scripts``: ``{scripts: [{path, size, modified_at}], truncated, skipped_links}``; ``path`` is relative to
+  the project folder, with ``/``.
 * ``GET /api/scripts/file?path=``: ``{path, content, digest}`` (UTF-8 text, at most 1 MB).
 * ``PUT /api/scripts/file`` with ``{"path", "content", "digest": "<what the page read>" | null, "overwrite"?}``:
   200 ``{path, digest}``.
 
-Refusals: ``studio.script_invalid`` (not a ``.sql`` path inside the project, a link, a hidden folder),
-``studio.script_not_found``, ``studio.script_unreadable`` (not UTF-8), ``studio.script_too_large``,
-``studio.script_exists`` and ``studio.script_stale`` (409: the page asks before it overwrites),
-``studio.script_folder_missing``. No answer names a path the request did not send; nothing is logged with a path.
+Refusals: ``studio.script_invalid`` (not a ``.sql`` path of plain names inside the project), ``studio.script_link``
+(a link, a hard-linked file or a reparse-point folder on the way), ``studio.script_not_found``,
+``studio.script_unreadable`` (not UTF-8), ``studio.script_too_large``, ``studio.script_exists`` and
+``studio.script_stale`` (409: the page asks before it overwrites), ``studio.script_folder_missing``, and the refusals
+of the file system ``studio.script_permission_denied``, ``studio.script_locked``, ``studio.script_disk_full`` and
+``studio.script_write_failed``. No answer names a path the request did not send; nothing is logged with a path.
 """
 
 from __future__ import annotations

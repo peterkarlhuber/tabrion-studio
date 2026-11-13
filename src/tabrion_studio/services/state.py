@@ -17,8 +17,10 @@ One store is shared by every Studio instance of this user (one per project folde
 timeout serialize the writers. Rows of project profiles carry the project's key (``scope``), so the history and the
 favorites of ``project:parts`` in one project never show in another; user profiles have the empty scope.
 
-The store opens lazily, on first use. When it cannot be opened (a refused link, a corrupt file, a full disk), the
-features that need it answer ``studio.state_unavailable`` and queries run on without a history entry.
+The store opens lazily, on first use. When it cannot be opened (a refused link, a corrupt file, a schema of a newer
+Studio, a full disk), the features that need it answer ``studio.state_unavailable`` for the life of the process and
+queries run on without a history entry. To recover, stop Studio and move ``state.sqlite`` (with its ``-wal`` and
+``-shm`` files) aside: the next start creates an empty one (the history and the favorites start over).
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import logging
 from pathlib import Path
 import sqlite3
 import threading
+import time
 from typing import TypeVar
 
 from tabrion.sqlite import SQLiteProfile, backup, connect, migrate, write_transaction
@@ -40,6 +43,10 @@ _T = TypeVar("_T")
 
 STATE_FILE = "state.sqlite"
 SCHEMA_VERSION = 2
+#: How long a write waits for another instance's write lock.
+BUSY_TIMEOUT_MS = 5_000
+CHECKPOINT_ATTEMPTS = 3
+CHECKPOINT_PAUSE_S = 0.05
 
 _V1 = (
     "CREATE TABLE history ("
@@ -137,21 +144,45 @@ class StateStore:
                 logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
                 raise StateUnavailable from None
 
-    def write(self, call: Callable[[sqlite3.Connection], _T]) -> _T:
-        """Run ``call`` in one write transaction (``BEGIN IMMEDIATE``; rolled back on any error)."""
+    def write(self, call: Callable[[sqlite3.Connection], _T], *, busy_timeout_ms: int | None = None) -> _T:
+        """Run ``call`` in one write transaction (``BEGIN IMMEDIATE``; rolled back on any error).
+
+        ``busy_timeout_ms`` waits less than the usual :data:`BUSY_TIMEOUT_MS` for another instance's write lock (a
+        query's history entry must not hold up the query's end)."""
         with self._lock:
             connection = self._get()
             try:
-                with write_transaction(connection):
-                    return call(connection)
+                if busy_timeout_ms is not None:
+                    connection.execute(f"PRAGMA busy_timeout = {int(busy_timeout_ms)}")
+                try:
+                    with write_transaction(connection):
+                        return call(connection)
+                finally:
+                    if busy_timeout_ms is not None:
+                        connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
             except sqlite3.Error:
                 logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
                 raise StateUnavailable from None
 
-    def checkpoint(self) -> None:
-        """Move the write-ahead log into the file and truncate it (after a delete, no old page stays in the log)."""
-        with self._lock, contextlib.suppress(sqlite3.Error, StateUnavailable):
-            self._get().execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchall()
+    def checkpoint(self) -> bool:
+        """Move the write-ahead log into the file and truncate it (after a delete, no old page stays in the log).
+
+        True when the log is empty now. Another Studio instance that is reading at that moment keeps the log in use;
+        the checkpoint is tried again a few times and otherwise left to the next one (the log is 0600 like the file,
+        and closing the last connection removes it)."""
+        for attempt in range(CHECKPOINT_ATTEMPTS):
+            if attempt:
+                time.sleep(CHECKPOINT_PAUSE_S)
+            with self._lock:
+                try:
+                    row = self._get().execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+                except (sqlite3.Error, StateUnavailable):
+                    return False
+            # (busy, frames in the log, frames moved): busy 0 means the log was moved and truncated.
+            if row is not None and row[0] == 0:
+                return True
+        logger.info("state log still in use", extra={"event": "studio.state_checkpoint_partial"})
+        return False
 
     def close(self) -> None:
         with self._lock:
@@ -168,7 +199,7 @@ class StateStore:
 
 
 def _open(path: Path) -> sqlite3.Connection:
-    connection = connect(path, profile=SQLiteProfile(secure_delete=True, busy_timeout=5.0))
+    connection = connect(path, profile=SQLiteProfile(secure_delete=True, busy_timeout=BUSY_TIMEOUT_MS / 1000))
     copies: list[Path] = []
 
     def keep_copy(found: int, target: int) -> None:

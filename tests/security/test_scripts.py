@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import stat
 import sys
+import threading
 from typing import Any
 
 import pytest
@@ -106,6 +107,35 @@ def test_read_a_script(project: Path) -> None:
         "a.sql ",
         "x" * 600 + ".sql",
         "sql/a.sql:stream",
+        # Windows device names, with or without an extension, in any case, also as a folder (F-2).
+        "nul.sql",
+        "NUL.SQL",
+        "con.sql",
+        "Aux.sql",
+        "prn.backup.sql",
+        "com1.sql",
+        "COM9.sql",
+        "lpt0.sql",
+        "com\u00b9.sql",
+        "lpt\u00b2.sql",
+        "conin$.sql",
+        "CONOUT$.sql",
+        "nul /a.sql",
+        "con/a.sql",
+        "sql/aux/a.sql",
+        # 8.3 short names and names Win32 trims (F-3).
+        "GIT~1/hidden.sql",
+        "TABRIO~1/x.sql",
+        "sql~2.sql",
+        "sql./a.sql",
+        "sql /a.sql",
+        "a.sql.",
+        # Format characters: bidi overrides and isolates, zero-width characters (F-9).
+        "evil\u202eloc.sql",
+        "a\u2066b.sql",
+        "a\u200bb.sql",
+        "a\u200fb.sql",
+        "\ufeffa.sql",
     ],
 )
 def test_refused_paths(project: Path, path: str) -> None:
@@ -144,13 +174,181 @@ def test_no_link_is_followed_on_the_way(project: Path, tmp_path: Path) -> None:
     (project / "indir").symlink_to(project / "sql")
     scripts = Scripts(project)
     for path in ("out.sql", "inside.sql", "outdir/secret.sql", "indir/a.sql", "outdir/new.sql"):
-        with pytest.raises(ScriptError, match=r"studio\.script_invalid"):
+        with pytest.raises(ScriptError, match=r"studio\.script_link"):
             scripts.read(path)
-        with pytest.raises(ScriptError, match=r"studio\.script_invalid"):
+        with pytest.raises(ScriptError, match=r"studio\.script_link"):
             scripts.save(path, "SELECT 'replaced'", None, overwrite=True)
     assert (outside / "secret.sql").read_bytes() == b"SELECT 'outside';"
     assert not (outside / "new.sql").exists()
     assert (project / "top.sql").read_bytes() == b"SELECT 3;\n"
+
+
+def test_names_like_devices_are_fine_as_part_of_a_name(project: Path) -> None:
+    scripts = Scripts(project)
+    for path in ("console.sql", "nullable.sql", "com10.sql", "lpt.sql", "my_aux.sql", "a~b.sql"):
+        scripts.save(path, "SELECT 1", None)
+        assert scripts.read(path)["content"] == "SELECT 1"
+
+
+@pytest.mark.skipif(not POSIX, reason="hard links need no privilege on POSIX")
+def test_a_hard_linked_script_is_refused(project: Path, tmp_path: Path) -> None:
+    """F-4: a hard link inside the project names a file whose other name may lie outside."""
+    outside = tmp_path / "outside.sql"
+    outside.write_bytes(b"SELECT 'outside';")
+    os.link(outside, project / "linked.sql")
+    scripts = Scripts(project)
+    with pytest.raises(ScriptError, match=r"studio\.script_link"):
+        scripts.read("linked.sql")
+    with pytest.raises(ScriptError, match=r"studio\.script_link"):
+        scripts.save("linked.sql", "SELECT 'mine'", None, overwrite=True)
+    assert outside.read_bytes() == b"SELECT 'outside';"
+
+
+@pytest.mark.skipif(not POSIX, reason="descriptor-anchored access is POSIX")
+def test_a_folder_swapped_for_a_link_after_the_check_is_not_followed(
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """F-4 (07 TM-04): the path is checked, then a folder on it becomes a link; read and save still stay inside."""
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "a.sql").write_bytes(b"SELECT 'outside';")
+    checked = Scripts._target
+
+    def swap_after_check(self: Scripts, path: object) -> Any:
+        result = checked(self, path)
+        if (project / "sql").is_dir() and not (project / "sql").is_symlink():
+            (project / "sql").rename(project / "moved")
+            (project / "sql").symlink_to(outside)
+        return result
+
+    monkeypatch.setattr(Scripts, "_target", swap_after_check)
+    with pytest.raises(ScriptError, match=r"studio\.script_link"):
+        Scripts(project).read("sql/a.sql")
+    (project / "sql").unlink()
+    (project / "moved").rename(project / "sql")
+    with pytest.raises(ScriptError, match=r"studio\.script_link"):
+        Scripts(project).save("sql/a.sql", "SELECT 'replaced'", None, overwrite=True)
+    assert (outside / "a.sql").read_bytes() == b"SELECT 'outside';"
+    assert sorted(path.name for path in outside.iterdir()) == ["a.sql"]
+
+
+def test_a_byte_order_mark_is_kept_on_save(project: Path) -> None:
+    """F-5: the page never sees the mark; saving over the file keeps it, and a new file gets none."""
+    (project / "bom.sql").write_bytes(b"\xef\xbb\xbfSELECT 1;\r\n")
+    scripts = Scripts(project)
+    read = scripts.read("bom.sql")
+    assert read["content"] == "SELECT 1;\r\n"
+    saved = scripts.save("bom.sql", read["content"], read["digest"])
+    assert (project / "bom.sql").read_bytes() == b"\xef\xbb\xbfSELECT 1;\r\n"
+    assert saved["digest"] == read["digest"]
+    scripts.save("plain.sql", "SELECT 2;", None)
+    assert (project / "plain.sql").read_bytes() == b"SELECT 2;"
+
+
+def test_mixed_line_endings_are_kept_byte_exact(project: Path) -> None:
+    mixed = b"SELECT 1;\r\nSELECT 2;\nSELECT 3;\rSELECT 4;"
+    (project / "mixed.sql").write_bytes(mixed)
+    scripts = Scripts(project)
+    read = scripts.read("mixed.sql")
+    assert read["content"].encode() == mixed
+    scripts.save("mixed.sql", read["content"], read["digest"])
+    assert (project / "mixed.sql").read_bytes() == mixed
+
+
+def test_two_saves_of_one_script_never_both_pass_the_check(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-5: the digest check and the replace run under one lock; the second save sees the first one's file."""
+    scripts = Scripts(project)
+    read = scripts.read("sql/a.sql")
+    entered = threading.Event()
+    release = threading.Event()
+    original = scripts_module._write_atomic
+
+    def slow_write(*args: Any) -> None:
+        entered.set()
+        assert release.wait(5)
+        original(*args)
+
+    monkeypatch.setattr(scripts_module, "_write_atomic", slow_write)
+    results: list[str] = []
+
+    def save(text: str) -> None:
+        try:
+            scripts.save("sql/a.sql", text, read["digest"])
+            results.append("saved")
+        except ScriptError as exc:
+            results.append(exc.code)
+
+    first = threading.Thread(target=save, args=("SELECT 'first';",))
+    first.start()
+    assert entered.wait(5)
+    second = threading.Thread(target=save, args=("SELECT 'second';",))
+    second.start()
+    second.join(0.2)
+    assert second.is_alive()  # waiting for the lock, not past the check
+    release.set()
+    first.join(5)
+    second.join(5)
+    assert sorted(results) == ["saved", "studio.script_stale"]
+    assert (project / "sql" / "a.sql").read_bytes() == b"SELECT 'first';"
+
+
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (PermissionError(13, "denied"), "studio.script_permission_denied"),
+        (OSError(30, "read-only file system"), "studio.script_permission_denied"),
+        (OSError(28, "no space"), "studio.script_disk_full"),
+        (OSError(5, "input/output error"), "studio.script_write_failed"),
+    ],
+)
+def test_file_system_refusals_have_their_own_problem(
+    project: Path, monkeypatch: pytest.MonkeyPatch, error: OSError, code: str
+) -> None:
+    """F-7: no refusal of the file system becomes studio.internal_error; the script on disk is unchanged."""
+
+    def refuse(*args: Any) -> None:
+        raise error
+
+    monkeypatch.setattr(scripts_module, "_write_atomic", refuse)
+    with pytest.raises(ScriptError) as refused:
+        Scripts(project).save("sql/a.sql", "SELECT 'x'", None, overwrite=True)
+    assert refused.value.code == code
+    assert (project / "sql" / "a.sql").read_bytes() == b"SELECT 1;\n"
+
+
+def test_windows_lock_and_disk_full_errors() -> None:
+    class WinError(OSError):
+        def __init__(self, winerror: int) -> None:
+            super().__init__(13, "windows")
+            self.winerror = winerror
+
+    assert scripts_module._os_code(WinError(32)) == "studio.script_locked"
+    assert scripts_module._os_code(WinError(33)) == "studio.script_locked"
+    assert scripts_module._os_code(WinError(112)) == "studio.script_disk_full"
+    assert scripts_module._os_code(WinError(5)) == "studio.script_permission_denied"
+
+
+@pytest.mark.skipif(not POSIX, reason="file modes")
+def test_a_folder_studio_may_not_write_is_a_clear_refusal(project: Path) -> None:
+    if os.geteuid() == 0:
+        pytest.skip("root may write anywhere")
+    (project / "sql").chmod(0o500)
+    try:
+        with pytest.raises(ScriptError, match=r"studio\.script_permission_denied"):
+            Scripts(project).save("sql/new.sql", "SELECT 1", None)
+    finally:
+        (project / "sql").chmod(0o700)
+
+
+@pytest.mark.skipif(not POSIX, reason="symbolic links")
+def test_the_listing_counts_the_links_it_skips(project: Path, tmp_path: Path) -> None:
+    (project / "linked").symlink_to(project / "sql")
+    (project / "link.sql").symlink_to(project / "top.sql")
+    (project / "GIT~1").mkdir()
+    (project / "GIT~1" / "x.sql").write_bytes(b"SELECT 1")
+    listed = Scripts(project).list()
+    assert listed["skipped_links"] == 2
+    assert [item["path"] for item in listed["scripts"]] == ["sql/a.sql", "sql/reports/b.SQL", "top.sql"]
 
 
 @pytest.mark.skipif(not POSIX, reason="file modes")

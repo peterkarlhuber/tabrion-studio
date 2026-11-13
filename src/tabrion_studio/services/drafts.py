@@ -18,8 +18,8 @@ authenticated API, one document per project (``scope`` is the project key), as b
   merge the browser storage had (L-5 of ``stu-012-review.md``), now in one write transaction.
 * **Settings.** ``[history] enabled = false`` does not stop the drafts: they are the tabs the user has open, shown on
   the page, not a record of what ran (close a tab to delete its text). ``[history] retention_days`` does apply: the
-  drafts of a project not saved for that many days are deleted when they are read, and every save deletes other
-  projects' drafts that old. "Delete history" leaves the drafts.
+  drafts of a project not saved for that many days are deleted at start, after a settings save and when they are
+  read, and every save deletes other projects' drafts that old. "Delete history" leaves the drafts.
 * **PROD.** Like the history, which records PROD queries too, a tab on a PROD profile keeps its draft: the text the
   user typed, never a value or a row.
 
@@ -37,7 +37,7 @@ import time
 from typing import Any
 
 from tabrion_studio.config.schema import Settings
-from tabrion_studio.services.state import StateStore
+from tabrion_studio.services.state import StateStore, StateUnavailable
 
 __all__ = [
     "MAX_KNOWN",
@@ -136,6 +136,24 @@ class Drafts:
 
     def _cutoff(self) -> float:
         return self.clock() - self.settings().history_retention_days * _DAY_S
+
+    def purge(self) -> int:
+        """Delete the drafts the retention period expires, of every project (never raises); the number deleted.
+
+        Runs at start and after a settings save, like the history's purge: the retention period holds on disk, also
+        for a project that is not opened again."""
+        cutoff = self._cutoff()
+        try:
+            deleted = int(
+                self.store.write(
+                    lambda connection: connection.execute("DELETE FROM drafts WHERE updated_at < ?", (cutoff,)).rowcount
+                )
+            )
+        except StateUnavailable:
+            return 0
+        if deleted:
+            self.store.checkpoint()
+        return deleted
 
     def read(self) -> dict[str, Any]:
         """``{drafts: {tabs, active_tab} | null}``. Raises :class:`StateUnavailable`."""
