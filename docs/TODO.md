@@ -1408,8 +1408,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `uvicorn.Config` with the default `log_config`, or a `dictConfig` of a program that embeds Studio, before or after
   `configure_logging`, would have let Uvicorn print a failed lifespan's traceback text unredacted.
 - **Done:** `configure_logging` takes over `logs.OWNED_LOGGERS` (Uvicorn's and asyncio's loggers): removes their own
-  handlers, turns propagation on and puts the redaction filters on the loggers themselves, so a handler added later
-  only sees redacted records; `LogSetup.close()` restores the earlier state. New canaries
+  handlers, turns propagation on and puts the redaction filters on the loggers themselves, so a record logged at an
+  owned logger is redacted before any handler sees it, also one added later (records of child loggers and of other
+  loggers: see "Limit"); `LogSetup.close()` restores the earlier state. New canaries
   `test_uvicorns_own_logging_config_from_earlier_does_not_bypass_redaction` and `..._from_later_...` fail without
   the change. Test isolation: the autouse fixture `restore_logging_state` in `tests/conftest.py` restores those
   loggers (handlers, filters, level, propagation, disabled), the root level and `logging.disable` after every test;
