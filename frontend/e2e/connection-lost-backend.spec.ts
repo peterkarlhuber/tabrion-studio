@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { seriousViolations } from './support';
+import { expectNoViolations, recordViolations, seriousViolations } from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -99,11 +99,7 @@ function newLink(): string {
 
 /** Sign in, record CSP violations and page errors. */
 async function signIn(page: Page): Promise<string[]> {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
-  });
-  page.on('pageerror', (error) => violations.push(String(error)));
+  const violations = await recordViolations(page);
   await page.goto(links.shift() ?? newLink());
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   return violations;
@@ -201,7 +197,7 @@ test('DEV: the connection closed on the server shows the banner; Reconnect reads
   await expect(page.getByRole('treeitem', { name: 'parts', exact: true })).toBeVisible();
   const after = (await api(page, 'GET', '/api/connections')).doc as { connections: unknown[] };
   expect(after.connections.length).toBe(before.connections.length + 1);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('PROD: Reconnect asks D-02 again; Cancel keeps the banner and opens nothing', async ({
@@ -238,7 +234,7 @@ test('PROD: Reconnect asks D-02 again; Cancel keeps the banner and opens nothing
   expect(opens.map((body) => JSON.parse(body) as unknown)).toEqual([
     { profile_id: 'user:e2e-lost-prod', confirmed_environment: 'prod' },
   ]);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 /** Make the throwaway database refuse connections and end Studio's sessions (`down`), or accept them again. */
@@ -304,5 +300,5 @@ test('PostgreSQL: the database stops answering; Reconnect fails while it is down
   await page.getByTestId('connection-lost').getByRole('button', { name: 'Reconnect' }).click();
   await expect(page.getByTestId('connection-lost')).toHaveCount(0);
   await expect(page.getByRole('tree')).toBeVisible();
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });

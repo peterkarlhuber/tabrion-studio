@@ -21,7 +21,12 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { foreignRequests, seriousViolations } from './support';
+import {
+  expectNoViolations,
+  foreignRequests,
+  recordViolations,
+  seriousViolations,
+} from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -92,11 +97,7 @@ function newLink(): string {
 }
 
 async function signIn(page: Page): Promise<string[]> {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
-  });
-  page.on('pageerror', (error) => violations.push(String(error)));
+  const violations = await recordViolations(page);
   const link = links.shift();
   expect(link, 'one sign-in link per test').toBeDefined();
   await page.goto(link as string);
@@ -122,7 +123,7 @@ test('the launch link signs in and the page runs under the CSP', async ({ page }
     await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
     expect(await seriousViolations(page)).toEqual([]);
   }
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('STU-006: D-01 asks before the project profiles are used, and trusting sticks', async ({
@@ -172,7 +173,7 @@ test('STU-006: D-01 asks before the project profiles are used, and trusting stic
   await page.reload();
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('STU-008: a profile created in the page is written to profiles.toml and deleted again', async ({
@@ -200,7 +201,7 @@ test('STU-008: a profile created in the page is written to profiles.toml and del
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByTestId('connections-status')).toHaveText('e2e-parts deleted.');
   expect(readFileSync(file, 'utf-8')).not.toContain('e2e-parts');
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "Connect")', async ({
@@ -325,7 +326,7 @@ test('STU-008: test, D-02 and Connect against the real registry (08 section 5 "C
   expect(await open()).toEqual(['user:e2e-dev true']);
   // Clean up for the later tests: the user's profiles go, the connection with them.
   rmSync(join(root, 'state', 'config', 'profiles.toml'), { force: true });
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('STU-014: the page runs the diagnosis of a prepared SQLite file and shows its findings', async ({
@@ -400,7 +401,7 @@ test('STU-014: the page runs the diagnosis of a prepared SQLite file and shows i
     );
   }
   expect(await seriousViolations(page)).toEqual([]);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
@@ -419,7 +420,7 @@ test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
   expect(seen).toContain('/api/health');
   expect(seen.some((path) => path.startsWith('/assets/'))).toBe(true);
   expect(foreign).toEqual([]);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('TD-021: language, theme and density are kept in settings.toml for the next browser', async ({
@@ -445,7 +446,7 @@ test('TD-021: language, theme and density are kept in settings.toml for the next
     })
     .toMatch(/language = "de"\ntheme = "dark"\ndensity = "normal"\n/);
   if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 
   // A browser without any stored preference (as after a restart on another port) gets them from the file.
   const fresh = await browser.newContext({ colorScheme: 'light', locale: 'en-US' });
