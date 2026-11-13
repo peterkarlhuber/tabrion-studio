@@ -705,6 +705,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The accessibility audit's Tab-stop walk (STU-053) measures each stop one task after the focus moved, because WebKit
+  scrolls a newly focused element into view from a zero-delay timer; the explorer's selected tree row, below the
+  fold since the "View" group was added, read as out of view now and then in the WebKit job (TD-058). Test only.
 - Tests: `tests/unit/test_server.py` built a `uvicorn.Config` with Uvicorn's default logging config, which stops the
   `uvicorn` loggers from propagating for the rest of the run; when it ran before `tests/security/test_canary.py`
   (`pytest tests/unit tests/security`), the lifespan test there saw no Uvicorn record and failed. It now passes
