@@ -34,7 +34,9 @@ and so is a call of ``set_config``, ``pg_notify``, a session-level advisory lock
 :data:`_REFUSED_FUNCTIONS` (effects outside Studio's transaction, F-3 of ``stu-016-security-review.md``) anywhere in
 the statement:
 the check reads the statement's tokens (comments and literals left out, quoted identifiers unquoted, both ways of
-lexing ``'...'``), so ``"set_config"(`` and ``set_config/**/(`` are caught (R-L1 of the re-review). It remains a
+lexing ``'...'``), so ``"set_config"(`` and ``set_config/**/(`` are caught (R-L1 of the re-review). A refused name
+right after ``.`` counts as a call too, with or without ``(``: PostgreSQL also reads ``x.name`` and ``(x).name`` as
+``name(x)`` (attribute notation, B-1 of the security assessment). It remains a
 best-effort check: a function of the database's own that calls ``set_config`` is not visible in the text, and only
 the role's privileges limit what such functions do. ``DO`` blocks and the functions that run a query given as text
 (``query_to_xml``, ``cursor_to_xml``, ``ts_stat``, ``ts_rewrite``, ``crosstab``, ``dblink``) are refused, since the
@@ -192,7 +194,10 @@ _SESSION_SETTINGS = frozenset(
 #: * server files: ``lo_import`` and ``lo_export`` (``lo_export`` writes a file, which no read-only check covers),
 #:   adminpack's ``pg_file_*`` writers;
 #: * index maintenance: ``brin_summarize_new_values``, ``brin_summarize_range``, ``brin_desummarize_range`` and
-#:   ``gin_clean_pending_list`` change an index outside the transaction's data; reading never needs them.
+#:   ``gin_clean_pending_list`` change an index outside the transaction's data; reading never needs them;
+#: * heap and visibility map (B-2 of the security assessment): pg_surgery's ``heap_force_kill`` and
+#:   ``heap_force_freeze`` and pg_visibility's ``pg_truncate_visibility_map`` change a table's storage without a
+#:   read-only check.
 #:
 #: The large-object writers (``lo_create``, ``lo_put``, ...), ``nextval`` and ``setval`` are left to the database: a
 #: read-only transaction refuses them. :data:`_REFUSED_PREFIXES` covers families by name.
@@ -271,6 +276,10 @@ _REFUSED_FUNCTIONS = frozenset(
         "brin_summarize_range",
         "brin_desummarize_range",
         "gin_clean_pending_list",
+        # heap and visibility map (pg_surgery, pg_visibility)
+        "heap_force_kill",
+        "heap_force_freeze",
+        "pg_truncate_visibility_map",
     }
 )
 #: Function families refused by name (F-3): every ``dblink`` function (``dblink_connect`` keeps a connection open past
@@ -452,14 +461,21 @@ def _calls_refused_function(lexings: list[list[tuple[str, bool]]]) -> bool:
     :data:`_REFUSED_PREFIXES` (or holds a Unicode-escaped identifier).
 
     The text is read twice, with and without backslash escapes in ``'...'``, so a literal cannot hide a call from
-    whichever way the server lexes it (R-L1 of the re-review: ``"set_config"(`` and ``set_config/**/(``).
+    whichever way the server lexes it (R-L1 of the re-review: ``"set_config"(`` and ``set_config/**/(``). Comments
+    and white space are not tokens and quoted identifiers are unquoted, so a refused name is a call when the next
+    token is ``(`` (``name(``, ``schema.name(``) or when the token before it is ``.``: PostgreSQL reads ``x.name``
+    and ``(x).name`` as ``name(x)`` (attribute notation, B-1 of the security assessment). A column or table of
+    that name written after a ``.`` is refused too, since the text cannot tell it from a call; the bare name, as a
+    column or an alias, stays allowed.
     """
     for lexed in lexings[:2]:  # PostgreSQL's functions, so PostgreSQL's readings (the first two of _READINGS)
         tokens = [token for token, _ in lexed]
         if _UNICODE_IDENTIFIER in tokens:
             return True
-        for position, token in enumerate(tokens[:-1]):
-            if tokens[position + 1] == "(" and (token in _REFUSED_FUNCTIONS or token.startswith(_REFUSED_PREFIXES)):
+        for position, token in enumerate(tokens):
+            if not (token in _REFUSED_FUNCTIONS or token.startswith(_REFUSED_PREFIXES)):
+                continue
+            if tokens[position + 1 : position + 2] == ["("] or (position > 0 and tokens[position - 1] == "."):
                 return True
     return False
 
