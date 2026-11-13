@@ -15,8 +15,14 @@ so it is kept for the next start.
 | Security | **Write SQL statements to the log** | off |
 
 The general settings are saved as soon as you choose them. The query and security settings are saved with
-**Save settings**. The limits and the SQL logging take effect with the query engine (STU-011). With SQL logging on,
-the log contains the statements you run, which can include data; parameter values are never logged.
+**Save settings**. **Maximum rows per result** applies to the next statement you run in the SQL editor. The
+**default statement timeout** is set when a connection opens: for a connection that is already open, **Disconnect**
+and **Connect** again. A profile with its own statement timeout keeps it; a PROD profile without one stops after 15
+seconds.
+
+**Write SQL statements to the log** is saved, but in this version Studio does not write SQL statements to the log
+either way (docs/TODO.md, TD-013). Once it does, the log will contain the statements you run, which can include
+data; parameter values are never logged.
 
 If `settings.toml` has issues, or was written by hand, Studio does not change it from the general settings: your
 choice then applies in this browser only, until the next start, and the view says so. Fix the file, or rewrite it

@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-017 docs (no tag, no release): the documentation checklist `docs/development/docs-checklist.md` maps every
+  requirement of the package (installation, start, security model, troubleshooting, the feature pages of TD-023) to
+  its page and check, and records the clean-install test: on Linux by hand from a locally built wheel (start without
+  Node.js, sign-in, a SQLite profile connected read-only, explorer and data viewer, `--stop`; passed), and automated
+  in `scripts/smoke_wheel.py`, which now installs with the Tabrion pin, signs in, connects a SQLite profile and reads
+  its rows (CI `packaging` job on Linux, macOS and Windows). The guide covers installing from a wheel, the residual
+  risks, and troubleshooting while installing, in the views and for `--stop`; the installation page names the
+  minimum OS versions and has PowerShell commands for Windows.
+
 - TD-034: the banner **Connection lost** with **Reconnect** (08 section 5 "error recovery") above every page that
   holds a connection (explorer with its data and definition tabs, SQL editor, diagnostics, migration status), when a
   request finds the database gone or the connection closed, or when the header connection's check (every 30 seconds
@@ -472,6 +481,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Request bodies are capped while they stream in, before any route reads them (STU-016 review F-4). A body over the
+  route's cap gets 413 without any of it being kept: a chunked body is stopped one chunk past the cap, and a declared
+  `Content-Length` over the cap is never read into memory. Before the 413, the rest of the body is read and discarded
+  (at most 4 MiB and 2 seconds), so the client gets the 413 instead of a connection reset; a declared length more than
+  that over the cap is answered at once. The answer closes the connection. Caps: 4 KB for `/api/session` and the
+  control endpoints, 2 MB for `/api/queries` and `/api/exports` (`studio.query_too_large` as before), 16 KB for every
+  other route (new problem code `access.body_too_large`). The routes' own, smaller caps are unchanged; an oversized
+  `/api/session` or `/api/control/launch` body is now 413 `access.body_too_large` instead of 400
+  `access.bad_request`.
+- The access middleware checks the control token itself for every request under `/api/control/` except `GET` and
+  `HEAD` of the proof, so a control route added later is never reachable without it, and an `/api/*` path with a `.`
+  or `..` segment is 404 before routing (STU-016 review F-8).
+- `docs/architecture/security-review-prep.md` records the outcome of the first independent security review (not
+  accepted at `e186178`): SQ-05, SQ-07, T-06 and T-13 are not met until the read-only hardening PR is merged and
+  re-reviewed, and F-5, F-6 and F-7 are owner decisions (STU-016 review F-9).
 - Catalog reads now use a fixed search_path; hardening against object resolution through user schemas (STU-022
   review). User SQL, the viewer and the exports keep the session's `search_path`.
 - Opening a PostgreSQL connection now runs the driver's and SQLAlchemy's setup queries under a fixed search_path;
@@ -536,6 +560,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- e2e (TD-050, joint regression JR-N2, PR #68): `backend.spec.ts` removes its `studio-e2e-*` temp directory after
+  the server has exited, like the other real-server suites; before, every run left one behind.
 - CI (STU-050, TD-047): the e2e suites also run in Firefox and WebKit, in the jobs `e2e (firefox)` and
   `e2e (webkit)` with the browsers of the locked Playwright version; advisory in `ci-manifest.json` until both are
   green. `STUDIO_E2E_BROWSERS` picks the browsers locally (Chromium by default); the heap measurements through CDP
@@ -564,6 +590,14 @@ All notable changes to this project are documented here. The format follows
   backend's own Host and Origin.
 
 ### Fixed
+
+- Theme switch: buttons kept their old background for 120 ms (a transition) while their text took the new theme,
+  so for that moment a primary button's label had too little contrast (TD-047, found by axe in WebKit). The theme now
+  switches with transitions off, and text and background change together.
+- The README's install command had no Tabrion pin and failed (`No matching distribution found for tabrion`); a test
+  now checks every documented install command. The README status names what is on `master`. The settings page no
+  longer says that SQL statements are logged when "Write SQL statements to the log" is on: the setting is saved but
+  not used yet (TD-013); it says when the row limit and the timeout apply.
 
 - The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
   WCAG 2.5.8).
