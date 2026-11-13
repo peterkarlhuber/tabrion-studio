@@ -76,7 +76,7 @@ _logger = logging.getLogger("tabrion_studio.app")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 #: Paths of the single-page app's own views (frontend/src/router.ts); a reload or a typed address on one of them gets
 #: index.html. Every other unknown path stays a 404.
-CLIENT_ROUTES = ("/connections", "/explorer", "/sql", "/migrations", "/diagnostics", "/settings")
+CLIENT_ROUTES = ("/connections", "/explorer", "/sql", "/history", "/migrations", "/diagnostics", "/settings")
 #: How often expired launch tokens and their redirect files are removed.
 SWEEP_SECONDS = 5.0
 _MAX_BODY = 4096

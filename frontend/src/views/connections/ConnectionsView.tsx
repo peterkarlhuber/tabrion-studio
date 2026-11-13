@@ -13,8 +13,16 @@
  * to check, never the server's message.
  */
 import type { TFunction } from 'i18next';
-import { Database, Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, type Ref } from 'react';
+import { Database, Plus, Star } from 'lucide-react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -25,6 +33,7 @@ import {
   type ConnectionTest,
   type OpenedConnection,
 } from '../../api/connections';
+import { fetchFavorites, setFavorite } from '../../api/history';
 import type { Problem } from '../../api/problem';
 import {
   deleteProfile,
@@ -43,6 +52,7 @@ import { MAX_ENTRIES, visible } from '../../lib/visible';
 import { DeleteProfileDialog, PasswordDialog } from './ConnectionDialogs';
 import { ConnectionWizard, type WizardResult } from './ConnectionWizard';
 import { problemText } from './messages';
+import { takeConnectRequest } from './pending';
 import { useConnect } from './useConnect';
 import { useConnectionSession } from '../../workspace';
 import styles from './Connections.module.css';
@@ -184,8 +194,13 @@ function Details({
   onConnect,
   onDisconnect,
   connectRef,
+  favorite,
+  onFavorite,
 }: {
   connectRef: Ref<HTMLButtonElement>;
+  /** Whether the profile is a favorite (STU-020); null while unknown (the state database is not available). */
+  favorite: boolean | null;
+  onFavorite: () => void;
   item: ProfileItem;
   outcome: Outcome | undefined;
   /** The profile's open connection, if it has one. */
@@ -278,6 +293,16 @@ function Details({
         <Button aria-disabled={busy} onClick={() => !busy && onTest()}>
           {t('connections.detail.test')}
         </Button>
+        {favorite !== null ? (
+          <Button
+            icon={<Star />}
+            aria-pressed={favorite}
+            onClick={onFavorite}
+            data-testid="connection-favorite"
+          >
+            {t('connections.detail.favorite')}
+          </Button>
+        ) : null}
         {item.source === 'user' ? (
           <>
             <Button onClick={onEdit}>{t('connections.detail.edit')}</Button>
@@ -315,6 +340,10 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
   const [status, setStatus] = useState<{ text: string; problem: boolean } | null>(null);
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({});
   const [opened, setOpened] = useState<OpenedConnection[]>([]);
+  /** Favorite profile ids (STU-020); null when the state database cannot be read. */
+  const [favorites, setFavorites] = useState<string[] | null>(null);
+  /** The current `runConnect`, for the start page's "Connect" once the profiles are read. */
+  const connectNow = useRef<(item: ProfileItem) => void>(() => undefined);
   const { setActive, forgetProd, headerVersion } = useConnectionSession();
   const { guard, connect, dialog: prodDialog } = useConnect(fetcher);
   /** Where the focus goes when the button that had it goes away (Disconnect; L-1 of the connect review). */
@@ -379,6 +408,16 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       setList(profiles);
       setKeyring(available);
       syncOpen(open, stamp);
+      // "Connect" asked on the start page (a favorite or a recent profile): select it and connect, the usual way.
+      const asked = takeConnectRequest();
+      const item = profiles?.profiles.find((profile) => profile.id === asked);
+      if (item !== undefined) {
+        setSelected(item.id);
+        connectNow.current(item);
+      }
+    });
+    void fetchFavorites(fetcher).then((result) => {
+      if (active) setFavorites(result.ok ? result.value.favorites : null);
     });
     return () => {
       active = false;
@@ -447,6 +486,27 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       // Confirmed now (or not PROD), so `connect` does not ask again.
       connect(item, connected);
     });
+
+  useLayoutEffect(() => {
+    connectNow.current = runConnect;
+  });
+
+  const toggleFavorite = async (item: ProfileItem) => {
+    const next = !(favorites ?? []).includes(item.id);
+    const result = await setFavorite(fetcher, item.id, next);
+    if (!result.ok) {
+      setStatus({ text: problemText(t, result.problem), problem: true });
+      return;
+    }
+    setFavorites(result.value.favorites);
+    setStatus({
+      text: t(next ? 'connections.favoriteAdded' : 'connections.favoriteRemoved', {
+        name: visible(item.name),
+        ...NO_ESCAPE,
+      }),
+      problem: false,
+    });
+  };
 
   const disconnect = async (item: ProfileItem, connection: OpenedConnection) => {
     const result = await closeConnection(fetcher, connection.connectionId);
@@ -644,7 +704,15 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
                           data-testid="connection-item"
                           onClick={() => setSelected(item.id)}
                         >
-                          <span className={styles.itemName}>{visible(item.name)}</span>
+                          <span className={styles.itemName}>
+                            {visible(item.name)}
+                            {favorites?.includes(item.id) ? (
+                              <>
+                                <Star aria-hidden="true" className={styles.favoriteMark} />
+                                <span className="tb-sr-only">, {t('connections.favorite')}</span>
+                              </>
+                            ) : null}
+                          </span>
                           <span className={styles.itemEngine}>
                             {t(`connections.engine.${item.engine}`)}
                             {opened.some((connection) => connection.profileId === item.id) ? (
@@ -665,6 +733,8 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
               outcome={outcomes[current.id]}
               open={opened.find((connection) => connection.profileId === current.id)}
               connectRef={connectButton}
+              favorite={favorites === null ? null : favorites.includes(current.id)}
+              onFavorite={() => void toggleFavorite(current)}
               onTest={() => runTest(current)}
               onConnect={() => runConnect(current)}
               onDisconnect={() => {

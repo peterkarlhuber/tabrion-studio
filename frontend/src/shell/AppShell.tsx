@@ -8,6 +8,7 @@ import {
   Command as CommandIcon,
   Database,
   GitBranch,
+  History,
   House,
   ListTree,
   Settings,
@@ -24,6 +25,7 @@ import { currentLocale } from '../i18n';
 import { buildCommands } from '../keyboard/commands';
 import { CommandPalette } from '../keyboard/CommandPalette';
 import { useKeyboardPlatform, useKeyNames } from '../keyboard/platform';
+import { focusRegion } from '../keyboard/regions';
 import { ShortcutHelp } from '../keyboard/ShortcutHelp';
 import { ariaShortcut, SHORTCUTS, shortcutText } from '../keyboard/shortcuts';
 import { useShortcuts } from '../keyboard/useShortcuts';
@@ -41,6 +43,7 @@ const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/connections', key: 'nav.connections', icon: <Database /> },
   { path: '/explorer', key: 'nav.explorer', icon: <ListTree /> },
   { path: '/sql', key: 'nav.sql', icon: <SquareTerminal /> },
+  { path: '/history', key: 'nav.history', icon: <History /> },
   { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
   { path: '/diagnostics', key: 'nav.diagnostics', icon: <Stethoscope /> },
 ];
@@ -116,11 +119,19 @@ export function AppShell({
   const [help, setHelp] = useState(false);
   const openPalette = useCallback(() => setPalette(true), []);
   const openHelp = useCallback(() => setHelp(true), []);
-  const shortcutHandlers = useMemo(() => ({ openPalette, openHelp }), [openPalette, openHelp]);
+  const openHistory = useCallback(() => {
+    navigate('/history');
+    window.setTimeout(() => focusRegion('main'), 0);
+  }, []);
+  const shortcutHandlers = useMemo(
+    () => ({ openPalette, openHelp, openHistory }),
+    [openPalette, openHelp, openHistory],
+  );
   useShortcuts(shortcutHandlers);
   const commands = useMemo(
-    () => (palette ? buildCommands({ t, path, theme: preference, density, openHelp }) : []),
-    [palette, t, path, preference, density, openHelp],
+    () =>
+      palette ? buildCommands({ t, path, theme: preference, density, openHelp, platform }) : [],
+    [palette, t, path, preference, density, openHelp, platform],
   );
   const workspace = useWorkspace();
   const connection = workspace.connection;

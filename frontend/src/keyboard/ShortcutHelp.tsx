@@ -11,7 +11,7 @@ import {
   EDITOR_SHORTCUTS,
   EXPLORER_SHORTCUTS,
   PAGE_SHORTCUTS,
-  SHORTCUTS,
+  shortcutFor,
   type ShortcutId,
 } from './shortcuts';
 import styles from './ShortcutHelp.module.css';
@@ -54,7 +54,7 @@ export function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => 
               <tr key={id}>
                 <td>{t(`keyboard.shortcuts.${id}`)}</td>
                 <td>
-                  <Keys shortcut={SHORTCUTS[id]} platform={platform} />
+                  <Keys shortcut={shortcutFor(id, platform)} platform={platform} />
                 </td>
               </tr>
             ))}

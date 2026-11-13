@@ -13,7 +13,8 @@
     "migrations": "Migrations",
     "diagnostics": "Diagnostics",
     "settings": "Settings",
-    "sql": "SQL editor"
+    "sql": "SQL editor",
+    "history": "Query history"
   },
   "header": {
     "label": "Status",
@@ -74,6 +75,10 @@
         "link": "Run a query",
         "hint": "Reading statements with parameters; export the result as CSV or JSON."
       },
+      "history": {
+        "link": "Look up an earlier statement",
+        "hint": "Every statement you ran, per profile, without parameter values."
+      },
       "migrations": {
         "link": "Check the migration status",
         "hint": "Which migrations the database has and which are pending."
@@ -82,7 +87,10 @@
         "link": "Run a diagnosis",
         "hint": "Roles, timeouts, TLS, file permissions and backups."
       }
-    }
+    },
+    "favorites": "Favorite connections",
+    "recent": "Recently opened",
+    "connect": "Connect"
   },
   "connections": {
     "title": "Connections",
@@ -127,7 +135,8 @@
       "open": "open (read-only)",
       "closed": "not open",
       "disconnect": "Disconnect",
-      "use": "Use this connection"
+      "use": "Use this connection",
+      "favorite": "Favorite"
     },
     "secret": {
       "keyring": "system keyring",
@@ -247,7 +256,10 @@
       "encoding": "encoding {{encoding}}",
       "timezone": "time zone {{zone}}",
       "privileged": "The role is a superuser or bypasses row-level security. Studio stays read-only, but only a role without write privileges is a hard boundary. Use a read-only role, above all for PROD."
-    }
+    },
+    "favorite": "favorite",
+    "favoriteAdded": "{{name}} is a favorite now. It is listed on the start page.",
+    "favoriteRemoved": "{{name}} is no longer a favorite."
   },
   "explorer": {
     "title": "Explorer",
@@ -685,7 +697,11 @@
       "issues": "Kept in this browser only: your settings.toml has issues, so Studio does not change it. Studio forgets the choice at the next start.",
       "hand_written": "Kept in this browser only: your settings.toml was written by hand, so Studio does not change it from here. Set the choice in the file, or let Studio rewrite it with “Rewrite file and save” below and then choose again.",
       "unavailable": "Kept in this browser only: the settings could not be saved. Studio forgets the choice at the next start."
-    }
+    },
+    "history": "Query history",
+    "historyEnabled": "Keep the statements I run",
+    "historyHint": "Kept in Studio's state database on this computer: the statement text and its parameter names, never parameter values. Older statements are deleted after the days below, also while the history is off; turning it off keeps the statements already there until then.",
+    "historyRetention": "Keep statements for (days)"
   },
   "languages": {
     "en": "English",
@@ -871,7 +887,22 @@
       "other": "The database reported an error ({{kind}})."
     },
     "report_invalid": "Studio could not make the report: the request was not valid.",
-    "report_unavailable": "Studio could not read from the server the names the report leaves out, so it made no report. Try again when the connection is free, or connect again."
+    "report_unavailable": "Studio could not read from the server the names the report leaves out, so it made no report. Try again when the connection is free, or connect again.",
+    "state_unavailable": "Studio's state database cannot be used, so the history and favorites are not available. Queries still run.",
+    "favorites_full": "You have the most favorites Studio keeps (100). Remove one first.",
+    "catalog_not_loaded": "The catalog of this connection is not loaded yet.",
+    "script_invalid": "Studio opens and saves only .sql files inside the project folder, named with plain names: no hidden folder, no device name such as NUL or COM1, no short name such as GIT~1, no name that ends in a dot.",
+    "script_link": "The script or a folder on its path is a link (a symbolic link, a junction, a hard-linked file or a cloud placeholder such as a OneDrive folder). Studio opens and saves only plain files in plain folders of the project.",
+    "script_permission_denied": "The system does not let Studio read or write this script or its folder. Check its permissions, or whether the drive is read-only.",
+    "script_locked": "Another program holds the script open. Close it there and save again.",
+    "script_disk_full": "The drive is full. Free some space and save again; the script on disk is unchanged.",
+    "script_write_failed": "The system refused to write the script; the script on disk is unchanged. Try again, or use Download instead.",
+    "script_not_found": "The script no longer exists.",
+    "script_unreadable": "The script is not UTF-8 text.",
+    "script_too_large": "The script is larger than Studio opens or saves (1 MB).",
+    "script_exists": "A script with this path exists already.",
+    "script_stale": "The script changed on disk since it was read.",
+    "script_folder_missing": "The folder does not exist. Studio creates no folders."
   },
   "keyboard": {
     "palette": {
@@ -909,8 +940,10 @@
       "cancel": "Cancel the running query (SQL editor; also Escape in the results)",
       "newTab": "New editor tab (SQL editor)",
       "closeTab": "Close the editor tab (SQL editor)",
-      "save": "Save the tab as a .sql file (SQL editor)",
-      "explorerFilter": "Focus the explorer filter (on the Explorer page)"
+      "save": "Save the tab as a .sql script in the project (SQL editor)",
+      "explorerFilter": "Focus the explorer filter (on the Explorer page)",
+      "format": "Format the selection or the whole statement text (SQL editor)",
+      "history": "Open the query history"
     },
     "commands": {
       "goTo": "Go to {{page}}",
@@ -952,8 +985,10 @@
       "cancel": "Cancel query",
       "newTab": "New editor tab",
       "closeTab": "Close editor tab",
-      "save": "Save as .sql",
-      "export": "Export…"
+      "save": "Save",
+      "export": "Export…",
+      "format": "Format",
+      "openScript": "Open…"
     },
     "params": {
       "title": "Parameters",
@@ -1043,7 +1078,42 @@
     "profileChanged": "The profile {{name}} changed since this page read it (now {{environment}}). Nothing was run on it; run again to use it as it is now.",
     "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
     "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run.",
-    "exportSubject": "result {{number}} of {{tab}}"
+    "exportSubject": "result {{number}} of {{tab}}",
+    "formatted": "Formatted. Undo with ⌘Z / Ctrl+Z.",
+    "formattedSelection": "Selection formatted. Undo with ⌘Z / Ctrl+Z.",
+    "formatFailed": "The statement could not be formatted (it may be incomplete). Nothing was changed.",
+    "completion": {
+      "load": "Load names",
+      "loadHint": "Read the tables and views of this PROD database for completion",
+      "loaded": "Table and view names loaded for completion."
+    },
+    "scripts": {
+      "openTitle": "Open script",
+      "openBody": "The .sql scripts in the project folder. The script opens in a new tab and does not run.",
+      "filter": "Filter scripts",
+      "list": "Scripts",
+      "loading": "Loading the scripts…",
+      "unavailable": "The scripts could not be listed.",
+      "none": "The project folder has no .sql scripts yet.",
+      "noMatch": "No script matches the filter.",
+      "more": "Not every script is shown. Narrow the filter to find the others.",
+      "skippedLinks_one": "{{count}} link was left out: Studio opens no script through a link or a cloud placeholder folder.",
+      "skippedLinks_other": "{{count}} links were left out: Studio opens no script through a link or a cloud placeholder folder.",
+      "opened": "{{path}} opened.",
+      "alreadyOpen": "{{path}} is already open: this is its tab.",
+      "saveTitle": "Save script",
+      "saveBody": "Save the tab as a .sql script in the project folder. Studio creates no folders.",
+      "path": "Path in the project",
+      "pathHint": "Relative to the project folder, with / between folders, ending in .sql. Example: sql/report.sql",
+      "pathInvalid": "Use a relative path ending in .sql, without .., names starting or ending with a dot, device names such as NUL or COM1, or short names such as GIT~1.",
+      "save": "Save",
+      "download": "Download instead",
+      "saved": "Saved to {{path}}.",
+      "overwriteTitle": "Overwrite script?",
+      "staleBody": "{{path}} changed on disk since this tab read it. Overwriting replaces those changes with the tab's text.",
+      "existsBody": "{{path}} already exists. Overwriting replaces it with the tab's text.",
+      "overwrite": "Overwrite"
+    }
   },
   "viewer": {
     "loading": "Loading the page…",
@@ -1169,5 +1239,42 @@
     "reconnect": "Reconnect",
     "reconnecting": "Reconnecting…",
     "failed": "Reconnecting failed: {{problem}}"
+  },
+  "history": {
+    "title": "Query history",
+    "lead": "The statements you ran in the SQL editor, newest first. Studio keeps the statement and the names of its parameters, never their values. Nothing here runs by itself.",
+    "profile": "Profile",
+    "allProfiles": "All profiles",
+    "search": "Search the statements",
+    "list": "Statements",
+    "loading": "Loading the history…",
+    "empty": "No statement ran yet. Run one in the SQL editor and it shows here.",
+    "noMatch": "No statement matches.",
+    "off": "The history is off: new statements are not kept.",
+    "offLink": "Change in the settings",
+    "state": {
+      "done_one": "{{rows}} row",
+      "done_other": "{{rows}} rows",
+      "failed": "Failed",
+      "canceled": "Canceled"
+    },
+    "params": "Parameters (values not kept): {{names}}",
+    "truncated": "Only the first 64 KB of this statement were kept.",
+    "open": "Open in editor",
+    "copy": "Copy",
+    "delete": "Delete",
+    "tabTitle": "From history",
+    "more": "Show older statements",
+    "deleteAll": "Delete history",
+    "deleteProfile": "Delete this profile's history",
+    "deleteAllTitle": "Delete the whole history?",
+    "deleteProfileTitle": "Delete the history of {{name}}?",
+    "deleteBody": "The statements are removed from Studio's state database and cannot be restored. Your databases and scripts are not changed.",
+    "deleteAllBody": "This deletes the statements of this project's profiles and of your own profiles. Your own profiles are shared by every project, so their statements leave the history of your other projects too. They cannot be restored; your databases and scripts are not changed.",
+    "truncatedTab": "This statement was cut: the history kept only its first 64 KB.",
+    "deleteConfirm": "Delete",
+    "deleted_one": "{{count}} statement deleted.",
+    "deleted_other": "{{count}} statements deleted.",
+    "deletedOne": "Statement deleted."
   }
 }

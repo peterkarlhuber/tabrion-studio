@@ -365,7 +365,8 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
   await page.goto('/harness.html?scenario=editor&path=/sql');
   await expect(page.getByTestId('editor-tab')).toHaveCount(2);
   await expect(page.locator('.cm-content')).toHaveText('select 2');
-  // D-06: "Cancel" has the focus; Save downloads the tab as a .sql file and closes it.
+  // D-06: "Cancel" has the focus; Save asks where in the project to save the new script (STU-020), and "Download
+  // instead" saves the tab as a .sql download and closes it.
   await page.getByRole('button', { name: 'Close Query 2' }).click();
   const dialog = page.getByRole('dialog', { name: 'Script not saved' });
   await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
@@ -382,8 +383,12 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
       click.call(this);
     };
   });
-  const downloading = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Save' }).click();
+  const saveDialog = page.getByRole('dialog', { name: 'Save script' });
+  await expect(saveDialog.getByTestId('script-path')).toHaveValue('Query 2.sql');
+  await expect(saveDialog.getByTestId('script-path')).toBeFocused();
+  const downloading = page.waitForEvent('download');
+  await saveDialog.getByRole('button', { name: 'Download instead' }).click();
   const file = await downloading;
   expect(await page.evaluate(() => (window as unknown as { offered: string[] }).offered)).toEqual([
     'Query 2.sql',

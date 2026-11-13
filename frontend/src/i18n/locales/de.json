@@ -13,7 +13,8 @@
     "migrations": "Migrationen",
     "diagnostics": "Diagnose",
     "settings": "Einstellungen",
-    "sql": "SQL-Editor"
+    "sql": "SQL-Editor",
+    "history": "Abfrageverlauf"
   },
   "header": {
     "label": "Status",
@@ -74,6 +75,10 @@
         "link": "Abfrage ausführen",
         "hint": "Lesende Statements mit Parametern; das Ergebnis als CSV oder JSON exportieren."
       },
+      "history": {
+        "link": "Eine frühere Anweisung nachschlagen",
+        "hint": "Jede ausgeführte Anweisung, pro Profil, ohne Parameterwerte."
+      },
       "migrations": {
         "link": "Migrationsstand prüfen",
         "hint": "Welche Migrationen die Datenbank hat und welche ausstehen."
@@ -82,7 +87,10 @@
         "link": "Datenbank untersuchen",
         "hint": "Rollen, Timeouts, TLS, Dateirechte und Backups."
       }
-    }
+    },
+    "favorites": "Favorisierte Verbindungen",
+    "recent": "Zuletzt geöffnet",
+    "connect": "Verbinden"
   },
   "connections": {
     "title": "Verbindungen",
@@ -127,7 +135,8 @@
       "open": "offen (schreibgeschützt)",
       "closed": "nicht offen",
       "disconnect": "Trennen",
-      "use": "Diese Verbindung verwenden"
+      "use": "Diese Verbindung verwenden",
+      "favorite": "Favorit"
     },
     "secret": {
       "keyring": "Schlüsselbund des Systems",
@@ -247,7 +256,10 @@
       "encoding": "Kodierung {{encoding}}",
       "timezone": "Zeitzone {{zone}}",
       "privileged": "Die Rolle ist Superuser oder umgeht die Zeilensicherheit. Studio bleibt schreibgeschützt, eine harte Grenze ist aber nur eine Rolle ohne Schreibrechte. Verwende eine Nur-Lese-Rolle, vor allem für PROD."
-    }
+    },
+    "favorite": "Favorit",
+    "favoriteAdded": "{{name}} ist jetzt ein Favorit und steht auf der Startseite.",
+    "favoriteRemoved": "{{name}} ist kein Favorit mehr."
   },
   "explorer": {
     "title": "Explorer",
@@ -685,7 +697,11 @@
       "issues": "Nur in diesem Browser gespeichert: Deine settings.toml hat Fehler, deshalb ändert Studio sie nicht. Beim nächsten Start ist die Auswahl vergessen.",
       "hand_written": "Nur in diesem Browser gespeichert: Deine settings.toml wurde von Hand geschrieben, deshalb ändert Studio sie hier nicht. Trage die Auswahl in der Datei ein, oder lass Studio sie unten mit „Datei neu schreiben und speichern“ neu schreiben und wähle dann noch einmal.",
       "unavailable": "Nur in diesem Browser gespeichert: Die Einstellungen konnten nicht gespeichert werden. Beim nächsten Start ist die Auswahl vergessen."
-    }
+    },
+    "history": "Abfrageverlauf",
+    "historyEnabled": "Ausgeführte Anweisungen behalten",
+    "historyHint": "Gespeichert in Studios Zustandsdatenbank auf diesem Computer: der Text der Anweisung und die Namen ihrer Parameter, nie Parameterwerte. Ältere Anweisungen werden nach den Tagen unten gelöscht, auch wenn der Verlauf aus ist; Ausschalten behält die schon gespeicherten Anweisungen bis dahin.",
+    "historyRetention": "Anweisungen behalten für (Tage)"
   },
   "languages": {
     "en": "English",
@@ -871,7 +887,22 @@
       "other": "Die Datenbank hat einen Fehler gemeldet ({{kind}})."
     },
     "report_invalid": "Studio konnte den Bericht nicht erstellen: Die Anfrage war ungültig.",
-    "report_unavailable": "Studio konnte die Namen, die der Bericht weglässt, nicht vom Server lesen, und hat daher keinen Bericht erstellt. Versuche es erneut, wenn die Verbindung frei ist, oder verbinde neu."
+    "report_unavailable": "Studio konnte die Namen, die der Bericht weglässt, nicht vom Server lesen, und hat daher keinen Bericht erstellt. Versuche es erneut, wenn die Verbindung frei ist, oder verbinde neu.",
+    "state_unavailable": "Studios Zustandsdatenbank ist nicht nutzbar, daher gibt es keinen Verlauf und keine Favoriten. Abfragen laufen weiter.",
+    "favorites_full": "Du hast so viele Favoriten, wie Studio behält (100). Entferne erst einen.",
+    "catalog_not_loaded": "Der Katalog dieser Verbindung ist noch nicht geladen.",
+    "script_invalid": "Studio öffnet und speichert nur .sql-Dateien im Projektordner mit einfachen Namen: kein versteckter Ordner, kein Gerätename wie NUL oder COM1, kein Kurzname wie GIT~1, kein Name, der auf einen Punkt endet.",
+    "script_link": "Das Skript oder ein Ordner auf seinem Pfad ist ein Link (ein symbolischer Link, eine Junction, eine Datei mit Hardlink oder ein Cloud-Platzhalter wie ein OneDrive-Ordner). Studio öffnet und speichert nur einfache Dateien in einfachen Ordnern des Projekts.",
+    "script_permission_denied": "Das System lässt Studio dieses Skript oder seinen Ordner nicht lesen oder schreiben. Prüfe die Berechtigungen oder ob das Laufwerk schreibgeschützt ist.",
+    "script_locked": "Ein anderes Programm hält das Skript offen. Schließe es dort und speichere noch einmal.",
+    "script_disk_full": "Das Laufwerk ist voll. Schaffe Platz und speichere noch einmal; das Skript auf der Festplatte ist unverändert.",
+    "script_write_failed": "Das System hat das Schreiben des Skripts abgelehnt; das Skript auf der Festplatte ist unverändert. Versuche es noch einmal, oder lade es stattdessen herunter.",
+    "script_not_found": "Das Skript gibt es nicht mehr.",
+    "script_unreadable": "Das Skript ist kein UTF-8-Text.",
+    "script_too_large": "Das Skript ist größer, als Studio öffnet oder speichert (1 MB).",
+    "script_exists": "Ein Skript mit diesem Pfad gibt es schon.",
+    "script_stale": "Das Skript hat sich auf der Festplatte geändert, seit es gelesen wurde.",
+    "script_folder_missing": "Den Ordner gibt es nicht. Studio legt keine Ordner an."
   },
   "keyboard": {
     "palette": {
@@ -909,8 +940,10 @@
       "cancel": "Laufende Abfrage abbrechen (SQL-Editor; auch Esc in den Ergebnissen)",
       "newTab": "Neuer Editor-Tab (SQL-Editor)",
       "closeTab": "Editor-Tab schließen (SQL-Editor)",
-      "save": "Tab als .sql-Datei speichern (SQL-Editor)",
-      "explorerFilter": "Explorer-Filter fokussieren (auf der Explorer-Seite)"
+      "save": "Tab als .sql-Skript im Projekt speichern (SQL-Editor)",
+      "explorerFilter": "Explorer-Filter fokussieren (auf der Explorer-Seite)",
+      "format": "Auswahl oder den ganzen Text formatieren (SQL-Editor)",
+      "history": "Abfrageverlauf öffnen"
     },
     "commands": {
       "goTo": "Gehe zu {{page}}",
@@ -952,8 +985,10 @@
       "cancel": "Abfrage abbrechen",
       "newTab": "Neuer Editor-Tab",
       "closeTab": "Editor-Tab schließen",
-      "save": "Als .sql speichern",
-      "export": "Exportieren…"
+      "save": "Speichern",
+      "export": "Exportieren…",
+      "format": "Formatieren",
+      "openScript": "Öffnen…"
     },
     "params": {
       "title": "Parameter",
@@ -1043,7 +1078,42 @@
     "profileChanged": "Das Profil {{name}} hat sich geändert, seit diese Seite es gelesen hat (jetzt {{environment}}). Darauf wurde nichts ausgeführt; führen Sie erneut aus, um es so zu verwenden, wie es jetzt ist.",
     "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt.",
     "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt.",
-    "exportSubject": "Ergebnis {{number}} von {{tab}}"
+    "exportSubject": "Ergebnis {{number}} von {{tab}}",
+    "formatted": "Formatiert. Rückgängig mit ⌘Z / Strg+Z.",
+    "formattedSelection": "Auswahl formatiert. Rückgängig mit ⌘Z / Strg+Z.",
+    "formatFailed": "Die Anweisung ließ sich nicht formatieren (vielleicht ist sie unvollständig). Nichts wurde geändert.",
+    "completion": {
+      "load": "Namen laden",
+      "loadHint": "Tabellen und Views dieser PROD-Datenbank für die Vervollständigung lesen",
+      "loaded": "Namen der Tabellen und Views für die Vervollständigung geladen."
+    },
+    "scripts": {
+      "openTitle": "Skript öffnen",
+      "openBody": "Die .sql-Skripte im Projektordner. Das Skript öffnet sich in einem neuen Tab und läuft nicht.",
+      "filter": "Skripte filtern",
+      "list": "Skripte",
+      "loading": "Skripte werden geladen…",
+      "unavailable": "Die Skripte konnten nicht aufgelistet werden.",
+      "none": "Der Projektordner hat noch keine .sql-Skripte.",
+      "noMatch": "Kein Skript passt zum Filter.",
+      "more": "Nicht alle Skripte werden gezeigt. Grenze den Filter ein, um die anderen zu finden.",
+      "skippedLinks_one": "{{count}} Link wurde ausgelassen: Studio öffnet kein Skript über einen Link oder einen Cloud-Platzhalter-Ordner.",
+      "skippedLinks_other": "{{count}} Links wurden ausgelassen: Studio öffnet kein Skript über einen Link oder einen Cloud-Platzhalter-Ordner.",
+      "opened": "{{path}} geöffnet.",
+      "alreadyOpen": "{{path}} ist schon geöffnet: Das ist sein Tab.",
+      "saveTitle": "Skript speichern",
+      "saveBody": "Den Tab als .sql-Skript im Projektordner speichern. Studio legt keine Ordner an.",
+      "path": "Pfad im Projekt",
+      "pathHint": "Relativ zum Projektordner, mit / zwischen Ordnern, endet auf .sql. Beispiel: sql/report.sql",
+      "pathInvalid": "Nimm einen relativen Pfad, der auf .sql endet, ohne .., ohne Namen, die mit einem Punkt beginnen oder enden, ohne Gerätenamen wie NUL oder COM1 und ohne Kurznamen wie GIT~1.",
+      "save": "Speichern",
+      "download": "Stattdessen herunterladen",
+      "saved": "In {{path}} gespeichert.",
+      "overwriteTitle": "Skript überschreiben?",
+      "staleBody": "{{path}} hat sich auf der Festplatte geändert, seit dieser Tab es gelesen hat. Überschreiben ersetzt diese Änderungen durch den Text des Tabs.",
+      "existsBody": "{{path}} gibt es schon. Überschreiben ersetzt es durch den Text des Tabs.",
+      "overwrite": "Überschreiben"
+    }
   },
   "viewer": {
     "loading": "Seite wird geladen …",
@@ -1169,5 +1239,42 @@
     "reconnect": "Neu verbinden",
     "reconnecting": "Verbinde neu …",
     "failed": "Neu verbinden fehlgeschlagen: {{problem}}"
+  },
+  "history": {
+    "title": "Abfrageverlauf",
+    "lead": "Die Anweisungen, die du im SQL-Editor ausgeführt hast, die neueste zuerst. Studio behält die Anweisung und die Namen ihrer Parameter, nie deren Werte. Hier läuft nichts von selbst.",
+    "profile": "Profil",
+    "allProfiles": "Alle Profile",
+    "search": "Anweisungen durchsuchen",
+    "list": "Anweisungen",
+    "loading": "Verlauf wird geladen…",
+    "empty": "Noch keine Anweisung ausgeführt. Führe eine im SQL-Editor aus, dann steht sie hier.",
+    "noMatch": "Keine Anweisung passt.",
+    "off": "Der Verlauf ist aus: Neue Anweisungen werden nicht behalten.",
+    "offLink": "In den Einstellungen ändern",
+    "state": {
+      "done_one": "{{rows}} Zeile",
+      "done_other": "{{rows}} Zeilen",
+      "failed": "Fehlgeschlagen",
+      "canceled": "Abgebrochen"
+    },
+    "params": "Parameter (Werte nicht gespeichert): {{names}}",
+    "truncated": "Von dieser Anweisung wurden nur die ersten 64 KB behalten.",
+    "open": "Im Editor öffnen",
+    "copy": "Kopieren",
+    "delete": "Löschen",
+    "tabTitle": "Aus dem Verlauf",
+    "more": "Ältere Anweisungen zeigen",
+    "deleteAll": "Verlauf löschen",
+    "deleteProfile": "Verlauf dieses Profils löschen",
+    "deleteAllTitle": "Den ganzen Verlauf löschen?",
+    "deleteProfileTitle": "Den Verlauf von {{name}} löschen?",
+    "deleteBody": "Die Anweisungen werden aus Studios Zustandsdatenbank entfernt und lassen sich nicht wiederherstellen. Deine Datenbanken und Skripte ändern sich nicht.",
+    "deleteAllBody": "Das löscht die Anweisungen der Profile dieses Projekts und deiner eigenen Profile. Deine eigenen Profile gelten in jedem Projekt, deshalb verschwinden ihre Anweisungen auch aus dem Verlauf deiner anderen Projekte. Sie lassen sich nicht wiederherstellen; deine Datenbanken und Skripte ändern sich nicht.",
+    "truncatedTab": "Diese Anweisung ist abgeschnitten: Der Verlauf hat nur ihre ersten 64 KB behalten.",
+    "deleteConfirm": "Löschen",
+    "deleted_one": "{{count}} Anweisung gelöscht.",
+    "deleted_other": "{{count}} Anweisungen gelöscht.",
+    "deletedOne": "Anweisung gelöscht."
   }
 }

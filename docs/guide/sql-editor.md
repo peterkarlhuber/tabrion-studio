@@ -83,5 +83,37 @@ with every start unless you give `--port`, and the browser keeps drafts per port
 drafts across starts. Two browser tabs on the editor keep each other's new tabs; when both change the same tab, the
 last change wins.
 
-**Save as .sql** (⌘S / Ctrl+S) downloads the tab's text as a `.sql` file. Closing a tab whose text changed since it
-was last saved asks first: **Save**, **Discard** or **Cancel**.
+Closing a tab whose text changed since it was last saved asks first: **Save**, **Discard** or **Cancel**.
+
+## Scripts
+
+Studio opens and saves `.sql` scripts in the project folder (the folder you started `tabrion-studio` in).
+
+- **Open…** lists the project's `.sql` files (hidden folders and tool folders such as `node_modules` are left out;
+  type to filter). The script opens in a new tab and does not run.
+- **Save** (⌘S / Ctrl+S) writes the tab back to its script. A tab without a script asks for a path in the project,
+  such as `sql/report.sql`; the folder must exist, because Studio creates no folders. **Download instead** saves the
+  text as a download, like before.
+- If the script changed on disk since the tab read it, or a script with that path exists already, Studio asks
+  before it overwrites it (the default is Cancel).
+- Studio follows no link and writes only `.sql` files inside the project, up to 1 MB of UTF-8. A script keeps its line
+  endings and its byte order mark: a script whose lines all end in CRLF is shown with ordinary lines and saved with
+  CRLF again; a script with mixed line endings shows each CR as a marked character and is saved byte for byte.
+- A path is a plain name on every system: no device name such as `NUL` or `COM1` (also not `nul.sql`), no short name
+  such as `GIT~1`, no name that ends in a dot. A script in a folder that is a link, or a OneDrive "Files On-Demand"
+  folder, does not open or save; the Open… list says how many it left out. Keep the project in a folder that
+  OneDrive does not sync.
+- When the system refuses the file (no permission, a read-only or full drive, the file open in another program),
+  Studio says which, and the script on disk is unchanged.
+
+## Format and completion
+
+**Format** (⌥⇧F / Alt+Shift+F) lays out the selection, or the whole text, with upper-case keywords. `:name`
+parameters, strings and comments stay as they are. ⌘Z / Ctrl+Z takes it back. A statement the formatter cannot
+read (for example an incomplete one) is left unchanged, and Studio says so.
+
+While you type, the editor offers keywords. Once the tab's connection is open (after the first run), it also offers
+the schemas, tables and views of that database, from the same catalog the explorer reads, and after `table.` the
+table's columns. On a PROD profile Studio reads no catalog by itself: it uses one the explorer has read already, or
+**Load names** reads it when you click it, and it reads no columns while you type. The list closes with Esc, and
+when a missing parameter takes the focus.

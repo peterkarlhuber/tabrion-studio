@@ -352,3 +352,34 @@
 .detailValue:focus-visible {
   outline: 2px solid var(--tb-color-focus);
 }
+/* STU-020: the project's scripts in the "Open script" dialog. */
+.scriptList {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--tb-color-border);
+  border-radius: var(--tb-radius-md);
+}
+.scriptItem {
+  width: 100%;
+  padding: var(--tb-space-2) var(--tb-space-3);
+  border: 0;
+  background: transparent;
+  color: var(--tb-color-text);
+  font-family: var(--tb-font-mono);
+  font-size: var(--tb-text-sm);
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.scriptItem:hover {
+  background: var(--tb-color-surface-hover);
+}
+.scriptItem:focus-visible {
+  outline: 2px solid var(--tb-color-focus);
+  outline-offset: -2px;
+}

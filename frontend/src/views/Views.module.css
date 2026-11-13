@@ -87,3 +87,21 @@
 .stepHint {
   color: var(--tb-color-text-muted);
 }
+.quickList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.quickItem {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-space-3);
+  align-items: center;
+}
+.quickName {
+  min-width: 10rem;
+  font-weight: var(--tb-weight-semibold);
+}

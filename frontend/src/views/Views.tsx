@@ -3,18 +3,23 @@ import { FolderOpen } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
+import { deleteHistory, fetchFavorites, type FavoritesState } from '../api/history';
 import type { Problem } from '../api/problem';
 import {
+  fetchProfiles,
   fetchSettings,
   saveSettings,
+  type ProfileItem,
   type ServerSettings,
   type SettingsState,
 } from '../api/profiles';
+import { EnvBadge } from '../components/status/Status';
 import { Button } from '../components/ui/Button';
 import { EmptyState } from '../components/ui/EmptyState';
 import { MAX_ENTRIES, visible } from '../lib/visible';
 import connectionStyles from './connections/Connections.module.css';
 import { Field } from './connections/Field';
+import { requestConnect } from './connections/pending';
 import { issuesByField, problemText } from './connections/messages';
 import {
   appearanceSaveCount,
@@ -27,6 +32,7 @@ import {
 import { currentLocale, SUPPORTED_LOCALES } from '../i18n';
 import { navigate } from '../router';
 import { useTheme, type Density, type ThemePreference } from '../theme';
+import { DeleteHistoryDialog } from './history/HistoryDialogs';
 import styles from './Views.module.css';
 
 /** Inline code in translations (`<code>tabrion-studio</code>`); rendered as elements, never as HTML. */
@@ -57,11 +63,77 @@ const START_STEPS = [
   { key: 'connections', path: '/connections' },
   { key: 'explorer', path: '/explorer' },
   { key: 'sql', path: '/sql' },
+  { key: 'history', path: '/history' },
   { key: 'migrations', path: '/migrations' },
   { key: 'diagnostics', path: '/diagnostics' },
 ] as const;
 
-export function StartView() {
+/**
+ * Favorite and recently opened profiles (03 section 2 A, 08 section 4.1 "zuletzt geöffnet", STU-020). "Connect" opens
+ * the connection manager with the profile selected and runs its own "Connect" there (D-02 for PROD, the password
+ * dialog), so the start page never opens a connection itself.
+ */
+function QuickConnect({ fetcher }: { fetcher: typeof fetch }) {
+  const { t } = useTranslation();
+  const [state, setState] = useState<{
+    profiles: ProfileItem[];
+    favorites: FavoritesState;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void Promise.all([fetchProfiles(fetcher), fetchFavorites(fetcher)]).then(
+      ([list, favorites]) => {
+        if (active && list !== null && favorites.ok) {
+          setState({ profiles: list.profiles, favorites: favorites.value });
+        }
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [fetcher]);
+  if (state === null) return null;
+  const byId = new Map(state.profiles.map((item) => [item.id, item]));
+  const favorites = state.favorites.favorites.flatMap((id) => byId.get(id) ?? []);
+  const recent = state.favorites.recent.flatMap(({ profileId }) => byId.get(profileId) ?? []);
+  if (favorites.length === 0 && recent.length === 0) return null;
+  const group = (id: string, title: string, items: ProfileItem[]) =>
+    items.length === 0 ? null : (
+      <section className={styles.card} aria-labelledby={id} data-testid={id}>
+        <h2 id={id} className={styles.cardTitle}>
+          {title}
+        </h2>
+        <ul className={styles.quickList}>
+          {items.map((item) => (
+            <li key={item.id} className={styles.quickItem}>
+              <span className={styles.quickName}>{visible(item.name)}</span>
+              <EnvBadge environment={item.environment} size="sm" />
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  requestConnect(item.id);
+                  navigate('/connections');
+                }}
+                data-testid="quick-connect"
+              >
+                {t('start.connect')}
+                <span className="tb-sr-only"> {visible(item.name)}</span>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  return (
+    <>
+      {group('start-favorites', t('start.favorites'), favorites)}
+      {group('start-recent', t('start.recent'), recent)}
+    </>
+  );
+}
+
+export function StartView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const { t } = useTranslation();
   return (
     <div className={styles.page}>
@@ -70,6 +142,7 @@ export function StartView() {
         <h1 className={styles.title}>{t('start.title')}</h1>
         <p className={styles.lead}>{t('start.lead')}</p>
       </div>
+      <QuickConnect fetcher={fetcher} />
       <EmptyState
         icon={<FolderOpen />}
         title={t('start.projectsTitle')}
@@ -151,9 +224,15 @@ function Choice<T extends string>({
 function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revision: number }) {
   const { t } = useTranslation();
   const [state, setState] = useState<SettingsState | null | 'loading'>('loading');
-  const [form, setForm] = useState<{ logSql: boolean; maxRows: string; timeout: string } | null>(
-    null,
-  );
+  const [form, setForm] = useState<{
+    logSql: boolean;
+    maxRows: string;
+    timeout: string;
+    historyEnabled: boolean;
+    retention: string;
+  } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [historyNote, setHistoryNote] = useState<{ text: string; problem: boolean } | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [saved, setSaved] = useState(false);
   const [overwrite, setOverwrite] = useState(false);
@@ -167,6 +246,8 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
         logSql: next.settings.logSql,
         maxRows: String(next.settings.maxRows),
         timeout: String(next.settings.statementTimeoutMs / 1000),
+        historyEnabled: next.settings.historyEnabled,
+        retention: String(next.settings.historyRetentionDays),
       });
     }
   };
@@ -202,6 +283,8 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
       logSql: form.logSql,
       maxRows: /^\d+$/.test(form.maxRows) ? Number(form.maxRows) : NaN,
       statementTimeoutMs: Number.isFinite(seconds) ? Math.round(seconds * 1000) : NaN,
+      historyEnabled: form.historyEnabled,
+      historyRetentionDays: /^\d+$/.test(form.retention) ? Number(form.retention) : NaN,
     };
     const local = [
       ...(Number.isNaN(settings.maxRows)
@@ -209,6 +292,9 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
         : []),
       ...(Number.isNaN(settings.statementTimeoutMs) || form.timeout.trim() === ''
         ? [{ pointer: 'settings.limits.statement_timeout_ms', code: 'config.type' }]
+        : []),
+      ...(Number.isNaN(settings.historyRetentionDays)
+        ? [{ pointer: 'settings.history.retention_days', code: 'config.type' }]
         : []),
     ];
     setSaved(false);
@@ -301,6 +387,73 @@ function ServerSettingsForm({ fetcher, revision }: { fetcher: typeof fetch; revi
             />
           )}
         </Field>
+      </section>
+      <section className={styles.card} aria-labelledby="settings-history">
+        <h2 id="settings-history" className={styles.cardTitle}>
+          {t('settings.history')}
+        </h2>
+        <label className={connectionStyles.check}>
+          <input
+            type="checkbox"
+            checked={form.historyEnabled}
+            aria-describedby="settings-history-hint"
+            onChange={(event) => setForm({ ...form, historyEnabled: event.target.checked })}
+            data-testid="settings-history-enabled"
+          />
+          {t('settings.historyEnabled')}
+        </label>
+        <p id="settings-history-hint" className={connectionStyles.hint}>
+          {t('settings.historyHint')}
+        </p>
+        <Field label={t('settings.historyRetention')} issues={fields['history.retention_days']}>
+          {(props) => (
+            <input
+              {...props}
+              className={connectionStyles.input}
+              inputMode="numeric"
+              value={form.retention}
+              onChange={(event) => setForm({ ...form, retention: event.target.value })}
+              data-testid="settings-history-retention"
+            />
+          )}
+        </Field>
+        <div>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setHistoryNote(null);
+              setDeleting(true);
+            }}
+            data-testid="settings-history-delete"
+          >
+            {t('history.deleteAll')}
+          </Button>
+        </div>
+        <div aria-live="polite">
+          {historyNote !== null ? (
+            <p
+              className={historyNote.problem ? connectionStyles.problem : connectionStyles.status}
+              data-testid="settings-history-note"
+            >
+              {historyNote.text}
+            </p>
+          ) : null}
+        </div>
+        {deleting ? (
+          <DeleteHistoryDialog
+            onCancel={() => setDeleting(false)}
+            onDelete={() => {
+              setDeleting(false);
+              void deleteHistory(fetcher).then((result) =>
+                setHistoryNote(
+                  result.ok
+                    ? { text: t('history.deleted', { count: result.value }), problem: false }
+                    : { text: problemText(t, result.problem), problem: true },
+                ),
+              );
+            }}
+          />
+        ) : null}
       </section>
       <section className={styles.card} aria-labelledby="settings-security">
         <h2 id="settings-security" className={styles.cardTitle}>
