@@ -43,9 +43,9 @@
 | TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR #42) | P2 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
-| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow; `keyboard.spec.ts` is a required e2e suite since the CI e2e-list PR) | P2 | Open |
+| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow; `keyboard.spec.ts` is a required e2e suite since the CI e2e-list PR) | P2 | Open (F6 over the panes and the keyboard-only E2E of every main flow done in the STU-052 rest PR; open: format and history with 1.0) |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
-| TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
+| TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, ER diagram, STU-016 pages, Firefox/WebKit, the final MVP report) | P2 | Open |
 | TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
 | TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; `backend test (windows-latest)` green on `23fd8a6`, run 43201304911) | P2 | Done (PR #29) |
 | TD-025 STU-015/STU-024 page: the Levuvo view shows state, version, open steps and the reason a table is unreadable, not the SQL preview or the files folder; formats the page does not know are only counted | P3 | Open (STU-015 page PR #32; C-1 of `stu-015-ui-review.md` done, delta items L-6..L-9 and I-6 done) |
@@ -61,10 +61,11 @@
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
-| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
+| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
+| TD-047 STU-050: the e2e suites on Firefox and WebKit (08 section 11, 09 STU-050; a `.github/` change) | P1 | Open (PR #59: jobs `e2e (firefox)` and `e2e (webkit)`, advisory until both are green) |
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 
@@ -374,8 +375,8 @@ merge after OA-004.
 | TABRION STU-022 | DDL, policies, row estimates | P2 | STU-010 (plan: STU-017) | Done (backend PR #38, page PR #54), started before STU-017: the owner allows the normal ordering decisions so that work runs in parallel, and the backend needs only the explorer backend (STU-010, PR #19). `GET .../tables/{schema}/{name}/ddl`, `.../policies` (PostgreSQL), `.../row-count` (SQLite, `count(*)` on request with a 10 s timeout) and `GET /api/connections/{id}/row-estimates` (PostgreSQL `reltuples`, partitioned tables summed); the table detail's estimate sums partitions too. PostgreSQL DDL is rebuilt from the catalog with `pg_get_*def` in `pg_dump --schema-only` form, SQLite's is the stored text; only checked `SELECT` statements on the read-only path (spy tests). Delta review 2 of `cfcb6bc` ACCEPTED (E-1: a view's column default added). Delta review of `dada71c` ACCEPTED (D-1: TD-039 corrected and raised to P1; D-2: a materialized view's column settings and `CLUSTER ON` added). Review fix round (`stu-022-review.md`, H-1, M-1, M-2, L-1..L-4): catalog reads now use a fixed search_path (hardening against object resolution through user schemas; the explorer's, migrations' and reflection's catalog reads too); the acceptance covers both apps in `public`; rules, child-only `NOT NULL`, replica identity, `CLUSTER ON`, column statistics, storage, compression and options, and the materialized view's `WITH` line added; SQLite names always quoted; a failing live pg_dump fails the test; more tests. Acceptance: `tests/security/test_definitions.py::test_pg_ddl_equals_pg_dump_schema_only` and `::test_pg_ddl_of_the_reference_apps_in_public_equals_pg_dump` (the reference apps `examples/parts` and `examples/measurements` of tabrion `f4228ec`, copied, plus an `extras` schema with RLS policies) equals pg_dump statement by statement, against recorded pg_dump 16.15 output always and a live `pg_dump` where one can dump the server; `docs/architecture/explorer.md`. The page (PR #54): the DDL tab, the policies tab and SQLite's row count on request in `/explorer` (`views/explorer/Definitions.tsx`, `e2e/explorer-definitions.spec.ts`, user guide `guide/explorer.md`); PostgreSQL's estimate stays in the table detail. Review `stu-022-page-review.md` ACCEPTED WITH CONDITIONS, done: L-1 (the parsers refuse a `USING`, `WITH CHECK`, owner, note or role name that is not text and role flags that are not booleans), L-2 (a JSON panel key, re-render tests), L-3 (tests for RLS off without policies and a non-text role), L-4 (ownership through membership, policies that reach no role), I-1 (tabs shown as tabs), I-4 (Copy DDL announced again), I-5. Open: the estimates in the tree (TD-041); the gaps in TD-035 |
 | TABRION STU-025 | Diagnosis report and backup hints | P2 | STU-014 (plan: STU-017) | Done (backend PR #40, page part TD-036 in PR #47; the command-line report stays open in TD-036; started before STU-017 on 2026-11-12: the owner allows normal ordering decisions so work can run in parallel, and the backend needs only the diagnostics backend of STU-014, PR #25; nothing in it depends on STU-017's docs or tag. Doc 09 still lists STU-017; recording the changed dependency there is for the coordinating thread). `POST /api/connections/{id}/diagnostics/report` with `{"format": "markdown" | "json"}` answers the report as an attachment, built from an allowlist (no password, token, URL or DSN, host, port, user, database name, path or parameter value) and passed through the log redaction (`logs.scrub`); Markdown escapes database text (T-07). Backup hints `STU-BK-001..014` in every diagnosis (`backup: {hints, facts}`): SQLite backups next to the database (found, older than the data, readable by others), PostgreSQL `archive_mode` and `pg_stat_archiver` (off, failing, nothing archived, standby); tabrion's `TAB-PG-020` gives way only when `STU-BK-010` is given. Acceptance "report without secrets (canary test)": `tests/security/test_diagnosis_report.py` (canaries in the PostgreSQL password, the process's tokens, URLs and DSNs, parameter values, a role setting, stored values and the SQLite path; both formats and the log). `docs/architecture/diagnostics.md`. Review `stu-025-review.md`: ACCEPTED WITH CONDITIONS; C-1 (the login role and the database as `[role]`/`[database]` in every text, canary with schemas named exactly like both), C-2 (`TAB-PG-020` dropped only when `STU-BK-010` is given), L-1..L-6 fixed (16 targeted mutations killed); I-1 noted. Delta review of `b8756c2`: D-1 (no report when the server cannot tell the names, `studio.report_unavailable`), D-2 (the page route keeps `TAB-PG-020` until TD-036), N-1..N-5 fixed. Open: TD-036 (the download button and the backup hints in the diagnostics view, STU-014 UI lane; the CLI report; the guide). The TD-036 page PR adds the download, the backup hints and the guide page `guide/diagnostics.md`, and the page route replaces `TAB-PG-020` too; the CLI report stays open |
 | TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | Done (PR #41; the editor-adoption and D-02 follow-ups in PR #48, the export dialog in PR #50): the page `/sql` with CodeMirror 6, editor tabs with local drafts, run, run script, cancel, `:name` parameters, the virtualized result grid with the detail panel, D-02 and D-06; 100 000 rows within the memory limit, and wide rows at `max_result_mb = 200` too (`e2e/editor.spec.ts`, `e2e/editor-backend.spec.ts`). Review `stu-012-review.md` (accepted with conditions): C-1..C-4 (results cleared on a profile change, the run registered before connecting, one-decimal durations, a row cache bounded in bytes) and L-1..L-8 done. The rest is TD-033; the required-suite list is TD-037. The "openapi in sync" CI job planned with STU-008 is TD-011 |
-| TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part merged in PR #16, its Low items in PR #22): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
-| TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part merged in PR #20): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
+| TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | Done (first part in the STU-052 PR, the rest in the STU-052 rest PR): the command palette, the shortcut help, the editor shortcuts (STU-012), F6/Shift+F6 over the shell and over the panes of the explorer and the SQL editor, keyboard-only E2E of every main flow of the MVP (connect with D-02, explorer, query, cancel; `e2e/keyboard.spec.ts`). `keyboard.spec.ts` is required in CI since the CI e2e-list PR. Left for 1.0: format and history (STU-020, TD-020) |
+| TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress: the shell (first PR, F-1..F-5) and the work pages (editor, grid, export, explorer, data viewer, DDL, Policies, row count, diagnostics, D-02; second PR, F-6) are audited in `docs/architecture/accessibility.md` and `e2e/a11y-audit.spec.ts`, with no open AA violation. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Preparation in progress (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). The gate itself, the independent review and its re-review are not done; G-S1 is decided by the owner, and a human security review before a public release stays mandatory |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
@@ -899,6 +900,12 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   between explorer, editor and result (TD-033).
 - **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); query
   and cancel are covered since STU-012, connect and explorer follow with their pages.
+- **Done in the STU-052 rest PR:** F6 and Shift+F6 step through the panes of the main area (`data-region` on the
+  explorer's tree and details and on the SQL editor's text, parameters and result; F6 stops at the areas that hold no
+  other area, and enters a pane on its `data-region-entry`), and `e2e/keyboard.spec.ts` runs every main flow keyboard
+  only from the page's start, without a click: connect with the test and D-02, the explorer, a query with a
+  parameter, a cancel with Escape in the result and with Ctrl+. in the SQL text. Still open: format and history
+  (1.0).
 - **Required e2e suite:** done in the CI e2e-list PR: the step "Every suite ran and none was skipped" requires every
   spec in `frontend/e2e` but `screenshots.spec.ts`, `keyboard.spec.ts` included.
 - **Review of #16 (`stu-052-td021-review.md`, accepted):** L-1 (German palette says "Darstellung" like the settings
@@ -950,9 +957,15 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Done in the STU-012 PR:** the result grid (`role="grid"`, `aria-rowcount`, `aria-rowindex`), the live region for
   the query status and the SQL editor (CodeMirror; Tab leaves it, no tab trap), with the editor page in `a11y.spec.ts`
   (light/dark, en/de) and keyboard tests in `e2e/editor.spec.ts`.
-- **With STU-010, STU-013 and STU-023:** the explorer tree (WAI-ARIA tree), the data viewer's grid, the ER diagram's
-  table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
-- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
+- **Done in the second STU-053 PR (the work pages):** the explorer tree, the data viewer's grid, the DDL and
+  Policies tabs, Count rows, the export dialog, the diagnostics report and D-02 in the connection manager. axe in
+  light/dark and en/de runs in each page's spec; `a11y-audit.spec.ts` adds for each page state target size, reflow
+  at 320 px and 200 % (640 px), the focus ring on every Tab stop (an open dialog keeps every stop), text spacing,
+  reduced motion and a live region for each action's result. F-6 (the export dialog's 21 px choices, 2.5.8) is
+  fixed; D-1 records why grid cells cut with "…" have no `title` (the cell detail shows the whole value).
+- **With STU-023 and STU-016:** the ER diagram's table alternative and the STU-016 pages. Add their states to the
+  pages' axe tests and to `WORK_PAGES` in `a11y-audit.spec.ts`.
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-047, a CI change).
 - **Required e2e suite:** done in the CI e2e-list PR: `a11y-audit.spec.ts` must pass without a skip, like every spec
   in `frontend/e2e` but `screenshots.spec.ts`.
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
@@ -1074,7 +1087,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **Grid:** no column resizing, sorting or "load in full" for a cut cell (03 section 5.3; the data viewer has it);
   TanStack Table was not needed for the MVP grid and is not added.
 - **Shell:** the shell's workspace tabs and the connection in the header (TD-011) are not filled by the editor; a
-  PROD tab shows its environment on the page only. F6 does not yet cycle editor, parameters and result (TD-020).
+  PROD tab shows its environment on the page only. F6 cycles editor, parameters and result since the STU-052 rest PR
+  (TD-020).
 - **From TD-013:** the `max_rows` default stays 10 000; the editor asks for 1 000 rows first and offers "Load up to
   N rows" with the setting (tests set 100 000). The `EXPLAIN` cost warning for prod profiles, closing a connection
   that has running queries, and the heartbeat on a stream are open.
@@ -1094,6 +1108,42 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `a11y-audit.spec.ts` (TD-022). The STU-012 PR does not touch `.github/`.
 - **What runs already:** `npm run e2e` runs every spec, and the job fails on any unexpected result; the review saw
   both editor suites pass in CI at `7acfe6b`. Only the skip detection is missing.
+
+### TD-047 · STU-050: the e2e suites on Firefox and WebKit
+
+- **Priority:** P1 High · **Status:** Open (PR #59) · **Refs:** 08 sections 10 and 11 (STU-050: every flow green in
+  E2E on Chromium, Firefox and WebKit), 09 STU-050, QA-9 row, TD-007, `ci-firefox-webkit-workflow-review.md`
+- **Done in PR #59:** `playwright.config.ts` picks the browsers from `STUDIO_E2E_BROWSERS` (default `chromium`, so the
+  job `e2e` is unchanged); the CI matrix job `e2e (firefox)` / `e2e (webkit)` runs the same suites against the same
+  wheel with the browser of the locked Playwright version. Its gate is the e2e job's, except that a test may skip
+  with a `chromium only:` reason (the five heap measurements through CDP) and never with a fixme or fail annotation.
+  Both jobs are `continue-on-error` and listed as advisory in `.github/ci-manifest.json`.
+- **Open:** make both jobs required once they are green (drop `continue-on-error` and the advisory entries: a
+  workflow change with its own review); fix what fails in either browser. The step summary shows the "Chromium only"
+  count per suite (expected 2 in `editor.spec.ts`, 2 in `editor-backend.spec.ts`, 1 in `viewer-backend.spec.ts`).
+- **Locally:** the agent sandbox has only a Chromium build, so these runs exist only in CI.
+- **First CI run (`9741eb7`, run 43343286134):** Firefox 251 passed, 3 failed, 35 skipped (30 screenshots and the 5
+  "chromium only" heap tests); WebKit 236 passed, 7 failed, 32 skipped (screenshots and "chromium only"), the rest of
+  its serial suites did not run after a failure. The gate step did not run, because the test step failed first, so
+  F-3 (the "chromium only" accounting from the annotations) still needs a run with every test passing. Root causes,
+  each to fix in its own follow-up, without a skip unless the feature is Chromium-only:
+  1. **WebKit, CSP:** "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear
+     in the style-src directive" is logged once each time a `<select>` is created (the diagnostics, explorer, data
+     tab, editor and parameter panel selects; trace times match each one). It fails four real-server tests
+     (`backend.spec.ts:331`, `editor-backend.spec.ts:164`, `explorer-reference.spec.ts:132`,
+     `viewer-backend.spec.ts:191`). Pages without a `<select>` have none, and Chromium and Firefox have none. The
+     likely cause is WebKit's own user-agent styles of the select; confirm with a minimal page under the same CSP
+     before a test treats the message as the browser's.
+  2. **Firefox, keyboard:** `editor.spec.ts:125`. After Tab the editor keeps the focus and its text changes, so Tab
+     in the SQL editor (CodeMirror in a shadow root, `indentWithTab: false`) seems to insert a tab instead of moving
+     on. This is a possible keyboard trap (WCAG 2.1.2), so it is a product bug to confirm and fix, not a test change.
+  3. **Firefox and WebKit, test:** `a11y-audit.spec.ts:334` reaches `:focus-visible` with `Shift` plus
+     `element.focus()` after a mouse click; only Chromium then treats the focus as keyboard focus. Reach it with Tab.
+  4. **Firefox and WebKit, test:** `explorer-definitions.spec.ts:64` calls `grantPermissions(['clipboard-read',
+     'clipboard-write'])`, which only Chromium knows. Check Copy DDL another way there, for example through the
+     page's copy result or a stub of `navigator.clipboard.writeText`.
+  5. **WebKit, test:** `editor.spec.ts:327` expects the saved script as "Query 2.sql"; WebKit's download reports
+     "Query_2.sql". Assert the name the page offers (the link's `download`) and accept the browser's spelling of it.
 
 ### TD-043 · STU-021 page: the export dialog, and what it leaves for later
 

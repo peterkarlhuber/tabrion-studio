@@ -17,6 +17,8 @@
       "dependency audit",
       "docs",
       "e2e",
+      "e2e (firefox)",
+      "e2e (webkit)",
       "frontend lint and typecheck",
       "frontend unit",
       "license and supply chain",
@@ -25,7 +27,10 @@
   },
   "pull_request_path_filtered": {},
   "path_filters": {},
-  "advisory": [],
+  "advisory": [
+    "ci.yml/e2e (firefox)",
+    "ci.yml/e2e (webkit)"
+  ],
   "nightly": {
     "nightly.yml": [
       "report"

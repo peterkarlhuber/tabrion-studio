@@ -19,6 +19,17 @@ All notable changes to this project are documented here. The format follows
   (`test_security_headers_are_pinned`), not compared with the code's own constant.
   `docs/TODO.md`: the package rows of STU-012, STU-022 and STU-025 are done with their PR numbers, and merged pages
   carry their PR numbers instead of "draft".
+- STU-052 (rest of TD-020): F6 and Shift+F6 also step through the panes of the main area (08 section 7,
+  "Explorer/Editor/Ergebnis"): in the explorer the tree (its current item) and the details (the selected tab), in the
+  SQL editor the SQL text, the first parameter value and the result grid. On other pages F6 stops at the main area as
+  before. Keyboard-only end-to-end tests for every main flow of the MVP from the page's start, without a click:
+  connect with the test and D-02 for PROD, the explorer, and a query with a parameter, then a cancel with Escape in
+  the result and with Ctrl+. in the SQL text (`e2e/keyboard.spec.ts`).
+- Accessibility audit of the work pages (STU-053, second part; `docs/architecture/accessibility.md`): the SQL
+  editor with its grid, cell detail and export dialog, the explorer's tree, Data, DDL and Policies tabs and Count
+  rows, the diagnostics report and D-02 in the connection manager. For each, `e2e/a11y-audit.spec.ts` checks target
+  size, reflow at 320 px and at 200 % zoom, every Tab stop's focus ring (an open dialog keeps the focus), text
+  spacing and reduced motion, and that each action's result is said in a live region (WCAG 4.1.3).
 - STU-022 in the explorer page: a **DDL** tab for every object (a sequence shows its DDL on its own) with **Copy
   DDL**, a **Policies** tab for a PostgreSQL table (row-level security on and forced, the owner and the connection's
   role, whether the policies bind that role and why not, a warning when RLS is on without a policy, every policy with
@@ -511,6 +522,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- CI (STU-050, TD-047): the e2e suites also run in Firefox and WebKit, in the jobs `e2e (firefox)` and
+  `e2e (webkit)` with the browsers of the locked Playwright version; advisory in `ci-manifest.json` until both are
+  green. `STUDIO_E2E_BROWSERS` picks the browsers locally (Chromium by default); the heap measurements through CDP
+  skip outside Chromium with a "chromium only:" reason, the only skip those jobs accept.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a
@@ -524,6 +539,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
+  WCAG 2.5.8).
 - SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still
   on its way was lost: the page had no query id yet, so it sent no cancel, and the query ran on until its timeout
   while the page showed it running. The page now cancels the query as soon as the server answers with its id. This

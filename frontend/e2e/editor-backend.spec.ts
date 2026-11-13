@@ -327,7 +327,11 @@ test('a cancel while the start answer is held back reaches the server; the next 
   expect(violations).toEqual([]);
 });
 
-test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async ({ page }) => {
+test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'chromium only: the heap is measured through CDP');
   test.setTimeout(180_000);
   const violations = await signIn(page);
   await openEditor(page);
@@ -369,7 +373,11 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
   expect(violations).toEqual([]);
 });
 
-test('wide rows at max_result_mb = 200 stay within the memory limit (M-4)', async ({ page }) => {
+test('wide rows at max_result_mb = 200 stay within the memory limit (M-4)', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'chromium only: the heap is measured through CDP');
   test.setTimeout(240_000);
   const violations = await signIn(page);
   await openEditor(page);
