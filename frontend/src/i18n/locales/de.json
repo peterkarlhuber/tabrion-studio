@@ -437,6 +437,7 @@
       "title": "ER-Diagramm",
       "schema": "Schema",
       "loading": "Tabellen werden gelesen …",
+      "loadFailed": "Das ER-Diagramm konnte nicht geladen werden. Lade die Seite neu und versuche es noch einmal.",
       "noTables": "Dieses Schema hat keine Tabellen.",
       "status": "Tabellen: {{count}}, Beziehungen: {{lines}}, Layout: {{ms}} ms.",
       "capped": "Das Schema hat {{total}} Tabellen; ein Diagramm zeigt höchstens {{max}}. Es zeigt die ersten {{max}} nach Namen; andere wählen Sie unter „Tabellen“.",

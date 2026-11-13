@@ -437,6 +437,7 @@
       "title": "ER diagram",
       "schema": "Schema",
       "loading": "Reading the tables…",
+      "loadFailed": "The ER diagram could not be loaded. Reload the page and try again.",
       "noTables": "This schema has no tables.",
       "status": "Tables: {{count}}, relationships: {{lines}}, layout: {{ms}} ms.",
       "capped": "The schema has {{total}} tables; one diagram shows at most {{max}}. It shows the first {{max}} by name; choose others under “Tables”.",

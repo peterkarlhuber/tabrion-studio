@@ -36,17 +36,7 @@ import {
   Table2,
   ListTree,
 } from 'lucide-react';
-import {
-  lazy,
-  Suspense,
-  useCallback,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -90,6 +80,7 @@ import {
   Value,
   type TabId,
 } from './ObjectDetail';
+import type { ErDiagram as ErDiagramType } from './er/ErDiagram';
 import { ObjectTree, type FocusTarget } from './ObjectTree';
 import {
   buildRows,
@@ -105,8 +96,22 @@ import {
   type TreeRow,
 } from './tree';
 
-/** The ER diagram (STU-023): @xyflow/react and dagre load only when the diagram is opened. */
-const ErDiagram = lazy(() => import('./er/ErDiagram'));
+/**
+ * The ER diagram (STU-023): @xyflow/react and dagre load only when the diagram is opened. Not `React.lazy`: a lazy
+ * component is rendered by Suspense's retry, which React renders in time slices and commits in a later task than the
+ * one that created the elements. WebKit reports its own inline style of a `<select>` (TD-047) as a violation event
+ * that goes to the element only while it is in the document, so the diagram's schema picker, still detached when the
+ * event was dispatched, reported to the document instead (TD-052). A state update after the import renders and
+ * commits in one task.
+ */
+type ErDiagramView = typeof ErDiagramType;
+let erDiagramView: ErDiagramView | null = null;
+function loadErDiagram(): Promise<ErDiagramView> {
+  return import('./er/ErDiagram').then((module) => {
+    erDiagramView = module.default;
+    return module.default;
+  });
+}
 
 /** The connection whose catalog is shown; name and environment are kept (the profile list may change). */
 interface Opened {
@@ -187,6 +192,23 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
   /** The object tree with details, or the ER diagram of a schema (STU-023). */
   const [view, setView] = useState<'objects' | 'diagram'>('objects');
+  const [ErDiagram, setErDiagram] = useState<ErDiagramView | null>(() => erDiagramView);
+  const [erFailed, setErFailed] = useState(false);
+  useEffect(() => {
+    if (view !== 'diagram' || ErDiagram !== null) return;
+    let live = true;
+    loadErDiagram().then(
+      (loaded) => {
+        if (live) setErDiagram(() => loaded);
+      },
+      () => {
+        if (live) setErFailed(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [view, ErDiagram]);
   /** Counts opens, refreshes and profile switches; a catalog answer is shown only for the latest. */
   const request = useRef(0);
   /** Counts selections (and everything that counts up `request`); a detail answer is shown only for the latest. */
@@ -757,7 +779,15 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         </div>
       ) : null}
       {view === 'diagram' && catalog !== null && opened !== null ? (
-        <Suspense fallback={<p className={connectionStyles.hint}>{t('explorer.er.loading')}</p>}>
+        ErDiagram === null ? (
+          erFailed ? (
+            <p role="alert" className={connectionStyles.problem} data-testid="er-load-problem">
+              {t('explorer.er.loadFailed')}
+            </p>
+          ) : (
+            <p className={connectionStyles.hint}>{t('explorer.er.loading')}</p>
+          )
+        ) : (
           <ErDiagram
             fetcher={fetcher}
             connectionId={opened.connectionId}
@@ -768,7 +798,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
             }}
             onGone={dataGone}
           />
-        </Suspense>
+        )
       ) : null}
       {view === 'objects' && catalog !== null && opened !== null && tree !== null ? (
         <div className={styles.workspace} data-testid="explorer-workspace">

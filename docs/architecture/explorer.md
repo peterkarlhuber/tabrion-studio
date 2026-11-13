@@ -207,13 +207,14 @@ and by the header.
   FK marked, the rest counted) and a line for each foreign key between two shown tables, from the key's table to the
   one it references. One GET of the diagram route on the explorer's open connection per schema (and again after a
   Refresh); a connection that is gone is dropped as for the data tab. The code (@xyflow/react 12 and dagre) loads
-  only when the diagram is opened (a separate chunk).
+  only when the diagram is opened (a separate chunk), through a dynamic import and a state update, not `React.lazy`
+  (see CSP below).
   - **Layout:** `layout.ts` builds the scene once per choice: box sizes from the text lengths in the 12 px monospace
     font (no measuring in the page), the connected tables through dagre (left to right, referenced tables first, the
     line routes from dagre), tables without a line packed in rows below. The page measures that step and says it
     ("Tables: 150, relationships: 170, layout: 120 ms."); the acceptance of 09 is 150 tables in under 2 s. The diagram
     shows at most 150 tables (03 section 2 E): a larger schema shows its first 150 by name and says so; **Tables** (a
-    button with `aria-expanded`, not a `<details>`: see CSP below) opens a list of every table with a filter, rendered
+    button with `aria-expanded`) opens a list of every table with a filter, rendered
     only while it is open, and **Show N tables** applies a new choice (a click on a checkbox does not lay out again).
     **Lay out again** measures the layout again and fits the view; the boxes are rebuilt only when the new layout
     places them differently (`sameLayout`; dagre is deterministic). The boxes get their translated texts from the
@@ -236,10 +237,13 @@ and by the header.
     tokens, so a dark page saves a dark diagram.
   - **CSP:** React, xyflow and d3 set their inline styles through the CSSOM (`element.style`, `style.setProperty`),
     which `style-src 'self'` does not refuse; none of them adds a `<style>` element or a `style` attribute in the parts
-    used, and xyflow's style sheet is bundled into the page's CSS. WebKit refuses the user-agent style of a `<details>`
-    under the CSP and reports a violation that is not the `<select>` of TD-047 (CI run of the first STU-023 head,
-    `e2e/csp.spec.ts` probes it in each browser), so the product renders no `<details>` (an ESLint rule) and the choice
-    of tables is a disclosure button. `global.css` gives every `svg`
+    used, and xyflow's style sheet is bundled into the page's CSS. WebKit reports its own inline style of every
+    `<select>` (TD-047) with a violation event that reaches the select only while it is in the document, else the
+    document, where the CSP watcher counts it. With `React.lazy` the schema picker was made by Suspense's retry, which
+    React renders in time slices and commits a task later, so `e2e (webkit)` failed (TD-052). The diagram is loaded
+    with `import()` and a state update instead, which React renders and commits in one task; the STU-023 test of
+    `backend.spec.ts` checks in every browser that each `<select>` is in the document a task after it is made
+    (`watchSelects`). `global.css` gives every `svg`
     `max-width: 100%`; xyflow's edge layers sit in a box without width, and an `svg` of width 0 is not drawn, so the
     diagram resets it for its own `svg` elements.
   - **Fail closed and U-1:** a table without a name or column list, a column without a name, a primary key or key
@@ -268,6 +272,6 @@ TD-052.
 | `tests/security/test_explorer.py` (STU-023) | the diagram of `main` (503 tables, the view left out; columns, composite and plain primary keys, the key out), unknown and hostile schema names refused, an unknown schema rebuilding the catalog at most every few seconds, the bound of `MAX_DIAGRAM_TABLES` (refused before any reflection), the route; on PostgreSQL the 502 tables of a schema, the key with its schema, keys into `public` and another schema named, a partitioned table's key once |
 | `frontend/src/views/explorer/er/layout.perf.test.ts` | STU-023 acceptance: 150 tables with 300 keys and up to 30 columns laid out in under 2 s of wall time and of CPU time (`process.cpuUsage`), measured on the layout (`timedScene`); `npm test` runs it after the other tests, alone in one worker (Vitest project `perf`) |
 | `frontend/src/views/explorer/er/layout.test.ts` | the scene of 150 dense tables: no two boxes overlap, every line routed, keys marked, 20 columns and a count, names escaped and capped, keys to tables not shown kept out of the drawing, loose tables packed in rows, at most 150 tables, the same layout every time (`sameLayout`) |
-| `frontend/src/views/explorer/er/exportImage.test.ts`, `ErDiagram.test.tsx` | the SVG (a well-formed standalone document; no `style`, script, link or outside URL; XML-escaped hostile names; U+FFFE, U+FFFF, controls and lone surrogates shown as `\uXXXX` so it always parses), file names, the PNG's scale limits and drawing; the view: one GET per schema, the table alternative, the choice (a button with `aria-expanded`, no `<details>`; its list rendered only while open) and its 150 bound, both exports, a refused PNG, problems, a connection that is gone, fail-closed answers |
+| `frontend/src/views/explorer/er/exportImage.test.ts`, `ErDiagram.test.tsx` | the SVG (a well-formed standalone document; no `style`, script, link or outside URL; XML-escaped hostile names; U+FFFE, U+FFFF, controls and lone surrogates shown as `\uXXXX` so it always parses), file names, the PNG's scale limits and drawing; the view: one GET per schema, the table alternative, the choice (a button with `aria-expanded`; its list rendered only while open) and its 150 bound, both exports, a refused PNG, problems, a connection that is gone, fail-closed answers |
 | `frontend/e2e/er-diagram.spec.ts` | STU-023 in Chromium: axe (light/dark, en/de) on the diagram and its choice, 150 tables laid out in under 2 s as the page measures it, the SVG and PNG downloads (150 boxes, 170 lines, no remote reference, no request while saving), the keyboard path from a box to the tree; `e2e/backend.spec.ts` runs the diagram and both exports on a real server under the CSP |
 | `frontend/e2e/explorer.spec.ts` | the page in Chromium with axe (light/dark, en/de) and keyboard-only; `e2e/explorer-reference.spec.ts` against the parts and measurements reference apps (skipped without its variables, TD-041) |

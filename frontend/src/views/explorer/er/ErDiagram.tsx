@@ -12,10 +12,10 @@
  * - **Exports:** SVG and PNG drawn in the page from the shown scene (`exportImage.ts`), no remote resource.
  * - **CSP:** React, xyflow and d3 set their inline styles through `element.style` (the CSSOM), which `style-src
  *   'self'` does not refuse; none of them adds a `<style>` element or a `style` attribute in the parts used (searched),
- *   and xyflow's style sheet is bundled. Built-in elements are another matter in WebKit, which refuses the style of
- *   their own shadow trees: a `<select>` (TD-047) and a `<details>`. The choice of tables is therefore a button with
- *   `aria-expanded`, not a `<details>` (TD-052; ESLint forbids `<details>`). `e2e/backend.spec.ts` runs this view
- *   under Studio's CSP in each browser.
+ *   and xyflow's style sheet is bundled. WebKit reports its own inline style of every `<select>` (TD-047), to the
+ *   select only while it is in the document: the explorer therefore loads this view without `React.lazy`, so that the
+ *   schema picker is created and attached in one task (`ExplorerView.tsx`, TD-052). `e2e/backend.spec.ts` runs this
+ *   view under Studio's CSP in each browser and checks that every `<select>` is attached one task after it is made.
  */
 import {
   BaseEdge,
@@ -721,8 +721,8 @@ export function ErDiagram({
         </p>
       ) : null}
       {diagram !== null && total > 0 ? (
-        // A button that shows and hides the choice, not <details>: WebKit refuses the inline style of the
-        // <details> element's own shadow tree under style-src 'self' and reports a CSP violation (TD-052).
+        // A button that shows and hides the choice; the list is rendered only while it is open (150 rows less in
+        // the diagram's render, C-3 of the STU-023 review).
         <div className={styles.choose} data-testid="er-choose">
           <button
             type="button"

@@ -22,10 +22,12 @@ import { join } from 'node:path';
 import { test, expect, type Page } from '@playwright/test';
 
 import {
+  detachedSelects,
   expectNoViolations,
   foreignRequests,
   recordViolations,
   seriousViolations,
+  watchSelects,
 } from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
@@ -435,6 +437,7 @@ test('STU-023: the ER diagram of a real SQLite database, its exports, under the 
     file,
   ]);
   const foreign = foreignRequests(page, () => base);
+  await watchSelects(page);
   links.push(newLink());
   const violations = await signIn(page);
   await page.getByRole('link', { name: 'Connections' }).click();
@@ -461,7 +464,7 @@ test('STU-023: the ER diagram of a real SQLite database, its exports, under the 
   await expect(page.getByTestId('er-canvas').locator('.react-flow__edge-path')).toHaveCount(3);
   await page.getByTestId('er-zoom-in').click();
   await page.getByTestId('er-fit').click();
-  // The choice of tables, opened: a button and the list it shows (no <details>, which WebKit refuses, TD-052).
+  // The choice of tables, opened: a button and the list it shows, under the CSP too.
   await page.getByTestId('er-choose-toggle').click();
   await expect(page.getByTestId('er-choose-toggle')).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByRole('checkbox', { name: 'note', exact: true })).toBeChecked();
@@ -489,6 +492,9 @@ test('STU-023: the ER diagram of a real SQLite database, its exports, under the 
     .click();
   await expect(page.getByRole('treeitem', { name: 'stock', exact: true })).toBeFocused();
   expect(foreign).toEqual([]);
+  // TD-052: every <select> (the explorer's, the diagram's schema picker) was in the document a task after it was
+  // made, so WebKit's report of its own select style reaches the select and the watcher pairs it.
+  expect(await detachedSelects(page)).toEqual([]);
   await expectNoViolations(page, violations);
 });
 

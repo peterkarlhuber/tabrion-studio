@@ -1296,12 +1296,15 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - Firefox and WebKit: `er-diagram.spec.ts` and the STU-023 test of `backend.spec.ts` run there only in CI (jobs
     `e2e (firefox)` and `e2e (webkit)`, TD-047); the agent sandbox has Chromium only.
 - **Review fixes (C-1 to C-3 of the STU-023 review):**
-  - C-1: the first head failed `e2e (webkit)`: an unpaired "Refused to apply a stylesheet" when the diagram opened.
-    The diagram's only new built-in element with a user-agent shadow tree was the `<details>` of **Tables**; it is now a
-    button with `aria-expanded` and `aria-controls` and a list rendered only while open, ESLint forbids `<details>` in
-    the product, and `e2e/csp.spec.ts` probes a bare `<details>` and the replacement in each browser (it prints the
-    violation events; the WebKit job settles the cause). `expectNoViolations` now shows the page's events with the
-    reports when it fails. The CSP and the TD-047 exemption are unchanged.
+  - C-1: `e2e (webkit)` failed with a `style-src-attr` event at the document, from React's code, when the diagram
+    opened. Cause: WebKit's report of its own `<select>` style (TD-047) reaches the select only while it is in the
+    document; the diagram, loaded with `React.lazy`, was rendered by Suspense's retry, which React commits a task
+    after it makes the elements, so the event of the schema picker went to the document. (A first guess, the
+    `<details>` of **Tables**, was wrong: a probe showed WebKit silent for it.) The diagram now loads with `import()`
+    and a state update, rendered and committed in one task; `watchSelects` (`e2e/support.ts`) checks in every browser
+    that each `<select>` is in the document a task after it is made (it fails with `React.lazy` in Chromium too).
+    `expectNoViolations` shows the page's events with the reports when it fails. The CSP and the TD-047 exemption are
+    unchanged. **Tables** is a button with `aria-expanded` whose list is rendered only while open (C-3).
   - C-2: the 2 s timing runs alone in one worker after the other unit tests (`layout.perf.test.ts`, Vitest project
     `perf`, both in `npm test`, which CI's `frontend unit` runs), and asserts CPU time under 2 s too.
   - C-3: the 150-table render does less: the choice list is not rendered while closed, **Lay out again** keeps the

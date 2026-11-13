@@ -109,8 +109,7 @@ describe('ErDiagram', () => {
       'The schema has 160 tables; one diagram shows at most 150.',
     );
     const choose = screen.getByTestId('er-choose');
-    // A button opens the choice (not a <details>, which WebKit's CSP refuses, TD-052); closed, it renders no rows.
-    expect(choose.querySelector('details')).toBeNull();
+    // A button opens the choice; closed, it renders no rows.
     const toggle = within(choose).getByRole('button', { name: 'Tables: 150 of 160' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     expect(within(choose).queryByRole('checkbox')).toBeNull();
