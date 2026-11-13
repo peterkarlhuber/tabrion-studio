@@ -1197,7 +1197,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   6. **Firefox, CSP watcher (L-5 of the PR #62 review):** the watchers matched "Content Security Policy" and "Refused
      to", but Firefox writes "Content-Security-Policy:", so in Firefox they never heard a report and those checks
      passed vacuously. `recordViolations` matches both spellings, and `csp.spec.ts` proves it hears Firefox's reports.
-     `ux-acceptance.spec.ts` (PR #62) moves to the shared watcher when #62 is merged.
+     `ux-acceptance.spec.ts` (PR #62, merged into this branch) uses the shared watcher too.
   7. **Firefox, `keyboard.spec.ts` (from PR #58, after merging master):** "connect from the start page" pressed Tab
      from "Test connection", the page's last control, to reach "Connect" right before it, which works only where the
      focus wraps around through the browser's UI (Chromium). The same headless-Firefox behavior as 2, no trap: the
