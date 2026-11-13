@@ -134,11 +134,11 @@ def test_control_launch_with_a_redirect_file(static_dir: Path, tmp_path: Path) -
 
 def test_control_launch_needs_a_json_object(static_dir: Path) -> None:
     studio = make_studio(static_dir)
-    for body in (b"[]", b"not json", b"x" * 5000):
+    for body, status in ((b"[]", 400), (b"not json", 400), (b"x" * 5000, 413)):
         response = studio.client.post(
             "/api/control/launch", headers={**CONTROL_AUTH, "Content-Type": "application/json"}, content=body
         )
-        assert response.status_code == 400
+        assert response.status_code == status
     assert studio.runtime.launches.pending == 0
 
 
