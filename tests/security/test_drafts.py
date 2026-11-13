@@ -17,6 +17,7 @@ import json
 import logging
 from pathlib import Path
 import random
+import sqlite3
 import stat
 import sys
 import time
@@ -450,6 +451,47 @@ def test_a_closed_tab_leaves_no_text_in_any_state_file(env: Env, state_dir: Path
     assert marker.encode() not in _state_bytes(state_dir)
     wal = state_dir / (STATE_FILE + "-wal")
     assert not wal.exists() or marker.encode() not in wal.read_bytes()
+
+
+@pytest.mark.parametrize("history_enabled", [True, False], ids=["history-on", "history-off"])
+@pytest.mark.parametrize("access", ["save", "read"])
+def test_a_text_deleted_while_another_connection_reads_leaves_the_log_at_the_next_drafts_call(
+    env: Env, state_dir: Path, history_enabled: bool, access: str
+) -> None:
+    """A-1 of the G-S1 delta audit: a reader (another Studio instance on the same state folder) keeps the log in use,
+    so the checkpoint after a closed tab cannot finish and must not wait. Once the reader has left, the next drafts
+    call finishes it, without any history activity and with the history on or off."""
+    env.settings["value"] = Settings(history_enabled=history_enabled)
+    marker = f"held_{uuid.uuid4().hex}"
+    env.put({"tabs": [_tab("a", f"select '{marker}'"), _tab("b", "select 2")], "active_tab": "a", "known": ["a", "b"]})
+    reader = sqlite3.connect(state_dir / STATE_FILE)
+    try:
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM drafts").fetchall()
+        started = time.monotonic()
+        # The page closed tab a: the text is deleted, the checkpoint finds the log in use.
+        closed = env.put({"tabs": [_tab("b", "select 2")], "active_tab": "b", "known": ["a", "b"]})
+        assert closed.status_code == 200
+        assert time.monotonic() - started < 1.0
+        assert env.drafts.store.checkpoint_pending is True
+        assert marker.encode() in _state_bytes(state_dir)
+        # A drafts call while the reader is still there does not wait for it either.
+        started = time.monotonic()
+        assert env.get().status_code == 200
+        assert time.monotonic() - started < 1.0
+        assert env.drafts.store.checkpoint_pending is True
+    finally:
+        reader.rollback()
+        reader.close()
+    # The next drafts call alone (no history read, record, settings save, start or close) finishes the checkpoint.
+    if access == "save":
+        answer = env.put({"tabs": [_tab("b", "select 2")], "active_tab": "b", "known": ["a", "b"]})
+    else:
+        answer = env.get()
+    assert answer.status_code == 200
+    assert env.drafts.store.checkpoint_pending is False
+    assert (state_dir / (STATE_FILE + "-wal")).stat().st_size == 0
+    assert marker.encode() not in _state_bytes(state_dir)
 
 
 def test_expired_drafts_deleted_on_read_or_save_leave_no_text(env: Env, state_dir: Path) -> None:

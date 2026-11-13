@@ -566,6 +566,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Drafts (G-S1 delta audit A-1): a draft text deleted while another connection was reading the state database (for
+  example a second Studio instance on the same state folder) could stay in `state.sqlite-wal` until the next history
+  activity, settings save, start or close, and with `[history] enabled = false` longer. Every read and save of the
+  drafts (and their purge) now retries a pending checkpoint, with the history on or off; it still never waits for the
+  reader.
 - TD-055: Studio's log redaction no longer depends on Uvicorn's loggers being unconfigured. `configure_logging`
   takes over Uvicorn's and asyncio's loggers (their own handlers removed, propagation on, the redaction filters on the
   loggers themselves) and restores them on close, so a `uvicorn.Config` with the default `log_config` or another
