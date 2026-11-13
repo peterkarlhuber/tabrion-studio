@@ -90,6 +90,7 @@ nav:
       - CI and supply chain: development/ci.md
       - Repository conventions: development/conventions.md
       - Documentation checklist: development/docs-checklist.md
+      - Release checklist 1.0: development/release-checklist.md
       - Tabrion API used: api-consumers.md
   - Architecture decisions:
       - adr/README.md
