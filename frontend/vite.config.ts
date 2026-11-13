@@ -1,6 +1,6 @@
-/// <reference types="vitest/config" />
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { configDefaults } from 'vitest/config';
 
 // `npm run dev` proxies /api to a running backend (`tabrion-studio --port 8765 --no-browser --print-url`). The backend
 // answers only its own Host and Origin (STU-003), so the proxy presents both as the backend's; the backend has no
@@ -35,11 +35,32 @@ export default defineConfig({
     sourcemap: false,
     assetsInlineLimit: 0,
   },
+  // Two projects, run one after the other by `npm test`: "unit" (every *.test.ts(x), in parallel) and "perf" (the timed
+  // acceptance tests, *.perf.test.ts, alone in one worker so no other test shares the CPU while they measure; STU-023).
   test: {
     globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
     restoreMocks: true,
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: 'unit',
+          environment: 'jsdom',
+          setupFiles: ['./src/test/setup.ts'],
+          include: ['src/**/*.test.{ts,tsx}'],
+          exclude: [...configDefaults.exclude, 'src/**/*.perf.test.ts'],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'perf',
+          environment: 'node',
+          include: ['src/**/*.perf.test.ts'],
+          fileParallelism: false,
+          maxWorkers: 1,
+        },
+      },
+    ],
   },
 });

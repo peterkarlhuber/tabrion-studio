@@ -26,4 +26,14 @@ native modal `<dialog>` instead of Radix Dialog, because Radix's scroll lock inj
 strict CSP of STU-003 (`style-src 'self'`) refuses (`docs/architecture/frontend.md`). STU-012 added CodeMirror 6
 (`@codemirror/view`, `state`, `language`, `lang-sql`, `autocomplete`), `@uiw/react-codemirror` and
 `@tanstack/react-virtual`, all approved in doc 05; CodeMirror is mounted in a shadow root for the same CSP reason.
+STU-023 added `@xyflow/react` 12.12.0 and `@dagrejs/dagre` 3.1.3 for the ER diagram (03 section 3.2, this ADR's E-S4:
+dagre, not elkjs). `@dagrejs/dagre` is dagre as its own maintainers publish it now (the `dagrejs` organization; the
+package `dagre` 0.8.5 of 2019 is no longer released and pulls in lodash); both and their dependencies (`zustand`,
+`classcat`, `@xyflow/system`, `d3-*`, `@types/d3-*`, `@dagrejs/graphlib`) are MIT, ISC or BSD-3-Clause and pass
+the license check. `@types/react-dom` (MIT) is now a runtime dependency in the lockfile, because `@xyflow/react`
+declares it, so it appears in the production SBOM; it is types only and never part of the bundle. React, xyflow and
+d3 set inline styles through `element.style` (the CSSOM), which the CSP does not refuse, and none of them adds a
+`<style>` element or a `style` attribute in the parts Studio uses. The diagram is loaded without `React.lazy`, so
+that its `<select>` is in the document within the task that made it, as WebKit's report of its own select style
+needs (TD-047, TD-052; `docs/architecture/explorer.md`, "The page").
 The other libraries arrive with the work packages that need them. The license check is in place (`scripts/check_licenses.py`).

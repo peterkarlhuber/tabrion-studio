@@ -439,6 +439,66 @@
       "copy": "Copy name",
       "copied": "Name copied.",
       "copyFailed": "The name could not be copied."
+    },
+    "view": {
+      "label": "View",
+      "objects": "Objects",
+      "diagram": "ER diagram"
+    },
+    "er": {
+      "title": "ER diagram",
+      "schema": "Schema",
+      "loading": "Reading the tables…",
+      "loadFailed": "The ER diagram could not be loaded. Reload the page and try again.",
+      "noTables": "This schema has no tables.",
+      "status": "Tables: {{count}}, relationships: {{lines}}, layout: {{ms}} ms.",
+      "capped": "The schema has {{total}} tables; one diagram shows at most {{max}}. It shows the first {{max}} by name; choose others under “Tables”.",
+      "choose": {
+        "summary": "Tables: {{count}} of {{total}}",
+        "legend": "Tables in the diagram",
+        "filter": "Filter tables",
+        "all": "Choose the first {{max}}",
+        "none": "Clear",
+        "apply_one": "Show {{count}} table",
+        "apply_other": "Show {{count}} tables",
+        "limit": "At most {{max}} tables fit in one diagram.",
+        "empty": "Choose at least one table."
+      },
+      "layout": "Lay out again",
+      "svg": "Save as SVG",
+      "png": "Save as PNG",
+      "saved": "Saved {{name}}.",
+      "pngFailed": "The browser could not draw the PNG. Save the diagram as SVG.",
+      "fileTitle": "ER diagram of {{schema}}",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "fit": "Fit to view",
+      "zoom": "{{percent}} %",
+      "minimap": "Overview of the diagram",
+      "canvas": "ER diagram of {{schema}} with {{count}} tables. The table below lists the same tables and relationships.",
+      "open": "Show {{name}} in the explorer",
+      "more_one": "+ {{count}} more column",
+      "more_other": "+ {{count}} more columns",
+      "pk": "primary key",
+      "fk": "foreign key",
+      "pkfk": "primary and foreign key",
+      "foreign": "(foreign)",
+      "unnamed": "unnamed key",
+      "aria": {
+        "node": "A table of the diagram.",
+        "edge": "A foreign key of the diagram.",
+        "controls": "Diagram controls"
+      },
+      "list": {
+        "caption": "Tables and relationships of {{schema}}",
+        "table": "Table",
+        "primaryKey": "Primary key",
+        "references": "References",
+        "referencedBy": "Referenced by",
+        "reference": "{{name}}: ({{columns}}) → {{target}} ({{referred}})",
+        "referenced": "{{table}} ({{columns}}), {{name}}",
+        "outside": "(not in the diagram)"
+      }
     }
   },
   "migrations": {
@@ -807,6 +867,7 @@
     "secret_file_unreadable": "The password file is missing, empty, larger than 4 KB or not UTF-8.",
     "object_not_found": "The object is no longer in the database's catalog. Refresh the catalog.",
     "explorer_engine": "This information exists only for the other database engine.",
+    "diagram_too_large": "The schema has more than 1000 tables, more than one diagram can read. Use the tree and the Relationships tab.",
     "db": {
       "connection": "Studio could not connect. Check the host and the port (a firewall may block it), the user and the password, and the TLS mode (verify-full needs the server certificate to be trusted; verify-ca or a CA file may help).",
       "auth": "The database refused the sign-in. Check the user and the password.",
