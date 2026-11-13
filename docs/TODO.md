@@ -66,7 +66,6 @@
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
-| TD-047 STU-050: the e2e suites on Firefox and WebKit (08 section 11, 09 STU-050; a `.github/` change) | P1 | Open (workflow-change draft PR) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -1114,19 +1113,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   completion list stays open over the editor.
 - **B-7, 4.3:** at 1280 × 800 the explorer's connection card fills the upper half of the page, so the tree and the
   detail start below the fold; 08 keeps the explorer as a sidebar beside the detail.
-- **Not here:** the "Connection lost" banner (TD-034), Firefox and WebKit (TD-047), the screen-reader sample
-  (TD-022).
-
-### TD-047 · STU-050: the e2e suites on Firefox and WebKit
-
-- **Priority:** P1 High · **Status:** Open (workflow-change draft PR) · **Refs:** 08 sections 10 and 11 (STU-050:
-  "alle Flows E2E grün auf Chromium/Firefox/WebKit"), 09 STU-050, QA-9 row, TD-007
-- **What:** CI runs the Playwright suites in Chromium only. A separate pull request adds Playwright projects for
-  Firefox and WebKit and a CI job per browser that installs the browser of the locked Playwright version; it changes
-  `.github/` and needs the workflow-change review. The jobs start as advisory, since the suites have not run in
-  either browser yet; they become required once green.
-- **Locally:** only a Chromium build is installed in the agent sandbox, so the acceptance run of 2026-11-13 covers
-  Chromium only.
+- **Not here:** the "Connection lost" banner (TD-034), Firefox and WebKit (TD-047, recorded in PR #59), the
+  screen-reader sample (TD-022).
 
 ### TD-043 · STU-021 page: the export dialog, and what it leaves for later
 

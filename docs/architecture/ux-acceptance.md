@@ -8,9 +8,10 @@ who does it. A criterion that is not met names its open item.
 
 **Acceptance run:** 2026-11-13, branch of the STU-050 pull request on master `e9df576`, the built frontend in a real
 `tabrion-studio` (editable install with `scripts/build_frontend.py`), SQLite and a throwaway PostgreSQL 16.15
-cluster with `scram-sha-256`, Chromium 1243 (headless shell; CI uses build 1248). Result: every criterion that the
-MVP covers is met in Chromium; Firefox and WebKit are open (B-2), and so are the items listed under
-[Open items](#open-items).
+cluster with `scram-sha-256`, Chromium 1243 (headless shell; CI uses build 1248). The whole e2e run: 259 passed, 30
+skipped (`screenshots.spec.ts`, which runs only with `STUDIO_SCREENSHOTS`), none failed, the PostgreSQL part of
+`explorer-reference.spec.ts` included. Result: every criterion that the MVP covers is met in Chromium; Firefox and
+WebKit are open (B-2), and so are the items listed under [Open items](#open-items).
 
 ## How to run it
 
@@ -80,7 +81,7 @@ after the MVP; marked ¹ in 08).
 | UX-X2 | Keyboard: palette, shortcuts, F6 areas, keyboard-only main flows | `e2e/keyboard.spec.ts`, `e2e/explorer.spec.ts`, `e2e/viewer.spec.ts`, `e2e/export.spec.ts` | met for the flows that exist; the rest is STU-052's (TD-020, PR #58) |
 | UX-X3 | No request leaves the local server | `e2e/network.spec.ts`, `e2e/backend.spec.ts`, `e2e/ux-acceptance.spec.ts` | met |
 | UX-X4 | Every flow green on **Chromium** | CI job `e2e` | met |
-| UX-X5 | Every flow green on **Firefox and WebKit** | a separate workflow-change pull request adds the browsers to CI | open (B-2) |
+| UX-X5 | Every flow green on **Firefox and WebKit** | jobs `e2e (firefox)` and `e2e (webkit)`, workflow-change PR #59 (advisory until green) | open (B-2, TD-047) |
 | UX-X6 | Screen-reader sample (VoiceOver, NVDA) and the final accessibility report | manual, STU-053 | open (TD-022) |
 
 ## Manual checks
@@ -98,7 +99,7 @@ Found or confirmed by this acceptance; each is in TD-046 unless another item alr
 
 - **B-1** 4.1: no project chooser, recently opened list or "Open SQLite file" on the start page. Studio serves one
   project folder per process (`docs/architecture/process-model.md`); "recently opened" is 1.0 (03 section 2 A).
-- **B-2** Firefox and WebKit are not run (TD-047, a workflow-change pull request).
+- **B-2** Firefox and WebKit are not run (TD-047, workflow-change draft PR #59).
 - **B-3** 4.8: the hint "Studio does not run migrations. Command: `alembic upgrade head`" with a copy button.
 - **B-4** 08 section 3: the switcher can show a latency, but showed none after Connect in the walk-through; the status
   bar's running queries (count, list with cancel) and the last query's rows and time (role and database are TD-034).
