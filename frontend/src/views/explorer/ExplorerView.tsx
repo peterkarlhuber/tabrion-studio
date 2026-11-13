@@ -63,7 +63,7 @@ import { handToEditor, selectStatement } from '../editor/handoff';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { prodTimeoutSeconds } from '../connections/useConnect';
-import { useConnectionSession } from '../../workspace';
+import { useConnectionSession, useReconnected } from '../../workspace';
 import viewStyles from '../Views.module.css';
 import styles from './Explorer.module.css';
 import {
@@ -182,6 +182,12 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   /** An Open press whose profile list is still being read; a second press meanwhile does nothing. */
   const checking = useRef(false);
   const connections = useConnectionSession();
+  const openedNow = useRef<Opened | null>(null);
+  /** The connection the page dropped because the server closed it; "Reconnect" in the banner brings it back. */
+  const dropped = useRef<Opened | null>(null);
+  useEffect(() => {
+    openedNow.current = opened;
+  }, [opened]);
 
   useEffect(() => {
     let active = true;
@@ -268,6 +274,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
 
   /** The connection `target` is gone: the page drops it (and the header too, if it shows it). */
   const forget = (target: Opened) => {
+    dropped.current = target;
     request.current += 1;
     detailRequest.current += 1;
     setPhase('idle');
@@ -417,6 +424,24 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     }
     await loadCatalog(mine, { ...target, connectionId: result.value }, false);
   };
+
+  // TD-034: "Reconnect" in the banner replaced the shown connection: read the catalog again on the new one, keeping
+  // the selection. Nothing opens here; the banner asked D-02.
+  // A connection the page dropped (the server closed it) is read afresh, if no other was opened since.
+  useReconnected((event) => {
+    const shown = openedNow.current;
+    const gone = dropped.current;
+    if (shown !== null && shown.connectionId === event.from) {
+      const mine = ++request.current;
+      setProblem(null);
+      void loadCatalog(mine, { ...shown, connectionId: event.to }, true);
+    } else if (shown === null && phase === 'idle' && gone?.connectionId === event.from) {
+      dropped.current = null;
+      const mine = ++request.current;
+      setProblem(null);
+      void loadCatalog(mine, { ...gone, connectionId: event.to }, false);
+    }
+  });
 
   /** Read the catalog again on the open connection: never opens one, so D-02 cannot be skipped. */
   const refresh = async () => {

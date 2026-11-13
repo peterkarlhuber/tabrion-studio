@@ -6,7 +6,14 @@
  * can pass a whole workspace to check the displays, in particular the PROD marking in the header, on every tab and in
  * the window title (STU-051).
  */
-import { createContext, useContext, type Dispatch, type SetStateAction } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 
 export type Environment = 'dev' | 'test' | 'prod';
 export type ConnectionStatus = 'connected' | 'connecting' | 'disconnected' | 'error';
@@ -71,6 +78,28 @@ export function prodKey(target: ProdTarget): string {
 }
 
 /**
+ * An open connection whose database no longer answers, or that the server closed (TD-034, 08 section 5 "error
+ * recovery"): the page shows the banner "Connection lost" with "Reconnect" until a connection of the same profile is
+ * opened again.
+ */
+export interface LostConnection {
+  connectionId: string;
+  profileId: string;
+  /** The profile's name as the page shows it (escaped). */
+  name: string;
+  environment: Environment | null;
+  /** `db.connection`, `studio.connection_not_found` or `studio.connection_stale`. */
+  code: string;
+}
+
+/** A lost connection was replaced: views that used `from` go on with `to` (the same id if the database came back). */
+export interface Reconnected {
+  profileId: string;
+  from: string;
+  to: string;
+}
+
+/**
  * The page's connection state, shared by the views that open a connection (STU-008): the connection the header
  * shows, and the PROD databases the user already confirmed with D-02 in this page session (08 section 6: "the first
  * time per session"). A confirmation belongs to the profile id and its target (`prodKey`): a profile that now points
@@ -95,6 +124,15 @@ export interface ConnectionSession {
    * while it had another value may miss the header's connection, so it must not clear it.
    */
   headerVersion: () => number;
+  /** The connections that are lost now, oldest first (TD-034). */
+  lost: LostConnection[];
+  /**
+   * Report that `connectionId` is lost (a request on it answered `code`). An id the page never opened, or one already
+   * replaced, is ignored. A PROD profile's D-02 confirmation is forgotten, so "Reconnect" asks D-02 again.
+   */
+  markLost: (connectionId: string, code: string) => void;
+  /** Listen for replaced connections; returns the function that stops listening. */
+  onReconnected: (listener: (event: Reconnected) => void) => () => void;
 }
 
 export const NO_CONNECTION_SESSION: ConnectionSession = {
@@ -106,12 +144,28 @@ export const NO_CONNECTION_SESSION: ConnectionSession = {
   beginConnect: () => 0,
   isLatestConnect: () => true,
   headerVersion: () => 0,
+  lost: [],
+  markLost: () => undefined,
+  onReconnected: () => () => undefined,
 };
 
 export const ConnectionSessionContext = createContext<ConnectionSession>(NO_CONNECTION_SESSION);
 
 export function useConnectionSession(): ConnectionSession {
   return useContext(ConnectionSessionContext);
+}
+
+/**
+ * Call `listener` when a lost connection is replaced (TD-034): a view that read on `event.from` goes on with
+ * `event.to`. The newest `listener` is called; it need not be stable.
+ */
+export function useReconnected(listener: (event: Reconnected) => void): void {
+  const { onReconnected } = useConnectionSession();
+  const current = useRef(listener);
+  useEffect(() => {
+    current.current = listener;
+  });
+  useEffect(() => onReconnected((event) => current.current(event)), [onReconnected]);
 }
 
 export const ENV_LABEL: Record<Environment, string> = { dev: 'DEV', test: 'TEST', prod: 'PROD' };

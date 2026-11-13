@@ -6,6 +6,11 @@
   password). The connection is checked before the answer, so a wrong password or an unreachable host is a
   ``db.<kind>`` problem here. An open connection of the same profile is returned again.
 * ``GET /api/connections``: the open connections (each checked against its profile; a stale one is closed).
+* ``GET /api/connections/{connection_id}/health`` (TD-034): whether the database still answers on the connection,
+  ``{state: "open", latency_ms}`` or ``{state: "busy"}`` (every pooled session in use); ``db.<kind>`` when it does not,
+  ``studio.connection_not_found`` or ``studio.connection_stale`` when the connection is gone. A read of ``SELECT 1``
+  kind only (tabrion's health check); the page's "Connection lost" banner polls it for the header's connection.
+  ``POST /api/connections`` does not return an open connection whose database no longer answers: it opens a new one.
 * ``DELETE /api/connections`` with ``{"connection_id"}``: 204 (the id is in the body, like the profile routes).
 * ``POST /api/connection-tests`` with ``{"profile_id", "confirmed_environment"}``: the connection test (TD-011):
   ``{ok, engine, environment, server_version, latency_ms, read_only, facts}``; the connection is closed again.
@@ -113,6 +118,13 @@ def add_connection_routes(app: FastAPI, registry: ConnectionRegistry) -> None:
     async def get_connections() -> Response:
         connections = await run(registry.list)
         return JSONResponse({"connections": [c.to_dict() for c in connections]})
+
+    @app.get("/api/connections/{connection_id}/health")
+    async def get_connection_health(connection_id: str) -> Response:
+        result = await guarded(registry.check, connection_id)
+        if isinstance(result, Response):
+            return result
+        return JSONResponse(result)
 
     @app.delete("/api/connections", status_code=204)
     async def delete_connection(request: Request) -> Response:

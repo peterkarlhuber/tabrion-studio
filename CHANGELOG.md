@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-034: the banner **Connection lost** with **Reconnect** (08 section 5 "error recovery") above every page that
+  holds a connection (explorer with its data and definition tabs, SQL editor, diagnostics, migration status), when a
+  request finds the database gone or the connection closed, or when the header connection's check (every 30 seconds
+  while the tab is visible; new route `GET /api/connections/{id}/health`) fails. **Reconnect** reads the profile
+  again and asks D-02 again for PROD; the page goes on with the new connection. The server now replaces a lost
+  connection on open instead of returning it; a busy pool (checked without waiting for a session) or a check that
+  fails otherwise (a timeout) keeps the connection. The SQL editor no longer reopens a PROD connection without D-02
+  when the server says it is gone.
 - STU-050, UX acceptance of the MVP: `docs/architecture/ux-acceptance.md` maps every criterion of 08 sections 3 to 6
   and of the plan's acceptance to its test or manual check, with the results of the run on 2026-11-13 (SQLite and
   PostgreSQL 16, Chromium). `e2e/ux-acceptance.spec.ts` runs 08 section 5's "First start" (launch link, D-01, the

@@ -11,11 +11,15 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { checkConnection } from './api/connections';
 import { startAppearanceSync } from './appearance';
+import { ConnectionLoss } from './connectionLoss';
+import { watchConnections } from './connectionWatch';
 import { fetchHealth, startHeartbeat } from './heartbeat';
 import { usePath } from './router';
 import type { SessionState } from './session';
 import { AppShell, type ServerState } from './shell/AppShell';
+import { ConnectionLost } from './shell/ConnectionLost';
 import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView } from './views/connections/ConnectionsView';
@@ -29,10 +33,17 @@ import {
   type ActiveConnection,
   prodKey,
   type ConnectionSession,
+  type LostConnection,
   type Workspace,
 } from './workspace';
 
 export type AppSession = SessionState | 'ended';
+
+/**
+ * How often the page asks whether the database still answers on the header's connection (TD-034), while the tab is
+ * visible; also when the tab becomes visible again.
+ */
+export const CONNECTION_CHECK_MS = 30_000;
 
 /** The SQL editor (STU-012) and CodeMirror load only when the page is opened: the other views stay small. */
 const EditorView = lazy(() =>
@@ -97,12 +108,15 @@ export function App({
   session = 'ok',
   workspace,
   heartbeat = true,
+  connectionCheckMs = CONNECTION_CHECK_MS,
 }: {
   fetcher?: typeof fetch;
   session?: SessionState;
   /** A fixed workspace (tests, e2e harness); without one the views fill it when they open a connection. */
   workspace?: Workspace;
   heartbeat?: boolean;
+  /** The interval of the connection check (TD-034); 0 turns it off. */
+  connectionCheckMs?: number;
 }) {
   const { t } = useTranslation();
   const path = usePath();
@@ -120,8 +134,28 @@ export function App({
   /** D-02 confirmations: `prodKey` -> profile id. */
   const [confirmed] = useState(() => new Map<string, string>());
   const requests = useRef(0);
+  // TD-034: the lost connections (the banner), kept by `loss`; the header's connection as of now for their names.
+  const [lost, setLost] = useState<LostConnection[]>([]);
+  const [loss] = useState(() => new ConnectionLoss());
+  useEffect(
+    () =>
+      loss.attach({
+        changed: setLost,
+        forgetProd: (profileId) => {
+          for (const [key, id] of [...confirmed]) if (id === profileId) confirmed.delete(key);
+        },
+        disconnected: (connectionId) =>
+          setActive((current) =>
+            current?.connectionId === connectionId
+              ? { ...current, status: 'disconnected' }
+              : current,
+          ),
+        header: () => active,
+      }),
+    [active, confirmed, loss, setActive],
+  );
   // The functions keep their identity when the header changes, so views that depend on them do not reload.
-  const sessionFunctions = useMemo<Omit<ConnectionSession, 'active' | 'setActive'>>(
+  const sessionFunctions = useMemo<Omit<ConnectionSession, 'active' | 'setActive' | 'lost'>>(
     () => ({
       prodConfirmed: (target) => confirmed.has(prodKey(target)),
       confirmProd: (target) => {
@@ -136,13 +170,48 @@ export function App({
       },
       isLatestConnect: (request) => request === requests.current,
       headerVersion: () => headerChanges.current,
+      markLost: (connectionId, code) => loss.markLost(connectionId, code),
+      onReconnected: (listener) => loss.onReconnected(listener),
     }),
-    [confirmed],
+    [confirmed, loss],
+  );
+
+  // Every view reads through this fetcher, so every answer about a connection reaches the session (TD-034).
+  const watched = useMemo(
+    () =>
+      watchConnections(fetcher, {
+        lost: (connectionId, code) => loss.markLost(connectionId, code),
+        opened: (connection) => loss.seen(connection, true),
+        listed: (list) => {
+          for (const connection of list) loss.seen(connection, false);
+        },
+      }),
+    [fetcher, loss],
   );
   const connections = useMemo<ConnectionSession>(
-    () => ({ active, setActive, ...sessionFunctions }),
-    [active, setActive, sessionFunctions],
+    () => ({ active, setActive, lost, ...sessionFunctions }),
+    [active, setActive, lost, sessionFunctions],
   );
+
+  // TD-034: ask now and then whether the database still answers on the header's connection; a failed check reaches
+  // `markLost` through the watched fetcher.
+  const checked = active?.status === 'connected' ? (active.connectionId ?? null) : null;
+  useEffect(() => {
+    if (checked === null || connectionCheckMs <= 0 || session !== 'ok') return undefined;
+    const check = () => {
+      if (document.visibilityState === 'hidden') return;
+      void checkConnection(watched, checked);
+    };
+    const timer = window.setInterval(check, connectionCheckMs);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [checked, connectionCheckMs, session, watched]);
   const shown = useMemo<Workspace>(
     () => workspace ?? { connection: active, tabs: [], activeTab: null },
     [workspace, active],
@@ -177,10 +246,15 @@ export function App({
   return (
     <WorkspaceContext.Provider value={shown}>
       <ConnectionSessionContext.Provider value={connections}>
-        <AppShell path={path} pageTitle={pageTitle} server={offline ? { kind: 'offline' } : server}>
-          <View path={path} fetcher={fetcher} />
+        <AppShell
+          path={path}
+          pageTitle={pageTitle}
+          server={offline ? { kind: 'offline' } : server}
+          banner={<ConnectionLost fetcher={watched} />}
+        >
+          <View path={path} fetcher={watched} />
         </AppShell>
-        <ProjectTrust fetcher={fetcher} />
+        <ProjectTrust fetcher={watched} />
       </ConnectionSessionContext.Provider>
     </WorkspaceContext.Provider>
   );
