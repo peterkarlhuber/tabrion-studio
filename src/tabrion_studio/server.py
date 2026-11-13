@@ -58,6 +58,7 @@ from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens, redirect_file_pattern
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
+from tabrion_studio.services.drafts import Drafts
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.favorites import Favorites
@@ -282,6 +283,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         history=history,
         favorites=favorites,
         scripts=Scripts(options.project),
+        drafts=Drafts(state, key, configuration.limits),
         explorer=explorer,
         viewer=Viewer(explorer, configuration.limits),
         diagnostics=Diagnostics(registry),

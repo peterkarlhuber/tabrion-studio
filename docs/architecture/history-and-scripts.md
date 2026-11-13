@@ -1,6 +1,7 @@
 # History, favorites and scripts
 
-STU-020 (03 sections 2 A, 2 C, 4.3 and 6; 08 sections 4.4, 4.10 and 5) adds four things:
+STU-020 (03 sections 2 A, 2 C, 4.3 and 6; 08 sections 4.4, 4.10 and 5) adds four things, and TD-033 (review F-5)
+moves the SQL editor's drafts into the same state database:
 
 - the query history;
 - favorite and recently opened profiles;
@@ -14,8 +15,8 @@ header and, for a change, the Origin check and JSON only.
 
 ## The state database
 
-`<state dir>/state.sqlite` holds the history, the favorites and the recently opened profiles (03 section 4.3,
-threat T-04, STU-T-007).
+`<state dir>/state.sqlite` holds the history, the favorites, the recently opened profiles and the editor drafts
+(03 section 4.3, threat T-04, STU-T-007).
 
 - **Opening.** The file is opened with `tabrion.sqlite.connect`:
   - a new file is created 0600 with `O_CREAT | O_EXCL | O_NOFOLLOW`, whatever the umask;
@@ -27,7 +28,10 @@ threat T-04, STU-T-007).
 - **Profile.** tabrion's defaults (WAL, `synchronous=FULL`, `trusted_schema=OFF`) plus `secure_delete=ON`, so a
   deleted entry is overwritten in the file.
 - **Schema.** It is versioned with `PRAGMA user_version` and migrated with `tabrion.sqlite.migrate` in one write
-  transaction. Every statement is a fixed text with bound values.
+  transaction. Every statement is a fixed text with bound values. Version 1 has the history, favorites and recent
+  profiles; version 2 adds `drafts`. A file that holds data is copied with `tabrion.sqlite.backup` to
+  `state.sqlite.v<n>.bak` (0600) before it is migrated; the steps only add tables, so the copy is removed once the
+  migration succeeded (it would otherwise keep history text that a later delete removes).
 - **When it fails.** The store opens on first use. If it cannot be opened (a refused link, a corrupt file, a full
   disk), the routes answer `studio.state_unavailable` (503), the log has one `studio.state_unavailable` record, and
   queries run on without a history entry.
@@ -67,6 +71,45 @@ write-ahead log.
 
 An entry is the user's own SQL text, which can hold sensitive literals (asset A5). It lives only in the state
 database. The query engine logs no SQL text, and no route other than the history answers it.
+
+## Editor drafts
+
+TD-033, security review F-5 (`src/tabrion_studio/services/drafts.py`, `api/drafts.py`). The SQL editor's tabs used
+to be kept in the browser's `localStorage`, which belongs to the port-scoped origin `http://127.0.0.1:<port>`: a later
+program serving on the same port in the same browser profile could read them, and they were outside the 0600 state
+folder. They now live in the state database, one document per project (the project key, as the browser key was).
+
+| Route | Answer |
+|---|---|
+| `GET /api/drafts` | `{drafts: {tabs: [{id, title, profile_id, sql, saved_sql, script_path?, script_digest?, script_crlf?}], active_tab} \| null}` |
+| `PUT /api/drafts` | `{"tabs", "active_tab", "known"?}`; `{tabs}`, the number stored |
+
+- **Fields.** A tab has exactly the fields above; any other field is `studio.invalid_request`, any other top-level
+  key `access.bad_request`. So a page cannot store a parameter value or a result in a draft, even by mistake. The
+  text is what the user typed, with its `:name` placeholders, like a history entry.
+- **Caps.** 32 tabs, 512 K characters per text (the statement cap), 2 M characters of text in all
+  (`studio.drafts_too_large`, 413), and the body cap of the route (12 MB plus about 700 KB, enforced while the body
+  streams in). The page leaves out a text over the cap of one text, and the largest texts first while all are over
+  theirs; the tab still works.
+- **Merge by tab.** `known` is every tab id the page has had. Stored tabs it does not name (another page of the same
+  project added them) are kept after the page's own, within the caps; the tabs it closed go. Without `known`, the
+  page's tabs replace the stored ones; no tabs at all delete the project's drafts. One write transaction.
+- **Settings.** `[history] retention_days` applies: drafts not saved for that many days are deleted when they are
+  read, and every save deletes other projects' drafts that old. `[history] enabled = false` does not stop drafts:
+  they are the tabs the user has open and sees, not a record of what ran; closing a tab deletes its text. "Delete
+  history" leaves the drafts.
+- **PROD.** A tab on a PROD profile keeps its draft like any other tab, as the history keeps PROD statements: the text
+  only, never a value or a row.
+- **Without the state database** both routes answer `studio.state_unavailable`; the page keeps its tabs in memory
+  only and writes nothing to browser storage.
+- **Migration from browser storage.** On load, the page reads the drafts an earlier version left under
+  `tabrion-studio.editor-drafts.<hash of the project folder>` and the unscoped `tabrion-studio.editor-drafts`, shows
+  them after the server's tabs, and sends them with its first save. Once the server accepted a save, every
+  `tabrion-studio.editor-drafts*` key is removed, other projects' too: their folder cannot be told from the hash,
+  and such a key can only be read again by a Studio on the same port. While the server cannot store them, the keys
+  stay, so nothing is lost. The page never writes a draft to `localStorage`, `sessionStorage` or IndexedDB.
+
+No log record holds a draft's text, title or script path.
 
 ## Favorite and recently opened profiles
 
@@ -166,7 +209,10 @@ this way for PROD and reads the catalog in full only after the user's click.
 |---|---|
 | `tests/security/test_history.py` | `state.sqlite` is 0600 and opened lazily; a link or a file others may write is refused (`studio.state_unavailable`, queries run on); the canary value of a parameter is in no answer, no file byte and no log record; off, retention, the entry and size caps; paging, search and the profile filter; project scopes; deletes leave no text in the file; favorites and recent profiles; `cached_only` |
 | `tests/security/test_scripts.py` | only `.sql` files in the project; every refused path form (traversal, drive, UNC, automount, hidden folder, control character); no link is followed, inside or out; atomic save with the mode kept; stale, exists, folder missing, size and encoding |
+| `tests/security/test_drafts.py` | a canary draft text is only in `state.sqlite*` (0600) and in no other file or log record; a tab with a parameter value or another field is refused; the caps and the body cap; merge by tab; projects apart; retention, history off and "Delete history"; `studio.state_unavailable`; the migration from version 1 keeps the history and leaves no copy |
 | `tests/security/test_every_route.py` | the new routes need a session and the CSRF header, refuse other sites and need JSON |
 | `frontend/src/views/history/HistoryView.test.tsx`, `src/views/editor/EditorView.test.tsx` (STU-020 block), `src/views/editor/completion.test.ts`, `src/api/history.test.ts`, `src/views/connections/ConnectionsView.test.tsx` | the page: history list, filters, open and delete; scripts open, save, overwrite, CRLF; format; completion and its PROD rule; favorites, start page, history settings |
 | `frontend/e2e/history.spec.ts` | the flows in the harness, keyboard only where it matters (Ctrl+H, the dialogs), axe light and dark in English and German |
+| `frontend/src/views/editor/drafts.test.ts`, `EditorView.test.tsx` (drafts) | drafts through the API only, the document's fields and caps, the server merge, the migration from `localStorage` and the removal of every draft key, the old keys kept while the server cannot store them |
+| `frontend/e2e/drafts-backend.spec.ts` | against a real server: a draft survives a reload and a restart on another port, its text is in `state.sqlite` and in no `localStorage`, `sessionStorage` or IndexedDB; old `localStorage` drafts move to the server and leave the browser; axe light and dark, English and German |
 | `frontend/e2e/history-backend.spec.ts` | 09 STU-020's acceptance against a real server: favorite made and opened, history without the parameter value (page, answer and state folder), script saved and opened, completion from the catalog |

@@ -69,13 +69,16 @@ whole.
 ## Tabs and drafts
 
 Each tab has its own connection and text. **New editor tab** is Alt+T (⌥T), **Close editor tab** is Alt+W (⌥W):
-the browser keeps ⌘T and ⌘W for itself. The text of every tab is kept as a draft in this browser and comes back
-when you open the editor again. A draft holds the SQL text exactly as typed (never parameter values or results), in
-the browser's storage of this computer's user, so do not type secrets into the SQL itself; give them as parameters.
-Drafts are kept per project: another project started on the same port does not see them. Studio's port changes
-with every start unless you give `--port`, and the browser keeps drafts per port, so give a fixed port to keep
-drafts across starts. Two browser tabs on the editor keep each other's new tabs; when both change the same tab, the
-last change wins.
+the browser keeps ⌘T and ⌘W for itself. The text of every tab is kept as a draft in Studio's private state database
+and comes back when you open the editor again, also after a restart on another port. A draft holds the SQL text
+exactly as typed (never parameter values or results), so do not type secrets into the SQL itself; give them as
+parameters. Nothing is kept in the browser's storage. Drafts are kept per project. A draft that has not changed for
+the history's retention days (Settings, 30 by default) is deleted; turning the history off or deleting it leaves
+the drafts. Two browser tabs on the editor keep each other's new tabs; when both change the same tab, the last
+change wins.
+
+Drafts that an earlier version of Studio kept in the browser are moved into the state database the first time you
+open the editor, and then removed from the browser, including drafts of other projects that ran on the same port.
 
 Closing a tab whose text changed since it was last saved asks first: **Save**, **Discard** or **Cancel**.
 

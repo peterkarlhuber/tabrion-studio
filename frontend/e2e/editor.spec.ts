@@ -397,15 +397,40 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
   expect(file.suggestedFilename()).toBe(browserName === 'webkit' ? 'Query_2.sql' : 'Query 2.sql');
   expect(readFileSync(await file.path(), 'utf-8')).toBe('select 2');
   await expect(page.getByTestId('editor-tab')).toHaveCount(1);
-  // The drafts are stored under the project's key, never the shared one; parameter values are never part of them.
-  const stored = await page.evaluate(() =>
-    Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
+  // The drafts go to the server (TD-033, review F-5), never to localStorage; parameter values are never part of them.
+  await page.waitForTimeout(600);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
+    ),
+  ).toEqual([]);
+  const puts = await page.evaluate(
+    () => (window as unknown as { draftsLog: { puts: unknown[] } }).draftsLog.puts,
   );
-  expect(stored).toHaveLength(1);
-  expect(stored[0]).toMatch(/^tabrion-studio\.editor-drafts\.[0-9a-z]+$/);
-  const text = await page.evaluate((key) => localStorage.getItem(key) ?? '', stored[0] ?? '');
+  const text = JSON.stringify(puts.at(-1));
   expect(text).toContain('select 1');
   expect(text).not.toContain('params');
+});
+
+test('drafts an earlier version kept in localStorage move to the server and leave the browser', async ({
+  page,
+}) => {
+  await page.goto(
+    '/harness.html?scenario=editor&path=/sql&sql=select%201&legacyDraft=select%20old',
+  );
+  await expect(page.getByTestId('editor-tab')).toHaveCount(2);
+  await expect(page.getByTestId('editor-tab').nth(1)).toContainText('Old draft');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.keys(localStorage).filter((key) => key.startsWith('tabrion-studio.editor-drafts')),
+      ),
+    )
+    .toEqual([]);
+  const puts = await page.evaluate(
+    () => (window as unknown as { draftsLog: { puts: unknown[] } }).draftsLog.puts,
+  );
+  expect(JSON.stringify(puts.at(-1))).toContain('select old');
 });
 
 test('D-02 asks before the first PROD connection; Cancel connects nothing', async ({ page }) => {

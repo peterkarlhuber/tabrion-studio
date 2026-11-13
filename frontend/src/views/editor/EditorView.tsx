@@ -4,8 +4,8 @@
  * time in a read-only transaction. There is no write mode and no write control: the Data Editor and the write mode
  * of the editor (STU-026) stay locked behind G-S2.
  *
- * - **Tabs:** each editor tab has its own connection profile and text; the text is kept as a draft in this browser
- *   (`drafts.ts`). Closing a tab whose text changed since it was last saved asks D-06 (save as a `.sql` file,
+ * - **Tabs:** each editor tab has its own connection profile and text; the text is kept as a draft in Studio's state
+ *   database (`drafts.ts`, `PUT /api/drafts`; never in browser storage, TD-033 / review F-5). Closing a tab whose text changed since it was last saved asks D-06 (save as a `.sql` file,
  *   discard, cancel).
  * - **Run:** ⌘↵/Ctrl+Enter runs the selection or the statement under the cursor; ⇧⌘↵/Shift+Ctrl+Enter runs every
  *   statement of the tab in turn and stops at the first error or a cancel. The statements are split here
@@ -94,7 +94,15 @@ import {
   relationNamed,
 } from './completion';
 import { takeHandoff } from './handoff';
-import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
+import {
+  clearLegacyDrafts,
+  fetchDrafts,
+  hasLegacyDrafts,
+  mergeDrafts,
+  readLegacyDrafts,
+  saveDrafts,
+  type DraftTab,
+} from './drafts';
 import { formatCount, formatMs, formatSeconds } from './format';
 import { formatSql } from './formatSql';
 import { ParamPanel, paramFieldId } from './ParamPanel';
@@ -320,10 +328,14 @@ export function EditorView({
   const [maxRowsSetting, setMaxRowsSetting] = useState(SETTING_MAX_ROWS);
   const [tabs, setTabs] = useState<DraftTab[]>([]);
   const [activeId, setActiveId] = useState<string>('');
-  /** The drafts' storage key (per project), known once the project's folder was read. */
-  const [draftKey, setDraftKey] = useState<string | null>(null);
+  /** The drafts were read (from the server, or the browser storage of an earlier version): saves may start. */
+  const [draftsRead, setDraftsRead] = useState(false);
   /** Every tab id this page has had: a draft write keeps only the other pages' tabs (`drafts.ts`). */
   const known = useRef(new Set<string>());
+  /** Saves of the drafts, one after the other (a later one never lands before an earlier one). */
+  const draftSaves = useRef<Promise<unknown>>(Promise.resolve());
+  /** An earlier version left drafts in browser storage: removed after the first save the server accepted. */
+  const legacyDrafts = useRef(false);
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const [params, setParams] = useState<Record<string, Record<string, ParamInput>>>({});
   const [paramProblem, setParamProblem] = useState<{ name: string; problem: ParamProblem } | null>(
@@ -375,31 +387,36 @@ export function EditorView({
   // Profiles, the drafts of this project and the row limit setting.
   useEffect(() => {
     let active = true;
-    void Promise.all([fetchProfiles(fetcher), fetchProject(fetcher)]).then(([list, project]) => {
-      if (!active) return;
-      const items = list?.profiles ?? [];
-      const key = draftsKey(project?.path ?? '');
-      const drafts = readDrafts(key);
-      // The drafts, or a first tab (on the first profile, or none).
-      let first = drafts?.tabs ?? [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))];
-      let activeTab = drafts?.activeTab ?? first[0]?.id ?? '';
-      // A statement from another page (the explorer's "SELECT … LIMIT 100"): a new tab, never run by itself.
-      const handed = takeHandoff();
-      if (handed !== null) {
-        const created = {
-          ...newTab(first.length + 1, handed.profileId, i18n.t.bind(i18n)),
-          title: handed.title,
-          sql: handed.sql,
-        };
-        first = drafts === null ? [created] : [...first, created];
-        activeTab = created.id;
-      }
-      for (const item of first) known.current.add(item.id);
-      setProfiles(items);
-      setTabs(first);
-      setActiveId(activeTab);
-      setDraftKey(key);
-    });
+    void Promise.all([fetchProfiles(fetcher), fetchProject(fetcher), fetchDrafts(fetcher)]).then(
+      ([list, project, stored]) => {
+        if (!active) return;
+        const items = list?.profiles ?? [];
+        // The server's drafts, and once those of an earlier version's browser storage (TD-033 migration): they are
+        // saved to the server with the first save and then removed from the browser.
+        legacyDrafts.current = hasLegacyDrafts();
+        const legacy = legacyDrafts.current ? readLegacyDrafts(project?.path ?? '') : null;
+        const drafts = mergeDrafts(stored.ok ? stored.value : null, legacy);
+        // The drafts, or a first tab (on the first profile, or none).
+        let first = drafts?.tabs ?? [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))];
+        let activeTab = drafts?.activeTab ?? first[0]?.id ?? '';
+        // A statement from another page (the explorer's "SELECT … LIMIT 100"): a new tab, never run by itself.
+        const handed = takeHandoff();
+        if (handed !== null) {
+          const created = {
+            ...newTab(first.length + 1, handed.profileId, i18n.t.bind(i18n)),
+            title: handed.title,
+            sql: handed.sql,
+          };
+          first = drafts === null ? [created] : [...first, created];
+          activeTab = created.id;
+        }
+        for (const item of first) known.current.add(item.id);
+        setProfiles(items);
+        setTabs(first);
+        setActiveId(activeTab);
+        setDraftsRead(true);
+      },
+    );
     void fetchSettings(fetcher).then((state) => {
       if (active && state !== null) setMaxRowsSetting(state.settings.maxRows);
     });
@@ -408,15 +425,21 @@ export function EditorView({
     };
   }, [fetcher, i18n]);
 
-  // Drafts, a moment after the last change.
+  // Drafts, a moment after the last change, to the server (never to browser storage).
   useEffect(() => {
-    if (tabs.length === 0 || draftKey === null) return undefined;
-    const timer = setTimeout(
-      () => writeDrafts({ tabs, activeTab: activeId }, draftKey, known.current),
-      DRAFT_SAVE_MS,
-    );
+    if (tabs.length === 0 || !draftsRead) return undefined;
+    const timer = setTimeout(() => {
+      const ids = new Set(known.current);
+      draftSaves.current = draftSaves.current.then(async () => {
+        const saved = await saveDrafts(fetcher, { tabs, activeTab: activeId }, ids);
+        if (saved && legacyDrafts.current) {
+          legacyDrafts.current = false;
+          clearLegacyDrafts();
+        }
+      });
+    }, DRAFT_SAVE_MS);
     return () => clearTimeout(timer);
-  }, [tabs, activeId, draftKey]);
+  }, [tabs, activeId, draftsRead, fetcher]);
 
   // Cancel what still runs when the page goes (the results are not kept).
   useEffect(

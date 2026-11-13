@@ -1,15 +1,20 @@
 /**
- * Drafts of the editor tabs in this browser (03 section 2 C: "drafts stored locally"): the title, the profile and
- * the SQL text of every tab, and which tab is open. Parameter values are never stored (08 section 5), and neither
- * are results (threat T-15).
+ * Drafts of the editor tabs (03 section 2 C, 08 section 4.4): the title, the profile and the SQL text of every tab,
+ * and which tab is open. Parameter values are never stored (08 section 5), and neither are results (threat T-15).
  *
- * Browser storage belongs to the origin, and Studio's port changes with every start unless `--port` is given, so a
- * draft survives a reload but not always a restart. The key holds a hash of the project's folder (`draftsKey`), so
- * two projects started on the same port do not see each other's drafts (L-5 of stu-012-review.md). Two pages of one
- * project merge by tab: a write keeps the tabs another page added and drops only the tabs this page closed. Keeping
- * drafts in Studio's state folder (08 section 4.4 names the state database) is docs/TODO.md TD-033. Every access is
- * guarded: storage can be unavailable or full.
+ * TD-033 / review F-5: the drafts live in Studio's state database (`state.sqlite`, 0600) behind the authenticated
+ * API, `GET` and `PUT /api/drafts` (docs/architecture/history-and-scripts.md, "Editor drafts"), one document per
+ * project. They used to live in `localStorage`, which belongs to the port-scoped origin `http://127.0.0.1:<port>`, so
+ * a later program on the same port in the same browser profile could read them. Nothing is written to browser storage
+ * any more. Drafts an earlier version left there are read once (`readLegacyDrafts`), saved to the server with the
+ * page's first save, and then every such key is removed (`clearLegacyDrafts`); while the server cannot keep them, the
+ * old keys stay so that nothing is lost.
+ *
+ * Two pages of one project merge by tab on the server: a save names every tab id the page has had (`known`), so the
+ * server keeps the tabs another page added and drops only the tabs this page closed.
  */
+import { read } from '../../api/explorer';
+import { send, type Result } from '../../api/profiles';
 
 export interface DraftTab {
   id: string;
@@ -32,6 +37,7 @@ export interface Drafts {
   activeTab: string;
 }
 
+/** The prefix of the browser-storage keys of earlier versions (read once for the migration, then removed). */
 export const DRAFTS_KEY = 'tabrion-studio.editor-drafts';
 
 /** A short hash of a text (53-bit cyrb53): the key names the project without holding its path. */
@@ -48,28 +54,23 @@ function hash(text: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
 
-/** The storage key of a project's drafts; the unscoped key when the project's folder is not known. */
+/** The browser-storage key an earlier version kept a project's drafts under (L-5); the unscoped key without one. */
 export function draftsKey(projectPath: string): string {
   return projectPath === '' ? DRAFTS_KEY : `${DRAFTS_KEY}.${hash(projectPath)}`;
 }
-/** The most tabs and the most text kept; a larger draft is not stored (the tab still works). */
+
+/** The server's caps (`services/drafts.py`): tabs, one text, every text together. */
 export const MAX_TABS = 32;
 export const MAX_DRAFT_CHARS = 512 * 1024;
+export const MAX_TOTAL_CHARS = 2 * 1024 * 1024;
+/** The tab ids a save names as known (the server's cap). */
+export const MAX_KNOWN = 1024;
 
 function text(value: unknown, limit: number): string | null {
   return typeof value === 'string' && value.length <= limit ? value : null;
 }
 
-export function parseDrafts(raw: string | null): Drafts | null {
-  if (raw === null) return null;
-  let doc: unknown;
-  try {
-    doc = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  if (typeof doc !== 'object' || doc === null) return null;
-  const { tabs, activeTab } = doc as Record<string, unknown>;
+function parseTabs(tabs: unknown, activeTab: unknown): Drafts | null {
   if (!Array.isArray(tabs)) return null;
   const parsed = tabs.slice(0, MAX_TABS).flatMap((item: unknown): DraftTab[] => {
     if (typeof item !== 'object' || item === null) return [];
@@ -79,7 +80,7 @@ export function parseDrafts(raw: string | null): Drafts | null {
     const profileId = text(tab.profile_id, 512) ?? '';
     const sql = text(tab.sql, MAX_DRAFT_CHARS);
     const savedSql = text(tab.saved_sql, MAX_DRAFT_CHARS) ?? '';
-    if (id === null || title === null || sql === null) return [];
+    if (id === null || id === '' || title === null || sql === null) return [];
     const scriptPath = text(tab.script_path, 512);
     const scriptDigest =
       typeof tab.script_digest === 'string' && /^[0-9a-f]{64}$/.test(tab.script_digest)
@@ -105,48 +106,147 @@ export function parseDrafts(raw: string | null): Drafts | null {
   return { tabs: parsed, activeTab: active };
 }
 
-export function readDrafts(key: string = DRAFTS_KEY): Drafts | null {
+/** Drafts as an earlier version stored them in the browser (`{tabs, activeTab}` as JSON text). */
+export function parseDrafts(raw: string | null): Drafts | null {
+  if (raw === null) return null;
+  let doc: unknown;
   try {
-    return parseDrafts(window.localStorage.getItem(key));
+    doc = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (typeof doc !== 'object' || doc === null) return null;
+  const { tabs, activeTab } = doc as Record<string, unknown>;
+  return parseTabs(tabs, activeTab);
+}
+
+/** The answer of `GET /api/drafts`: `{drafts: {tabs, active_tab} | null}`; null when it has another shape. */
+export function parseDraftsAnswer(body: unknown): { drafts: Drafts | null } | null {
+  if (typeof body !== 'object' || body === null || !('drafts' in body)) return null;
+  const drafts = (body as { drafts: unknown }).drafts;
+  if (drafts === null) return { drafts: null };
+  if (typeof drafts !== 'object') return null;
+  const { tabs, active_tab: activeTab } = drafts as Record<string, unknown>;
+  return { drafts: parseTabs(tabs, activeTab) };
 }
 
 /**
- * Store the drafts under `key`. With `known` (every tab id this page has had), the stored tabs this page never had
+ * The document `PUT /api/drafts` takes: the known fields of each tab and nothing else, within the server's caps. A
+ * text over the cap of one text is left out (the tab still works), and while all texts together are over their cap,
+ * the largest is left out first.
+ */
+export function draftsDocument(drafts: Drafts, known?: ReadonlySet<string>) {
+  const tabs = drafts.tabs.slice(0, MAX_TABS).map((tab) => ({
+    id: tab.id,
+    title: tab.title,
+    profile_id: tab.profileId,
+    sql: tab.sql.length <= MAX_DRAFT_CHARS ? tab.sql : '',
+    saved_sql: tab.savedSql.length <= MAX_DRAFT_CHARS ? tab.savedSql : '',
+    ...(tab.scriptPath !== undefined && tab.scriptDigest !== undefined
+      ? {
+          script_path: tab.scriptPath,
+          script_digest: tab.scriptDigest,
+          ...(tab.scriptCrlf === true ? { script_crlf: true } : {}),
+        }
+      : {}),
+  }));
+  let total = tabs.reduce((sum, tab) => sum + tab.sql.length + tab.saved_sql.length, 0);
+  while (total > MAX_TOTAL_CHARS) {
+    let largest: { tab: (typeof tabs)[number]; field: 'sql' | 'saved_sql' } | null = null;
+    for (const tab of tabs) {
+      for (const field of ['sql', 'saved_sql'] as const) {
+        if (largest === null || tab[field].length > largest.tab[largest.field].length) {
+          largest = { tab, field };
+        }
+      }
+    }
+    if (largest === null) break;
+    total -= largest.tab[largest.field].length;
+    largest.tab[largest.field] = '';
+  }
+  return {
+    tabs,
+    active_tab: drafts.activeTab,
+    ...(known !== undefined ? { known: [...known].slice(-MAX_KNOWN) } : {}),
+  };
+}
+
+/** This project's drafts from the server; `null` when it keeps none. */
+export async function fetchDrafts(fetcher: typeof fetch): Promise<Result<Drafts | null>> {
+  const result = await read(fetcher, '/api/drafts', parseDraftsAnswer);
+  return result.ok ? { ok: true, value: result.value.drafts } : result;
+}
+
+/**
+ * Store the drafts on the server. With `known` (every tab id this page has had), the stored tabs this page never had
  * are kept after its own: another page of the same project added them.
  */
-export function writeDrafts(
+export async function saveDrafts(
+  fetcher: typeof fetch,
   drafts: Drafts,
-  key: string = DRAFTS_KEY,
   known?: ReadonlySet<string>,
-): void {
-  let tabs = drafts.tabs;
-  if (known !== undefined) {
-    const others = (readDrafts(key)?.tabs ?? []).filter((tab) => !known.has(tab.id));
-    tabs = [...tabs, ...others];
-  }
-  const doc = {
-    tabs: tabs.slice(0, MAX_TABS).map((tab) => ({
-      id: tab.id,
-      title: tab.title,
-      profile_id: tab.profileId,
-      sql: tab.sql.length <= MAX_DRAFT_CHARS ? tab.sql : '',
-      saved_sql: tab.savedSql.length <= MAX_DRAFT_CHARS ? tab.savedSql : '',
-      ...(tab.scriptPath !== undefined && tab.scriptDigest !== undefined
-        ? {
-            script_path: tab.scriptPath,
-            script_digest: tab.scriptDigest,
-            ...(tab.scriptCrlf === true ? { script_crlf: true } : {}),
-          }
-        : {}),
-    })),
-    activeTab: drafts.activeTab,
-  };
+): Promise<boolean> {
+  const result = await send<unknown>(fetcher, 'PUT', '/api/drafts', draftsDocument(drafts, known));
+  return result.ok;
+}
+
+// --- browser storage of earlier versions (migration only) ----------------------------------------------------------
+
+function legacyKeys(): string[] {
   try {
-    window.localStorage.setItem(key, JSON.stringify(doc));
+    const keys: string[] = [];
+    for (let i = 0; i < window.localStorage.length; i += 1) {
+      const key = window.localStorage.key(i);
+      if (key !== null && (key === DRAFTS_KEY || key.startsWith(`${DRAFTS_KEY}.`))) keys.push(key);
+    }
+    return keys;
   } catch {
-    // Storage unavailable or full: the drafts live only in this page.
+    return [];
   }
+}
+
+/** Whether an earlier version left drafts (of any project) in this browser's storage. */
+export function hasLegacyDrafts(): boolean {
+  return legacyKeys().length > 0;
+}
+
+/**
+ * The drafts an earlier version kept in this browser for this project: its own key, then the unscoped key (written
+ * while the project's folder was not known). Only read: `clearLegacyDrafts` removes them once the server has them.
+ */
+export function readLegacyDrafts(projectPath: string): Drafts | null {
+  const stored = (key: string) => {
+    try {
+      return parseDrafts(window.localStorage.getItem(key));
+    } catch {
+      return null;
+    }
+  };
+  const own = projectPath === '' ? null : stored(draftsKey(projectPath));
+  return mergeDrafts(own, stored(DRAFTS_KEY));
+}
+
+/**
+ * Remove every draft key of earlier versions from this browser's storage: this project's, the unscoped one and other
+ * projects' (their folder cannot be told from the key's hash, and browser storage is what F-5 is about).
+ */
+export function clearLegacyDrafts(): void {
+  for (const key of legacyKeys()) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Storage unavailable: nothing to remove.
+    }
+  }
+}
+
+/** `first`'s tabs, then `second`'s tabs that `first` does not have (by id), within the tab cap. */
+export function mergeDrafts(first: Drafts | null, second: Drafts | null): Drafts | null {
+  if (first === null) return second;
+  if (second === null) return first;
+  const ids = new Set(first.tabs.map((tab) => tab.id));
+  return {
+    tabs: [...first.tabs, ...second.tabs.filter((tab) => !ids.has(tab.id))].slice(0, MAX_TABS),
+    activeTab: first.activeTab,
+  };
 }

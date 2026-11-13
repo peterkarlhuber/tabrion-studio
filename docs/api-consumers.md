@@ -39,6 +39,7 @@ is used.
 | `tabrion.safe_url` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py`, `tests/security/test_definitions.py` |
 | `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py` |
+| `tabrion.sqlite.backup` | `src/tabrion_studio/services/state.py` |
 | `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py` |
 | `tabrion.sqlite.write_transaction` | `src/tabrion_studio/services/state.py` |

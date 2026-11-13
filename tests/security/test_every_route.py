@@ -43,6 +43,7 @@ from tabrion_studio.config.user import UserConfig
 from tabrion_studio.security.sessions import CSRF_HEADER, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
+from tabrion_studio.services.drafts import Drafts
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.favorites import Favorites
@@ -79,6 +80,7 @@ FAMILIES = (
     "/api/history",
     "/api/favorites",
     "/api/scripts",
+    "/api/drafts",
 )
 
 
@@ -106,6 +108,7 @@ def _full_studio(static_dir: Path, tmp_path: Path) -> Studio:
         history=history,
         favorites=Favorites(store, "k1", lambda: {entry.id for entry in configuration.entries()}),
         scripts=Scripts(project),
+        drafts=Drafts(store, "k1", configuration.limits),
     )
 
 

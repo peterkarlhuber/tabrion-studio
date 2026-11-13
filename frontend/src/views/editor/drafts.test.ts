@@ -1,13 +1,21 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { createDraftsServer } from '../../harness/drafts';
 import {
+  clearLegacyDrafts,
   DRAFTS_KEY,
+  draftsDocument,
   draftsKey,
+  fetchDrafts,
+  hasLegacyDrafts,
   MAX_DRAFT_CHARS,
   MAX_TABS,
+  MAX_TOTAL_CHARS,
+  mergeDrafts,
   parseDrafts,
-  readDrafts,
-  writeDrafts,
+  parseDraftsAnswer,
+  readLegacyDrafts,
+  saveDrafts,
   type DraftTab,
 } from './drafts';
 
@@ -21,20 +29,136 @@ const tab = (id: string, sql = ''): DraftTab => ({
 
 afterEach(() => localStorage.clear());
 
-describe('drafts', () => {
+function fake(server: ReturnType<typeof createDraftsServer>): typeof fetch {
+  return async (input, init) =>
+    server.handle(String(input), init) ?? new Response(null, { status: 404 });
+}
+
+describe('drafts on the server (TD-033, review F-5)', () => {
   it('keep title, profile and text of every tab, and nothing else', () => {
-    writeDrafts({
-      tabs: [{ id: 'a', title: 'Query 1', profileId: 'user:x', sql: 'select :p', savedSql: '' }],
-      activeTab: 'a',
-    });
-    expect(JSON.parse(localStorage.getItem(DRAFTS_KEY) ?? '')).toEqual({
+    expect(
+      draftsDocument({
+        tabs: [{ id: 'a', title: 'Query 1', profileId: 'user:x', sql: 'select :p', savedSql: '' }],
+        activeTab: 'a',
+      }),
+    ).toEqual({
       tabs: [{ id: 'a', title: 'Query 1', profile_id: 'user:x', sql: 'select :p', saved_sql: '' }],
-      activeTab: 'a',
+      active_tab: 'a',
     });
-    expect(readDrafts()?.tabs[0]?.sql).toBe('select :p');
   });
 
-  it('ignore what they cannot read', () => {
+  it('are saved and read through the API, never through browser storage', async () => {
+    const server = createDraftsServer();
+    const fetcher = fake(server);
+    expect(await fetchDrafts(fetcher)).toEqual({ ok: true, value: null });
+    expect(
+      await saveDrafts(fetcher, { tabs: [tab('a', 'select 1')], activeTab: 'a' }, new Set(['a'])),
+    ).toBe(true);
+    expect(server.log.puts).toEqual([
+      {
+        tabs: [{ id: 'a', title: 'T a', profile_id: '', sql: 'select 1', saved_sql: '' }],
+        active_tab: 'a',
+        known: ['a'],
+      },
+    ]);
+    expect(await fetchDrafts(fetcher)).toEqual({
+      ok: true,
+      value: { tabs: [tab('a', 'select 1')], activeTab: 'a' },
+    });
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it('report a server that cannot keep them', async () => {
+    const fetcher = fake(createDraftsServer({ unavailable: true }));
+    const read = await fetchDrafts(fetcher);
+    expect(read.ok).toBe(false);
+    expect(await saveDrafts(fetcher, { tabs: [tab('a')], activeTab: 'a' })).toBe(false);
+  });
+
+  it('read the answer strictly', () => {
+    expect(parseDraftsAnswer({})).toBeNull();
+    expect(parseDraftsAnswer({ drafts: 'x' })).toBeNull();
+    expect(parseDraftsAnswer({ drafts: null })).toEqual({ drafts: null });
+    expect(
+      parseDraftsAnswer({
+        drafts: { tabs: [{ id: 'a', title: 'T', sql: 'x' }], active_tab: 'zz' },
+      }),
+    ).toEqual({
+      drafts: {
+        tabs: [{ id: 'a', title: 'T', profileId: '', sql: 'x', savedSql: '' }],
+        activeTab: 'a',
+      },
+    });
+  });
+
+  it('leave out a text over the cap of one text, and the largest texts while all are over theirs', () => {
+    const big = 'x'.repeat(MAX_DRAFT_CHARS + 1);
+    const fits = 'y'.repeat(MAX_DRAFT_CHARS);
+    expect(
+      draftsDocument({ tabs: [tab('a', big), tab('b', fits)], activeTab: 'a' }).tabs.map(
+        (item) => item.sql.length,
+      ),
+    ).toEqual([0, MAX_DRAFT_CHARS]);
+    const count = MAX_TOTAL_CHARS / MAX_DRAFT_CHARS;
+    const full = Array.from({ length: count }, (_, i) => tab(`t${i}`, fits));
+    const doc = draftsDocument({ tabs: [...full, tab('small', 'select 1')], activeTab: 't0' });
+    const lengths = doc.tabs.map((item) => item.sql.length);
+    expect(lengths.reduce((sum, length) => sum + length, 0)).toBeLessThanOrEqual(MAX_TOTAL_CHARS);
+    expect(lengths.at(-1)).toBe('select 1'.length);
+    expect(lengths.filter((length) => length === 0)).toHaveLength(1);
+    const many = Array.from({ length: MAX_TABS + 3 }, (_, i) => tab(`t${i}`));
+    expect(draftsDocument({ tabs: many, activeTab: 't0' }).tabs).toHaveLength(MAX_TABS);
+    expect(
+      parseDrafts(JSON.stringify({ tabs: [{ id: 'a', title: 'T', sql: big }], activeTab: 'a' })),
+    ).toBeNull();
+  });
+
+  it('keep the tabs another page added and drop the ones this page closed (server merge)', async () => {
+    const server = createDraftsServer();
+    const fetcher = fake(server);
+    await saveDrafts(fetcher, { tabs: [tab('a'), tab('b')], activeTab: 'a' }, new Set(['a', 'b']));
+    // Another page added c.
+    await saveDrafts(
+      fetcher,
+      { tabs: [tab('a'), tab('b'), tab('c', 'other')], activeTab: 'c' },
+      new Set(['a', 'b', 'c']),
+    );
+    // This page knew a and b, closed b and edited a.
+    await saveDrafts(fetcher, { tabs: [tab('a', 'mine')], activeTab: 'a' }, new Set(['a', 'b']));
+    expect(server.current()?.tabs.map((item) => [item.id, item.sql])).toEqual([
+      ['a', 'mine'],
+      ['c', 'other'],
+    ]);
+  });
+});
+
+describe('drafts of an earlier version in browser storage (migration)', () => {
+  const legacy = (tabs: DraftTab[]) =>
+    JSON.stringify({
+      tabs: tabs.map((item) => ({ id: item.id, title: item.title, sql: item.sql })),
+      activeTab: tabs[0]?.id,
+    });
+
+  it('are read for this project and from the unscoped key, and removed for every project', () => {
+    expect(hasLegacyDrafts()).toBe(false);
+    localStorage.setItem(draftsKey('/p'), legacy([tab('a', 'one')]));
+    localStorage.setItem(DRAFTS_KEY, legacy([tab('a', 'dup'), tab('u', 'unscoped')]));
+    localStorage.setItem(draftsKey('/other'), legacy([tab('o', 'other')]));
+    localStorage.setItem('tabrion-studio.theme', 'dark');
+    expect(hasLegacyDrafts()).toBe(true);
+    expect(readLegacyDrafts('/p')?.tabs.map((item) => item.sql)).toEqual(['one', 'unscoped']);
+    expect(readLegacyDrafts('')?.tabs.map((item) => item.sql)).toEqual(['dup', 'unscoped']);
+    clearLegacyDrafts();
+    expect(hasLegacyDrafts()).toBe(false);
+    expect(Object.keys(localStorage)).toEqual(['tabrion-studio.theme']);
+  });
+
+  it('keep their key per project (L-5) and cannot be read when malformed', () => {
+    const one = draftsKey('/home/a/project');
+    expect(one).not.toBe(draftsKey('/home/b/project'));
+    expect(one).not.toContain('/home');
+    expect(draftsKey('')).toBe(DRAFTS_KEY);
     expect(parseDrafts('{')).toBeNull();
     expect(parseDrafts('{"tabs":[{"id":1}]}')).toBeNull();
     expect(
@@ -42,68 +166,24 @@ describe('drafts', () => {
     ).toBe('a');
   });
 
-  it('do not store a text over the size cap, and do not read one', () => {
-    const big = 'x'.repeat(MAX_DRAFT_CHARS + 1);
-    const fits = 'y'.repeat(MAX_DRAFT_CHARS);
-    writeDrafts({ tabs: [tab('a', big), tab('b', fits)], activeTab: 'a' });
-    const stored = readDrafts();
-    expect(stored?.tabs.map((item) => item.sql.length)).toEqual([0, MAX_DRAFT_CHARS]);
-    expect(
-      parseDrafts(JSON.stringify({ tabs: [{ id: 'a', title: 'T', sql: big }], activeTab: 'a' })),
-    ).toBeNull();
-    const many = Array.from({ length: MAX_TABS + 3 }, (_, i) => tab(`t${i}`));
-    writeDrafts({ tabs: many, activeTab: 't0' });
-    expect(readDrafts()?.tabs).toHaveLength(MAX_TABS);
-  });
-
-  it('are kept per project (L-5)', () => {
-    const one = draftsKey('/home/a/project');
-    const two = draftsKey('/home/b/project');
-    expect(one).not.toBe(two);
-    expect(one).not.toContain('/home');
-    expect(draftsKey('')).toBe(DRAFTS_KEY);
-    writeDrafts({ tabs: [tab('a', 'select 1')], activeTab: 'a' }, one);
-    expect(readDrafts(one)?.tabs[0]?.sql).toBe('select 1');
-    expect(readDrafts(two)).toBeNull();
-    expect(readDrafts()).toBeNull();
-  });
-
-  it('keep the tabs another page added and drop the ones this page closed', () => {
-    const key = draftsKey('/p');
-    writeDrafts({ tabs: [tab('a'), tab('b')], activeTab: 'a' }, key);
-    // Another page added c.
-    writeDrafts({ tabs: [tab('a'), tab('b'), tab('c', 'other')], activeTab: 'c' }, key);
-    // This page knew a and b, closed b and edited a.
-    writeDrafts({ tabs: [tab('a', 'mine')], activeTab: 'a' }, key, new Set(['a', 'b']));
-    expect(readDrafts(key)?.tabs.map((item) => [item.id, item.sql])).toEqual([
-      ['a', 'mine'],
-      ['c', 'other'],
-    ]);
+  it('merge after the server drafts, by tab id', () => {
+    expect(mergeDrafts(null, null)).toBeNull();
+    const server = { tabs: [tab('a', 'server')], activeTab: 'a' };
+    const local = { tabs: [tab('a', 'local'), tab('b', 'local b')], activeTab: 'b' };
+    expect(mergeDrafts(server, local)).toEqual({
+      tabs: [tab('a', 'server'), tab('b', 'local b')],
+      activeTab: 'a',
+    });
+    expect(mergeDrafts(null, local)).toBe(local);
   });
 });
 
 describe('drafts of project scripts (STU-020)', () => {
-  it('keep the script path and digest of a tab, and drop a malformed digest', () => {
+  it('keep the script path and digest of a tab, and drop a malformed digest', async () => {
     const digest = 'c'.repeat(64);
-    writeDrafts(
-      {
-        tabs: [
-          {
-            id: 'a',
-            title: 'report',
-            profileId: '',
-            sql: 'x',
-            savedSql: 'x',
-            scriptPath: 'sql/report.sql',
-            scriptDigest: digest,
-          },
-          { id: 'b', title: 'plain', profileId: '', sql: 'y', savedSql: '' },
-        ],
-        activeTab: 'a',
-      },
-      'k',
-    );
-    expect(readDrafts('k')?.tabs).toEqual([
+    const server = createDraftsServer();
+    const fetcher = fake(server);
+    const tabs: DraftTab[] = [
       {
         id: 'a',
         title: 'report',
@@ -114,7 +194,12 @@ describe('drafts of project scripts (STU-020)', () => {
         scriptDigest: digest,
       },
       { id: 'b', title: 'plain', profileId: '', sql: 'y', savedSql: '' },
-    ]);
+    ];
+    await saveDrafts(fetcher, { tabs, activeTab: 'a' });
+    expect((await fetchDrafts(fetcher)).ok && (await fetchDrafts(fetcher))).toEqual({
+      ok: true,
+      value: { tabs, activeTab: 'a' },
+    });
     const raw = JSON.stringify({
       tabs: [{ id: 'a', title: 't', sql: '', script_path: 'a.sql', script_digest: 'not-a-digest' }],
       activeTab: 'a',

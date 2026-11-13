@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-033 drafts part (security review F-5): the SQL editor's drafts (each tab's title, profile, text and script
+  binding, and the open tab) are kept in Studio's state database `state.sqlite` (0600) behind the authenticated
+  `GET`/`PUT /api/drafts` (session cookie and CSRF header; a tab with any field but the known ones is refused, so a
+  draft has no place for a parameter value; at most 32 tabs, 512 K characters per text and 2 M in all,
+  `studio.drafts_too_large`). Nothing is written to browser storage any more, and drafts now survive a restart on
+  another port. Drafts an earlier version kept in `localStorage` are moved to the server once and every
+  `tabrion-studio.editor-drafts*` key is then removed (while the server cannot store them, they stay). `[history]
+  retention_days` also applies to drafts; `enabled = false` and "Delete history" leave them. The state database moves
+  to schema version 2 (table `drafts`; a file with data is copied 0600 before the migration and the copy removed
+  after it).
 - STU-020 (page): **Query history** (`/history`, ⌘Y / Ctrl+H): the statements you ran with their profile,
   environment, state and parameter names, never the values; filter by profile, search, "Open in editor" (runs
   nothing; the values are asked again), delete one or all after a confirmation; history settings and "Delete history"

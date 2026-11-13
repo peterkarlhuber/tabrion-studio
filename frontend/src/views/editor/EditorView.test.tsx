@@ -14,6 +14,7 @@ import { createQueryServer, type QueryLog } from '../../harness/queries';
 import { PROFILES, SETTINGS } from '../../harness/profiles';
 import { editorActions } from '../../keyboard/editorActions';
 import type { SaveFile } from '../../lib/download';
+import { createDraftsServer } from '../../harness/drafts';
 import { DRAFTS_KEY, draftsKey } from './drafts';
 import { handToEditor } from './handoff';
 import { EditorView, queryProblemText, scriptFileName } from './EditorView';
@@ -70,7 +71,22 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
 });
 
-afterEach(() => localStorage.clear());
+afterEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+});
+
+/** What browser storage holds: the drafts never go there (TD-033, review F-5). */
+function browserStorage(): string {
+  const all: string[] = [];
+  for (const storage of [localStorage, sessionStorage]) {
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i) ?? '';
+      all.push(`${key}=${storage.getItem(key) ?? ''}`);
+    }
+  }
+  return all.join('\n');
+}
 
 interface Options {
   connectDelayMs?: number;
@@ -84,26 +100,30 @@ interface Options {
   saveExport?: SaveFile;
   /** The page's connection session (TD-034); none by default. */
   session?: ConnectionSession;
+  /** The drafts routes answer `studio.state_unavailable` (TD-033). */
+  draftsUnavailable?: boolean;
 }
 
 function setup(draft?: { sql: string; profile?: string }, options: Options = {}) {
-  if (draft !== undefined) {
-    localStorage.setItem(
-      draftsKey(options.projectPath ?? ''),
-      JSON.stringify({
-        tabs: [
-          {
-            id: 'd1',
-            title: 'Query 1',
-            profile_id: draft.profile ?? 'project:parts-dev',
-            sql: draft.sql,
-            saved_sql: '',
+  // The drafts as the server keeps them (TD-033).
+  const drafts = createDraftsServer({
+    unavailable: options.draftsUnavailable === true,
+    seed:
+      draft === undefined
+        ? null
+        : {
+            tabs: [
+              {
+                id: 'd1',
+                title: 'Query 1',
+                profile_id: draft.profile ?? 'project:parts-dev',
+                sql: draft.sql,
+                saved_sql: '',
+              },
+            ],
+            active_tab: 'd1',
           },
-        ],
-        activeTab: 'd1',
-      }),
-    );
-  }
+  });
   // The profiles as the page last read them; the fake server's connection answers name their environment.
   let seen: { profiles: { id: string; environment: string }[] } | null = null;
   const server = createQueryServer({
@@ -136,6 +156,8 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
       return new Response(JSON.stringify({ path: options.projectPath, state: 'none' }));
     }
     if (url === '/api/settings') return new Response(JSON.stringify(SETTINGS));
+    const stored = drafts.handle(url, init);
+    if (stored !== null) return stored;
     return (await server.handle(url, init)) ?? new Response(null, { status: 404 });
   };
   const view = <EditorView fetcher={fetcher} saveExport={options.saveExport} />;
@@ -148,7 +170,14 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
       </ConnectionSessionContext.Provider>
     ),
   );
-  return { log: server.log as QueryLog, requests };
+  return { log: server.log as QueryLog, requests, drafts };
+}
+
+/** Wait past the drafts' save delay. */
+async function afterDraftSave() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  });
 }
 
 async function editor() {
@@ -390,16 +419,75 @@ describe('EditorView', () => {
     );
   });
 
-  it('keeps the drafts per project (L-5)', async () => {
-    setup({ sql: 'select 7' }, { projectPath: '/work/parts' });
+  it('keeps the drafts on the server, never in browser storage (TD-033, review F-5)', async () => {
+    const { drafts } = setup({ sql: 'select 7' }, { projectPath: '/work/parts' });
     expect(await editor()).toHaveValue('select 7');
-    expect(localStorage.getItem(DRAFTS_KEY)).toBeNull();
     fireEvent.change(await editor(), { target: { value: 'select 8' } });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
+    await afterDraftSave();
+    expect(drafts.current()?.tabs.map((tab) => tab.sql)).toEqual(['select 8']);
+    // The save names the tabs this page has had (the server keeps another page's tabs), and nothing else.
+    expect(drafts.log.puts.at(-1)).toEqual({
+      tabs: [
+        {
+          id: 'd1',
+          title: 'Query 1',
+          profile_id: 'project:parts-dev',
+          sql: 'select 8',
+          saved_sql: '',
+        },
+      ],
+      active_tab: 'd1',
+      known: ['d1'],
     });
-    expect(localStorage.getItem(draftsKey('/work/parts'))).toContain('select 8');
-    expect(localStorage.getItem(DRAFTS_KEY)).toBeNull();
+    expect(browserStorage()).not.toContain('select');
+  });
+
+  it('moves the drafts of an earlier version from browser storage to the server once, then removes them', async () => {
+    localStorage.setItem(
+      draftsKey('/work/parts'),
+      JSON.stringify({
+        tabs: [
+          {
+            id: 'old',
+            title: 'Old',
+            profile_id: 'project:parts-dev',
+            sql: 'select 5',
+            saved_sql: '',
+          },
+        ],
+        activeTab: 'old',
+      }),
+    );
+    localStorage.setItem(
+      draftsKey('/work/other'),
+      JSON.stringify({ tabs: [{ id: 'x', title: 'X', sql: 'select 6' }], activeTab: 'x' }),
+    );
+    localStorage.setItem('tabrion-studio.theme', 'dark');
+    const { drafts } = setup({ sql: 'select 7' }, { projectPath: '/work/parts' });
+    expect(await editor()).toHaveValue('select 7');
+    expect(screen.getAllByTestId('editor-tab')).toHaveLength(2);
+    await afterDraftSave();
+    expect(drafts.current()?.tabs.map((tab) => tab.sql)).toEqual(['select 7', 'select 5']);
+    // Every draft key is gone (other projects' too); other settings stay.
+    expect(Object.keys(localStorage)).toEqual(['tabrion-studio.theme']);
+    expect(browserStorage()).not.toContain('select');
+  });
+
+  it('keeps the old browser drafts while the server cannot store them, and writes none', async () => {
+    const legacy = JSON.stringify({
+      tabs: [{ id: 'old', title: 'Old', profile_id: '', sql: 'select 5', saved_sql: '' }],
+      activeTab: 'old',
+    });
+    localStorage.setItem(DRAFTS_KEY, legacy);
+    setup(undefined, { projectPath: '/work/parts', draftsUnavailable: true });
+    expect(await screen.findByRole('textbox', { name: 'SQL of Old' })).toHaveValue('select 5');
+    fireEvent.change(screen.getByRole('textbox', { name: 'SQL of Old' }), {
+      target: { value: 'select 9' },
+    });
+    await afterDraftSave();
+    // Nothing is lost and nothing new is written: the old key is as it was.
+    expect(Object.keys(localStorage)).toEqual([DRAFTS_KEY]);
+    expect(localStorage.getItem(DRAFTS_KEY)).toBe(legacy);
   });
 
   describe('a profile that changed on the server since the page read it (C-5)', () => {
@@ -625,16 +713,15 @@ describe('EditorView', () => {
 
   it('asks D-06 before closing a changed tab, and keeps parameter values out of the drafts', async () => {
     const user = userEvent.setup();
-    setup({ sql: 'select :secret' });
+    const { drafts } = setup({ sql: 'select :secret' });
     await editor();
     fireEvent.change(screen.getByRole('textbox', { name: ':secret' }), {
       target: { value: 'hunter2' },
     });
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    });
-    expect(localStorage.getItem(DRAFTS_KEY)).toContain('select :secret');
-    expect(localStorage.getItem(DRAFTS_KEY)).not.toContain('hunter2');
+    await afterDraftSave();
+    expect(JSON.stringify(drafts.log.puts)).toContain('select :secret');
+    expect(JSON.stringify(drafts.log.puts)).not.toContain('hunter2');
+    expect(browserStorage()).not.toContain('select');
     await user.click(screen.getByRole('button', { name: 'Close Query 1' }));
     const dialog = screen.getByRole('dialog', { name: 'Script not saved' });
     await user.click(within(dialog).getByRole('button', { name: 'Discard' }));
@@ -1036,7 +1123,7 @@ describe('EditorView: scripts, format and completion (STU-020)', () => {
     const scripts = scriptServer({
       'sql/report.sql': { content: 'select 1;\n', digest: DIGEST_A },
     });
-    const { log } = setup({ sql: 'select 2' }, { before: scripts.before });
+    const { log, drafts } = setup({ sql: 'select 2' }, { before: scripts.before });
     await editor();
     await user.click(screen.getByTestId('editor-open'));
     const dialog = screen.getByRole('dialog', { name: 'Open script' });
@@ -1062,10 +1149,8 @@ describe('EditorView: scripts, format and completion (STU-020)', () => {
     );
     expect(screen.getAllByTestId('editor-tab')[1]).not.toHaveTextContent('not saved');
     // The tab remembers its script (and the new digest) in the drafts.
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    });
-    expect(localStorage.getItem(DRAFTS_KEY)).toContain(`"script_digest":"${DIGEST_B}"`);
+    await afterDraftSave();
+    expect(JSON.stringify(drafts.current())).toContain(`"script_digest":"${DIGEST_B}"`);
   });
 
   it('keeps the CRLF line endings of a script: the tab shows lines, the save writes CRLF back', async () => {

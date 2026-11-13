@@ -15,7 +15,9 @@
  * /history, /migrations, /diagnostics, /settings). In every scenario the fake answers STU-020's routes
  * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
  * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
- * `theme` (light, dark) and `lang` (en, de).
+ * `theme` (light, dark) and `lang` (en, de). The editor's drafts (TD-033) go to a fake `/api/drafts` (`drafts.ts`) that
+ * keeps them between page loads of the harness; `legacyDraft` puts a draft into `localStorage` the way an earlier
+ * version did (the page moves it to the server and removes it) and `draftsOff=1` answers `studio.state_unavailable`.
  */
 import { StrictMode, useState, type ReactElement } from 'react';
 import { createRoot } from 'react-dom/client';
@@ -40,6 +42,7 @@ import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
 import { draftsKey } from '../views/editor/drafts';
+import { createDraftsServer } from './drafts';
 import { createHistoryServer } from './history';
 import { createQueryServer } from './queries';
 import { PROFILES, SETTINGS, TEST_RESULTS } from './profiles';
@@ -92,20 +95,43 @@ const historyServer = createHistoryServer({
 const draft = params.get('sql');
 /** The project folder of the editor scenario: its drafts are stored under that project's key (L-5). */
 const EDITOR_PROJECT = '/home/demo/parts';
-if (scenario === 'editor' && draft !== null) {
+const draftsServer = createDraftsServer({
+  storage: window.sessionStorage,
+  unavailable: params.get('draftsOff') === '1',
+  ...(scenario === 'editor' && draft !== null
+    ? {
+        seed: {
+          tabs: [
+            {
+              id: 'd1',
+              title: 'Query 1',
+              profile_id: params.get('profile') ?? 'project:parts-dev',
+              sql: draft,
+              saved_sql: '',
+            },
+          ],
+          active_tab: 'd1',
+        },
+      }
+    : {}),
+});
+(window as unknown as { draftsLog: unknown }).draftsLog = draftsServer.log;
+/** A draft as an earlier version kept it in this browser's storage (the TD-033 migration). */
+const legacyDraft = params.get('legacyDraft');
+if (scenario === 'editor' && legacyDraft !== null) {
   window.localStorage.setItem(
     draftsKey(EDITOR_PROJECT),
     JSON.stringify({
       tabs: [
         {
-          id: 'd1',
-          title: 'Query 1',
-          profile_id: params.get('profile') ?? 'project:parts-dev',
-          sql: draft,
+          id: 'l1',
+          title: 'Old draft',
+          profile_id: 'project:parts-dev',
+          sql: legacyDraft,
           saved_sql: '',
         },
       ],
-      activeTab: 'd1',
+      activeTab: 'l1',
     }),
   );
 }
@@ -215,6 +241,8 @@ function lostAnswer(url: string, method: string): Response | null {
 const fakeServer: typeof fetch = async (input, init) => {
   const lost = lostAnswer(String(input), init?.method ?? 'GET');
   if (lost !== null) return lost;
+  const drafts = draftsServer.handle(String(input), init);
+  if (drafts !== null) return drafts;
   // STU-020's own routes, in every scenario (the catalog for completion comes after the scenarios' own).
   if (/^\/api\/(history|favorites|scripts)(\/|\?|$)/.test(String(input))) {
     const answer = historyServer.handle(String(input), init);

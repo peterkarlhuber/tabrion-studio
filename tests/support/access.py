@@ -15,6 +15,7 @@ from tabrion_studio.security.launch import LaunchTokens
 from tabrion_studio.security.sessions import CSRF_HEADER
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
+from tabrion_studio.services.drafts import Drafts
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.favorites import Favorites
@@ -89,6 +90,7 @@ def make_studio(
     history: History | None = None,
     favorites: Favorites | None = None,
     scripts: Scripts | None = None,
+    drafts: Drafts | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -110,7 +112,8 @@ def make_studio(
         history=history,
         favorites=favorites,
         scripts=scripts,
-        state=None if history is None else history.store,
+        drafts=drafts,
+        state=history.store if history is not None else None if drafts is None else drafts.store,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

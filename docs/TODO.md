@@ -61,7 +61,7 @@
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
-| TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
+| TD-033 STU-012 SQL editor MVP: what it leaves for later (the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream; drafts in the state database done) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done; drafts part done in the F-5 drafts PR, review F-5) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
@@ -1099,11 +1099,14 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   (not the one read again), and an answer without an environment counts as a mismatch. When the profile list cannot
   be read again, nothing is opened: Vitest, and `e2e/editor-backend.spec.ts` with `/api/profiles` failing (no
   `POST /api/connections`). The test fake's connection answer names the profile's environment, like the server's.
-- **Drafts in the state database:** 08 keeps drafts in Studio's state database; the MVP keeps the tabs' titles,
-  profiles and text in the browser's `localStorage` (`src/views/editor/drafts.ts`), which is per port like TD-021,
-  under a key per project (a hash of the project's folder) and merged by tab between pages. Move them behind an API
-  route when the state database has a drafts table (then they also get its 0600 file, 03 section 4.3, T-04).
-  Parameter values and results are never stored.
+- **Drafts in the state database (done, F-5 drafts PR; review F-5):** the tabs' drafts live in `state.sqlite`
+  (schema version 2, table `drafts`, one document per project) behind `GET`/`PUT /api/drafts` with the session and
+  CSRF checks; a tab with an unknown field is refused, so a parameter value has no place in a draft; caps of 32 tabs,
+  512 K characters per text and 2 M in all. Pages of one project merge by tab on the server (`known`). Nothing is
+  written to browser storage; drafts of earlier versions in `localStorage` are moved to the server once and every
+  draft key is removed afterwards. `[history] retention_days` applies to drafts, `enabled = false` and "Delete
+  history" do not (`docs/architecture/history-and-scripts.md`, "Editor drafts"). Tests: `tests/security/test_drafts.py`,
+  `src/views/editor/drafts.test.ts`, `EditorView.test.tsx`, `e2e/editor.spec.ts`, `e2e/drafts-backend.spec.ts`.
 - **Statement splitting:** the page splits scripts with its own scanner (`sqlScan.ts`) instead of
   `tabrion.sql.split_statements`; the server checks every statement again, so a different reading is refused, never
   run as something else. Replace it with a server route (or tabrion 0.2's splitter) when one exists. The page now
