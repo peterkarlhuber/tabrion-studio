@@ -20,6 +20,7 @@ from pathlib import Path
 import zipfile
 
 WINDOWS = os.name == "nt"
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[union-attr]
 PARENT = Path(sys.argv[2]) if len(sys.argv) > 2 else Path.home() / "Tëst Ördner l'été"
 PARENT.mkdir(parents=True, exist_ok=True)
 with zipfile.ZipFile(sys.argv[1]) as archive:
