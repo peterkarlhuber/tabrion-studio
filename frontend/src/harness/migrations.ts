@@ -17,14 +17,15 @@ export function codeTrust(trusted: boolean) {
   };
 }
 
-export function migrationStatus(trusted: boolean) {
+/** `knownOnly`: no revision the project does not know, so the page offers the upgrade command (TD-046 B-3). */
+export function migrationStatus(trusted: boolean, knownOnly = false) {
   const alembic = trusted
     ? {
         current: ['0002'],
         heads: ['0003'],
         pending: ['0003'],
         is_current: false,
-        unknown: ['ghost-1'],
+        unknown: knownOnly ? [] : ['ghost-1'],
         revisions: 'read',
       }
     : {

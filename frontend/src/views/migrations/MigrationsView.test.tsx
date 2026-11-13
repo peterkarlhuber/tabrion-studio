@@ -450,6 +450,8 @@ describe('migration status view: status', () => {
     );
     expect(screen.getByTestId('migrations-alembic')).toHaveTextContent('0002');
     expect(screen.getByTestId('migrations-unknown')).toHaveTextContent('ghost\\u202E');
+    // Review M-2 of PR #84: Alembic cannot upgrade from a revision it does not know, so no command.
+    expect(screen.queryByTestId('migrations-command')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Show status' }));
     await waitFor(() =>
       expect(screen.getByTestId('migrations-summary')).toHaveTextContent(

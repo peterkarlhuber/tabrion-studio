@@ -6,9 +6,12 @@
  * - every key the source names (in a `t(...)` call, a `<Trans i18nKey>` or a key-shaped string in a key table)
  *   exists in en.json, as itself or as its plural forms; a key built from a template has at least one key under its
  *   fixed prefix;
- * - no visible text is written into the markup: a JSX text, or a string in `aria-label`, `title`, `placeholder`,
- *   `alt` or `label`, is either from the catalog or on the short list below of names that are the same in every
- *   language (SQL keywords and SQLite pragma names);
+ * - no visible text is written into the markup: a JSX text, or the fixed text of an expression in a JSX child or in
+ *   `aria-label`, `aria-description`, `aria-roledescription`, `aria-valuetext`, `title`, `placeholder`, `alt` or
+ *   `label` (strings, the static parts of templates, both sides of a condition, `??` and `||`), is either from the
+ *   catalog or on the short list below of names that are the same in every language (SQL keywords, pragma names);
+ *   not seen: a module constant or a state value rendered later, and component text props under other names
+ *   (recorded in TD-060);
  * - every plural has its `_one` and `_other` form in both languages.
  *
  * The page's source files are read as text through Vite's import.meta.glob and parsed with the TypeScript compiler
@@ -111,6 +114,10 @@ const NOT_TRANSLATED = new Set([
   'NULL',
   'PK',
   'FK',
+  // The ER diagram's badge for a column that is a primary and a foreign key (hidden like PK and FK).
+  'PF',
+  // The placeholder of a JSON parameter: a JSON example, the same in every language.
+  '{"key": "value"}',
 ]);
 /** Strings shaped like a key that are not keys: the settings.toml fields the settings form points its issues at. */
 const NOT_KEYS = new Set([
@@ -119,7 +126,37 @@ const NOT_KEYS = new Set([
   'settings.history.retention_days',
   'history.retention_days',
 ]);
-const TEXT_ATTRIBUTES = new Set(['aria-label', 'title', 'placeholder', 'alt', 'label']);
+const TEXT_ATTRIBUTES = new Set([
+  'aria-label',
+  'aria-description',
+  'aria-roledescription',
+  'aria-valuetext',
+  'title',
+  'placeholder',
+  'alt',
+  'label',
+]);
+
+/**
+ * The fixed text an expression can show: a string, every static part of a template, and both sides of a condition,
+ * `??` or `||` (review L-1 of PR #84). A call (`t(...)`), a name or a property is not text the markup writes.
+ */
+function staticTexts(node: ts.Expression): string[] {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return [node.text];
+  if (ts.isTemplateExpression(node))
+    return [node.head.text, ...node.templateSpans.map((span) => span.literal.text)];
+  if (ts.isParenthesizedExpression(node)) return staticTexts(node.expression);
+  if (ts.isConditionalExpression(node))
+    return [...staticTexts(node.whenTrue), ...staticTexts(node.whenFalse)];
+  if (
+    ts.isBinaryExpression(node) &&
+    [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(
+      node.operatorToken.kind,
+    )
+  )
+    return [...staticTexts(node.left), ...staticTexts(node.right)];
+  return [];
+}
 
 describe('the page source against the catalogs (STU-054)', () => {
   it('reads the page source', () => {
@@ -170,16 +207,14 @@ describe('the page source against the catalogs (STU-054)', () => {
     const written: string[] = [];
     for (const { file } of SOURCES) {
       walk(file, (node) => {
-        let text: string | null = null;
-        if (ts.isJsxText(node)) text = node.text.trim();
+        let texts: string[] = [];
+        if (ts.isJsxText(node)) texts = [node.text];
         else if (
           ts.isJsxExpression(node) &&
           node.expression !== undefined &&
-          (ts.isStringLiteral(node.expression) ||
-            ts.isNoSubstitutionTemplateLiteral(node.expression)) &&
           !ts.isJsxAttribute(node.parent)
         )
-          text = node.expression.text.trim();
+          texts = staticTexts(node.expression);
         else if (
           ts.isJsxAttribute(node) &&
           TEXT_ATTRIBUTES.has(node.name.getText(file)) &&
@@ -188,17 +223,57 @@ describe('the page source against the catalogs (STU-054)', () => {
           const value = ts.isJsxExpression(node.initializer)
             ? node.initializer.expression
             : node.initializer;
-          if (
-            value !== undefined &&
-            (ts.isStringLiteral(value) || ts.isNoSubstitutionTemplateLiteral(value))
-          )
-            text = value.text.trim();
+          if (value !== undefined) texts = staticTexts(value);
         }
-        if (text !== null && /\p{L}{2,}/u.test(text) && !NOT_TRANSLATED.has(text))
-          written.push(`${where(file, node)} ${JSON.stringify(text)}`);
+        for (const raw of texts) {
+          const text = raw.trim();
+          if (/\p{L}{2,}/u.test(text) && !NOT_TRANSLATED.has(text))
+            written.push(`${where(file, node)} ${JSON.stringify(text)}`);
+        }
       });
     }
     expect(written).toEqual([]);
+  });
+
+  it('sees text in conditions, fallbacks, templates and the aria text attributes', () => {
+    // The shapes review L-1 of PR #84 found unseen, written into a small component of their own.
+    const sample = ts.createSourceFile(
+      'sample.tsx',
+      [
+        'export const A = ({ x }: { x: boolean }) => (',
+        '  <div aria-description="Several heads" aria-label={`Close the ${x} box`}>',
+        "    {x ? 'Several heads found' : null}",
+        "    {x ?? 'Nothing here'}",
+        '  </div>',
+        ');',
+      ].join('\n'),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const seen: string[] = [];
+    walk(sample, (node) => {
+      if (
+        ts.isJsxExpression(node) &&
+        node.expression !== undefined &&
+        !ts.isJsxAttribute(node.parent)
+      )
+        seen.push(...staticTexts(node.expression));
+      if (ts.isJsxAttribute(node) && node.initializer !== undefined) {
+        const value = ts.isJsxExpression(node.initializer)
+          ? node.initializer.expression
+          : node.initializer;
+        if (value !== undefined && TEXT_ATTRIBUTES.has(node.name.getText(sample)))
+          seen.push(...staticTexts(value));
+      }
+    });
+    expect(seen.map((text) => text.trim())).toEqual([
+      'Several heads',
+      'Close the',
+      'box',
+      'Several heads found',
+      'Nothing here',
+    ]);
   });
 
   it('keeps the lists of untranslated names and of key-shaped non-keys current', () => {

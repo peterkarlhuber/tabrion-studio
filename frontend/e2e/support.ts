@@ -17,6 +17,9 @@ export interface HarnessOptions {
   recent?: string;
   /** scenario=explorer: `150` gives the PostgreSQL schema `audit` 150 tables for the ER diagram (STU-023). */
   er?: string;
+  /** scenario=migrations: `none` leaves out the revision the project does not know, so pending revisions get the
+   * upgrade command (TD-046 B-3). */
+  unknown?: string;
 }
 
 /** Open the e2e harness (src/harness/main.tsx) and wait until the shell or the notice is rendered. */

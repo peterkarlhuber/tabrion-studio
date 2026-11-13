@@ -82,6 +82,8 @@ const ANNOUNCE_DELAY_MS = 100;
 /**
  * 08 section 4.8 (TD-046 B-3): Studio never migrates, so a database with pending revisions gets the command that
  * applies them, to run in the project folder, with a copy button. `heads` when the project has more than one head.
+ * Not shown while the database names a revision the project does not know (08: "DB neuer als Code"): Alembic stops
+ * there with "Can't locate revision", so the command would fail (review M-2 of PR #84).
  */
 function UpgradeCommand({ heads }: { heads: string[] }) {
   const { t } = useTranslation();
@@ -179,7 +181,10 @@ function AlembicResult({ status }: { status: AlembicStatus }) {
           )}
         </dd>
       </dl>
-      {read && status.isCurrent === false && (status.pending?.length ?? 0) > 0 ? (
+      {read &&
+      status.isCurrent === false &&
+      (status.pending?.length ?? 0) > 0 &&
+      (status.unknown?.length ?? 0) === 0 ? (
         <UpgradeCommand heads={status.heads ?? []} />
       ) : null}
       {status.unknown !== null && status.unknown.length > 0 ? (

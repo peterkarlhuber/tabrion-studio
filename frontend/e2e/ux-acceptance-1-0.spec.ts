@@ -4,12 +4,14 @@
  * "Studio 1.0"), against a real `tabrion-studio` under its strict CSP:
  *
  * - the 1.0 tour in English and in German: the DDL of a table, the ER diagram, a query with a parameter, Format, the
- *   export dialog, the query history, the migration status and a diagnosis; axe (colour contrast included) in light
+ *   export dialog, the query history, the migration status and a diagnosis; axe (color contrast included) in light
  *   and dark at every step, and on the German pages no text of the English catalog and no raw i18n key;
- * - the negative tests of 03 section 9 ("Schreibfunktionen gesperrt: alle Schreibversuche über API ... (Negativtest)")
+ * - the negative tests of 03 section 8 (the 1.0 row: "Schreibfunktionen gesperrt: alle Schreibversuche über API ... (Negativtest)")
  *   and 08 section 5 ("PROD: Chip zeigt ⛔ mit Tooltip, kein Dialog"): the page offers no data editing (STU-026 stays
  *   locked behind G-S2), the API refuses every write on a DEV and on a PROD connection and the database file is
- *   byte for byte unchanged, and every changing API route is on a known list of routes that never write to a database.
+ *   byte for byte unchanged (no journal or write-ahead file appears), and every changing route of the documented API
+ *   is on a reviewed list; `tests/security/test_every_route.py` holds the list for every route of the app, hidden
+ *   ones included (review M-1 of PR #84).
  *
  * The other 1.0 acceptance flows run in their own suites and are not repeated here: favorites, history without
  * parameter values, scripts and completion in `history-backend.spec.ts`, the export files in `editor-backend.spec.ts`
@@ -21,7 +23,7 @@
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -243,6 +245,25 @@ function databaseState(): string {
   );
 }
 
+/**
+ * Wait until the page has handled an action: two animation frames (React commits and the browser paints) and a task
+ * after them, so an editor or dialog that an action opens a task later is in the document before its absence is
+ * asserted (review L-2 of PR #84). No fixed wait.
+ */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))),
+      ),
+  );
+}
+
+/** No rollback journal or write-ahead log next to the database: nothing ever opened it for writing. */
+function sideFiles(): string[] {
+  return ['-journal', '-wal', '-shm'].filter((suffix) => existsSync(`${database}${suffix}`));
+}
+
 function fileDigest(): string {
   return createHash('sha256').update(readFileSync(database)).digest('hex');
 }
@@ -282,11 +303,15 @@ async function pageTexts(page: Page, language: Language): Promise<string> {
  * catalog and no raw key in what the page shows.
  */
 async function checkStep(page: Page, language: Language, step: string): Promise<void> {
+  // The page applies the theme from a media-query listener, which WebKit runs at its next rendering step: axe runs
+  // only once the page shows the theme it checks (review L-3 of PR #84).
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', scheme);
     expect(await seriousViolations(page), `${step}, ${scheme}`).toEqual([]);
   }
   await page.emulateMedia({ colorScheme: 'light' });
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
   const shown = await pageTexts(page, language);
   const keys = [...shown.matchAll(KEY_SHAPE)]
     .map((match) => match[0])
@@ -480,6 +505,7 @@ test('the page offers no data editing (STU-026 locked); on PROD the chip says "W
     await expect(page.getByRole('button', { name: editing })).toHaveCount(0);
     await expect(page.getByRole('link', { name: editing })).toHaveCount(0);
     await grid.getByRole('gridcell', { name: 'Aluminium' }).dblclick();
+    await settled(page);
     await expect(page.locator('main [contenteditable="true"], main input:focus')).toHaveCount(0);
     // 08 section 5 "Unlock writing": the chip is text, not a control; on PROD it says "Writing locked" with its
     // tooltip, and a click opens no dialog.
@@ -497,6 +523,7 @@ test('the page offers no data editing (STU-026 locked); on PROD the chip says "W
       environment === 'PROD' ? t('header.access.lockedHint') : t('header.access.readOnlyHint'),
     );
     await chip.click();
+    await settled(page);
     await expect(page.getByRole('dialog')).toHaveCount(0);
     expect(await seriousViolations(page)).toEqual([]);
   }
@@ -518,6 +545,7 @@ test('the page offers no data editing (STU-026 locked); on PROD the chip says "W
   expect(await seriousViolations(page)).toEqual([]);
   await expectNoViolations(page, violations);
   expect(fileDigest()).toBe(before);
+  expect(sideFiles()).toEqual([]);
 });
 
 /** Statements that would change the database, each refused by Studio's statement check before it runs. */
@@ -648,12 +676,15 @@ test('the API refuses every write on DEV and on PROD; the database file stays by
   }
   expect(databaseState()).toBe(before.state);
   expect(fileDigest()).toBe(before.digest);
+  expect(sideFiles()).toEqual([]);
 });
 
 /**
- * The changing API routes (POST, PUT, PATCH, DELETE in the server's OpenAPI document), each with why it never writes
- * to a database: they change Studio's own files and state, open or close read-only connections, or run read-only
- * work. A new changing route fails this test until it is reviewed and added here.
+ * The changing routes of the documented API (POST, PUT, PATCH, DELETE in the server's OpenAPI document), each with why
+ * it never writes to a database: they change Studio's own files and state, open or close read-only connections, or
+ * run read-only work. A second layer over the running server: `CHANGING_ROUTES` in `tests/security/test_every_route.py`
+ * is the list for every route of the app, including the two left out of the document (`POST /api/session` and
+ * `POST /api/control/{action}`), so a hidden changing route fails there.
  */
 const CHANGING_ROUTES: Record<string, string> = {
   'POST /api/project/trust': "the project trust record in Studio's state folder",
@@ -681,7 +712,7 @@ const CHANGING_ROUTES: Record<string, string> = {
   'PUT /api/drafts': "Studio's state database",
 };
 
-test('every changing API route is a known one that never writes to a database', async ({
+test('every changing route of the documented API is a reviewed one that never writes to a database', async ({
   page,
 }) => {
   await signIn(page);

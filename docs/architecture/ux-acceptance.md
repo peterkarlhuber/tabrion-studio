@@ -121,7 +121,9 @@ B item for 1.0; what stays open moved to TD-060 (see [Open for 1.0](#open-for-10
   **Done in the STU-054 PR:** an Alembic status with pending revisions shows "Studio does not run migrations. To apply
   the pending revisions, run this command in the project folder:" with `alembic upgrade head` (`heads` when the
   project has more than one head) and **Copy command** (en/de; `MigrationsView.test.tsx`, axe in light/dark × en/de
-  in `e2e/migrations.spec.ts`). Levuvo formats get no command: their runners are the platforms' own.
+  in `e2e/migrations.spec.ts`). Levuvo formats get no command: their runners are the platforms' own. No command
+  while the database names a revision the project does not know (08 section 4.8, "DB neuer als Code"): Alembic stops
+  there, so the command would fail (review M-2 of PR #84).
 - **B-4** 08 section 3: the switcher can show a latency, but showed none after Connect in the walk-through; the status
   bar's running queries (count, list with cancel) and the last query's rows and time (role and database are TD-034).
   **1.0 decision:** open (TD-060). The connection watch of TD-034 reads the latency but does not hand it to the header,
@@ -160,24 +162,28 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
 - **the 1.0 tour, in English and in German:** the DDL of a table (read from the real database), the ER diagram with
   its table alternative, a query with a `:name` parameter, Format, the export dialog, the query history (the
   parameter's name, never its value), the migration status and a diagnosis with its backup hints and report buttons;
-  axe (WCAG 2.0 to 2.2 A and AA, colour contrast included) in light and dark at every step, so the 1.0 views pass in
+  axe (WCAG 2.0 to 2.2 A and AA, color contrast included) in light and dark at every step, so the 1.0 views pass in
   light/dark × en/de against the real server; on the German pages no text of the English catalog and no raw i18n key
-  (text marked `lang="en"`, the findings' own texts, is left out: TD-032);
+  (text marked `lang="en"`, the findings' own texts, is left out: TD-032; once PR #85 merges, only tabrion's
+  `TAB-*` texts keep that mark and the exclusion narrows to them, TD-060);
 - **the page offers no data editing (STU-026 locked):** on a DEV and on a PROD connection the data viewer's grid has
   no field and no editable cell, a double click edits nothing, no control is named edit, insert, delete row, save
   changes, commit, roll back, discard, unlock or write mode; the access chip is text (no role, no tab stop), says
   "Read-only" or, on PROD, "Writing locked" with its tooltip, and a click on it opens no dialog; on PROD the SQL
   editor refuses a write before it runs;
-- **the API refuses every write, on DEV and on PROD:** a write mode (`mode: "write"`) is `403
+- **the API refuses every write, on DEV and on PROD (03 section 8):** a write mode (`mode: "write"`) is `403
   studio.query_write_unsupported`; 16 writing statements (DML, DDL, `ATTACH`, `VACUUM`, `REINDEX`, `ANALYZE`,
   `SELECT … INTO`, transaction control) are refused by the query and the export route before they run (`400
   studio.statement_*`); the statements the text check lets through (`WITH … DELETE`, writing `PRAGMA`s) fail in the
   database, which is read-only for every Studio connection (`db.*`); every changing method on the data viewer's routes
   and on the Data Editor's planned `changesets` route is `405 studio.method_not_allowed`; afterwards the database file
-  is byte for byte the same and its schema, rows and `user_version` are unchanged;
+  is byte for byte the same, no journal or write-ahead file appears next to it, and its schema, rows and
+  `user_version` are unchanged;
 - **no route writes to a database:** every changing route of the server's OpenAPI document is on a list with the
   reason it never writes to a database (Studio's own files and state, opening or closing read-only connections,
-  read-only work); a new changing route fails the test until it is reviewed and listed.
+  read-only work). The complete list, over every route of the app including those left out of the document, is
+  `CHANGING_ROUTES` in `tests/security/test_every_route.py`; a new changing route fails there until it is reviewed
+  and listed.
 
 ### History, favorites, scripts, format, completion (08 sections 2, 4.4, 4.10 and 7; STU-020)
 
@@ -218,7 +224,7 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
 |---|---|---|---|
 | UX-10-M1 | 09 STU-024: "Fixtures der drei Repos (kopiert, keine Abhängigkeit) korrekt erkannt" | `tests/security/test_levuvo_migrations.py` with `tests/security/levuvo_fixtures` (PostgreSQL job) | met |
 | UX-10-M2 | 08 section 4.8 for every format: state, pending steps, database newer than the code, changed checksums; Studio never migrates | `src/views/migrations/MigrationsView.test.tsx`, `e2e/migrations.spec.ts` (axe light/dark × en/de), `e2e/ux-acceptance-1-0.spec.ts` (SQLite's `user_version` from the real server in en/de) | met; the Levuvo formats need PostgreSQL, which the e2e jobs do not run (TD-041), so the page shows them from the harness and the backend is checked in the PostgreSQL job |
-| UX-10-M3 | 08 section 4.8 "Befehl: alembic upgrade head [⧉]" | `src/views/migrations/MigrationsView.test.tsx` (TD-046 B-3), `e2e/migrations.spec.ts` | met (fixed in this PR) |
+| UX-10-M3 | 08 section 4.8 "Befehl: alembic upgrade head [⧉]" | `src/views/migrations/MigrationsView.test.tsx` (TD-046 B-3; none with an unknown revision), `e2e/migrations.spec.ts` (axe light/dark × en/de with the command; none beside an unknown revision) | met (fixed in this PR) |
 
 ### Diagnosis report and backup hints (08 section 4.9; STU-025)
 
@@ -227,24 +233,24 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
 | UX-10-G1 | 09 STU-025: "Bericht ohne Secrets (Kanarientest)" | `tests/security/test_diagnosis_report.py` | met |
 | UX-10-G2 | 08 section 4.9 "⤓ Bericht¹" and the backup hints | `e2e/backend.spec.ts` (STU-014: both reports from the real route, without the file's name or path; the backup hint), `e2e/diagnostics.spec.ts` (keyboard download, refused report, axe), `e2e/ux-acceptance-1-0.spec.ts` (en/de, light/dark) | met; the report from the command line is open (TD-036) |
 
-### Writing stays locked (03 sections 5.2 and 9, 08 sections 3, 4.6 and 5; STU-054 negative test)
+### Writing stays locked (03 sections 5.2 and 8, 08 sections 3, 4.6 and 5; STU-054 negative test)
 
 | ID | Criterion | Check | Result |
 |---|---|---|---|
 | UX-10-W1 | No data editing in the page: no editable grid, no editing control, no write mode, no D-03, D-04, D-05 | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD), `e2e/editor.spec.ts` ("the page offers no write control"), `src/components/dialogs/StudioDialogs.tsx` (D-03 to D-05 and D-07 not built) | met |
 | UX-10-W2 | 08 section 5 "Schreibmodus entsperren¹": "PROD: Chip zeigt ⛔ mit Tooltip, kein Dialog"; 08 section 3: the unlock dialog only after G-S2 | `e2e/ux-acceptance-1-0.spec.ts` (the chip is text with its tooltip; a click opens nothing; DEV says "Read-only" and has no unlock either), `e2e/backend.spec.ts` ("Writing locked"), `e2e/a11y-audit.spec.ts` (tooltip) | met |
-| UX-10-W3 | 03 section 9 for 1.0: "Schreibfunktionen gesperrt: alle Schreibversuche über API 403 (Negativtest)" | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD, the file unchanged), `tests/security/test_every_route.py` (write mode refused), `tests/security/test_queries.py`, `tests/security/test_read_only.py` (STU-T-010 to STU-T-012: the database refuses a write that passes the check), `tests/security/test_exports.py` | met in substance: every write is refused and nothing changes. The status is 403 only for the write mode; a writing statement is 400 (`studio.statement_*`) and a changing method on a read route 405. The owner confirms that this meets "403" (TD-060) |
+| UX-10-W3 | 03 section 8, the 1.0 row: "Schreibfunktionen gesperrt: alle Schreibversuche über API 403 (Negativtest)" | `e2e/ux-acceptance-1-0.spec.ts` (DEV and PROD, the file unchanged), `tests/security/test_queries.py` (line 400: write mode refused, `studio.query_write_unsupported`), `tests/security/test_read_only.py` (STU-T-010 to STU-T-012: the database refuses a write that passes the check), `tests/security/test_exports.py` | met in substance: every write is refused and nothing changes. The status is 403 only for the write mode; a writing statement is 400 (`studio.statement_*`) and a changing method on a read route 405. The owner confirms that this meets "403" (TD-060) |
 | UX-10-W4 | 03 section 5.2: "Für `prod` ist Schreiben in 1.0 technisch nicht möglich (Backend verweigert, kein UI-Pfad)" | `e2e/ux-acceptance-1-0.spec.ts` (PROD), `e2e/connections.spec.ts`, `e2e/editor-backend.spec.ts` (TD-038: no PROD connection without D-02, on the server) | met |
-| UX-10-W5 | No changing API route writes to a database | `e2e/ux-acceptance-1-0.spec.ts` (the OpenAPI document against the reviewed list) | met |
+| UX-10-W5 | No changing API route writes to a database | `tests/security/test_every_route.py` (`CHANGING_ROUTES`: every route of the app with a changing method, hidden ones included, such as `POST /api/session` and `POST /api/control/{action}`, each with its reason; a hidden route added in the test is caught), `e2e/ux-acceptance-1-0.spec.ts` (the documented API of the running server against the same list) | met (review M-1 of PR #84: the list first read only the OpenAPI document) |
 
 ### Languages: de/en complete (08 section 0, E-S3; STU-054)
 
 | ID | Criterion | Check | Result |
 |---|---|---|---|
 | UX-10-L1 | en.json and de.json have the same keys, no empty value, the same placeholders and tags, every text translated that is not a name, German typography | `src/i18n/i18n.test.ts` | met |
-| UX-10-L2 | Every key the page names exists; every plural has both forms in both languages; no visible text is written into the markup outside the catalog | `src/i18n/coverage.test.ts` (new: the page source parsed with the TypeScript compiler; `t()`, `<Trans i18nKey>` and key tables; JSX text and `aria-label`, `title`, `placeholder`, `alt`, `label`; a short list of names that are the same in every language: SQL keywords, pragma names, `NULL`, the key badges) | met |
-| UX-10-L3 | A German page shows no English catalog text and no raw key, in every 1.0 view, against the real server | `e2e/ux-acceptance-1-0.spec.ts` (the German tour) | met |
-| UX-10-L4 | The diagnosis' findings in German | depends on TD-032 (German details and remedies of the `STU-DX-*` checks, localized in another lane); the titles, details and remedies of tabrion's own `TAB-*` checks come from tabrion in English and are marked `lang="en"` | open: **dependency TD-032**, whose decision says the `STU-DX-*` texts must be en/de before STU-054 is accepted; that tabrion's `TAB-*` texts stay English and labelled until tabrion has a catalog needs the owner's confirmation (TD-032, TD-060) |
+| UX-10-L2 | Every key the page names exists; every plural has both forms in both languages; no visible text is written into the markup outside the catalog | `src/i18n/coverage.test.ts` (new: the page source parsed with the TypeScript compiler; `t()`, `<Trans i18nKey>` and key tables; JSX text and the fixed text of JSX expressions and of `aria-label`, `aria-description`, `aria-roledescription`, `aria-valuetext`, `title`, `placeholder`, `alt`, `label`: strings, static parts of templates, both sides of conditions, `??` and `||`; a short list of names that are the same in every language: SQL keywords, pragma names, `NULL`, the key badges, a JSON example) | met. Not seen by the scan: a module constant or a state value rendered later, component text props under other names, and `t(variable)` (TD-060) |
+| UX-10-L3 | A German page shows no English catalog text and no raw key, in every 1.0 view, against the real server | `e2e/ux-acceptance-1-0.spec.ts` (the German tour; it compares phrases, catalog texts with a space and at least 12 characters, so a single English word such as a button label is left to the key parity of UX-10-L1) | met |
+| UX-10-L4 | The diagnosis' findings in German | depends on TD-032 (German details and remedies of the `STU-DX-*` checks, localized in another lane); the titles, details and remedies of tabrion's own `TAB-*` checks come from tabrion in English and are marked `lang="en"` | open: **dependency TD-032**, whose decision says the `STU-DX-*` texts must be en/de before STU-054 is accepted; that tabrion's `TAB-*` texts stay English and labeled until tabrion has a catalog needs the owner's confirmation (TD-032, TD-060) |
 | UX-10-L5 | Problem texts of the server in both languages | the page shows its own en/de text per problem code (`src/views/connections/messages.ts`; `i18n.test.ts`) | met |
 
 ### Settings and dialogs of 1.0 (08 sections 4.10 and 6)
@@ -260,10 +266,14 @@ is merged and the owner has decided the items under [Open for 1.0](#open-for-10)
 
 All in TD-060.
 
-- **Owner decisions:** whether 400/405 for refused writes meets 03 section 9's "403" (UX-10-W3; recommended: yes,
+- **Owner decisions:** whether 400/405 for refused writes meets 03 section 8's "403" (UX-10-W3; recommended: yes,
   the substance is "every write refused, nothing written"); D-07 for 1.0 or later (UX-10-S1; recommended: later, as
   03 section 5.3 calls it optional); tabrion's own finding texts in English in 1.0 (UX-10-L4); the B-1 deviation.
-- **Dependency:** TD-032 (German `STU-DX-*` details and remedies), in another lane.
+- **Dependency:** TD-032 (German `STU-DX-*` details and remedies), in another lane (PR #85); then the German tour's
+  exclusion narrows to tabrion's `TAB-*` texts.
+- **Owner decision for STU-026 too:** 03 section 8 asks for 403 for PROD writes in the Data Editor row as well; the
+  decision on UX-10-W3 is recorded for STU-026.
+- **Source scan limits:** UX-10-L2 (module constants, state, other text props, `t(variable)`).
 - **Open from the MVP:** B-4, B-5 (QA-S1, now for 1.0), B-7; TD-043 (export from the data viewer), TD-052 (the ER
   route and line details), TD-036 (the report from the command line), TD-034 (status bar facts).
 - **Deviation noted:** the query history is its own view, not a tab beside the results (UX-10-H2).

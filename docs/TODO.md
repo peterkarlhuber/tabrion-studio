@@ -77,7 +77,7 @@
 | TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Open |
 | TD-057 Export slot race: a client that started the next export on a connection right after reading the previous one to its end could get `studio.export_busy` (the worker freed the slot only after its last log line) | P2 | Done (PR #80) |
 | TD-058 STU-053 audit walk in WebKit: "explorer Policies tab: every Tab stop ... is in view" failed once in CI (PR #80, run 43405250149) with the selected tree row out of view; WebKit scrolls a newly focused element into view from a zero-delay timer, and the walk measured in the same task. Test race, no product bug; the walk now measures one task later | P2 | Done (PR #81) |
-| TD-060 STU-054 UX acceptance 1.0: what stays open (owner decisions on the "403" wording of 03 section 9, D-07, tabrion's English finding texts and the start page's 4.1 deviation; TD-032 as a dependency; TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR) |
+| TD-060 STU-054 UX acceptance 1.0: what stays open (owner decisions on the "403" wording of 03 section 8 (also for the STU-026 row), D-07, tabrion's English finding texts and the start page's 4.1 deviation; TD-032 as a dependency; TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR) |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
@@ -1439,15 +1439,17 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 ### TD-060 · STU-054 UX acceptance 1.0: what stays open
 
 - **Priority:** P2 Medium · **Status:** Open (recorded 2026-11-13 with the STU-054 PR) · **Refs:** 03 sections 5.2,
-  5.3 and 9, 08 sections 3, 4.1, 4.3, 4.4, 4.9, 5, 6 and 11, 09 STU-054, `docs/architecture/ux-acceptance.md`
+  5.3 and 8, 08 sections 3, 4.1, 4.3, 4.4, 4.9, 5, 6 and 11, 09 STU-054, `docs/architecture/ux-acceptance.md`
   ("Studio 1.0", "Open for 1.0"), TD-032, TD-046
 - **Owner decisions:**
-  - 03 section 9 asks for "alle Schreibversuche über API 403 (Negativtest)". Every write is refused and nothing is
+  - 03 section 8 (the 1.0 row) asks for "alle Schreibversuche über API 403 (Negativtest)". Every write is refused and nothing is
     written (`e2e/ux-acceptance-1-0.spec.ts`), but only the write mode answers 403 (`studio.query_write_unsupported`);
     a writing statement is `400 studio.statement_*` before it runs (or a `db.*` failure in the read-only database
     when the text check lets it through), and a changing method on a read route is `405`. Recommendation: accept
     this as meeting the criterion (the codes say why; the substance is the refusal); otherwise the statement refusals
-    change to 403, an API change.
+    change to 403, an API change, and the 400 assertions of `ux-acceptance-1-0.spec.ts` with them. 03 section 8 says
+    the same for the Data Editor ("prod-Schreibversuche über API alle 403", STU-026 row), so the decision is recorded
+    for STU-026 too.
   - D-07 (EXPLAIN cost warning on PROD) and its setting: listed for STU-054 in 08 section 11, but 03 section 5.3 calls
     the warning optional for 1.0, and it is not built. Recommendation: after 1.0.
   - TD-032's decision: tabrion's own `TAB-*` finding texts stay English (marked `lang="en"`) until tabrion has a
@@ -1458,6 +1460,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **From TD-046:** B-4 (the header's latency after Connect; the status bar's running queries and the last query's rows
   and time, with TD-034), B-5 (QA-S1 with the owner, on the 1.0 build; 08 section 11 asks for one session per
   release), B-7 (the explorer's layout at 1280 × 800, with the workspace routes of TD-041 and TD-052).
+- **German-tour exclusion:** the German tour leaves out text marked `lang="en"`, today the diagnosis' `STU-DX-*`,
+  `STU-BK-*` and tabrion `TAB-*` texts. PR #85 (TD-032, in review) gives the `STU-DX-*` and `STU-BK-*` texts German
+  wording without a `lang` attribute; once it merges, narrow the exclusion to tabrion's `TAB-*` findings (and assert
+  that only they carry `lang="en"`).
+- **Source scan limits (review L-1 of PR #84):** `coverage.test.ts` does not see a module constant or a state value
+  rendered later, text props of components under other names (`hint`, `description`, `tooltip`) or `t(variable)`;
+  an extra scan of the current source found no such hard-coded text. Extend it when a cheap rule appears.
 - **Deviation noted:** the query history is its own view (`/history`, Ctrl+H), not a tab beside the results as 08
   section 4.4 sketches it; the view filters by profile and opens a statement in the editor, which a result tab
   could not. Recorded, no change planned.
