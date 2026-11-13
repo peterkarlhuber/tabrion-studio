@@ -52,6 +52,15 @@ function PageHeader({ title, children }: { title: string; children?: ReactNode }
   );
 }
 
+/** The start page's next steps (08 section 4.1): link names differ from the activity bar's, so each name is one link. */
+const START_STEPS = [
+  { key: 'connections', path: '/connections' },
+  { key: 'explorer', path: '/explorer' },
+  { key: 'sql', path: '/sql' },
+  { key: 'migrations', path: '/migrations' },
+  { key: 'diagnostics', path: '/diagnostics' },
+] as const;
+
 export function StartView() {
   const { t } = useTranslation();
   return (
@@ -65,9 +74,27 @@ export function StartView() {
         icon={<FolderOpen />}
         title={t('start.projectsTitle')}
         description={
-          <p>
-            <Trans i18nKey="start.projectsBody" components={TRANS_COMPONENTS} />
-          </p>
+          <>
+            <p>
+              <Trans i18nKey="start.projectsBody" components={TRANS_COMPONENTS} />
+            </p>
+            <ul className={styles.steps} data-testid="start-steps">
+              {START_STEPS.map(({ key, path }) => (
+                <li key={key}>
+                  <a
+                    href={path}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      navigate(path);
+                    }}
+                  >
+                    {t(`start.steps.${key}.link`)}
+                  </a>{' '}
+                  <span className={styles.stepHint}>{t(`start.steps.${key}.hint`)}</span>
+                </li>
+              ))}
+            </ul>
+          </>
         }
       />
     </div>

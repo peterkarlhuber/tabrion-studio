@@ -59,8 +59,30 @@
     "title": "Welcome",
     "lead": "Tabrion Studio is a local developer tool for SQLite and PostgreSQL databases. It runs on this computer only and is read-only by default.",
     "logoAlt": "Tabrion Studio",
-    "projectsTitle": "No projects yet",
-    "projectsBody": "Run <code>tabrion-studio</code> in a project folder to work with its connection profiles. The project and connection views arrive with the next versions."
+    "projectsTitle": "Get started",
+    "projectsBody": "Studio works with the connection profiles of the project folder you started <code>tabrion-studio</code> in, and with your own profiles. It only reads: nothing here changes a database.",
+    "steps": {
+      "connections": {
+        "link": "Add or test a connection profile",
+        "hint": "SQLite or PostgreSQL, with its environment (DEV, TEST, PROD)."
+      },
+      "explorer": {
+        "link": "Browse tables and views",
+        "hint": "Their columns, keys, indexes, DDL and data."
+      },
+      "sql": {
+        "link": "Run a query",
+        "hint": "Reading statements with parameters; export the result as CSV or JSON."
+      },
+      "migrations": {
+        "link": "Check the migration status",
+        "hint": "Which migrations the database has and which are pending."
+      },
+      "diagnostics": {
+        "link": "Run a diagnosis",
+        "hint": "Roles, timeouts, TLS, file permissions and backups."
+      }
+    }
   },
   "connections": {
     "title": "Connections",

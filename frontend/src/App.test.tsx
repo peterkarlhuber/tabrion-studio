@@ -41,6 +41,35 @@ describe('App', () => {
     expect(document.title).toBe('Tabrion Studio');
   });
 
+  it('STU-050: the start page leads to every view that exists, each link named once', async () => {
+    const user = userEvent.setup();
+    render(<App fetcher={server()} />);
+    await screen.findByText('Local server 0.1.0.dev0');
+    expect(screen.getByRole('heading', { level: 2, name: 'Get started' })).toBeInTheDocument();
+    expect(screen.queryByText(/arrive with the next versions/)).toBeNull();
+    const steps = within(screen.getByTestId('start-steps')).getAllByRole('link');
+    expect(steps.map((link) => link.getAttribute('href'))).toEqual([
+      '/connections',
+      '/explorer',
+      '/sql',
+      '/migrations',
+      '/diagnostics',
+    ]);
+    // No step shares a name with the activity bar (a locator by name finds exactly one link).
+    const nav = within(screen.getByRole('navigation', { name: 'Main navigation' }));
+    for (const link of steps) {
+      const name = link.textContent ?? '';
+      expect(nav.queryAllByRole('link', { name: new RegExp(name, 'i') })).toHaveLength(0);
+      for (const other of nav.getAllByRole('link')) {
+        const label = (other.getAttribute('aria-label') ?? other.textContent ?? '').trim();
+        expect(label).not.toBe('');
+        expect(name.toLowerCase()).not.toContain(label.toLowerCase());
+      }
+    }
+    await user.click(screen.getByRole('link', { name: 'Run a query' }));
+    expect(window.location.pathname).toBe('/sql');
+  });
+
   it('asks to run tabrion-studio again when the sign-in link was used', async () => {
     render(<App fetcher={server()} session="used" />);
     expect(await screen.findByRole('alert')).toHaveTextContent('already used');
