@@ -6,16 +6,23 @@
  * - an inline `<style>` and a `style` attribute, which the CSP refuses: the watcher must report both in each browser,
  *   so a run in Firefox or WebKit cannot pass because it never hears of a violation (each browser words the console
  *   message its own way);
- * - plain form controls: nothing to report, except that WebKit logs WEBKIT_SELECT_CSP_REPORT once for each `<select>`,
- *   the one report the watcher leaves out. When a WebKit update stops logging it, this test fails and the exception
- *   goes.
+ * - plain form controls: nothing to report, except that WebKit logs WEBKIT_SELECT_CSP_REPORT once for each `<select>`
+ *   with a `style-src-attr` violation event for the select itself, which has no `style` attribute. That pair is the
+ *   one report the watcher leaves out; WebKit words a refused `style` attribute of the page the same way, and that
+ *   one the watcher still hears. When a WebKit update stops logging it, this test fails and the exception goes.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { test, expect, type ConsoleMessage } from '@playwright/test';
 
-import { isWebKitSelectReport, recordViolations, WEBKIT_SELECT_CSP_REPORT } from './support';
+import {
+  isWebKitSelectReport,
+  recordViolations,
+  settleConsole,
+  WEBKIT_SELECT_CSP_REPORT,
+  WEBKIT_SELECT_EVENT,
+} from './support';
 
 /** CONTENT_SECURITY_POLICY of src/tabrion_studio/security/access.py, its string pieces joined. */
 function studioCsp(): string {
@@ -48,7 +55,7 @@ test("the CSP watcher hears every browser's reports, and leaves out only WebKit'
   );
   const messages: ConsoleMessage[] = [];
   page.on('console', (message) => messages.push(message));
-  const violations = recordViolations(page);
+  const violations = await recordViolations(page);
   await page.goto('/csp-probe.html');
   // The browser's own violation events, next to its console messages (what each browser reports, in the log).
   await page.evaluate(() => {
@@ -101,21 +108,29 @@ test("the CSP watcher hears every browser's reports, and leaves out only WebKit'
       { kind, marker },
     );
     await done;
+    // The violation events arrive after their reports; the watcher pairs WebKit's.
+    await settleConsole(page);
     const own = messages
       .slice(before)
-      .filter((message) => message.text() !== marker && !message.text().startsWith('probe event:'));
+      .filter(
+        (message) => message.text() !== marker && !message.text().startsWith('console settled'),
+      );
     observed[key] = {
-      console: [
-        ...messages
-          .slice(before)
-          .filter((message) => message.text() !== marker)
-          .map((message) => `${message.type()}: ${message.text()}`),
-      ],
+      console: own.map((message) => `${message.type()}: ${message.text()}`).sort(),
       watcher: violations.slice(heard),
     };
-    if (kind === 'select') reports.push(...own);
+    if (kind === 'select')
+      reports.push(...own.filter((message) => message.text() === WEBKIT_SELECT_CSP_REPORT));
   }
-  const select = browserName === 'webkit' ? [`error: ${WEBKIT_SELECT_CSP_REPORT}`] : [];
+  // WebKit: the report, its event for the select itself, and the watcher's mark of that event (sorted).
+  const select =
+    browserName === 'webkit'
+      ? [
+          `error: ${WEBKIT_SELECT_CSP_REPORT}`,
+          `warning: ${WEBKIT_SELECT_EVENT}`,
+          'warning: probe event: style-src-attr inline SELECT',
+        ]
+      : [];
   const nothing = { console: [], watcher: [] };
   const refused = { console: expect.arrayContaining([]), watcher: [expect.any(String)] };
   expect(observed).toEqual({
@@ -128,6 +143,7 @@ test("the CSP watcher hears every browser's reports, and leaves out only WebKit'
     'style element': refused,
     'style attribute': refused,
   });
-  // The watcher's exception matches each of WebKit's reports (an error at line 0, column 0 of the page).
+  // Each of WebKit's reports has the form the watcher pairs (an error at line 0, column 0 of the page).
+  expect(reports).toHaveLength(browserName === 'webkit' ? 2 : 0);
   for (const message of reports) expect(isWebKitSelectReport(page, message)).toBe(true);
 });

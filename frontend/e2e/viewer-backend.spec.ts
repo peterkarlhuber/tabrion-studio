@@ -16,7 +16,12 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { foreignRequests, recordViolations, seriousViolations } from './support';
+import {
+  expectNoViolations,
+  foreignRequests,
+  recordViolations,
+  seriousViolations,
+} from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -104,7 +109,7 @@ function newLink(): string {
 
 /** Sign in, record CSP violations and page errors. */
 async function signIn(page: Page): Promise<string[]> {
-  const violations = recordViolations(page);
+  const violations = await recordViolations(page);
   await page.goto(links.shift() ?? newLink());
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   return violations;
@@ -244,7 +249,7 @@ test('pages, sort, a filter and Load in full under the CSP; nothing but reads', 
   await expect(firstCell(page)).toHaveText('<img src=x onerror=alert(1)>');
   await expect(page.getByTestId('explorer-workspace').locator('img')).toHaveCount(0);
   expect(writes).toEqual(['POST /api/connections']);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
   expect(foreign).toEqual([]);
 });
 
@@ -264,7 +269,7 @@ test('a PROD profile shows data only after D-02', async ({ page }) => {
     'data-env',
     'prod',
   );
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('a connection closed elsewhere: the explorer drops it', async ({ page }) => {
@@ -290,7 +295,7 @@ test('a connection closed elsewhere: the explorer drops it', async ({ page }) =>
   await expect(page.getByTestId('explorer-workspace')).toHaveCount(0);
   await expect(page.getByTestId('explorer-problem')).toBeVisible();
   await expect(page.getByTestId('explorer-open')).toBeFocused();
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('wide rows at max_result_mb = 200 stay within the memory limit', async ({
@@ -333,5 +338,5 @@ test('wide rows at max_result_mb = 200 stay within the memory limit', async ({
   expect(total).toBeLessThan(300 * 2 ** 20);
   // A page of 1000 asked rows would be cut by the server near 200 MB of JSON (about 185 rows, over 130 MB here).
   expect(used).toBeLessThan(90 * 2 ** 20);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });

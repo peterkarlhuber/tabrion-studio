@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { recordViolations, seriousViolations } from './support';
+import { expectNoViolations, recordViolations, seriousViolations } from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 const examples = process.env.TABRION_STUDIO_E2E_EXAMPLES;
@@ -71,7 +71,7 @@ test.afterAll(() => {
 });
 
 async function signIn(page: Page): Promise<string[]> {
-  const violations = recordViolations(page);
+  const violations = await recordViolations(page);
   await page.goto(link);
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   return violations;
@@ -268,5 +268,5 @@ test('STU-010: the explorer against the parts and measurements reference apps', 
     await page.getByRole('tab', { name: 'Constraints' }).click();
     await expect(page.getByTestId('detail-pk')).toContainText('device_id, channel, ts_utc');
   }
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
