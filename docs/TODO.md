@@ -1116,7 +1116,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   each to fix in its own follow-up, without a skip unless the feature is Chromium-only:
   1. **WebKit, CSP:** "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear
      in the style-src directive" is logged once each time a `<select>` is created (the diagnostics, explorer, data
-     tab, editor and parameter panel selects; trace times match each one). It fails five real-server tests
+     tab, editor and parameter panel selects; trace times match each one). It fails four real-server tests
      (`backend.spec.ts:331`, `editor-backend.spec.ts:164`, `explorer-reference.spec.ts:132`,
      `viewer-backend.spec.ts:191`). Pages without a `<select>` have none, and Chromium and Firefox have none. The
      likely cause is WebKit's own user-agent styles of the select; confirm with a minimal page under the same CSP
