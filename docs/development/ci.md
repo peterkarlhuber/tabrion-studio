@@ -85,6 +85,11 @@ The same job writes CycloneDX SBOMs and uploads them as the artifact `sbom`:
 `tabrion-studio-python.cdx.json` (`cyclonedx-py environment` over the runtime environment) and
 `tabrion-studio-frontend.cdx.json` (`npm sbom`; shipped packages have scope `required`, build tools `optional`).
 
+The release SBOM and license report are written from the lockfiles by `scripts/release_bom.py` (CycloneDX 1.5, the
+same bytes on every computer for one commit, with the license records of every system); see
+[Release checklist](release-checklist.md#sbom-and-license-report). It is not a CI step yet: collecting the macOS and
+Windows license records in CI is a `.github/` change that needs its workflow review.
+
 ## Dependency audit
 
 `pip-audit` over the development environment (the runtime dependencies at the versions of the lock) and `npm audit --omit=dev --audit-level=high`.

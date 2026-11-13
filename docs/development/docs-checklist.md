@@ -33,12 +33,16 @@ Status words: **Met** (the page says it and the check passed), **Partly** (what 
 | D-19 | The README's status, install command and usage match `master` | review L-2 of `stu-27-review.md` | `README.md` | `tests/unit/test_user_guide.py::test_every_install_command_carries_the_tabrion_pin` | Met |
 | D-20 | The site builds without a warning, every link and anchor resolves | QA | the whole site | `mkdocs build --strict` (CI job `docs`) | Met |
 | D-21 | US English throughout | repository rule | the whole site | review | Met |
-| D-22 | Clean-install test | 09 STU-017 | this page, [Building and testing](building.md#wheel) | below | Met on Linux (manual and automated); macOS and Windows through the automated test in CI, which uses its own commands, not the guide's. For 1.0, 03 §8 also asks for a clean install with pipx and uv on all three systems; neither is run yet (TD-023) |
+| D-22 | Clean-install test | 09 STU-017 | this page, [Building and testing](building.md#wheel) | below | Met on Linux (manual and automated); macOS and Windows through the automated test in CI, which uses its own commands, not the guide's. For 1.0, 03 §8 also asks for a clean install with pipx and uv on all three systems; both passed on Linux in STU-028 (D-25), macOS and Windows are open (TD-023) |
 | D-23 | Tag `v0.1.0`, no publication | 09 STU-017, G-R | none yet | not done in this pull request | Open: a separate step after G-S1 |
+| D-24 | The 1.0 features: query history, favorite and recent connections, project scripts, Format, completion (PROD: cached only), drafts kept by the server | 03 §8 1.0, STU-020, TD-033 | [Query history and favorites](../guide/history.md), [SQL editor](../guide/sql-editor.md#scripts) | read against `e2e/history.spec.ts`, `e2e/history-backend.spec.ts` and [History, favorites and scripts](../architecture/history-and-scripts.md) (STU-028) | Met |
+| D-25 | Install with pipx and uv (03 §4.6, §8 for 1.0) | 03 §4.6, §8 | [Installation](../guide/installation.md#pipx-or-uv) | clean install with both, [Release checklist](release-checklist.md#clean-install-2026-11-13-linux) | Partly: Linux passed on 2026-11-13; macOS and Windows open (TD-023) |
+| D-26 | The release checklist with the gates, the SBOM and the license report | 09 STU-028, 07 §5 G-R | [Release checklist](release-checklist.md) | `tests/supply_chain/test_release_bom.py`; the run recorded there | Met as preparation; nothing released (G-R not granted) |
 
-Out of scope here: the features of later packages that are not on `master` (STU-020 history and favorites, STU-026
-data editor) get their pages with their own pull requests; the STU-023 ER diagram brought its section of the
-explorer page (D-12a).
+Out of scope here: the STU-026 data editor (locked behind G-S2, not part of 1.0) gets its pages with its own pull
+request. The 1.0 features on `master` have their pages: the ER diagram (D-12a), history, favorites, scripts, Format,
+completion and the server-kept drafts (D-24, checked in STU-028). The steps of a 1.0 release, its gates and the
+1.0 clean install are on the [Release checklist](release-checklist.md).
 
 ## Clean-install test
 
