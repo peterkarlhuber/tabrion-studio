@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   connection on open instead of returning it; a busy pool (checked without waiting for a session) or a check that
   fails otherwise (a timeout) keeps the connection. The SQL editor no longer reopens a PROD connection without D-02
   when the server says it is gone.
+- STU-050, UX acceptance of the MVP: `docs/architecture/ux-acceptance.md` maps every criterion of 08 sections 3 to 6
+  and of the plan's acceptance to its test or manual check, with the results of the run on 2026-11-13 (SQLite and
+  PostgreSQL 16, Chromium). `e2e/ux-acceptance.spec.ts` runs 08 section 5's "First start" (launch link, D-01, the
+  start page, the first table's rows in under 60 s) and "Connect" (a failed test says what to check) against a real
+  server with axe. User guide page "Migration status"; the guide's index and security page cover the views that
+  landed and PROD profiles (D-02). Open items are TD-046 and TD-047.
 - STU-016 preparation (not the gate G-S1): `docs/architecture/security-review-prep.md`, a readiness checklist that
   maps SQ-01..SQ-08 and the threat model T-01..T-16 to their code and tests, lists the open security-relevant TD rows,
   the residual risks and the points for the human reviewer. Two security tests from the internal pre-review:
@@ -558,6 +564,14 @@ All notable changes to this project are documented here. The format follows
 - `tabrion-studio` no longer ends with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered
   output) when the terminal or the parent process stopped reading its output before a clean stop; the last line is
   dropped and the exit status stays 0. Other errors writing that line are still raised (TD-044, joint regression JR-1).
+- STU-050: the start page said the project and connection views "arrive with the next versions"; it now leads to
+  Connections, Explorer, SQL editor, Migrations and Diagnostics (en/de).
+- STU-050: connection failures (a missing or linked SQLite file, a file that is no database, an unset password
+  variable, an unreachable server, a timeout, settings the driver refused, a full disk) now say what to check, as
+  08 section 5 asks.
+- STU-050: the migration view showed an empty status bar under its header before its first message.
+- `e2e/explorer-reference.spec.ts` can run its PostgreSQL part against a server with password authentication
+  (`TABRION_STUDIO_E2E_PG_PASSWORD`).
 - TABRION QA-21: `scripts/check_tabrion_api.py --surface` no longer reports enum members and dataclass fields as
   missing. Tabrion's `docs/api/surface.json` lists them in the parent entry (`members`, `fields`), not as names of
   their own, so `tabrion.TLSMode.AUTO` failed against tabrion v0.1.0; such a name is now checked against its parent's

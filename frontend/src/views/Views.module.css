@@ -75,3 +75,15 @@
   margin: 0;
   accent-color: var(--tb-color-primary);
 }
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  margin: var(--tb-space-3) 0 0;
+  padding: 0;
+  list-style: none;
+  text-align: start;
+}
+.stepHint {
+  color: var(--tb-color-text-muted);
+}
