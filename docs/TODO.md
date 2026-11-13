@@ -69,7 +69,7 @@
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
-| TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #@@) |
+| TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -1218,11 +1218,11 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-050 · Joint regression JR-N2: `backend.spec.ts` left its temp directory behind
 
-- **Priority:** P3 Low · **Status:** Done (PR #@@) · **Refs:** joint regression JR-N2, TD-044 (JR-1)
+- **Priority:** P3 Low · **Status:** Done (PR #68) · **Refs:** joint regression JR-N2, TD-044 (JR-1)
 - **What:** `frontend/e2e/backend.spec.ts` creates `<tmpdir>/studio-e2e-XXXXXX` (project, state, the test databases)
   in `beforeAll`, but its `afterAll` only sent SIGTERM to the server, so every run left that directory behind. The
   other real-server suites already removed theirs.
-- **Done in PR #@@:** `afterAll` sends SIGTERM, waits for the server to exit (at most 10 s, it may still write its
+- **Done in PR #68:** `afterAll` sends SIGTERM, waits for the server to exit (at most 10 s, it may still write its
   state on the way out) and removes the directory. Checked locally (Chromium): 7 passed and no new `studio-e2e-*`
   directory; without the change the same run left one. Directories left by earlier runs are not touched.
 
