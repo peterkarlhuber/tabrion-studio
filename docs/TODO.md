@@ -65,6 +65,8 @@
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
 | TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
 | TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
+| TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
+| TD-047 STU-050: the e2e suites on Firefox and WebKit (08 section 11, 09 STU-050; a `.github/` change) | P1 | Open (workflow-change draft PR) |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -374,7 +376,7 @@ merge after OA-004.
 | TABRION STU-012 | SQL editor | P1 | STU-010, STU-011 | In progress (draft PR #41): the page `/sql` with CodeMirror 6, editor tabs with local drafts, run, run script, cancel, `:name` parameters, the virtualized result grid with the detail panel, D-02 and D-06; 100 000 rows within the memory limit, and wide rows at `max_result_mb = 200` too (`e2e/editor.spec.ts`, `e2e/editor-backend.spec.ts`). Review `stu-012-review.md` (accepted with conditions): C-1..C-4 (results cleared on a profile change, the run registered before connecting, one-decimal durations, a row cache bounded in bytes) and L-1..L-8 done. The rest is TD-033; the required-suite list is TD-037. The "openapi in sync" CI job planned with STU-008 is TD-011 |
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part in the STU-052 PR): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part in the STU-053 PR): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
-| TABRION STU-050 | UX acceptance | P1 | | |
+| TABRION STU-050 | UX acceptance | P1 | STU-008..STU-015, STU-051, QA-9 | In progress (STU-050 PR): the checklist `docs/architecture/ux-acceptance.md` (every criterion of 08 sections 3 to 6 and of the plan's acceptance, each with its test or manual check), run on 2026-11-13 against the built app with SQLite and PostgreSQL 16 (scram) in Chromium: met for what the MVP covers. New `e2e/ux-acceptance.spec.ts` (08 section 5 "First start" under 60 s and "Connect" with the remedy, against a real server). Fixed: the start page leads to the views (it said they "arrive with the next versions"), seven connection failures name the remedy, the migration view's empty status box. Open: Firefox and WebKit (TD-047), the "Connection lost" banner (TD-034, parallel lane), QA-S1 and the rest of TD-046 |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part in the user-guide PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
 
@@ -964,6 +966,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
   connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
 - **Done in the STU-012 PR:** `guide/sql-editor.md` (running, parameters, the grid, cancel, drafts, shortcuts).
+- **Done in the STU-050 PR:** the pages that landed are checked against the views (explorer with DDL and policies,
+  data viewer, SQL editor with export, diagnostics, connections with D-02); new `guide/migrations.md` (status, code
+  trust, problems); `guide/security.md` says how PROD profiles are marked and confirmed (D-02); `guide/index.md`
+  lists every page and no longer says that the explorer, data viewer and diagnostics are still to come.
 - **With STU-009..STU-015:** connecting and the connection test, the explorer, the
   data viewer, diagnostics and migration status; update the "Development version" note on `guide/index.md`.
 - **Troubleshooting:** the tables grow with the problem codes those packages add; the guide's command lines are
@@ -1092,6 +1098,35 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `a11y-audit.spec.ts` (TD-022). The STU-012 PR does not touch `.github/`.
 - **What runs already:** `npm run e2e` runs every spec, and the job fails on any unexpected result; the review saw
   both editor suites pass in CI at `7acfe6b`. Only the skip detection is missing.
+
+### TD-046 · STU-050 UX acceptance: what the MVP does not meet yet
+
+- **Priority:** P2 Medium · **Status:** Open (recorded 2026-11-13 with the STU-050 PR) · **Refs:** 08 sections 3,
+  4.1, 4.3, 4.4, 4.8 and 11 (QA-S1), 09 STU-050, `docs/architecture/ux-acceptance.md` ("Open items")
+- **B-1, 4.1:** no project chooser, recently opened list or "Open SQLite file" on the start page. Studio serves one
+  project folder per process; "recently opened" is 1.0 (03 section 2 A). The start page now says what to do next.
+- **B-3, 4.8:** the hint "Studio does not run migrations. Command: `alembic upgrade head`" with a copy button.
+- **B-4, section 3:** the connection switcher can show a latency but showed none after Connect; the status bar's
+  running queries (count, a list with cancel) and the last query's rows and time (role and database are TD-034).
+- **B-5, QA-S1:** the 30-minute usability session with the owner on the reference apps; it also judges "without
+  documentation" of the first-start flow (the automated part runs in about 4 s of the 60 s).
+- **B-6, 4.4:** when a run stops at a missing parameter, the focus moves to the parameter field but CodeMirror's
+  completion list stays open over the editor.
+- **B-7, 4.3:** at 1280 × 800 the explorer's connection card fills the upper half of the page, so the tree and the
+  detail start below the fold; 08 keeps the explorer as a sidebar beside the detail.
+- **Not here:** the "Connection lost" banner (TD-034), Firefox and WebKit (TD-047), the screen-reader sample
+  (TD-022).
+
+### TD-047 · STU-050: the e2e suites on Firefox and WebKit
+
+- **Priority:** P1 High · **Status:** Open (workflow-change draft PR) · **Refs:** 08 sections 10 and 11 (STU-050:
+  "alle Flows E2E grün auf Chromium/Firefox/WebKit"), 09 STU-050, QA-9 row, TD-007
+- **What:** CI runs the Playwright suites in Chromium only. A separate pull request adds Playwright projects for
+  Firefox and WebKit and a CI job per browser that installs the browser of the locked Playwright version; it changes
+  `.github/` and needs the workflow-change review. The jobs start as advisory, since the suites have not run in
+  either browser yet; they become required once green.
+- **Locally:** only a Chromium build is installed in the agent sandbox, so the acceptance run of 2026-11-13 covers
+  Chromium only.
 
 ### TD-043 · STU-021 page: the export dialog, and what it leaves for later
 
