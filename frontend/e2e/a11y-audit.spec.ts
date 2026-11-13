@@ -297,7 +297,8 @@ test('every Tab stop of the shell shows the focus ring and is in view (2.4.7, 2.
   const seen = new Set<string>();
   for (let step = 0; step < 15; step += 1) {
     await page.keyboard.press('Tab');
-    const focus = await page.evaluate(() => {
+    const focus = await page.evaluate(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
       const el = document.activeElement as HTMLElement | null;
       if (el === null || el === document.body) return null;
       // Back at an element already passed: the walk has gone round once.
@@ -523,6 +524,12 @@ test('a click beside a focused link or button does not activate it through its t
  * Every Tab stop from the top of the page: it shows the 2 px ring and is in view. The walk starts at a
  * marker put first in the body (after blur() Chromium would go on from the blurred element) and ends when
  * the focus leaves the page or comes back to a stop it passed (a modal dialog's focus trap).
+ *
+ * Each stop is measured one task after the focus moved (TD-058). Chromium and Firefox scroll a newly focused
+ * element into view inside focus(); WebKit only schedules it, on a zero-delay timer
+ * (LocalFrameView::scheduleScrollToFocusedElement). Measured in the same task, a stop below the fold, such as the
+ * selected tree row under the explorer's "View" group, could still be out of view. A timer set after the focus moved
+ * runs after that one (timers of equal delay run in the order they were set), so the walk sees what the user sees.
  */
 async function walkFocus(
   page: Page,
@@ -540,7 +547,8 @@ async function walkFocus(
   let end: 'left' | 'cycle' | 'cap' = 'cap';
   for (let step = 0; step < stops; step += 1) {
     await page.keyboard.press('Tab');
-    const focus = await page.evaluate(() => {
+    const focus = await page.evaluate(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
       const el = document.activeElement as HTMLElement | null;
       if (el === null || el === document.body) return 'left' as const;
       if (el.dataset.auditStop !== undefined) return 'cycle' as const;
