@@ -15,11 +15,14 @@
  * - **Focus** never falls back to the document: the buttons stay mounted while they work (`aria-disabled`), and
  *   following a relationship moves the focus to the target's tree row (C-2 of stu-014-ui-review.md).
  * - **U-1:** every database name and text is escaped and capped (`lib/visible.ts`).
+ * - **ER diagram (STU-023):** "ER diagram" next to "Objects" shows a schema's tables on the open connection
+ *   (`er/ErDiagram.tsx`, loaded on first use); a table there switches back and follows it like a relationship.
  */
 import {
   Copy,
   Database,
   Eye,
+  Network,
   FileText,
   Folder,
   Globe,
@@ -31,6 +34,7 @@ import {
   Shapes,
   SquareTerminal,
   Table2,
+  ListTree,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -76,6 +80,7 @@ import {
   Value,
   type TabId,
 } from './ObjectDetail';
+import type { ErDiagram as ErDiagramType } from './er/ErDiagram';
 import { ObjectTree, type FocusTarget } from './ObjectTree';
 import {
   buildRows,
@@ -90,6 +95,23 @@ import {
   type Filter,
   type TreeRow,
 } from './tree';
+
+/**
+ * The ER diagram (STU-023): @xyflow/react and dagre load only when the diagram is opened. Not `React.lazy`: a lazy
+ * component is rendered by Suspense's retry, which React renders in time slices and commits in a later task than the
+ * one that created the elements. WebKit reports its own inline style of a `<select>` (TD-047) as a violation event
+ * that goes to the element only while it is in the document, so the diagram's schema picker, still detached when the
+ * event was dispatched, reported to the document instead (TD-052). A state update after the import renders and
+ * commits in one task.
+ */
+type ErDiagramView = typeof ErDiagramType;
+let erDiagramView: ErDiagramView | null = null;
+function loadErDiagram(): Promise<ErDiagramView> {
+  return import('./er/ErDiagram').then((module) => {
+    erDiagramView = module.default;
+    return module.default;
+  });
+}
 
 /** The connection whose catalog is shown; name and environment are kept (the profile list may change). */
 interface Opened {
@@ -168,6 +190,25 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [tab, setTab] = useState<TabId>('columns');
   const [focused, setFocused] = useState<string | null>(null);
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
+  /** The object tree with details, or the ER diagram of a schema (STU-023). */
+  const [view, setView] = useState<'objects' | 'diagram'>('objects');
+  const [ErDiagram, setErDiagram] = useState<ErDiagramView | null>(() => erDiagramView);
+  const [erFailed, setErFailed] = useState(false);
+  useEffect(() => {
+    if (view !== 'diagram' || ErDiagram !== null) return;
+    let live = true;
+    loadErDiagram().then(
+      (loaded) => {
+        if (live) setErDiagram(() => loaded);
+      },
+      () => {
+        if (live) setErFailed(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [view, ErDiagram]);
   /** Counts opens, refreshes and profile switches; a catalog answer is shown only for the latest. */
   const request = useRef(0);
   /** Counts selections (and everything that counts up `request`); a detail answer is shown only for the latest. */
@@ -395,6 +436,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setCatalog(null);
     setSelection(null);
     setDetail(null);
+    setView('objects');
     setMessage(t('explorer.opening'));
     const connecting = connections.beginConnect();
     // The environment this page confirmed for (D-02 on the server, TD-038).
@@ -465,6 +507,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
     setDetail(null);
     setFilter(NO_FILTER);
     setFocused(null);
+    setView('objects');
   };
 
   const select = (next: Selection) => {
@@ -713,7 +756,51 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
           </p>
         ) : null}
       </section>
-      {catalog !== null && opened !== null && tree !== null ? (
+      {catalog !== null && opened !== null ? (
+        <div className={styles.views} role="group" aria-label={t('explorer.view.label')}>
+          <Button
+            size="sm"
+            icon={<ListTree />}
+            aria-pressed={view === 'objects'}
+            onClick={() => setView('objects')}
+            data-testid="explorer-view-objects"
+          >
+            {t('explorer.view.objects')}
+          </Button>
+          <Button
+            size="sm"
+            icon={<Network />}
+            aria-pressed={view === 'diagram'}
+            onClick={() => setView('diagram')}
+            data-testid="explorer-view-diagram"
+          >
+            {t('explorer.view.diagram')}
+          </Button>
+        </div>
+      ) : null}
+      {view === 'diagram' && catalog !== null && opened !== null ? (
+        ErDiagram === null ? (
+          erFailed ? (
+            <p role="alert" className={connectionStyles.problem} data-testid="er-load-problem">
+              {t('explorer.er.loadFailed')}
+            </p>
+          ) : (
+            <p className={connectionStyles.hint}>{t('explorer.er.loading')}</p>
+          )
+        ) : (
+          <ErDiagram
+            fetcher={fetcher}
+            connectionId={opened.connectionId}
+            catalog={catalog}
+            onShow={(object) => {
+              setView('objects');
+              follow(object);
+            }}
+            onGone={dataGone}
+          />
+        )
+      ) : null}
+      {view === 'objects' && catalog !== null && opened !== null && tree !== null ? (
         <div className={styles.workspace} data-testid="explorer-workspace">
           <section
             className={styles.treePanel}

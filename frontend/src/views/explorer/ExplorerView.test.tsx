@@ -1359,3 +1359,48 @@ describe('the shared connection state of STU-008 (#42)', () => {
     expect(shared.state.active).toBeNull();
   });
 });
+
+describe('the ER diagram (STU-023)', () => {
+  beforeAll(() => {
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
+  });
+  afterAll(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('switches to the diagram of the open connection, and a table there opens in the tree', async () => {
+    const { fetcher, calls } = server();
+    const user = await openSqlite(fetcher);
+    const objects = screen.getByTestId('explorer-view-objects');
+    expect(objects).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByTestId('explorer-view-diagram'));
+    expect(screen.queryByTestId('explorer-workspace')).toBeNull();
+    const list = await screen.findByTestId('er-list');
+    expect(calls.map((c) => `${c.method} ${c.url}`)).toContain(`GET ${SQLITE}/diagram?schema=main`);
+    await user.click(within(list).getByRole('button', { name: 'Show material in the explorer' }));
+    expect(objects).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByTestId('er-panel')).toBeNull();
+    await waitFor(() => expect(row('material')).toHaveFocus());
+    expect(row('material')).toHaveAttribute('aria-selected', 'true');
+    // Only the connection open writes.
+    expect(calls.filter((c) => c.method !== 'GET').map((c) => c.url)).toEqual(['/api/connections']);
+  });
+
+  it('drops the connection when the diagram finds it gone, like the data tab', async () => {
+    const { fetcher } = server({
+      [`GET ${SQLITE}/diagram?schema=main`]: () => problem('studio.connection_not_found', 404),
+    });
+    const user = await openSqlite(fetcher);
+    await user.click(screen.getByTestId('explorer-view-diagram'));
+    await waitFor(() => expect(screen.queryByTestId('er-panel')).toBeNull());
+    expect(screen.queryByTestId('explorer-view-diagram')).toBeNull();
+    expect(screen.getByTestId('explorer-problem')).toBeInTheDocument();
+  });
+});
