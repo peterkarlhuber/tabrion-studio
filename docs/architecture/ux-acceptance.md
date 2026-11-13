@@ -6,12 +6,12 @@ E2E on Chromium, Firefox and WebKit; axe without serious or critical violations"
 page turns that into a checklist: each criterion names the automated test that checks it, or the manual check and
 who does it. A criterion that is not met names its open item.
 
-**Acceptance run:** 2026-11-13, branch of the STU-050 pull request on master `e9df576`, the built frontend in a real
-`tabrion-studio` (editable install with `scripts/build_frontend.py`), SQLite and a throwaway PostgreSQL 16.15
-cluster with `scram-sha-256`, Chromium 1243 (headless shell; CI uses build 1248). The whole e2e run: 259 passed, 30
-skipped (`screenshots.spec.ts`, which runs only with `STUDIO_SCREENSHOTS`), none failed, the PostgreSQL part of
-`explorer-reference.spec.ts` included. Result: every criterion that the MVP covers is met in Chromium; Firefox and
-WebKit are open (B-2), and so are the items listed under [Open items](#open-items).
+**Acceptance run:** 2026-11-13, branch of the STU-050 pull request started on master `e9df576`, the built frontend in
+a real `tabrion-studio` (editable install with `scripts/build_frontend.py`), SQLite and a throwaway PostgreSQL 16.15
+cluster with `scram-sha-256`, Chromium 1243 (headless shell; CI uses build 1248). The whole e2e run after merging
+master `432f6b3`: 261 passed, 30 skipped (`screenshots.spec.ts`, which runs only with `STUDIO_SCREENSHOTS`), none
+failed, the PostgreSQL part of `explorer-reference.spec.ts` included. Result: every criterion that the MVP covers is
+met in Chromium; Firefox and WebKit are open (B-2), and so are the items listed under [Open items](#open-items).
 
 ## How to run it
 
@@ -99,7 +99,14 @@ Found or confirmed by this acceptance; each is in TD-046 unless another item alr
 
 - **B-1** 4.1: no project chooser, recently opened list or "Open SQLite file" on the start page. Studio serves one
   project folder per process (`docs/architecture/process-model.md`); "recently opened" is 1.0 (03 section 2 A).
-- **B-2** Firefox and WebKit are not run (TD-047, workflow-change draft PR #59).
+- **B-2** Firefox and WebKit (TD-047, PR #59, advisory jobs). First CI run on `9741eb7`: Firefox 251 passed, 3
+  failed; WebKit 236 passed, 7 failed (the rest did not run or are the screenshots and the five "chromium only" heap
+  tests). Root causes as far as known: (1) WebKit logs "Refused to apply a stylesheet" under the CSP each time a
+  `<select>` is created (5 real-server tests; none in Chromium or Firefox), probably the select's own user-agent
+  styles, to be confirmed with a minimal page; (2) Firefox: Tab in the SQL editor appears to stay in the editor
+  (the text changes after Tab), a possible keyboard trap (WCAG 2.1.2) to be confirmed and fixed; (3) the tooltip
+  test reaches `:focus-visible` with `Shift` plus `focus()`, which only Chromium treats as keyboard focus; (4)
+  `grantPermissions` for the clipboard exists only in Chromium; (5) WebKit saves "Query 2.sql" as "Query_2.sql".
 - **B-3** 4.8: the hint "Studio does not run migrations. Command: `alembic upgrade head`" with a copy button.
 - **B-4** 08 section 3: the switcher can show a latency, but showed none after Connect in the walk-through; the status
   bar's running queries (count, list with cancel) and the last query's rows and time (role and database are TD-034).
