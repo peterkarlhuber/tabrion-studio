@@ -664,6 +664,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- STU-020 (E-1 and the Info item of the delta review): script names may hold the zero-width non-joiner U+200C and the
+  zero-width joiner U+200D between two letters or marks (Persian `می‌خواهم.sql`, Indic conjuncts; a ZWJ also inside
+  an emoji sequence) and the ideographic space U+3000 inside a name, like U+0020 (Japanese `売上　集計.sql`). A
+  joiner at the start or end of a name, doubled or next to a space, a dot or a digit, the bidi controls and the other
+  format and blank characters stay refused; the save dialog checks the same rule. The page keeps showing the joiners
+  escaped (`\u200C`) in the Open… list and in tab titles, so look-alike names stay apart. `GET /api/scripts` counts
+  the folders and `.sql` files it leaves out for their name in `skipped_invalid`, and the Open… dialog says how many
+  (en/de). Another instance's write lock on the state database is logged at info level as `studio.state_busy`
+  without a traceback; other database errors stay `studio.state_error` warnings.
+
 - e2e (TD-050, joint regression JR-N2, PR #68): `backend.spec.ts` removes its `studio-e2e-*` temp directory after
   the server has exited, like the other real-server suites; before, every run left one behind.
 - CI (STU-050, TD-047): the e2e suites also run in Firefox and WebKit, in the jobs `e2e (firefox)` and

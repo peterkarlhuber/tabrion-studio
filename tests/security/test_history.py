@@ -369,6 +369,44 @@ def test_recording_waits_only_briefly_for_another_writer(env: Env, state_dir: Pa
     _record(env.history, "SELECT 'after'")
 
 
+def test_another_instances_lock_is_logged_quietly(env: Env, state_dir: Path, caplog: pytest.LogCaptureFixture) -> None:
+    """Info item of the delta review: while another instance holds the write lock, every history read retries the
+    purge. That busy case is an info record without a traceback, not a ``studio.state_error`` warning."""
+    _record(env.history, "SELECT 'first'")
+    other = sqlite3.connect(state_dir / STATE_FILE, timeout=0)
+    try:
+        other.execute("BEGIN IMMEDIATE")
+        with caplog.at_level(logging.INFO, logger="tabrion_studio"):
+            for _ in range(2):
+                assert env.get("/api/history").status_code == 200
+    finally:
+        other.rollback()
+        other.close()
+    state = [record for record in caplog.records if record.name == "tabrion_studio.state"]
+    busy = [record for record in state if getattr(record, "event", None) == "studio.state_busy"]
+    assert len(busy) >= 2
+    assert all(record.levelno == logging.INFO and record.exc_info is None for record in busy)
+    assert not [record for record in state if getattr(record, "event", None) == "studio.state_error"]
+
+
+def test_any_other_state_error_keeps_its_warning(state_dir: Path, caplog: pytest.LogCaptureFixture) -> None:
+    store = StateStore(state_dir)
+
+    def broken(connection: sqlite3.Connection) -> None:
+        raise sqlite3.DatabaseError("database disk image is malformed")
+
+    try:
+        with caplog.at_level(logging.INFO, logger="tabrion_studio"), pytest.raises(StateUnavailable):
+            store.read(broken)
+        with caplog.at_level(logging.INFO, logger="tabrion_studio"), pytest.raises(StateUnavailable):
+            store.write(broken, busy_timeout_ms=100)
+    finally:
+        store.close()
+    errors = [record for record in caplog.records if getattr(record, "event", None) == "studio.state_error"]
+    assert len(errors) == 2
+    assert all(record.levelno == logging.WARNING and record.exc_info is not None for record in errors)
+
+
 def test_a_reader_holds_up_neither_a_query_nor_the_history(
     env: Env, state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
