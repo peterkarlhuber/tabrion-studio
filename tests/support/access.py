@@ -26,6 +26,20 @@ PORT = 1234
 ORIGIN = loopback_origin(PORT)
 HOST = f"127.0.0.1:{PORT}"
 CONTROL_AUTH = {"Authorization": f"Bearer {TOKEN}"}
+#: The security headers every answer carries, written out here rather than read from ``SECURITY_HEADERS``: a header
+#: dropped or weakened in the code must fail the tests (C-1 of stu-016-prep-review.md).
+EXPECTED_SECURITY_HEADERS: dict[str, str] = {
+    "content-security-policy": (
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
+        "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+    ),
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "x-frame-options": "DENY",
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-resource-policy": "same-origin",
+}
 
 
 class Clock:
