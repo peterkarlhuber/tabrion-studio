@@ -377,7 +377,7 @@ merge after OA-004.
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | In progress (first part merged in PR #16, its Low items in PR #22): the command palette, the shortcut help and F6/Shift+F6 over the shell, keyboard-only E2E for the flows that exist (`e2e/keyboard.spec.ts`). The editor shortcuts and the keyboard-only E2E of every main flow follow with STU-011/STU-012 (TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress (first part merged in PR #20): audit of the current shell in `docs/architecture/accessibility.md`, findings F-1..F-5 fixed, `e2e/a11y-audit.spec.ts`. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | | |
-| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Preparation in progress (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, canary over every page's flows). The gate itself, the independent review and its re-review are not done; G-S1 is decided by the owner, and a human security review before a public release stays mandatory |
+| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Preparation in progress (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). The gate itself, the independent review and its re-review are not done; G-S1 is decided by the owner, and a human security review before a public release stays mandatory |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R); STU-021
@@ -1285,9 +1285,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-036 · STU-025 parts outside the backend
 
-- **Priority:** P2 Medium · **Status:** Open (recorded 2026-11-12 with the STU-025 backend PR) · **Refs:** 03 section 2
-  G ("Bericht exportieren (Markdown/JSON, ohne Secrets)"), 03 section 1 ("Diagnose-Bericht ist auch per CLI
-  erzeugbar"), 09 STU-025, `docs/architecture/diagnostics.md` ("Diagnosis report")
+- **Priority:** P2 Medium · **Status:** Partly done (recorded 2026-11-12 with the STU-025 backend PR; the page part
+  in PR #47, the command line open) · **Refs:** 03 section 2 G ("Bericht exportieren (Markdown/JSON, ohne
+  Secrets)"), 03 section 1 ("Diagnose-Bericht ist auch per CLI erzeugbar"), 09 STU-025,
+  `docs/architecture/diagnostics.md` ("Diagnosis report")
 - **Download button:** the diagnostics view gets a "Download report" action with the two formats. It belongs to the
   STU-014 page (merged in #39, `frontend/src/views/diagnostics`): `POST /api/connections/{id}/diagnostics/report` with `{"format"}` through
   `fetch` (session and CSRF header, like the export dialog), saved under the name of `Content-Disposition`; the view

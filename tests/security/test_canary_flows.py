@@ -3,9 +3,10 @@ parameters, in SQL text, in a viewer filter and in export parameters never reach
 in a problem answer.
 
 ``test_canary.py`` covers the log machinery and ``test_queries.py`` the query engine on its own; this test drives the
-whole application through its routes, as the page does, with every service: profiles, connections, the SQL editor's
-queries (a failing one too), the data viewer (rows, a filter, one cell), exports (a working and a failing one) and the
-diagnosis with its report.
+whole application through its routes, as the page does: profiles, connections, the SQL editor's queries (a failing
+one too), the data viewer (rows, a filter, one cell), exports (one that works, one the database fails and two Studio
+refuses) and the diagnosis with its report. It does not cover the explorer's catalog, DDL and policies, the query
+event stream, connection tests or migrations.
 """
 
 from __future__ import annotations
@@ -152,6 +153,20 @@ def test_a_canary_reaches_no_log_line_and_no_problem(studio: Studio, tmp_path: P
             assert CANARY in export.text  # the file itself holds the data; it is not a log
         else:
             problems.append(export.text)
+    # Exports Studio itself refuses before it starts (``ExportError``, C-2 of stu-016-prep-review.md): a format it does
+    # not know and a row limit that is not a number, each with the canary in the parameters.
+    for extra in ({"format": "xml"}, {"format": "csv", "max_rows": CANARY}):
+        refused = send(
+            "POST",
+            "/api/exports",
+            {
+                "connection_id": connection_id,
+                "sql": "SELECT secret FROM notes WHERE secret = :p",
+                "params": {"p": CANARY},
+            }
+            | extra,
+        )
+        assert refused.status_code == 400 and refused.json()["code"] == "studio.export_invalid", refused.text
 
     # The diagnosis and its report.
     assert send("POST", f"/api/connections/{connection_id}/diagnostics", {}).status_code == 200
@@ -170,6 +185,7 @@ def test_a_canary_reaches_no_log_line_and_no_problem(studio: Studio, tmp_path: P
         if not json.loads(line).get("logger", "").startswith("httpx")
     ]
     assert any("studio.query_finished" in line for line in lines)
+    assert sum("studio.export_refused" in line for line in lines) == 2
     assert [line[:300] for line in lines if CANARY in line] == []
     assert problems, "the failing statement and export must have answered a problem"
     for problem in problems:

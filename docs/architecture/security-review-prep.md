@@ -25,9 +25,9 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 | SQ | Requirement | Where it is enforced | Tests |
 |---|---|---|---|
 | SQ-01 | Listen on loopback only | `server.py` binds `127.0.0.1` (and holds `[::1]`); the CLI has no host option | STU-T-025: `tests/unit/test_cli.py::test_bad_arguments`, `tests/security/test_launch.py` |
-| SQ-02 | Host and Origin allowlist (DNS rebinding) | `security/access.py`: `127.0.0.1:<port>` only, Origin and `Sec-Fetch-Site` on unsafe methods | STU-T-001..003: `tests/security/test_access.py`; every API route: `tests/security/test_every_route.py` |
+| SQ-02 | Host and Origin allowlist (DNS rebinding) | `security/access.py`: `127.0.0.1:<port>` only, the own Origin and same-origin fetch metadata on every API request | STU-T-001..003: `tests/security/test_access.py`; every API route: `tests/security/test_every_route.py` |
 | SQ-03 | Launch token, then an HttpOnly SameSite=Strict cookie and a CSRF header | `security/launch.py`, `security/sessions.py` | STU-T-004..006: `test_access.py`, `test_launch.py`; every API route: `test_every_route.py` |
-| SQ-04 | Secrets only in the backend | `config/secrets.py` (keyring without plain-text fallback, `env:`, `file:`), `tabrion.safe_url()`, log redaction in `logs.py` | STU-T-008/-009: `test_canary.py`, `test_secrets_api.py`, `test_log_process.py`, `test_diagnosis_report.py`; across every page's flows: `test_canary_flows.py` |
+| SQ-04 | Secrets only in the backend | `config/secrets.py` (keyring without plain-text fallback, `env:`, `file:`), `tabrion.safe_url()`, log redaction in `logs.py` | STU-T-008/-009: `test_canary.py`, `test_secrets_api.py`, `test_log_process.py`, `test_diagnosis_report.py`; through the routes of the editor, viewer, export and diagnosis: `test_canary_flows.py` |
 | SQ-05 | Read-only enforced by the database | `services/connections.py`, `services/readonly.py` (SQLite `mode=ro`, `query_only`, authorizer; PostgreSQL read-only session and transactions), text check as a second layer | STU-T-010..013, -024: `tests/security/test_read_only.py` (PostgreSQL part in the `backend integration (PostgreSQL 17)` CI job) |
 | SQ-06 | Limits and cancel | `services/queries.py`, `viewer.py`, `exports.py`; limits in the configuration | STU-T-018..020: `test_queries.py`, `test_viewer.py`, `test_exports.py`, `frontend/e2e/editor-backend.spec.ts` |
 | SQ-07 | PROD marking; no writes before G-S2 | Environment badge, frame and title (STU-051); D-02 on the server (`confirmed_environment`, TD-038); no write route exists (STU-026 is locked) | `test_read_only.py::test_td_038_*`, `test_connections_api.py`, frontend D-02 tests; `test_every_route.py` lists every route |
@@ -59,9 +59,10 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 ## The pages and their API
 
 Every API route except `/api/health`, `/api/session` and the CLI's control endpoints needs the session, the CSRF
-header and, for unsafe methods, the own Origin and a JSON body. `test_every_route.py` reads the routes from the
-application built with every service, so a route added later is checked without a change to the test; at `e9df576`
-there are 45 routes.
+header, refuses a foreign Origin and cross-site or same-site fetch metadata, and, for unsafe methods, needs the own
+Origin and a JSON body. `test_every_route.py` reads the routes from the application built with every service, so a
+route added later is checked without a change to the test; at `e9df576` there are 45 routes. The only other route
+under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fails if another appears.
 
 | Page | API families | Specific measures |
 |---|---|---|
@@ -76,9 +77,11 @@ there are 45 routes.
 
 ## Further checklist items
 
-- **CSP and headers:** CSP, `no-store`, `nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and same-origin COOP and CORP on every
-  answer and refusal (STU-T-014, -026, `test_every_route.py`). No inline script; the frontend has no `innerHTML`,
-  `eval`, `window.open` or `srcdoc`, and downloads go through a blob and an anchor.
+- **CSP and headers:** CSP, `no-store`, `nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and
+  same-origin COOP and CORP on every answer and refusal (STU-T-014, -026, `test_access.py`, `test_every_route.py`).
+  The tests compare with values written out in `tests/support/access.py`, and
+  `test_access.py::test_security_headers_are_pinned` fails when the code's set changes. No inline script; the
+  frontend has no `innerHTML`, `eval`, `window.open` or `srcdoc`, and downloads go through a blob and an anchor.
 - **Secrets:** keyring without a plain-text fallback, `env:` and `file:` references (C-3 checks at read time),
   session secrets bound to the connection target; the page never receives a password (`docs/architecture/secrets.md`).
 - **D-02:** enforced on the server since TD-038 (`confirmed_environment`, 409 `studio.prod_confirmation_required`);

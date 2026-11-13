@@ -11,9 +11,12 @@ All notable changes to this project are documented here. The format follows
   maps SQ-01..SQ-08 and the threat model T-01..T-16 to their code and tests, lists the open security-relevant TD rows,
   the residual risks and the points for the human reviewer. Two security tests from the internal pre-review:
   `tests/security/test_every_route.py` (every API route of the full application, read from the app itself, needs the
-  session and the CSRF header, unsafe methods refuse other sites and non-JSON bodies, every refusal carries the CSP
-  and `no-store`, and nothing on disk changes) and `tests/security/test_canary_flows.py` (a canary in the database,
-  parameters, SQL text, a viewer filter and export parameters reaches no log line and no problem answer).
+  session and the CSRF header and refuses other sites, unsafe methods refuse non-JSON bodies, every refusal carries
+  the security headers, and nothing on disk changes; the only other `/api/` route is `/api/openapi.json`) and
+  `tests/security/test_canary_flows.py` (a canary in the database, parameters, SQL text, a viewer filter and export
+  parameters reaches no log line and no problem answer of the editor, viewer, export and diagnosis routes; exports
+  Studio refuses included). The security headers are pinned literally in the tests
+  (`test_security_headers_are_pinned`), not compared with the code's own constant.
   `docs/TODO.md`: the package rows of STU-012, STU-022 and STU-025 are done with their PR numbers, and merged pages
   carry their PR numbers instead of "draft".
 - STU-022 in the explorer page: a **DDL** tab for every object (a sequence shows its DDL on its own) with **Copy
