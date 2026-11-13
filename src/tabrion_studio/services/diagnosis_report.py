@@ -25,7 +25,8 @@ in an issue. 09's acceptance is "report without secrets (canary test)", so the r
 starts a line, and has the characters that make links, HTML, emphasis, code, tables or headings escaped with a
 backslash, so a database's text cannot become a link or markup where the report is rendered (T-07). **JSON**
 (``application/json``): ``{"report", "format_version", "generated_at", "studio_version", "tabrion_version",
-"connection", "diagnosis", "backup", "left_out"}``; times are ISO 8601 UTC text.
+"connection", "diagnosis", "backup", "left_out"}``; times are ISO 8601 UTC text. The JSON is ASCII: every other
+character is a ``\\u`` escape, so no control or bidi character of a database name reaches a terminal raw.
 """
 
 from __future__ import annotations
@@ -203,7 +204,9 @@ class DiagnosisReports:
         report = _clean(report)
         media_type, suffix = FORMATS[report_format]
         if report_format == "json":
-            body = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+            # ASCII with \\u escapes (L-1 of the PR #85 review): json.dumps escapes only U+0000..U+001F, so C1
+            # controls (U+009B is the 8-bit CSI) and bidi overrides from a database name would reach a terminal raw.
+            body = json.dumps(report, ensure_ascii=True, indent=2).encode("ascii") + b"\n"
         else:
             body = _markdown(report).encode("utf-8")
         stamp = datetime.datetime.fromtimestamp(generated, tz=datetime.UTC).strftime("%Y%m%dT%H%M%SZ")

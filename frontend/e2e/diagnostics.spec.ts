@@ -41,7 +41,7 @@ const TEXT = {
     owner: 'Die Rolle besitzt Tabellen',
     ownerDetail:
       'Die Rolle besitzt 3 Tabellen oder Sichten in der Datenbank oder kann deren Eigentümer werden.',
-    archiveRemedy: 'Stellen Sie sicher, dass die Datenbank gesichert wird',
+    archiveRemedy: 'Stelle sicher, dass die Datenbank gesichert wird',
     backup: 'Sicherungen',
     archive: 'WAL-Archivierung ist aus',
   },

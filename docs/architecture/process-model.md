@@ -3,7 +3,7 @@
 ```
 tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]
 tabrion-studio --stop [PROJECT]
-tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE] [--confirm-prod]
+tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE [--force]] [--confirm-prod]
 ```
 
 `tabrion-studio diagnose` is no server and takes no lock: it opens one read-only connection in its own process,

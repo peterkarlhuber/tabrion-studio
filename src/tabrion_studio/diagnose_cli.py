@@ -1,9 +1,10 @@
 """``tabrion-studio diagnose``: the diagnosis report on the command line (03 section 1, STU-025, TD-036).
 
-``tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE] [--confirm-prod]``
-opens the profile's read-only connection, runs the diagnosis with its backup hints and writes the same report as
-``POST /api/connections/{id}/diagnostics/report`` (:class:`.DiagnosisReports`, the same allowlist: no password,
-token, URL or DSN, host, port, user name, database name, file path or value), to standard output or to ``FILE``. It
+``tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE [--force]]
+[--confirm-prod]`` opens the profile's read-only connection, runs the diagnosis with its backup hints and writes the
+same report as ``POST /api/connections/{id}/diagnostics/report`` (:class:`.DiagnosisReports`, the same allowlist: no
+password, token, URL or DSN, host, port, user name, database name, file path or value), to standard output (its
+bytes, UTF-8 with LF, whatever the stream's encoding) or to ``FILE``. It
 needs no running Studio and starts no server; it reads the same configuration as the server for PROJECT:
 
 * **Profiles:** the user's own (``user:<name>``) and, only while the project file is trusted, the project's
@@ -16,6 +17,14 @@ needs no running Studio and starts no server; it reads the same configuration as
   same check as the page's; a profile that became PROD after it was named is refused too. The flag has no
   environment variable or setting, so it is given for each run.
 
+* **Output file:** ``--output FILE`` is written atomically as a new 0600 file (a temporary file in the same folder,
+  opened with ``O_EXCL`` and ``O_NOFOLLOW``, then moved into place). An existing file is refused unless ``--force``
+  is given; a link or anything but a regular file is always refused, and so are the profile's own database file and
+  its ``-wal``, ``-shm`` and ``-journal`` files (also through a link or a hard link), since Studio never changes a
+  database (M-1 of the PR #85 review).
+* **State directory:** checked like the server's (owner only, no link, not writable by others), never created or
+  changed.
+
 Errors are the fixed English texts of the problem catalog (:mod:`tabrion_studio.problems`), never the text of an
 exception; log records go to standard error through the log redaction, at warning level and above. Exit codes:
 0 the report was written, 1 it could not be made, 2 a usage error (an unknown profile, PROD not confirmed).
@@ -25,9 +34,12 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+import contextlib
 import logging
 import os
 from pathlib import Path
+import secrets
+import stat
 import sys
 from typing import Any, TextIO
 
@@ -55,7 +67,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--format", choices=("markdown", "json"), default="markdown", help="report format (default: markdown)"
     )
     parser.add_argument(
-        "--output", type=Path, default=None, metavar="FILE", help="write the report to FILE (default: standard output)"
+        "--output",
+        type=Path,
+        default=None,
+        metavar="FILE",
+        help="write the report to FILE, a new file with mode 0600 (default: standard output, as UTF-8)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="replace FILE if it exists (never a link, a folder or the profile's own database file)",
     )
     parser.add_argument(
         "--confirm-prod",
@@ -95,7 +116,86 @@ def _say_db(err: TextIO, error: Any) -> None:
     print(f"tabrion-studio diagnose: {found.title}. {found.detail}{hint} ({found.code})", file=err)
 
 
+class OutputError(Exception):
+    """``--output`` names a file the report may not be written to; the message is a fixed text with the path."""
+
+
+#: The files next to a SQLite database that belong to it (M-1 of the PR #85 review).
+_SIDE_FILES = ("", "-wal", "-shm", "-journal")
+
+
+def _protected(database_file: Path | None) -> set[str]:
+    """The real paths the report must never replace: the profile's database file and its side files."""
+    if database_file is None:
+        return set()
+    real = os.path.realpath(database_file)
+    return {os.path.normcase(real + suffix) for suffix in _SIDE_FILES}
+
+
+def _check_output(target: Path, *, force: bool, protected: set[str]) -> None:
+    """Refuse a link, anything but a regular file, an existing file without ``force``, and the database's files."""
+    if os.path.normcase(os.path.realpath(target)) in protected:
+        raise OutputError(f"{target} is the profile's database or one of its files; Studio never changes a database")
+    try:
+        info = os.lstat(target)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise OutputError(f"{target} is a link or not a regular file; give another file name")
+    if not force:
+        raise OutputError(f"{target} exists; pass --force to replace it")
+    for name in protected:  # a hard link to the database is the database too
+        with contextlib.suppress(OSError):
+            if os.path.samefile(name, target):
+                raise OutputError(
+                    f"{target} is the profile's database or one of its files; Studio never changes a database"
+                )
+
+
+def _write_output(target: Path, body: bytes, *, force: bool, protected: set[str]) -> None:
+    """Write ``body`` to ``target`` atomically: a new 0600 file in the same folder (``O_EXCL``, ``O_NOFOLLOW``), then
+    moved into place. Without ``force`` the move never replaces a file that appeared meanwhile."""
+    _check_output(target, force=force, protected=protected)
+    folder = target.parent
+    tmp = folder / f".{target.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as file:
+            file.write(body)
+            file.flush()
+            os.fsync(file.fileno())
+        if force:
+            os.replace(tmp, target)  # replaces a link itself, never what it points to
+        elif sys.platform == "win32":
+            os.rename(tmp, target)  # fails when target exists
+        else:
+            os.link(tmp, target)  # fails when target exists, atomically
+            os.unlink(tmp)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def _write_stdout(out: TextIO, body: bytes) -> None:
+    """The report's bytes as they are (UTF-8, LF), whatever the stream's encoding (M-2 of the PR #85 review)."""
+    buffer = getattr(out, "buffer", None)
+    if buffer is not None:
+        out.flush()
+        buffer.write(body)
+        buffer.flush()
+    else:  # a text stream without bytes underneath (tests)
+        out.write(body.decode("utf-8"))
+        out.flush()
+
+
 def main(argv: Sequence[str], out: TextIO, err: TextIO) -> int:
+    reconfigure = getattr(err, "reconfigure", None)
+    if reconfigure is not None:
+        # A message that names a profile must not crash on a stream that cannot encode it (M-2).
+        with contextlib.suppress(Exception):
+            reconfigure(errors="backslashreplace")
     args = build_parser().parse_args(list(argv))
     project = Path(args.project).expanduser()
     if not project.is_dir():
@@ -121,7 +221,13 @@ def _run(args: argparse.Namespace, project: Path, out: TextIO, err: TextIO) -> i
     from tabrion_studio.config.secrets import SecretError
     from tabrion_studio.config.user import UserConfig
     from tabrion_studio.instance import project_key
-    from tabrion_studio.paths import STATE_DIR_ENV, default_config_dir, default_state_dir
+    from tabrion_studio.paths import (
+        STATE_DIR_ENV,
+        UnsafePathError,
+        check_private_dir,
+        default_config_dir,
+        default_state_dir,
+    )
     from tabrion_studio.services.connections import ConnectionRegistry, HealthError, RegistryError
     from tabrion_studio.services.diagnosis_report import DiagnosisReports, ReportError
     from tabrion_studio.services.diagnostics import Diagnostics
@@ -132,6 +238,23 @@ def _run(args: argparse.Namespace, project: Path, out: TextIO, err: TextIO) -> i
     config_dir: Path = (
         args.config_dir if args.config_dir is not None else default_config_dir(state_dir if explicit_state else None)
     )
+    try:
+        # L-4 of the PR #85 review: the server's rule for the folder of the trust records, checked, never changed.
+        check_private_dir(state_dir)
+    except (OSError, UnsafePathError):
+        print(
+            f"tabrion-studio diagnose: the state directory {state_dir} is not private (a link, another user's, or "
+            "writable by others); fix it before Studio reads its trust records.",
+            file=err,
+        )
+        return EXIT_ERROR
+    output: Path | None = None if args.output is None else Path(args.output).expanduser()
+    if output is not None:
+        try:
+            _check_output(output, force=args.force, protected=set())
+        except OutputError as exc:
+            print(f"tabrion-studio diagnose: {exc}", file=err)
+            return EXIT_USAGE
     configuration = Configuration(
         project=ProjectConfig(project, state_dir, project_key(project), config_dir.expanduser().resolve()),
         user=UserConfig(config_dir.expanduser().resolve()),
@@ -140,7 +263,8 @@ def _run(args: argparse.Namespace, project: Path, out: TextIO, err: TextIO) -> i
     entries = configuration.entries(project_state)
     wanted = str(args.profile)
     matches: list[ProfileEntry] = [entry for entry in entries if entry.id == wanted]
-    if not matches:
+    if not matches and not wanted.startswith(("user:", "project:")):
+        # L-2: an id-shaped value is an id only; a name match could pick a project profile named "user:...".
         matches = [entry for entry in entries if entry.profile.name == wanted]
     if len(matches) > 1:
         names = ", ".join(entry.id for entry in matches)
@@ -148,6 +272,11 @@ def _run(args: argparse.Namespace, project: Path, out: TextIO, err: TextIO) -> i
         return EXIT_USAGE
     if not matches:
         _say(err, "studio.profile_not_found")
+        # L-3: say why a profile may be missing: the issues of the user's own file (key paths and codes only).
+        for issue in configuration.user.profiles().issues:
+            print(f"  profiles.toml: {issue.pointer}: {issue.code}", file=err)
+        if project_state.state == "invalid":
+            print("The project's profile file has issues; Studio shows them in the connection manager.", file=err)
         if project_state.state in ("untrusted", "changed"):
             print(
                 "The project's profiles are used only after you trust them in Studio (dialog D-01): run "
@@ -170,6 +299,7 @@ def _run(args: argparse.Namespace, project: Path, out: TextIO, err: TextIO) -> i
     reports = DiagnosisReports(registry, diagnostics, clock=diagnostics.clock)
     try:
         connection = registry.open(entry.id, confirmed_environment="prod" if args.confirm_prod else None)
+        protected = _protected(connection.database_file)
         report = reports.build(connection.id, args.format)
     except RegistryError as exc:
         _say(err, exc.code)
@@ -201,19 +331,20 @@ def _run(args: argparse.Namespace, project: Path, out: TextIO, err: TextIO) -> i
         return EXIT_ERROR
     finally:
         registry.close_all()
-    if args.output is None:
-        out.write(report.body.decode("utf-8"))
-        out.flush()
-    else:
-        try:
-            Path(args.output).expanduser().write_bytes(report.body)
-        except OSError as exc:
-            print(
-                f"tabrion-studio diagnose: cannot write {args.output}: {exc.strerror or type(exc).__name__}", file=err
-            )
-            return EXIT_ERROR
-        print(f"Report written to {args.output} ({report.filename}).", file=err)
-    _logger.info("diagnosis report", extra={"event": "studio.diagnosis_report_cli"})
+    try:
+        if output is None:
+            _write_stdout(out, report.body)
+        else:
+            _write_output(output, report.body, force=args.force, protected=protected)
+    except OutputError as exc:
+        print(f"tabrion-studio diagnose: {exc}", file=err)
+        return EXIT_USAGE
+    except OSError as exc:
+        where = "standard output" if output is None else str(output)
+        print(f"tabrion-studio diagnose: cannot write {where}: {exc.strerror or type(exc).__name__}", file=err)
+        return EXIT_ERROR
+    if output is not None:
+        print(f"Report written to {output} ({report.filename}).", file=err)
     return EXIT_OK
 
 

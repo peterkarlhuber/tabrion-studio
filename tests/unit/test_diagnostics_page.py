@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 import pytest
@@ -85,6 +86,17 @@ def test_every_text_has_german_with_the_same_keys() -> None:
     assert {code: sorted(keys) for code, keys in german.items()} == {
         code: sorted(keys) for code, keys in diagnosis_texts.TEXTS.items()
     }
+
+
+def test_the_german_texts_speak_like_the_page() -> None:
+    """L-5 of ``pr85-diag-review.md``: the page says "du" and "Sicherung"; Studio's German details and remedies too."""
+    formal = re.compile(r"\b(Sie|Ihnen|Ihre?[mnrs]?)\b")
+    english = re.compile(r"Backup")  # the folder names backups and backup stay as they are
+    for code, entry in _page_texts("de").items():
+        for key, text in entry.items():
+            assert not formal.search(text), (code, key, text)
+            assert not english.search(text), (code, key, text)
+            assert "..." not in text and '"' not in text, (code, key, text)
 
 
 def test_the_shared_cases_are_the_servers_english_and_use_every_template(monkeypatch: pytest.MonkeyPatch) -> None:

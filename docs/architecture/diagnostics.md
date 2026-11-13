@@ -171,7 +171,7 @@ It only reads; nothing on the page writes to a database.
 Deviations from 08 section 4.9 (TD-032): the route `/diagnostics` with a profile picker instead of
 `/c/:conn/diagnostics` (no connection workspace yet, TD-011; like `/migrations`), no progress display (the backend
 reports none), no documentation link per finding and no "OK" rows. Studio's details and remedies are en/de since
-TD-032; tabrion's stay English (labelled). The report export and the backup hints of STU-025 are on the page since
+TD-032; tabrion's stay English (labeled). The report export and the backup hints of STU-025 are on the page since
 TD-036, and the report from the command line is `tabrion-studio diagnose` ([below](#the-report-from-the-command-line-td-036)).
 
 Page tests: `DiagnosticsView.test.tsx` (run, D-02, run again, escaping and caps, the fail-closed parser, cancel
@@ -317,14 +317,16 @@ the same `params` as the page's wording (TD-032).
 extensions). In the Markdown report every such text is put on one line (controls and line separators become spaces),
 never starts a line, and has the characters of inline markup escaped with a backslash (`` \ ` * _ [ ] < > ! | ~ & # @ ``; `@` for mentions and e-mail autolinks, L-1),
 and `://` and `www.` are broken up, so a name cannot become a link, an image, HTML, a table cell or a heading where
-the report is rendered. The JSON report is plain JSON.
+the report is rendered. The JSON report is JSON with `ensure_ascii`: every character outside ASCII, C1 controls
+and direction marks (`U+202E`) among them, is a `\u` escape, so a raw byte cannot reach a terminal that shows the file
+(L-1 of `pr85-diag-review.md`).
 
 ### The report from the command line (TD-036)
 
 03 section 1 says that agents and CI can make the diagnosis report from the command line:
 
 ```
-tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE] [--confirm-prod]
+tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE [--force]] [--confirm-prod]
                         [--state-dir DIR] [--config-dir DIR]
 ```
 
@@ -335,8 +337,11 @@ keyring), opens the profile's read-only connection with `ConnectionRegistry.open
 `DiagnosisReports.build` of that connection, the route's code, so the allowlist, the `[role]`/`[database]`
 replacement, the log redaction and `studio.report_unavailable` are the same. The connection is closed at the end.
 
+- **State directory.** `paths.check_private_dir` checks it as the server does (a plain folder, the user's own, not
+  writable by group or others; the ACL on Windows) without creating or changing it; otherwise exit 1 (L-4).
 - **Profiles.** `--profile` is the API id (`user:<name>`, `project:<name>`) or a name that only one profile has
-  (otherwise exit 2 with the ids). Project profiles exist only while the project file is trusted
+  (otherwise exit 2 with the ids). A value with the `user:` or `project:` prefix is compared with the ids only (L-2).
+  When nothing matches, the issues of the user's `profiles.toml` are printed as key path and code (L-3). Project profiles exist only while the project file is trusted
   (`Configuration.entries`); the trust is given in D-01 in the browser, never by this command. An untrusted or
   changed project file gives "Profile not found" with a note on D-01.
 - **PROD (D-02).** The page asks D-02 once per page session; the command has no session and no dialog, so
@@ -347,12 +352,18 @@ replacement, the log redaction and `studio.report_unavailable` are the same. The
   (`studio.prod_confirmation_required`). Nothing is weaker than the page: the connection is the same read-only one.
 - **Secrets.** As in the server (keyring, `env:`, `file:`); the command never prompts, so a missing password is
   `studio.secret_missing` (exit 1).
-- **Output.** The report to standard output, or with `--output` to that file (the server's file name is printed on
-  standard error). Refusals are the problem catalog's fixed English title, detail and hint with the code
+- **Output.** The report to standard output as UTF-8 bytes (`stdout.buffer`, LF, whatever the stream's encoding; a
+  failing stream is a fixed `cannot write` error, exit 1; M-2), or with `--output` to that file (the server's file name
+  is printed on standard error). The file is written atomically (M-1): a new `O_CREAT|O_EXCL|O_NOFOLLOW` temporary
+  file with mode 0600 in the target's folder, then `os.link` and unlink (`os.replace` with `--force`), so a reader
+  sees the whole report or none. The target is refused (exit 2) when it is a link, a folder or not a regular file,
+  when it exists without `--force`, and always when it is, by real path or as the same file, the profile's database
+  file or its `-wal`, `-shm` or `-journal` file. Standard error writes non-encodable characters as backslash
+  escapes. Refusals are the problem catalog's fixed English title, detail and hint with the code
   (`db.<kind>` for a database that does not answer), never an exception's text. Log records go to standard error
   at warning level and above, through the log redaction; there is no log file.
 - **Exit codes.** 0 written; 1 not made (a database, secret, trust or report problem, or an unexpected error); 2 a
-  usage error (bad options, an unknown or ambiguous profile, PROD not confirmed).
+  usage error (bad options, an unknown or ambiguous profile, PROD not confirmed, a refused output file).
 
 A project folder named `diagnose` is given as `./diagnose`.
 

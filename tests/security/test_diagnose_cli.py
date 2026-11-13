@@ -13,17 +13,20 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import stat
+import sys
 from typing import Any
 import uuid
 
 import pytest
 import sqlalchemy
+from tabrion.check import Finding, Severity
 
 from tabrion_studio import cli, diagnose_cli
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.instance import project_key
 from tabrion_studio.logs import forget_secrets
-from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 
 pytestmark = pytest.mark.security
 
@@ -258,3 +261,157 @@ def test_postgres_report_hides_the_password_host_port_user_and_database(
         for name in (url.username, url.database):
             assert f" {name} " not in text and f'"{name}"' not in text and f"`{name}`" not in text
         assert "STU-DX-004" in out or "STU-DX-010" in out or "No findings" in out
+
+
+# Review of PR #85: M-1 (a safe --output), M-2 (bytes to standard output), L-1 to L-4.
+posix = pytest.mark.skipif(sys.platform == "win32", reason="POSIX links and modes")
+
+
+def test_m1_output_is_a_new_private_file_and_an_existing_one_needs_force(env: Env, tmp_path: Path) -> None:
+    env.profiles(env.sqlite_profile())
+    target = tmp_path / "out" / "report.md"
+    target.parent.mkdir()
+    assert env.run("--profile", "shop", "--output", str(target))[0] == diagnose_cli.EXIT_OK
+    assert target.read_bytes().startswith(b"# Tabrion Studio diagnosis report")
+    if sys.platform != "win32":
+        assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    target.write_bytes(b"keep me")
+    code, _, err = env.run("--profile", "shop", "--output", str(target))
+    assert code == diagnose_cli.EXIT_USAGE and "exists; pass --force" in err
+    assert target.read_bytes() == b"keep me"
+    assert env.run("--profile", "shop", "--output", str(target), "--force")[0] == diagnose_cli.EXIT_OK
+    assert target.read_bytes().startswith(b"# Tabrion Studio diagnosis report")
+    assert sorted(path.name for path in target.parent.iterdir()) == ["report.md"]  # no temporary file left
+
+
+def test_m1_output_never_replaces_the_profiles_database(env: Env) -> None:
+    env.profiles(env.sqlite_profile())
+    before = env.db.read_bytes()
+    for target in (env.db, Path(f"{env.db}-wal"), Path(f"{env.db}-journal"), Path(f"{env.db}-shm")):
+        for force in ((), ("--force",)):
+            code, _, err = env.run("--profile", "shop", "--output", str(target), *force)
+            assert code == diagnose_cli.EXIT_USAGE, (target, force)
+            # Without --force the existing database file is refused as existing; with it, as the database.
+            existing = not force and target == env.db
+            assert ("exists; pass --force" if existing else "Studio never changes a database") in err, (target, err)
+    assert env.db.read_bytes() == before
+    assert not Path(f"{env.db}-wal").exists() and not Path(f"{env.db}-journal").exists()
+
+
+@posix
+def test_m1_output_refuses_links_to_any_file_and_hard_links_to_the_database(env: Env, tmp_path: Path) -> None:
+    env.profiles(env.sqlite_profile())
+    victim = tmp_path / "victim.txt"
+    victim.write_bytes(b"other data")
+    link = tmp_path / "link.md"
+    link.symlink_to(victim)
+    for force in ((), ("--force",)):
+        code, _, err = env.run("--profile", "shop", "--output", str(link), *force)
+        assert code == diagnose_cli.EXIT_USAGE and "link or not a regular file" in err
+    assert victim.read_bytes() == b"other data" and link.is_symlink()
+    to_db = tmp_path / "db-link.md"
+    to_db.symlink_to(env.db)
+    hard = tmp_path / "hard.md"
+    os.link(env.db, hard)
+    before = env.db.read_bytes()
+    for target in (to_db, hard):
+        code, _, err = env.run("--profile", "shop", "--output", str(target), "--force")
+        assert code == diagnose_cli.EXIT_USAGE, target
+        assert "link or not a regular file" in err or "never changes a database" in err
+    assert env.db.read_bytes() == before
+    folder = tmp_path / "a-folder"
+    folder.mkdir()
+    assert env.run("--profile", "shop", "--output", str(folder), "--force")[0] == diagnose_cli.EXIT_USAGE
+
+
+def test_m1_a_missing_folder_is_an_error_without_a_traceback(env: Env, tmp_path: Path) -> None:
+    env.profiles(env.sqlite_profile())
+    code, _, err = env.run("--profile", "shop", "--output", str(tmp_path / "missing" / "r.md"))
+    assert code == diagnose_cli.EXIT_ERROR and "cannot write" in err and "Traceback" not in err
+
+
+def test_m2_standard_output_gets_the_utf8_bytes_on_an_ascii_stream(env: Env) -> None:
+    env.profiles(env.sqlite_profile())
+    raw = io.BytesIO()
+    out = io.TextIOWrapper(raw, encoding="ascii", newline="\r\n")
+    err = io.StringIO()
+    args = [str(env.project), "--state-dir", str(env.state), "--config-dir", str(env.config), "--profile", "shop"]
+    assert diagnose_cli.main(args, out, err) == diagnose_cli.EXIT_OK, err.getvalue()
+    body = raw.getvalue()
+    assert "·".encode() in body and b"\r\n" not in body  # UTF-8 and LF, as the report's bytes
+    assert body.decode("utf-8").startswith("# Tabrion Studio diagnosis report")
+
+
+def test_m2_a_failing_standard_output_is_a_fixed_error(env: Env) -> None:
+    env.profiles(env.sqlite_profile())
+
+    class Broken(io.BytesIO):
+        def write(self, data: Any) -> int:
+            raise BrokenPipeError(32, "Broken pipe")
+
+    out = io.TextIOWrapper(Broken(), encoding="utf-8")
+    err = io.StringIO()
+    args = [str(env.project), "--state-dir", str(env.state), "--config-dir", str(env.config), "--profile", "shop"]
+    assert diagnose_cli.main(args, out, err) == diagnose_cli.EXIT_ERROR
+    assert "cannot write standard output: Broken pipe" in err.getvalue()
+
+
+def test_l1_json_and_markdown_hold_no_raw_c1_or_bidi_character(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    env.profiles(env.sqlite_profile())
+    hostile = "audit\x9b31m\u202egol\u2066x"
+    monkeypatch.setattr(
+        OpenConnection,
+        "tabrion_findings",
+        lambda self, **_: [Finding("TAB-SQ-004", Severity.WARNING, hostile, f"detail {hostile}", "remedy")],
+    )
+    for report_format in ("json", "markdown"):
+        code, out, err = env.run("--profile", "shop", "--format", report_format)
+        assert code == diagnose_cli.EXIT_OK, err
+        for character in ("\x9b", "\u202e", "\u2066"):
+            assert character not in out, (report_format, character)
+        if report_format == "json":
+            assert out.isascii()
+            detail = next(item for item in json.loads(out)["diagnosis"]["findings"] if item["code"] == "TAB-SQ-004")
+            assert detail["detail"] == f"detail {hostile}"  # the escapes decode to the text
+
+
+def test_l2_an_id_shaped_value_matches_ids_only(env: Env) -> None:
+    (env.project / ".tabrion" / "studio.toml").write_text(
+        'version = 1\n[[profile]]\nname = "user:mine"\nengine = "sqlite"\npath = "p.db"\nenvironment = "dev"\n',
+        encoding="utf-8",
+    )
+    (env.project / "p.db").write_bytes(env.db.read_bytes())
+    project = ProjectConfig(env.project.resolve(), env.state, project_key(env.project.resolve()), env.config)
+    project.trust(project.load().digest)
+    code, out, err = env.run("--profile", "user:mine")
+    assert code == diagnose_cli.EXIT_USAGE and out == "" and "(studio.profile_not_found)" in err
+    assert env.run("--profile", "project:user:mine")[0] == diagnose_cli.EXIT_OK
+
+
+def test_l3_the_user_files_issues_are_named(env: Env) -> None:
+    env.profiles("[[profile]\nname = broken")
+    code, _, err = env.run("--profile", "shop")
+    assert code == diagnose_cli.EXIT_USAGE and "(studio.profile_not_found)" in err
+    assert "profiles.toml: profiles.toml line" in err and "config." in err
+
+
+@posix
+def test_l4_a_state_directory_others_may_write_is_refused(env: Env) -> None:
+    env.profiles(env.sqlite_profile())
+    env.state.chmod(0o777)
+    try:
+        code, out, err = env.run("--profile", "shop")
+    finally:
+        env.state.chmod(0o700)
+    assert code == diagnose_cli.EXIT_ERROR and out == "" and "is not private" in err
+    assert stat.S_IMODE(env.state.stat().st_mode) == 0o700  # checked, never changed by the command
+
+
+def test_m2_a_message_naming_a_profile_survives_an_ascii_error_stream(env: Env) -> None:
+    env.profiles(env.sqlite_profile("prüf", environment="prod"))
+    raw = io.BytesIO()
+    err = io.TextIOWrapper(raw, encoding="ascii")
+    args = [str(env.project), "--state-dir", str(env.state), "--config-dir", str(env.config), "--profile", "prüf"]
+    assert diagnose_cli.main(args, io.StringIO(), err) == diagnose_cli.EXIT_USAGE
+    err.flush()
+    assert b"user:pr\\xfcf is marked as PROD" in raw.getvalue()

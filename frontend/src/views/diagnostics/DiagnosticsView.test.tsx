@@ -730,7 +730,7 @@ describe('diagnostics view: Studio texts in en/de (TD-032)', () => {
     );
     expect(owner.getByTestId('diagnostics-detail')).not.toHaveAttribute('lang');
     expect(owner.getByTestId('diagnostics-remedy')).toHaveTextContent(
-      'Abhilfe: Nutzen Sie eine Eigentümerrolle für Migrationen und eine eigene Laufzeitrolle für die Anwendung (03 Abschnitt 5.4: Pflicht für PROD).',
+      'Abhilfe: Nutze eine Eigentümerrolle für Migrationen und eine eigene Laufzeitrolle für die Anwendung (03 Abschnitt 5.4: Pflicht für PROD).',
     );
     expect(nth(items, 0).querySelector('[lang]')).toBeNull();
     expect(within(nth(items, 1)).getByTestId('diagnostics-detail')).toHaveTextContent(
@@ -790,7 +790,7 @@ describe('diagnostics view: Studio texts in en/de (TD-032)', () => {
     });
     const hint = within(screen.getByTestId('diagnostics-hint'));
     expect(hint.getByTestId('diagnostics-detail')).toHaveTextContent(
-      'Das neueste Backup ist 8 Tage älter als die letzte Änderung der Datenbank.',
+      'Die neueste Sicherung ist 8 Tage älter als die letzte Änderung der Datenbank.',
     );
     expect(hint.getByTestId('diagnostics-detail')).not.toHaveAttribute('lang');
   });
