@@ -10,11 +10,20 @@ import { test, expect, type Locator, type Page } from '@playwright/test';
 
 import { openHarness, seriousViolations, type Theme } from './support';
 
-/** Press Tab until `target` has the focus (at most `limit` times), as a keyboard user would. */
-async function tabTo(page: Page, target: Locator, limit = 40): Promise<void> {
+/**
+ * Press Tab (or Shift+Tab) until `target` has the focus (at most `limit` times), as a keyboard user would. Past the
+ * page's last control the focus leaves the page: Chromium comes back at its start, headless Firefox has no browser UI
+ * to go to and keeps the focus (TD-047), so a control before the focus is reached with Shift+Tab.
+ */
+async function tabTo(
+  page: Page,
+  target: Locator,
+  limit = 40,
+  key: 'Tab' | 'Shift+Tab' = 'Tab',
+): Promise<void> {
   for (let press = 0; press < limit; press += 1) {
     if (await target.evaluate((element) => element === document.activeElement)) return;
-    await page.keyboard.press('Tab');
+    await page.keyboard.press(key);
   }
   await expect(target).toBeFocused();
 }
@@ -143,7 +152,8 @@ test('keyboard only: connect from the start page, with D-02 for PROD (08 section
   await tabTo(page, detail.getByRole('button', { name: 'Test connection' }));
   await page.keyboard.press('Enter');
   await expect(detail.getByTestId('connection-outcome')).toContainText('Connection works');
-  await tabTo(page, detail.getByRole('button', { name: 'Connect', exact: true }));
+  // "Connect" comes right before "Test connection", the page's last control.
+  await tabTo(page, detail.getByRole('button', { name: 'Connect', exact: true }), 1, 'Shift+Tab');
   await page.keyboard.press('Enter');
   await expect(page).toHaveTitle('[DEV] parts-dev – Tabrion Studio');
   // PROD: D-02 asks with the focus on Cancel; Tab and Enter connect.

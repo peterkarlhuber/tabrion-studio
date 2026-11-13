@@ -16,7 +16,12 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { foreignRequests, seriousViolations } from './support';
+import {
+  expectNoViolations,
+  foreignRequests,
+  recordViolations,
+  seriousViolations,
+} from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -94,11 +99,7 @@ function newLink(): string {
 
 /** Sign in, record CSP violations and page errors. */
 async function signIn(page: Page): Promise<string[]> {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
-  });
-  page.on('pageerror', (error) => violations.push(String(error)));
+  const violations = await recordViolations(page);
   await page.goto(links.shift() ?? newLink());
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   return violations;
@@ -200,7 +201,7 @@ test('runs a query under the CSP, with the grid, parameters and the detail panel
     expect(await seriousViolations(page)).toEqual([]);
   }
   // No CSP violation: CodeMirror's styles are a constructed style sheet in its shadow root.
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
   expect(foreign).toEqual([]);
 });
 
@@ -215,7 +216,7 @@ test('a write is refused by the server; nothing in the page writes', async ({ pa
   await type(page, "select count(*) from parts where material = 'Gold'");
   await page.getByTestId('editor-run').click();
   await expect(page.getByRole('grid').getByRole('gridcell').first()).toHaveText('0');
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('cancel stops an endless query within a second (STU-T-020)', async ({ page }) => {
@@ -268,7 +269,7 @@ test('cancel stops an endless query within a second (STU-T-020)', async ({ page 
   await type(page, 'select 42');
   await page.getByTestId('editor-run').click();
   await expect(page.getByRole('grid').getByRole('gridcell').first()).toHaveText('42');
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('a cancel while the start answer is held back reaches the server; the next query runs at once (#56 L-1)', async ({
@@ -324,7 +325,7 @@ test('a cancel while the start answer is held back reaches the server; the next 
   await page.getByTestId('editor-run').click();
   await expect(page.getByRole('grid').getByRole('gridcell').first()).toHaveText('42');
   expect(Date.now() - next).toBeLessThan(5_000);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async ({
@@ -370,7 +371,7 @@ test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async 
   );
   expect(total).toBeLessThan(300 * 2 ** 20);
   expect(used).toBeLessThan(100 * 2 ** 20);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('wide rows at max_result_mb = 200 stay within the memory limit (M-4)', async ({
@@ -414,7 +415,7 @@ test('wide rows at max_result_mb = 200 stay within the memory limit (M-4)', asyn
   expect(total).toBeLessThan(300 * 2 ** 20);
   // The byte budget is 64 MB; all rows held would be well above 100 MB.
   expect(used).toBeLessThan(140 * 2 ** 20);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 /** A call to the API from the page that returns the JSON body. */
@@ -500,7 +501,7 @@ test('a profile changed to PROD elsewhere never connects without D-02 (C-5)', as
   expect(await openProfiles(page, 'e2e-dev4')).not.toContain('prod');
   await page.getByTestId('editor-run').click();
   await expect(page.getByRole('dialog', { name: 'Production database' })).toBeVisible();
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('the server refuses a PROD open the page confirmed as DEV; the next run asks D-02 (TD-038)', async ({
@@ -552,7 +553,7 @@ test('the server refuses a PROD open the page confirmed as DEV; the next run ask
     { profile_id: 'user:e2e-dev6', confirmed_environment: 'prod' },
   ]);
   await page.unroute('**/api/profiles');
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('a profile list that cannot be read again opens no connection (L-9)', async ({ page }) => {
@@ -583,7 +584,7 @@ test('a profile list that cannot be read again opens no connection (L-9)', async
   expect(opens).toEqual([]);
   await page.unroute('**/api/profiles');
   expect(await openProfiles(page, 'e2e-dev5')).toEqual([]);
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
 });
 
 test('TD-043: exports a result through the real export route, as CSV and as JSON cut at a limit', async ({
@@ -643,6 +644,6 @@ test('TD-043: exports a result through the real export route, as CSV and as JSON
   expect(doc.rows).toHaveLength(10);
   expect(doc.truncated).toBe('rows');
   await expect(page.getByTestId('editor-notice')).toContainText('It stops at 10 rows');
-  expect(violations).toEqual([]);
+  await expectNoViolations(page, violations);
   expect(foreign).toEqual([]);
 });
