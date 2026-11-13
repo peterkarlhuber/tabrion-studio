@@ -9,6 +9,10 @@ name: CI
 # Nothing here releases or publishes anything (G-R).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): every install of Studio takes the tabrion
 # commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py).
+# TD-031 (security review F-6): every other runtime dependency comes from the hashed lock constraints/runtime-lock.txt
+# (pip --require-hashes --no-deps, wheels only), the same file docs/guide/installation.md installs from; after the
+# development tools, `pip check` and `scripts/runtime_lock.py check-installed` prove that the runtime closure is
+# exactly the lock. `python -m build` takes its backend from the hashed build-constraints.txt.
 on:
   push:
     branches: [master]
@@ -42,7 +46,10 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
       - run: ruff check .
       - run: ruff format --check .
       - run: mypy --strict src tests scripts hatch_build.py
@@ -50,6 +57,8 @@ jobs:
       - run: lint-imports
       # AC-7: only public Tabrion names.
       - run: python scripts/check_tabrion_api.py
+      # TD-031: the hashed runtime lock is inside the pyproject.toml ranges and agrees with build-constraints.txt.
+      - run: python scripts/runtime_lock.py check
       # CI-FAST: the manifest, the workflow files and ci-ok.yml agree; the ci-ok scripts are tested.
       - run: python3 -I .github/scripts/ci_ok.py --self-check --root .
       - run: python3 -m unittest discover -s .github/scripts -p "test_ci_ok*.py"
@@ -77,7 +86,10 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       # STU-001: the editable install on every OS (without the built frontend).
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
       - run: pip list
       # Unit, process-model (STU-002: start < 2 s, reuse, idle exit, shutdown), security and supply-chain tests.
       - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing
@@ -94,11 +106,76 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
       # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
       - run: pytest -m security -v -p no:cacheprovider
       # ruff's flake8-bandit rules (S) over the package and the scripts.
       - run: ruff check --select S src scripts hatch_build.py
+
+  windows-t2:
+    name: T-2 path checks (windows-latest)
+    # TD-008 (review C-2 of stu-006-review.md): the T-2 tests by name on Windows, where a UNC value from the project
+    # file could open an SMB connection (nt._getfinalpathname). The gate below fails when one of them is missing,
+    # skipped or failed, so a skip condition or a rename cannot turn the check off unnoticed.
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
+      - run: >-
+          pytest -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/t2.xml"
+          tests/unit/test_config_locations.py
+          tests/security/test_project_trust.py::test_network_paths_are_refused_before_any_file_system_access
+          tests/security/test_project_trust.py::test_windows_never_resolves_a_unc_path_from_the_project_file
+      - name: Every T-2 test ran on Windows and none was skipped
+        env:
+          JUNIT: ${{ runner.temp }}/t2.xml
+        run: |
+          python -I - <<'PY'
+          import collections, os, xml.etree.ElementTree as ET
+          # The T-2 tests that must pass here; the link tests of test_config_locations.py are POSIX only (symlinks).
+          required = {
+              "test_network_device_and_drive_relative_forms_are_refused",
+              "test_ordinary_paths_are_not_refused",
+              "test_windows_containment_as_text",
+              "test_posix_containment_as_text",
+              "test_roots_of_another_flavour_never_match",
+              "test_contained_touches_no_file_for_a_refused_or_outside_value",
+              "test_network_paths_are_refused_before_any_file_system_access",
+              "test_windows_never_resolves_a_unc_path_from_the_project_file",
+          }
+          counts = collections.Counter()
+          for case in ET.parse(os.environ["JUNIT"]).getroot().iter("testcase"):
+              name = case.get("name", "").split("[", 1)[0]
+              outcome = next((child.tag for child in case if child.tag in ("failure", "error", "skipped")), "passed")
+              if outcome == "skipped" and name not in required:
+                  message = next(child.get("message", "") for child in case if child.tag == "skipped")
+                  outcome = "skipped (posix only)" if "symlinks" in message else "skipped"
+              counts[(name, outcome)] += 1
+          print(dict(counts))
+          bad = {key: n for key, n in counts.items() if key[1] in ("failure", "error", "skipped")}
+          assert not bad, bad
+          missing = sorted(name for name in required if counts[(name, "passed")] == 0)
+          assert not missing, f"no passing run of {missing}"
+          rows = [f"| {name} | {counts[(name, 'passed')]} |" for name in sorted(required)]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("### T-2 on Windows\n\n| Test | Passed |\n|---|---|\n" + "\n".join(rows) + "\n")
+          PY
 
   backend-integration:
     name: backend integration (PostgreSQL 17)
@@ -131,7 +208,10 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
       - name: Create the test role and its database
         run: |
           python -I - <<'PY'
@@ -236,10 +316,16 @@ jobs:
       - run: python scripts/build_frontend.py
       - run: pip install "build==1.6.1"
       - run: python -m build --wheel --outdir dist
+        env:
+          # TD-031: the build backend from the hashed pins (the wheel's bytes depend on it, TABRION QA-8).
+          PIP_CONSTRAINT: ${{ github.workspace }}/build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       - name: Install the wheel into a fresh environment
         run: |
           python -m venv "$RUNNER_TEMP/studio"
-          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip check
       # explorer-reference.spec.ts (TD-041) creates tabrion's reference apps with their own code: the examples of the
       # very tabrion commit the constraints pin, so they match the tabrion installed above.
       - name: The tabrion commit the constraints pin
@@ -341,10 +427,16 @@ jobs:
       - run: python scripts/build_frontend.py
       - run: pip install "build==1.6.1"
       - run: python -m build --wheel --outdir dist
+        env:
+          # TD-031: the build backend from the hashed pins (the wheel's bytes depend on it, TABRION QA-8).
+          PIP_CONSTRAINT: ${{ github.workspace }}/build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       - name: Install the wheel into a fresh environment
         run: |
           python -m venv "$RUNNER_TEMP/studio"
-          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip check
       - name: The tabrion commit the constraints pin
         id: tabrion
         run: |
@@ -453,15 +545,17 @@ jobs:
       - run: pip install "build==1.6.1" "pytest==9.2.0" "twine==7.0.0"
       # STU-018: the hatch hook refuses a wheel without static/index.html.
       - run: python -m build --outdir dist
+        env:
+          # TD-031: the build backend from the hashed pins (the wheel's bytes depend on it, TABRION QA-8).
+          PIP_CONSTRAINT: ${{ github.workspace }}/build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       - run: twine check --strict dist/*
       - run: pytest -m packaging tests/packaging -v -p no:cacheprovider
         env:
           TABRION_STUDIO_DIST: dist
-      # Fresh venv from the wheel, then run with every Node folder removed from PATH. The script's pip reads the
-      # tabrion pin from PIP_CONSTRAINT (tabrion is not on PyPI, ADR 0009 amendment).
+      # Fresh venv from the wheel, then run with every Node folder removed from PATH. The script installs the hashed
+      # runtime lock, then the wheel and the tabrion pin with --no-deps (tabrion is not on PyPI, ADR 0009 amendment).
       - run: python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
-        env:
-          PIP_CONSTRAINT: ${{ github.workspace }}/constraints/tabrion-integration.txt
       - if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -487,11 +581,16 @@ jobs:
       - run: python scripts/build_frontend.py
       - run: pip install "build==1.6.1"
       - run: python -m build --wheel --outdir dist
+        env:
+          # TD-031: the build backend from the hashed pins (the wheel's bytes depend on it, TABRION QA-8).
+          PIP_CONSTRAINT: ${{ github.workspace }}/build-constraints.txt
+          PIP_REQUIRE_HASHES: "1"
       # STU-031: what users install = the wheel and its runtime dependencies, in a fresh environment.
       - name: Install the wheel into a fresh environment
         run: |
           python -m venv "$RUNNER_TEMP/runtime"
-          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
           "$RUNNER_TEMP/runtime/bin/python" -m pip check
       - run: mkdir -p sbom && "$RUNNER_TEMP/runtime/bin/python" -I scripts/collect_licenses.py > sbom/licenses-python.json
       - name: License policy (Python runtime closure and npm lockfile)
@@ -551,8 +650,11 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: python -m pip install --upgrade pip
-      # The runtime dependencies and the development toolchain.
+      # The runtime dependencies as locked (TD-031) and the development toolchain.
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install "pip-audit==2.10.1" -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
       - run: pip-audit --skip-editable --progress-spinner off
       - run: npm ci --no-audit --no-fund
         working-directory: frontend
@@ -571,5 +673,8 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
+      - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
       - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - run: python scripts/runtime_lock.py check-installed
       - run: mkdocs build --strict

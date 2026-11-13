@@ -58,7 +58,7 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist, functions included (F-2); `trusted_schema` off | STU-T-024 and the F-2 tests (`test_read_only.py`) | Covered: review F-2 fixed (PR #65/#66), independent re-review accepted at `2a8a229` |
 | T-14 Network exposure | No `--host` | STU-T-025 | Covered |
 | T-15 Cached answers | `Cache-Control: no-store` | STU-T-026; every refusal in `test_every_route.py` | Covered |
-| T-16 Trusted project code (Alembic) | Code trust bound to file digests (also the project modules on `prepend_sys_path`, F-7), isolated worker | `test_migrations.py` | Covered; residual: what trusted code runs by other means than an import from those folders (documented in T-16) |
+| T-16 Trusted project code (Alembic) | Code trust bound to file digests (also the project modules on `prepend_sys_path`, F-7), isolated worker | `test_migrations.py` | Covered; residual: what trusted code runs by other means than an import (documented in T-16) |
 
 ## The pages and their API
 
@@ -145,7 +145,7 @@ reproduction steps, stays outside the repository.
 | F-3 | Low | PostgreSQL side-effect functions outside the statement check's denylist | Fixed (PR #66, refused); independent re-review accepted at `2a8a229`; see the residual risks |
 | F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed (PR #65): caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)); independent re-review accepted at `2a8a229` |
 | F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | **Owner decision:** finish TD-033 before a public release, or accept the risk and say so in the user guide |
-| F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | **Owner decision:** hashed pins used in CI and documented, before G-R |
+| F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | Fixed in the f6-lock PR: CI and the installation guide install from the hashed lock `constraints/runtime-lock.txt` (`--require-hashes`), checked against the `pyproject.toml` ranges; Tabrion stays a full-SHA pin |
 | F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | Fixed in PR #75 (TD-054): the digest covers them, versioned (earlier trust is renewed), fail closed over its caps; the dialog lists them. Review of the fix accepted with condition C-1 (project folders on the interpreter's path); C-1 fixed in PR #75, its re-check pending |
 | F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed (PR #65): every control request except GET/HEAD of the proof path needs the token; dot segments in `/api/*` paths reach no route; independent re-review accepted at `2a8a229` |
 | F-9 | Info | This page said "covered" for SQ-05, T-06 and T-13 | Fixed: this page (PR #65); the status after the re-review is recorded below |
@@ -168,7 +168,8 @@ reproducibility. The report stays outside the repository.
 
 - **F-5 / TD-033:** editor drafts (SQL text) in the browser storage of the port-scoped origin. Finish TD-033 before
   a public release, or accept the risk and say so in the user guide.
-- **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock.
+- **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock. Addressed by the f6-lock PR (hashed
+  lock in CI and the installation guide; table above); the owner confirms it with G-S1.
 - **F-7 / T-16:** the migration code-trust digest did not cover project modules that revision files import. Fixed
   in PR #75 (TD-054) by hashing them; the review of the fix is accepted with condition C-1, which is fixed in the
   same PR and waits for its re-check.
