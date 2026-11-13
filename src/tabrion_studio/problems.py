@@ -126,6 +126,9 @@ CATALOG: dict[str, Entry] = {
     "access.bad_request": Entry(
         400, ProblemKind.REQUEST, "Bad request", "The request body is not a small JSON object."
     ),
+    "access.body_too_large": Entry(
+        413, ProblemKind.REQUEST, "Request too large", "The request body is larger than this route accepts."
+    ),
     "access.launch_used": Entry(
         401, ProblemKind.ACCESS, "Sign-in link used", "This sign-in link has been used already.", _SIGN_IN_HINT
     ),
@@ -796,17 +799,15 @@ def problem_response(
     return Response(doc.body(), status_code=doc.status, media_type=PROBLEM_MEDIA_TYPE, headers=headers)
 
 
-async def send_problem(send: Send, doc: Problem) -> None:
-    """Send ``doc`` as a complete answer on a raw ASGI ``send`` (for middleware that answers by itself)."""
+async def send_problem(send: Send, doc: Problem, *, close: bool = False) -> None:
+    """Send ``doc`` as a complete answer on a raw ASGI ``send`` (for middleware that answers by itself).
+
+    ``close`` adds ``Connection: close``: the server then closes the connection after the answer instead of reading
+    the rest of a request body that was refused unread.
+    """
     body = doc.body()
-    await send(
-        {
-            "type": "http.response.start",
-            "status": doc.status,
-            "headers": [
-                (b"content-type", PROBLEM_MEDIA_TYPE.encode()),
-                (b"content-length", str(len(body)).encode()),
-            ],
-        }
-    )
+    headers = [(b"content-type", PROBLEM_MEDIA_TYPE.encode()), (b"content-length", str(len(body)).encode())]
+    if close:
+        headers.append((b"connection", b"close"))
+    await send({"type": "http.response.start", "status": doc.status, "headers": headers})
     await send({"type": "http.response.body", "body": body})

@@ -63,4 +63,4 @@ command prints its path at the start. The log has routes, codes and durations, n
 values or the text of database errors. If an error page shows a log ID (12 hex digits), the matching log entry has
 the same ID.
 
-Writing SQL statements to the log is off by default; see [Settings](settings.md).
+Studio does not write SQL statements to the log in this version; see [Settings](settings.md).

@@ -12,6 +12,10 @@ lead to a session (``/api/health``, ``/api/session``) and the CLI's control endp
 - STU-T-014 and STU-T-026 (T-07, T-15): every refusal carries the strict CSP, ``Cache-Control: no-store`` and the other
   security headers, compared with values written out in ``tests/support/access.py``, not with the code's constant.
 
+The control endpoints are checked too (STU-016 review F-8): every route under ``/api/control/`` except the proof
+needs the control token in the access middleware, so a route added under that prefix later is never reachable without
+it, and an ``/api/*`` path with a ``.`` or ``..`` segment never reaches a route.
+
 Only FastAPI routes are checked here; the one other route under ``/api/`` is ``/api/openapi.json``, which
 ``test_access.py`` covers, and a test fails if another appears.
 
@@ -20,10 +24,15 @@ Every refusal happens before the route runs: no profile file, database or state 
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
+import json
 from pathlib import Path
 import re
+from typing import Any
 
+from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 import pytest
 
@@ -31,7 +40,7 @@ from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.code_trust import CodeTrust
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.user import UserConfig
-from tabrion_studio.security.sessions import CSRF_HEADER
+from tabrion_studio.security.sessions import CSRF_HEADER, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
@@ -39,7 +48,7 @@ from tabrion_studio.services.exports import Exports
 from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.viewer import Viewer
-from tests.support.access import EXPECTED_SECURITY_HEADERS, ORIGIN, Studio, make_studio
+from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, TOKEN, Studio, make_studio
 
 pytestmark = pytest.mark.security
 
@@ -203,3 +212,130 @@ def test_every_unsafe_api_route_refuses_other_sites_and_non_json(studio: Studio,
         )
         _assert_refused(form, 415, "access.json_only", where)
     assert _snapshot(tmp_path) == before
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# STU-016 review F-8: the control prefix is no way around the session
+# --------------------------------------------------------------------------------------------------------------------
+
+#: The one control route without the control token: a second start checks the server's proof before sending it.
+CONTROL_WITHOUT_TOKEN = {"/api/control/proof"}
+WRONG_TOKENS: list[dict[str, str]] = [
+    {},
+    {"Authorization": "Bearer wrong"},
+    {"Authorization": TOKEN},
+    {"Authorization": f"Basic {TOKEN}"},
+    {"Authorization": f"Bearer {TOKEN[:-1]}"},
+]
+
+
+def _control_routes(studio: Studio) -> list[tuple[str, str]]:
+    routes = []
+    for route in studio.client.app.routes:  # type: ignore[attr-defined]
+        if isinstance(route, APIRoute) and route.path.startswith("/api/control/"):
+            for method in sorted((route.methods or set()) - {"HEAD"}):
+                routes.append((method, route.path))
+    return routes
+
+
+def _add_first(app: FastAPI, path: str) -> None:
+    """A route without any check of its own, ahead of the static files: what a careless later route would be."""
+
+    async def endpoint() -> JSONResponse:
+        return JSONResponse({"reached": True})
+
+    app.add_api_route(path, endpoint, methods=["GET", "POST"])
+    app.router.routes.insert(0, app.router.routes.pop())
+
+
+def _asgi(app: Any, method: str, path: str, headers: dict[str, str]) -> tuple[int, dict[str, Any]]:
+    """One request with ``path`` exactly as given (an HTTP client would remove dot segments first)."""
+    sent: list[dict[str, Any]] = []
+
+    async def receive() -> dict[str, Any]:
+        return {"type": "http.request", "body": b"{}", "more_body": False}
+
+    async def send(message: dict[str, Any]) -> None:
+        sent.append(message)
+
+    all_headers = {"Host": HOST, "Content-Type": "application/json", "Content-Length": "2", **headers}
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": method,
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "root_path": "",
+        "query_string": b"",
+        "headers": [(key.lower().encode(), value.encode()) for key, value in all_headers.items()],
+        "client": ("127.0.0.1", 50000),
+        "server": ("127.0.0.1", PORT),
+    }
+    asyncio.run(app(scope, receive, send))
+    body = b"".join(message.get("body", b"") for message in sent[1:])
+    return int(sent[0]["status"]), json.loads(body)
+
+
+def test_every_control_route_needs_the_control_token(studio: Studio, tmp_path: Path) -> None:
+    """Even with a valid session (the cookie is sent, the CSRF header too): a session is no control token."""
+    csrf = studio.sign_in()
+    routes = [(method, path) for method, path in _control_routes(studio) if path not in CONTROL_WITHOUT_TOKEN]
+    assert ("POST", "/api/control/{action}") in routes
+    before = _snapshot(tmp_path)
+    for method, template in routes:
+        for path in {_concrete(template), template.replace("{action}", "launch"), "/api/control/proof/x"}:
+            for headers in WRONG_TOKENS:
+                response = studio.client.request(method, path, headers={**csrf, **headers}, json={})
+                _assert_refused(response, 401, "access.control_denied", (method, path))
+    assert _snapshot(tmp_path) == before
+    assert studio.shutdowns == [] and studio.runtime.launches.pending == 0
+
+
+def test_a_later_route_under_the_control_prefix_needs_the_token(studio: Studio) -> None:
+    """The prefix used to skip the session check and rely on each route's own bearer check; a route that forgot its
+    check would have been open to every local process. The access middleware now checks the token for it."""
+    app = studio.client.app
+    assert isinstance(app, FastAPI)
+    _add_first(app, "/api/control/later")
+    csrf = studio.sign_in()
+    for method in ("GET", "POST"):
+        for headers in WRONG_TOKENS:
+            for extra in ({}, csrf):
+                response = studio.client.request(method, "/api/control/later", headers={**extra, **headers}, json={})
+                _assert_refused(response, 401, "access.control_denied", (method, str(headers)))
+        reached = studio.client.request(method, "/api/control/later", headers=CONTROL_AUTH, json={})
+        assert reached.json() == {"reached": True}
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/api/control/../profiles",
+        "/api/control/../control/launch",
+        "/api/control/./launch",
+        "/api/control/x/../launch",
+        "/api/./heartbeat",
+        "/api/x/../heartbeat",
+        "/api/..",
+        "/api/files/../../etc/passwd",
+    ],
+)
+def test_dot_segments_in_api_paths_never_reach_a_route(studio: Studio, path: str) -> None:
+    """A route with a ``path`` parameter would match these; a later mount or path normalization could map them to
+    another route. They are 404 with a valid session and a valid control token alike (the server has decoded
+    ``%2e%2e`` to ``..`` before the middleware sees the path)."""
+    csrf = studio.sign_in()[CSRF_HEADER]
+    app = studio.client.app
+    assert isinstance(app, FastAPI)
+    _add_first(app, "/api/control/{rest:path}")
+    _add_first(app, "/api/files/{rest:path}")
+    _add_first(app, "/api/{rest:path}")
+    session = studio.client.cookies[cookie_name(PORT)]
+    signed_in = {"Cookie": f"{cookie_name(PORT)}={session}", CSRF_HEADER: csrf, "Origin": ORIGIN}
+    for method in ("GET", "POST"):
+        for headers in ({}, signed_in, CONTROL_AUTH):
+            status, doc = _asgi(app, method, path, headers)
+            assert (status, doc["code"]) == (404, "studio.not_found"), (method, path, headers.keys())
+    assert studio.shutdowns == [] and studio.runtime.launches.pending == 0

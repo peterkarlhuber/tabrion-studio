@@ -15,7 +15,7 @@ import pytest
 
 from tabrion_studio.security.access import CONTENT_SECURITY_POLICY, SECURITY_HEADERS, AccessMiddleware, session_cookie
 from tabrion_studio.security.sessions import CSRF_HEADER, Sessions
-from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, Studio, make_studio
+from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, TOKEN, Studio, make_studio
 
 pytestmark = pytest.mark.security
 
@@ -125,7 +125,7 @@ def _asgi_status(headers: list[tuple[bytes, bytes]], path: str = "/api/health", 
     async def receive() -> Any:
         return {"type": "http.request", "body": b""}
 
-    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions())
+    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions(), control_token=TOKEN)
     scope = {"type": "http", "method": method, "path": path, "headers": headers}
     asyncio.run(middleware(scope, receive, send))
     return 0 if reached else int(sent[0]["status"])
@@ -137,6 +137,22 @@ def test_missing_or_duplicate_host_is_refused() -> None:
     assert _asgi_status([]) == 403
     assert _asgi_status([own, (b"host", b"evil.example")]) == 403
     assert _asgi_status([own, own]) == 403
+
+
+def test_only_get_and_head_of_the_proof_skip_the_control_token() -> None:
+    """STU-016 review F-8 and I-2 of sec-limits-review.md: any other method on the proof path, and any other path
+    under the control prefix, is refused in the middleware without the token, before a route is chosen."""
+    own = [(b"host", HOST.encode()), (b"content-type", b"application/json")]
+    proof = "/api/control/proof"
+    assert _asgi_status(own, proof, "GET") == 0
+    assert _asgi_status(own, proof, "HEAD") == 0
+    for method in ("POST", "PUT", "DELETE", "PATCH", "OPTIONS"):
+        assert _asgi_status(own, proof, method) == 401, method
+    for path in ("/api/control/proof/", "/api/control//proof", "/api/control/launch", "/api/control/x"):
+        assert _asgi_status(own, path, "GET") == 401, path
+    token = [*own, (b"authorization", f"Bearer {TOKEN}".encode())]
+    assert _asgi_status(token, proof, "POST") == 0
+    assert _asgi_status([*token, (b"authorization", f"Bearer {TOKEN}".encode())], "/api/control/launch", "POST") == 401
 
 
 def test_websockets_are_refused() -> None:
@@ -151,7 +167,7 @@ def test_websockets_are_refused() -> None:
     async def receive() -> Any:
         return {"type": "websocket.connect"}
 
-    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions())
+    middleware = AccessMiddleware(app, port=PORT, sessions=Sessions(), control_token=TOKEN)
     scope = {"type": "websocket", "path": "/api/events", "headers": [(b"host", HOST.encode())]}
     asyncio.run(middleware(scope, receive, send))
     assert sent == [{"type": "websocket.close", "code": 1008}]
@@ -407,11 +423,16 @@ def test_unknown_launch_token_is_refused(static_dir: Path, token: object) -> Non
 
 def test_session_request_needs_a_json_object(static_dir: Path) -> None:
     studio = make_studio(static_dir)
-    for body in (b"[]", b"{", b"x" * 5000):
+    for body in (b"[]", b"{"):
         response = studio.client.post(
             "/api/session", content=body, headers={"Origin": ORIGIN, "Content-Type": "application/json"}
         )
         _assert_refused(response, 400, "access.bad_request")
+    # Over the 4 KB cap: refused while the body streams in (STU-016 review F-4, test_body_limits.py).
+    response = studio.client.post(
+        "/api/session", content=b"x" * 5000, headers={"Origin": ORIGIN, "Content-Type": "application/json"}
+    )
+    _assert_refused(response, 413, "access.body_too_large")
 
 
 def test_session_of_another_instance_does_not_count(static_dir: Path) -> None:
