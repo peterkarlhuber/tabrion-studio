@@ -18,20 +18,22 @@ from pathlib import Path
 import socket
 import threading
 import time
+import tracemalloc
 from typing import Any
 
 import pytest
 import uvicorn
 
 from tabrion_studio.app import BODY_LIMITS, DEFAULT_BODY_LIMIT
-from tabrion_studio.security.body import BodyLimit, BodyLimitMiddleware
+from tabrion_studio.security import body as body_module
+from tabrion_studio.security.body import DRAIN_BYTES, BodyLimit, BodyLimitMiddleware
 from tabrion_studio.security.sessions import CSRF_HEADER, cookie_name
 from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, Studio, make_studio
 
 pytestmark = pytest.mark.security
 
 #: A body the old code would have read in full; the counting receive raises once this much more than the cap is read.
-OVERSHOOT = 1024 * 1024
+OVERSHOOT = DRAIN_BYTES + 1024 * 1024
 
 
 class Exhausted(Exception):
@@ -53,6 +55,19 @@ class Body:
             raise Exhausted
         self.read += self.chunk
         return {"type": "http.request", "body": b"x" * self.chunk, "more_body": True}
+
+
+class Finite:
+    """A request body of ``size`` bytes in chunks of ``chunk`` bytes."""
+
+    def __init__(self, size: int, chunk: int) -> None:
+        self.left = size
+        self.chunk = chunk
+
+    async def receive(self) -> dict[str, Any]:
+        part = min(self.chunk, self.left)
+        self.left -= part
+        return {"type": "http.request", "body": b"x" * part, "more_body": self.left > 0}
 
 
 def _call(app: Any, method: str, path: str, headers: list[tuple[str, str]], receive: Any) -> list[dict[str, Any]]:
@@ -129,9 +144,9 @@ def test_the_caps_are_the_routes_own_caps() -> None:
     assert BodyLimit(16 * 1024, "access.body_too_large") == DEFAULT_BODY_LIMIT
 
 
-def test_a_content_length_over_the_cap_is_refused_before_reading(studio: Studio) -> None:
+def test_a_content_length_far_over_the_cap_is_refused_before_reading(studio: Studio) -> None:
     for path, headers, limit in _cases(studio):
-        for declared in (limit.max_bytes + 1, 400 * 1024 * 1024, 10**30):
+        for declared in (limit.max_bytes + DRAIN_BYTES + 1, 400 * 1024 * 1024, 10**30):
             body = Body(1024, limit.max_bytes)
             sent = _call(studio.client.app, "POST", path, [*headers, ("Content-Length", str(declared))], body.receive)
             status, code, answer_headers = _answer(sent)
@@ -144,8 +159,26 @@ def test_a_content_length_over_the_cap_is_refused_before_reading(studio: Studio)
     assert studio.runtime.launches.pending == 0 and studio.shutdowns == []
 
 
+def test_a_content_length_a_little_over_the_cap_is_drained_then_refused(studio: Studio) -> None:
+    """Review C-1: the rest of the body is read (and discarded) before the 413, so the server never closes a socket
+    with unread bytes, which would turn the answer into a TCP reset. The route is never reached."""
+    for path, headers, limit in _cases(studio):
+        for declared in (limit.max_bytes + 1, limit.max_bytes + DRAIN_BYTES):
+            parts = Finite(declared, 64 * 1024)
+            sent = _call(studio.client.app, "POST", path, [*headers, ("Content-Length", str(declared))], parts.receive)
+            status, code, answer_headers = _answer(sent)
+            assert (status, code, answer_headers["connection"]) == (413, limit.code, "close"), (path, declared)
+            assert parts.left == 0, path  # read to the end before the answer
+    assert len(studio.runtime.sessions) == 1
+    assert studio.runtime.launches.pending == 0 and studio.shutdowns == []
+
+
 @pytest.mark.parametrize("chunk", [1, 1000])
-def test_a_chunked_body_is_read_only_one_chunk_past_the_cap(studio: Studio, chunk: int) -> None:
+def test_a_chunked_body_is_kept_only_one_chunk_past_the_cap(
+    studio: Studio, chunk: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the drain off, the read stops with the chunk that passes the cap (the drain is checked below)."""
+    monkeypatch.setattr(body_module, "DRAIN_BYTES", 0)
     for path, headers, limit in _cases(studio):
         if chunk == 1 and limit.max_bytes > 64 * 1024:
             continue  # two million one-byte reads add nothing over the 1000-byte chunks
@@ -158,6 +191,62 @@ def test_a_chunked_body_is_read_only_one_chunk_past_the_cap(studio: Studio, chun
             assert body.read == limit.max_bytes + 1
     assert len(studio.runtime.sessions) == 1
     assert studio.runtime.launches.pending == 0 and studio.shutdowns == []
+
+
+def test_the_drain_discards_and_is_bounded(studio: Studio) -> None:
+    """An endless body: the drain reads at most DRAIN_BYTES past the cap, keeps none of it (peak memory far below the
+    bytes read), then answers 413 and closes."""
+    for path, headers, limit in _cases(studio):
+        chunk = 64 * 1024
+        body = Body(chunk, limit.max_bytes)
+        tracemalloc.start()
+        try:
+            sent = _call(studio.client.app, "POST", path, [*headers, ("Transfer-Encoding", "chunked")], body.receive)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert _answer(sent)[:2] == (413, limit.code), path
+        assert limit.max_bytes + DRAIN_BYTES <= body.read <= limit.max_bytes + DRAIN_BYTES + 2 * chunk, path
+        assert peak < limit.max_bytes + 1024 * 1024, (path, peak)  # not the 4 MiB drained
+
+
+def test_the_drain_waits_only_briefly(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A client that stops sending in the middle of an over-cap body gets its 413 after DRAIN_SECONDS."""
+    monkeypatch.setattr(body_module, "DRAIN_SECONDS", 0.05)
+    reached: list[str] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        reached.append("app")
+
+    first = [{"type": "http.request", "body": b"x" * 20, "more_body": True}]
+
+    async def receive() -> dict[str, Any]:
+        if first:
+            return first.pop()
+        await asyncio.Event().wait()  # never sends the rest
+        raise AssertionError("unreachable")
+
+    middleware = BodyLimitMiddleware(app, default=BodyLimit(10))
+    started = time.monotonic()
+    sent = _call(middleware, "POST", "/api/x", [("Transfer-Encoding", "chunked")], receive)
+    assert _answer(sent)[:2] == (413, "access.body_too_large")
+    assert time.monotonic() - started < 5 and reached == []
+
+
+def test_a_client_that_leaves_during_the_drain_gets_no_answer() -> None:
+    messages: list[dict[str, Any]] = [
+        {"type": "http.request", "body": b"x" * 20, "more_body": True},
+        {"type": "http.disconnect"},
+    ]
+
+    async def receive() -> dict[str, Any]:
+        return messages.pop(0)
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        raise AssertionError("reached the app")
+
+    middleware = BodyLimitMiddleware(app, default=BodyLimit(10))
+    assert _call(middleware, "POST", "/api/x", [("Transfer-Encoding", "chunked")], receive) == []
 
 
 def test_a_refused_request_is_never_read(studio: Studio) -> None:
@@ -297,12 +386,57 @@ def test_uvicorn_answers_a_declared_huge_body_at_once_and_closes(studio: Studio)
     assert b"\r\nconnection: close\r\n" in answer.lower()
 
 
-def test_uvicorn_stops_a_chunked_body_at_the_cap(studio: Studio) -> None:
+CHUNK = b"400\r\n" + b"x" * 1024 + b"\r\n"  # one chunk of 1 KiB in chunked encoding
+ROUNDS = 20
+
+
+def test_uvicorn_answers_a_chunked_body_over_the_cap_with_413(studio: Studio) -> None:
+    """8 KiB, twice the 4 KiB cap, in many small writes, then the end of the body: every time the client reads a 413,
+    never a reset (review C-1: the server drains the body before it answers and closes)."""
+    with _server(studio.client.app) as port:
+        for _ in range(ROUNDS):
+            with socket.create_connection(("127.0.0.1", port)) as conn:
+                conn.sendall(HEAD + b"Transfer-Encoding: chunked\r\n\r\n")
+                for _ in range(8):
+                    conn.sendall(CHUNK)
+                conn.sendall(b"0\r\n\r\n")
+                answer = _read_answer(conn)
+            assert answer.startswith(b"HTTP/1.1 413 ")
+            assert b"access.body_too_large" in answer
+            assert b"\r\nconnection: close\r\n" in answer.lower()
+
+
+def test_uvicorn_answers_a_statement_over_the_cap_with_413(studio: Studio) -> None:
+    """The page's case: a 3 MB body to /api/queries (cap 2 MB) with Content-Length, sent in full, then read."""
+    signed_in = "".join(f"{key}: {value}\r\n" for key, value in _signed_in(studio))
+    size = 3 * 1024 * 1024
+    head = (
+        f"POST /api/queries HTTP/1.1\r\nHost: {HOST}\r\nOrigin: {ORIGIN}\r\nContent-Type: application/json\r\n"
+        f"{signed_in}Content-Length: {size}\r\n\r\n"
+    ).encode()
+    with _server(studio.client.app) as port:
+        for _ in range(5):
+            with socket.create_connection(("127.0.0.1", port)) as conn:
+                conn.settimeout(10)
+                conn.sendall(head)
+                for _ in range(size // (64 * 1024)):
+                    conn.sendall(b"x" * (64 * 1024))
+                answer = _read_answer(conn)
+            assert answer.startswith(b"HTTP/1.1 413 ")
+            assert b"studio.query_too_large" in answer
+
+
+def test_uvicorn_stops_reading_an_endless_chunked_body(studio: Studio) -> None:
+    """A client that never stops sending: after the bounded drain the server answers and closes, so the client's
+    writes fail long before the bound. Without the cap the route would buffer all of it."""
+    bound = 64 * 1024 * 1024
+    sent = 0
     with _server(studio.client.app) as port, socket.create_connection(("127.0.0.1", port)) as conn:
+        conn.settimeout(10)
         conn.sendall(HEAD + b"Transfer-Encoding: chunked\r\n\r\n")
-        chunk = b"400\r\n" + b"x" * 1024 + b"\r\n"
-        for _ in range(8):  # 8 KB, twice the cap; no terminating chunk
-            conn.sendall(chunk)
-        answer = _read_answer(conn)
-    assert answer.startswith(b"HTTP/1.1 413 ")
-    assert b"access.body_too_large" in answer
+        block = CHUNK * 64
+        with pytest.raises((BrokenPipeError, ConnectionResetError)):
+            while sent < bound:
+                conn.sendall(block)
+                sent += len(block)
+    assert sent < bound

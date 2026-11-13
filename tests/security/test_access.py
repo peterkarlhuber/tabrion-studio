@@ -139,6 +139,22 @@ def test_missing_or_duplicate_host_is_refused() -> None:
     assert _asgi_status([own, own]) == 403
 
 
+def test_only_get_and_head_of_the_proof_skip_the_control_token() -> None:
+    """STU-016 review F-8 and I-2 of sec-limits-review.md: any other method on the proof path, and any other path
+    under the control prefix, is refused in the middleware without the token, before a route is chosen."""
+    own = [(b"host", HOST.encode()), (b"content-type", b"application/json")]
+    proof = "/api/control/proof"
+    assert _asgi_status(own, proof, "GET") == 0
+    assert _asgi_status(own, proof, "HEAD") == 0
+    for method in ("POST", "PUT", "DELETE", "PATCH", "OPTIONS"):
+        assert _asgi_status(own, proof, method) == 401, method
+    for path in ("/api/control/proof/", "/api/control//proof", "/api/control/launch", "/api/control/x"):
+        assert _asgi_status(own, path, "GET") == 401, path
+    token = [*own, (b"authorization", f"Bearer {TOKEN}".encode())]
+    assert _asgi_status(token, proof, "POST") == 0
+    assert _asgi_status([*token, (b"authorization", f"Bearer {TOKEN}".encode())], "/api/control/launch", "POST") == 401
+
+
 def test_websockets_are_refused() -> None:
     sent: list[Any] = []
 

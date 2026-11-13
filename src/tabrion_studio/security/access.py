@@ -22,8 +22,8 @@ Threats (03 section 7.3) and review findings, in the order of the checks:
 7. **Session and CSRF header (T-03, SQ-03, F-09).** Every ``/api/*`` route except :data:`OPEN_API_PATHS` and the
    control endpoints needs the session cookie (``access.session_required``, 401) **and** the session's CSRF value in
    ``X-Tabrion-CSRF`` (``access.csrf_invalid``, 403). A valid session counts as activity for the idle timeout (F-06).
-8. **Control token (STU-016 review F-8).** Every path under ``/api/control/`` except exactly
-   :data:`CONTROL_PROOF_PATH` needs the instance's control token as ``Authorization: Bearer``
+8. **Control token (STU-016 review F-8).** Every request under ``/api/control/`` except ``GET`` and ``HEAD`` of
+   exactly :data:`CONTROL_PROOF_PATH` needs the instance's control token as ``Authorization: Bearer``
    (``access.control_denied``, 401), checked here in constant time and again by the route. A route added under the
    prefix later is therefore never reachable without the token, and the prefix is never a way around the session.
 
@@ -163,7 +163,8 @@ class AccessMiddleware:
             content_types = [value.split(";", 1)[0].strip().lower() for key, value in headers if key == "content-type"]
             if content_types != ["application/json"]:
                 return "access.json_only"
-        if control and path != CONTROL_PROOF_PATH and not self._control_authorized(headers):
+        proof = path == CONTROL_PROOF_PATH and method in ("GET", "HEAD")
+        if control and not proof and not self._control_authorized(headers):
             return "access.control_denied"
         if api and not control and path not in OPEN_API_PATHS:
             candidates = session_cookie(headers, self.cookie)

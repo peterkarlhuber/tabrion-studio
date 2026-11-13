@@ -91,7 +91,7 @@ a restart ends every session.
 | 5 | Other `/api/*` requests with `Sec-Fetch-Site: cross-site` or `same-site` are refused (a page on another port of 127.0.0.1 is same-site) | 403 `access.cross_site` | T-02 |
 | 6 | Unsafe `/api/*` requests need `Content-Type: application/json` | 415 `access.json_only` | T-02 |
 | 7 | Every `/api/*` route except `/api/health`, `/api/session` and the control endpoints needs the session cookie and its CSRF header | 401 `access.session_required`, 403 `access.csrf_invalid` | T-03, SQ-03, F-09 |
-| 8 | Every path under `/api/control/` except exactly `/api/control/proof` needs the control token (`Authorization: Bearer`, compared in constant time; the route checks it again). A route added under the prefix later is never open without the token | 401 `access.control_denied` | STU-016 review F-8 |
+| 8 | Every request under `/api/control/` except `GET` and `HEAD` of exactly `/api/control/proof` needs the control token (`Authorization: Bearer`, compared in constant time; the route checks it again). A route added under the prefix later is never open without the token | 401 `access.control_denied` | STU-016 review F-8 |
 
 A request that passes check 7 counts as activity for the idle timeout (review F-06, R-5). Navigations to `/`,
 `/launch` and the frontend's own view paths (`/connections`, `/explorer`, `/migrations`, `/settings`;
@@ -113,9 +113,15 @@ checks, so a refused request is never read, and caps the body while it streams i
 | `/api/queries`, `/api/exports` (a statement of up to 512 K characters plus parameters) | 2 MB | 413 `studio.query_too_large` |
 | Every other path | 16 KB (the largest cap of a route's own check: the profile and settings forms) | 413 `access.body_too_large` |
 
-A `Content-Length` over the cap is refused before a byte is read; a malformed or repeated `Content-Length` is 400
-`access.bad_request`. A chunked body is read chunk by chunk and refused as soon as it passes the cap, so the server
-holds at most the cap plus one chunk. The refusal carries `Connection: close`, so the server does not read the rest.
+A malformed or repeated `Content-Length` is 400 `access.bad_request`. A chunked body is read chunk by chunk and
+refused as soon as it passes the cap, so the server holds at most the cap plus one chunk. The refusal carries
+`Connection: close`.
+
+Before the 413, the rest of the body is read and discarded (nothing is kept), for at most 4 MiB and 2 seconds
+(`DRAIN_BYTES`, `DRAIN_SECONDS`). A server that closes a socket with unread request bytes makes the kernel reset the
+connection, and the reset can destroy the answer before the client reads it: the page would see a network error
+instead of the 413 (review C-1 of the request-limits PR). A declared `Content-Length` more than 4 MiB over the cap is
+answered at once without reading; such a client may see a reset, but the server spends nothing on it.
 Each route keeps its own, often smaller, cap (4 KB for most forms, 1 KB for the diagnosis report).
 
 Every answer, including refusals and errors, gets these headers:
@@ -156,8 +162,8 @@ of the launch flow for Firefox and WebKit (the `file://` to http meta refresh, t
 | STU-T-002 | Forwarded requests; only `127.0.0.1` URLs printed or opened (F-08) | `test_forwarded_requests_are_refused`; `tests/security/test_launch.py::test_no_localhost_url_is_printed_or_opened`; `tests/process/test_process_model.py::test_ipv6_loopback_port_is_held` |
 | STU-T-003 | Origin, fetch metadata, control endpoint refuses browser headers (F-05) | `test_foreign_origin_is_refused`, `test_unsafe_requests_need_the_own_origin`, `test_cross_site_api_requests_are_refused`, `test_control_rejects_browser_headers` |
 | STU-T-004 | JSON only; CSRF header from origin-scoped storage (F-09) | `test_api_accepts_json_only`, `test_cookie_alone_is_useless_without_csrf_header`, `test_csrf_value_is_bound_to_its_session`, `test_csrf_value_never_travels_in_a_cookie`, `test_a_tossed_cookie_does_not_hide_the_real_session`; frontend `session.test.ts` |
-| F-4 (STU-016 review) | Body caps while streaming: `Content-Length` refused before reading, chunked bodies stopped one chunk past the cap, on the wire with Uvicorn too | `tests/security/test_body_limits.py` |
-| F-8 (STU-016 review) | Control token in the middleware for every control path but the proof, also for a route added later; dot segments never reach a route | `tests/security/test_every_route.py`: `test_every_control_route_needs_the_control_token`, `test_a_later_route_under_the_control_prefix_needs_the_token`, `test_dot_segments_in_api_paths_never_reach_a_route` |
+| F-4 (STU-016 review) | Body caps while streaming: a far-over `Content-Length` refused before reading, chunked bodies kept only one chunk past the cap, the bounded drain before the 413 (review C-1: a 413, never a reset, on the wire with Uvicorn) | `tests/security/test_body_limits.py` |
+| F-8 (STU-016 review) | Control token in the middleware for every control request but GET and HEAD of the proof, also for a route added later; dot segments never reach a route | `tests/security/test_access.py::test_only_get_and_head_of_the_proof_skip_the_control_token`; `tests/security/test_every_route.py`: `test_every_control_route_needs_the_control_token`, `test_a_later_route_under_the_control_prefix_needs_the_token`, `test_dot_segments_in_api_paths_never_reach_a_route` |
 | STU-T-005 | Session only through a one-time launch token; without cookie 401; cookie flags | `test_api_needs_a_session`, `test_launch_token_gives_a_session_cookie`, `test_launch_token_works_once`, `test_launch_token_expires`, `test_unknown_launch_token_is_refused` |
 | STU-T-005/-006 | Token in the fragment, never in a process argv (F-02); redirect file 0600, deleted after use, timeout and stop; `--print-url` opt-in | `tests/security/test_launch.py`: `test_browser_argv_contains_no_token` (a real process and a fake `$BROWSER` that records its argv, POSIX), `test_browser_is_opened_with_a_redirect_file`, `test_second_start_opens_a_new_redirect_file`, `test_print_url_is_the_explicit_opt_in`, `test_launch_tokens_and_redirect_files`, `test_validate_redirect_file`, `test_second_start_refuses_a_foreign_redirect_file` |
 | STU-T-014 | CSP on every answer; no inline scripts; no `dangerouslySetInnerHTML` | `test_csp_is_strict`, `test_security_headers_on_every_answer`, `test_frontend_has_no_inline_script`, `test_eslint_forbids_dangerously_set_inner_html` |
