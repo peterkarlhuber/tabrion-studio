@@ -53,6 +53,8 @@ dev = [
     # hatch_build.py (the wheel build hook) is unit-tested.
     "hatchling>=1.26",
     "twine>=6",
+    # tests/security/test_workflows.py loads every workflow (PR #76 review M-1); already pulled in by mkdocs.
+    "pyyaml>=6",
 ]
 
 [project.scripts]
