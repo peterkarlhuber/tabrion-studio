@@ -343,7 +343,40 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         )
         logs.close()
     if not server.started:
-        print("Tabrion Studio could not start.", file=out, flush=True)
+        say_last("Tabrion Studio could not start.", out)
         return 1
-    print(f"Tabrion Studio stopped ({server.stop_reason}).", file=out, flush=True)
+    say_last(f"Tabrion Studio stopped ({server.stop_reason}).", out)
     return 0
+
+
+def say_last(text: str, out: TextIO) -> None:
+    """Print the last line of a run; a reader that is already gone does not turn a clean stop into a traceback.
+
+    The shutdown has finished when this runs (info file, launch tokens, sockets, lock and log are closed), so a
+    closed pipe (the terminal or the parent process stopped reading, e.g. ``tabrion-studio | head``) or a closed
+    ``out`` only loses this line. ``sys.stdout`` is then pointed at ``os.devnull``, so the interpreter's own flush at
+    exit does not report the broken pipe either (the CPython guidance for SIGPIPE). Every other error is raised.
+    """
+    try:
+        print(text, file=out, flush=True)
+    except BrokenPipeError:
+        _drop_stdout(out)
+    except ValueError:
+        if not getattr(out, "closed", False):
+            raise
+    except OSError as exc:
+        # Windows reports a write to a pipe whose reader is gone as EINVAL, not as a broken pipe.
+        if not (sys.platform == "win32" and exc.errno == errno.EINVAL):
+            raise
+        _drop_stdout(out)
+
+
+def _drop_stdout(out: TextIO) -> None:
+    if out is not sys.stdout:
+        return
+    with contextlib.suppress(OSError, ValueError):
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        try:
+            os.dup2(devnull, sys.stdout.fileno())
+        finally:
+            os.close(devnull)

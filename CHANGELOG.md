@@ -518,6 +518,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- `tabrion-studio` no longer ends with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered
+  output) when the terminal or the parent process stopped reading its output before a clean stop; the last line is
+  dropped and the exit status stays 0. Other errors writing that line are still raised (TD-044, joint regression JR-1).
 - TABRION QA-21: `scripts/check_tabrion_api.py --surface` no longer reports enum members and dataclass fields as
   missing. Tabrion's `docs/api/surface.json` lists them in the parent entry (`members`, `fields`), not as names of
   their own, so `tabrion.TLSMode.AUTO` failed against tabrion v0.1.0; such a name is now checked against its parent's
