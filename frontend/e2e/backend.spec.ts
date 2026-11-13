@@ -72,8 +72,18 @@ test.beforeAll(async () => {
   base = new URL(first).origin;
 });
 
-test.afterAll(() => {
-  studio?.kill('SIGTERM');
+/**
+ * JR-N2: stop the server, wait until it has exited (it may still write its state on the way out), then remove the
+ * test's temporary directory, as the other real-server suites do.
+ */
+test.afterAll(async () => {
+  const proc = studio;
+  if (proc && proc.exitCode === null && proc.signalCode === null) {
+    const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()));
+    proc.kill('SIGTERM');
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+  }
+  if (root) rmSync(root, { recursive: true, force: true });
 });
 
 /** A fresh one-time link from the running server: a second `tabrion-studio --print-url --no-browser`. */

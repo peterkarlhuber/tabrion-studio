@@ -122,7 +122,8 @@ under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fai
   F-3 of the STU-016 review, the text check refuses the side-effect functions it knows: `pg_terminate_backend`,
   `pg_cancel_backend`, `pg_logical_emit_message`, `txid_current`, `pg_current_xact_id`, the WAL, backup, replication
   slot and replication origin functions, `pg_reload_conf`, `pg_rotate_logfile`, `pg_promote`, the statistics resets,
-  `lo_import`, `lo_export`, adminpack's file writers and every `dblink` function (the list and the reason for each are
+  `lo_import`, `lo_export`, adminpack's file writers, the BRIN and GIN index maintenance functions, `connectby` and
+  `xpath_table` (which run a query given as text) and every `dblink` function (the list and the reason for each are
   in [Connections](connections.md)). A function of the database or of an extension that Studio does not know is not
   visible in the text; the role stays the boundary for it.
 - The warning before a destructive statement is UX, not protection.
