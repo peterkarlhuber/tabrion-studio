@@ -171,6 +171,11 @@ reproducibility. The report stays outside the repository.
 - **F-6 / TD-031:** Python runtime dependencies are ranges, not a hashed lock. Addressed by the f6-lock PR (hashed
   lock in CI and the installation guide; table above); the owner confirms it with G-S1.
 - **F-7 / T-16:** the migration code-trust digest does not cover project modules that revision files import.
+- **STU-020 D-4 / F-6 (scripts on Windows):** every reparse-point folder or file, including OneDrive "Files
+  On-Demand" placeholders, is refused as a link (`studio.script_link`), so scripts in a OneDrive-synced project are
+  probably unusable. Keep refusing (the safe reading, documented in
+  [History, favorites and scripts](history-and-scripts.md)), or accept the cloud reparse tags. Either way it needs a
+  check on a real Windows machine with OneDrive, together with the refused device names (F-2).
 - Still open from this page: TD-005 (the spent launch URL in the browser history), TD-002 and TD-007 (the
   redirect-file launch path and the checks in a real browser), TD-003 and TD-008 (the file-permission model on
   Windows, which CI does not yet check), and the PostgreSQL read-only model for side-effect functions that the

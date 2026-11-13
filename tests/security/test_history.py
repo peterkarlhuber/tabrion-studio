@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 import io
 import logging
@@ -366,6 +367,93 @@ def test_recording_waits_only_briefly_for_another_writer(env: Env, state_dir: Pa
         other.close()
     # The usual wait is back for the next write.
     _record(env.history, "SELECT 'after'")
+
+
+def test_a_reader_holds_up_neither_a_query_nor_the_history(
+    env: Env, state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-1 of the delta review: with the history full, each query deletes the oldest entry and checkpoints; another
+    connection's read transaction keeps the log in use, and the checkpoint must not wait for it."""
+    monkeypatch.setattr(history_module, "MAX_ENTRIES", 2)
+    marker = f"oldest_{uuid.uuid4().hex}"
+    _record(env.history, f"SELECT '{marker}'")
+    _record(env.history, "SELECT 'second'")
+    reader = sqlite3.connect(state_dir / STATE_FILE)
+    try:
+        reader.execute("BEGIN")
+        reader.execute("SELECT count(*) FROM history").fetchall()
+        started = time.monotonic()
+        _record(env.history, "SELECT 'third'")  # deletes the oldest entry, then checkpoints
+        assert time.monotonic() - started < 1.0
+        assert env.store.checkpoint_pending is True
+        # A query through the engine: its end (query.done, which a cancel waits for) is not held up either.
+        started = time.monotonic()
+        env.run("SELECT 'fourth'")
+        assert time.monotonic() - started < 3.0
+        # Neither is a read of the history, which retries the pending checkpoint.
+        started = time.monotonic()
+        assert env.get("/api/history").status_code == 200
+        assert time.monotonic() - started < 1.0
+    finally:
+        reader.rollback()
+        reader.close()
+    # D-3: once the reader is gone, the next purge (here: a read of the history) finishes the checkpoint.
+    assert env.get("/api/history").status_code == 200
+    assert env.store.checkpoint_pending is False
+    assert (state_dir / (STATE_FILE + "-wal")).stat().st_size == 0
+    assert marker.encode() not in _state_bytes(state_dir)
+
+
+def test_the_settings_purge_runs_off_the_event_loop_and_waits_only_briefly(
+    static_dir: Path, state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """D-2 of the delta review: another connection holds the write lock; saving the settings still answers at once,
+    and the purge never runs on the event loop."""
+    project = tmp_path / "project"
+    project.mkdir()
+    config_dir = tmp_path / "config"
+    configuration = Configuration(
+        project=ProjectConfig(project, state_dir, "projkey1", config_dir), user=UserConfig(config_dir)
+    )
+    clock = Clock()
+    store = StateStore(state_dir)
+    history = History(store, "projkey1", configuration.limits, clock=clock)
+    on_loop: list[bool] = []
+    purge = history.purge
+
+    def watched_purge() -> int:
+        try:
+            asyncio.get_running_loop()
+            on_loop.append(True)
+        except RuntimeError:
+            on_loop.append(False)
+        return purge()
+
+    monkeypatch.setattr(history, "purge", watched_purge)
+    studio = make_studio(static_dir, config=configuration, history=history, favorites=Favorites(store, "projkey1", set))
+    marker = f"expired_{uuid.uuid4().hex}"
+    _record(history, f"SELECT '{marker}'")
+    clock.now += 5 * 86_400
+    writer = sqlite3.connect(state_dir / STATE_FILE, timeout=0)
+    try:
+        writer.execute("BEGIN IMMEDIATE")
+        headers = {**studio.sign_in(), "Origin": ORIGIN}
+        started = time.monotonic()
+        saved = studio.client.put(
+            "/api/settings",
+            json={"settings": {"history": {"retention_days": 1}}, "digest": None},
+            headers=headers,
+        )
+        assert saved.status_code == 200, saved.text
+        assert time.monotonic() - started < 1.5
+        assert on_loop == [False]
+    finally:
+        writer.rollback()
+        writer.close()
+    # The purge the lock kept from running is done by the next one.
+    assert history.purge() == 1
+    assert marker.encode() not in _state_bytes(state_dir)
+    store.close()
 
 
 def test_the_checkpoint_says_whether_the_log_is_empty(env: Env, state_dir: Path) -> None:
