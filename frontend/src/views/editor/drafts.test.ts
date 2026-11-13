@@ -81,3 +81,50 @@ describe('drafts', () => {
     ]);
   });
 });
+
+describe('drafts of project scripts (STU-020)', () => {
+  it('keep the script path and digest of a tab, and drop a malformed digest', () => {
+    const digest = 'c'.repeat(64);
+    writeDrafts(
+      {
+        tabs: [
+          {
+            id: 'a',
+            title: 'report',
+            profileId: '',
+            sql: 'x',
+            savedSql: 'x',
+            scriptPath: 'sql/report.sql',
+            scriptDigest: digest,
+          },
+          { id: 'b', title: 'plain', profileId: '', sql: 'y', savedSql: '' },
+        ],
+        activeTab: 'a',
+      },
+      'k',
+    );
+    expect(readDrafts('k')?.tabs).toEqual([
+      {
+        id: 'a',
+        title: 'report',
+        profileId: '',
+        sql: 'x',
+        savedSql: 'x',
+        scriptPath: 'sql/report.sql',
+        scriptDigest: digest,
+      },
+      { id: 'b', title: 'plain', profileId: '', sql: 'y', savedSql: '' },
+    ]);
+    const raw = JSON.stringify({
+      tabs: [{ id: 'a', title: 't', sql: '', script_path: 'a.sql', script_digest: 'not-a-digest' }],
+      activeTab: 'a',
+    });
+    expect(parseDrafts(raw)?.tabs[0]).toEqual({
+      id: 'a',
+      title: 't',
+      profileId: '',
+      sql: '',
+      savedSql: '',
+    });
+  });
+});

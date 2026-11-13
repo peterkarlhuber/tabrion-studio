@@ -60,8 +60,12 @@ from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
+from tabrion_studio.services.favorites import Favorites
+from tabrion_studio.services.history import History
 from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.scripts import Scripts
+from tabrion_studio.services.state import StateStore
 from tabrion_studio.services.viewer import Viewer
 
 
@@ -266,10 +270,20 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     )
     registry = ConnectionRegistry(configuration)
     explorer = Explorer(registry)
+    key = project_key(options.project)
+    state = StateStore(options.state_dir)
+    history = History(state, key, configuration.limits)
+    # Retention holds on disk also while nothing new is recorded (the history off, an idle project): F-1.
+    history.purge()
+    favorites = Favorites(state, key, lambda: {entry.id for entry in configuration.entries()})
     runtime = Runtime(
         config=configuration,
         connections=registry,
-        queries=QueryEngine(registry, configuration.limits),
+        queries=QueryEngine(registry, configuration.limits, history=history),
+        state=state,
+        history=history,
+        favorites=favorites,
+        scripts=Scripts(options.project),
         explorer=explorer,
         viewer=Viewer(explorer, configuration.limits),
         diagnostics=Diagnostics(registry),

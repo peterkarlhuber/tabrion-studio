@@ -19,6 +19,12 @@ export interface DraftTab {
   sql: string;
   /** The text as it was last saved as a file (D-06 asks when it differs). */
   savedSql: string;
+  /** STU-020: the project script the tab was opened from or saved to (relative, `/`), if any. */
+  scriptPath?: string;
+  /** The SHA-256 of that script as last read or written: a save is bound to it (`studio.script_stale`). */
+  scriptDigest?: string;
+  /** The script's lines end in CRLF on disk: the editor shows `\n`, and a save writes CRLF back. */
+  scriptCrlf?: boolean;
 }
 
 export interface Drafts {
@@ -74,7 +80,23 @@ export function parseDrafts(raw: string | null): Drafts | null {
     const sql = text(tab.sql, MAX_DRAFT_CHARS);
     const savedSql = text(tab.saved_sql, MAX_DRAFT_CHARS) ?? '';
     if (id === null || title === null || sql === null) return [];
-    return [{ id, title, profileId, sql, savedSql }];
+    const scriptPath = text(tab.script_path, 512);
+    const scriptDigest =
+      typeof tab.script_digest === 'string' && /^[0-9a-f]{64}$/.test(tab.script_digest)
+        ? tab.script_digest
+        : null;
+    return [
+      {
+        id,
+        title,
+        profileId,
+        sql,
+        savedSql,
+        ...(scriptPath !== null && scriptPath !== '' && scriptDigest !== null
+          ? { scriptPath, scriptDigest, ...(tab.script_crlf === true ? { scriptCrlf: true } : {}) }
+          : {}),
+      },
+    ];
   });
   if (parsed.length === 0) return null;
   const active = parsed.some((tab) => tab.id === activeTab)
@@ -112,6 +134,13 @@ export function writeDrafts(
       profile_id: tab.profileId,
       sql: tab.sql.length <= MAX_DRAFT_CHARS ? tab.sql : '',
       saved_sql: tab.savedSql.length <= MAX_DRAFT_CHARS ? tab.savedSql : '',
+      ...(tab.scriptPath !== undefined && tab.scriptDigest !== undefined
+        ? {
+            script_path: tab.scriptPath,
+            script_digest: tab.scriptDigest,
+            ...(tab.scriptCrlf === true ? { script_crlf: true } : {}),
+          }
+        : {}),
     })),
     activeTab: drafts.activeTab,
   };

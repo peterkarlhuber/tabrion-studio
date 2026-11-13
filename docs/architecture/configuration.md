@@ -7,10 +7,11 @@ schema version 1), `files.py` (reading without following links), `project.py` (p
 
 | File | Content | Trust |
 |---|---|---|
-| `<config dir>/settings.toml` | language, theme, density, `log_sql`, limits; telemetry does not exist (`telemetry = true` is reported and ignored) | the user's own file; not a link |
+| `<config dir>/settings.toml` | language, theme, density, `log_sql`, limits, `[history]` (`enabled`, `retention_days`, STU-020); telemetry does not exist (`telemetry = true` is reported and ignored) | the user's own file; not a link |
 | `<config dir>/profiles.toml` | the user's profiles | the user's own file; must be 0600 and owned by the user (POSIX), not a link |
 | `<project>/.tabrion/studio.toml` | the project's profiles, checked into the repository | **untrusted** until the user confirms exactly these bytes (D-01) |
 | `<state dir>/trust-<key>.json` | the trust record of one project folder: the SHA-256 of the confirmed file and what the dialog showed | written by Studio, 0600 |
+| `<state dir>/state.sqlite` | the query history, the favorite and the recently opened profiles (STU-020, [History, favorites and scripts](history-and-scripts.md)) | written by Studio through `tabrion.sqlite.connect`, 0600, no link |
 
 The configuration folder is `--config-dir`, else `$TABRION_STUDIO_CONFIG_DIR`, else `<state dir>/config` when the
 state directory was given explicitly, else `platformdirs.user_config_dir("tabrion-studio")`.
@@ -49,7 +50,7 @@ in the configuration folder (and the trust records in the state folder); **it ne
 | `POST /api/profiles` | `{"profile": {...}, "digest", "overwrite"?}` | 201 `{"id": "user:<name>", "digest"}` |
 | `PUT /api/profiles` | `{"id": "user:<name>", "profile": {...}, "digest", "overwrite"?}` | 200 `{"id", "digest"}`; the name cannot change (`config.rename_unsupported`) |
 | `DELETE /api/profiles` | `{"id": "user:<name>", "digest", "overwrite"?}` | 200 `{"digest"}`; also removes the profile's saved password (keyring and session) |
-| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "density"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?, "max_result_mb"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
+| `PUT /api/settings` | `{"settings": {"language"?, "theme"?, "density"?, "log_sql"?, "limits"?: {"max_rows"?, "statement_timeout_ms"?, "max_result_mb"?}, "history"?: {"enabled"?, "retention_days"?}}, "digest", "overwrite"?}` | 200 `{"digest", "settings"}`; keys left out keep their value |
 
 The id is in the body, not the path (03 section 6 sketches `/profiles/{id}`): a profile name may contain `/`, and
 `/api/profiles/{id}/secret` must never be read as a profile route. A profile has the keys of the file;

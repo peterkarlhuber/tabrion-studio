@@ -249,3 +249,10 @@
   color: var(--tb-color-text);
   font-weight: var(--tb-weight-semibold);
 }
+.favoriteMark {
+  width: 0.875rem;
+  height: 0.875rem;
+  margin-left: var(--tb-space-1);
+  vertical-align: -0.125rem;
+  fill: currentColor;
+}

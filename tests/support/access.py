@@ -17,8 +17,11 @@ from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
+from tabrion_studio.services.favorites import Favorites
+from tabrion_studio.services.history import History
 from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.scripts import Scripts
 from tabrion_studio.services.viewer import Viewer
 
 TOKEN = "control-token-for-tests"
@@ -83,6 +86,9 @@ def make_studio(
     diagnostics: Diagnostics | None = None,
     migrations: Migrations | None = None,
     exports: Exports | None = None,
+    history: History | None = None,
+    favorites: Favorites | None = None,
+    scripts: Scripts | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -101,6 +107,10 @@ def make_studio(
         diagnostics=diagnostics,
         migrations=migrations,
         exports=exports,
+        history=history,
+        favorites=favorites,
+        scripts=scripts,
+        state=None if history is None else history.store,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

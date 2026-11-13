@@ -12,6 +12,7 @@ export const ROUTES = [
   '/sql',
   '/migrations',
   '/diagnostics',
+  '/history',
   '/settings',
 ] as const;
 export type Route = (typeof ROUTES)[number];

@@ -24,6 +24,7 @@ import { ProjectTrust } from './shell/ProjectTrust';
 import { SessionNotice } from './shell/SessionNotice';
 import { ConnectionsView } from './views/connections/ConnectionsView';
 import { ExplorerView } from './views/explorer/ExplorerView';
+import { HistoryView } from './views/history/HistoryView';
 import { DiagnosticsView } from './views/diagnostics/DiagnosticsView';
 import { MigrationsView } from './views/migrations/MigrationsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
@@ -68,7 +69,7 @@ function useServer(fetcher: typeof fetch): [ServerState, () => void] {
 function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
   switch (path) {
     case '/':
-      return <StartView />;
+      return <StartView fetcher={fetcher} />;
     case '/connections':
       return <ConnectionsView fetcher={fetcher} />;
     case '/explorer':
@@ -79,6 +80,8 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
           <EditorView fetcher={fetcher} />
         </Suspense>
       );
+    case '/history':
+      return <HistoryView fetcher={fetcher} />;
     case '/migrations':
       return <MigrationsView fetcher={fetcher} />;
     case '/diagnostics':
@@ -94,6 +97,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/connections': 'connections.title',
   '/explorer': 'explorer.title',
   '/sql': 'editor.title',
+  '/history': 'history.title',
   '/migrations': 'migrations.title',
   '/diagnostics': 'diagnostics.title',
   '/settings': 'settings.title',

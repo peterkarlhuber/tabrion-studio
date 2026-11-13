@@ -43,9 +43,12 @@ from tabrion_studio.api.connections import add_connection_routes
 from tabrion_studio.api.diagnostics import add_diagnostics_routes
 from tabrion_studio.api.explorer import add_explorer_routes
 from tabrion_studio.api.exports import add_export_routes
+from tabrion_studio.api.history import add_history_routes
 from tabrion_studio.api.migrations import add_migration_routes
 from tabrion_studio.api.queries import MAX_BODY as MAX_QUERY_BODY
 from tabrion_studio.api.queries import add_query_routes
+from tabrion_studio.api.scripts import MAX_BODY as MAX_SCRIPT_BODY
+from tabrion_studio.api.scripts import add_script_routes
 from tabrion_studio.api.viewer import add_viewer_routes
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
@@ -60,8 +63,12 @@ from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.diagnostics import Diagnostics
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.exports import Exports
+from tabrion_studio.services.favorites import Favorites
+from tabrion_studio.services.history import History
 from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
+from tabrion_studio.services.scripts import Scripts
+from tabrion_studio.services.state import StateStore
 from tabrion_studio.services.viewer import Viewer
 
 _logger = logging.getLogger("tabrion_studio.app")
@@ -69,13 +76,14 @@ _logger = logging.getLogger("tabrion_studio.app")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 #: Paths of the single-page app's own views (frontend/src/router.ts); a reload or a typed address on one of them gets
 #: index.html. Every other unknown path stays a 404.
-CLIENT_ROUTES = ("/connections", "/explorer", "/sql", "/migrations", "/diagnostics", "/settings")
+CLIENT_ROUTES = ("/connections", "/explorer", "/sql", "/history", "/migrations", "/diagnostics", "/settings")
 #: How often expired launch tokens and their redirect files are removed.
 SWEEP_SECONDS = 5.0
 _MAX_BODY = 4096
 #: The body cap of every request (STU-016 review F-4): enforced while the body streams in, before a route reads it
 #: (:mod:`tabrion_studio.security.body`). The default is the largest cap of a JSON route's own check; each route keeps
-#: its own, often smaller, check. The SQL editor and the export take a statement of up to 512 K characters.
+#: its own, often smaller, check. The SQL editor and the export take a statement of up to 512 K characters, and a
+#: script save (STU-020) a `.sql` file of up to 1 MB as JSON.
 DEFAULT_BODY_LIMIT = BodyLimit(MAX_FORM_BODY)
 BODY_LIMITS: dict[str, BodyLimit] = {
     "/api/session": BodyLimit(_MAX_BODY),  # reached before a session exists
@@ -83,6 +91,7 @@ BODY_LIMITS: dict[str, BodyLimit] = {
     "/api/control/shutdown": BodyLimit(_MAX_BODY),
     "/api/queries": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
     "/api/exports": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
+    "/api/scripts/file": BodyLimit(MAX_SCRIPT_BODY, "studio.script_too_large"),
 }
 
 _NOT_BUILT = """<!doctype html>
@@ -120,6 +129,13 @@ class Runtime:
     migrations: Migrations | None = None
     #: Exports of query results and tables (STU-021); None serves no export route.
     exports: Exports | None = None
+    #: The state database (STU-020), closed on shutdown; the history and the favorites live in it.
+    state: StateStore | None = None
+    #: The query history and the favorite and recent profiles (STU-020); None serves neither.
+    history: History | None = None
+    favorites: Favorites | None = None
+    #: The project's ``.sql`` scripts (STU-020); None serves no script route.
+    scripts: Scripts | None = None
 
 
 def _problem(code: str) -> Response:
@@ -178,6 +194,8 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
                 if runtime.connections is not None:
                     # Engines are disposed on shutdown (STU-009).
                     await asyncio.to_thread(runtime.connections.close_all)
+                if runtime.state is not None:
+                    await asyncio.to_thread(runtime.state.close)
         except Exception:
             _logger.exception("application %s failed", phase, extra={"event": "studio.lifespan_failed"})
             raise
@@ -261,9 +279,12 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         return _problem("studio.not_found")
 
     if runtime.config is not None:
-        add_config_routes(app, runtime.config)
+        add_config_routes(
+            app, runtime.config, settings_saved=None if runtime.history is None else runtime.history.purge
+        )
     if runtime.connections is not None:
-        add_connection_routes(app, runtime.connections)
+        opened = None if runtime.favorites is None else runtime.favorites.opened
+        add_connection_routes(app, runtime.connections, opened=opened)
     if runtime.queries is not None:
         add_query_routes(app, runtime.queries)
     if runtime.explorer is not None:
@@ -276,6 +297,10 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_migration_routes(app, runtime.migrations)
     if runtime.exports is not None:
         add_export_routes(app, runtime.exports)
+    if runtime.history is not None and runtime.favorites is not None:
+        add_history_routes(app, runtime.history, runtime.favorites)
+    if runtime.scripts is not None:
+        add_script_routes(app, runtime.scripts)
 
     index = static_dir / "index.html"
     if index.is_file():

@@ -46,11 +46,11 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-01 DNS rebinding | Host allowlist on every route | STU-T-001, -002 (`test_access.py`, `test_launch.py`) | Covered |
 | T-02 CSRF from another site | Origin, fetch metadata, JSON only, CSRF header | STU-T-003, -004; every API route in `test_every_route.py` | Covered |
 | T-03 Token theft | One-time launch token in the fragment, redirect file 0600, session cookie | STU-T-005, -006 | Covered; TD-005 (spent URL in history) is an accepted risk |
-| T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. No state database or history yet (1.0); editor drafts are in browser storage (TD-033) |
+| T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. The state database with the history (STU-020): `tests/security/test_history.py` (0600, link and shared-file refusal, no parameter value in any byte); editor drafts are in browser storage (TD-033) |
 | T-05 Secret leaks | Redaction, canaries, safe URLs, Problem JSON without server text | STU-T-008, -009; `test_canary_flows.py` | Covered |
 | T-06 Accidental writes | Read-only in the database, prod marking; the text check refuses `INTO` (F-1) and side-effect functions (F-3); `STU-DX-003` reports schema `CREATE` and database `TEMP` | STU-T-010..013 and the F-1/F-3 tests (`test_read_only.py`, `test_queries.py`, `test_exports.py`, `test_diagnostics.py`) | Covered: review F-1 fixed (PR #65/#66), independent re-review accepted at `2a8a229`. Residual: side-effect functions the database itself defines (see the residual risks). The write mode is G-S2 |
 | T-07 XSS through database text | React text only, ESLint rule against `dangerouslySetInnerHTML`, CSP | STU-T-014; no STU-T-015 label, in substance `test_access.py::test_eslint_forbids_dangerously_set_inner_html` and hostile-value tests of the views | Covered |
-| T-08 Hostile project | Project trust (D-01), bound to digests | STU-T-016, -017 (`test_project_trust.py`) | Covered |
+| T-08 Hostile project | Project trust (D-01), bound to digests; script paths (STU-020) judged as text, then reached through folder descriptors with `O_NOFOLLOW` (07 TM-04), no device, 8.3 or format-character names, no hard links | STU-T-016, -017 (`test_project_trust.py`); `tests/security/test_scripts.py` | Covered on POSIX; on Windows a folder swapped between the check and a save's rename remains (documented in [History, favorites and scripts](history-and-scripts.md)) |
 | T-09 Resource exhaustion | Row, byte and cell caps, timeouts, cancel, parallel limits; request body caps while streaming (review F-4) | STU-T-018..020; `test_body_limits.py` | Covered |
 | T-10 TLS downgrade | `STU-DX-002` for PROD without verify-full | STU-T-021 (`test_diagnostics.py`) | Covered as a finding; Studio does not refuse such a profile |
 | T-11 Supply chain | Locked dependencies, license policy, SBOM, audits | No STU-T-022 label; CI jobs `license and supply chain`, `dependency audit` | Covered; TD-030 (dev-only advisory), TD-031 (hashed pins in CI) |
@@ -174,6 +174,11 @@ reproducibility. The report stays outside the repository.
   in PR #75 (TD-054) by hashing them; the review of the fix is accepted with condition C-1, which is fixed in the
   same PR; its delta review is accepted with condition C-2, fixed in the same PR, and the re-check is accepted at
   `d33f89d`.
+- **STU-020 D-4 / F-6 (scripts on Windows):** every reparse-point folder or file, including OneDrive "Files
+  On-Demand" placeholders, is refused as a link (`studio.script_link`), so scripts in a OneDrive-synced project are
+  probably unusable. Keep refusing (the safe reading, documented in
+  [History, favorites and scripts](history-and-scripts.md)), or accept the cloud reparse tags. Either way it needs a
+  check on a real Windows machine with OneDrive, together with the refused device names (F-2).
 - Still open from this page: TD-005 (the spent launch URL in the browser history), TD-002 and TD-007 (the
   redirect-file launch path and the checks in a real browser), TD-003 and TD-008 (the file-permission model on
   Windows, which CI does not yet check), and the PostgreSQL read-only model for side-effect functions that the
