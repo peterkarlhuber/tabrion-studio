@@ -122,13 +122,17 @@ python -I scripts/release_bom.py --strict \
   exception, an unknown license, no license; license records of a name at a version that no pin of that name has
   (with or without a marker: a record exists, so the package was installed there); a pin without a marker that no
   record covers; and a Tabrion record that is not of the pinned commit (`collect_licenses.py` records the commit of
-  PEP 610 `direct_url.json`, and it must equal the SHA of `constraints/tabrion-integration.txt`). A pin whose marker
+  PEP 610 `direct_url.json`, and it must equal the SHA of `constraints/tabrion-integration.txt`; a URL with user
+  information is never recorded, so such a record fails too). Every record of a name, from every `--licenses` file,
+  is judged: one matching record never hides a mismatching or disallowed one, and the order of the files does not
+  change the result. A pin whose marker
   applies only elsewhere is "not verified"; `--strict` fails on it too, so the release run needs the records of
   every system. Unreadable or malformed input, and an output folder that cannot be written, exit with code 2.
 - **Reproducible:** the same inputs give the same bytes; the serial number is derived from the content, and a
   timestamp is written only with `SOURCE_DATE_EPOCH`.
 - **Tested** offline by `tests/supply_chain/test_release_bom.py` (every pin and shipped package listed, copyleft,
-  unknown, missing and stale records fail, a Tabrion record of another commit fails, `--strict`, npm duplicates,
+  unknown, missing and stale records fail, a Tabrion record of another commit fails, every record counts in either
+  file order, `--strict`, npm duplicates,
   multi-hash integrity and workspace names, reproducibility, exit codes).
 
 Run on 2026-11-13 for `master` `d72a14f`, with the license records of fresh runtime environments on Ubuntu 24.04

@@ -88,6 +88,10 @@ Any bundled distribution of Studio (for example a later desktop package) must ke
 these license texts (14 section 4.2 item 6, risk R-14)."""
 
 
+class InputError(ValueError):
+    """Unreadable or malformed input of this script (exit code 2); anything else is a bug and keeps its traceback."""
+
+
 def canonical(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
@@ -110,9 +114,9 @@ class Component:
 
 
 def read_version(path: Path = VERSION_FILE) -> str:
-    match = re.search(r'__version__\s*=\s*"([^"]+)"', path.read_text(encoding="utf-8"))
+    match = re.search(r'__version__\s*=\s*"([^"]+)"', read_text(path))
     if match is None:
-        raise ValueError(f"{path}: no __version__")
+        raise InputError(f"{path}: no __version__")
     return match[1]
 
 
@@ -125,7 +129,7 @@ def read_lock(text: str) -> list[Component]:
             continue
         match = _PIN.fullmatch(line)
         if match is None:
-            raise ValueError(f"runtime lock line {number} is not 'name==version [; marker] --hash=sha256:...'")
+            raise InputError(f"runtime lock line {number} is not 'name==version [; marker] --hash=sha256:...'")
         name = canonical(match["name"])
         hashes = sorted(h.removeprefix("--hash=sha256:") for h in match["hashes"].split())
         components.append(
@@ -139,7 +143,7 @@ def read_lock(text: str) -> list[Component]:
             )
         )
     if not components:
-        raise ValueError("the runtime lock pins nothing")
+        raise InputError("the runtime lock pins nothing")
     return components
 
 
@@ -152,7 +156,7 @@ def read_git_pins(text: str) -> list[Component]:
             continue
         match = _GIT_PIN.fullmatch(line)
         if match is None:
-            raise ValueError(f"the git pin file has a line that is not 'name @ git+https://...@<sha>': {line!r}")
+            raise InputError(f"the git pin file has a line that is not 'name @ git+https://...@<sha>': {line!r}")
         name = canonical(match["name"])
         vcs = f"git+{match['url']}@{match['sha']}"
         components.append(
@@ -182,10 +186,10 @@ def _integrity(text: str) -> list[tuple[str, str]]:
         try:
             raw = base64.b64decode(digest, validate=True)
         except ValueError as exc:
-            raise ValueError(f"an npm integrity value is not valid base64: {token[:40]!r}") from exc
+            raise InputError(f"an npm integrity value is not valid base64: {token[:40]!r}") from exc
         expected = {"sha512": 64, "sha384": 48, "sha256": 32, "sha1": 20}[algorithm]
         if len(raw) != expected:
-            raise ValueError(f"an npm {algorithm} integrity value has {len(raw)} bytes, not {expected}")
+            raise InputError(f"an npm {algorithm} integrity value has {len(raw)} bytes, not {expected}")
         hashes.setdefault(_NPM_ALGORITHMS[algorithm], raw.hex())
     return sorted(hashes.items())
 
@@ -196,10 +200,12 @@ def npm_components(lock: dict[str, Any]) -> tuple[list[Component], int]:
     One component per name and version: a package installed at several nested paths is listed once, with every path
     as a property. A workspace member (a path without ``node_modules/``) is named by its own ``name``.
     """
-    policy.check_npm(lock)  # validates the lockfile version
+    packages = lock.get("packages")
+    if not isinstance(packages, dict) or int(str(lock.get("lockfileVersion", 0))) < 2:
+        raise InputError("the npm lockfile needs lockfileVersion 2 or 3 (with a packages section)")
     by_purl: dict[str, Component] = {}
     dev = 0
-    for path, meta in sorted(lock["packages"].items()):
+    for path, meta in sorted(packages.items()):
         if not path or not isinstance(meta, dict) or meta.get("link"):
             continue
         if meta.get("dev"):
@@ -207,11 +213,8 @@ def npm_components(lock: dict[str, Any]) -> tuple[list[Component], int]:
             continue
         name = path.rsplit("node_modules/", 1)[-1] if "node_modules/" in path else str(meta.get("name") or path)
         version = str(meta.get("version", ""))
-        declared = meta.get("license")
-        if isinstance(declared, dict):  # legacy {"type": "MIT"}
-            declared = declared.get("type")
-        declared = str(declared or "")
-        allowed = policy.expression_allowed(declared, policy.ALLOWED_SHIPPED)
+        declared = policy.npm_license(meta)
+        allowed = policy.npm_allowed(declared, dev=False)
         purl = f"pkg:npm/{quote(name, safe='/')}@{version}"
         component = by_purl.get(purl)
         if component is None:
@@ -230,8 +233,35 @@ def npm_components(lock: dict[str, Any]) -> tuple[list[Component], int]:
     return list(by_purl.values()), dev
 
 
+def _judge_all(component: Component, records: list[dict[str, object]]) -> None:
+    """Judge every record of one pin: the worst verdict wins, so no record can hide another one."""
+    findings = policy.check_python(records)
+    bad = [f for f in findings if not f.allowed]
+    licenses = sorted({f.license for f in findings})
+    if bad:
+        component.status = DISALLOWED
+        component.license = "" if bad[0].license == "(none)" else bad[0].license
+        component.note = "copyleft or unknown license outside the policy" if component.license else "no license"
+        if len(licenses) > 1:
+            component.note += f" (the records declare {'; '.join(licenses)})"
+        return
+    component.license = "" if findings[0].license == "(none)" else findings[0].license
+    exceptions = [f for f in findings if f.note.startswith("exception")]
+    if exceptions:
+        component.status = EXCEPTION
+        component.note = exceptions[0].note.removeprefix("exception: ")
+    else:
+        component.status = ALLOWED
+    if len(licenses) > 1:
+        component.note = (component.note + f"; the records declare {'; '.join(licenses)}").lstrip("; ")
+
+
 def judge_python(components: list[Component], records: list[dict[str, object]]) -> None:
-    """Set license, status and note of each Python component from the collected license records."""
+    """Set license, status and note of each Python component from the collected license records.
+
+    Every record of a name counts, from every ``--licenses`` file, so the verdict does not depend on their order and
+    a matching record never hides a mismatching or disallowed one (delta review D-1).
+    """
     by_name: dict[str, list[dict[str, object]]] = {}
     for record in records:
         by_name.setdefault(canonical(str(record.get("name", ""))), []).append(record)
@@ -251,47 +281,47 @@ def judge_python(components: list[Component], records: list[dict[str, object]]) 
             continue
         versions = sorted({str(r.get("version", "")) for r in found})
         if component.vcs:
-            # A Git pin: only a record of the pinned commit counts (PEP 610 direct_url.json, collect_licenses.py).
-            commits = sorted({str(r.get("vcs_commit") or "(none)") for r in found})
-            found = [
+            # A Git pin: every record must be of the pinned commit and repository (PEP 610, collect_licenses.py).
+            foreign = [
                 r
                 for r in found
-                if r.get("vcs_commit") == component.commit
-                and str(r.get("vcs_url") or "").removesuffix(".git") == component.vcs_url.removesuffix(".git")
+                if r.get("vcs_commit") != component.commit
+                or str(r.get("vcs_url") or "").removesuffix(".git") != component.vcs_url.removesuffix(".git")
             ]
-            versions = sorted({str(r.get("version", "")) for r in found})
-            if not found or len(versions) != 1:
+            if foreign:
+                commits = sorted({str(r.get("vcs_commit") or "(none)") for r in foreign})
                 component.status = DISALLOWED
                 component.note = (
-                    f"no license record of the pinned commit {component.commit} from {component.vcs_url} "
-                    f"(the records name the commit {', '.join(commits)})"
-                    if not found
-                    else f"license records of several versions: {', '.join(versions)}"
+                    f"{len(foreign)} of {len(found)} license record(s) are not of the pinned commit "
+                    f"{component.commit} from {component.vcs_url} (they name the commit {', '.join(commits)})"
                 )
+                continue
+            if len(versions) != 1:
+                component.status = DISALLOWED
+                component.note = f"license records of several versions: {', '.join(versions)}"
                 continue
             component.version = versions[0]
             component.purl = component.purl.replace("?", f"@{component.version}?", 1)
-        else:
-            # The lock may pin one name at two versions under different markers: use the record of this version.
-            found = [r for r in found if str(r.get("version", "")) == component.version]
-            if not found:
-                explained = set(versions) <= pinned[component.name]
-                component.status = UNVERIFIED if explained and component.marker else DISALLOWED
-                component.note = (
-                    f"the license records are for version {', '.join(versions)}, the lock pins {component.version}"
-                )
-                continue
-        findings = policy.check_python([found[0]])
-        finding = findings[0]
-        component.license = "" if finding.license == "(none)" else finding.license
-        if not finding.allowed:
+            _judge_all(component, found)
+            continue
+        stray = sorted(set(versions) - pinned[component.name])
+        if stray:
+            # A record at a version that no pin of this name has: that environment did not install the lock.
             component.status = DISALLOWED
-            component.note = "copyleft or unknown license outside the policy" if component.license else "no license"
-        elif finding.note.startswith("exception"):
-            component.status = EXCEPTION
-            component.note = finding.note.removeprefix("exception: ")
-        else:
-            component.status = ALLOWED
+            component.note = (
+                f"license records for version {', '.join(stray)}, which the lock does not pin "
+                f"(it pins {', '.join(sorted(pinned[component.name]))})"
+            )
+            continue
+        mine = [r for r in found if str(r.get("version", "")) == component.version]
+        if not mine:
+            # The lock pins this name at two versions under different markers; only the other one was recorded.
+            component.status = UNVERIFIED if component.marker else DISALLOWED
+            component.note = (
+                f"the license records are for version {', '.join(versions)}, the lock pins {component.version}"
+            )
+            continue
+        _judge_all(component, mine)
 
 
 def _cdx_component(component: Component) -> dict[str, Any]:
@@ -419,13 +449,35 @@ def build(
     return sbom(version, python + npm), report(version, python, npm, dev_count, failures), failures
 
 
+def read_json(path: Path) -> object:
+    """A JSON file; text that is not UTF-8 JSON is an InputError (an unreadable file stays an OSError)."""
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise InputError(f"{path} is not JSON: {exc}") from exc
+
+
+def read_npm_lock(path: Path) -> dict[str, Any]:
+    data = read_json(path)
+    if not isinstance(data, dict):
+        raise InputError(f"{path} is not an npm lockfile (a JSON object)")
+    return data
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except UnicodeDecodeError as exc:
+        raise InputError(f"{path} is not UTF-8 text") from exc
+
+
 def read_records(path: Path) -> list[dict[str, object]]:
     """One ``collect_licenses.py`` file: a JSON list of objects, each with a ``name`` and a ``version``."""
-    data = json.loads(path.read_text(encoding="utf-8"))
+    data = read_json(path)
     if not isinstance(data, list) or not all(
         isinstance(r, dict) and isinstance(r.get("name"), str) and isinstance(r.get("version"), str) for r in data
     ):
-        raise ValueError(f"{path} is not a list of license records with name and version (collect_licenses.py)")
+        raise InputError(f"{path} is not a list of license records with name and version (collect_licenses.py)")
     return data
 
 
@@ -444,9 +496,9 @@ def main(argv: list[str] | None = None) -> int:
         version = args.version or read_version()
         bom, text, failures = build(
             batches,
-            args.lock.read_text(encoding="utf-8"),
-            args.tabrion_pin.read_text(encoding="utf-8"),
-            json.loads(args.npm_lock.read_text(encoding="utf-8")),
+            read_text(args.lock),
+            read_text(args.tabrion_pin),
+            read_npm_lock(args.npm_lock),
             version,
             args.strict,
         )
@@ -454,7 +506,7 @@ def main(argv: list[str] | None = None) -> int:
         sbom_path = args.out / f"tabrion-studio-{version}.cdx.json"
         sbom_path.write_text(json.dumps(bom, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
         (args.out / "third-party-licenses.md").write_text(text + "\n", encoding="utf-8", newline="\n")
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+    except (OSError, InputError) as exc:
         print(f"release_bom: {exc}", file=sys.stderr)
         return 2
     print(f"wrote {sbom_path} ({len(bom['components'])} components) and {args.out / 'third-party-licenses.md'}")

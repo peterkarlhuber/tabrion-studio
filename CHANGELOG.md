@@ -16,8 +16,10 @@ All notable changes to this project are documented here. The format follows
   run) and the same bytes for the same inputs; tested offline (`tests/supply_chain/test_release_bom.py`). The
   clean install of master `d72a14f` on Linux (`smoke_wheel.py`, `uv tool install`, and `pipx install` with pip as
   its installer and the Tabrion pin only) is recorded there. `scripts/collect_licenses.py` also records the Git
-  commit of a VCS install (PEP 610 `direct_url.json`), and `release_bom.py` fails when the Tabrion record is not of
-  the pinned commit.
+  commit of a VCS install (PEP 610 `direct_url.json`; never a URL with user information), and `release_bom.py`
+  fails when a Tabrion record is not of the pinned commit. Every license record of a name, from every `--licenses`
+  file, is judged, so the result does not depend on the order of the files. `check_licenses.py` gains the shared
+  helpers `npm_license` and `npm_allowed`.
 - TD-033 drafts part (security review F-5): the SQL editor's drafts (each tab's title, profile, text and script
   binding, and the open tab) are kept in Studio's state database `state.sqlite` (0600) behind the authenticated
   `GET`/`PUT /api/drafts` (session cookie and CSRF header; a tab with any field but the known ones is refused, so a

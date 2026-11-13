@@ -137,7 +137,7 @@ def test_the_sbom_lists_every_pin_and_every_shipped_frontend_package() -> None:
             "LicenseRef-Proprietary: copyleft or unknown",
         ),
         (lambda r: r.update(license_expression=""), "(none): no license"),
-        (lambda r: r.update(version="0.0.1"), "the license records are for version 0.0.1"),
+        (lambda r: r.update(version="0.0.1"), "license records for version 0.0.1, which the lock does not pin"),
     ],
 )
 def test_copyleft_unknown_and_stale_python_licenses_fail(change: Callable[[Record], None], expected: str) -> None:
@@ -247,7 +247,7 @@ def test_the_tabrion_record_must_be_of_the_pinned_commit(change: Callable[[Recor
     change(next(r for r in records if r["name"] == "tabrion"))
     bom, _, failures = build(records)
     assert len(failures) == 1, failures
-    assert failures[0].startswith(f"python tabrion {TABRION_COMMIT}: (none): no license record of the pinned commit")
+    assert failures[0].startswith(f"python tabrion {TABRION_COMMIT}: (none): 1 of 1 license record(s) are not of")
     assert expected in failures[0]
     tabrion = next(c for c in components(bom).values() if c["name"] == "tabrion")
     assert prop(tabrion, "tabrion-studio:license-policy") == ["DISALLOWED"]
@@ -347,3 +347,99 @@ def test_the_collector_records_the_commit_of_a_git_install(tmp_path: Path) -> No
     assert cl._vcs(dist("wheel", {"url": "file:///home/me/x.whl", "archive_info": {}})) == {}
     assert cl._vcs(dist("local", {"url": "file:///home/me/repo", "vcs_info": {"commit_id": "a" * 40}})) == {}
     assert cl._vcs(dist("plain", None)) == {}
+
+
+def _fastapi_version() -> str:
+    return next(c.version for c in rb.read_lock(LOCK.read_text(encoding="utf-8")) if c.name == "fastapi")
+
+
+def _tabrion(**changes: object) -> Record:
+    record: Record = {
+        "name": "tabrion",
+        "version": "0.1.0",
+        "license_expression": "MIT",
+        "vcs_url": "https://github.com/peterkarlhuber/tabrion",
+        "vcs_commit": TABRION_COMMIT,
+    }
+    record.update(changes)
+    return {k: v for k, v in record.items() if v is not None}
+
+
+@pytest.mark.parametrize(
+    ("second", "expected"),
+    [
+        # Git pin: another platform's environment has another Tabrion commit, or Tabrion from an index.
+        ([_tabrion(vcs_commit="546d254a27df9f6b539d57c307ad3022d0ee3a4a")], "python tabrion "),
+        ([_tabrion(vcs_url=None, vcs_commit=None)], "python tabrion "),
+        # Git pin: a correct record next to a GPL record of another commit and version.
+        (
+            [_tabrion(version="9.9", license_expression="GPL-3.0-only", vcs_commit="0" * 40)],
+            "python tabrion ",
+        ),
+        # Lock pin: a GPL record at a version the lock does not pin.
+        ([{"name": "fastapi", "version": "0.1.0", "license_expression": "GPL-3.0-only"}], "python fastapi "),
+        # Lock pin: the pinned version with another (GPL) license.
+        ([{"name": "fastapi", "version": "@pinned", "license_expression": "GPL-3.0-only"}], "python fastapi "),
+    ],
+)
+def test_one_matching_record_does_not_hide_another_in_any_file_order(second: list[Record], expected: str) -> None:
+    """Delta review D-1: every record of a name is judged, from every --licenses file, in either order."""
+    second = [{**r, "version": _fastapi_version()} if r["version"] == "@pinned" else r for r in second]
+    npm = json.loads(NPM_LOCK.read_text(encoding="utf-8"))
+    lock, pin = LOCK.read_text(encoding="utf-8"), PIN.read_text(encoding="utf-8")
+    good = lock_records()
+    _, _, alone = rb.build([good], lock, pin, npm, "1.0.0", False)
+    assert alone == []
+    _, _, forward = rb.build([good, second], lock, pin, npm, "1.0.0", False)
+    _, _, backward = rb.build([second, good], lock, pin, npm, "1.0.0", False)
+    assert len(forward) == 1 and forward[0].startswith(expected), forward
+    assert forward == backward
+
+
+def test_records_that_agree_across_files_pass() -> None:
+    """The release run passes one file per system; identical records of a name do not fail."""
+    npm = json.loads(NPM_LOCK.read_text(encoding="utf-8"))
+    lock, pin = LOCK.read_text(encoding="utf-8"), PIN.read_text(encoding="utf-8")
+    _, report, failures = rb.build([lock_records(), lock_records()], lock, pin, npm, "1.0.0", False)
+    assert failures == [] and "Policy: **passed**" in report
+
+
+def test_the_collector_never_writes_a_url_with_user_information(tmp_path: Path) -> None:
+    """Delta review D-2: a token in a direct_url.json URL is dropped, and the Tabrion check then fails closed."""
+    sys.path.insert(0, str(SCRIPTS))
+    import collect_licenses as cl
+
+    sys.path.remove(str(SCRIPTS))
+    for number, url in enumerate(
+        ["https://token@github.com/o/r", "https://user:secret@github.com/o/r", "https://:secret@github.com/o/r"]
+    ):
+        info = tmp_path / f"d{number}-1.0.dist-info"
+        info.mkdir()
+        (info / "METADATA").write_text(f"Metadata-Version: 2.4\nName: d{number}\nVersion: 1.0\n", encoding="utf-8")
+        direct = {"url": url, "vcs_info": {"vcs": "git", "commit_id": TABRION_COMMIT}}
+        (info / "direct_url.json").write_text(json.dumps(direct), encoding="utf-8")
+        found = cl._vcs(importlib.metadata.PathDistribution(info))
+        assert found == {"vcs_commit": TABRION_COMMIT}, url
+        assert "secret" not in json.dumps(found) and "token" not in json.dumps(found)
+    records = [r for r in lock_records() if r["name"] != "tabrion"] + [_tabrion(vcs_url=None)]
+    _, _, failures = build(records)
+    assert len(failures) == 1 and failures[0].startswith("python tabrion "), failures
+
+
+def test_only_input_errors_exit_2(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Delta review D-3: malformed input is exit 2; a bug inside the script is not turned into "bad input"."""
+    env = {k: v for k, v in os.environ.items() if k != "SOURCE_DATE_EPOCH"}
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps(lock_records()), encoding="utf-8")
+    for content in ("[]", '{"lockfileVersion": 1}', "\xff"):
+        npm = tmp_path / "package-lock.json"
+        npm.write_text(content, encoding="latin-1")
+        result = run("--licenses", str(good), "--npm-lock", str(npm), "--out", str(tmp_path / "o"), env=env)
+        assert result.returncode == 2 and result.stderr.startswith("release_bom: "), (content, result.stderr)
+
+    def broken(*args: object) -> None:
+        raise TypeError("a bug")
+
+    monkeypatch.setattr(rb, "build", broken)
+    with pytest.raises(TypeError, match="a bug"):
+        rb.main(["--licenses", str(good), "--out", str(tmp_path / "p")])
