@@ -15,7 +15,7 @@ import pytest
 
 from tabrion_studio.security.access import CONTENT_SECURITY_POLICY, SECURITY_HEADERS, AccessMiddleware, session_cookie
 from tabrion_studio.security.sessions import CSRF_HEADER, Sessions
-from tests.support.access import CONTROL_AUTH, HOST, ORIGIN, PORT, Studio, make_studio
+from tests.support.access import CONTROL_AUTH, EXPECTED_SECURITY_HEADERS, HOST, ORIGIN, PORT, Studio, make_studio
 
 pytestmark = pytest.mark.security
 
@@ -60,8 +60,8 @@ def _assert_refused(response: object, status: int, code: str) -> None:
 
 def _assert_security_headers(response: object) -> None:
     headers = response.headers  # type: ignore[attr-defined]
-    for name, value in SECURITY_HEADERS:
-        assert headers.get(name) == value, name
+    for name, value in EXPECTED_SECURITY_HEADERS.items():
+        assert headers.get_list(name) == [value], name
 
 
 def _signed_in_headers(studio: Studio) -> dict[str, str]:
@@ -438,6 +438,12 @@ def test_sessions_are_bounded() -> None:
 # --------------------------------------------------------------------------------------------------------------------
 # STU-T-014 (T-07, SQ-08): strict CSP on every answer, no inline scripts
 # --------------------------------------------------------------------------------------------------------------------
+
+
+def test_security_headers_are_pinned() -> None:
+    """The code's header set is exactly the one written out in the tests (C-1 of stu-016-prep-review.md)."""
+    assert dict(SECURITY_HEADERS) == EXPECTED_SECURITY_HEADERS
+    assert len(SECURITY_HEADERS) == len(EXPECTED_SECURITY_HEADERS)
 
 
 def test_csp_is_strict() -> None:
