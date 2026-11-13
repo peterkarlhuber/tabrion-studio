@@ -473,3 +473,27 @@ describe('the command palette (C-1 of stu-052-td021-review.md)', () => {
     );
   });
 });
+
+describe('theme switch (TD-047)', () => {
+  it('sets the theme with transitions off, and only when it changes', async () => {
+    setThemePreference('light');
+    const root = document.documentElement;
+    const seen: string[] = [];
+    const observer = new MutationObserver((records) => {
+      for (const record of records) seen.push(`${record.attributeName}:${record.oldValue ?? ''}`);
+    });
+    observer.observe(root, {
+      attributes: true,
+      attributeOldValue: true,
+      attributeFilter: ['data-theme', 'data-theme-switching'],
+    });
+    setThemePreference('dark');
+    setThemePreference('dark');
+    await act(async () => undefined);
+    observer.disconnect();
+    // Switching on, the theme changed (old value "light"), switching off; the same theme again changes nothing.
+    expect(seen).toEqual(['data-theme-switching:', 'data-theme:light', 'data-theme-switching:']);
+    expect(root.dataset.theme).toBe('dark');
+    expect(root.hasAttribute('data-theme-switching')).toBe(false);
+  });
+});

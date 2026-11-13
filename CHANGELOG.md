@@ -612,6 +612,9 @@ All notable changes to this project are documented here. The format follows
   `uvicorn` loggers from propagating for the rest of the run; when it ran before `tests/security/test_canary.py`
   (`pytest tests/unit tests/security`), the lifespan test there saw no Uvicorn record and failed. It now passes
   `log_config=None`, like the product.
+- Theme switch: buttons kept their old background for 120 ms (a transition) while their text took the new theme,
+  so for that moment a primary button's label had too little contrast (TD-047, found by axe in WebKit). The theme now
+  switches with transitions off, and text and background change together.
 - The README's install command had no Tabrion pin and failed (`No matching distribution found for tabrion`); a test
   now checks every documented install command. The README status names what is on `master`. The settings page no
   longer says that SQL statements are logged when "Write SQL statements to the log" is on: the setting is saved but

@@ -24,7 +24,7 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
-import { openHarness, type HarnessOptions } from './support';
+import { openHarness, seriousViolations, type HarnessOptions } from './support';
 
 type State = [string, HarnessOptions, ((page: Page) => Promise<void>)?];
 
@@ -318,6 +318,35 @@ test('prefers-reduced-motion turns the transitions off (2.3.3)', async ({ page }
   expect(await duration()).toBe('0ms');
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   expect(await duration()).not.toBe('0ms');
+});
+
+test('a theme switch starts no transition, so text and background change together (1.4.3)', async ({
+  page,
+}) => {
+  // With motion on (TD-047): a button's background used to fade from the old theme while its text took the new one at
+  // once, dark text on dark blue for 120 ms after "Theme: Dark", which axe found in WebKit.
+  await openHarness(page, { scenario: 'editor', path: '/sql', sql: 'select 1' });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.evaluate(() => {
+    const started: string[] = [];
+    (window as unknown as { started: string[] }).started = started;
+    document.addEventListener('transitionrun', (event) => {
+      const target = event.target as Element;
+      started.push(`${event.propertyName} <${target.nodeName}> ${target.className}`);
+    });
+  });
+  const started = () =>
+    page.evaluate(() => (window as unknown as { started: string[] }).started.splice(0));
+  for (const theme of ['Dark', 'Light'] as const) {
+    await page.keyboard.press('Control+k');
+    await expect(page.getByTestId('command-palette')).toBeVisible();
+    await page.keyboard.type(`theme ${theme}`);
+    await page.keyboard.press('Enter');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme.toLowerCase());
+    expect(await page.locator('html').getAttribute('data-theme-switching')).toBeNull();
+    expect(await started()).toEqual([]);
+    expect(await seriousViolations(page)).toEqual([]);
+  }
 });
 
 test('every view has one banner, one main, a named navigation and status bar (1.3.1, 2.4.1)', async ({
