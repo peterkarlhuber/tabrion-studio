@@ -433,6 +433,7 @@ function HarnessDialog({ id }: { id: string }) {
         configFile="alembic.ini"
         scriptLocation="migrations"
         revisionFiles={['0001_parts.py', '0002_measurements.py', '0003_indexes.py']}
+        moduleFiles={['parts/__init__.py', 'parts/models.py']}
         onTrust={done('trust')}
         onReject={done('cancel')}
       />

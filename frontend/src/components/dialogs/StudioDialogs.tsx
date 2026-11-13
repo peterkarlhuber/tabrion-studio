@@ -290,12 +290,14 @@ export function TrustProjectDialog({
  * Trusting the project's migration code (STU-015, threat T-16): reading the Alembic revisions imports the project's
  * revision files, which runs their code. Default: "Don't trust". The file names come from the project, so they are
  * escaped and capped like D-01's entries (U-1); `stale` says that the files changed after the dialog showed them.
+ * The trust covers the project modules in the `prepend_sys_path` folders as well (F-7), so the dialog lists them.
  */
 export function TrustCodeDialog({
   open,
   configFile,
   scriptLocation,
   revisionFiles,
+  moduleFiles = [],
   stale = false,
   onTrust,
   onReject,
@@ -304,6 +306,7 @@ export function TrustCodeDialog({
   configFile: string;
   scriptLocation: string | null;
   revisionFiles: string[];
+  moduleFiles?: string[];
   stale?: boolean;
   onTrust: () => void;
   onReject: () => void;
@@ -344,6 +347,13 @@ export function TrustCodeDialog({
         label={t('dialogs.trustCode.files')}
         items={revisionFiles.map((value) => ({ value }))}
       />
+      {moduleFiles.length > 0 ? (
+        <EntryList
+          testId="trust-code-modules"
+          label={t('dialogs.trustCode.modules')}
+          items={moduleFiles.map((value) => ({ value }))}
+        />
+      ) : null}
     </Dialog>
   );
 }

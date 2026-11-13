@@ -430,6 +430,7 @@ describe('STU-015 trust dialog with project file names (U-1)', () => {
     expect(
       within(within(dialog).getByTestId('trust-code-config')).getAllByRole('listitem'),
     ).toHaveLength(1);
+    expect(within(dialog).queryByTestId('trust-code-modules')).toBeNull(); // no project modules
     const files = within(dialog).getByTestId('trust-code-files');
     expect(within(files).getByRole('heading')).toHaveTextContent(
       `Revision files (${names.length})`,

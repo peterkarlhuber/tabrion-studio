@@ -221,6 +221,7 @@ const PAGES: [string, string, () => ReactElement][] = [
         configFile="alembic.ini"
         scriptLocation="migrations"
         revisionFiles={['0001_parts.py']}
+        moduleFiles={['parts/models.py']}
         stale
         onTrust={noop}
         onReject={noop}
