@@ -1011,7 +1011,12 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `log_sql` is not used yet (TD-013); the README's status and its install command (no Tabrion pin, so it failed);
   `tests/unit/test_user_guide.py` checks that every documented install command carries the pin.
 - **Open:** the tag `v0.1.0` (after G-S1, no publication, G-R), then the install section names the tag instead of a
-  commit; a clean-install run by hand on macOS and Windows and in Firefox, Safari and Edge (TD-047).
+  commit; a clean-install run by hand on macOS and Windows and in Firefox, Safari and Edge (TD-047); the guide's PowerShell
+  commands run by hand on Windows; for 1.0 (03 §8), a clean install with pipx and uv on Linux, macOS and Windows.
+- **Review `stu-017-docs-review.md` (accepted with conditions):** L-1 (npm only warns with `EBADENGINE`), L-2 (the
+  minimum OS versions), L-3 (PowerShell blocks), L-4 (the smoke script hides the sign-in link on every path), L-5
+  (the security page keeps programs running as you out of its promise), I-1, I-2, I-4 and I-5 done; I-3 is a stale
+  comment in `.github/workflows/ci.yml` (separate workflow review); I-7 is the pipx/uv item above.
 
 ### TD-035 · STU-022 DDL: what pg_dump writes and Studio's DDL does not (TABRION STU-022)
 

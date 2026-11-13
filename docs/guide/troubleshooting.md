@@ -6,8 +6,8 @@
 |---|---|
 | `No matching distribution found for tabrion` | Tabrion is not on PyPI: install with `-c constraints/tabrion-integration.txt`, see [Installation](installation.md) |
 | `AssertionError: Candidate is not for this requirement` | your pip is older than 26.1; run `python -m pip install --upgrade "pip>=26.1"` in the virtual environment first |
-| `… static/index.html is missing: build the frontend first with python scripts/build_frontend.py` | the frontend is not built; run `python scripts/build_frontend.py` (needs Node.js 22.22 or later), then install again |
-| `npm ci` fails with an engine error | Node.js is older than 22.22; update it. Node is needed only for the build, never to run Studio |
+| ``… static/index.html is missing: build the frontend first with `python scripts/build_frontend.py` (needs Node.js 22 and npm); the wheel must contain the built frontend (STU-018).`` | the frontend is not built; run `python scripts/build_frontend.py` (with Node.js 22.22 or later), then install again |
+| `npm warn EBADENGINE Unsupported engine` during `python scripts/build_frontend.py`, then the build may fail with another error | Node.js is older than 22.22. npm only warns and goes on, so the build can fail later or succeed by chance; update Node.js and build again. Node is needed only for the build, never to run Studio |
 | `tabrion-studio: command not found` | the virtual environment's `bin` folder (`Scripts` on Windows) is not on your `PATH`; call the command with its full path or add the folder |
 
 ## In the browser

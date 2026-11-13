@@ -13,7 +13,8 @@ All notable changes to this project are documented here. The format follows
   Node.js, sign-in, a SQLite profile connected read-only, explorer and data viewer, `--stop`; passed), and automated
   in `scripts/smoke_wheel.py`, which now installs with the Tabrion pin, signs in, connects a SQLite profile and reads
   its rows (CI `packaging` job on Linux, macOS and Windows). The guide covers installing from a wheel, the residual
-  risks, and troubleshooting while installing, in the views and for `--stop`.
+  risks, and troubleshooting while installing, in the views and for `--stop`; the installation page names the
+  minimum OS versions and has PowerShell commands for Windows.
 
 - TD-034: the banner **Connection lost** with **Reconnect** (08 section 5 "error recovery") above every page that
   holds a connection (explorer with its data and definition tabs, SQL editor, diagnostics, migration status), when a

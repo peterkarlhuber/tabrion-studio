@@ -52,10 +52,19 @@ INSTALL_DOCS = ("README.md", "docs/guide/installation.md")
 PIN = "-c constraints/tabrion-integration.txt"
 
 
+PIN_WINDOWS = "-c constraints\\tabrion-integration.txt"
+#: The fence languages the install docs use; a new one must be added here, so that its block is checked too.
+FENCE_LANGUAGES = {"", "bash", "powershell"}
+
+
+def _fences(text: str) -> list[tuple[str, str]]:
+    """Every fenced code block as (language, body), whatever its language."""
+    return re.findall(r"^```([\w-]*)\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
+
+
 def _install_commands(text: str) -> list[str]:
-    """The ``pip install`` lines of the fenced code blocks that install Studio (not pip itself or the build tool)."""
-    blocks = re.findall(r"^```(?:bash)?\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
-    lines = [line.strip() for block in blocks for line in block.splitlines()]
+    """The ``pip install`` lines of every fenced code block that install Studio (not pip itself or the build tool)."""
+    lines = [line.strip() for _, body in _fences(text) for line in body.splitlines()]
     return [
         line
         for line in lines
@@ -63,10 +72,17 @@ def _install_commands(text: str) -> list[str]:
     ]
 
 
+def test_the_install_docs_use_only_known_fence_languages() -> None:
+    languages = {language for name in INSTALL_DOCS for language, _ in _fences((ROOT / name).read_text("utf-8"))}
+    assert "powershell" in languages  # the Windows blocks were read
+    assert languages <= FENCE_LANGUAGES
+
+
 def test_every_install_command_carries_the_tabrion_pin() -> None:
     commands = [command for name in INSTALL_DOCS for command in _install_commands((ROOT / name).read_text("utf-8"))]
-    assert len(commands) >= 4  # README, the guide's commit install, the wheel install and the update were read
-    assert [command for command in commands if PIN not in command] == []
+    # README, the guide's commit install (bash and PowerShell), the wheel install (both) and the update were read.
+    assert len(commands) >= 6
+    assert [command for command in commands if PIN not in command and PIN_WINDOWS not in command] == []
     assert (ROOT / "constraints" / "tabrion-integration.txt").is_file()
 
 

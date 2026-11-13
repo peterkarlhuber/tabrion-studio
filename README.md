@@ -40,7 +40,8 @@ python -m venv ~/.venvs/tabrion-studio
 ```
 
 Tabrion is not on PyPI either, so the install needs the constraints file; a plain `pip install .` fails. The
-[installation guide](docs/guide/installation.md) also covers Windows, building a wheel, updating and uninstalling.
+[installation guide](docs/guide/installation.md) also covers building a wheel, updating and uninstalling, and gives
+PowerShell commands for Windows.
 
 ## Usage
 

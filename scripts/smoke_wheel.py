@@ -81,9 +81,17 @@ def sqlite_round_trip(link: str, database: Path) -> str:
         headers={"Origin": base, "Content-Type": "application/json"},
         method="POST",
     )
-    with _OPENER.open(request, timeout=10) as response:
-        cookie = response.headers["Set-Cookie"].split(";", 1)[0]
-        csrf = json.loads(response.read())["csrf"]
+    try:
+        with _OPENER.open(request, timeout=10) as response:
+            set_cookie = response.headers.get("Set-Cookie")
+            doc = json.loads(response.read())
+    except (urllib.error.URLError, ValueError) as exc:
+        # The token is in the request body, never in this message.
+        sys.exit(f"smoke: the sign-in with the one-time link failed: {exc}")
+    if not set_cookie or not isinstance(doc, dict) or not isinstance(doc.get("csrf"), str):
+        sys.exit("smoke: the sign-in answered without a session cookie or a CSRF value")
+    cookie = set_cookie.split(";", 1)[0]
+    csrf = doc["csrf"]
     profiles = _api(f"{base}/api/profiles", cookie, csrf)
     digest = profiles["user_file"]["digest"]
     profile = {"name": "smoke", "engine": "sqlite", "environment": "dev", "path": str(database)}
@@ -99,6 +107,11 @@ def sqlite_round_trip(link: str, database: Path) -> str:
     if "Aluminium" not in rows or "Brass" not in rows:
         sys.exit(f"smoke: the rows of parts were not read: {rows[:300]}")
     return "signed in, saved a SQLite profile, connected it read-only, read its catalog and the rows of parts"
+
+
+def _redacted(log: Path) -> str:
+    """The server's output with the one-time sign-in link hidden (every path that prints it)."""
+    return _LINK.sub("do not share): <one-time sign-in link>", log.read_text(encoding="utf-8", errors="replace"))
 
 
 def _step(message: str) -> None:
@@ -203,8 +216,7 @@ def main(argv: list[str] | None = None) -> int:
             finally:
                 if process.poll() is None:
                     process.kill()
-        printed = _LINK.sub("do not share): <one-time sign-in link>", log.read_text(encoding="utf-8", errors="replace"))
-        _step(printed.strip().replace("\n", " | "))
+        _step(_redacted(log).strip().replace("\n", " | "))
     _step("ok")
     return 0
 
@@ -213,7 +225,7 @@ def _wait_ready(state: Path, process: subprocess.Popen[bytes], log: Path) -> str
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            sys.exit(f"smoke: tabrion-studio exited with {process.returncode}: {log.read_text(errors='replace')}")
+            sys.exit(f"smoke: tabrion-studio exited with {process.returncode}: {_redacted(log)}")
         infos = sorted(state.glob("studio-*.json")) if state.is_dir() else []
         if infos:
             try:
@@ -224,7 +236,7 @@ def _wait_ready(state: Path, process: subprocess.Popen[bytes], log: Path) -> str
             except (OSError, ValueError, KeyError):
                 pass
         time.sleep(0.1)
-    sys.exit(f"smoke: not ready within 30 s: {log.read_text(errors='replace')}")
+    sys.exit(f"smoke: not ready within 30 s: {_redacted(log)}")
 
 
 if __name__ == "__main__":
