@@ -27,12 +27,12 @@ export async function openHarness(page: Page, options: HarnessOptions = {}): Pro
   }
 }
 
-/** WCAG 2.0-2.2 A and AA rules, colour contrast included; the serious and critical violations. */
+/** WCAG 2.0-2.2 A and AA rules, color contrast included; the serious and critical violations. */
 export async function seriousViolations(page: Page): Promise<string[]> {
   const result = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'])
     .analyze();
-  // The colour contrast rule must really have judged the page (it is skipped silently without a layout).
+  // The color contrast rule must really have judged the page (it is skipped silently without a layout).
   expect(
     [...result.passes, ...result.violations].some((rule) => rule.id === 'color-contrast'),
   ).toBe(true);

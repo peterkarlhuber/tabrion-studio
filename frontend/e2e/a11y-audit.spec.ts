@@ -18,7 +18,7 @@
  * detail and the export dialog; the explorer's Data, DDL and Policies tabs and "Count rows"; the data viewer with
  * filters and the cell detail; the diagnostics result with its report buttons; D-02 from the connection manager.
  *
- * axe itself (with colour contrast, light and dark, en and de) is a11y.spec.ts and the page suites (editor, export,
+ * axe itself (with color contrast, light and dark, en and de) is a11y.spec.ts and the page suites (editor, export,
  * explorer, explorer-definitions, viewer, diagnostics, connections); the dialogs' focus rules are dialogs.spec.ts.
  * The audit report is docs/architecture/accessibility.md.
  */
@@ -183,7 +183,7 @@ async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out: string[] = [];
     const selector =
-      'a[href], button, input:not([type="hidden"]), select, textarea, summary, [role="tab"], [role="option"]';
+      'a[href], button, input:not([type="hidden"]), select, textarea, summary, [role="tab"], [role="option"], [role="treeitem"], [role="gridcell"]';
     for (const element of Array.from(document.querySelectorAll<HTMLElement>(selector))) {
       if (element.closest('[inert]')) continue;
       let box = element.getBoundingClientRect();
@@ -480,7 +480,10 @@ test('a click beside a focused link or button does not activate it through its t
  * marker put first in the body (after blur() Chromium would go on from the blurred element) and ends when
  * the focus leaves the page or comes back to a stop it passed (a modal dialog's focus trap).
  */
-async function walkFocus(page: Page, stops: number): Promise<{ ids: string[]; inModal: boolean }> {
+async function walkFocus(
+  page: Page,
+  stops: number,
+): Promise<{ ids: string[]; inModal: boolean; end: 'left' | 'cycle' | 'cap' }> {
   await page.evaluate(() => {
     const start = document.createElement('span');
     start.tabIndex = -1;
@@ -490,12 +493,13 @@ async function walkFocus(page: Page, stops: number): Promise<{ ids: string[]; in
   });
   const ids: string[] = [];
   let inModal = true;
+  let end: 'left' | 'cycle' | 'cap' = 'cap';
   for (let step = 0; step < stops; step += 1) {
     await page.keyboard.press('Tab');
     const focus = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null;
-      if (el === null || el === document.body) return null;
-      if (el.dataset.auditStop !== undefined) return null;
+      if (el === null || el === document.body) return 'left' as const;
+      if (el.dataset.auditStop !== undefined) return 'cycle' as const;
       el.dataset.auditStop = '';
       // The SQL editor lives in a shadow root on its host; its frame draws the ring (:focus-within).
       const ringed = el.shadowRoot !== null ? (el.parentElement ?? el) : el;
@@ -509,13 +513,16 @@ async function walkFocus(page: Page, stops: number): Promise<{ ids: string[]; in
         inModal: el.closest('[aria-modal="true"]') !== null,
       };
     });
-    if (focus === null) break;
+    if (typeof focus === 'string') {
+      end = focus;
+      break;
+    }
     ids.push(focus.id);
     inModal &&= focus.inModal;
     expect(focus.ring, `ring: ${focus.id}`).toBe(true);
     expect(focus.inView, `in view: ${focus.id}`).toBe(true);
   }
-  return { ids, inModal: inModal && ids.length > 0 };
+  return { ids, inModal: inModal && ids.length > 0, end };
 }
 
 for (const [name, options, then] of WORK_PAGES) {
@@ -528,6 +535,8 @@ for (const [name, options, then] of WORK_PAGES) {
     if (modal > 0) {
       // An open modal dialog keeps the focus: every stop is in it (2.4.3), and it has its controls.
       expect(walk.inModal, walk.ids.join(', ')).toBe(true);
+      // ... and Tab comes back to a stop it passed instead of leaving the dialog for the page or the browser.
+      expect(walk.end, walk.ids.join(', ')).toBe('cycle');
       expect(walk.ids.length).toBeGreaterThanOrEqual(3);
     } else {
       expect(walk.ids.length).toBeGreaterThanOrEqual(10);
@@ -565,8 +574,13 @@ for (const [name, options, then] of WORK_PAGES) {
         })
         .map((el) => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}"`),
     );
+    const width = await page.evaluate(() => [
+      document.documentElement.scrollWidth,
+      document.documentElement.clientWidth,
+    ]);
     expect(cut).toEqual([]);
     expect(await page.evaluate(untitledEllipses, true)).toEqual([]);
+    expect(width[0]).toBeLessThanOrEqual(width[1] ?? 0);
   });
 
   test(`${name}: nothing moves with prefers-reduced-motion (2.3.3)`, async ({ page }) => {
@@ -588,42 +602,56 @@ for (const [name, options, then] of WORK_PAGES) {
   });
 }
 
-/** The text of every live region on the page (role status or alert, or aria-live other than off). */
-function liveText(): string {
-  return Array.from(
-    document.querySelectorAll<HTMLElement>(
-      '[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])',
-    ),
-  )
-    .map((el) => el.textContent ?? '')
-    .join(' | ');
+/**
+ * The text of the live region that holds the element with this test id (the element itself or an ancestor with
+ * role status or alert, or aria-live other than off), or null when the element is in none.
+ */
+function liveRegionText(testId: string): string | null {
+  const element = document.querySelector(`[data-testid="${testId}"]`);
+  const region = element?.closest(
+    '[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])',
+  );
+  return region === null || region === undefined ? null : (region.textContent ?? '');
 }
 
 test('the result of each action is said in a live region (4.1.3)', async ({ page }) => {
-  test.setTimeout(60_000);
+  const live = (testId: string) => page.evaluate(liveRegionText, testId);
   // A query's result.
   await open(page, { scenario: 'editor', path: '/sql', sql: QUERY });
   await page.getByTestId('editor-run').click();
-  await expect.poll(() => page.evaluate(liveText)).toContain('3 rows');
-  // The export's progress and end.
+  await expect.poll(() => live('result-announce')).toContain('3 rows');
+  // The export's progress in its dialog, and its end in the editor's notice.
   await page.getByTestId('export-open').click();
-  await page
-    .getByRole('dialog', { name: 'Export' })
-    .getByRole('button', { name: 'Export', exact: true })
-    .click();
-  await expect.poll(() => page.evaluate(liveText)).toMatch(/Export saved|Exporting/);
-  // A page of the data viewer and a row count.
+  const dialog = page.getByRole('dialog', { name: 'Export' });
+  // The dialog closes when the export is saved, so its region is recorded while it is there.
+  await page.evaluate(() => {
+    const said: string[] = [];
+    (window as unknown as { auditSaid: string[] }).auditSaid = said;
+    new MutationObserver(() => {
+      const region = document
+        .querySelector('[data-testid="export-progress"]')
+        ?.closest('[role="status"], [aria-live]:not([aria-live="off"])');
+      const text = region?.textContent ?? '';
+      if (text !== '' && said.at(-1) !== text) said.push(text);
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  });
+  await dialog.getByRole('button', { name: 'Export', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { auditSaid: string[] }).auditSaid))
+    .toContainEqual(expect.stringMatching(/^Exporting/));
+  await expect.poll(() => live('editor-notice')).toContain('Export saved');
+  // A row count and a page of the data viewer.
   await open(page, { scenario: 'explorer', path: '/explorer' });
   await explorerPart(page);
   await page.getByRole('button', { name: 'Count rows' }).click();
-  await expect.poll(() => page.evaluate(liveText)).toMatch(/\b1\b/);
+  await expect.poll(() => live('row-count-result')).toMatch(/^1,234 rows \(counted/);
   await page.getByTestId('explorer-show-data').click();
-  await expect.poll(() => page.evaluate(liveText)).toContain('Rows 1–100');
+  await expect.poll(() => live('viewer-status')).toContain('Rows 1–100');
   // A diagnosis.
   await open(page, { scenario: 'diagnostics', path: '/diagnostics' });
   await page.getByRole('button', { name: 'Run diagnosis' }).click();
   await expect(page.getByTestId('diagnostics-finding')).toHaveCount(4);
-  await expect.poll(() => page.evaluate(liveText)).toMatch(/1 error/);
+  await expect.poll(() => live('diagnostics-message')).toMatch(/1 error/);
   // A connection test.
   await open(page, { scenario: 'connections', path: '/connections' });
   await page.getByTestId('connection-item').nth(1).click();
@@ -631,5 +659,5 @@ test('the result of each action is said in a live region (4.1.3)', async ({ page
     .getByTestId('connection-detail')
     .getByRole('button', { name: 'Test connection' })
     .click();
-  await expect.poll(() => page.evaluate(liveText)).toContain('Test failed');
+  await expect.poll(() => live('connection-outcome')).toContain('Test failed');
 });
