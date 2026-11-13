@@ -597,7 +597,17 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "Not a script path",
-        "A script is a .sql file inside the project folder, named by a relative path without links or hidden folders.",
+        "A script is a .sql file inside the project folder, named by a relative path of plain names: no hidden"
+        " folder, no device name such as NUL or COM1, no short name such as GIT~1, no name that ends in a dot.",
+    ),
+    "studio.script_link": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Script behind a link",
+        "The script or a folder on its path is a link: a symbolic link, a junction, a hard-linked file or a cloud"
+        " placeholder such as a OneDrive Files On-Demand folder. Studio opens and saves only plain files in plain"
+        " folders of the project.",
+        "Copy the script into a plain folder of the project, or move the project out of the synced folder.",
     ),
     "studio.script_not_found": Entry(404, ProblemKind.NOT_FOUND, "Script not found", "There is no such script."),
     "studio.script_unreadable": Entry(422, ProblemKind.REQUEST, "Script not readable", "The script is not UTF-8 text."),
@@ -623,6 +633,34 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.NOT_FOUND,
         "Folder not found",
         "The folder of the script does not exist; Studio creates no folders.",
+    ),
+    "studio.script_permission_denied": Entry(
+        403,
+        ProblemKind.REQUEST,
+        "Script not accessible",
+        "The system does not let Studio read or write this script or its folder.",
+        "Check the permissions of the file and its folder, or whether the drive is read-only.",
+    ),
+    "studio.script_locked": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Script in use",
+        "Another program holds the script open, so Studio cannot replace it.",
+        "Close the script in the other program and save again.",
+    ),
+    "studio.script_disk_full": Entry(
+        507,
+        ProblemKind.REQUEST,
+        "Disk full",
+        "There is no room left on the drive for the script.",
+        "Free some space and save again; the script on disk is unchanged.",
+    ),
+    "studio.script_write_failed": Entry(
+        500,
+        ProblemKind.REQUEST,
+        "Script not saved",
+        "The system refused to write the script; the script on disk is unchanged.",
+        "Try again, or save it somewhere else with Download.",
     ),
     "studio.internal_error": Entry(
         500,

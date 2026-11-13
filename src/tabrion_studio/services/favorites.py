@@ -5,7 +5,8 @@ profile's favorite holds in every project, a project profile's only in its proje
 profile's target or secret; the page joins them with ``GET /api/profiles``, and only ids of profiles that exist now
 (a project's only while its file is trusted) are answered or accepted.
 
-* A favorite is set and cleared by the user (``PUT /api/favorites``).
+* A favorite is set and cleared by the user (``PUT /api/favorites``); at most :data:`MAX_FAVORITES` of the profiles
+  a project shows (its own and the user's that exist now).
 * A profile is "recently opened" when ``POST /api/connections`` opened (or returned) its connection; the
   :data:`MAX_RECENT` newest per scope are kept.
 """
@@ -82,7 +83,8 @@ class Favorites:
         if not isinstance(profile_id, str) or not isinstance(favorite, bool):
             raise FavoritesError("studio.invalid_request")
         scope = scope_of(profile_id, self.project_key)
-        if scope is None or profile_id not in self.profile_ids():
+        existing = self.profile_ids()
+        if scope is None or profile_id not in existing:
             raise FavoritesError("studio.profile_not_found")
         now = self.clock()
 
@@ -90,7 +92,16 @@ class Favorites:
             if not favorite:
                 connection.execute("DELETE FROM favorites WHERE scope = ? AND profile_id = ?", (scope, profile_id))
                 return
-            (count,) = connection.execute("SELECT count(*) FROM favorites").fetchone()
+            # The limit counts what this project shows: favorites of other projects and of profiles that are gone
+            # take no place.
+            rows = connection.execute(
+                "SELECT scope, profile_id FROM favorites WHERE scope IN (?, ?)", self._scopes()
+            ).fetchall()
+            count = sum(
+                1
+                for row_scope, row_id in rows
+                if row_id in existing and row_scope == scope_of(row_id, self.project_key)
+            )
             known = connection.execute(
                 "SELECT 1 FROM favorites WHERE scope = ? AND profile_id = ?", (scope, profile_id)
             ).fetchone()

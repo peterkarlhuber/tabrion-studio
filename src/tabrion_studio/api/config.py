@@ -27,6 +27,7 @@ All of them sit behind the access middleware (session cookie and CSRF header).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
 import logging
@@ -242,7 +243,11 @@ def _user_name(config: Configuration, profile_id: object) -> str:
     raise SaveError("studio.profile_not_found")
 
 
-def add_config_routes(app: FastAPI, config: Configuration) -> None:
+def add_config_routes(
+    app: FastAPI, config: Configuration, *, settings_saved: Callable[[], object] | None = None
+) -> None:
+    """``settings_saved`` runs after ``settings.toml`` was written (the history drops what the new retention
+    expires)."""
     load_project = config.load_project
 
     @app.get("/api/project")
@@ -384,6 +389,8 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
         settings = form_settings(doc.get("settings"), current)
         new_digest = config.user.save_settings(settings, expected, overwrite=overwrite)
         logger.info("settings saved", extra={"event": "studio.settings_saved"})
+        if settings_saved is not None:
+            settings_saved()
         return JSONResponse({"digest": new_digest, "settings": settings.to_dict()})
 
     @app.post("/api/profiles", status_code=201)

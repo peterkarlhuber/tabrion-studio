@@ -16,6 +16,17 @@ All notable changes to this project are documented here. The format follows
   byte-exact with the line endings kept, and bound to what the page read); `?cached_only=true` on the catalog, so completion never reads a PROD catalog
   unasked. New problem codes `studio.state_unavailable`, `studio.favorites_full`, `studio.catalog_not_loaded` and
   `studio.script_*`.
+- STU-020 review fixes (backend): the history's retention period now holds on disk while nothing is recorded (the
+  history off, an idle project): expired entries are deleted, with a checkpoint, when Studio starts, when the history
+  is read and when the settings are saved. Script paths refuse Windows device names (also with an extension), 8.3
+  short names, names that end in a dot and format characters (bidi, zero-width) on every system; the file is reached
+  through folder descriptors with `O_NOFOLLOW` on POSIX (07 TM-04), and on Windows the opened handle must be the
+  checked file; hard-linked files are refused. A save keeps the file's byte order mark and holds one lock from the
+  digest check to the replace. Links, hard links and reparse-point folders (OneDrive placeholders) answer the new
+  `studio.script_link`, and the listing counts what it skipped (`skipped_links`); refusals of the file system answer
+  `studio.script_permission_denied`, `studio.script_locked`, `studio.script_disk_full` or
+  `studio.script_write_failed` instead of an internal error. Recording a history entry waits at most 250 ms for
+  another instance's write lock; the checkpoint result is checked and retried; the 100 favorites count per project.
 - STU-017 docs (no tag, no release): the documentation checklist `docs/development/docs-checklist.md` maps every
   requirement of the package (installation, start, security model, troubleshooting, the feature pages of TD-023) to
   its page and check, and records the clean-install test: on Linux by hand from a locally built wheel (start without

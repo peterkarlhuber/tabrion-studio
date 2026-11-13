@@ -273,6 +273,8 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     key = project_key(options.project)
     state = StateStore(options.state_dir)
     history = History(state, key, configuration.limits)
+    # Retention holds on disk also while nothing new is recorded (the history off, an idle project): F-1.
+    history.purge()
     favorites = Favorites(state, key, lambda: {entry.id for entry in configuration.entries()})
     runtime = Runtime(
         config=configuration,

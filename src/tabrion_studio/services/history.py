@@ -12,9 +12,15 @@ interface has no parameter for them. What an entry keeps:
   problem code of a failed query (a fixed ``studio.*`` or ``db.<kind>`` code, never a server message);
 * when it finished.
 
-The ``[history]`` settings decide: ``enabled = false`` records nothing (the entries already kept stay until they
-expire or are deleted), and ``retention_days`` (30 by default) drops older entries; at most :data:`MAX_ENTRIES` are
-kept, the oldest go first. A delete overwrites the rows (``secure_delete``) and checkpoints the write-ahead log.
+The ``[history]`` settings decide: ``enabled = false`` records nothing, and ``retention_days`` (30 by default) is
+how long an entry is kept; at most :data:`MAX_ENTRIES` are kept, the oldest go first. Retention holds on disk whether
+or not anything is recorded: expired entries are deleted from the file (:meth:`History.purge`) when Studio starts,
+whenever the history is read, when the settings are saved and when an entry is recorded. Turning the history off
+keeps the entries already there until they expire or the user deletes them. A delete, the purge included, overwrites
+the rows (``secure_delete``) and checkpoints the write-ahead log.
+
+Recording waits at most :data:`RECORD_BUSY_MS` for another Studio instance's write lock and otherwise keeps no entry:
+the query has ended already (its state is published before), and a cancel is never held up by the history.
 
 A history entry is the user's own SQL text, which can hold sensitive literals (asset A5): it lives only in the state
 database (0600), never in a log record (the engine logs no SQL), and is shown only to the session that owns the
@@ -34,7 +40,7 @@ from typing import Any
 from tabrion_studio.config.schema import Settings
 from tabrion_studio.services.state import StateStore, StateUnavailable, scope_of
 
-__all__ = ["DEFAULT_PAGE", "MAX_ENTRIES", "MAX_PAGE", "MAX_SQL_CHARS", "History", "HistoryError"]
+__all__ = ["DEFAULT_PAGE", "MAX_ENTRIES", "MAX_PAGE", "MAX_SQL_CHARS", "RECORD_BUSY_MS", "History", "HistoryError"]
 
 logger = logging.getLogger("tabrion_studio.history")
 
@@ -44,6 +50,8 @@ MAX_SQL_CHARS = 64 * 1024
 MAX_ENTRIES = 5_000
 DEFAULT_PAGE = 100
 MAX_PAGE = 500
+#: How long recording a finished query waits for another instance's write lock.
+RECORD_BUSY_MS = 250
 #: A search text longer than this finds nothing useful and only costs time.
 MAX_QUERY_CHARS = 200
 _STATES = frozenset({"done", "failed", "canceled"})
@@ -116,7 +124,7 @@ class History:
         names = json.dumps(sorted(set(param_names)))
         text = sql[:MAX_SQL_CHARS]
 
-        def insert(connection: sqlite3.Connection) -> None:
+        def insert(connection: sqlite3.Connection) -> int:
             connection.execute(
                 "INSERT INTO history (scope, profile_id, environment, engine, sql, sql_truncated, param_names, state,"
                 " row_count, elapsed_ms, code, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -135,20 +143,44 @@ class History:
                     now,
                 ),
             )
-            connection.execute("DELETE FROM history WHERE finished_at < ?", (cutoff,))
-            connection.execute(
+            expired = connection.execute("DELETE FROM history WHERE finished_at < ?", (cutoff,)).rowcount
+            dropped = connection.execute(
                 "DELETE FROM history WHERE id NOT IN (SELECT id FROM history ORDER BY id DESC LIMIT ?)",
                 (MAX_ENTRIES,),
-            )
+            ).rowcount
+            return int(expired) + int(dropped)
 
         try:
-            self.store.write(insert)
+            deleted = self.store.write(insert, busy_timeout_ms=RECORD_BUSY_MS)
         except StateUnavailable:
             if not self._warned:
                 self._warned = True
                 logger.warning("query history unavailable", extra={"event": "studio.history_unavailable"})
             return False
+        if deleted:
+            self.store.checkpoint()
         return True
+
+    def purge(self) -> int:
+        """Delete the entries the retention period expires, of every project (never raises); the number deleted.
+
+        Runs whether or not the history is on: the retention period is a promise about the file, not about the
+        page."""
+        cutoff = self.clock() - self.settings().history_retention_days * _DAY_S
+        try:
+            deleted = int(
+                self.store.write(
+                    lambda connection: (
+                        connection.execute("DELETE FROM history WHERE finished_at < ?", (cutoff,)).rowcount
+                    )
+                )
+            )
+        except StateUnavailable:
+            return 0
+        if deleted:
+            self.store.checkpoint()
+            logger.info("history expired", extra={"event": "studio.history_expired", "count": deleted})
+        return deleted
 
     # Reading
 
@@ -172,6 +204,7 @@ class History:
             raise HistoryError("studio.invalid_request")
         settings = self.settings()
         cutoff = self.clock() - settings.history_retention_days * _DAY_S
+        self.purge()
         scope = None
         if profile_id is not None:
             scope = scope_of(profile_id, self.project_key)
