@@ -44,9 +44,10 @@ $py = "$env:USERPROFILE\.venvs\tabrion-studio\Scripts\python.exe"
 ```
 
 The first install takes every runtime dependency from `constraints/runtime-lock.txt`: exact versions, and pip checks
-the SHA-256 of every file it downloads (`--require-hashes`; wheels only, so nothing is built on your computer). The
-second installs Studio and Tabrion without dependencies, so nothing else comes from PyPI, and `pip check` confirms
-that the lock was complete. CI installs the same way and tests exactly these versions (security review F-6,
+the SHA-256 of every file it downloads (`--require-hashes`; wheels only, so no dependency is built on your
+computer). The second installs Studio and Tabrion without dependencies, so the runtime dependencies come only from
+the lock, and `pip check` confirms that the lock was complete. pip still builds Studio and Tabrion themselves from
+source, with their build backends fetched from PyPI without hashes (build time only; nothing of it is installed). CI installs the same way and tests exactly these versions (security review F-6,
 [CI](../development/ci.md#hashed-runtime-pins)). The lock is one tested set inside the ranges of `pyproject.toml`;
 `pip install . -c constraints/tabrion-integration.txt` works too, but resolves the dependencies afresh from PyPI,
 without hashes.
@@ -140,7 +141,8 @@ python scripts/build_frontend.py
 On Windows, run the same three commands with `& $py` as above and `\` in the paths.
 
 The first command moves the dependencies to the pins of the new commit. The second names the Tabrion pin itself, so
-a newer Studio commit that moves it also installs the new Tabrion.
+a newer Studio commit that moves it also installs the new Tabrion. A package that the new lock no longer lists stays
+installed; that is harmless, and a fresh virtual environment drops it.
 
 Stop a running Studio first (`tabrion-studio --stop` in the project folder); a running server keeps the old code.
 

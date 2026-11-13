@@ -29,7 +29,7 @@ Exit codes: 0 clean, 1 findings, 2 usage or tool errors.
 from __future__ import annotations
 
 import argparse
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 import importlib.metadata
 import os
@@ -162,10 +162,23 @@ def check(root: Path = ROOT) -> list[str]:
     return problems
 
 
-def _closure(root_name: str) -> tuple[dict[str, str], list[str]]:
-    """Installed name -> version for ``root_name`` and its runtime requirements, transitively, with extras."""
+#: An installed distribution's version and requirement strings, or None when it is not installed.
+Lookup = Callable[[str], "tuple[str, list[str]] | None"]
+
+
+def installed_distribution(name: str) -> tuple[str, list[str]] | None:
+    try:
+        distribution = importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    return distribution.version, list(distribution.requires or [])
+
+
+def _closure(root_name: str, lookup: Lookup) -> tuple[dict[str, str], set[str]]:
+    """Installed name -> version for ``root_name`` and its runtime requirements, transitively, with extras; and the
+    names that are required but not installed."""
     found: dict[str, str] = {}
-    problems: list[str] = []
+    missing: set[str] = set()
     queue: list[tuple[str, frozenset[str]]] = [(root_name, frozenset())]
     done: set[tuple[str, frozenset[str]]] = set()
     while queue:
@@ -173,28 +186,28 @@ def _closure(root_name: str) -> tuple[dict[str, str], list[str]]:
         if (name, extras) in done:
             continue
         done.add((name, extras))
-        try:
-            distribution = importlib.metadata.distribution(name)
-        except importlib.metadata.PackageNotFoundError:
-            problems.append(f"{name} is required but not installed")
+        distribution = lookup(name)
+        if distribution is None:
+            missing.add(name)
             continue
-        found[canonicalize_name(name)] = distribution.version
-        for text in distribution.requires or []:
+        version, requires = distribution
+        found[canonicalize_name(name)] = version
+        for text in requires:
             requirement = Requirement(text)
             if requirement.marker is not None and not any(
                 requirement.marker.evaluate({"extra": extra}) for extra in (extras or {""})
             ):
                 continue
             queue.append((canonicalize_name(requirement.name), frozenset(requirement.extras)))
-    return found, problems
+    return found, missing
 
 
-def check_installed(root: Path = ROOT) -> list[str]:
+def check_installed(root: Path = ROOT, lookup: Lookup = installed_distribution) -> list[str]:
     """Problems between this environment's runtime closure of tabrion-studio and the lock (empty list = equal)."""
     pins, problems = read_lock((root / LOCK).read_text(encoding="utf-8"))
     applicable = {pin.name: pin for pin in pins if pin.applies()}
-    installed, missing = _closure("tabrion-studio")
-    problems += missing
+    installed, missing = _closure("tabrion-studio", lookup)
+    problems += [f"{name} is required but not installed" for name in sorted(missing)]
     for name, version in sorted(installed.items()):
         if name in UNLOCKED:
             continue
@@ -204,7 +217,8 @@ def check_installed(root: Path = ROOT) -> list[str]:
         elif Version(version) != Version(pin.version):
             problems.append(f"{name} is installed at {version}, {LOCK}:{pin.line} pins {pin.version}")
     for name, pin in sorted(applicable.items()):
-        if name not in installed:
+        # A required pin that is not installed is reported above, not as stale (review L-5).
+        if name not in installed and name not in missing:
             problems.append(f"{LOCK}:{pin.line}: {name} applies here but nothing requires it (stale pin)")
     return problems
 

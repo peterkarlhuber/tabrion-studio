@@ -13,8 +13,10 @@ There is no release workflow, and no PyPI release is needed for now: distributio
 `tests/security/test_workflows.py` fails if a workflow gains a publish step or `id-token: write`.
 
 Rules: every action is pinned by its full commit SHA, the default token is read-only, checkouts do not persist
-credentials (all enforced by `tests/security/test_workflows.py`). `ci-ok.yml` runs from the default branch, so a pull
-request cannot change the gate that judges it; it starts working once it is on master.
+credentials, and every workflow file parses as YAML and has jobs (all enforced by `tests/security/test_workflows.py`;
+`ci_ok.py --self-check` reads the files as text and does not notice a file that does not parse). `ci-ok.yml` runs
+from the default branch, so a pull request cannot change the gate that judges it; it starts working once it is on
+master.
 
 ## Workflow-change gate (review F-03, R-2, R-3)
 

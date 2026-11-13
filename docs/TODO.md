@@ -59,7 +59,7 @@
 | TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR #54), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI: its SQLite part runs and is required since the CI e2e-list PR, its PostgreSQL part not yet) | P2 | Open (STU-010 page PR #43) |
 | TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced; the viewer suites are required in CI since the CI e2e-list PR) | P2 | Open (STU-013 page PR #52) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
-| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8); install and test against a hashed runtime lock (security review F-6) | P2 | Done in the f6-lock PR (`constraints/runtime-lock.txt`, `scripts/runtime_lock.py`; every CI install and build uses the hashed pins); needs the workflow-change review and its label before merge; open: refreshing the lock (by hand, about monthly) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8); install and test against a hashed runtime lock (security review F-6) | P2 | Done in the f6-lock PR (`constraints/runtime-lock.txt`, `scripts/runtime_lock.py`; every CI install and build uses the hashed pins); needs the workflow-change review and its label before merge; open: refreshing the lock (by hand, about monthly), a non-required scheduled job that tests the newest versions inside the ranges (review of PR #76), the lock install on macOS and Windows only with Python 3.13 (review L-7, accepted) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
 | TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
@@ -1452,7 +1452,13 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request. Refresh the runtime
   lock (`python scripts/runtime_lock.py update -- --upgrade`) about once a month and whenever `dependency audit`
   reports an advisory against a pin; Dependabot is not relied on for it. The `pip install --upgrade "pip>=26.1"` step
-  of the guide and of `smoke_wheel.py` is not hashed.
+  of the guide and of `smoke_wheel.py` is not hashed, and pip builds Studio and Tabrion with build backends fetched
+  without hashes (build time only; review L-1).
+- **Later (review of PR #76):** CI now tests only the locked set, so a newer release inside the `pyproject.toml`
+  ranges that breaks Studio shows up only at the next lock update. Add a non-required scheduled job (nightly, Linux
+  with Python 3.11 and 3.14) that installs without the lock, prints `pip freeze` and runs `pytest -m "not
+  packaging"`; optionally a weekly lowest-direct run for the lower bounds. CI installs the lock on macOS and Windows
+  only with Python 3.13 (L-7, accepted: only the `< 3.12` markers differ by version, and Linux 3.11 covers them).
 - **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
   (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
   `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.

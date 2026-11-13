@@ -491,7 +491,8 @@ All notable changes to this project are documented here. The format follows
   commit SHA. `scripts/runtime_lock.py check` keeps the lock inside the unchanged `pyproject.toml` ranges and in step
   with `build-constraints.txt`, `check-installed` fails a CI job whose runtime closure differs from the lock, and
   `update` regenerates it (`docs/development/ci.md`, "Hashed runtime pins"). The CI wheel builds now take the build
-  backend from the hashed `build-constraints.txt`.
+  backend from the hashed `build-constraints.txt`. `tests/security/test_workflows.py` now loads every workflow with PyYAML
+  (a dev dependency), because an unparsable `ci.yml` ran no job and no check noticed (review of PR #76, B-1/M-1).
 
 - STU-016: the independent security review was re-run on master `2a8a229` and accepted (F-1..F-4, F-8, F-9 fixed in
   PR #65 and PR #66). `security-review-prep.md` and `docs/TODO.md` record this and the owner decisions still open
