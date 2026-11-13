@@ -162,6 +162,18 @@ def test_a_pin_without_a_record_fails_and_a_marker_pin_needs_strict() -> None:
     assert len(failures) == 1 and "tabrion" in failures[0] and "no license record" in failures[0]
 
 
+def test_a_record_of_a_package_the_lock_does_not_pin_fails() -> None:
+    """Re-check R-1: a record outside the lock is not ignored (with or without --strict); Studio's own is allowed."""
+    studio: Record = {"name": "tabrion_studio", "version": "1.0.0", "license_expression": "MIT"}
+    _, _, failures = build([*lock_records(), studio])
+    assert failures == []
+    for strict in (False, True):
+        extra: Record = {"name": "Not_Pinned", "version": "2.0", "license_expression": "MIT"}
+        _, report, failures = build([*lock_records(), studio, extra], strict=strict)
+        assert failures == ["python not-pinned 2.0: MIT: a license record of a package the lock does not pin"]
+        assert "Policy: **FAILED** (1 finding(s))" in report and "not-pinned 2.0" in report
+
+
 def test_frontend_copyleft_and_missing_licenses_fail() -> None:
     lock = json.loads(NPM_LOCK.read_text(encoding="utf-8"))
     lock["packages"]["node_modules/copyleft-probe"] = {"version": "1.0.0", "license": "GPL-3.0-only"}

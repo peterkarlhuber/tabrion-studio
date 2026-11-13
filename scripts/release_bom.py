@@ -32,6 +32,8 @@ The policy is the one of ``scripts/check_licenses.py`` (STU-031). Exit code 1 wh
   exists, so the package was installed there, at another version than the lock's);
 * the Git pin (Tabrion) has no record of the pinned commit: the record must carry the commit of its PEP 610
   ``direct_url.json`` (``vcs_commit``, written by ``collect_licenses.py``) and it must equal the pinned SHA.
+* a license record names a package that the lock does not pin (other than ``tabrion-studio`` itself): that
+  environment had more installed than the lock, the Tabrion pin and the wheel (re-check R-1).
 
 A pin with a marker that no ``--licenses`` file covers is reported as "not verified" (the same for a pin whose name
 was recorded only at the version of another pin of that name); ``--strict`` (the release run) fails on it too. Exit
@@ -324,6 +326,26 @@ def judge_python(components: list[Component], records: list[dict[str, object]]) 
         _judge_all(component, mine)
 
 
+def unpinned_records(python: list[Component], records: list[dict[str, object]]) -> list[str]:
+    """One failure per name that has license records but neither a pin nor is Studio itself (re-check R-1).
+
+    Such a package was installed where the licenses were collected although the lock does not pin it, so that
+    environment is not what users get, and the package would otherwise be missing from the report.
+    """
+    pinned = {c.name for c in python} | {"tabrion-studio"}
+    outside: dict[str, list[dict[str, object]]] = {}
+    for record in records:
+        name = canonical(str(record.get("name", "")))
+        if name not in pinned:
+            outside.setdefault(name, []).append(record)
+    failures = []
+    for name, found in sorted(outside.items()):
+        versions = ", ".join(sorted({str(r.get("version", "")) for r in found}))
+        licenses = "; ".join(sorted({policy.python_license(r) or "(none)" for r in found}))
+        failures.append(f"python {name} {versions}: {licenses}: a license record of a package the lock does not pin")
+    return failures
+
+
 def _cdx_component(component: Component) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "type": "library",
@@ -445,6 +467,7 @@ def build(
         for c in python + npm
         if c.status == DISALLOWED or (strict and c.status == UNVERIFIED)
     ]
+    failures += unpinned_records(python, records)
     failures += [f"npm (dev) {f.name} {f.version}: {f.license}: outside the dev allowlist" for f in dev_failures]
     return sbom(version, python + npm), report(version, python, npm, dev_count, failures), failures
 
