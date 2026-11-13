@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import errno
+import io
 from pathlib import Path
 import signal
 import socket
@@ -78,3 +80,46 @@ def test_info_file_is_withdrawn_before_the_shutdown(monkeypatch: pytest.MonkeyPa
     )
     asyncio.run(studio.shutdown())
     assert events == ["info removed", "uvicorn shutdown"]
+
+
+# JR-1 of joint-regression-2026-11-12.md: the last line of a run, when its reader is gone.
+
+
+class _Out(io.StringIO):
+    """A stream whose writes raise ``error``."""
+
+    def __init__(self, error: BaseException) -> None:
+        super().__init__()
+        self.error = error
+
+    def write(self, text: str) -> int:
+        raise self.error
+
+
+def test_say_last_prints_the_line() -> None:
+    out = io.StringIO()
+    server.say_last("Tabrion Studio stopped (SIGTERM).", out)
+    assert out.getvalue() == "Tabrion Studio stopped (SIGTERM).\n"
+
+
+def test_say_last_ignores_a_reader_that_is_gone() -> None:
+    server.say_last("lost", _Out(BrokenPipeError(errno.EPIPE, "Broken pipe")))
+    closed = io.StringIO()
+    closed.close()
+    server.say_last("lost", closed)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [OSError(errno.EIO, "I/O error"), OSError(errno.ENOSPC, "No space left"), ValueError("not about a closed file")],
+    ids=["EIO", "ENOSPC", "ValueError-open"],
+)
+def test_say_last_raises_every_other_error(error: BaseException) -> None:
+    with pytest.raises(type(error)):
+        server.say_last("line", _Out(error))
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="EINVAL is the closed pipe only on Windows")
+def test_say_last_raises_einval_off_windows() -> None:
+    with pytest.raises(OSError):
+        server.say_last("line", _Out(OSError(errno.EINVAL, "Invalid argument")))

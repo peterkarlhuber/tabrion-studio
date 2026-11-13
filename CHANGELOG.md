@@ -518,6 +518,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still
+  on its way was lost: the page had no query id yet, so it sent no cancel, and the query ran on until its timeout
+  while the page showed it running. The page now cancels the query as soon as the server answers with its id. This
+  was the cause of `editor-backend.spec.ts` › "cancel stops an endless query within a second" failing under load. That
+  test now waits for the start to be answered and takes the cancel time in the page (key to "Canceled"), not as the
+  test's wall time, which included the retry schedule of `expect`.
+- `tabrion-studio` no longer ends with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered
+  output) when the terminal or the parent process stopped reading its output before a clean stop; the last line is
+  dropped and the exit status stays 0. Other errors writing that line are still raised (TD-044, joint regression JR-1).
 - STU-050: the start page said the project and connection views "arrive with the next versions"; it now leads to
   Connections, Explorer, SQL editor, Migrations and Diagnostics (en/de).
 - STU-050: connection failures (a missing or linked SQLite file, a file that is no database, an unset password
