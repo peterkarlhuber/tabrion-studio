@@ -422,7 +422,9 @@ class OpenConnection:
         """``consume(inspector)`` with tabrion's ``Database.inspector()``, inside its one ``Database.read()`` (STU-010).
 
         Reflection runs SQLAlchemy's own catalog queries, never user SQL; read-only like everything else. On
-        PostgreSQL they run under the fixed ``search_path`` (:func:`.tabrion_compat.pin_catalog_path`).
+        PostgreSQL they run under the fixed ``search_path`` (:func:`.tabrion_compat.pin_catalog_path`). This does not
+        go through :meth:`_read` (its timeout applies only to tabrion's own statement steps, which reflection does not
+        use); a change to :meth:`_read` must be made here too (review I-1 of PR #91).
         """
         with self._db.inspector() as found:
             tabrion_compat.pin_catalog_path(found)

@@ -392,3 +392,22 @@ def test_a_failing_studio_startup_is_logged_with_frames_only(
     assert failures[0]["message"] == "application startup failed"
     assert "in fail" in str(failures[0]["exception"])
     assert "RuntimeError: [message redacted]" in str(failures[0]["exception"])
+
+
+@pytest.mark.parametrize("label", ["DETAIL", "HINT", "CONTEXT", "QUERY"])
+@pytest.mark.parametrize("as_argument", [False, True], ids=["in_message", "as_argument"])
+def test_a_database_detail_in_the_middle_of_a_line_is_redacted(logs: Logs, label: str, as_argument: bool) -> None:
+    """TD-056 / GR-5 (PR #78 review F-9): with tabrion 0.2.0, a ``DETAIL:`` (``HINT:``, ``CONTEXT:``, ``QUERY:``) part
+    in the middle of a one-line message with a single blank after the label, and no database exception object, is
+    removed by Studio's log path (tabrion's ``DbErrorRedactionFilter`` under Studio's filters), in the file and on
+    the console."""
+    text = f"insert failed: duplicate key {label}: Key (email)=({CANARY}@example.com) already exists."
+    logger = logging.getLogger("tabrion_studio.td056")
+    if as_argument:
+        logger.error("database said %s", text)
+    else:
+        logger.error(text)
+    _assert_no_canary(logs.everything())
+    records = [record for record in logs.records() if "insert failed" in str(record.get("message", ""))]
+    assert records, logs.records()
+    assert "[redacted: database server text]" in str(records[0]["message"])

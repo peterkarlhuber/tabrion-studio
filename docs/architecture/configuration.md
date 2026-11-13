@@ -111,8 +111,9 @@ statement_timeout_ms = 15000
 - A SQLite `path` with a `?`, `#` or `%` is the error `config.url_character` (TD-013), as in tabrion 0.2's
   `tabrion.profilefile` (`profilefile.value`, its G-T2 review B-1): in a SQLAlchemy URL `?` and `#` start the query
   and the fragment, and `%` is unquoted, so `%2F%2Fhost/share/x.db` would become a network path there. Studio's own
-  connection never reads the path as a URL (it opens the resolved file), so this keeps a Studio file a valid
-  Tabrion profile file. The check runs after the network-path check.
+  connection never reads the path as a URL (it opens the resolved file); this aligns the SQLite `path` with
+  Tabrion's reader. The PostgreSQL `database` is not aligned (Tabrion's reader also refuses `/?#%@` there; TD-013).
+  The check runs after the network-path check.
 - A file nested deeper than the TOML parser can follow is `config.too_deep` (review T-3).
 - `sslmode` defaults to `prefer` only for a Unix socket folder (`/...`), the literal `localhost` and a loopback IP
   address (`127.0.0.0/8`, `::1`); any DNS name, even `127.evil.example`, gets `verify-full` (review T-4).

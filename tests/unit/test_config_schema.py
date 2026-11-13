@@ -267,8 +267,8 @@ def test_network_and_device_paths_are_refused_by_the_schema(fields: dict[str, An
 )
 def test_url_characters_in_a_sqlite_path_are_refused(path: str) -> None:
     """TD-013: like tabrion 0.2's profilefile (``profilefile.value``, G-T2 B-1), a "?", "#" or "%" in a SQLite path
-    is an error, so a Studio file stays a valid tabrion profile file and no URL reading can turn the path into
-    another one. Text only: the value is not repeated."""
+    is an error, so a Studio SQLite path is also valid for tabrion's reader and no URL reading can turn it into
+    another path (the PostgreSQL ``database`` is not aligned, TD-013). Text only: the value is not repeated."""
     result = validate_profiles(_one(path=path))
     assert [(issue.pointer, issue.code, issue.severity) for issue in result.issues] == [
         ("profile[0].path", "config.url_character", "error")

@@ -151,6 +151,8 @@ Choose **Trust** to use the profiles, or **Don't load** (the default) to leave t
 again. After any change of the file, even a comment, Studio asks again and shows what changed since you trusted it.
 A file with errors is not loaded at all; Studio says so and lists the issues. One such error: a SQLite `path` with a
 `?`, `#` or `%` (`config.url_character`), which Tabrion's profile file format refuses too; rename the database file.
+The same holds for your own profiles: since this check, a profile in `profiles.toml` whose SQLite path has one of
+these characters is skipped, and the connections page lists it with that issue until you change the path.
 
 ## Passwords
 

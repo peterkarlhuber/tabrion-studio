@@ -74,7 +74,7 @@
 | TD-052 STU-023 ER diagram: what it leaves for later (the route `/c/:conn/schema` with the workspace, a diagram across schemas, column-to-column lines and cardinality marks, moving boxes, schemas of more than 1000 tables, the diagram in the reference-app E2E, Firefox and WebKit runs of the new specs only in CI) | P3 | Open (STU-023 PR) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
 | TD-055 Test order: the canary `test_a_failing_lifespan_of_any_app_logs_no_traceback_text` failed after `tests/unit/test_server.py`, whose default `uvicorn.Config` left Uvicorn's own logging config (stderr handler, `propagate=False`) in the process; Studio's redaction now takes over Uvicorn's and asyncio's loggers, and every test restores their state; left: records of child loggers after a later `dictConfig` (not hit by `serve()`) | P2 | Done (PR #78) |
-| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Open; a G-R precondition (G-S1 decision 13: fix in tabrion, then the new tabrion pin in Studio) |
+| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Done for Studio (TD-013 PR: tabrion 0.2.0 has the fix, tabrion TB-144; Studio pins it and `test_a_database_detail_in_the_middle_of_a_line_is_redacted` checks it); G-R precondition GR-5 met |
 | TD-057 Export slot race: a client that started the next export on a connection right after reading the previous one to its end could get `studio.export_busy` (the worker freed the slot only after its last log line) | P2 | Done (PR #80) |
 | TD-058 STU-053 audit walk in WebKit: "explorer Policies tab: every Tab stop ... is in view" failed once in CI (PR #80, run 43405250149) with the selected tree row out of view; WebKit scrolls a newly focused element into view from a zero-delay timer, and the walk measured in the same task. Test race, no product bug; the walk now measures one task later | P2 | Done (PR #81) |
 | TD-061 STU-028 release SBOM: the macOS and Windows license records and `scripts/release_bom.py --strict` as a CI step (a `.github/` change); the inherited SPDX parenthesis gap of `check_licenses.py` (review L-6); a license record of a package the lock does not pin is ignored by `release_bom.py` (re-check R-1) | P2 | Done in PR #90 (its workflow-change review pending): the nightly jobs `license records (<system>)` and `release SBOM (strict)`, in nightly.yml and not in a required job (reason in the entry); L-6 and R-1 fixed with tests. Open: the first nightly run's result, attaching the files to a release (G-5, after G-R) |
@@ -1505,8 +1505,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-056 · tabrion's `DbErrorRedactionFilter` keeps `DETAIL` values in the middle of a line
 
-- **Priority:** P2 Medium · **Status:** Open · **Owner:** tabrion (`tabrion.errors.DbErrorRedactionFilter`) ·
-  **Refs:** PR #78 review F-9, TS-001, STU-009, `docs/architecture/errors-and-logging.md`
+- **Priority:** P2 Medium · **Status:** Done for Studio (TD-013 PR) · **Owner:** tabrion
+  (`tabrion.errors.DbErrorRedactionFilter`) · **Refs:** PR #78 review F-9, TS-001, STU-009, `docs/architecture/errors-and-logging.md`
 - **What:** the filter removes `DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts only where they start a line.
   A one-line message such as `... DETAIL: Key (email)=(...)` that carries no database exception object keeps the
   values; with a line break before `DETAIL:` they are removed. Pre-existing (the same on `e93c4f3`), not part of
@@ -1516,6 +1516,12 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   tabrion pin. Not fixed in Studio.
 - **Owner decision (G-S1, 2026-11-13, decision 13, option A):** fixed in tabrion, no second filter in Studio; the
   residual risk is accepted until then, and the fix with the pin update is a G-R precondition (GR-5).
+- **Done (TD-013 PR):** tabrion 0.2.0 (`52353da`, tabrion TB-144) removes a `DETAIL:`, `HINT:`, `CONTEXT:` or
+  `QUERY:` part in the middle of a line with one blank after the label, also in a record without a database
+  exception. Studio pins that commit, and `tests/security/test_canary.py::
+  test_a_database_detail_in_the_middle_of_a_line_is_redacted` sends such a one-line message (in the message and as
+  an argument, each label) through Studio's log setup and requires the canary to be absent from the file and the
+  console; it fails with tabrion 0.1.0. GR-5 is met; no second filter in Studio.
 
 ### TD-060 · STU-054 UX acceptance 1.0: what stays open
 

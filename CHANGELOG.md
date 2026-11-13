@@ -624,7 +624,12 @@ All notable changes to this project are documented here. The format follows
   the error `config.url_character`, as in tabrion 0.2's profile file reader (`profilefile.value`, tabrion G-T2 review
   B-1: in a SQLAlchemy URL `%` is unquoted, so `%2F%2Fhost/share/x.db` would become a network path). Such a project
   file is shown as invalid with that issue and cannot be trusted; the value is not repeated. Studio's own connection
-  never read the path as a URL, so this keeps Studio's files valid Tabrion profile files.
+  never read the path as a URL; this aligns the SQLite `path` with Tabrion's reader (not the PostgreSQL `database`,
+  which Tabrion's reader checks more strictly; docs/TODO.md TD-013). A profile in your own `profiles.toml` with such a
+  path is skipped and shown with that issue.
+- TD-056 / GR-5: with tabrion 0.2.0, a database `DETAIL:`, `HINT:`, `CONTEXT:` or `QUERY:` part in the middle of a
+  one-line log message (one blank after the label, no database exception) is removed from Studio's logs; a canary
+  test through Studio's log setup pins it (it fails with tabrion 0.1.0).
 
 - TD-061 (review L-6, re-check R-1): `scripts/check_licenses.py` reads SPDX parentheses as groups (AND binds tighter
   than OR), so `(MIT OR GPL-3.0-only) AND LGPL-2.1-only` now fails; a malformed expression fails too, and a trove

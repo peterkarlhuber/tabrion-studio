@@ -51,7 +51,9 @@ _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 #: Refused in a SQLite ``path`` (``config.url_character``), as tabrion 0.2's ``tabrion.profilefile`` does
 #: (``profilefile.value``, G-T2 B-1): in a SQLAlchemy URL "?" and "#" start the query and the fragment and "%" is
-#: unquoted, so ``%2F%2Fhost/share/x.db`` would become a network path there (TD-013).
+#: unquoted, so ``%2F%2Fhost/share/x.db`` would become a network path there (TD-013). This aligns only the SQLite
+#: ``path``: tabrion's reader also refuses ``/?#%@`` in a PostgreSQL ``database``, which Studio still accepts (it
+#: builds that URL with ``URL.create``, so the name is never read as a URL; TODO TD-013).
 _URL_CHARACTERS = frozenset("?#%")
 
 _COMMON = {"name", "engine", "environment", "password", "statement_timeout_ms", "read_only_role"}
