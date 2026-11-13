@@ -19,7 +19,8 @@ Policy:
 * Anything else, including GPL/AGPL/LGPL outside the exceptions, SSPL, a commercial license or a missing license,
   fails the check with exit code 1.
 
-An SPDX ``OR`` expression passes if any alternative passes, an ``AND`` expression only if all parts pass.
+An SPDX ``OR`` expression passes if any alternative passes, an ``AND`` expression only if all parts pass;
+parentheses group, and ``AND`` binds tighter than ``OR`` (review L-6).
 Standard library only.
 """
 
@@ -102,24 +103,95 @@ def normalize(raw: str) -> str:
 
 
 def expression_allowed(expression: str, allowed: frozenset[str]) -> bool:
-    """Judge an SPDX expression: OR needs one allowed alternative, AND needs every part allowed."""
-    text = expression.strip()
-    if not text:
+    """Judge an SPDX expression: OR needs one allowed alternative, AND needs every part allowed.
+
+    Parentheses group as in SPDX, and AND binds tighter than OR, so ``(MIT OR GPL-3.0-only) AND LGPL-2.1-only``
+    fails (review L-6 of ``pr83-stu028-review.md``). ``WITH`` adds an exception, which only adds permissions, so
+    ``Apache-2.0 WITH LLVM-exception`` is judged as ``Apache-2.0``. A license name may be several words (the free-text
+    ``License`` field of older packages); the operators are the upper-case words ``OR``, ``AND`` and ``WITH``. An
+    expression that does not parse (an unbalanced parenthesis, an operator without an operand) is not allowed.
+    """
+    tokens = _tokens(expression)
+    if not tokens:
         return False
-    # Parentheses only group; SPDX expressions in package metadata do not nest OR inside AND in practice, but the
-    # conservative reading (AND binds tighter, as in SPDX) is applied: split OR first, then AND.
-    text = text.replace("(", " ").replace(")", " ")
-    alternatives = re.split(r"\s+OR\s+", text)
-    for alternative in alternatives:
-        parts = [normalize(p) for p in re.split(r"\s+AND\s+", alternative) if p.strip()]
-        if parts and all(_strip_with(p) in allowed for p in parts):
-            return True
-    return False
+    try:
+        value, end = _parse_or(tokens, 0, allowed)
+    except _SyntaxError:
+        return False
+    return value and end == len(tokens)
 
 
-def _strip_with(identifier: str) -> str:
-    # "Apache-2.0 WITH LLVM-exception": the exception only adds permissions.
-    return re.split(r"\s+WITH\s+", identifier.strip())[0]
+_OPERATORS = frozenset({"OR", "AND", "WITH", "(", ")"})
+
+
+class _SyntaxError(ValueError):
+    """An SPDX expression that does not parse; it is judged as not allowed."""
+
+
+def _tokens(expression: str) -> list[str]:
+    """Parentheses, the operators, and each license name (the text of consecutive other words, as written).
+
+    A parenthesis right after a word of a name belongs to the name, as in the trove classifier name
+    ``GNU General Public License (GPL)``: in SPDX a group opens only at the start or after an operator.
+    """
+    tokens: list[str] = []
+    start = end = -1  # the span of the license name being read
+    depth = 0  # open parentheses inside that name
+    for match in re.finditer(r"\(|\)|[^\s()]+", expression):
+        word = match.group()
+        if start >= 0:  # inside a name
+            if depth or word == "(" or word not in _OPERATORS:
+                depth += {"(": 1, ")": -1}.get(word, 0)
+                end = match.end()
+                continue
+            tokens.append(expression[start:end])
+            start = -1
+        if word in _OPERATORS:
+            tokens.append(word)
+        else:
+            start, end = match.start(), match.end()
+    if start >= 0:
+        if depth:  # a parenthesis left open inside a name (workflow review L-1 of PR #90)
+            return []
+        tokens.append(expression[start:end])
+    return tokens
+
+
+def _parse_or(tokens: list[str], i: int, allowed: frozenset[str]) -> tuple[bool, int]:
+    value, i = _parse_and(tokens, i, allowed)
+    while i < len(tokens) and tokens[i] == "OR":
+        right, i = _parse_and(tokens, i + 1, allowed)
+        value = value or right
+    return value, i
+
+
+def _parse_and(tokens: list[str], i: int, allowed: frozenset[str]) -> tuple[bool, int]:
+    value, i = _parse_with(tokens, i, allowed)
+    while i < len(tokens) and tokens[i] == "AND":
+        right, i = _parse_with(tokens, i + 1, allowed)
+        value = value and right
+    return value, i
+
+
+def _parse_with(tokens: list[str], i: int, allowed: frozenset[str]) -> tuple[bool, int]:
+    if i >= len(tokens):
+        raise _SyntaxError("an operand is missing")
+    word = tokens[i]
+    if word == "(":
+        value, i = _parse_or(tokens, i + 1, allowed)
+        if i >= len(tokens) or tokens[i] != ")":
+            raise _SyntaxError("a parenthesis is not closed")
+        i += 1
+    elif word in _OPERATORS:
+        raise _SyntaxError(f"{word} where a license is expected")
+    else:
+        value, i = normalize(word) in allowed, i + 1
+    if i < len(tokens) and tokens[i] == "WITH":
+        # The exception (one identifier) only adds permissions; the license before it is judged.
+        if i + 1 >= len(tokens) or tokens[i + 1] in _OPERATORS:
+            raise _SyntaxError("WITH without an exception")
+        i += 2
+    return value, i
 
 
 def python_license(entry: dict[str, object]) -> str:

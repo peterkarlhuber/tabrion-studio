@@ -42,6 +42,27 @@ def run(*args: str) -> subprocess.CompletedProcess[str]:
         ("MPL-2.0", False),
         ("UNLICENSED", False),
         ("", False),
+        # Review L-6: parentheses group, and AND binds tighter than OR (SPDX).
+        ("(MIT OR GPL-3.0-only) AND LGPL-2.1-only", False),
+        ("(MIT OR GPL-3.0-only) AND Apache-2.0", True),
+        ("MIT OR (GPL-3.0-only AND LGPL-2.1-only)", True),
+        ("GPL-3.0-only OR MIT AND LGPL-2.1-only", False),
+        ("((MIT)) AND (ISC OR GPL-2.0-only)", True),
+        ("GPL-2.0-only WITH Classpath-exception-2.0", False),
+        ("Apache-2.0 WITH LLVM-exception AND MIT", True),
+        # Malformed expressions are not allowed.
+        ("(MIT", False),
+        ("MIT OR Foo (x", False),
+        ("MIT OR GPL-3.0-only (x", False),
+        ("MIT)", False),
+        ("MIT AND", False),
+        ("OR MIT", False),
+        ("()", False),
+        ("MIT WITH", False),
+        # Trove classifier names with parentheses stay one name (normalized by the aliases).
+        ("ISC License (ISCL)", True),
+        ("BSD-3-Clause OR GNU General Public License (GPL)", True),
+        ("GNU General Public License (GPL)", False),
     ],
 )
 def test_shipped_expressions(expression: str, ok: bool) -> None:

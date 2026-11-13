@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-031 (owner decision G-S1 2): the nightly job `newest dependencies (Python 3.11 and 3.14)` installs Studio and the
+  pinned Tabrion without the hashed runtime lock, so with the newest releases inside the `pyproject.toml` ranges,
+  prints `pip freeze`, and runs `pip check` and the backend tests. It is not a pull request check; a failure opens the
+  "Nightly failed" issue.
+- TD-061: the nightly collects the license records of fresh runtime environments on Linux (Python 3.13 and 3.11),
+  macOS and Windows and runs `scripts/release_bom.py --strict` over them (job `release SBOM (strict)`, artifact
+  `release-sbom` with the SBOM, the license report and the records).
 - STU-016: G-S1 passed for master `9a5d4faa69f1c974999d258b36258fbc10b3323f`. The owner granted it on the condition
   that all 21 required CI jobs are green on that SHA, which was met on 2026-11-13 (run 43457105100); recorded in
   `docs/TODO.md`, `docs/architecture/security-review-prep.md`, `docs/guide/security.md`, the README and
@@ -612,6 +619,12 @@ All notable changes to this project are documented here. The format follows
   `db.connection`) and records every `POST /api/connections` body. Test only; the behavior is unchanged.
 
 ### Security
+
+- TD-061 (review L-6, re-check R-1): `scripts/check_licenses.py` reads SPDX parentheses as groups (AND binds tighter
+  than OR), so `(MIT OR GPL-3.0-only) AND LGPL-2.1-only` now fails; a malformed expression fails too, and a trove
+  classifier name with parentheses (`ISC License (ISCL)`) stays one name. `scripts/release_bom.py` fails on a license
+  record of a package that the lock does not pin (other than `tabrion-studio`), also without `--strict`, instead of
+  ignoring it.
 
 - `tabrion-studio diagnose --output`: hardened against a folder swap. On POSIX the output folder is opened once and
   the checks, the temporary file and the final move all act on that opened folder; the guide now says that a folder

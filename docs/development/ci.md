@@ -6,7 +6,7 @@
 |---|---|---|
 | `ci.yml` (`CI`) | pull request, push to master, nightly | backend lint, backend tests (Python 3.11 to 3.14 on Linux, 3.13 on macOS and Windows), security tests, the T-2 path checks on Windows (`T-2 path checks (windows-latest)`, TD-008), frontend lint/typecheck and unit tests, e2e (Playwright in Chromium: axe with color contrast in light/dark and en/de, contrast, dialogs, status, and the built wheel in a real server under the CSP), the same suites in Firefox and WebKit (`e2e (firefox)`, `e2e (webkit)`; required, TD-047; the CDP heap measurements are Chromium only), build and install on Linux, macOS and Windows (wheel with the frontend, fresh venv, run without Node), license and supply chain, dependency audit, docs |
 | `ci-ok.yml` | `workflow_run` of CI | evaluates the mandatory checks of `.github/ci-manifest.json` on the PR head SHA (`ci_ok.py`, byte-identical to the canonical copy in nodestro-studio) and posts the verdict as the commit status `ci-ok` on that SHA (`ci_ok_status.py`), so that branch protection can require it |
-| `nightly.yml` (`Nightly`) | cron 03:30 UTC, manual | the whole CI on master plus a test-ID inventory; a red run opens or updates the issue "Nightly failed" |
+| `nightly.yml` (`Nightly`) | cron 03:30 UTC, manual | the whole CI on master plus a test-ID inventory, the [newest dependencies](#newest-dependencies-nightly) run without the runtime lock (TD-031) and the [release SBOM](#sbom) with `--strict` over the license records of every system (TD-061); a red run opens or updates the issue "Nightly failed". None of these jobs is a pull request check |
 
 There is no release workflow, and no PyPI release is needed for now: distribution is by Git SHA pin (owner decision
 2026-11-08). Any publication (a GitHub release, for example) needs the owner's approval G-R for every version;
@@ -87,8 +87,19 @@ The same job writes CycloneDX SBOMs and uploads them as the artifact `sbom`:
 
 The release SBOM and license report are written from the lockfiles by `scripts/release_bom.py` (CycloneDX 1.5, the
 same bytes on every computer for one commit, with the license records of every system); see
-[Release checklist](release-checklist.md#sbom-and-license-report). It is not a CI step yet: collecting the macOS and
-Windows license records in CI is a `.github/` change that needs its workflow review.
+[Release checklist](release-checklist.md#sbom-and-license-report). The nightly (TD-061) runs it:
+
+- **`license records (<label>)`** (`linux-py3.13`, `linux-py3.11`, `macos-py3.13`, `windows-py3.13`): a fresh
+  environment with the hashed lock and the Tabrion pin, both with `--no-deps` (as in `license and supply chain`),
+  `pip check`, then `collect_licenses.py`; uploaded as the artifact `licenses-<label>`. Python 3.11 covers the pins
+  with `python_full_version < '3.12'`, Windows the two Windows-only pins. Studio itself is not installed: its own
+  record is not used, and the wheel needs the frontend build.
+- **`release SBOM (strict)`**: `release_bom.py --strict` over the four record files; uploads the SBOM, the report and
+  the records as the artifact `release-sbom`, and puts the head of the report in the job summary.
+
+It is a nightly job and not a step of `license and supply chain`, because the Python 3.11 record needs a runner that
+no required pull request job has (adding one would change the required job set), and the required job would have to
+wait for the jobs of the other systems and would be skipped, so NOT OK for `ci-ok`, whenever one of them fails.
 
 ## Dependency audit
 
@@ -134,6 +145,17 @@ python scripts/runtime_lock.py check-installed                     # jobs with t
   job audits the locked versions), and otherwise about once a month. Do not rely on Dependabot for this file; update it with this recipe.
 - **The pins are not the supported versions:** the ranges in `pyproject.toml` stay what Studio supports; the lock is
   the one set that CI tests and the guide installs.
+
+## Newest dependencies (nightly)
+
+CI tests only the locked set, so a newer release inside the `pyproject.toml` ranges that breaks Studio would show up
+only at the next lock update. The nightly job `newest dependencies (Python <version>)` (TD-031, owner decision G-S1
+2, option A; Linux with Python 3.11 and 3.14) therefore installs Studio with its development tools **without**
+`constraints/runtime-lock.txt` and without the pip cache (`pip install --upgrade --upgrade-strategy eager -e ".[dev]"
+-c constraints/tabrion-integration.txt`: the newest releases inside the ranges, Tabrion at its pinned commit), runs
+`pip check`, writes `pip freeze` into the log and the job summary, and runs `pytest -m "not packaging"` (the selection
+of `backend test`). It is not a pull request check and is not in `.github/ci-manifest.json`; when it fails, the
+nightly issue names it. Then either fix Studio or narrow the range in `pyproject.toml`, and refresh the lock ([Hashed runtime pins](#hashed-runtime-pins)).
 
 ## Reproducible builds
 

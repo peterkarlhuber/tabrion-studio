@@ -4,6 +4,11 @@ name: Nightly
 # test-ID inventory, so that breakage from outside the repository (new dependency releases, advisories, runner
 # images) shows up as an open issue rather than on the next unrelated PR. Added by later work
 # packages: e2e on WebKit (K12, QA-9) and the tabrion-HEAD compatibility run once tabrion has releases.
+# TD-031 (G-S1 decision 2): "newest dependencies" installs without the hashed runtime lock and tests the newest
+# releases inside the pyproject.toml ranges. TD-061: "license records" and "release SBOM (strict)" run
+# scripts/release_bom.py --strict over the license records of Linux (Python 3.13 and 3.11), macOS and Windows.
+# None of these jobs is a pull request check (not in ci.yml, not in .github/ci-manifest.json); a red one opens the
+# "Nightly failed" issue like every other job here.
 on:
   schedule:
     - cron: "30 3 * * *"
@@ -60,9 +65,121 @@ jobs:
           name: test-ids
           path: test-ids.sorted
 
+  newest-deps:
+    # TD-031 (G-S1 decision 2, option A): CI tests only the locked set, so a newer release inside the pyproject.toml
+    # ranges that breaks Studio would show up only at the next lock update. This job installs Studio and the pinned
+    # Tabrion WITHOUT constraints/runtime-lock.txt (the newest releases pip finds inside the ranges), prints them and
+    # runs the backend tests. Non-blocking: nightly and manual only, never a pull request check.
+    name: newest dependencies (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      # No runtime lock and no pip cache: pip resolves every dependency to the newest release inside the ranges;
+      # only Tabrion stays at the commit of constraints/tabrion-integration.txt (it is not on PyPI).
+      - run: python -m pip install --upgrade pip
+      - run: pip install --upgrade --upgrade-strategy eager -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip check
+      - name: The versions under test (pip freeze, also in the job summary)
+        run: |
+          set -euo pipefail
+          pip freeze --exclude-editable | tee freeze.txt
+          { echo "### Newest dependencies (Python ${{ matrix.python }})"; echo; echo '```'; cat freeze.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      # The same selection as the job "backend test" of ci.yml.
+      - run: pytest -m "not packaging" -p no:cacheprovider
+
+  license-records:
+    # TD-061: the license records (scripts/collect_licenses.py) of a fresh runtime environment on every system the
+    # lock covers, and Python 3.11 for the "python_full_version < '3.12'" pins. Like the job "license and supply
+    # chain" of ci.yml: the hashed lock with --no-deps, then the Tabrion pin with --no-deps, then pip check. Studio
+    # itself is not installed (its own record is not used, and the wheel needs the frontend build).
+    name: license records (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-py3.13, os: ubuntu-latest, python: "3.13" }
+          - { label: linux-py3.11, os: ubuntu-latest, python: "3.11" }
+          - { label: macos-py3.13, os: macos-latest, python: "3.13" }
+          - { label: windows-py3.13, os: windows-latest, python: "3.13" }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install the runtime closure into a fresh environment and collect its licenses
+        run: |
+          set -euo pipefail
+          python -m venv runtime-env
+          if [ "$RUNNER_OS" = Windows ]; then py=runtime-env/Scripts/python.exe; else py=runtime-env/bin/python; fi
+          "$py" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+          "$py" -m pip install --quiet --no-deps -r constraints/tabrion-integration.txt
+          "$py" -m pip check
+          "$py" -I scripts/collect_licenses.py > "licenses-${{ matrix.label }}.json"
+          echo "$(grep -c '"name"' "licenses-${{ matrix.label }}.json") license records"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: licenses-${{ matrix.label }}
+          path: licenses-${{ matrix.label }}.json
+          if-no-files-found: error
+
+  release-bom:
+    # TD-061 (STU-028, C-6 of docs/development/release-checklist.md): the release SBOM and the third-party license
+    # report over the records of every system; --strict fails on any pin that no record covers. Here and not in
+    # ci.yml: the Python 3.11 record needs a runner that no required pull request job has, and "license and supply
+    # chain" would have to wait for (and be skipped with) the jobs of other systems.
+    name: release SBOM (strict)
+    needs: license-records
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: licenses-*
+          path: release/licenses
+          merge-multiple: true
+      - name: release_bom.py --strict over the records of every system
+        run: |
+          set -euo pipefail
+          args=()
+          for label in linux-py3.13 linux-py3.11 macos-py3.13 windows-py3.13; do
+            args+=(--licenses "release/licenses/licenses-$label.json")
+          done
+          status=0
+          python -I scripts/release_bom.py --strict "${args[@]}" --out release || status=$?
+          { echo "### Release SBOM (strict)"; echo; head -n 20 release/third-party-licenses.md; } >> "$GITHUB_STEP_SUMMARY" || true
+          exit "$status"
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-sbom
+          path: release/
+
   report:
     # Opens one "Nightly failed" issue on red, comments on it while it stays red, closes it on the next green run.
-    needs: [ci, canary, inventory]
+    needs: [ci, canary, inventory, newest-deps, license-records, release-bom]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
