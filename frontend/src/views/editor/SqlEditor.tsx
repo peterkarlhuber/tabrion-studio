@@ -235,5 +235,8 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
     [view],
   );
 
-  return <div ref={host} className={styles.editorHost} data-testid="sql-editor" />;
+  // F6 into the editor pane focuses the SQL text inside the shadow root (src/keyboard/regions.ts).
+  return (
+    <div ref={host} className={styles.editorHost} data-testid="sql-editor" data-region-entry="" />
+  );
 });

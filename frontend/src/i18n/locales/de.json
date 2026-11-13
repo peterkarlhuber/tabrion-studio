@@ -836,7 +836,7 @@
     "shortcuts": {
       "palette": "Befehlspalette öffnen",
       "help": "Tastenkürzel anzeigen",
-      "nextRegion": "Zum nächsten Bereich (Kopfzeile, Navigation, Tabs, Hauptbereich, Statusleiste)",
+      "nextRegion": "Zum nächsten Bereich (Kopfzeile, Navigation, Tabs, Hauptbereich oder seine Teile, Statusleiste)",
       "previousRegion": "Zum vorherigen Bereich",
       "run": "Statement am Cursor oder die Auswahl ausführen (SQL-Editor)",
       "runScript": "Alle Statements des Tabs ausführen (SQL-Editor)",

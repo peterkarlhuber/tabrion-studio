@@ -836,7 +836,7 @@
     "shortcuts": {
       "palette": "Open the command palette",
       "help": "Show the keyboard shortcuts",
-      "nextRegion": "Go to the next area (header, navigation, tabs, main area, status bar)",
+      "nextRegion": "Go to the next area (header, navigation, tabs, main area or its panes, status bar)",
       "previousRegion": "Go to the previous area",
       "run": "Run the statement at the cursor or the selection (SQL editor)",
       "runScript": "Run every statement of the tab (SQL editor)",
