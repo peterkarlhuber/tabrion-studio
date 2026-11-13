@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-017 docs (no tag, no release): the documentation checklist `docs/development/docs-checklist.md` maps every
+  requirement of the package (installation, start, security model, troubleshooting, the feature pages of TD-023) to
+  its page and check, and records the clean-install test: on Linux by hand from a locally built wheel (start without
+  Node.js, sign-in, a SQLite profile connected read-only, explorer and data viewer, `--stop`; passed), and automated
+  in `scripts/smoke_wheel.py`, which now installs with the Tabrion pin, signs in, connects a SQLite profile and reads
+  its rows (CI `packaging` job on Linux, macOS and Windows). The guide covers installing from a wheel, the residual
+  risks, and troubleshooting while installing, in the views and for `--stop`; the installation page names the
+  minimum OS versions and has PowerShell commands for Windows.
+
 - TD-034: the banner **Connection lost** with **Reconnect** (08 section 5 "error recovery") above every page that
   holds a connection (explorer with its data and definition tabs, SQL editor, diagnostics, migration status), when a
   request finds the database gone or the connection closed, or when the header connection's check (every 30 seconds
@@ -579,6 +588,11 @@ All notable changes to this project are documented here. The format follows
   backend's own Host and Origin.
 
 ### Fixed
+
+- The README's install command had no Tabrion pin and failed (`No matching distribution found for tabrion`); a test
+  now checks every documented install command. The README status names what is on `master`. The settings page no
+  longer says that SQL statements are logged when "Write SQL statements to the log" is on: the setting is saved but
+  not used yet (TD-013); it says when the row limit and the timeout apply.
 
 - The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
   WCAG 2.5.8).

@@ -65,6 +65,13 @@ python -m build                      # sdist + wheel; hatch_build.py refuses a w
 python scripts/smoke_wheel.py dist/tabrion_studio-*.whl   # fresh venv, runs without Node on PATH
 ```
 
+`smoke_wheel.py` is the automated clean-install test (STU-018, STU-017): it installs the wheel into a fresh virtual
+environment with the Tabrion pin of `constraints/tabrion-integration.txt` (`--constraint` names another file), starts
+`tabrion-studio --no-browser --print-url` without Node.js on `PATH`, checks the health endpoint and the served page,
+signs in with the printed one-time link, saves a SQLite profile, connects it read-only and reads its catalog and the
+rows of a table, then checks the second start and `--stop`. CI runs it in the `packaging` job on Linux, macOS and
+Windows. The manual run in a browser is recorded in the [documentation checklist](docs-checklist.md).
+
 `src/tabrion_studio/static` is not in git; the `artifacts` setting in `pyproject.toml` puts it into the wheel and the
 sdist. An editable install (`pip install -e .`) does not need it; the server then shows a "frontend not built" page.
 

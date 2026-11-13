@@ -12,12 +12,12 @@ Tabrion Studio is a **local developer tool** for SQLite files and PostgreSQL dat
 in your browser. It focuses on understanding schemas, running queries safely (read-only by default) and checking
 migration states and Tabrion profiles.
 
-> **Status: pre-alpha skeleton.** This repository currently contains the project skeleton, the command-line
-> process model, CI, the access protection, Problem JSON errors and redacted, rotating logs, configuration files,
-> profiles and project trust, and the empty app shell with the design system, German and English, and the status
-> displays and dialogs, saved passwords, the connection manager and the settings, and the command palette (work
-> packages STU-001 to STU-008, STU-018, STU-031, STU-051 and the first part of STU-052). Studio does not connect to
-> databases yet.
+> **Status: MVP in development, not released.** On `master`: starting and signing in, connection profiles with the
+> project's trust dialog and saved passwords, read-only connections to SQLite and PostgreSQL, the explorer with DDL
+> and row-level security policies, the data viewer, the SQL editor (reading statements only) with CSV and JSON
+> export, the migration status, the diagnostics with backup hints and the report, the settings, the keyboard and the
+> command palette, in English and German. Studio never writes to a database. The independent security review of the
+> MVP (G-S1) is still open.
 > There is no release; nothing is published to PyPI, and no PyPI release is needed for now: distribution is by Git
 > SHA pin (owner decision 2026-11-08). A later publication would need a new decision and the owner's approval G-R.
 > See [docs/TODO.md](docs/TODO.md) for what comes next.
@@ -32,17 +32,25 @@ Requirements: Python 3.11 or later. Node.js is needed only to **build** the fron
 ```bash
 git clone https://github.com/peterkarlhuber/tabrion-studio.git
 cd tabrion-studio
-python scripts/build_frontend.py        # npm ci + npm run build, copies the result into the package (needs Node 22)
-python -m pip install .                 # the wheel contains the built frontend
+git checkout <commit SHA>               # the commit you pin
+python scripts/build_frontend.py        # npm ci + npm run build, copies the result into the package (Node 22.22+)
+python -m venv ~/.venvs/tabrion-studio
+~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
+~/.venvs/tabrion-studio/bin/python -m pip install . -c constraints/tabrion-integration.txt   # Tabrion's pin
 ```
+
+Tabrion is not on PyPI either, so the install needs the constraints file; a plain `pip install .` fails. The
+[installation guide](docs/guide/installation.md) also covers building a wheel, updating and uninstalling, and gives
+PowerShell commands for Windows.
 
 ## Usage
 
-The [user guide](docs/guide/index.md) explains installing, starting, connections, settings and troubleshooting.
+The [user guide](docs/guide/index.md) explains installing, starting, connections, the explorer, the data viewer, the
+SQL editor, the migration status, diagnostics, settings, the security model and troubleshooting.
 
 ```bash
-tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES] [--log-dir DIR]
-               [--config-dir DIR]
+tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]
+               [--state-dir DIR] [--log-dir DIR] [--config-dir DIR]
 tabrion-studio --stop [PROJECT]
 tabrion-studio --version
 ```
@@ -50,7 +58,8 @@ tabrion-studio --version
 - `PROJECT` is the project folder (default: the current folder). Studio serves it on `127.0.0.1` at a free port and
   opens the system browser.
 - Studio opens the browser with a one-time sign-in link (through a private file, so the link never shows up in the
-  process list). `--print-url` prints such a link instead, for a browser you start yourself; it works once.
+  process list). `--no-browser --print-url` prints such a link instead, for a browser you start yourself; it works
+  once.
 - One instance per project folder: starting `tabrion-studio` again for the same folder opens the running instance
   instead of starting a second server.
 - Project profiles in `PROJECT/.tabrion/studio.toml` are used only after you confirm them in the trust dialog, and
