@@ -519,6 +519,12 @@ All notable changes to this project are documented here. The format follows
 
 - The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
   WCAG 2.5.8).
+- SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still
+  on its way was lost: the page had no query id yet, so it sent no cancel, and the query ran on until its timeout
+  while the page showed it running. The page now cancels the query as soon as the server answers with its id. This
+  was the cause of `editor-backend.spec.ts` › "cancel stops an endless query within a second" failing under load. That
+  test now waits for the start to be answered and takes the cancel time in the page (key to "Canceled"), not as the
+  test's wall time, which included the retry schedule of `expect`.
 - `tabrion-studio` no longer ends with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered
   output) when the terminal or the parent process stopped reading its output before a clean stop; the last line is
   dropped and the exit status stays 0. Other errors writing that line are still raised (TD-044, joint regression JR-1).
