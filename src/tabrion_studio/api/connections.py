@@ -27,6 +27,7 @@ Refusals are problems with fixed texts: ``studio.secret_*`` (no password), ``stu
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import json
 import logging
 from typing import Any
@@ -91,7 +92,12 @@ def connection_problem(exc: BaseException) -> Response | None:
     return None
 
 
-def add_connection_routes(app: FastAPI, registry: ConnectionRegistry) -> None:
+def add_connection_routes(
+    app: FastAPI, registry: ConnectionRegistry, *, opened: Callable[[str], None] | None = None
+) -> None:
+    """``opened(profile_id)`` is told of every connection ``POST /api/connections`` answers (the recently opened
+    profiles, STU-020); it must not raise."""
+
     async def run(call: Any, *args: Any) -> Any:
         return await asyncio.to_thread(call, *args)
 
@@ -112,6 +118,8 @@ def add_connection_routes(app: FastAPI, registry: ConnectionRegistry) -> None:
         result = await guarded(registry.open, doc["profile_id"], doc.get("confirmed_environment"))
         if isinstance(result, Response):
             return result
+        if opened is not None:
+            await run(opened, result.profile_id)
         return JSONResponse(result.to_dict(), status_code=201)
 
     @app.get("/api/connections")

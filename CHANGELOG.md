@@ -7,6 +7,31 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-020 (backend): Studio's state database `state.sqlite` in the state folder (0600, opened through
+  `tabrion.sqlite.connect`, links refused, `secure_delete`); the query history of every finished query, per profile
+  and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,
+  `DELETE /api/history`; settings `[history] enabled` and `retention_days`, 30 days by default, at most 5,000
+  entries); favorite and recently opened profiles (`GET`/`PUT /api/favorites`); `.sql` scripts in the project folder
+  (`GET /api/scripts`, `GET`/`PUT /api/scripts/file`: only `.sql` files inside the project, no links, atomic,
+  byte-exact with the line endings kept, and bound to what the page read); `?cached_only=true` on the catalog, so completion never reads a PROD catalog
+  unasked. New problem codes `studio.state_unavailable`, `studio.favorites_full`, `studio.catalog_not_loaded` and
+  `studio.script_*`.
+- STU-020 review fixes (backend): the history's retention period now holds on disk while nothing is recorded (the
+  history off, an idle project): expired entries are deleted, with a checkpoint, when Studio starts, when the history
+  is read and when the settings are saved. Script paths refuse Windows device names (also with an extension), 8.3
+  short names, names that end in a dot and format characters (bidi, zero-width) on every system; the file is reached
+  through folder descriptors with `O_NOFOLLOW` on POSIX (07 TM-04), and on Windows the opened handle must be the
+  checked file; hard-linked files are refused. A save keeps the file's byte order mark and holds one lock from the
+  digest check to the replace. Links, hard links and reparse-point folders (OneDrive placeholders) answer the new
+  `studio.script_link`, and the listing counts what it skipped (`skipped_links`); refusals of the file system answer
+  `studio.script_permission_denied`, `studio.script_locked`, `studio.script_disk_full` or
+  `studio.script_write_failed` instead of an internal error. Recording a history entry waits at most 250 ms for
+  another instance's write lock; the checkpoint result is checked and retried; the 100 favorites count per project.
+- STU-020 delta review fixes (backend): a checkpoint of the state database never waits for another connection
+  (`busy_timeout = 0`), so a reader holds up neither a query's end nor the store; a checkpoint that finds the log in
+  use is retried on every purge until it succeeds. The purge after a settings save runs off the event loop and, like
+  recording, waits at most 250 ms for another instance's write lock. Script names refuse blank-looking characters
+  (spaces other than U+0020, Hangul fillers, the braille blank, the combining grapheme joiner).
 - STU-023, the ER diagram: **ER diagram** next to **Objects** in the explorer draws the tables of one schema (at most
   150; **Tables** chooses them) with their columns, keys and a line for each foreign key, laid out by dagre and shown
   with @xyflow/react 12 (pan, zoom, overview map); 150 tables are laid out in under 2 s, and the page says how long
@@ -29,7 +54,6 @@ All notable changes to this project are documented here. The format follows
   its rows (CI `packaging` job on Linux, macOS and Windows). The guide covers installing from a wheel, the residual
   risks, and troubleshooting while installing, in the views and for `--stop`; the installation page names the
   minimum OS versions and has PowerShell commands for Windows.
-
 - TD-034: the banner **Connection lost** with **Reconnect** (08 section 5 "error recovery") above every page that
   holds a connection (explorer with its data and definition tabs, SQL editor, diagnostics, migration status), when a
   request finds the database gone or the connection closed, or when the header connection's check (every 30 seconds
@@ -652,6 +676,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Tests: `tests/unit/test_server.py` built a `uvicorn.Config` with Uvicorn's default logging config, which stops the
+  `uvicorn` loggers from propagating for the rest of the run; when it ran before `tests/security/test_canary.py`
+  (`pytest tests/unit tests/security`), the lifespan test there saw no Uvicorn record and failed. It now passes
+  `log_config=None`, like the product.
 - Theme switch: buttons kept their old background for 120 ms (a transition) while their text took the new theme,
   so for that moment a primary button's label had too little contrast (TD-047, found by axe in WebKit). The theme now
   switches with transitions off, and text and background change together.
@@ -659,7 +687,6 @@ All notable changes to this project are documented here. The format follows
   now checks every documented install command. The README status names what is on `master`. The settings page no
   longer says that SQL statements are logged when "Write SQL statements to the log" is on: the setting is saved but
   not used yet (TD-013); it says when the row limit and the timeout apply.
-
 - The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
   WCAG 2.5.8).
 - SQL editor: a cancel (Ctrl+., Escape, the button, or closing the tab) while the start request of a query was still

@@ -27,6 +27,8 @@ All of them sit behind the access middleware (session cookie and CSRF header).
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
 import logging
@@ -49,8 +51,9 @@ logger = logging.getLogger("tabrion_studio.config")
 _MAX_BODY = 4096
 #: The largest body of a profile or settings form (the largest body cap of any route but queries and exports).
 MAX_FORM_BODY = 16 * 1024
-_SETTINGS_KEYS = frozenset({"language", "theme", "density", "log_sql", "limits"})
+_SETTINGS_KEYS = frozenset({"language", "theme", "density", "log_sql", "limits", "history"})
 _LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms", "max_result_mb"})
+_HISTORY_KEYS = frozenset({"enabled", "retention_days"})
 
 
 class FormError(Exception):
@@ -196,10 +199,19 @@ def _form_pointer(pointer: str) -> str:
 
 def form_settings(raw: object, current: Settings) -> Settings:
     """``current`` with the values of the form; :class:`FormError` if one is not valid."""
-    if not isinstance(raw, dict) or not isinstance(raw.get("limits", {}), dict):
+    if (
+        not isinstance(raw, dict)
+        or not isinstance(raw.get("limits", {}), dict)
+        or not isinstance(raw.get("history", {}), dict)
+    ):
         raise FormError("studio.settings_invalid", [("settings", "config.type")])
     limits = raw.get("limits", {})
-    if any(key not in _SETTINGS_KEYS for key in raw) or any(key not in _LIMIT_KEYS for key in limits):
+    history = raw.get("history", {})
+    if (
+        any(key not in _SETTINGS_KEYS for key in raw)
+        or any(key not in _LIMIT_KEYS for key in limits)
+        or any(key not in _HISTORY_KEYS for key in history)
+    ):
         raise FormError("studio.settings_invalid", [("settings", "config.unknown_key")])
     doc: dict[str, Any] = {
         "version": SCHEMA_VERSION,
@@ -211,6 +223,10 @@ def form_settings(raw: object, current: Settings) -> Settings:
             "max_rows": limits.get("max_rows", current.max_rows),
             "statement_timeout_ms": limits.get("statement_timeout_ms", current.statement_timeout_ms),
             "max_result_mb": limits.get("max_result_mb", current.max_result_mb),
+        },
+        "history": {
+            "enabled": history.get("enabled", current.history_enabled),
+            "retention_days": history.get("retention_days", current.history_retention_days),
         },
     }
     settings, issues = validate_settings(doc)
@@ -228,7 +244,11 @@ def _user_name(config: Configuration, profile_id: object) -> str:
     raise SaveError("studio.profile_not_found")
 
 
-def add_config_routes(app: FastAPI, config: Configuration) -> None:
+def add_config_routes(
+    app: FastAPI, config: Configuration, *, settings_saved: Callable[[], object] | None = None
+) -> None:
+    """``settings_saved`` runs after ``settings.toml`` was written (the history drops what the new retention
+    expires)."""
     load_project = config.load_project
 
     @app.get("/api/project")
@@ -386,7 +406,11 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
 
     @app.put("/api/settings")
     async def put_settings(request: Request) -> Response:
-        return await save(request, put_settings_action)
+        response = await save(request, put_settings_action)
+        if settings_saved is not None and response.status_code == 200:
+            # Off the event loop: the purge writes to the state database, which another instance may hold.
+            await asyncio.to_thread(settings_saved)
+        return response
 
     @app.get("/api/secrets")
     async def get_secrets() -> Response:

@@ -185,6 +185,7 @@ def test_settings_defaults_and_values() -> None:
         "log_sql": True,
         "telemetry": False,
         "limits": {"max_rows": 500, "statement_timeout_ms": 30000, "max_result_mb": 20},
+        "history": {"enabled": True, "retention_days": 30},
     }
 
 
