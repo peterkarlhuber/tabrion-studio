@@ -1,4 +1,5 @@
-"""The user guide (STU-017, first part) has a table row for every command-line option and is in the site navigation."""
+"""The user guide (STU-017) has a table row for every command-line option, is in the site navigation, and every
+documented install command carries the Tabrion pin (the clean-install test found a README command without it)."""
 
 from __future__ import annotations
 
@@ -45,3 +46,29 @@ def test_every_guide_page_is_in_the_navigation() -> None:
     pages = sorted(path.name for path in GUIDE.glob("*.md"))
     assert len(pages) >= 6
     assert [page for page in pages if f"guide/{page}" not in nav] == []
+
+
+INSTALL_DOCS = ("README.md", "docs/guide/installation.md")
+PIN = "-c constraints/tabrion-integration.txt"
+
+
+def _install_commands(text: str) -> list[str]:
+    """The ``pip install`` lines of the fenced code blocks that install Studio (not pip itself or the build tool)."""
+    blocks = re.findall(r"^```(?:bash)?\n(.*?)^```", text, re.MULTILINE | re.DOTALL)
+    lines = [line.strip() for block in blocks for line in block.splitlines()]
+    return [
+        line
+        for line in lines
+        if re.search(r"pip install\b", line) and not re.search(r"pip install (--upgrade \"pip|\"build==)", line)
+    ]
+
+
+def test_every_install_command_carries_the_tabrion_pin() -> None:
+    commands = [command for name in INSTALL_DOCS for command in _install_commands((ROOT / name).read_text("utf-8"))]
+    assert len(commands) >= 4  # README, the guide's commit install, the wheel install and the update were read
+    assert [command for command in commands if PIN not in command] == []
+    assert (ROOT / "constraints" / "tabrion-integration.txt").is_file()
+
+
+def test_the_docs_checklist_is_in_the_navigation() -> None:
+    assert "development/docs-checklist.md" in _nav_pages()

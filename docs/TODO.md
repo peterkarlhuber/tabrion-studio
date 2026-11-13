@@ -46,7 +46,7 @@
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow; `keyboard.spec.ts` is a required e2e suite since the CI e2e-list PR) | P2 | Open (F6 over the panes and the keyboard-only E2E of every main flow done in the STU-052 rest PR; open: format and history with 1.0) |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, ER diagram, STU-016 pages, Firefox/WebKit, the final MVP report) | P2 | Open |
-| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
+| TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Partly done (user-guide PR #27; the docs checklist and the clean-install test in the STU-017 docs PR; open: the tag `v0.1.0` and the install section naming it, I-3 in `guide/connections.md`) |
 | TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; `backend test (windows-latest)` green on `23fd8a6`, run 43201304911) | P2 | Done (PR #29) |
 | TD-025 STU-015/STU-024 page: the Levuvo view shows state, version, open steps and the reason a table is unreadable, not the SQL preview or the files folder; formats the page does not know are only counted | P3 | Open (STU-015 page PR #32; C-1 of `stu-015-ui-review.md` done, delta items L-6..L-9 and I-6 done) |
 | TD-026 STU-021 export: infinite and out-of-range dates, Unicode file names, the problem code of data-modifying CTEs (F-7, F-9, F-10) | P3 | Open (STU-021 done in PR #33) |
@@ -380,7 +380,7 @@ merge after OA-004.
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress: the shell (first PR, F-1..F-5) and the work pages (editor, grid, export, explorer, data viewer, DDL, Policies, row count, diagnostics, D-02; second PR, F-6) are audited in `docs/architecture/accessibility.md` and `e2e/a11y-audit.spec.ts`, with no open AA violation. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | STU-008..STU-015, STU-051, QA-9 | In progress (STU-050 PR): the checklist `docs/architecture/ux-acceptance.md` (every criterion of 08 sections 3 to 6 and of the plan's acceptance, each with its test or manual check), run on 2026-11-13 against the built app with SQLite and PostgreSQL 16 (scram) in Chromium: met for what the MVP covers. New `e2e/ux-acceptance.spec.ts` (08 section 5 "First start" under 60 s and "Connect" with the remedy, against a real server). Fixed: the start page leads to the views (it said they "arrive with the next versions"), eight connection failures name the remedy, the migration view's empty status box. Open: Firefox and WebKit (TD-047), the "Connection lost" banner (TD-034, parallel lane), QA-S1 and the rest of TD-046 |
 | TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Preparation in progress (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). The gate itself, the independent review and its re-review are not done; G-S1 is decided by the owner, and a human security review before a public release stays mandatory |
-| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The rest is TD-023; adds the build-only release workflow |
+| TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27; the docs part in the STU-017 docs PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The docs PR adds the documentation checklist `docs/development/docs-checklist.md` (every requirement of 03 §10 and 09 mapped to its page and check, D-1..D-23), the clean-install test (manual on Linux on 2026-11-13 from a locally built wheel of master `7093bea`: install with the Tabrion pin, start without Node.js, sign-in link, a SQLite profile saved, tested and connected read-only, the explorer and the data viewer, `--stop`; passed. Automated: `scripts/smoke_wheel.py` now installs with the pin and signs in, connects a SQLite profile and reads its rows, in the `packaging` job on Linux, macOS and Windows), install from a wheel, troubleshooting for installing, the views and the `--stop` failures (I-5), the residual risks on the security page, the README status and install command (it had no Tabrion pin and failed), and the settings page (the timeout applies on connect; `log_sql` is saved but not used, TD-013). Open: the tag `v0.1.0` (a separate step after G-S1; no publication, G-R) and the build-only release workflow; the rest is TD-023 |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R); STU-021
 and STU-024 no longer wait for STU-017 (doc 09, Phase B changes, accepted 2026-11-12). STU-025 was started before
@@ -975,8 +975,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-023 · User guide parts that wait for later packages (STU-017)
 
-- **Priority:** P2 Medium · **Status:** Open · **Refs:** 03 section 10 (STU-017: installation, start, security model,
-  troubleshooting), 09 STU-017 (depends on STU-016), `docs/guide/`
+- **Priority:** P2 Medium · **Status:** Partly done (the tag and I-3 open) · **Refs:** 03 section 10 (STU-017:
+  installation, start, security model, troubleshooting), 09 STU-017 (depends on STU-016), `docs/guide/`,
+  `docs/development/docs-checklist.md`
 - **Done in the user-guide PR:** `docs/guide/` for the features that exist: installation from a Git commit (no PyPI,
   owner decision 2026-11-08), start and stop with every option (pinned by `tests/unit/test_user_guide.py`),
   connections, the trust dialog and passwords, settings and keyboard, the security model in short, troubleshooting.
@@ -997,8 +998,20 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   file Studio writes (settings, profiles, trust records, instance files, sign-in files, logs); L-4, the test wants a
   row in the options table for every option and a real `nav` line (not a comment) for every guide page; I-2, I-4 and
   I-6 (`--version` after the `PATH` note, Node.js 22.22 or later, the final newline of this file).
-- **Open (Info):** I-1 ("when connecting arrives" on the SQLite read-only and error-text lines), I-3 (the keyring
-  binding covers every target field, not only the TLS mode), I-5 (the `--stop` failures in troubleshooting).
+- **Info items of `stu-27-review.md`:** I-1 needs nothing any more (connecting has arrived, so the present tense is
+  right); I-5 done in the STU-017 docs PR (the `--stop` failures in troubleshooting); I-3 open (the keyring row of
+  `guide/connections.md` names host, database, user and TLS mode, while the binding covers every target field:
+  engine, host, port, database, user, path, sslmode; that page is being edited by the security-fix PRs #65 and #66).
+- **Done in the STU-017 docs PR:** the documentation checklist `docs/development/docs-checklist.md`; the
+  clean-install test on Linux, by hand from a locally built wheel (2026-11-13, master `7093bea`, passed) and
+  automated in `scripts/smoke_wheel.py` (with the Tabrion pin; sign-in, a SQLite profile connected read-only, its
+  catalog and rows), which CI runs in the `packaging` job on Linux, macOS and Windows; `guide/installation.md`
+  builds a wheel; `guide/troubleshooting.md` covers installing, the views and the `--stop` failures;
+  `guide/security.md` names the residual risks (03 §7.3); `guide/settings.md` says when the limits apply and that
+  `log_sql` is not used yet (TD-013); the README's status and its install command (no Tabrion pin, so it failed);
+  `tests/unit/test_user_guide.py` checks that every documented install command carries the pin.
+- **Open:** the tag `v0.1.0` (after G-S1, no publication, G-R), then the install section names the tag instead of a
+  commit; a clean-install run by hand on macOS and Windows and in Firefox, Safari and Edge (TD-047).
 
 ### TD-035 · STU-022 DDL: what pg_dump writes and Studio's DDL does not (TABRION STU-022)
 

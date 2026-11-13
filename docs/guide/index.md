@@ -9,7 +9,7 @@ This guide is for people who use Tabrion Studio. It describes what the current d
     command palette. Studio never writes to a database. Nothing is released; you install Studio from a commit of the
     repository.
 
-- [Installation](installation.md): from a Git commit, with Python 3.11 or later.
+- [Installation](installation.md): from a Git commit or a wheel built from it, with Python 3.11 or later.
 - [Starting and stopping](starting.md): the `tabrion-studio` command, the sign-in link, one Studio per project
   folder, the logs.
 - [Connections](connections.md): your profiles, the project's profiles and the trust dialog, passwords.
@@ -24,6 +24,7 @@ This guide is for people who use Tabrion Studio. It describes what the current d
 - [Settings and keyboard](settings.md): language, theme, density, query limits, the command palette and the
   shortcuts.
 - [How Studio protects your data](security.md): what Studio does and does not do, in short.
-- [Troubleshooting](troubleshooting.md): the messages you may see, and what to do.
+- [Troubleshooting](troubleshooting.md): the messages you may see while installing, in the browser, in the views
+  and in the terminal, and what to do.
 
 The architecture pages in this site explain how each part works and how it is tested.

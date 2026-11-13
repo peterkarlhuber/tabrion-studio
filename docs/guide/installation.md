@@ -32,15 +32,44 @@ built and tested against (Tabrion v0.1.0), so always install with `-c constraint
 
 The install needs pip 26.1 or later. Older pip versions (24.0 to 26.0, for example the pip 24.0 of a fresh
 Ubuntu 24.04 virtual environment) stop with `AssertionError: Candidate is not for this requirement`, because they
-cannot combine the constraint with the `tabrion[postgres,sqlalchemy]` extras. The upgrade step above avoids that.
+cannot combine the constraint with the `tabrion[postgres,sqlalchemy]` extras. The upgrade step above avoids that. A
+virtual environment of Python 3.13 or later already comes with a recent enough pip; the upgrade step does no harm
+there.
 
 The wheel contains the built frontend. A build without it stops with a message that names
 `scripts/build_frontend.py`. For the same reason, `pip install git+https://…@<SHA>` does not work: the built frontend
 is not in Git.
 
+### Or: build a wheel first
+
+In the checked-out folder, you can also build a wheel once and install that, for example to install the same build
+on several computers. This is the way the clean-install test of STU-017 installs Studio
+([Documentation checklist](../development/docs-checklist.md)):
+
+```bash
+python scripts/build_frontend.py
+python -m venv ~/.venvs/tabrion-build
+~/.venvs/tabrion-build/bin/python -m pip install "build==1.6.1"
+PIP_CONSTRAINT=build-constraints.txt PIP_REQUIRE_HASHES=1 ~/.venvs/tabrion-build/bin/python -m build --wheel --outdir dist
+# then, on each computer, with the wheel and constraints/tabrion-integration.txt copied there:
+python -m venv ~/.venvs/tabrion-studio
+~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
+~/.venvs/tabrion-studio/bin/python -m pip install dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+```
+
+The wheel needs the same constraints file as `pip install .`; without it pip stops with `No matching distribution
+found for tabrion`. `PIP_CONSTRAINT` and `PIP_REQUIRE_HASHES` pin the build backend to the hashed versions of
+`build-constraints.txt`, so the same sources give the same wheel. On Windows, set both variables with `set` before
+the build.
+
+### Other tools
+
 A tool such as `pipx` works too (`pipx install . --pip-args "-c constraints/tabrion-integration.txt"` after the
-frontend build). Put the command on your `PATH`, or call it with the full path of the virtual environment. Check the
-installation:
+frontend build).
+
+### Check the installation
+
+Put the command on your `PATH`, or call it with the full path of the virtual environment:
 
 ```bash
 ~/.venvs/tabrion-studio/bin/tabrion-studio --version   # or just tabrion-studio --version once it is on your PATH

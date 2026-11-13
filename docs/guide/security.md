@@ -30,6 +30,22 @@ Studio is a tool for one person on one computer. In short:
 - **Nothing leaves the computer.** The page loads nothing from other sites, there is no telemetry, and the browser
   page is protected by a strict Content Security Policy.
 
+## What Studio does not protect against
+
+- **Programs running as you.** Malware or any other program with your user's rights can read what you can: the
+  keyring, Studio's folders, the browser's storage and the memory of the `tabrion-studio` process. Studio does not
+  defend against it.
+- **Functions with side effects on PostgreSQL.** Studio runs every statement in a read-only transaction, but a
+  function can still have effects outside it (for example through `dblink` or an extension that calls out). Only the role's
+  rights are a hard boundary: connect with a role that has no write privileges, at least for PROD. The diagnostics
+  report a role that can write although the profile says it should not.
+- **Warnings are not protection.** Refusing `BEGIN`, `SET` and similar statements, and every warning before a
+  statement, help you avoid mistakes; they are not the security boundary.
+- **Drafts in the browser.** The SQL editor keeps your tabs' text in this browser's storage, outside Studio's private
+  folders. Do not leave secrets in a draft.
+- **Not reviewed for publication yet.** The independent security review of the MVP (G-S1) and a human security review
+  before a public release are still open; Studio is not released.
+
 The technical details and their tests are in [Access protection](../architecture/access-protection.md),
 [Configuration and project trust](../architecture/configuration.md), [Secret management](../architecture/secrets.md)
 and [Errors and logging](../architecture/errors-and-logging.md). To report a vulnerability, follow `SECURITY.md` in the
