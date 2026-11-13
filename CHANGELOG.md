@@ -27,6 +27,11 @@ All notable changes to this project are documented here. The format follows
   `studio.script_permission_denied`, `studio.script_locked`, `studio.script_disk_full` or
   `studio.script_write_failed` instead of an internal error. Recording a history entry waits at most 250 ms for
   another instance's write lock; the checkpoint result is checked and retried; the 100 favorites count per project.
+- STU-020 delta review fixes (backend): a checkpoint of the state database never waits for another connection
+  (`busy_timeout = 0`), so a reader holds up neither a query's end nor the store; a checkpoint that finds the log in
+  use is retried on every purge until it succeeds. The purge after a settings save runs off the event loop and, like
+  recording, waits at most 250 ms for another instance's write lock. Script names refuse blank-looking characters
+  (spaces other than U+0020, Hangul fillers, the braille blank, the combining grapheme joiner).
 - TD-008 (review C-2): the required CI job `T-2 path checks (windows-latest)` runs the T-2 path tests by name on
   Windows (no `nt._getfinalpathname` for a UNC value from the project file) and fails when one of them is missing,
   skipped or failed.

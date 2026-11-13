@@ -27,6 +27,7 @@ All of them sit behind the access middleware (session cookie and CSRF header).
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 import json
@@ -389,8 +390,6 @@ def add_config_routes(
         settings = form_settings(doc.get("settings"), current)
         new_digest = config.user.save_settings(settings, expected, overwrite=overwrite)
         logger.info("settings saved", extra={"event": "studio.settings_saved"})
-        if settings_saved is not None:
-            settings_saved()
         return JSONResponse({"digest": new_digest, "settings": settings.to_dict()})
 
     @app.post("/api/profiles", status_code=201)
@@ -407,7 +406,11 @@ def add_config_routes(
 
     @app.put("/api/settings")
     async def put_settings(request: Request) -> Response:
-        return await save(request, put_settings_action)
+        response = await save(request, put_settings_action)
+        if settings_saved is not None and response.status_code == 200:
+            # Off the event loop: the purge writes to the state database, which another instance may hold.
+            await asyncio.to_thread(settings_saved)
+        return response
 
     @app.get("/api/secrets")
     async def get_secrets() -> Response:

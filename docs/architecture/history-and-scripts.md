@@ -34,12 +34,16 @@ threat T-04, STU-T-007).
   and move `state.sqlite` (with its `-wal` and `-shm` files) out of the state folder; the next start creates an empty
   one, and the history and the favorites start over.
 - **Sharing.** Every Studio instance of the user (one per project folder) shares the file; SQLite's locking
-  serializes the writers. A write waits up to 5 s for another instance's lock; recording a query's entry waits only
-  250 ms and otherwise keeps no entry, so a query's end and its cancel are never held up by the history.
+  serializes the writers. A write waits up to 5 s for another instance's lock. Recording a query's entry and the
+  retention purge wait only 250 ms, in Studio's own loop, and otherwise keep no entry or leave the purge to the next
+  one, so a query's end and its cancel are never held up by the history.
 - **Checkpoint.** After a delete or a purge, `PRAGMA wal_checkpoint(TRUNCATE)` moves the write-ahead log into the
-  file and empties it. When another instance is reading at that moment, the log stays in use; the checkpoint is tried
-  three times and otherwise left to the next one (`studio.state_checkpoint_partial` in the log). The log is 0600 like
-  the file, and closing the last connection removes it.
+  file and empties it. A checkpoint never waits for another connection: it runs with `busy_timeout = 0`, so it holds
+  neither a query's end nor the store lock. When another instance (or any other program) is reading at that moment,
+  the log stays in use: a delete from the history page tries three times, 50 ms apart; otherwise the checkpoint is
+  *pending* (`studio.state_checkpoint_partial` in the log, once) and is tried again on every purge, that is on every
+  read of the history and every recorded query, until it succeeds. The log is 0600 like the file, and closing the last
+  connection removes it.
 - **Scopes.** Rows of a project profile carry the project's key, so `project:parts` in one project is not
   `project:parts` in another. Rows of the user's own profiles hold in every project.
 
@@ -69,7 +73,9 @@ no log record.
   turning it off: they stay until their retention period ends, or until the user deletes them on the history page.
 - `retention_days` (default 30, 1 to 3650): an older entry is deleted from the file, also while the history is off.
   The purge runs when Studio starts, whenever the history is read, when the settings are saved and when an entry is
-  recorded. It deletes the expired entries of every project, with `secure_delete` and a checkpoint like a delete.
+  recorded. It deletes the expired entries of every project, with `secure_delete` and a checkpoint like a delete. The
+  purge after a settings save runs off the server's event loop, so a busy state database never holds up another
+  request.
 
 At most 5,000 entries are kept, and the oldest go first. An entry keeps at most 64 KB of a statement
 (`sql_truncated`). A delete is followed by `PRAGMA wal_checkpoint(TRUNCATE)`, so no deleted text stays in the
@@ -110,7 +116,9 @@ A path is relative to the project folder, with `/`. It is judged as text first, 
 helpers of the project's database paths (threat T-08, `config/locations.py`):
 
 - **Text.** No drive, no root, no `\`, no `..` or `.`, no empty component, no control character, no format
-  character (bidi overrides and isolates, zero-width characters: a name must read as what it is), no component that
+  character (bidi overrides and isolates, zero-width characters: a name must read as what it is), no blank-looking
+  character (a space other than U+0020, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the braille blank
+  U+2800, the combining grapheme joiner U+034F, the Khmer inherent vowels U+17B4 and U+17B5), no component that
   starts with `.` (so `.git` and `.tabrion` are not script folders), no leading or trailing blank, at most 512
   characters. The last name ends in `.sql`, in any case.
 - **Names Windows reads as something else.** Refused on every system alike, because the same project is opened on
@@ -130,11 +138,14 @@ helpers of the project's database paths (threat T-08, `config/locations.py`):
   path names (same volume and file index). **Residual on Windows:** a folder swapped for a junction between that check
   and the rename of a save. It needs a program of the user's own that writes in the project folder at that moment,
   which has the user's rights anyway.
-- **Reparse-point folders (Windows).** Every folder with a reparse point is refused as a link (`studio.script_link`),
-  and the listing leaves it out and counts it (`skipped_links`, which the page shows). That includes OneDrive "Files
-  On-Demand" placeholder folders (Documents under Known Folder Move on many company machines): keep the project, or at
-  least its scripts, in a folder that OneDrive does not sync. This is checked by tests on Linux only; it still needs a
-  check on a real Windows machine with OneDrive.
+- **Reparse-point folders (Windows): refused, pending an owner decision (G-S1).** Every folder (and file) with a
+  reparse point is refused as a link (`studio.script_link`), and the listing leaves it out and counts it
+  (`skipped_links`, which the page shows). That includes OneDrive "Files On-Demand" placeholder folders (Documents
+  under Known Folder Move on many company machines), and cloud files carry the attribute too: in such a project,
+  scripts are probably unusable, possibly also at the project root. The stated way out is to keep the project in a
+  folder that OneDrive does not sync. Whether Studio keeps refusing every reparse point (the safe reading) or accepts
+  the cloud tags like `config/locations._is_link` does is an **open owner decision for G-S1**; it also still needs a
+  check on a real Windows machine with OneDrive, like the device names. Tests cover this on Linux only.
 - **Size and encoding.** A script is a regular file of at most 1 MB of UTF-8.
 - **Byte-exact.** Files are read and written as bytes, never in text mode, so a script and its digest are byte-exact
   on every system: CRLF, LF, CR and mixed line endings are kept as they are, and what the page sends is written as it
