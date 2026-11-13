@@ -385,6 +385,12 @@ test('STU-014: the page runs the diagnosis of a prepared SQLite file and shows i
   expect(codes).not.toContain('TAB-SQ-001');
   await expect(page.getByTestId('diagnostics-result')).not.toContainText('diag-shop');
   await expect(page.getByTestId('diagnostics-incomplete')).toHaveCount(0);
+  // TD-032: the real route's params are worded by the page (not the server's text marked as English).
+  const keys = list.getByTestId('diagnostics-finding').filter({ hasText: 'STU-DX-005' });
+  await expect(keys.getByTestId('diagnostics-detail')).toHaveText(
+    'PRAGMA foreign_key_check finds 1 row whose foreign key points nowhere: data was written with foreign_keys off.',
+  );
+  await expect(keys.locator('[lang]')).toHaveCount(0);
   // TD-036: the backup hints of STU-025 (no backup next to the file: STU-BK-001), not counted as findings.
   const backup = page.getByRole('region', { name: 'Backups' });
   await expect(backup.getByRole('heading', { level: 4, name: 'No backup found' })).toBeVisible();

@@ -112,6 +112,28 @@ def ensure_private_dir(path: Path) -> Path:
     return path
 
 
+def check_private_dir(path: Path) -> None:
+    """Check, without creating or changing it, that an existing ``path`` passes :func:`ensure_private_dir`'s rules.
+
+    A missing ``path`` passes (nothing can be read from it). For a reader that must not change the folder, such as
+    ``tabrion-studio diagnose`` reading the trust records (L-4 of the PR #85 review). Raises :class:`UnsafePathError`.
+    """
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or _is_reparse_point(info):
+        raise UnsafePathError(f"the state directory is not a plain directory: {path}")
+    if _POSIX:
+        if info.st_uid != os.getuid():
+            raise UnsafePathError(f"the state directory belongs to another user: {path}")
+        mode = stat.S_IMODE(info.st_mode)
+        if mode & 0o022:
+            raise UnsafePathError(f"the state directory can be written by other users (mode {mode:o}): {path}")
+    else:
+        _check_windows_dir(path)
+
+
 def _is_reparse_point(info: os.stat_result) -> bool:
     """A Windows junction, mount point or other reparse point (``os.lstat`` does not report junctions as links)."""
     return bool(getattr(info, "st_file_attributes", 0) & _FILE_ATTRIBUTE_REPARSE_POINT)

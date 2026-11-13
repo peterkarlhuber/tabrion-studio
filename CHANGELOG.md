@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-036 (STU-025): `tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE
+  [--force]] [--confirm-prod]` writes the diagnosis report of one profile from the command line, for scripts, CI and agents,
+  without a running Studio. It is the report of the download (the same allowlist: no password, token, URL or DSN,
+  host, port, user or database name, path or value). Project profiles count only after you trusted them in Studio;
+  a PROD profile needs `--confirm-prod` on every run, and the connection checks it again on the profile it opens. No
+  password prompt; refusals are Studio's fixed texts; exit codes 0 (written), 1 (not made), 2 (usage).
+  `--output` writes a new file with mode 0600 in one step, replaces an existing file only with `--force`, and never
+  follows a link or touches the profile's database files; the JSON report escapes every non-ASCII character.
+- TD-032: Studio's own findings and backup hints (`STU-DX-*`, `STU-BK-*`) show their details and remedies in German
+  as well as English. The diagnostics route sends each one's facts as `params` (counts, setting names, the `sslmode`,
+  the checks that did not run), and the page words them from its translations; tabrion's `TAB-*` texts stay English
+  and marked as such. The JSON diagnosis report carries the `params` too.
 - STU-054 (UX acceptance of Studio 1.0 without the Data Editor): the 1.0 section of
   `docs/architecture/ux-acceptance.md` maps every 1.0 criterion of the UX blueprint and of the backlog to its test or
   manual check. New `e2e/ux-acceptance-1-0.spec.ts` against a real server: the 1.0 tour (DDL, ER diagram, a query with
@@ -711,6 +723,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- TD-032: the English `detail` and `remedy` of Studio's findings and backup hints use plurals ("2 rows" instead of
+  "2 row(s)"), and the check names in `STU-DX-008` are made from `params`; the page's note that texts are English now
+  shows only when one of tabrion's texts is listed.
 - STU-016 docs (G-S1 decisions; G-S1 itself is not yet granted): `docs/architecture/security-review-prep.md`
   records the owner's acceptance on 2026-11-13 of the 13 recommendations of the G-S1 decision package (each option
   A: decision, accepted residual risk, follow-up, whether it is a G-R precondition); the formal G-S1 confirmation on

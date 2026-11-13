@@ -18,11 +18,11 @@ is used.
 | `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.Transaction` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.check.Finding` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.check.Severity` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Finding` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnose_cli.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity` | `tests/security/test_diagnose_cli.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.Severity.ERROR` | `tests/security/test_diagnostics.py` |
 | `tabrion.check.Severity.INFO` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.check.Severity.WARNING` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.check.Severity.WARNING` | `tests/security/test_diagnose_cli.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py` |
@@ -31,7 +31,7 @@ is used.
 | `tabrion.errors.Kind.CONNECTION` | `src/tabrion_studio/services/connections.py`, `tests/security/test_connection_loss.py` |
 | `tabrion.errors.Kind.PERMISSION` | `src/tabrion_studio/services/levuvo_migrations.py` |
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |

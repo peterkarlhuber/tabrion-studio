@@ -1,12 +1,21 @@
 """The diagnostics page names Studio's own findings in its en/de text (STU-014): the English titles must be the ones
 the backend sends, and every ``STU-DX-*`` code the backend can send must have a title in both languages. The same holds
-for the backup hints ``STU-BK-*`` that the page shows since TD-036 (STU-025)."""
+for the backup hints ``STU-BK-*`` that the page shows since TD-036 (STU-025). Since TD-032 the same holds for their
+details and remedies: the page's English templates are the server's (:mod:`.diagnosis_texts`), and German has every
+one of them."""
 
 from __future__ import annotations
 
 import ast
 import json
 from pathlib import Path
+import re
+from typing import Any
+
+import pytest
+
+from tabrion_studio.services import backup_hints, diagnosis_texts
+from tabrion_studio.services import diagnostics as diagnostics_module
 
 ROOT = Path(__file__).resolve().parents[2]
 SERVICE = ROOT / "src" / "tabrion_studio" / "services" / "diagnostics.py"
@@ -53,3 +62,64 @@ def test_every_studio_finding_has_a_german_title() -> None:
     german = _page_titles("de")
     assert sorted(german) == sorted(_backend_titles())
     assert all(title.strip() for title in german.values())
+
+
+# TD-032: Studio's details and remedies in en/de. The page words each finding's ``params`` from its i18n files; the
+# server words the same ``params`` in English for the API, the report and the command line.
+CASES = ROOT / "frontend" / "src" / "views" / "diagnostics" / "studioTexts.cases.json"
+
+
+def _page_texts(language: str) -> dict[str, dict[str, str]]:
+    doc = json.loads((LOCALES / f"{language}.json").read_text(encoding="utf-8"))
+    texts = doc["diagnostics"]["texts"]
+    assert isinstance(texts, dict)
+    return texts
+
+
+def test_the_pages_english_texts_are_the_servers() -> None:
+    assert _page_texts("en") == diagnosis_texts.TEXTS
+    assert sorted(diagnosis_texts.TEXTS) == sorted(_backend_titles())
+
+
+def test_every_text_has_german_with_the_same_keys() -> None:
+    german = _page_texts("de")
+    assert {code: sorted(keys) for code, keys in german.items()} == {
+        code: sorted(keys) for code, keys in diagnosis_texts.TEXTS.items()
+    }
+
+
+def test_the_german_texts_speak_like_the_page() -> None:
+    """L-5 of ``pr85-diag-review.md``: the page says "du" and "Sicherung"; Studio's German details and remedies too."""
+    formal = re.compile(r"\b(Sie|Ihnen|Ihre?[mnrs]?)\b")
+    english = re.compile(r"Backup")  # the folder names backups and backup stay as they are
+    for code, entry in _page_texts("de").items():
+        for key, text in entry.items():
+            assert not formal.search(text), (code, key, text)
+            assert not english.search(text), (code, key, text)
+            assert "..." not in text and '"' not in text, (code, key, text)
+
+
+def test_the_shared_cases_are_the_servers_english_and_use_every_template(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``studioTexts.cases.json`` is checked here against the server and in Vitest against the page's English, so
+    both word the same ``params`` alike. Every template of every code is used by some case."""
+    used: set[tuple[str, str]] = set()
+    real = diagnosis_texts._text
+
+    def recording(code: str, key: str, values: Any = None, *, count: int | None = None) -> str:
+        used.add((code, key if count is None else f"{key}_{'one' if count == 1 else 'other'}"))
+        return real(code, key, values, count=count)
+
+    monkeypatch.setattr(diagnosis_texts, "_text", recording)
+    cases = json.loads(CASES.read_text(encoding="utf-8"))
+    for case in cases:
+        assert diagnosis_texts.studio_text(case["code"], case["params"]) == (case["detail"], case["remedy"]), case
+    assert used == {(code, key) for code, texts in diagnosis_texts.TEXTS.items() for key in texts}
+
+
+def test_studio_findings_carry_their_params_and_their_english_text() -> None:
+    """Every ``_finding``/``_hint`` result has ``params``, and its ``detail`` and ``remedy`` are made from them."""
+    finding = diagnostics_module._finding("STU-DX-005", "warning", "Rows break foreign keys", {"rows": 2})
+    assert finding["params"] == {"rows": 2}
+    assert (finding["detail"], finding["remedy"]) == diagnosis_texts.studio_text("STU-DX-005", {"rows": 2})
+    hint = backup_hints._hint("STU-BK-001", "warning", "No backup found")
+    assert hint["params"] == {} and hint["detail"].startswith("Studio found no SQLite file")

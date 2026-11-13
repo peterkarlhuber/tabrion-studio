@@ -4,7 +4,8 @@
  * - `POST /api/connections {profile_id}` opens (or returns) the read-only connection of a profile (STU-009).
  * - `POST /api/connections/{id}/diagnostics {}` runs the diagnosis. It only reads; it is a POST because it runs checks
  *   against the database. The answer is `{connection_id, engine, environment, ran_at, findings: [{code, severity,
- *   title, detail, remedy, source}], counts}`.
+ *   title, detail, remedy, source, params?}], counts}`. Studio's own findings and hints carry `params`, which the page
+ *   words in en/de (TD-032, `views/diagnostics/studioText.ts`); `detail` and `remedy` are the server's English.
  * - `POST /api/connections/{id}/diagnostics/cancel {}` stops the running diagnoses of that connection; their answers
  *   then carry `STU-DX-008` ("Not every check ran").
  * - `POST /api/connections/{id}/diagnostics/report {format}` (STU-025, TD-036) runs the diagnosis again and answers the
@@ -15,8 +16,9 @@
  * `counts`; the page reads the hints and ignores the facts. Fields the page does not know are ignored. The parser fails
  * closed: an answer without a findings list is no answer (`studio.answer_invalid`), a `backup` without a hints list is
  * shown as unreadable (never as "no hints"), an unknown severity stays visible as `unknown` and is never counted as a
- * lesser one, and the page counts the findings itself instead of trusting `counts`. Titles, details and remedies are the server's English text and may name database
- * objects (tabrion names schemas and extensions), so the page shows them escaped and capped (`lib/visible.ts`, U-1).
+ * lesser one, and the page counts the findings itself instead of trusting `counts`. tabrion's titles, details and
+ * remedies (and Studio's when their `params` do not fit) are the server's English text and may name database objects
+ * (tabrion names schemas and extensions), so the page shows them escaped and capped (`lib/visible.ts`, U-1).
  */
 import { apiHeaders } from '../session';
 import { OFFLINE, readProblem, type Problem } from './problem';
@@ -33,6 +35,11 @@ export interface Finding {
   detail: string;
   remedy: string;
   source: FindingSource;
+  /**
+   * The facts of Studio's own findings and hints (TD-032), which the page words in en/de (`studioText.ts`); null when
+   * the answer has none or they are not an object. tabrion's findings have none.
+   */
+  params: Record<string, unknown> | null;
 }
 
 export interface Diagnosis {
@@ -94,6 +101,10 @@ function parseFinding(item: unknown): Finding[] {
       source: SOURCES.includes(doc.source as FindingSource)
         ? (doc.source as FindingSource)
         : 'unknown',
+      params:
+        typeof doc.params === 'object' && doc.params !== null && !Array.isArray(doc.params)
+          ? (doc.params as Record<string, unknown>)
+          : null,
     },
   ];
 }

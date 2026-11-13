@@ -626,7 +626,7 @@
       "ranAt": "Geprüft",
       "remedy": "Abhilfe:",
       "noTitle": "(ohne Titel)",
-      "serverText": "Details und Abhilfen sind der englische Originaltext der Prüfungen.",
+      "serverText": "Details und Abhilfen von tabrion sind dessen englischer Originaltext.",
       "more_one": "Und {{count}} weiterer Befund, nicht angezeigt.",
       "more_other": "Und {{count}} weitere Befunde, nicht angezeigt."
     },
@@ -669,6 +669,114 @@
       "STU-BK-012": "Noch nichts archiviert",
       "STU-BK-013": "Dieser Standby archiviert nicht",
       "STU-BK-014": "Archivierungsstatus nicht lesbar"
+    },
+    "texts": {
+      "STU-DX-001": {
+        "detail": "Das PROD-Profil nutzt sslmode {{sslmode}}; das Zertifikat des Servers wird nicht geprüft.",
+        "detail_unset": "Das PROD-Profil setzt kein sslmode; das Zertifikat des Servers wird nicht geprüft.",
+        "remedy": "Setze sslmode im Profil auf verify-full (oder verify-ca) und gib die CA des Servers an."
+      },
+      "STU-DX-002": {
+        "detail": "Das Profil nutzt sslmode {{sslmode}} für einen Host, der nicht Loopback ist: Der Datenverkehr kann unterwegs mitgelesen oder verändert werden (T-10).",
+        "remedy": "Nutze sslmode verify-full."
+      },
+      "STU-DX-003": {
+        "detail": "Das Profil gibt read_only_role an, aber die Rolle oder eine Rolle, zu der sie per SET ROLE wechseln kann, darf {{parts}}. Die Sitzung von Studio ist schreibgeschützt, die Rolle nicht.",
+        "write_one": "in {{amount}} Tabelle, Sicht oder Sequenz schreiben (INSERT, UPDATE, DELETE, TRUNCATE, ein Spaltenrecht oder Eigentum)",
+        "write_other": "in {{amount}} Tabellen, Sichten oder Sequenzen schreiben (INSERT, UPDATE, DELETE, TRUNCATE, ein Spaltenrecht oder Eigentum)",
+        "create_one": "in {{amount}} Schema Tabellen anlegen (CREATE auf dem Schema)",
+        "create_other": "in {{amount}} Schemas Tabellen anlegen (CREATE auf dem Schema)",
+        "temporary": "temporäre Tabellen anlegen (TEMP auf der Datenbank)",
+        "and": "; und ",
+        "remedy": "Verbinde dich mit einer Rolle, die nur SELECT hat (und USAGE auf den Schemas), kein CREATE auf einem Schema, kein TEMP auf der Datenbank und keine Mitgliedschaft in einer Rolle, die schreiben darf.",
+        "detail_temporary": "Das Profil gibt read_only_role an, aber die Rolle oder eine Rolle, zu der sie per SET ROLE wechseln kann, darf temporäre Tabellen anlegen (TEMP auf der Datenbank; PostgreSQL vergibt das standardmäßig an PUBLIC). Studio lehnt die Anweisungen ab, die sie anlegen, und verwirft temporäre Tabellen, wenn eine Sitzung in ihren Pool zurückgeht; die Rolle selbst ist nicht eingeschränkt.",
+        "remedy_temporary": "REVOKE TEMP ON DATABASE … FROM PUBLIC (und von der Rolle), und GRANT an die Rollen, die es brauchen."
+      },
+      "STU-DX-004": {
+        "detail": "Weder die Rolle noch die Datenbank setzt statement_timeout (oder die genaueste Einstellung ist 0). Eine Anwendung, die selbst keines setzt, führt Anweisungen daher ohne Grenze aus (außer postgresql.conf setzt eines, was diese Rolle nicht lesen kann).",
+        "remedy": "ALTER ROLE … SET statement_timeout = '30s' (oder ALTER DATABASE), oder setze es in der Anwendung (tabrions SessionSettings tut das)."
+      },
+      "STU-DX-005": {
+        "detail_one": "PRAGMA foreign_key_check findet {{amount}} Zeile, deren Fremdschlüssel ins Leere zeigt: Die Daten wurden mit ausgeschaltetem foreign_keys geschrieben.",
+        "detail_other": "PRAGMA foreign_key_check findet {{amount}} Zeilen, deren Fremdschlüssel ins Leere zeigt: Die Daten wurden mit ausgeschaltetem foreign_keys geschrieben.",
+        "remedy": "Öffne die Datenbank mit eingeschaltetem foreign_keys (tabrion.sqlite.connect tut das) und repariere die Zeilen."
+      },
+      "STU-DX-006": {
+        "detail_one": "Die Rolle besitzt {{amount}} Tabelle oder Sicht in der Datenbank oder kann deren Eigentümer werden. Ein Eigentümer kann sie ändern und unterliegt keiner Row-Level-Security, außer FORCE ROW LEVEL SECURITY ist gesetzt.",
+        "detail_other": "Die Rolle besitzt {{amount}} Tabellen oder Sichten in der Datenbank oder kann deren Eigentümer werden. Ein Eigentümer kann sie ändern und unterliegt keiner Row-Level-Security, außer FORCE ROW LEVEL SECURITY ist gesetzt.",
+        "remedy": "Nutze eine Eigentümerrolle für Migrationen und eine eigene Laufzeitrolle für die Anwendung.",
+        "remedy_prod": "Nutze eine Eigentümerrolle für Migrationen und eine eigene Laufzeitrolle für die Anwendung (03 Abschnitt 5.4: Pflicht für PROD)."
+      },
+      "STU-DX-007": {
+        "detail": "Standardrechte (ALTER DEFAULT PRIVILEGES) geben der Rolle oder einer Rolle, der sie angehört, Schreibrechte auf später angelegte Tabellen oder Sequenzen.",
+        "remedy": "ALTER DEFAULT PRIVILEGES … REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM der Rolle."
+      },
+      "STU-DX-008": {
+        "detail_canceled": "Die Diagnose wurde beendet, weil du sie abgebrochen hast. Nicht gelaufen: {{steps}}.",
+        "detail_time_limit": "Die Diagnose wurde beendet, weil sie das Zeitlimit von {{seconds}} s erreicht hat. Nicht gelaufen: {{steps}}.",
+        "tabrion": "die Prüfungen von tabrion",
+        "tabrion_integrity": "die Integritätsprüfung von tabrion (TAB-SQ-006)",
+        "backup": "die Hinweise zu Sicherungen",
+        "remedy": "Führe die Diagnose erneut aus; gib dem Profil für eine große SQLite-Datei ein längeres Statement-Timeout."
+      },
+      "STU-DX-009": {
+        "detail_definition": "PRAGMA foreign_key_check ist fehlgeschlagen: Eine Fremdschlüsseldefinition ist defekt, zum Beispiel zeigt sie auf Spalten ohne Primärschlüssel oder eindeutigen Index.",
+        "remedy_definition": "Repariere die Fremdschlüsseldefinitionen (die Elternspalten brauchen einen PRIMARY KEY oder eine UNIQUE-Einschränkung).",
+        "detail_unreadable": "PRAGMA foreign_key_check konnte nicht laufen: Die Datenbank war belegt, gesperrt oder nicht lesbar.",
+        "remedy_unreadable": "Führe die Diagnose erneut aus, wenn kein anderes Programm die Datei sperrt."
+      },
+      "STU-DX-010": {
+        "detail": "Weder die Rolle noch die Datenbank setzt {{settings}}. Eine Anwendung, die selbst keine setzt, läuft ohne sie (außer postgresql.conf setzt sie, was diese Rolle nicht lesen kann).",
+        "remedy": "ALTER ROLE … SET (oder ALTER DATABASE), oder setze sie in der Anwendung (tabrions SessionSettings tut das)."
+      },
+      "STU-BK-001": {
+        "detail": "Studio hat neben der Datenbank und in ihrem Unterordner backups oder backup keine SQLite-Datei gefunden, deren Name mit dem Namen der Datenbank beginnt. Sicherungen an anderen Orten sieht Studio nicht.",
+        "remedy": "Sichere die Datenbank mit tabrion.sqlite.backup (online, 0600, mit quick_check geprüft) und lege die Kopie auch auf einem anderen Datenträger ab."
+      },
+      "STU-BK-002": {
+        "detail": "Die neueste Sicherung ist {{span}} älter als die letzte Änderung der Datenbank.",
+        "minutes_one": "{{count}} Minute",
+        "minutes_other": "{{count}} Minuten",
+        "hours_one": "{{count}} Stunde",
+        "hours_other": "{{count}} Stunden",
+        "days_one": "{{count}} Tag",
+        "days_other": "{{count}} Tage",
+        "remedy": "Erstelle eine neue Sicherung mit tabrion.sqlite.backup, zum Beispiel vor jeder Migration."
+      },
+      "STU-BK-003": {
+        "detail_one": "{{count}} Sicherungsdatei kann von der Gruppe oder von anderen gelesen werden; eine Sicherung enthält alle Daten.",
+        "detail_other": "{{count}} Sicherungsdateien können von der Gruppe oder von anderen gelesen werden; eine Sicherung enthält alle Daten.",
+        "remedy": "Setze die Sicherungsdateien mit chmod 600; tabrion.sqlite.backup legt sie mit 0600 an."
+      },
+      "STU-BK-004": {
+        "detail": "Studio konnte den Ordner der Datenbank oder einen ihrer Unterordner für Sicherungen nicht auflisten.",
+        "remedy": "Prüfe die Rechte des Ordners, oder suche selbst nach Sicherungen."
+      },
+      "STU-BK-005": {
+        "detail": "Ein Ordner enthält mehr als {{limit}} Einträge; Studio hat sich jeweils die ersten {{limit}} angesehen (in keiner bestimmten Reihenfolge), daher wurde eine Sicherung, sogar die neueste, womöglich übersehen.",
+        "remedy": "Lege Sicherungen in einem eigenen Unterordner backups ab, oder weniger Dateien neben die Datenbank."
+      },
+      "STU-BK-010": {
+        "detail": "archive_mode ist aus: Der Server führt kein WAL-Archiv, daher lässt sich die Datenbank nicht auf einen Zeitpunkt wiederherstellen. Sicherungen mit pg_dump oder mit einem Werkzeug, das kein WAL archiviert, sieht Studio nicht.",
+        "remedy": "Stelle sicher, dass die Datenbank gesichert wird (pg_dump, pg_basebackup oder ein Sicherungswerkzeug); für eine Wiederherstellung auf einen Zeitpunkt setze archive_mode und ein archive_command oder eine archive_library."
+      },
+      "STU-BK-011": {
+        "detail_one": "Der Archiver ist seit dem Zurücksetzen seiner Statistik {{count}}-mal fehlgeschlagen, auch beim letzten Versuch: Das WAL-Archiv hat eine Lücke, und der Server behält WAL, bis die Archivierung wieder funktioniert.",
+        "detail_other": "Der Archiver ist seit dem Zurücksetzen seiner Statistik {{count}}-mal fehlgeschlagen, auch beim letzten Versuch: Das WAL-Archiv hat eine Lücke, und der Server behält WAL, bis die Archivierung wieder funktioniert.",
+        "remedy": "Suche im Serverlog nach dem Fehler von archive_command oder archive_library und behebe ihn."
+      },
+      "STU-BK-012": {
+        "detail": "archive_mode ist an, aber der Archiver hat seit dem Zurücksetzen seiner Statistik keine WAL-Datei archiviert.",
+        "remedy": "Prüfe, ob archive_command oder archive_library gesetzt ist; pg_switch_wal() erzwingt eine erste Datei."
+      },
+      "STU-BK-013": {
+        "detail": "Der Server ist ein Standby mit archive_mode = on und archiviert damit nur auf dem Primärserver.",
+        "remedy": "Prüfe die Archivierung auf dem Primärserver, oder setze archive_mode = always, um auch auf dem Standby zu archivieren."
+      },
+      "STU-BK-014": {
+        "detail": "Studio konnte archive_mode oder pg_stat_archiver mit dieser Rolle nicht lesen.",
+        "remedy": "Frag die Datenbankadministration, wie die Datenbank gesichert wird."
+      }
     }
   },
   "settings": {

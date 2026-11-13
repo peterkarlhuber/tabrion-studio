@@ -18,7 +18,7 @@ It only says what it can see of them:
   archiver fails. Both are readable by every role; ``archive_command`` is not read (it may hold a secret, and only
   a superuser may read it). Backups made with ``pg_dump`` or a tool that does not archive WAL are not visible.
 
-The answer is ``{"hints": [{code, severity, title, detail, remedy, source}], "facts": {...}}`` with codes
+The answer is ``{"hints": [{code, severity, title, detail, remedy, source, params}], "facts": {...}}`` with codes
 ``STU-BK-*``. Like every finding, no hint and no fact names a file path, a file name, a host, a user or a value.
 """
 
@@ -31,6 +31,8 @@ from pathlib import Path
 import stat
 import sys
 from typing import Any
+
+from tabrion_studio.services.diagnosis_texts import span, studio_text
 
 __all__ = [
     "ARCHIVER_SQL",
@@ -70,17 +72,20 @@ ARCHIVER_SQL = (
 )
 
 
-def _hint(code: str, severity: str, title: str, detail: str, remedy: str) -> dict[str, str]:
-    return {"code": code, "severity": severity, "title": title, "detail": detail, "remedy": remedy, "source": "studio"}
-
-
-def _span(seconds: float) -> str:
-    """``seconds`` in words: minutes below two hours, hours below two days, days above."""
-    if seconds < 7200:
-        return f"{max(int(seconds // 60), 1)} minute(s)"
-    if seconds < 2 * 86400:
-        return f"{int(seconds // 3600)} hour(s)"
-    return f"{int(seconds // 86400)} day(s)"
+def _hint(code: str, severity: str, title: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One hint: its facts in ``params`` (the page words them in en/de, TD-032) and the English ``detail`` and
+    ``remedy`` made from them (:func:`.diagnosis_texts.studio_text`)."""
+    params = {} if params is None else params
+    detail, remedy = studio_text(code, params)
+    return {
+        "code": code,
+        "severity": severity,
+        "title": title,
+        "detail": detail,
+        "remedy": remedy,
+        "source": "studio",
+        "params": params,
+    }
 
 
 def _is_backup_name(name: str, database: str, stem: str) -> bool:
@@ -208,39 +213,20 @@ def sqlite_hints(
     }
     hints: list[dict[str, str]] = []
     if seen["unreadable"]:
-        hints.append(_hint(
-            "STU-BK-004", "info", "Backups could not be searched",
-            "Studio could not list the database's folder or one of its backup subfolders.",
-            "Check the folder's permissions, or look for backups yourself.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-004", "info", "Backups could not be searched"))
     if seen["truncated"]:
-        hints.append(_hint(
-            "STU-BK-005", "info", "Backup search cut short",
-            f"A folder holds more than {MAX_ENTRIES} entries; Studio looked at the first {MAX_ENTRIES} of each "
-            "(in no particular order), so a backup, even the newest one, may not have been seen.",
-            "Keep backups in a backups subfolder of their own, or fewer files next to the database.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-005", "info", "Backup search cut short", {"max_entries": MAX_ENTRIES}))
     if seen["found"] == 0:
-        hints.append(_hint(
-            "STU-BK-001", "warning", "No backup found",
-            "Studio found no SQLite file next to the database, or in its backups or backup subfolder, whose name "
-            "starts with the database's name. Backups kept elsewhere are not visible to Studio.",
-            "Back the database up with tabrion.sqlite.backup (online, 0600, checked with quick_check) and keep the "
-            "copy on another disk as well.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-001", "warning", "No backup found"))
     elif newest is not None and changed is not None and changed > newest:
         behind = changed - newest
+        amount, unit = span(behind)
         hints.append(_hint(
             "STU-BK-002", "warning" if behind > OLD_BACKUP_S else "info", "Newest backup is older than the data",
-            f"The newest backup is {_span(behind)} older than the database's last change.",
-            "Make a new backup with tabrion.sqlite.backup, for example before every migration.",
+            {"amount": amount, "unit": unit},
         ))  # fmt: skip
     if seen["exposed"]:
-        hints.append(_hint(
-            "STU-BK-003", "warning", "Backups readable by other users",
-            f"{seen['exposed']} backup file(s) can be read by the group or by others; a backup holds all the data.",
-            "chmod 600 the backup files; tabrion.sqlite.backup creates them with 0600.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-003", "warning", "Backups readable by other users", {"files": seen["exposed"]}))
     return {"hints": hints, "facts": facts}
 
 
@@ -260,13 +246,9 @@ def postgres_hints(row: tuple[Any, ...] | None, *, prod: bool) -> dict[str, Any]
     """The backup hints from the one row of :data:`ARCHIVER_SQL`, or ``None`` when it could not be read."""
     if row is None or len(row) != 7:
         return {
-            "hints": [_hint(
-                "STU-BK-014", "info", "Archiving state not readable",
-                "Studio could not read archive_mode or pg_stat_archiver with this role.",
-                "Ask the database administrator how the database is backed up.",
-            )],
+            "hints": [_hint("STU-BK-014", "info", "Archiving state not readable")],
             "facts": {"engine": "postgresql", "archive_mode": None},
-        }  # fmt: skip
+        }
     mode, standby = str(row[0]), bool(row[1])
     archived, failed = _count(row[2]), _count(row[3])
     last_archived, last_failed, reset = _number(row[4]), _number(row[5]), _number(row[6])
@@ -282,30 +264,11 @@ def postgres_hints(row: tuple[Any, ...] | None, *, prod: bool) -> dict[str, Any]
     }
     hints: list[dict[str, str]] = []
     if mode == "off":
-        hints.append(_hint(
-            "STU-BK-010", "warning" if prod else "info", "WAL archiving is off",
-            "archive_mode is off: the server keeps no WAL archive, so the database cannot be restored to a point in "
-            "time. Studio cannot see backups made with pg_dump or with a tool that does not archive WAL.",
-            "Make sure the database is backed up (pg_dump, pg_basebackup or a backup tool); for point-in-time "
-            "recovery set archive_mode and an archive_command or archive_library.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-010", "warning" if prod else "info", "WAL archiving is off"))
     elif standby and mode == "on":
-        hints.append(_hint(
-            "STU-BK-013", "info", "This standby does not archive",
-            "The server is a standby with archive_mode on, which archives only on the primary.",
-            "Check the archiving on the primary, or set archive_mode = always to archive on the standby too.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-013", "info", "This standby does not archive"))
     elif failed and (last_archived is None or (last_failed is not None and last_failed >= last_archived)):
-        hints.append(_hint(
-            "STU-BK-011", "error" if prod else "warning", "WAL archiving fails",
-            f"The archiver failed {failed} time(s) since its statistics were reset, and the last attempt failed: "
-            "the WAL archive has a gap and the server keeps WAL until archiving works again.",
-            "Look at the server log for the archive_command or archive_library error and fix it.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-011", "error" if prod else "warning", "WAL archiving fails", {"failures": failed}))
     elif archived == 0:
-        hints.append(_hint(
-            "STU-BK-012", "info", "Nothing archived yet",
-            "archive_mode is on, but the archiver has not archived a WAL file since its statistics were reset.",
-            "Check that archive_command or archive_library is set; pg_switch_wal() forces a first file.",
-        ))  # fmt: skip
+        hints.append(_hint("STU-BK-012", "info", "Nothing archived yet"))
     return {"hints": hints, "facts": dict(facts)}

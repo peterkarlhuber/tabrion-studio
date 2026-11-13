@@ -1,7 +1,10 @@
 """Diagnostics (MVP): tabrion's checks and Studio's own on one open connection (03 sections 2 G and 6, STU-014).
 
 ``Diagnostics.run`` gives a list of findings ``{code, severity, title, detail, remedy, source}``; ``severity`` is
-``error``, ``warning`` or ``info`` (tabrion's scale), and ``source`` is ``tabrion`` or ``studio``.
+``error``, ``warning`` or ``info`` (tabrion's scale), and ``source`` is ``tabrion`` or ``studio``. Studio's own
+findings also carry ``params``, their facts (counts, setting names, the ``sslmode``, the checks that did not run), which
+the page words in English or German (TD-032); their ``detail`` and ``remedy`` are the English text made from them
+(:mod:`.diagnosis_texts`). tabrion's texts are English only.
 
 **tabrion's findings** (``TAB-SQ-*``, ``TAB-PG-*``) come from ``tabrion.check`` on the driver connection of one
 ``Database.read()`` (:func:`.tabrion_compat.check`; on PostgreSQL in tabrion's own read-only transactions, I-1 of
@@ -63,6 +66,7 @@ from tabrion.check import Finding
 from tabrion_studio.config.schema import is_loopback
 from tabrion_studio.services import backup_hints
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
+from tabrion_studio.services.diagnosis_texts import CAPPED_COUNT, studio_text
 from tabrion_studio.services.queries import CANCEL_ATTEMPTS, CANCEL_INTERVAL_S
 from tabrion_studio.services.tabrion_compat import Cancel
 
@@ -94,7 +98,7 @@ _ORDER = {"error": 0, "warning": 1, "info": 2}
 #: The SQLite errors of ``PRAGMA foreign_key_check`` that mean a broken foreign key definition (L-5).
 _BROKEN_FOREIGN_KEY = ("foreign key mismatch", "no such table")
 #: How many foreign-key violations ``STU-DX-005`` reads at most (it only counts them).
-MAX_FK_ROWS = 1_000
+MAX_FK_ROWS = CAPPED_COUNT
 #: STU-DX-003 checks every role the session can become: itself and every role it is a member of, INHERIT or not
 #: (one SET ROLE away; ``pg_has_role(..., 'MEMBER')``), as tabrion's role checks count "can become" (I-20).
 _WRITABLE_SQL = (
@@ -149,11 +153,23 @@ _SECURE_TLS = frozenset({"verify-ca", "verify-full"})
 _WEAK_TLS = frozenset({"disable", "allow", "prefer"})
 
 
-def _finding(code: str, severity: str, title: str, detail: str, remedy: str) -> dict[str, str]:
-    return {"code": code, "severity": severity, "title": title, "detail": detail, "remedy": remedy, "source": "studio"}
+def _finding(code: str, severity: str, title: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """One of Studio's findings: its facts in ``params`` (the page words them in en/de, TD-032) and the English
+    ``detail`` and ``remedy`` made from them (:func:`.diagnosis_texts.studio_text`)."""
+    params = {} if params is None else params
+    detail, remedy = studio_text(code, params)
+    return {
+        "code": code,
+        "severity": severity,
+        "title": title,
+        "detail": detail,
+        "remedy": remedy,
+        "source": "studio",
+        "params": params,
+    }
 
 
-def _from_tabrion(finding: Finding) -> dict[str, str]:
+def _from_tabrion(finding: Finding) -> dict[str, Any]:
     return {
         "code": finding.code,
         "severity": str(finding.severity),
@@ -256,11 +272,9 @@ class Diagnostics:
             # N-1 of the delta review: on SQLite the cancel stops only tabrion's quick_check, so its other findings
             # (file mode, journal) come back even past the limit; they take milliseconds.
             sqlite = connection.engine == "sqlite"
-            tabrion = run.step(
-                "tabrion's checks", lambda: connection.tabrion_findings(cancel=run.hook), empty, always=sqlite
-            )
+            tabrion = run.step("tabrion", lambda: connection.tabrion_findings(cancel=run.hook), empty, always=sqlite)
             if sqlite and run.hook.requested and any(_not_checked(finding, "TAB-SQ-006") for finding in tabrion):
-                run.skipped.append("tabrion's integrity check (TAB-SQ-006)")
+                run.skipped.append("tabrion_integrity")
             findings = [
                 _from_tabrion(finding)
                 for finding in tabrion
@@ -286,12 +300,11 @@ class Diagnostics:
                 if not runs:
                     self._running.pop(connection.id, None)
         if run.skipped:
-            why = "you canceled it" if run.canceled else f"it reached the time limit of {connection.timeout_s:g} s"
-            findings.append(_finding(
-                "STU-DX-008", "info", "Not every check ran",
-                f"The diagnosis stopped because {why}. Not run: {', '.join(run.skipped)}.",
-                "Run the diagnosis again; for a large SQLite file, give the profile a longer statement timeout.",
-            ))  # fmt: skip
+            findings.append(_finding("STU-DX-008", "info", "Not every check ran", {
+                "reason": "canceled" if run.canceled else "time_limit",
+                "time_limit_s": connection.timeout_s,
+                "skipped": list(run.skipped),
+            }))  # fmt: skip
         findings.sort(key=lambda item: (_ORDER.get(item["severity"], 3), item["code"]))
         counts = {name: sum(item["severity"] == name for item in findings) for name in _ORDER}
         doc: dict[str, Any] = {
@@ -312,7 +325,7 @@ class Diagnostics:
         if connection.engine != "postgresql":
             empty: dict[str, Any] = {"hints": [], "facts": {"engine": connection.engine, "searched": False}}
             return run.step(
-                "backup hints",
+                "backup",
                 lambda: backup_hints.sqlite_hints(
                     connection.database_file, clock=self.clock, stop=lambda: run.hook.requested
                 ),
@@ -329,7 +342,7 @@ class Diagnostics:
             return tuple(rows[0]) if rows else None
 
         missing = object()
-        row = run.step("backup hints", archiver, missing)
+        row = run.step("backup", archiver, missing)
         if row is missing:
             return {"hints": [], "facts": {"engine": "postgresql", "archive_mode": None}}
         return backup_hints.postgres_hints(row if isinstance(row, tuple) else None, prod=prod)
@@ -337,24 +350,18 @@ class Diagnostics:
     @staticmethod
     def _postgres(
         connection: OpenConnection, profile: Any, run: _Run, *, prod: bool, tabrion_tls: bool
-    ) -> list[dict[str, str]]:
-        found: list[dict[str, str]] = []
+    ) -> list[dict[str, Any]]:
+        found: list[dict[str, Any]] = []
         sslmode = str(profile.sslmode or "")
         host = str(profile.host or "")
         socket = host.startswith("/")  # a Unix socket folder has no TLS at all (L-3 of the review)
         if prod and not socket and sslmode not in _SECURE_TLS:
             found.append(_finding(
                 "STU-DX-001", "error", "Production connection without a verified certificate",
-                f"The prod profile uses sslmode {sslmode or 'unset'}; the server's certificate is not verified.",
-                "Set sslmode to verify-full (or verify-ca) in the profile and give the server's CA.",
+                {"sslmode": sslmode or None},
             ))  # fmt: skip
         if sslmode in _WEAK_TLS and host and not is_loopback(host) and not tabrion_tls:
-            found.append(_finding(
-                "STU-DX-002", "warning", "Weak TLS to a remote host",
-                f"The profile uses sslmode {sslmode} for a host that is not loopback: traffic can be read or changed "
-                "on the way (T-10).",
-                "Use sslmode verify-full.",
-            ))  # fmt: skip
+            found.append(_finding("STU-DX-002", "warning", "Weak TLS to a remote host", {"sslmode": sslmode}))
 
         def count(sql: str) -> int:
             value = connection.fetch(sql, cancel=run.hook)[0][0]
@@ -364,81 +371,36 @@ class Diagnostics:
             writable, creatable, temporary = run.step(
                 "STU-DX-003", lambda: (count(_WRITABLE_SQL), count(_CREATE_SQL), count(_TEMP_SQL)), (0, 0, 0)
             )
-            if writable > 0 or creatable > 0:
-                parts = []
-                if writable > 0:
-                    parts.append(
-                        f"write in {writable}{'+' if writable >= 1000 else ''} table(s), view(s) or sequence(s) "
-                        "(INSERT, UPDATE, DELETE, TRUNCATE, a column grant or ownership)"
-                    )
-                if creatable > 0:
-                    parts.append(
-                        f"create tables in {creatable}{'+' if creatable >= 1000 else ''} schema(s) (CREATE on the "
-                        "schema)"
-                    )
-                if temporary > 0:
-                    parts.append("create temporary tables (TEMP on the database)")
-                found.append(_finding(
-                    "STU-DX-003", "error" if prod else "warning", "The read-only role can write",
-                    "The profile says read_only_role, but the role, or a role it can SET ROLE to, may "
-                    f"{'; and '.join(parts)}. Studio's session is read-only; the role is not.",
-                    "Connect with a role that has only SELECT (and USAGE on the schemas), no CREATE on any schema, no "
-                    "TEMP on the database, and no membership in a role that can write.",
-                ))  # fmt: skip
-            elif temporary > 0:
-                found.append(_finding(
-                    "STU-DX-003", "info", "The read-only role can write",
-                    "The profile says read_only_role, but the role, or a role it can SET ROLE to, may create "
-                    "temporary tables (TEMP on the database; PostgreSQL grants it to PUBLIC by default). Studio "
-                    "refuses the statements that create them and drops temporary tables when a session goes back to "
-                    "its pool; the role itself is not limited.",
-                    "REVOKE TEMP ON DATABASE ... FROM PUBLIC (and from the role), and GRANT it to the roles that "
-                    "need it.",
-                ))  # fmt: skip
+            if writable > 0 or creatable > 0 or temporary > 0:
+                # TEMP alone is an info on every environment (F-1 of the STU-016 review).
+                severity = ("error" if prod else "warning") if writable > 0 or creatable > 0 else "info"
+                found.append(_finding("STU-DX-003", severity, "The read-only role can write", {
+                    "writable": writable, "creatable": creatable, "temporary": temporary > 0,
+                }))  # fmt: skip
             if run.step("STU-DX-007", lambda: count(_DEFAULT_WRITE_SQL), 0) > 0:
-                found.append(_finding(
-                    "STU-DX-007", "info", "Future tables will be writable",
-                    "Default privileges (ALTER DEFAULT PRIVILEGES) grant the role, or a role it belongs to, write "
-                    "access to tables or sequences created later.",
-                    "ALTER DEFAULT PRIVILEGES ... REVOKE INSERT, UPDATE, DELETE, TRUNCATE ON TABLES FROM the role.",
-                ))  # fmt: skip
+                found.append(_finding("STU-DX-007", "info", "Future tables will be writable"))
         owned = run.step("STU-DX-006", lambda: count(_OWNER_SQL), 0)
         if owned > 0:
             found.append(_finding(
-                "STU-DX-006", "error" if prod else "warning", "Role owns tables",
-                f"The role owns, or can become the owner of, {owned}{'+' if owned >= 1000 else ''} table(s) or "
-                "view(s) in the database; an owner can change them and is not subject to row-level security unless "
-                "FORCE ROW LEVEL SECURITY is set.",
-                "Use an owner role for migrations and a separate runtime role for the application"
-                f"{' (03 section 5.4: required for prod)' if prod else ''}.",
+                "STU-DX-006", "error" if prod else "warning", "Role owns tables", {"owned": owned, "prod": prod}
             ))  # fmt: skip
         rows = run.step("STU-DX-004", lambda: connection.fetch(_ROLE_SETTINGS_SQL, cancel=run.hook), None)
         if rows is not None:
             settings = effective_settings(rows)
             if _unset(settings, "statement_timeout"):
-                found.append(_finding(
-                    "STU-DX-004", "warning", "No statement timeout for the role or database",
-                    "Neither the role nor the database sets statement_timeout (or the most specific setting is 0), "
-                    "so an application that sets none runs statements without a limit (unless postgresql.conf sets "
-                    "one, which this role cannot read).",
-                    "ALTER ROLE ... SET statement_timeout = '30s' (or ALTER DATABASE), or set it in the application "
-                    "(tabrion's SessionSettings does).",
-                ))  # fmt: skip
+                found.append(_finding("STU-DX-004", "warning", "No statement timeout for the role or database"))
             missing = [name for name in _OTHER_SETTINGS if _unset(settings, name)]
             if missing:
                 found.append(_finding(
                     "STU-DX-010",
                     "warning" if "idle_in_transaction_session_timeout" in missing else "info",
                     "Session settings missing for the role or database",
-                    f"Neither the role nor the database sets {', '.join(missing)}; an application that sets none "
-                    "runs without them (unless postgresql.conf sets them, which this role cannot read).",
-                    "ALTER ROLE ... SET (or ALTER DATABASE), or set them in the application (tabrion's "
-                    "SessionSettings does).",
+                    {"missing": missing},
                 ))  # fmt: skip
         return found
 
     @staticmethod
-    def _sqlite(connection: OpenConnection, run: _Run) -> list[dict[str, str]]:
+    def _sqlite(connection: OpenConnection, run: _Run) -> list[dict[str, Any]]:
         def violations() -> int:
             statement = connection.prepare("PRAGMA foreign_key_check")
             return len(connection.stream(statement, lambda cursor: cursor.fetch(MAX_FK_ROWS), cancel=run.hook))
@@ -450,23 +412,10 @@ class Diagnostics:
             # mismatch" (parent columns without a unique index) and "no such table" (a missing parent on old SQLite)
             # say that a definition is broken; a busy, locked or unreadable file says nothing about the keys.
             cause = str(exc.original) if isinstance(exc.original, sqlite3.Error) else ""
-            if cause.startswith(_BROKEN_FOREIGN_KEY):
-                return [_finding(
-                    "STU-DX-009", "warning", "Foreign keys could not be checked",
-                    "PRAGMA foreign_key_check failed: a foreign key definition is broken, for example it points at "
-                    "columns without a primary key or unique index.",
-                    "Fix the foreign key definitions (the parent columns need a PRIMARY KEY or UNIQUE constraint).",
-                )]  # fmt: skip
             return [_finding(
                 "STU-DX-009", "warning", "Foreign keys could not be checked",
-                "PRAGMA foreign_key_check could not run: the database was busy, locked or not readable.",
-                "Run the diagnosis again when no other program holds a lock on the file.",
+                {"cause": "definition" if cause.startswith(_BROKEN_FOREIGN_KEY) else "unreadable"},
             )]  # fmt: skip
         if not found:
             return []
-        return [_finding(
-            "STU-DX-005", "warning", "Rows break foreign keys",
-            f"PRAGMA foreign_key_check finds {found}{'+' if found >= MAX_FK_ROWS else ''} row(s) whose "
-            "foreign key points nowhere: data was written with foreign_keys off.",
-            "Open the database with foreign_keys on (tabrion.sqlite.connect does) and repair the rows.",
-        )]  # fmt: skip
+        return [_finding("STU-DX-005", "warning", "Rows break foreign keys", {"rows": found})]

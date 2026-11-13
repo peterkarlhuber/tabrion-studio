@@ -6,7 +6,8 @@ in an issue. 09's acceptance is "report without secrets (canary test)", so the r
 
 * **In it:** the report's time, Studio's and tabrion's versions, the profile's name, engine and environment; on
   PostgreSQL whether the profile expects a read-only role and its ``sslmode``; every finding and backup hint (code,
-  severity, title, detail, remedy, source) with their counts, and the backup facts (counts, times, ``archive_mode``).
+  severity, title, detail, remedy, source; for Studio's own also ``params`` in the JSON report, TD-032) with their
+  counts, and the backup facts (counts, times, ``archive_mode``).
 * **Never in it:** a password or other secret, a token of the process, a connection URL or DSN, the host, port, user
   or database name, a file path or file name, the connection ID and any SQL text or parameter value. Studio's own
   findings and hints name none of these. tabrion's may name schemas and extensions, and a schema is often named after
@@ -24,7 +25,8 @@ in an issue. 09's acceptance is "report without secrets (canary test)", so the r
 starts a line, and has the characters that make links, HTML, emphasis, code, tables or headings escaped with a
 backslash, so a database's text cannot become a link or markup where the report is rendered (T-07). **JSON**
 (``application/json``): ``{"report", "format_version", "generated_at", "studio_version", "tabrion_version",
-"connection", "diagnosis", "backup", "left_out"}``; times are ISO 8601 UTC text.
+"connection", "diagnosis", "backup", "left_out"}``; times are ISO 8601 UTC text. The JSON is ASCII: every other
+character is a ``\\u`` escape, so no control or bidi character of a database name reaches a terminal raw.
 """
 
 from __future__ import annotations
@@ -135,9 +137,14 @@ def hide_names(text: str, names: dict[str, str]) -> str:
     return text
 
 
-def _item(entry: dict[str, Any]) -> dict[str, str]:
+def _item(entry: dict[str, Any]) -> dict[str, Any]:
     keys = ("code", "severity", "title", "detail", "remedy", "source")
-    return {key: str(entry.get(key, "")) for key in keys}
+    item: dict[str, Any] = {key: str(entry.get(key, "")) for key in keys}
+    if item["source"] == "studio" and isinstance(entry.get("params"), dict):
+        # TD-032: Studio's facts behind its English text (counts, setting names, sslmode, the checks that did not
+        # run), the same the page words in en/de. Only Studio's own: they never name the role, database or a path.
+        item["params"] = dict(entry["params"])
+    return item
 
 
 @dataclass
@@ -197,7 +204,9 @@ class DiagnosisReports:
         report = _clean(report)
         media_type, suffix = FORMATS[report_format]
         if report_format == "json":
-            body = json.dumps(report, ensure_ascii=False, indent=2).encode("utf-8") + b"\n"
+            # ASCII with \\u escapes (L-1 of the PR #85 review): json.dumps escapes only U+0000..U+001F, so C1
+            # controls (U+009B is the 8-bit CSI) and bidi overrides from a database name would reach a terminal raw.
+            body = json.dumps(report, ensure_ascii=True, indent=2).encode("ascii") + b"\n"
         else:
             body = _markdown(report).encode("utf-8")
         stamp = datetime.datetime.fromtimestamp(generated, tz=datetime.UTC).strftime("%Y%m%dT%H%M%SZ")

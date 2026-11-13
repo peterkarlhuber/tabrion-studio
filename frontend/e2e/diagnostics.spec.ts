@@ -3,7 +3,8 @@
  * bidi override) have no serious or critical axe violation in light and dark, English and German; a PROD profile
  * asks D-02 first; every write is JSON; Cancel posts the cancel route and the incomplete result says so. TD-036: the
  * backup hints are listed under "Backups" and pass axe too; "Download Markdown report" saves the server's file under
- * its name by keyboard alone, and a refused report (`studio.report_unavailable`) is the page's text.
+ * its name by keyboard alone, and a refused report (`studio.report_unavailable`) is the page's text. TD-032: Studio's
+ * details and remedies are in the page's language, tabrion's stay English (`lang="en"`).
  */
 import { readFileSync } from 'node:fs';
 
@@ -29,6 +30,8 @@ const TEXT = {
     run: 'Run diagnosis',
     summary: '1 error · 2 warnings · 1 note',
     owner: 'Role owns tables',
+    ownerDetail: 'The role owns, or can become the owner of, 3 tables or views in the database;',
+    archiveRemedy: 'Make sure the database is backed up (pg_dump, pg_basebackup or a backup tool);',
     backup: 'Backups',
     archive: 'WAL archiving is off',
   },
@@ -36,6 +39,9 @@ const TEXT = {
     run: 'Diagnose starten',
     summary: '1 Fehler · 2 Warnungen · 1 Hinweis',
     owner: 'Die Rolle besitzt Tabellen',
+    ownerDetail:
+      'Die Rolle besitzt 3 Tabellen oder Sichten in der Datenbank oder kann deren Eigentümer werden.',
+    archiveRemedy: 'Stelle sicher, dass die Datenbank gesichert wird',
     backup: 'Sicherungen',
     archive: 'WAL-Archivierung ist aus',
   },
@@ -55,12 +61,33 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       await expect(page.getByTestId('diagnostics-summary')).toHaveText(text.summary);
       await expect(page.getByTestId('diagnostics-finding')).toHaveCount(4);
       await expect(page.getByRole('heading', { name: text.owner })).toBeVisible();
+      // TD-032: Studio's detail in the page's language, not marked as English; tabrion's stays English.
+      const owner = page.getByTestId('diagnostics-finding').filter({ hasText: 'STU-DX-006' });
+      await expect(owner.getByTestId('diagnostics-detail')).toContainText(text.ownerDetail);
+      await expect(owner.locator('[lang]')).toHaveCount(0);
+      const tabrion = page.getByTestId('diagnostics-finding').filter({ hasText: 'TAB-PG-002' });
+      await expect(tabrion.getByTestId('diagnostics-detail')).toHaveAttribute('lang', 'en');
+      // Only tabrion's TAB-* entries keep lang="en": no STU-* finding or hint has any English-marked text.
+      const marked = page.locator(
+        '[data-testid="diagnostics-finding"], [data-testid="diagnostics-hint"]',
+      );
+      for (const item of await marked.all()) {
+        const code = (await item.getByTestId('diagnostics-code').textContent()) ?? '';
+        if (code.startsWith('STU-')) await expect(item.locator('[lang]')).toHaveCount(0);
+        else expect(code).toMatch(/^TAB-/);
+      }
+      // tabrion's title, detail and remedy: the only English-marked texts of the result.
+      const english = page.locator('[data-testid="diagnostics-diagnosis"] [lang="en"]');
+      await expect(english).toHaveCount(3);
       // The schema name from the database is escaped (U-1).
       await expect(page.getByTestId('diagnostics-findings')).toContainText('audit\\u202Egol');
       // TD-036: the backup hints in their own section, not counted in the summary.
       const backup = page.getByRole('region', { name: text.backup });
       await expect(backup.getByTestId('diagnostics-hint')).toHaveCount(2);
       await expect(backup.getByRole('heading', { level: 4, name: text.archive })).toBeVisible();
+      await expect(backup.getByTestId('diagnostics-remedy').first()).toContainText(
+        text.archiveRemedy,
+      );
       expect(await seriousViolations(page)).toEqual([]);
     });
   }

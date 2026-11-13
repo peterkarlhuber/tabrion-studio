@@ -697,6 +697,105 @@ describe('diagnostics view: German', () => {
   });
 });
 
+describe('diagnostics view: Studio texts in en/de (TD-032)', () => {
+  const WORDED_OWNER = { ...OWNER, params: { owned: 3, prod: true } };
+  const WORDED_INCOMPLETE = {
+    ...INCOMPLETE,
+    params: { reason: 'time_limit', time_limit_s: 15, skipped: ['tabrion', 'STU-DX-004'] },
+  };
+  // Params that do not fit (a count as text): the page shows the server's English, marked as such.
+  const BROKEN_NOTE = { ...NOTE, params: { missing: 'lock_timeout' } };
+
+  async function run(findingsList: unknown[], button: string, backup?: unknown) {
+    const user = userEvent.setup();
+    const { fetcher } = server({
+      'POST /api/connections/c1/diagnostics': () =>
+        json(diagnosis(findingsList, backup === undefined ? {} : { backup })),
+    });
+    render(<DiagnosticsView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.click(screen.getByRole('button', { name: button }));
+    await screen.findByTestId('diagnostics-summary');
+  }
+
+  it("words Studio's details and remedies in German from their params, without lang=en", async () => {
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    await run([WORDED_OWNER, WORDED_INCOMPLETE], 'Diagnose starten');
+    const items = findings();
+    const owner = within(nth(items, 0));
+    expect(owner.getByTestId('diagnostics-detail')).toHaveTextContent(
+      'Die Rolle besitzt 3 Tabellen oder Sichten in der Datenbank oder kann deren Eigentümer werden.',
+    );
+    expect(owner.getByTestId('diagnostics-detail')).not.toHaveAttribute('lang');
+    expect(owner.getByTestId('diagnostics-remedy')).toHaveTextContent(
+      'Abhilfe: Nutze eine Eigentümerrolle für Migrationen und eine eigene Laufzeitrolle für die Anwendung (03 Abschnitt 5.4: Pflicht für PROD).',
+    );
+    expect(nth(items, 0).querySelector('[lang]')).toBeNull();
+    expect(within(nth(items, 1)).getByTestId('diagnostics-detail')).toHaveTextContent(
+      'Die Diagnose wurde beendet, weil sie das Zeitlimit von 15 s erreicht hat. Nicht gelaufen: die Prüfungen von tabrion, STU-DX-004.',
+    );
+    // Only Studio's texts: no hint that some text is English.
+    expect(screen.queryByTestId('diagnostics-server-text')).toBeNull();
+  });
+
+  it("words them in English the server's way, and the hint names tabrion's English text", async () => {
+    await run([WORDED_OWNER, HOSTILE], 'Run diagnosis');
+    const items = findings();
+    expect(within(nth(items, 0)).getByTestId('diagnostics-detail')).toHaveTextContent(
+      'The role owns, or can become the owner of, 3 tables or views in the database;',
+    );
+    expect(within(nth(items, 0)).getByTestId('diagnostics-detail')).not.toHaveAttribute('lang');
+    expect(within(nth(items, 1)).getByTestId('diagnostics-detail')).toHaveAttribute('lang', 'en');
+    expect(screen.getByTestId('diagnostics-server-text')).toHaveTextContent(
+      'Details and remedies from tabrion are its own English text.',
+    );
+  });
+
+  it("falls back to the server's English text when the params do not fit", async () => {
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    await run([BROKEN_NOTE, { ...OWNER, params: { owned: '3', prod: false } }], 'Diagnose starten');
+    for (const item of findings()) {
+      expect(within(item).getByTestId('diagnostics-detail')).toHaveAttribute('lang', 'en');
+      expect(
+        within(item).getByTestId('diagnostics-remedy').querySelector('[lang="en"]'),
+      ).not.toBeNull();
+    }
+    expect(within(nth(findings(), 1)).getByTestId('diagnostics-detail')).toHaveTextContent(
+      'Neither the role nor the database sets lock_timeout.',
+    );
+    expect(screen.getByTestId('diagnostics-server-text')).toBeVisible();
+  });
+
+  it('words the backup hints in German from their params', async () => {
+    await act(async () => {
+      await i18n.changeLanguage('de');
+    });
+    await run([], 'Diagnose starten', {
+      hints: [
+        {
+          code: 'STU-BK-002',
+          severity: 'warning',
+          title: 'Newest backup is older than the data',
+          detail: 'The newest backup is 8 days older than the database.',
+          remedy: 'Make a new backup.',
+          source: 'studio',
+          params: { amount: 8, unit: 'days' },
+        },
+      ],
+      facts: { searched: true },
+    });
+    const hint = within(screen.getByTestId('diagnostics-hint'));
+    expect(hint.getByTestId('diagnostics-detail')).toHaveTextContent(
+      'Die neueste Sicherung ist 8 Tage älter als die letzte Änderung der Datenbank.',
+    );
+    expect(hint.getByTestId('diagnostics-detail')).not.toHaveAttribute('lang');
+  });
+});
+
 describe('diagnostics API parsing', () => {
   it('fails closed on unexpected values', () => {
     expect(parseDiagnosis(null)).toBeNull();
@@ -709,6 +808,8 @@ describe('diagnostics API parsing', () => {
       ran_at: 'yesterday',
       findings: [
         { code: 'A', severity: 'warning', title: 1, detail: null, remedy: [], source: 'studio' },
+        { code: 'C', severity: 'info', source: 'studio', params: ['rows', 5] },
+        { code: 'D', severity: 'info', source: 'studio', params: { rows: 5 } },
         { code: '', severity: 'error' },
         { severity: 'error' },
         null,
@@ -729,15 +830,43 @@ describe('diagnostics API parsing', () => {
           detail: '',
           remedy: '',
           source: 'tabrion',
+          params: null,
         },
-        { code: 'A', severity: 'warning', title: '', detail: '', remedy: '', source: 'studio' },
+        {
+          code: 'A',
+          severity: 'warning',
+          title: '',
+          detail: '',
+          remedy: '',
+          source: 'studio',
+          params: null,
+        },
+        // TD-032: params must be an object (not a list); the page checks their fields when it words them.
+        {
+          code: 'C',
+          severity: 'info',
+          title: '',
+          detail: '',
+          remedy: '',
+          source: 'studio',
+          params: null,
+        },
+        {
+          code: 'D',
+          severity: 'info',
+          title: '',
+          detail: '',
+          remedy: '',
+          source: 'studio',
+          params: { rows: 5 },
+        },
       ],
       backup: null,
     });
     expect(countFindings(parsed?.findings ?? [])).toEqual({
       error: 0,
       warning: 1,
-      info: 0,
+      info: 2,
       unknown: 1,
     });
     expect(parseDiagnosis({ findings: [], ran_at: -1 })?.ranAt).toBeNull();

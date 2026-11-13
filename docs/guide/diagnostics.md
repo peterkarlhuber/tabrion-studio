@@ -22,9 +22,11 @@ view stops a running diagnosis.
 
 Findings are sorted by severity: **Error**, **Warning** and **Note**, each with an icon and the word, never by
 colour alone. Each finding shows its code, its title, the detail and the remedy, and whether it comes from tabrion or
-from Studio. Studio's own titles (`STU-DX-*`, `STU-BK-*`) are in your language; details and remedies are the
-checks' own English text, because they name database objects such as schemas. Unusual characters in those names
-(for example a right-to-left mark) are shown as escapes such as `‮`, so a name cannot disguise itself.
+from Studio. Studio's own findings and hints (`STU-DX-*`, `STU-BK-*`) are in your language: title, detail and
+remedy. tabrion's findings (`TAB-*`) are tabrion's own English text, because tabrion has no German texts yet and its
+details name database objects such as schemas; a note above the list says so when such a finding is shown.
+Unusual characters in those names (for example a right-to-left mark) are shown as escapes such as `\u202E`, so a
+name cannot disguise itself.
 
 ## Backups
 
@@ -71,4 +73,53 @@ If Studio cannot read from the server the names it has to leave out, it makes no
 not read from the server the names the report leaves out …"); try again when the connection is free, or connect
 again.
 
-The report cannot be made from the command line yet.
+The report is in English, whatever the language of the page, since it is meant to be passed on. The JSON report
+also gives the facts behind each of Studio's findings and hints (`params`: counts, setting names, the `sslmode`, the
+checks that did not run), so a tool can word them itself.
+
+## The report from the command line
+
+`tabrion-studio diagnose` writes the same report without opening the browser, for example in a script or for an
+agent. No Studio needs to run for it:
+
+```
+tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE [--force]] [--confirm-prod]
+```
+
+| Option | Meaning |
+|---|---|
+| `PROJECT` | the project folder (default: the current folder); its profiles count only after you trusted them in Studio |
+| `--profile` | the profile: its id (`user:NAME` for your own profiles, `project:NAME` for the project's) or its name, when only one profile has that name; a value that starts with `user:` or `project:` is only compared with the ids |
+| `--format` | `markdown` (the default) or `json` |
+| `--output` | write the report to this file, a new file that only you may read (mode 0600 on Linux and macOS); without it, the report goes to standard output as UTF-8 |
+| `--force` | with `--output`: replace a file that already exists; without it, an existing file is refused |
+| `--confirm-prod` | needed for a profile marked as PROD: your confirmation that Studio may connect to the production database ("Production database"); the connection stays read-only and limited to the profile's time limit (15 seconds unless the profile sets its own) |
+| `--state-dir`, `--config-dir` | the folders Studio uses, as for `tabrion-studio` itself |
+
+It opens the profile's read-only connection, runs the diagnosis with the backup hints, writes the report and closes
+the connection. The report leaves out the same things as the downloaded one. The command never asks anything:
+
+- **Project profiles** are used only after you chose **Trust** in Studio's dialog **Trust the project profiles?**
+  (see [Connections](connections.md)), and only while the file is unchanged since. Otherwise the command says that
+  the profile was not found and that the project's profiles need your trust first.
+- **PROD** profiles need `--confirm-prod` on every run; without it the command connects to nothing and stops with
+  exit code 2. If the profile becomes PROD while the command runs, it is refused as well.
+- **Passwords** come from the system keyring or from the profile's `env:` or `file:` reference, as in Studio; the
+  command itself does not prompt for one, but your system keyring may ask to be unlocked. In a script or CI job
+  without a keyring, give the profile an `env:` reference and set `PYTHON_KEYRING_BACKEND=keyring.backends.null.Keyring`
+  so that no keyring is asked.
+
+The output file is written whole or not at all: the report goes to a temporary file in the same folder, which then
+takes the file's name. `--output` never follows a link, never writes to a folder or a device, and always refuses the
+profile's database file and its `-wal`, `-shm` and `-journal` files, even with `--force`. The JSON report escapes
+every character outside ASCII (`\u...`), and the Markdown report leaves out control and direction characters, so
+neither can change how a terminal or an editor shows the text around it.
+
+The command reads the folder given by `--state-dir` (or Studio's default one) only when it is private, as Studio
+does: owned by you and not writable by others. If not, it stops with exit code 1 and says why. When the profile is
+not found and your profiles file has problems, the command lists them (the place in the file and the problem's
+code), so you can fix the file.
+
+Exit codes: `0` the report was written, `1` it could not be made (for example the database does not answer, or the
+password is missing, or the output file could not be written), `2` a usage error (an unknown profile, a name that
+more than one profile has, PROD not confirmed, an output file that exists without `--force` or that is refused). Messages go to standard error. A project folder named `diagnose` is given as `./diagnose`.

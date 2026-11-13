@@ -11,10 +11,12 @@
  *   run (`STU-DX-008`), and the page says that the result is incomplete. A profile switch or leaving the page cancels
  *   a running diagnosis too, and an answer that arrives after a newer request or a profile switch is dropped.
  * - **Findings:** sorted by severity, each with its severity (icon and word, never colour alone), code, title, detail,
- *   remedy and source. Titles of Studio's own codes are the page's en/de text; every other text is the server's
- *   English text, escaped and capped (`lib/visible.ts`, U-1), because tabrion's details name database objects.
+ *   remedy and source. Titles of Studio's own codes are the page's en/de text, and so are their details and remedies,
+ *   worded from the finding's `params` (TD-032, `studioText.ts`). tabrion's texts (and Studio's when the params do
+ *   not fit) are the server's English text, marked `lang="en"`, escaped and capped (`lib/visible.ts`, U-1), because
+ *   tabrion's details name database objects.
  * - **Backups (STU-025, TD-036):** the answer's backup hints (`STU-BK-*`) in their own list below the findings, shown
- *   like findings with en/de titles; they are not counted in the summary. With the hints on the page, the route lets
+ *   like findings with en/de titles, details and remedies; they are not counted in the summary. With the hints on the page, the route lets
  *   tabrion's `TAB-PG-020` give way to `STU-BK-010` (one cause, one entry).
  * - **Report (STU-025, TD-036):** "Download Markdown report" and "Download JSON report" post
  *   `.../diagnostics/report` on the shown connection (never a new one, so D-02 cannot be skipped). The server runs the
@@ -50,6 +52,7 @@ import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
 import { useReconnected } from '../../workspace';
+import { studioText } from './studioText';
 import viewStyles from '../Views.module.css';
 import styles from './Diagnostics.module.css';
 
@@ -82,6 +85,13 @@ const ICONS: Record<Severity, ReactNode> = {
 
 type Phase = 'idle' | 'opening' | 'running' | 'canceling' | 'reporting';
 
+/** Whether the page words this finding's detail and remedy itself (Studio's own code with fitting params). */
+function isWorded(t: TFunction, finding: Finding): boolean {
+  return (
+    finding.source === 'studio' && STUDIO_CODES.has(finding.code) && studioText(t, finding) !== null
+  );
+}
+
 /** `capped(value, limit)` as one string, with "…" when it was cut. */
 function cut(value: string, limit: number): string {
   const [shown, wasCut] = capped(value, limit);
@@ -110,6 +120,8 @@ function FindingItem({
   const { t } = useTranslation();
   const titleId = useId();
   const own = finding.source === 'studio' && STUDIO_CODES.has(finding.code);
+  // TD-032: Studio's details and remedies in en/de from their params; else the server's English text.
+  const worded = own ? studioText(t, finding) : null;
   const Title = hint ? 'h4' : 'h3';
   return (
     <li
@@ -136,17 +148,31 @@ function FindingItem({
           ? t(`diagnostics.titles.${finding.code}`)
           : cut(finding.title, MAX_TITLE_LENGTH) || t('diagnostics.result.noTitle')}
       </Title>
-      {finding.detail !== '' ? (
-        <p className={styles.text} lang="en" data-testid="diagnostics-detail">
-          {cut(finding.detail, MAX_TEXT_LENGTH)}
-        </p>
-      ) : null}
-      {finding.remedy !== '' ? (
-        <p className={styles.text} data-testid="diagnostics-remedy">
-          <span className={styles.remedyLabel}>{t('diagnostics.result.remedy')}</span>{' '}
-          <span lang="en">{cut(finding.remedy, MAX_TEXT_LENGTH)}</span>
-        </p>
-      ) : null}
+      {worded !== null ? (
+        <>
+          <p className={styles.text} data-testid="diagnostics-detail">
+            {worded.detail}
+          </p>
+          <p className={styles.text} data-testid="diagnostics-remedy">
+            <span className={styles.remedyLabel}>{t('diagnostics.result.remedy')}</span>{' '}
+            <span>{worded.remedy}</span>
+          </p>
+        </>
+      ) : (
+        <>
+          {finding.detail !== '' ? (
+            <p className={styles.text} lang="en" data-testid="diagnostics-detail">
+              {cut(finding.detail, MAX_TEXT_LENGTH)}
+            </p>
+          ) : null}
+          {finding.remedy !== '' ? (
+            <p className={styles.text} data-testid="diagnostics-remedy">
+              <span className={styles.remedyLabel}>{t('diagnostics.result.remedy')}</span>{' '}
+              <span lang="en">{cut(finding.remedy, MAX_TEXT_LENGTH)}</span>
+            </p>
+          ) : null}
+        </>
+      )}
     </li>
   );
 }
@@ -249,7 +275,11 @@ function DiagnosisResult({
       ) : null}
       {listed.length > 0 ? (
         <>
-          <p className={connectionStyles.hint}>{t('diagnostics.result.serverText')}</p>
+          {listed.some((finding) => !isWorded(t, finding)) ? (
+            <p className={connectionStyles.hint} data-testid="diagnostics-server-text">
+              {t('diagnostics.result.serverText')}
+            </p>
+          ) : null}
           <ul className={styles.findings} data-testid="diagnostics-findings">
             {listed.map((finding, index) => (
               <FindingItem key={index} finding={finding} index={index} />

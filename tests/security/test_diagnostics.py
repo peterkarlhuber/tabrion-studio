@@ -95,7 +95,8 @@ def test_sqlite_fk_off_and_0644_are_findings(lite: tuple[Diagnostics, Connection
     assert doc["counts"] == {"error": 1, "warning": 1, "info": 1} and doc["ran_at"] == 1234.0
     assert [item["severity"] for item in doc["findings"]] == ["error", "warning", "info"]
     fk = next(item for item in doc["findings"] if item["code"] == "STU-DX-005")
-    assert "5 row(s)" in fk["detail"] and fk["source"] == "studio"
+    assert "finds 5 rows whose" in fk["detail"] and fk["source"] == "studio"
+    assert fk["params"] == {"rows": 5}  # TD-032: the page words the count in en/de
     assert not any(str(path) in str(item) or path.name in str(item) for item in doc["findings"])
 
 
@@ -229,15 +230,21 @@ def test_f1_schema_create_and_database_temp_are_stu_dx_003() -> None:
     assert run_fake("dev", facts={"creatable": 2, "temporary": 1}, read_only_role=None) == {}  # no expectation
     base = Profile("pg", "postgresql", "dev", host="db.example.internal", database="app", sslmode="verify-full")
 
-    def detail(facts: dict[str, Any]) -> str:
+    def finding(facts: dict[str, Any]) -> dict[str, Any]:
         connection = FakeConnection("postgresql", "dev", [], facts)
         registry = FakeRegistry(connection, replace(base, read_only_role=True))
         doc = Diagnostics(registry).run("c_fake")  # type: ignore[arg-type]
-        return str(next(item for item in doc["findings"] if item["code"] == "STU-DX-003")["detail"])
+        return dict(next(item for item in doc["findings"] if item["code"] == "STU-DX-003"))
 
-    both = detail({"writable": 3, "creatable": 1000, "temporary": 1})
-    assert "3 table(s)" in both and "1000+ schema(s)" in both and "temporary tables" in both
-    assert "TEMP on the database" in detail({"temporary": 1})
+    both = finding({"writable": 3, "creatable": 1000, "temporary": 1})
+    assert "write in 3 tables, views or sequences" in both["detail"]
+    assert "1000+ schemas" in both["detail"] and "temporary tables" in both["detail"]
+    assert both["params"] == {"writable": 3, "creatable": 1000, "temporary": True}
+    one = finding({"writable": 1})
+    assert "write in 1 table, view or sequence (" in one["detail"] and "TEMP" not in one["detail"]
+    alone = finding({"temporary": 1})
+    assert "TEMP on the database" in alone["detail"] and alone["remedy"].startswith("REVOKE TEMP")
+    assert alone["params"] == {"writable": 0, "creatable": 0, "temporary": True}
 
 
 @pytest.mark.parametrize(
@@ -584,6 +591,8 @@ def test_sqlite_diagnosis_can_be_canceled(tmp_path: Path) -> None:
         registry.close_all()
     details = {item["code"]: item["detail"] for item in result["findings"]}
     assert "you canceled it" in details["STU-DX-008"]
+    stopped = next(item["params"] for item in result["findings"] if item["code"] == "STU-DX-008")
+    assert stopped["reason"] == "canceled" and "tabrion_integrity" in stopped["skipped"]
     severities = {item["code"]: item["severity"] for item in result["findings"]}
     assert severities["TAB-SQ-006"] == "info"  # quick_check was stopped: "not checked", the other checks ran
     assert "tabrion's checks" not in details["STU-DX-008"]
@@ -691,7 +700,7 @@ def test_n1_a_stop_before_tabrions_step_still_runs_it_on_sqlite(
     entered: list[bool] = []
 
     def step_after_the_stop(run: Any, name: str, work: Any, default: Any, *, always: bool = False) -> Any:
-        if name == "tabrion's checks":
+        if name == "tabrion":  # the step id of tabrion's checks (TD-032: "tabrion's checks" in the detail)
             if stop == "cancel":
                 assert diagnostics.cancel(connection_id) is True
             deadline = time.monotonic() + 5
@@ -916,6 +925,7 @@ def test_l5_only_a_broken_definition_is_called_broken(error: BaseException, brok
     found = Diagnostics._sqlite(_ErrorConnection(error), diagnostics_module._Run())  # type: ignore[arg-type]
     assert [item["code"] for item in found] == ["STU-DX-009"]
     assert ("definition is broken" in found[0]["detail"]) is broken
+    assert found[0]["params"] == {"cause": "definition" if broken else "unreadable"}
 
 
 def test_l5_other_errors_are_not_findings() -> None:
@@ -936,8 +946,10 @@ def test_pg_owner_settings_and_schemas_as_a_plain_owner() -> None:
     schema = f"studio_diag_{secrets.token_hex(4)}"
 
     def owned(found: dict[str, Any]) -> int:
-        detail = next(item["detail"] for item in found["findings"] if item["code"] == "STU-DX-006")
-        return int(re.search(r"owner of, (\d+)", detail).group(1))  # type: ignore[union-attr]
+        finding = next(item for item in found["findings"] if item["code"] == "STU-DX-006")
+        count = int(re.search(r"owner of, (\d+)", finding["detail"]).group(1))  # type: ignore[union-attr]
+        assert finding["params"]["owned"] == count
+        return count
 
     try:
         diagnostics = Diagnostics(registry)
