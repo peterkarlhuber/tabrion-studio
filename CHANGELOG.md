@@ -519,7 +519,8 @@ All notable changes to this project are documented here. The format follows
   pattern never matched them, so those checks passed vacuously in Firefox) and leaves out only WebKit's own report for
   a `<select>`, paired with its violation event; `e2e/csp.spec.ts` proves both per browser. The Tab test of the SQL
   editor checks the focus lands on the next control; the tooltip test reaches `:focus-visible` with Tab; Copy DDL is
-  checked for the exact text in every browser; the saved script's offered name is checked as the page offers it.
+  checked for the exact text in every browser; the saved script's offered name is checked as the page offers it;
+  the keyboard-only connect flow reaches "Connect" with Shift+Tab instead of relying on the focus wrapping around.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a
