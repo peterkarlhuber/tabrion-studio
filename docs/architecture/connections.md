@@ -23,6 +23,7 @@ services (import-linter contracts `services-below-api` and `engines-only-in-serv
 | `POST /api/connections` | `{"profile_id", "confirmed_environment"}` | 201 `{connection_id, profile_id, engine, environment, read_only: true, url, opened_at}`; `studio.prod_confirmation_required` (409, see below) |
 | `GET /api/connections` | – | `{"connections": [...]}` (each checked against its profile; a stale one is closed and left out) |
 | `DELETE /api/connections` | `{"connection_id"}` | 204, or `studio.connection_not_found` |
+| `GET /api/connections/{id}/health` | – | `{state: "open" \| "busy", latency_ms}`; a lost connection is its `db.<kind>` problem (502 `db.connection` when the database does not answer); `studio.connection_not_found`, `studio.connection_stale` (TD-034) |
 | `POST /api/connection-tests` | `{"profile_id", "confirmed_environment"}` | `{ok, engine, environment, server_version, latency_ms, read_only, facts}`; the connection is closed again; `studio.prod_confirmation_required` (409) |
 
 The ids go in the body, like the profile routes. All routes sit behind the access middleware (session, CSRF,
@@ -57,6 +58,38 @@ too.
   next run).
 - D-02 is still a page dialog; the server only refuses a PROD connection that no page confirmed. It cannot tell which
   person confirmed, so a script with a session can still send `"prod"`.
+
+## Lost connections and "Reconnect" (TD-034)
+
+08 section 5 "error recovery": when the database stops answering, every page that holds a connection (explorer with
+its data and definition tabs, SQL editor, diagnostics, migration status) shows the banner "Connection lost" with
+"Reconnect" above the view. Studio only reads, so nothing was lost with the connection; the banner says so.
+
+- **Server.** `OpenConnection.check()` runs `Database.health()` and says `open`, `busy` (the pool has every
+  connection checked out: a pool timeout classifies as a connection problem too, so a busy pool is told apart by the
+  pool's counts, not by the error) or `lost`. `GET /api/connections/{id}/health` answers it; a lost connection is its
+  `db.<kind>` problem and stays registered, so the page can name it. `POST /api/connections` checks an already open
+  connection of the profile before it returns it: a lost one is logged (`studio.connection_lost`), closed, and a new
+  one is opened. D-02 (`confirmed_environment`) is checked first, as for every open. A database that only ended
+  Studio's sessions and accepts new ones is not lost: tabrion's pool (`pool_pre_ping`) reconnects on the next request.
+- **Seeing the loss.** `connectionWatch.ts` wraps the page's fetcher, so it sees every answer of every view without
+  a change to the views: a request on an open connection (`/api/connections/{id}/…`, or `POST /api/queries` and
+  `POST /api/exports` with `connection_id` in the body) answered with `db.connection`, `studio.connection_not_found`
+  or `studio.connection_stale` marks it lost. It reads a copy of the answer (`Response.clone()`) and never changes
+  one; the user's own "Disconnect" is not watched. A query that fails later, in its event stream, is reported by the
+  SQL editor itself (`markLost`). The header's connection is also checked every 30 seconds while the tab is visible
+  (`GET …/health`); the check stops while the connection is lost.
+- **State.** `connectionLoss.ts` (`ConnectionLoss`, one per page, in the connection session) keeps the connections
+  the page opened or listed, the lost ones and the ones "Reconnect" replaced. Unknown and replaced connections are
+  ignored, so a late answer on an old connection does not bring the banner back. A loss forgets the profile's D-02
+  confirmation and shows the header's connection as disconnected.
+- **"Reconnect"** (`shell/ConnectionLost.tsx`) reads the profile list again (the profile as it is now decides) and
+  connects through the page's shared gate (`useConnect`): D-02 first for a PROD profile; Cancel connects nothing and
+  keeps the banner. A failure is shown in the banner. When the new connection arrives, the loss ends and the views
+  follow it (`useReconnected`): the explorer reads its catalog again on the new connection (also when it had dropped
+  a connection the server closed), the SQL editor's tabs and runs move to it, diagnostics and the migration status
+  use it for their next request. The focus moves to the main area. The SQL editor no longer reopens a PROD
+  connection silently when the server says it is gone; DEV and TEST still reopen as before.
 
 ## The connection test (STU-008)
 

@@ -13,6 +13,7 @@
 | "Kept in this browser only: your settings.toml has issues …" | Studio does not change a file with issues, or one written by hand, from the general settings | fix `settings.toml`, or rewrite it from the Settings view |
 | "Your profiles.toml has issues, so Studio does not change it." | the file has an error or an unknown key | fix the listed issues in the file |
 | the keyring choice says "not available on this computer" | no usable keyring (on Linux: no Secret Service or KWallet running) | use "Only this session", a variable or a file, or start a keyring service |
+| "Connection lost" with **Reconnect** | the database stopped answering (a restart, the network), or the connection was closed in another tab or after a profile change | check that the database is up, then press **Reconnect**; a PROD profile asks "Production database" again |
 | "Project profiles not loaded" | `.tabrion/studio.toml` has errors | fix the listed issues in the project file |
 
 ## In the terminal

@@ -6,10 +6,10 @@ is used.
 
 | Name | Used in |
 |---|---|
-| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_read_only.py` |
+| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_connections_api.py`, `tests/security/test_read_only.py` |
 | `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `tests/security/test_read_only.py` |
 | `tabrion.Database.from_url` | `src/tabrion_studio/services/connections.py` |
-| `tabrion.Health` | `src/tabrion_studio/services/connections.py` |
+| `tabrion.Health` | `src/tabrion_studio/services/connections.py`, `tests/security/test_connections_api.py` |
 | `tabrion.Profile` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.AUTO` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.INSECURE` | `src/tabrion_studio/services/connections.py` |
@@ -27,12 +27,13 @@ is used.
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
-| `tabrion.errors.Kind` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.Kind` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.Kind.CONNECTION` | `tests/security/test_connection_loss.py` |
 | `tabrion.errors.Kind.PERMISSION` | `src/tabrion_studio/services/levuvo_migrations.py` |
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py` |
-| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.safe_url` | `src/tabrion_studio/services/connections.py` |

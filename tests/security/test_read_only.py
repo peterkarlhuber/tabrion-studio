@@ -493,7 +493,9 @@ def test_stu_t_011_every_environment_gets_a_read_only_profile() -> None:
 
 def test_stu_t_012_a_handle_offers_no_way_to_write() -> None:
     public = {name for name in dir(OpenConnection) if not name.startswith("_")}
+    # check (TD-034) runs Database.health() only, like health.
     assert public == {
+        "check",
         "close",
         "fetch",
         "health",

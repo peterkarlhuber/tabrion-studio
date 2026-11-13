@@ -8,6 +8,8 @@ export interface HarnessOptions {
   path?: string;
   theme?: Theme;
   lang?: 'en' | 'de';
+  /** The page's connection check interval in ms (TD-034; off when not given). */
+  check?: string;
 }
 
 /** Open the e2e harness (src/harness/main.tsx) and wait until the shell or the notice is rendered. */
