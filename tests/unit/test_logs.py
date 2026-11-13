@@ -65,6 +65,13 @@ def test_file_gets_json_lines_and_console_gets_warnings(tmp_path: Path, console:
     assert setup.handlers == []  # close() removed them from the root logger
 
 
+def test_the_fixture_guards_exactly_the_owned_loggers() -> None:
+    # PR #78 review F-5: tests/conftest.py repeats the list (the packaging tests cannot import Studio).
+    from tests.conftest import _GUARDED_LOGGERS
+
+    assert _GUARDED_LOGGERS == OWNED_LOGGERS
+
+
 def test_owned_loggers_are_taken_over_and_given_back(tmp_path: Path, console: io.StringIO) -> None:
     # TD-055: Uvicorn's own handler and propagate=False (its default log_config) would bypass the root handlers.
     uvicorn_logger = logging.getLogger("uvicorn")

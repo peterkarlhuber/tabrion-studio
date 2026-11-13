@@ -362,6 +362,20 @@ def test_uvicorns_own_logging_config_from_later_does_not_bypass_redaction(
     assert "[traceback text redacted]" in err
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason="TD-055 limit: a logger filter runs only for records created at that logger, so a child of an owned logger "
+    "reaches a handler that a later dictConfig re-adds without redaction (not hit by serve())",
+)
+def test_a_child_loggers_record_after_a_later_dictconfig_is_not_redacted_by_uvicorns_handler(
+    logs: Logs, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Pins the limit of TD-055 (PR #78 review F-1): when this starts to pass, update TD-055 and drop the xfail."""
+    uvicorn.Config(FastAPI())  # a later dictConfig: uvicorn gets its own stderr handler and propagate=False again
+    logging.getLogger("uvicorn.error.child").error("Traceback (most recent call last):\nRuntimeError: %s", CANARY)
+    _assert_no_canary(logs.everything() + capsys.readouterr().err)
+
+
 def test_a_failing_studio_startup_is_logged_with_frames_only(
     static_dir: Path, logs: Logs, monkeypatch: pytest.MonkeyPatch
 ) -> None:

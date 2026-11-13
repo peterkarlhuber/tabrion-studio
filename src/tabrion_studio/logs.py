@@ -32,8 +32,11 @@ logger, so that Studio's own loggers (``tabrion_studio.*``), Uvicorn's and async
    on the loggers themselves. Uvicorn's default ``log_config`` (any ``uvicorn.Config`` built without
    ``log_config=None`` in the same process, or a ``dictConfig`` of the embedding program) gives ``uvicorn`` a stderr
    handler and ``propagate=False``; without the takeover, Uvicorn's records would bypass the redacting handlers on the
-   root logger and a failed lifespan's traceback text would be printed as it is. The logger filters also scrub a
-   record before a handler that is added to these loggers later. :meth:`LogSetup.close` restores the earlier state.
+   root logger and a failed lifespan's traceback text would be printed as it is. A record logged *at* one of these
+   loggers is scrubbed by the logger filters before any handler, also one added to these loggers later (a later
+   ``dictConfig``). A logger filter does not run for a record of a child logger (``uvicorn.error.x``) or of another
+   logger; those are redacted only by Studio's root handlers (the limit of TD-055). :meth:`LogSetup.close` restores
+   the earlier state.
 
 Studio never logs SQL parameter values, result rows, passwords or full connection URLs; SQL text is logged only at
 DEBUG after the opt-in ``log_sql = true``, cut to 2 KB (STU-011). Uvicorn's access log is off; the request log of
