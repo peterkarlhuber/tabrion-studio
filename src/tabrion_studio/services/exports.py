@@ -11,6 +11,8 @@ runs it in one ``Database.read()``, PostgreSQL through a server-side cursor) and
 * **Limits.** At most ``max_rows`` rows (default and maximum :data:`MAX_EXPORT_ROWS`); the export stops after
   :data:`EXPORT_TIMEOUT_S` (a cancel, as for a query); one export per connection and :data:`MAX_PARALLEL` at a time
   (each holds one of the connection's two sessions while it runs). A client that goes away cancels the export.
+  The slot is freed as soon as the statement's transaction has ended, before the end (or the error) reaches the
+  client, so a client may start the next export on the same connection right after reading one to its end (TD-057).
 * **CSV** (``text/csv``, UTF-8, a header row of column names, RFC 4180 quoting): ``NULL`` is the empty field, bytes
   are base64, dates and times ISO 8601, JSON values JSON text. A text value that a spreadsheet would read as a
   formula (it starts with ``=``, ``+``, ``-``, ``@``, tab or carriage return) gets a leading ``'`` (CSV injection),
@@ -259,7 +261,8 @@ class Exports:
     registry: ConnectionRegistry
     explorer: Explorer
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
-    _running: dict[str, int] = field(default_factory=dict, repr=False)
+    #: The export that holds each connection's slot; freed only by that export (:meth:`_release`).
+    _running: dict[str, Export] = field(default_factory=dict, repr=False)
 
     def start(
         self,
@@ -281,10 +284,6 @@ class Exports:
             raise ExportError("studio.export_invalid")
         connection = self.registry.get(connection_id)
         statement, base_name = self._statement(connection, sql, params, table)
-        with self._lock:
-            if sum(self._running.values()) >= MAX_PARALLEL or self._running.get(connection.id):
-                raise ExportError("studio.export_busy")
-            self._running[connection.id] = 1
         export = Export(
             filename=f"{base_name}.{export_format}",
             media_type="text/csv; charset=utf-8" if export_format == "csv" else "application/json",
@@ -293,14 +292,28 @@ class Exports:
             _stopped=threading.Event(),
             _done=threading.Event(),
         )
+        with self._lock:
+            if len(self._running) >= MAX_PARALLEL or connection.id in self._running:
+                raise ExportError("studio.export_busy")
+            self._running[connection.id] = export
         worker = threading.Thread(
             target=self._produce,
             args=(export, connection, statement, export_format, rows, escape_formulas),
             name="studio-export",
             daemon=True,
         )
-        worker.start()
+        try:
+            worker.start()
+        except BaseException:
+            self._release(connection.id, export)
+            raise
         return export
+
+    def _release(self, connection_id: str, export: Export) -> None:
+        """Free ``export``'s slot; a no-op when it is already free or a later export holds it."""
+        with self._lock:
+            if self._running.get(connection_id) is export:
+                del self._running[connection_id]
 
     def _statement(
         self, connection: OpenConnection, sql: object, params: Mapping[str, object] | None, table: object
@@ -330,7 +343,6 @@ class Exports:
     ) -> None:
         timer = threading.Timer(EXPORT_TIMEOUT_S, export.close)
         timer.daemon = True
-        timer.start()
 
         def put(item: object) -> None:
             while not export._stopped.is_set():
@@ -370,7 +382,14 @@ class Exports:
             return encoder.rows
 
         try:
-            rows = connection.stream(statement, consume, cancel=export._hook)
+            try:
+                timer.start()  # inside the try (TD-057 review F-1): a thread that cannot start must not leak the slot
+                rows = connection.stream(statement, consume, cancel=export._hook)
+            finally:
+                # TD-057: ``stream`` has closed the cursor and ended the transaction, whether it returned or raised,
+                # so the connection's session is free. Free the slot now, before the client can see the end or the
+                # error: a client that starts the next export right after reading this one must not find it busy.
+                self._release(connection.id, export)
             put(_END)
             logger.info("export finished", extra={"event": "studio.export_finished", "rows": rows})
         except _Stopped:
@@ -387,8 +406,7 @@ class Exports:
         finally:
             timer.cancel()
             export._done.set()
-            with self._lock:
-                self._running.pop(connection.id, None)
+            self._release(connection.id, export)  # already free unless something failed before the statement ran
 
 
 class _Stopped(Exception):

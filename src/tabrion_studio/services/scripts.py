@@ -6,8 +6,9 @@ as text first and then on the file system, with the same helpers as a project's 
 :mod:`tabrion_studio.config.locations`):
 
 * only a relative path of plain names: no drive, no root, no ``\\``, no ``..``, no ``.`` component, no control or
-  format character (bidi overrides, zero-width characters), no blank-looking character (a space other than U+0020,
-  the Hangul fillers, the braille blank, the combining grapheme joiner), no component that starts with ``.`` (hidden
+  format character (bidi overrides, zero-width characters), no blank-looking character (a space other than U+0020
+  and the ideographic space U+3000, the Hangul fillers, the braille blank, the combining grapheme joiner), no
+  component that starts with ``.`` (hidden
   folders such as ``.git`` or ``.tabrion`` are not script folders), at most :data:`MAX_PATH_CHARS` characters;
 * no name that Windows reads as something else, on every system alike (the same project is opened on all of them):
   a device name (``CON``, ``PRN``, ``AUX``, ``NUL``, ``COM0``-``COM9``, ``LPT0``-``LPT9``, also with superscript
@@ -36,7 +37,13 @@ check and the rename of a save, which needs a program of the user's own running 
 **Listing** walks the project folder without following links, skips hidden folders, names Studio would refuse and the
 usual tool folders (``node_modules``, virtual environments, caches), goes :data:`MAX_DEPTH` folders deep and stops
 after :data:`MAX_SCRIPTS` scripts or :data:`MAX_VISITED` entries (``truncated`` says so); ``skipped_links`` counts the
-folders and files left out because they are links (or reparse points).
+folders and files left out because they are links (or reparse points), and ``skipped_invalid`` the folders and
+``.sql`` files left out because Studio refuses their name (a hidden name, starting with ``.``, is not counted).
+
+**Joiners and the ideographic space.** A ZWNJ (U+200C) or ZWJ (U+200D) is accepted only between two letters or
+marks, so Persian, Indic and emoji names work; a ZWJ also between two symbols of an emoji sequence. It is never at
+the start or end of a name, never doubled, never next to a space, a dot or a digit. U+3000 is accepted like U+0020,
+never leading or trailing.
 
 **Saving** is bound to what the page showed: ``digest`` is the SHA-256 of the file the page read (``null``: the page
 expects no file there). A file that changed or appeared meanwhile is ``studio.script_stale`` or
@@ -98,6 +105,14 @@ _DEVICE = re.compile(r"(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9¹²³]|LPT[0-
 #: Hangul fillers, the Khmer inherent vowels and the braille blank. With the format characters (category Cf) and every
 #: space but U+0020 (category Zs) they would let two names look alike.
 _BLANK = frozenset("\u034f\u115f\u1160\u17b4\u17b5\u2800\u3164\uffa0")
+#: The spaces a name may hold (inside, never leading or trailing): U+0020 and the ideographic space of Japanese and
+#: Chinese names (``売上　集計.sql``). Every other space (category Zs) is refused.
+_SPACES = frozenset(" \u3000")
+#: The zero-width non-joiner and joiner (Persian ``می‌خواهم``, Indic conjuncts, emoji sequences): accepted only
+#: between two letters or marks (a ZWJ also inside an emoji sequence), see :func:`_joiner_in_place`. The page shows
+#: them escaped (``\u200C``) wherever a script path is shown, so two names that differ only by one stay apart.
+_ZWJ = "\u200d"
+_JOINERS = frozenset("\u200c\u200d")
 #: An 8.3 short name (``GIT~1``) can name another file or folder, a hidden one too.
 _SHORT_NAME = re.compile(r"~[0-9]")
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
@@ -131,20 +146,43 @@ def script_digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def _invisible(char: str) -> bool:
+def _letter_or_mark(char: str) -> bool:
+    return unicodedata.category(char)[0] in "LM"
+
+
+def _joiner_in_place(name: str, index: int) -> bool:
+    """Whether the ZWNJ or ZWJ at ``index`` joins two letters or marks (a ZWJ also two symbols, as in an emoji
+    sequence): never at the start or end of a name, never doubled, never next to a space, a dot or a digit."""
+    if index == 0 or index == len(name) - 1:
+        return False
+    before, after = name[index - 1], name[index + 1]
+    if _letter_or_mark(before) and _letter_or_mark(after):
+        return True
+    if name[index] != _ZWJ:
+        return False
+    # An emoji sequence: a symbol (or its variation selector or skin tone, which are marks or symbols) on both sides.
+    pictured = ("So", "Sk", "Mn")
+    return unicodedata.category(before) in pictured and unicodedata.category(after) == "So"
+
+
+def _invisible(name: str, index: int) -> bool:
+    char = name[index]
     if char in _BLANK:
         return True
+    if char in _JOINERS:
+        return not _joiner_in_place(name, index)
     category = unicodedata.category(char)
-    return category == "Cf" or (category == "Zs" and char != " ")
+    return category == "Cf" or (category == "Zs" and char not in _SPACES)
 
 
 def _plain_name(name: str) -> bool:
     """Whether one path component is a name Studio accepts on every system."""
+    # ``strip()`` also removes U+3000, so the ideographic space has the rules of U+0020: never leading or trailing.
     if not name or name in (".", "..") or name.startswith(".") or name != name.strip() or name.endswith("."):
         return False
     if _CONTROL.search(name) or _FORBIDDEN.search(name) or _SHORT_NAME.search(name):
         return False
-    if any(_invisible(char) for char in name):
+    if any(_invisible(name, index) for index in range(len(name))):
         return False  # bidi overrides and isolates, zero-width and blank characters: a name must read as what it is
     return _DEVICE.fullmatch(name.split(".", 1)[0].rstrip(" ")) is None
 
@@ -357,6 +395,7 @@ class Scripts:
         found: list[dict[str, Any]] = []
         visited = 0
         links = 0
+        invalid = 0
         truncated = False
         pending: list[tuple[Path, tuple[str, ...]]] = [(root, ())]
         while pending and not truncated:
@@ -372,11 +411,18 @@ class Scripts:
                     truncated = True
                     break
                 name = entry.name
-                if not _plain_name(name):
-                    continue
+                if name.startswith("."):
+                    continue  # a hidden name (.git, .tabrion): not a script folder, and not counted
+                plain = _plain_name(name)
                 try:
                     info = entry.stat(follow_symlinks=False)
                 except OSError:
+                    continue
+                if not plain:
+                    # Counted so the page can say why a script is missing; a link with such a name stays uncounted.
+                    script = stat.S_ISREG(info.st_mode) and name.lower().endswith(".sql")
+                    if not _link(info) and (stat.S_ISDIR(info.st_mode) or script):
+                        invalid += 1
                     continue
                 if _link(info):
                     links += 1
@@ -389,10 +435,11 @@ class Scripts:
                     continue
                 relative = "/".join((*prefix, name))
                 if len(relative) > MAX_PATH_CHARS:
+                    invalid += 1
                     continue
                 found.append({"path": relative, "size": info.st_size, "modified_at": info.st_mtime})
         found.sort(key=lambda item: str(item["path"]).lower())
-        return {"scripts": found, "truncated": truncated, "skipped_links": links}
+        return {"scripts": found, "truncated": truncated, "skipped_links": links, "skipped_invalid": invalid}
 
     # Reading
 

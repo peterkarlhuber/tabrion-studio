@@ -146,9 +146,26 @@ def test_read_a_script(project: Path) -> None:
         "a\u034fb.sql",
         "a\u17b4b.sql",
         "a\u00a0b.sql",
-        "a\u3000b.sql",
         "a\u2007b.sql",
         "sql\u3164/a.sql",
+        # E-1: a ZWNJ or ZWJ out of place (start, end, doubled, next to a blank, a dot or a digit, between symbols that
+        # are no emoji sequence), U+3000 leading or trailing like U+0020.
+        "\u200ca.sql",
+        "a\u200c.sql",
+        "a\u200d.sql",
+        "\u200da.sql",
+        "a\u200c\u200cb.sql",
+        "a\u200d\u200db.sql",
+        "a\u200c b.sql",
+        "a \u200db.sql",
+        "a\u200c.b.sql",
+        "1\u200c2.sql",
+        "\u2606\u200c\u2606.sql",
+        "sql\u200c/a.sql",
+        "\u3000a.sql",
+        "a.sql\u3000",
+        "sql\u3000/a.sql",
+        "\u3000/a.sql",
     ],
 )
 def test_refused_paths(project: Path, path: str) -> None:
@@ -210,6 +227,13 @@ def test_names_like_devices_are_fine_as_part_of_a_name(project: Path) -> None:
         "caf\u00e9.sql",
         "re\u0301sume\u0301.sql",
         "\ud55c\uae00.sql",
+        # E-1: Persian with a ZWNJ, an Indic conjunct and emoji sequences with a ZWJ, Japanese with U+3000.
+        "\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645.sql",
+        "\u0915\u094d\u200d\u0937.sql",
+        "\U0001f468\u200d\U0001f4bb.sql",
+        "\U0001f468\U0001f3fd\u200d\U0001f4bb.sql",
+        "\u2764\ufe0f\u200d\U0001f525.sql",
+        "\u58f2\u4e0a\u3000\u96c6\u8a08.sql",
     ):
         scripts.save(path, "SELECT 1", None)
         assert scripts.read(path)["content"] == "SELECT 1"
@@ -374,6 +398,30 @@ def test_the_listing_counts_the_links_it_skips(project: Path, tmp_path: Path) ->
     listed = Scripts(project).list()
     assert listed["skipped_links"] == 2
     assert [item["path"] for item in listed["scripts"]] == ["sql/a.sql", "sql/reports/b.SQL", "top.sql"]
+
+
+def test_the_listing_counts_the_names_it_refuses(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """E-1: a folder or ``.sql`` file with a name Studio refuses is left out and counted, so the page can say why."""
+    (project / "a.sql.").mkdir()  # a folder whose name ends in a dot (not on Windows: Win32 drops the dot)
+    (project / "x\u200by.sql").write_bytes(b"SELECT 1")  # a zero-width space
+    (project / "sql" / "com1.sql").write_bytes(b"SELECT 1")  # a device name
+    (project / "notes\u200b.txt").write_bytes(b"not a script")  # not counted: not a script
+    (project / ".hidden.sql").write_bytes(b"SELECT 1")  # not counted: hidden
+    (project / "\u0645\u06cc\u200c\u062e.sql").write_bytes(b"SELECT 1")  # listed: a ZWNJ between letters
+    listed = Scripts(project).list()
+    expected = 2 if sys.platform == "win32" else 3
+    assert listed["skipped_invalid"] == expected
+    assert [item["path"] for item in listed["scripts"]] == [
+        "sql/a.sql",
+        "sql/reports/b.SQL",
+        "top.sql",
+        "\u0645\u06cc\u200c\u062e.sql",
+    ]
+    # A path longer than the limit is left out and counted too.
+    monkeypatch.setattr(scripts_module, "MAX_PATH_CHARS", 12)
+    listed = Scripts(project).list()
+    assert "sql/reports/b.SQL" not in [item["path"] for item in listed["scripts"]]
+    assert listed["skipped_invalid"] == expected + 1
 
 
 @pytest.mark.skipif(not POSIX, reason="file modes")

@@ -120,6 +120,16 @@ def scope_of(profile_id: str, project_key: str) -> str | None:
     return None
 
 
+def _log_error(exc: sqlite3.Error) -> None:
+    """Log a refusal of the state database. Another instance holding the lock is expected (each history read retries
+    the purge while it does): it is logged at info level without a traceback. Every other error keeps its warning
+    and traceback. Neither names a path or SQL."""
+    if isinstance(exc, sqlite3.OperationalError) and _busy(exc):
+        logger.info("state database busy", extra={"event": "studio.state_busy"})
+        return
+    logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
+
+
 class StateStore:
     """The state database. Thread-safe: one connection, used under a lock; opened on first use."""
 
@@ -151,8 +161,8 @@ class StateStore:
             connection = self._get()
             try:
                 return call(connection)
-            except sqlite3.Error:
-                logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
+            except sqlite3.Error as exc:
+                _log_error(exc)
                 raise StateUnavailable from None
 
     def write(self, call: Callable[[sqlite3.Connection], _T], *, busy_timeout_ms: int | None = None) -> _T:
@@ -181,8 +191,8 @@ class StateStore:
                         time.sleep(BUSY_PAUSE_S)
                 finally:
                     connection.execute(f"PRAGMA busy_timeout = {BUSY_TIMEOUT_MS}")
-            except sqlite3.Error:
-                logger.warning("state database error", exc_info=True, extra={"event": "studio.state_error"})
+            except sqlite3.Error as exc:
+                _log_error(exc)
                 raise StateUnavailable from None
 
     def checkpoint(self, *, attempts: int = 1) -> bool:

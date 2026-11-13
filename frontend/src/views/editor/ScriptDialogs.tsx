@@ -127,6 +127,11 @@ export function OpenScriptDialog({
           {t('editor.scripts.skippedLinks', { count: list.skippedLinks })}
         </p>
       ) : null}
+      {list !== null && list !== 'loading' && list.skippedInvalid > 0 ? (
+        <p className={connectionStyles.hint} data-testid="script-skipped-invalid">
+          {t('editor.scripts.skippedInvalid', { count: list.skippedInvalid })}
+        </p>
+      ) : null}
     </Dialog>
   );
 }

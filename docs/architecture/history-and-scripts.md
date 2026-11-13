@@ -46,7 +46,10 @@ header and, for a change, the Origin check and JSON only.
 - **Sharing.** Every Studio instance of the user (one per project folder) shares the file; SQLite's locking
   serializes the writers. A write waits up to 5 s for another instance's lock. Recording a query's entry and the
   retention purge wait only 250 ms, in Studio's own loop, and otherwise keep no entry or leave the purge to the next
-  one, so a query's end and its cancel are never held up by the history.
+  one, so a query's end and its cancel are never held up by the history. While another instance holds the lock,
+  every read of the history retries the purge and finds the lock again: that refusal is logged at info level
+  (`studio.state_busy`) without a traceback; every other database error stays a `studio.state_error` warning with
+  its traceback. Neither names a path or SQL.
 - **Checkpoint.** After a delete or a purge, `PRAGMA wal_checkpoint(TRUNCATE)` moves the write-ahead log into the
   file and empties it. A checkpoint never waits for another connection: it runs with `busy_timeout = 0`, so it holds
   neither a query's end nor the store lock. When another instance (or any other program) is reading at that moment,
@@ -171,7 +174,7 @@ or secret.
 
 | Route | Answer |
 |---|---|
-| `GET /api/scripts` | `{scripts: [{path, size, modified_at}], truncated, skipped_links}` |
+| `GET /api/scripts` | `{scripts: [{path, size, modified_at}], truncated, skipped_links, skipped_invalid}` |
 | `GET /api/scripts/file?path=` | `{path, content, digest}` |
 | `PUT /api/scripts/file` | `{"path", "content", "digest": <what the page read> \| null, "overwrite"?}`; `{path, digest}` |
 
@@ -180,15 +183,30 @@ helpers of the project's database paths (threat T-08, `config/locations.py`):
 
 - **Text.** No drive, no root, no `\`, no `..` or `.`, no empty component, no control character, no format
   character (bidi overrides and isolates, zero-width characters: a name must read as what it is), no blank-looking
-  character (a space other than U+0020, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the braille blank
+  character (a space other than U+0020 and U+3000, the Hangul fillers U+115F, U+1160, U+3164 and U+FFA0, the braille blank
   U+2800, the combining grapheme joiner U+034F, the Khmer inherent vowels U+17B4 and U+17B5), no component that
   starts with `.` (so `.git` and `.tabrion` are not script folders), no leading or trailing blank, at most 512
   characters. The last name ends in `.sql`, in any case.
+- **Joiners and the ideographic space (E-1 of the delta review).** Real names need three of these characters:
+  Persian needs the zero-width non-joiner U+200C (`می‌خواهم.sql`), Indic conjuncts and emoji sequences need the
+  zero-width joiner U+200D (`क्‍ष`, 👨‍💻), and Japanese names use the ideographic space U+3000 (`売上　集計.sql`).
+  ZWNJ and ZWJ are accepted only between two letters or marks (a ZWJ also between two symbols of an emoji sequence,
+  for example after a skin tone or a variation selector): never at the start or end of a name, never doubled, never
+  next to a space, a dot or a digit. U+3000 has the rules of U+0020: inside a name, never leading or trailing. The
+  bidi controls and every other format or blank character stay refused. The page mirrors the rule in its save
+  dialog (`validScriptPath`).
+- **How the page shows them (decision).** The page's `visible()` keeps showing ZWNJ and ZWJ escaped (`\u200C`,
+  `\u200D`) in the Open… list and in tab titles, so `ab.sql` and `a\u200Cb.sql` never look alike; a Persian or
+  emoji name therefore reads with its escape. This is the safe reading: a name the user did not write is visible as
+  such, and the file still opens and saves. U+3000 shows as a wide space, like U+0020 a visible gap.
 - **Names Windows reads as something else.** Refused on every system alike, because the same project is opened on
   all of them: device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0`-`COM9`, `LPT0`-`LPT9`, also with the superscript
   digits ¹²³, `CONIN$`, `CONOUT$`), also with an extension (`nul.sql`) and as a folder; a component that ends in `.`
   (Win32 drops it, so `sub.` names `sub`); and a `~` followed by a digit (an 8.3 short name such as `GIT~1` can name
-  `.git`). The listing leaves such names out as well.
+  `.git`). The listing leaves such names out as well and counts the folders and `.sql` files it left out for their
+  name (`skipped_invalid`), which the Open… dialog shows ("n files or folders have names Studio does not open"); a
+  hidden name (starting with `.`) is not counted. A script whose path is longer than 512 characters is counted
+  there too.
 - **File system.** The path must stay inside the project, and it must be its own real path: a link anywhere on the
   way is refused, even one that stays inside (`studio.script_link`). `safe_realpath` never touches a network or device
   path. A hard-linked file (more than one name) is refused for reading and for saving, because its other name may lie
@@ -281,7 +299,7 @@ this way for PROD and reads the catalog in full only after the user's click.
 | Test | What it shows |
 |---|---|
 | `tests/security/test_history.py` | `state.sqlite` is 0600 and opened lazily; a link or a file others may write is refused (`studio.state_unavailable`, queries run on); the canary value of a parameter is in no answer, no file byte and no log record; off, retention on disk (also while off: at start, on read, on a settings save), the entry and size caps; recording waits only briefly for another writer; the checkpoint result; the favorites limit per project; paging, search and the profile filter; project scopes; deletes leave no text in the file; favorites and recent profiles; `cached_only` |
-| `tests/security/test_scripts.py` | only `.sql` files in the project; every refused path form (traversal, drive, UNC, automount, hidden folder, control and format characters, device names, 8.3 names, trailing dots); no link is followed, inside or out, also when a folder is swapped after the check; hard links; atomic save with the mode kept; the byte order mark and mixed line endings kept; two saves under one lock; stale, exists, folder missing, size and encoding; file-system refusals with their own codes |
+| `tests/security/test_scripts.py` | only `.sql` files in the project; every refused path form (traversal, drive, UNC, automount, hidden folder, control and format characters, device names, 8.3 names, trailing dots; ZWNJ/ZWJ only between letters, U+3000 like a space; the refused names counted in the listing); no link is followed, inside or out, also when a folder is swapped after the check; hard links; atomic save with the mode kept; the byte order mark and mixed line endings kept; two saves under one lock; stale, exists, folder missing, size and encoding; file-system refusals with their own codes |
 | `tests/security/test_drafts.py` | a canary draft text is only in `state.sqlite*` (0600) and in no other file or log record; a tab with a parameter value or another field is refused; the caps and the body cap; merge by tab; projects apart; retention, history off and "Delete history"; `studio.state_unavailable`; the migration from version 1 keeps the history and leaves no copy |
 | `tests/security/test_every_route.py` | the new routes need a session and the CSRF header, refuse other sites and need JSON |
 | `frontend/src/views/history/HistoryView.test.tsx`, `src/views/editor/EditorView.test.tsx` (STU-020 block), `src/views/editor/completion.test.ts`, `src/api/history.test.ts`, `src/views/connections/ConnectionsView.test.tsx` | the page: history list, filters, open and delete; scripts open, save, overwrite, CRLF; format; completion and its PROD rule; favorites, start page, history settings |

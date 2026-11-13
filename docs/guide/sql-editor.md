@@ -107,9 +107,13 @@ Studio opens and saves `.sql` scripts in the project folder (the folder you star
   endings and its byte order mark: a script whose lines all end in CRLF is shown with ordinary lines and saved with
   CRLF again; a script with mixed line endings shows each CR as a marked character and is saved byte for byte.
 - A path is a plain name on every system: no device name such as `NUL` or `COM1` (also not `nul.sql`), no short name
-  such as `GIT~1`, no name that ends in a dot. A script in a folder that is a link, or a OneDrive "Files On-Demand"
-  folder, does not open or save; the Open… list says how many it left out. Keep the project in a folder that
-  OneDrive does not sync.
+  such as `GIT~1`, no name that ends in a dot, no invisible character. Names in other scripts work: accents, Arabic,
+  CJK, Hangul, the Persian zero-width non-joiner and the joiner of Indic conjuncts and emoji between two letters,
+  and the Japanese ideographic space inside a name. The Open… list and the tab show a zero-width (non-)joiner as
+  `\u200C` or `\u200D`, so two names that differ only by one never look alike. Files and folders with a name
+  Studio refuses are left out of the Open… list, which says how many; rename them to open them. A script in a
+  folder that is a link, or a OneDrive "Files On-Demand" folder, does not open or save; the Open… list says how
+  many it left out. Keep the project in a folder that OneDrive does not sync.
 - When the system refuses the file (no permission, a read-only or full drive, the file open in another program),
   Studio says which, and the script on disk is unchanged.
 

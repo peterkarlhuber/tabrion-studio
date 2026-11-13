@@ -20,12 +20,18 @@ export interface ScriptList {
   truncated: boolean;
   /** Links and reparse-point folders (OneDrive placeholders) the listing left out. */
   skippedLinks: number;
+  /** Folders and `.sql` files left out because Studio refuses their name. */
+  skippedInvalid: number;
 }
 
 export interface ScriptFile {
   path: string;
   content: string;
   digest: string;
+}
+
+function count(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) ? Math.max(0, value) : 0;
 }
 
 export function parseScriptList(body: unknown): ScriptList | null {
@@ -40,10 +46,8 @@ export function parseScriptList(body: unknown): ScriptList | null {
         : [];
     }),
     truncated: doc.truncated === true,
-    skippedLinks:
-      typeof doc.skipped_links === 'number' && Number.isInteger(doc.skipped_links)
-        ? Math.max(0, doc.skipped_links)
-        : 0,
+    skippedLinks: count(doc.skipped_links),
+    skippedInvalid: count(doc.skipped_invalid),
   };
 }
 
@@ -91,15 +95,29 @@ export function scriptTitle(path: string): string {
 const DEVICE =
   /^(?:CON|PRN|AUX|NUL|CONIN\$|CONOUT\$|COM[0-9\u00b9\u00b2\u00b3]|LPT[0-9\u00b9\u00b2\u00b3])$/i;
 
-/** Characters that look blank: every space but U+0020, the Hangul fillers, the braille blank, U+034F, U+17B4/5. */
-const BLANK = /(?! )\p{Zs}|\u034f|\u115f|\u1160|\u17b4|\u17b5|\u2800|\u3164|\uffa0/u;
+/**
+ * Characters that look blank: every space but U+0020 and the ideographic space U+3000, the Hangul fillers, the
+ * braille blank, U+034F, U+17B4/5.
+ */
+const BLANK = /(?![ \u3000])\p{Zs}|\u034f|\u115f|\u1160|\u17b4|\u17b5|\u2800|\u3164|\uffa0/u;
+
+/**
+ * A zero-width non-joiner or joiner in its place (E-1 of the STU-020 delta review): between two letters or marks
+ * (Persian, Indic conjuncts), a ZWJ also inside an emoji sequence (after a symbol, a skin tone or a variation
+ * selector, before a symbol). Never at the start or end, never doubled, never next to a space, a dot or a digit.
+ * The lookbehind and lookahead see the neighbour code points, so `u` handles astral emoji.
+ */
+const JOINED =
+  /(?<=[\p{L}\p{M}])[\u200c\u200d](?=[\p{L}\p{M}])|(?<=[\p{So}\p{Sk}\p{Mn}])\u200d(?=\p{So})/gu;
 
 /** Whether one name of a script path is a plain name (the server's rules, `services/scripts.py`). */
 function plainName(part: string): boolean {
+  // `trim()` also removes U+3000, so the ideographic space is never leading or trailing, like U+0020.
   if (part === '' || part.startsWith('.') || part.endsWith('.') || part !== part.trim())
     return false;
-  // An 8.3 short name (GIT~1), a format character (bidi, zero-width), a blank-looking character.
-  if (/~[0-9]/.test(part) || /\p{Cf}/u.test(part) || BLANK.test(part)) return false;
+  // An 8.3 short name (GIT~1), a format character (bidi, zero-width; a joiner only in its place), a blank.
+  const rest = part.replace(JOINED, '');
+  if (/~[0-9]/.test(part) || /\p{Cf}/u.test(rest) || BLANK.test(part)) return false;
   return !DEVICE.test((part.split('.')[0] ?? '').replace(/ +$/, ''));
 }
 

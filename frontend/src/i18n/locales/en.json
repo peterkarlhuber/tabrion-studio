@@ -1099,6 +1099,8 @@
       "more": "Not every script is shown. Narrow the filter to find the others.",
       "skippedLinks_one": "{{count}} link was left out: Studio opens no script through a link or a cloud placeholder folder.",
       "skippedLinks_other": "{{count}} links were left out: Studio opens no script through a link or a cloud placeholder folder.",
+      "skippedInvalid_one": "{{count}} file or folder was left out: Studio does not open its name (a device name, a name ending in a dot, an invisible character). Rename it to open it.",
+      "skippedInvalid_other": "{{count}} files or folders were left out: Studio does not open their names (a device name, a name ending in a dot, an invisible character). Rename them to open them.",
       "opened": "{{path}} opened.",
       "alreadyOpen": "{{path}} is already open: this is its tab.",
       "saveTitle": "Save script",

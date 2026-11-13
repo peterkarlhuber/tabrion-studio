@@ -679,6 +679,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- STU-020 (E-1 and the Info item of the delta review): script names may hold the zero-width non-joiner U+200C and the
+  zero-width joiner U+200D between two letters or marks (Persian `می‌خواهم.sql`, Indic conjuncts; a ZWJ also inside
+  an emoji sequence) and the ideographic space U+3000 inside a name, like U+0020 (Japanese `売上　集計.sql`). A
+  joiner at the start or end of a name, doubled or next to a space, a dot or a digit, the bidi controls and the other
+  format and blank characters stay refused; the save dialog checks the same rule. The page keeps showing the joiners
+  escaped (`\u200C`) in the Open… list and in tab titles, so look-alike names stay apart. `GET /api/scripts` counts
+  the folders and `.sql` files it leaves out for their name in `skipped_invalid`, and the Open… dialog says how many
+  (en/de). Another instance's write lock on the state database is logged at info level as `studio.state_busy`
+  without a traceback; other database errors stay `studio.state_error` warnings.
+
 - e2e (TD-050, joint regression JR-N2, PR #68): `backend.spec.ts` removes its `studio-e2e-*` temp directory after
   the server has exited, like the other real-server suites; before, every run left one behind.
 - CI (STU-050, TD-047): the e2e suites also run in Firefox and WebKit, in the jobs `e2e (firefox)` and
@@ -710,6 +720,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Export: starting the next export on a connection right after the previous one was downloaded to its end could
+  be refused with `studio.export_busy`, because the finished export freed its slot only after its last log line.
+  The slot is now freed as soon as the export's transaction has ended, before the end or the error reaches the
+  client; an earlier export can no longer free a later one's slot (TD-057).
+- Export and query engine: when a worker or its timeout timer could not start (no more threads), the export's slot
+  or a `running` query stayed taken until restart, and the export's download waited forever. Both now end with an
+  error and free their slot (TD-057, review F-1 of PR #80).
 - The accessibility audit's Tab-stop walk (STU-053) measures each stop one task after the focus moved, because WebKit
   scrolls a newly focused element into view from a zero-delay timer; the explorer's selected tree row, below the
   fold since the "View" group was added, read as out of view now and then in the WebKit job (TD-058). Test only.
