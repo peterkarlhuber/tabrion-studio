@@ -69,6 +69,7 @@
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
+| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | In progress (read-only hardening PR) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), the control token checked in the access middleware for every control path but the proof and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (request-limits PR); re-review pending |
 
@@ -1152,6 +1153,27 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   detail start below the fold; 08 keeps the explorer as a sidebar beside the detail.
 - **Not here:** the "Connection lost" banner (TD-034), Firefox and WebKit (TD-047), the
   screen-reader sample (TD-022).
+
+### TD-048 · STU-016 review F-1..F-3: read-only path, SQLite functions, side-effect functions
+
+- **Priority:** P0 (G-S1) · **Status:** In progress (read-only hardening PR) · **Refs:** STU-016 independent security
+  review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
+  documents), SQ-05, SQ-07, T-06, T-13, `docs/architecture/connections.md`, `docs/architecture/diagnostics.md`
+- **Done in the PR:** F-1: `check_statement` refuses any `INTO` outside literals, comments and quoted identifiers in
+  every lexing, and a number directly followed by a word character;
+  the PostgreSQL pool reset runs `DISCARD TEMP`; `STU-DX-003` reports schema `CREATE` (warning, error on PROD) and
+  database `TEMP` (info on its own). F-2: the SQLite authorizer allows only SQLite's built-in reading functions
+  (`fts3_tokenizer` and the rest denied), and every SQLite session sets `trusted_schema = OFF`. F-3: the statement
+  check refuses the PostgreSQL functions with effects outside the transaction, plus `connectby`, `xpath_table` and
+  the BRIN/GIN index maintenance functions (list and reasons in `connections.md`). The prep page's SQ-05, T-06 and T-13 rows and its residual-risk line say what the review
+  found. Tests in `test_read_only.py`, `test_queries.py`, `test_exports.py` and `test_diagnostics.py`, the
+  PostgreSQL ones in the PostgreSQL 17 CI job.
+- **Open:** the re-review on merged SHAs (G-S1); the owner's decisions recorded with the review. Limits that stay:
+  the text check is best effort, so a function of the database or of an unknown extension with side effects is
+  still limited only by the role; a SQLite column named `into` must be written `"into"` (`[into]` and backticks are
+  refused, since the PostgreSQL lexings read them as the keyword); `TEMP` stays an info, not a warning, since
+  PostgreSQL grants it to `PUBLIC` by default; hexadecimal, octal, binary and underscore number forms are refused
+  (write numbers in decimal).
 
 ### TD-047 · STU-050: the e2e suites on Firefox and WebKit
 

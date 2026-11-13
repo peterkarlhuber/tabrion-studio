@@ -35,6 +35,12 @@ the time zone; for SQLite foreign keys, the journal mode and the encoding. A sup
 row-level security, gets a warning: Studio stays read-only, but only a role without write privileges is a hard
 boundary.
 
+For a PostgreSQL profile, and above all a PROD one, use a role of its own that has only `SELECT` (and `USAGE` on
+the schemas): no write privileges, no `CREATE` on any schema, no `TEMP` on the database (PostgreSQL grants `TEMP` to
+`PUBLIC` by default; `REVOKE TEMP ON DATABASE ... FROM PUBLIC` takes it back), and not the role your application uses,
+since a role can end its own other sessions. With **read-only role** set on the profile, the diagnostics report what
+the role can still write or create (`STU-DX-003`).
+
 **Connect** opens the profile's read-only connection; the header then shows it with its environment, and a PROD
 connection marks the whole window. The first PROD connection of a profile in a browser session asks first
 ("Production database"; the default is Cancel), and so does the first connection test of a PROD profile, because
@@ -82,7 +88,7 @@ A file with errors is not loaded at all; Studio says so and lists the issues.
 
 | Source | Where the password is | Notes |
 |---|---|---|
-| System keyring | your operating system's keyring, service `tabrion-studio` | the entry belongs to the connection target: if a profile later points to another host, database or user, or a weaker TLS mode, the saved password is not used and Studio asks again |
+| System keyring | your operating system's keyring, service `tabrion-studio` | the entry belongs to the connection target, which is the profile's engine, host, port, database, user, path (SQLite) and `sslmode`: if any of them changes later (another host, database or user, or another TLS mode, for example), the saved password is not used and Studio asks again |
 | Environment variable | the variable of the `tabrion-studio` process | start Studio from a shell that has it; an empty variable counts as missing |
 | File | a file you own with mode 0600 or 0400, at most 4 KB, no link | a project profile's file must lie in the project folder or the configuration folder; `~` is not expanded |
 | This session | Studio's memory | gone when Studio stops |
