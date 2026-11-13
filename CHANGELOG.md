@@ -550,6 +550,8 @@ All notable changes to this project are documented here. The format follows
   After the review: the watcher also counts the page's own `securitypolicyviolation` events in every browser (WebKit's
   select exempt once per element), `connection-lost-backend.spec.ts` uses it too, and the Tab test also checks Tab
   without a result.
+- CI (TD-047, PR #@@): the jobs `e2e (firefox)` and `e2e (webkit)` are required. They lost `continue-on-error` and
+  their `advisory` entries in `.github/ci-manifest.json`, so `ci-ok` fails when either fails, like `e2e`.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a
