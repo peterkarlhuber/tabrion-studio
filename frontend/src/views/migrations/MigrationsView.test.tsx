@@ -450,6 +450,8 @@ describe('migration status view: status', () => {
     );
     expect(screen.getByTestId('migrations-alembic')).toHaveTextContent('0002');
     expect(screen.getByTestId('migrations-unknown')).toHaveTextContent('ghost\\u202E');
+    // Review M-2 of PR #84: Alembic cannot upgrade from a revision it does not know, so no command.
+    expect(screen.queryByTestId('migrations-command')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Show status' }));
     await waitFor(() =>
       expect(screen.getByTestId('migrations-summary')).toHaveTextContent(
@@ -457,6 +459,84 @@ describe('migration status view: status', () => {
       ),
     );
     expect(screen.queryByTestId('migrations-unknown')).toBeNull();
+  });
+
+  it('TD-046 B-3: pending revisions get the upgrade command with Copy; none when up to date', async () => {
+    const user = userEvent.setup();
+    const pending = (heads: string[]) =>
+      alembic({
+        code_trust: 'trusted',
+        current: ['0001'],
+        heads,
+        pending: ['0002'],
+        is_current: false,
+        unknown: [],
+        revisions: 'read',
+      });
+    const { fetcher, calls } = server({
+      'GET /api/connections/c1/migrations': [
+        () => json(migrations([pending(['0002'])])),
+        () => json(migrations([pending(['0002a', '0002b'])])),
+        () =>
+          json(
+            migrations([
+              alembic({
+                code_trust: 'trusted',
+                current: ['0002'],
+                heads: ['0002'],
+                pending: [],
+                is_current: true,
+                unknown: [],
+                revisions: 'read',
+              }),
+            ]),
+          ),
+      ],
+    });
+    render(<MigrationsView fetcher={fetcher} />);
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    const command = await screen.findByTestId('migrations-command');
+    expect(command).toHaveTextContent('Studio does not run migrations.');
+    expect(within(command).getByTestId('migrations-command-text')).toHaveTextContent(
+      /^alembic upgrade head$/,
+    );
+    // After userEvent.setup(), which puts a clipboard stub of its own on navigator.
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    await user.click(within(command).getByRole('button', { name: 'Copy command' }));
+    expect(writeText).toHaveBeenCalledWith('alembic upgrade head');
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-command-status')).toHaveTextContent(
+        'The command is on the clipboard.',
+      ),
+    );
+    // Copying is not a request: the only write is the connection the status opened.
+    expect(writes(calls).map((call) => `${call.method} ${call.url}`)).toEqual([
+      'POST /api/connections',
+    ]);
+    // Two heads: "heads".
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-command-text')).toHaveTextContent(
+        /^alembic upgrade heads$/,
+      ),
+    );
+    // A refused copy says so.
+    writeText.mockRejectedValueOnce(new Error('denied'));
+    await user.click(screen.getByRole('button', { name: 'Copy command' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-command-status')).toHaveTextContent(
+        'The command could not be copied.',
+      ),
+    );
+    await user.click(screen.getByRole('button', { name: 'Show status' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('migrations-summary')).toHaveTextContent(
+        'The database is up to date.',
+      ),
+    );
+    expect(screen.queryByTestId('migrations-command')).toBeNull();
   });
 
   it('shows the problem of the revisions and of opening the connection', async () => {

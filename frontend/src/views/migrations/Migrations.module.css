@@ -25,3 +25,15 @@
 .env {
   margin: 0;
 }
+.command {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+}
+.commandLine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-3);
+  margin: 0;
+}

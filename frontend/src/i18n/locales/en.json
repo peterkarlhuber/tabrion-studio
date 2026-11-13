@@ -554,7 +554,11 @@
       "pending_one": "{{count}} revision is not yet applied.",
       "pending_other": "{{count}} revisions are not yet applied.",
       "others_one": "{{count}} further migration format was found but is not shown here yet.",
-      "others_other": "{{count}} further migration formats were found but are not shown here yet."
+      "others_other": "{{count}} further migration formats were found but are not shown here yet.",
+      "commandHint": "Studio does not run migrations. To apply the pending revisions, run this command in the project folder:",
+      "copyCommand": "Copy command",
+      "commandCopied": "The command is on the clipboard.",
+      "commandCopyFailed": "The command could not be copied. Select it and copy it by hand."
     },
     "levuvo": {
       "current": "The database is up to date with the files.",
