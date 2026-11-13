@@ -8,6 +8,8 @@ export interface HarnessOptions {
   path?: string;
   theme?: Theme;
   lang?: 'en' | 'de';
+  /** scenario=editor: the first tab's draft. */
+  sql?: string;
 }
 
 /** Open the e2e harness (src/harness/main.tsx) and wait until the shell or the notice is rendered. */

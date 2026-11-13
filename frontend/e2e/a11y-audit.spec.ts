@@ -9,14 +9,123 @@
  * - 2.3.3 / 08 section 9: prefers-reduced-motion turns the transitions off.
  * - 1.3.1 / 2.4.1: one banner, one main, a named navigation and a named status bar on every view.
  *
- * axe itself (with colour contrast, light and dark, en and de) is a11y.spec.ts; the dialogs' focus rules are
- * dialogs.spec.ts. The audit report is docs/architecture/accessibility.md.
+ * - 4.1.3 Status messages: the result of a query, a page of the data viewer, a row count, a diagnosis, an export
+ *   and a connection test is said in a live region (role status or alert, or aria-live).
+ * - 1.4.4 / 1.4.10 at 200 %: at 640 CSS px (200 % zoom of 1280 px) the work pages do not scroll sideways either; a
+ *   result grid scrolls inside its own region (data tables are exempt from 1.4.10, but the page must not move).
+ *
+ * The pages that landed after the first audit (TD-022, STU-053 second part): the SQL editor with a result, the cell
+ * detail and the export dialog; the explorer's Data, DDL and Policies tabs and "Count rows"; the data viewer with
+ * filters and the cell detail; the diagnostics result with its report buttons; D-02 from the connection manager.
+ *
+ * axe itself (with colour contrast, light and dark, en and de) is a11y.spec.ts and the page suites (editor, export,
+ * explorer, explorer-definitions, viewer, diagnostics, connections); the dialogs' focus rules are dialogs.spec.ts.
+ * The audit report is docs/architecture/accessibility.md.
  */
 import { test, expect, type Page } from '@playwright/test';
 
 import { openHarness, type HarnessOptions } from './support';
 
-const STATES: [string, HarnessOptions, ((page: Page) => Promise<void>)?][] = [
+type State = [string, HarnessOptions, ((page: Page) => Promise<void>)?];
+
+const QUERY = 'select * from generate_series(1, 3)';
+
+/** Open the explorer on the SQLite profile with the table `part` selected. */
+async function explorerPart(page: Page) {
+  await page.getByTestId('explorer-open').click();
+  await page.getByRole('treeitem', { name: 'part', exact: true }).click();
+  await expect(page.getByTestId('detail-column')).toHaveCount(8);
+}
+
+/** Run the editor's statement and wait for its result. */
+async function runQuery(page: Page) {
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByTestId('result-status')).toContainText('3 rows');
+}
+
+/** The pages that landed after the first audit (TD-022): each in the state with the most on screen. */
+const WORK_PAGES: State[] = [
+  [
+    'SQL editor with a result (STU-012)',
+    { scenario: 'editor', path: '/sql', sql: QUERY },
+    runQuery,
+  ],
+  [
+    'SQL editor with the cell detail (STU-012)',
+    { scenario: 'editor', path: '/sql', sql: QUERY },
+    async (page) => {
+      await runQuery(page);
+      await page.getByRole('grid').getByRole('gridcell').nth(1).click();
+      await page.keyboard.press('Enter');
+      await expect(page.getByTestId('cell-detail')).toBeVisible();
+    },
+  ],
+  [
+    'export dialog (TD-043)',
+    { scenario: 'editor', path: '/sql', sql: QUERY },
+    async (page) => {
+      await runQuery(page);
+      await page.getByTestId('export-open').click();
+      await expect(page.getByRole('dialog', { name: 'Export' })).toBeVisible();
+    },
+  ],
+  [
+    'explorer Data tab with a filter and the cell detail (STU-013)',
+    { scenario: 'explorer', path: '/explorer' },
+    async (page) => {
+      await explorerPart(page);
+      await page.getByTestId('explorer-show-data').click();
+      await expect(page.getByTestId('viewer-status')).toContainText('Rows 1–100');
+      await page.getByTestId('viewer-add-filter').click();
+      await page.locator('[data-row="6"][data-column="2"]').click();
+      await expect(page.getByTestId('cell-detail')).toBeVisible();
+    },
+  ],
+  [
+    'explorer DDL tab and row count (STU-022)',
+    { scenario: 'explorer', path: '/explorer' },
+    async (page) => {
+      await explorerPart(page);
+      await page.getByRole('button', { name: 'Count rows' }).click();
+      await expect(page.getByTestId('row-count-result')).toContainText('1');
+      await page.getByRole('tab', { name: 'DDL' }).click();
+      await expect(page.getByTestId('ddl-text')).toContainText('CREATE TABLE part');
+    },
+  ],
+  [
+    'explorer Policies tab (STU-022)',
+    { scenario: 'explorer', path: '/explorer' },
+    async (page) => {
+      await page.getByRole('combobox').first().selectOption('project:parts-pg');
+      await page.getByTestId('explorer-open').click();
+      await page.getByRole('treeitem', { name: 'measurement', exact: true }).click();
+      await page.getByRole('tab', { name: 'Policies' }).click();
+      await expect(page.getByTestId('detail-policy')).toHaveCount(2);
+    },
+  ],
+  [
+    'diagnostics with findings and the report buttons (STU-014, TD-036)',
+    { scenario: 'diagnostics', path: '/diagnostics' },
+    async (page) => {
+      await page.getByRole('button', { name: 'Run diagnosis' }).click();
+      await expect(page.getByTestId('diagnostics-finding')).toHaveCount(4);
+    },
+  ],
+  [
+    'D-02 from the connection manager (STU-008)',
+    { scenario: 'connections', path: '/connections' },
+    async (page) => {
+      await page.getByTestId('connection-item').nth(2).click();
+      await page
+        .getByTestId('connection-detail')
+        .getByRole('button', { name: 'Test connection' })
+        .click();
+      await expect(page.getByRole('dialog', { name: 'Production database' })).toBeVisible();
+    },
+  ],
+];
+
+const STATES: State[] = [
   ['start page', {}],
   ['connections', { scenario: 'connections', path: '/connections' }],
   [
@@ -55,6 +164,7 @@ const STATES: [string, HarnessOptions, ((page: Page) => Promise<void>)?][] = [
     },
   ],
   ['PROD workspace', { scenario: 'prod' }],
+  ...WORK_PAGES,
   ['D-01 hostile and changed', { scenario: 'dialog-d01-hostile' }],
   ['D-02', { scenario: 'dialog-d02' }],
   ['D-06', { scenario: 'dialog-d06' }],
@@ -97,10 +207,12 @@ async function smallTargets(page: Page): Promise<string[]> {
 }
 
 /** Texts cut with "…" whose full text no title shows (WCAG 1.4.10 "without loss of information"). */
-function untitledEllipses(): string[] {
+function untitledEllipses(exceptGridCells = false): string[] {
   return Array.from(document.querySelectorAll<HTMLElement>('body *'))
     .filter((el) => {
       if (getComputedStyle(el).textOverflow !== 'ellipsis') return false;
+      // A result grid's cell: a click or Enter shows the whole value in the cell detail (D-1 in accessibility.md).
+      if (exceptGridCells && el.closest('[role="gridcell"]') !== null) return false;
       if (el.scrollWidth <= el.clientWidth + 1) return false; // not cut
       const text = (el.textContent ?? '').trim();
       return !(el.closest<HTMLElement>('[title]')?.title ?? '').includes(text);
@@ -177,6 +289,9 @@ test('every Tab stop of the shell shows the focus ring and is in view (2.4.7, 2.
     const focus = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement | null;
       if (el === null || el === document.body) return null;
+      // Back at an element already passed: the walk has gone round once.
+      if (el.dataset.auditStop !== undefined) return null;
+      el.dataset.auditStop = '';
       const style = getComputedStyle(el);
       const box = el.getBoundingClientRect();
       return {
@@ -356,4 +471,165 @@ test('a click beside a focused link or button does not activate it through its t
   await page.mouse.click(buttonBox.x + buttonBox.width - 4, buttonBox.y + buttonBox.height + 12);
   await page.waitForTimeout(100);
   await expect(page.getByTestId('command-palette')).toBeHidden();
+});
+
+// ---- The work pages that landed after the first audit (TD-022) ----
+
+/**
+ * Every Tab stop from the top of the page: it shows the 2 px ring and is in view. The walk starts at a
+ * marker put first in the body (after blur() Chromium would go on from the blurred element) and ends when
+ * the focus leaves the page or comes back to a stop it passed (a modal dialog's focus trap).
+ */
+async function walkFocus(page: Page, stops: number): Promise<{ ids: string[]; inModal: boolean }> {
+  await page.evaluate(() => {
+    const start = document.createElement('span');
+    start.tabIndex = -1;
+    start.dataset.auditStop = '';
+    document.body.prepend(start);
+    start.focus();
+  });
+  const ids: string[] = [];
+  let inModal = true;
+  for (let step = 0; step < stops; step += 1) {
+    await page.keyboard.press('Tab');
+    const focus = await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el === null || el === document.body) return null;
+      if (el.dataset.auditStop !== undefined) return null;
+      el.dataset.auditStop = '';
+      // The SQL editor lives in a shadow root on its host; its frame draws the ring (:focus-within).
+      const ringed = el.shadowRoot !== null ? (el.parentElement ?? el) : el;
+      const style = getComputedStyle(ringed);
+      const box = el.getBoundingClientRect();
+      const visible = Math.min(box.bottom, innerHeight) - Math.max(box.top, 0) > 0;
+      return {
+        id: `${el.tagName}:${el.getAttribute('data-testid') ?? el.getAttribute('aria-label') ?? el.textContent?.trim().slice(0, 30)}`,
+        ring: style.outlineStyle !== 'none' && parseFloat(style.outlineWidth) >= 2,
+        inView: visible && box.left >= 0 && box.right <= innerWidth + 1,
+        inModal: el.closest('[aria-modal="true"]') !== null,
+      };
+    });
+    if (focus === null) break;
+    ids.push(focus.id);
+    inModal &&= focus.inModal;
+    expect(focus.ring, `ring: ${focus.id}`).toBe(true);
+    expect(focus.inView, `in view: ${focus.id}`).toBe(true);
+  }
+  return { ids, inModal: inModal && ids.length > 0 };
+}
+
+for (const [name, options, then] of WORK_PAGES) {
+  test(`${name}: every Tab stop shows the focus ring and is in view (2.4.7, 2.4.11)`, async ({
+    page,
+  }) => {
+    await open(page, options, then);
+    const modal = await page.locator('[aria-modal="true"]').count();
+    const walk = await walkFocus(page, 80);
+    if (modal > 0) {
+      // An open modal dialog keeps the focus: every stop is in it (2.4.3), and it has its controls.
+      expect(walk.inModal, walk.ids.join(', ')).toBe(true);
+      expect(walk.ids.length).toBeGreaterThanOrEqual(3);
+    } else {
+      expect(walk.ids.length).toBeGreaterThanOrEqual(10);
+    }
+  });
+
+  test(`${name}: no sideways scrolling at 200 % zoom (640 px, 1.4.4, 1.4.10)`, async ({ page }) => {
+    await page.setViewportSize({ width: 640, height: 400 });
+    await open(page, options, then);
+    const width = await page.evaluate(() => [
+      document.documentElement.scrollWidth,
+      document.documentElement.clientWidth,
+    ]);
+    expect(width[0]).toBeLessThanOrEqual(width[1] ?? 0);
+  });
+
+  test(`${name}: text spacing of 1.4.12 cuts no control text`, async ({ page }) => {
+    await open(page, options, then);
+    await page.addStyleTag({
+      content: `* { line-height: 1.5 !important; letter-spacing: 0.12em !important;
+        word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }`,
+    });
+    const cut = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll<HTMLElement>(
+          'button, a[href], label, h1, h2, h3, legend, [role="tab"], [role="columnheader"]',
+        ),
+      )
+        .filter((el) => el.getBoundingClientRect().width > 1)
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          if (style.overflow === 'visible' && style.overflowX === 'visible') return false;
+          if (style.textOverflow === 'ellipsis' && el.closest('[title]') !== null) return false;
+          return el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1;
+        })
+        .map((el) => `${el.tagName} "${(el.textContent ?? '').trim().slice(0, 30)}"`),
+    );
+    expect(cut).toEqual([]);
+    expect(await page.evaluate(untitledEllipses, true)).toEqual([]);
+  });
+
+  test(`${name}: nothing moves with prefers-reduced-motion (2.3.3)`, async ({ page }) => {
+    await open(page, options, then); // openHarness emulates reduce
+    const moving = await page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLElement>('body *'))
+        .filter((el) => el.getBoundingClientRect().width > 0)
+        .filter((el) => {
+          const style = getComputedStyle(el);
+          const long = (value: string) => value.split(',').some((part) => parseFloat(part) > 0.01);
+          return (
+            (style.animationName !== 'none' && long(style.animationDuration)) ||
+            (style.transitionProperty !== 'none' && long(style.transitionDuration))
+          );
+        })
+        .map((el) => `${el.tagName}.${el.className}`.slice(0, 80)),
+    );
+    expect(moving).toEqual([]);
+  });
+}
+
+/** The text of every live region on the page (role status or alert, or aria-live other than off). */
+function liveText(): string {
+  return Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '[role="status"], [role="alert"], [aria-live]:not([aria-live="off"])',
+    ),
+  )
+    .map((el) => el.textContent ?? '')
+    .join(' | ');
+}
+
+test('the result of each action is said in a live region (4.1.3)', async ({ page }) => {
+  test.setTimeout(60_000);
+  // A query's result.
+  await open(page, { scenario: 'editor', path: '/sql', sql: QUERY });
+  await page.getByTestId('editor-run').click();
+  await expect.poll(() => page.evaluate(liveText)).toContain('3 rows');
+  // The export's progress and end.
+  await page.getByTestId('export-open').click();
+  await page
+    .getByRole('dialog', { name: 'Export' })
+    .getByRole('button', { name: 'Export', exact: true })
+    .click();
+  await expect.poll(() => page.evaluate(liveText)).toMatch(/Export saved|Exporting/);
+  // A page of the data viewer and a row count.
+  await open(page, { scenario: 'explorer', path: '/explorer' });
+  await explorerPart(page);
+  await page.getByRole('button', { name: 'Count rows' }).click();
+  await expect.poll(() => page.evaluate(liveText)).toMatch(/\b1\b/);
+  await page.getByTestId('explorer-show-data').click();
+  await expect.poll(() => page.evaluate(liveText)).toContain('Rows 1–100');
+  // A diagnosis.
+  await open(page, { scenario: 'diagnostics', path: '/diagnostics' });
+  await page.getByRole('button', { name: 'Run diagnosis' }).click();
+  await expect(page.getByTestId('diagnostics-finding')).toHaveCount(4);
+  await expect.poll(() => page.evaluate(liveText)).toMatch(/1 error/);
+  // A connection test.
+  await open(page, { scenario: 'connections', path: '/connections' });
+  await page.getByTestId('connection-item').nth(1).click();
+  await page
+    .getByTestId('connection-detail')
+    .getByRole('button', { name: 'Test connection' })
+    .click();
+  await expect.poll(() => page.evaluate(liveText)).toContain('Test failed');
 });
