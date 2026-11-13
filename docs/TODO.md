@@ -37,7 +37,7 @@
 | TD-005 spent launch URL in the browser history (review S-2) | P3 | Accepted risk (documented) |
 | TD-006 who may set the label `workflow-change-reviewed` (review S-3) | P3 | Open |
 | TD-007 development proxy and real-browser launch checks (review S-5) | P3 | Open (documented; STU-050) |
-| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Open (needs a workflow-change review) |
+| TD-008 add a windows-latest CI job for the T-2 checks (review C-2) | P1 | Done in the f6-lock PR (job `T-2 path checks (windows-latest)`, required); needs the workflow-change review and its label before merge |
 | TD-009 STU-004 review: remaining Low and Info items (L-2 rest, I-1..I-5, re-review R-2) | P3 | Open |
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR #42) | P2 | Open |
@@ -59,7 +59,7 @@
 | TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR #54), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI: its SQLite part runs and is required since the CI e2e-list PR, its PostgreSQL part not yet) | P2 | Open (STU-010 page PR #43) |
 | TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced; the viewer suites are required in CI since the CI e2e-list PR) | P2 | Open (STU-013 page PR #52) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
-| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
+| TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8); install and test against a hashed runtime lock (security review F-6) | P2 | Done in the f6-lock PR (`constraints/runtime-lock.txt`, `scripts/runtime_lock.py`; every CI install and build uses the hashed pins); needs the workflow-change review and its label before merge; open: refreshing the lock (by hand, about monthly), a non-required scheduled job that tests the newest versions inside the ranges (review of PR #76), the lock install on macOS and Windows only with Python 3.13 (review L-7, accepted) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
 | TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
@@ -69,9 +69,10 @@
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
-| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | In progress (read-only hardening PR) |
+| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | Done (PR #66; independent re-review accepted at `2a8a229`) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
-| STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), the control token checked in the access middleware for every control path but the proof and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (request-limits PR); re-review pending |
+| TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
+| STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -243,7 +244,7 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
     from the project file (`test_config_locations.py` with `PureWindowsPath` and `PurePosixPath`;
     `test_network_paths_are_refused_before_any_file_system_access`; on Windows
     `test_windows_never_resolves_a_unc_path_from_the_project_file`, which patches `nt._getfinalpathname` and runs in
-    the `windows-latest` leg of the test matrix). The dedicated Windows CI job is TD-008.
+    the `windows-latest` leg of the test matrix). The dedicated Windows CI job is TD-008 (`T-2 path checks (windows-latest)`).
   - **T-3:** deeply nested TOML is `config.too_deep`; a damaged or deeply nested trust record means untrusted; an
     unexpected load error makes the project `invalid` and `/api/profiles` still lists the user's profiles.
   - **T-4:** loopback by `ipaddress` plus the literal `localhost` (and socket folders), so `127.evil.example` gets
@@ -383,7 +384,7 @@ merge after OA-004.
 | TABRION STU-020 | Favorites, history, scripts, format, autocomplete | P1 | STU-017 (plan), STU-012 | In progress (started before STU-017 under the owner's allowance of normal ordering decisions; the backend needs only STU-011 and STU-012). Backend PR: the state database `state.sqlite` (0600 through `tabrion.sqlite.connect`, STU-T-007), the query history (`GET`/`DELETE /api/history`, per profile, `[history]` settings `enabled` and `retention_days`, never a parameter value: canary test), favorite and recently opened profiles (`GET`/`PUT /api/favorites`), `.sql` scripts in the project folder (`GET /api/scripts`, `GET`/`PUT /api/scripts/file`) and the cached-only catalog for completion on PROD (`?cached_only=true`); `docs/architecture/history-and-scripts.md`. The fixes of the independent review (`stu-020-review.md`: retention on disk, Windows names, descriptor-anchored access, hard links, byte order mark, save lock, file-system problem codes) are in the same PR; the OneDrive placeholder case and the device names still need a check on a real Windows machine. Open: the page PR (history view, favorites, open/save scripts, format with sql-formatter, completion; E2E of the acceptance flows) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress: the shell (first PR, F-1..F-5) and the work pages (editor, grid, export, explorer, data viewer, DDL, Policies, row count, diagnostics, D-02; second PR, F-6) are audited in `docs/architecture/accessibility.md` and `e2e/a11y-audit.spec.ts`, with no open AA violation. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | STU-008..STU-015, STU-051, QA-9 | In progress (STU-050 PR): the checklist `docs/architecture/ux-acceptance.md` (every criterion of 08 sections 3 to 6 and of the plan's acceptance, each with its test or manual check), run on 2026-11-13 against the built app with SQLite and PostgreSQL 16 (scram) in Chromium: met for what the MVP covers. New `e2e/ux-acceptance.spec.ts` (08 section 5 "First start" under 60 s and "Connect" with the remedy, against a real server). Fixed: the start page leads to the views (it said they "arrive with the next versions"), eight connection failures name the remedy, the migration view's empty status box. Open: Firefox and WebKit (TD-047), the "Connection lost" banner (TD-034, parallel lane), QA-S1 and the rest of TD-046 |
-| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Preparation in progress (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). The gate itself, the independent review and its re-review are not done; G-S1 is decided by the owner, and a human security review before a public release stays mandatory |
+| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Independent review done and accepted (re-review at `2a8a229`); waiting on the owner's decision G-S1. Preparation done (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). Independent review done and accepted: the first round at `e186178` was not accepted, its fixes (PR #65, PR #66) were re-reviewed and the review accepted at `2a8a229`. Waiting on the owner's decision G-S1 (open owner decisions F-5/TD-033, F-6/TD-031, F-7/T-16 and the rest listed in `security-review-prep.md`); a human security review before a public release (STU-028, G-R) stays mandatory |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27; the docs part in the STU-017 docs PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The docs PR adds the documentation checklist `docs/development/docs-checklist.md` (every requirement of 03 §10 and 09 mapped to its page and check, D-1..D-23), the clean-install test (manual on Linux on 2026-11-13 from a locally built wheel of master `7093bea`: install with the Tabrion pin, start without Node.js, sign-in link, a SQLite profile saved, tested and connected read-only, the explorer and the data viewer, `--stop`; passed. Automated: `scripts/smoke_wheel.py` now installs with the pin and signs in, connects a SQLite profile and reads its rows, in the `packaging` job on Linux, macOS and Windows), install from a wheel, troubleshooting for installing, the views and the `--stop` failures (I-5), the residual risks on the security page, the README status and install command (it had no Tabrion pin and failed), and the settings page (the timeout applies on connect; `log_sql` is saved but not used, TD-013). Open: the tag `v0.1.0` (a separate step after G-S1; no publication, G-R) and the build-only release workflow; the rest is TD-023 |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R); STU-021
@@ -503,16 +504,21 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-008 · Add a windows-latest CI job for the T-2 checks (review C-2 of `stu-006-review.md`)
 
-- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Open (needs a
-  workflow-change review, OA-003) · **Refs:** `stu-006-review.md` T-2 and C-2, `config/locations.py`
+- **Priority:** P1 High (before STU-009 and before any build is published, G-R) · **Status:** Done in the f6-lock PR
+  (needs the workflow-change review and the label `workflow-change-reviewed` before merge, OA-003) · **Refs:**
+  `stu-006-review.md` T-2 and C-2, `config/locations.py`
 - **What:** the review asks for a test in a Windows CI job that patches `nt._getfinalpathname` and asserts that it is
   never called for a UNC value from the project file. The test exists
   (`tests/security/test_project_trust.py::test_windows_never_resolves_a_unc_path_from_the_project_file`) and the pure
   path tests use `PureWindowsPath` on every platform; today the Windows test runs in the `windows-latest` leg of the
   test matrix. The conditions PR does not change `.github/`.
-- **Next step:** add a windows-latest CI job (or a required step in the existing leg) that runs the T-2 tests by name
-  and fails if they are skipped, like the `e2e` job's required-suite check; then the workflow-change review and the
-  label.
+- **Done:** the CI job `T-2 path checks (windows-latest)` (required in `.github/ci-manifest.json`) installs from the
+  hashed runtime lock (TD-031), runs `tests/unit/test_config_locations.py` and the two T-2 tests of
+  `test_project_trust.py` by name, and its gate step reads the JUnit report: each of the eight T-2 tests
+  (`test_windows_never_resolves_a_unc_path_from_the_project_file` among them) must have passed at least once, and
+  nothing may fail or skip, except the link tests of `test_config_locations.py`, which skip on Windows with the reason
+  "symlinks". A renamed test or a new skip condition fails the job.
+- **Next step:** the workflow-change review of the f6-lock PR and the label.
 
 ### TD-009 · STU-004 review: remaining Low and Info items
 
@@ -1157,8 +1163,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-048 · STU-016 review F-1..F-3: read-only path, SQLite functions, side-effect functions
 
-- **Priority:** P0 (G-S1) · **Status:** In progress (read-only hardening PR) · **Refs:** STU-016 independent security
-  review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
+- **Priority:** P0 (G-S1) · **Status:** Done (PR #66; independent re-review accepted at `2a8a229`) · **Refs:**
+  STU-016 independent security review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
   documents), SQ-05, SQ-07, T-06, T-13, `docs/architecture/connections.md`, `docs/architecture/diagnostics.md`
 - **Done in the PR:** F-1: `check_statement` refuses any `INTO` outside literals, comments and quoted identifiers in
   every lexing, and a number directly followed by a word character;
@@ -1169,7 +1175,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   the BRIN/GIN index maintenance functions (list and reasons in `connections.md`). The prep page's SQ-05, T-06 and T-13 rows and its residual-risk line say what the review
   found. Tests in `test_read_only.py`, `test_queries.py`, `test_exports.py` and `test_diagnostics.py`, the
   PostgreSQL ones in the PostgreSQL 17 CI job.
-- **Open:** the re-review on merged SHAs (G-S1); the owner's decisions recorded with the review. Limits that stay:
+- **Re-review:** done on master `2a8a229` (the merge of PR #66) and accepted, with F-4, F-8 and F-9 of PR #65; the
+  owner's decisions for G-S1 are listed in `security-review-prep.md`. The message for a denied SQLite function is
+  TD-053.
+- **Limits that stay:**
   the text check is best effort, so a function of the database or of an unknown extension with side effects is
   still limited only by the role; a SQLite column named `into` must be written `"into"` (`[into]` and backticks are
   refused, since the PostgreSQL lexings read them as the keyword); `TEMP` stays an info, not a warning, since
@@ -1271,6 +1280,15 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   switch starts no transition…" (motion on, both directions: no `transitionrun`, no serious axe violation; it fails
   without the fix) and a Vitest of the attribute sequence. The other axe checks after a theme switch run in the
   harness under reduced motion, and `editor-backend.spec.ts` is the only real-server spec that switches the theme.
+
+### TD-053 · SQLite: a denied function surfaces as `db.unknown`, not `db.permission`
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** re-review of the STU-016 security review at `2a8a229` (an info
+  note, not a security issue), TD-048, F-2
+- **What:** when the SQLite authorizer denies a function (since F-2 every function outside SQLite's built-in reading
+  functions), SQLite reports "not authorized", which Studio maps to the problem `db.unknown`. The statement is
+  refused as it should be, but the message is vaguer than the one for a denied table or pragma.
+- **Next step:** map SQLite's "not authorized" error to `db.permission`, with a test for a denied function.
 
 ### TD-050 · Joint regression JR-N2: `backend.spec.ts` left its temp directory behind
 
@@ -1414,16 +1432,34 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-031 · Build with the hashed backend pins in CI, and keep the two pins in step (TABRION QA-8)
 
-- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request, lane J) · **Refs:** TABRION QA-8,
-  `build-constraints.txt`, tabrion TODO TB-130 and TB-133 (the same pins)
+- **Priority:** P2 Medium · **Status:** Done in the f6-lock PR (needs the workflow-change review and its label before
+  merge) · **Refs:** TABRION QA-8, security review F-6 (`security-review-prep.md`), `build-constraints.txt`,
+  `constraints/runtime-lock.txt`, `docs/development/ci.md` ("Hashed runtime pins"), tabrion TODO TB-130 and TB-133
+  (the same build pins)
 - **What:** the wheel hash is reproducible only for one hatchling version (its `WHEEL` file names the generator).
   `pyproject.toml` pins `hatchling==1.33.0`, `build-constraints.txt` pins it and its dependencies with hashes,
   `tests/unit/test_build_constraints.py` checks that the two agree, and the reproducibility test builds with them.
   The CI jobs still build with the unhashed `pyproject.toml` pin.
-- **Next step:** in `.github/workflows/ci.yml`, give the three `python -m build` steps (jobs `e2e`, `build and
-  install`, `license and supply chain`) the environment `PIP_CONSTRAINT: build-constraints.txt` and
-  `PIP_REQUIRE_HASHES: "1"`. After the first hatchling release, check that the Dependabot pull request updates both
-  pins; if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request.
+- **Done (build):** the four `python -m build` steps (jobs `e2e`, `e2e (<browser>)`, `build and install`, `license
+  and supply chain`) run with `PIP_CONSTRAINT` set to `build-constraints.txt` and `PIP_REQUIRE_HASHES: "1"`.
+- **Done (runtime, F-6):** `constraints/runtime-lock.txt` pins the runtime closure of Studio and Tabrion (Python 3.11
+  to 3.14, Linux, macOS, Windows) exactly, with the SHA-256 of every file; Tabrion stays a full-SHA Git pin. Every CI
+  job that installs Studio installs the lock first (`pip install --require-hashes --no-deps --only-binary :all:`),
+  then Studio and Tabrion; `pip check` and `scripts/runtime_lock.py check-installed` fail when the installed runtime
+  closure differs from the lock. `scripts/runtime_lock.py check` (job `backend lint`, `tests/unit/test_runtime_lock.py`)
+  keeps the lock inside the `pyproject.toml` ranges and in step with `build-constraints.txt`; `scripts/smoke_wheel.py`
+  and the installation guide install the same way. The ranges in `pyproject.toml` are unchanged.
+- **Next step:** after the first hatchling release, check that the Dependabot pull request updates both build pins;
+  if not, regenerate `build-constraints.txt` by the recipe in its header in the same pull request. Refresh the runtime
+  lock (`python scripts/runtime_lock.py update -- --upgrade`) about once a month and whenever `dependency audit`
+  reports an advisory against a pin; Dependabot is not relied on for it. The `pip install --upgrade "pip>=26.1"` step
+  of the guide and of `smoke_wheel.py` is not hashed, and pip builds Studio and Tabrion with build backends fetched
+  without hashes (build time only; review L-1).
+- **Later (review of PR #76):** CI now tests only the locked set, so a newer release inside the `pyproject.toml`
+  ranges that breaks Studio shows up only at the next lock update. Add a non-required scheduled job (nightly, Linux
+  with Python 3.11 and 3.14) that installs without the lock, prints `pip freeze` and runs `pytest -m "not
+  packaging"`; optionally a weekly lowest-direct run for the lower bounds. CI installs the lock on macOS and Windows
+  only with Python 3.13 (L-7, accepted: only the `< 3.12` markers differ by version, and Linux 3.11 covers them).
 - **Also (review L-2 of the Studio QA-8 PR):** the frontend's reproducibility is checked by hand
   (`scripts/check_frontend_reproducible.py`). A CI step could run it in `build and install` on each OS after
   `build_frontend.py` (`node_modules` is already there) and compare the printed listings across the OS matrix.

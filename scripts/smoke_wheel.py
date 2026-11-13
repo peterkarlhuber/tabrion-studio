@@ -3,8 +3,10 @@
 
     python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
 
-Steps: create a venv in a temporary folder, upgrade pip, ``pip install`` the wheel with the Tabrion pin of
-``constraints/tabrion-integration.txt`` (``--constraint``; Tabrion is not on PyPI, so a plain install fails), then
+Steps: create a venv in a temporary folder, upgrade pip, install the runtime dependencies from the hashed lock
+``constraints/runtime-lock.txt`` (``--lock``; ``pip --require-hashes --no-deps``, TD-031), then the wheel and the
+Tabrion pin of ``constraints/tabrion-integration.txt`` (``--tabrion-pin``; Tabrion is not on PyPI) with ``--no-deps``,
+so nothing outside the lock is installed, and ``pip check`` that the lock was complete; then
 run the installed ``tabrion-studio`` with a PATH from which every folder containing ``node`` is removed:
 ``--version``, a start with ``--no-browser --print-url``, the health endpoint, the served ``index.html`` and its
 script asset, the sign-in with the printed one-time link, a SQLite profile saved, connected (read-only) and read
@@ -31,7 +33,8 @@ import urllib.request
 
 WINDOWS = sys.platform == "win32"
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-_CONSTRAINTS = Path(__file__).resolve().parents[1] / "constraints" / "tabrion-integration.txt"
+_TABRION_PIN = Path(__file__).resolve().parents[1] / "constraints" / "tabrion-integration.txt"
+_LOCK = Path(__file__).resolve().parents[1] / "constraints" / "runtime-lock.txt"
 _LINK = re.compile(r"do not share\): (http://127\.0\.0\.1:\d+/launch#[A-Za-z0-9_-]+)")
 
 
@@ -122,10 +125,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Smoke-test the built wheel without Node.js")
     parser.add_argument("wheel", type=Path)
     parser.add_argument(
+        "--tabrion-pin",
+        # The old name, from when the file was passed with -c.
         "--constraint",
+        dest="tabrion_pin",
         type=Path,
-        default=_CONSTRAINTS,
-        help="the pip constraints file with the Tabrion pin (default: constraints/tabrion-integration.txt)",
+        default=_TABRION_PIN,
+        help="the file with the full-SHA Tabrion pin, installed with -r and --no-deps "
+        "(default: constraints/tabrion-integration.txt)",
+    )
+    parser.add_argument(
+        "--lock",
+        type=Path,
+        default=_LOCK,
+        help="the hashed lock of the runtime dependencies (default: constraints/runtime-lock.txt)",
     )
     args = parser.parse_args(argv)
     wheel: Path = args.wheel.resolve()
@@ -147,11 +160,14 @@ def main(argv: list[str] | None = None) -> int:
         subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
         python = _bin(venv, "python")
         subprocess.run([str(python), "-m", "pip", "install", "--quiet", "--upgrade", "pip>=26.1"], check=True)
-        _step(f"installing {wheel.name} with {args.constraint.name}")
+        _step(f"installing the runtime dependencies from {args.lock.name} (hashes required)")
+        pip = [str(python), "-m", "pip", "install", "--quiet", "--no-deps"]
         subprocess.run(
-            [str(python), "-m", "pip", "install", "--quiet", str(wheel), "-c", str(args.constraint.resolve())],
+            [*pip, "--require-hashes", "--only-binary", ":all:", "-r", str(args.lock.resolve())],
             check=True,
         )
+        _step(f"installing {wheel.name} and the Tabrion pin of {args.tabrion_pin.name}")
+        subprocess.run([*pip, str(wheel), "-r", str(args.tabrion_pin.resolve())], check=True)
         subprocess.run([str(python), "-m", "pip", "check"], check=True)
 
         env = {**os.environ, "PATH": node_free_path(), "PYTHONUNBUFFERED": "1"}
