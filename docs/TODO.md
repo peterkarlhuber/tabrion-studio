@@ -43,7 +43,7 @@
 | TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR) | P2 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
 | TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
-| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow, `keyboard.spec.ts` as a required e2e suite) | P2 | Open |
+| TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow; `keyboard.spec.ts` is a required e2e suite since the CI e2e-list PR) | P2 | Open |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, tree, grid, live region, editor, Firefox/WebKit, the final MVP report) | P2 | Open |
 | TD-023 user guide parts that wait for later packages (connecting, explorer, editor, data viewer, diagnostics, migrations; the clean-install test and the tag of STU-017) | P2 | Open (user-guide PR #27; review findings done) |
@@ -56,15 +56,16 @@
 | TD-039 STU-022 review: the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (PR #45) |
 | TD-034 STU-008 connect: what the page does not do yet (no workspace overview after Connect, the header learns of a connection the server closed only when the manager reloads, no reconnect banner, the status bar's role and database) | P2 | Open (STU-008 connect PR) |
 | TD-038 STU-008 connect: limits of the D-02 gate and of the error states (`stu-008-connect-review.md` L-5, L-7). D-02 was enforced only in the page, from its loaded list, so a profile changed to `prod` in another tab or on disk after the list loaded was connected without D-02 (the connection manager too). Done in the D-02 server PR: `POST /api/connections` and `POST /api/connection-tests` take `confirmed_environment` and refuse a PROD profile that was not confirmed for PROD with 409 `studio.prod_confirmation_required` (missing means not confirmed); the manager reads the profile again and asks D-02, the migration status and diagnostics views read their list again (`docs/architecture/connections.md`, "D-02 on the server"). The explorer (#43) and the SQL editor (#41) send it too and read their list again after a 409; `confirmed_environment` is a required argument of the page's `openConnection` and `testConnection`, so a new caller cannot leave it out (#48 review C-2). For a SQLite user profile the server resolves the file from the same profile read that passed the check (#48 review C-1). The diagnostics view uses the shared D-02 gate since TD-036 (#47). The 08 section 4.2 states "sign-in refused" (SQLSTATE class 28) and "TLS certificate invalid" are reached only by mocks: against a real cluster, a wrong password, an unknown user or database and a TLS mismatch all come back as `db.connection` without `sqlstate`, so the page shows the one generic text (host, port, user, password, TLS mode); the fix is in tabrion's classification at connect time. The delta review's leftovers are fixed in the STU-008 follow-up PR: L-10 (the header could stay "connecting…" after a slow connect and a newer one that failed), a refused URL's `password` query parameter staying in the field (and `sslpassword`, from the #44 review), the other order of L-10 (the older request answers first, then the newer one fails; #44 review R-1), a connection that was open before two connects that both failed (#44 delta review R-2), tests for the two surviving mutants (the busy click guard, the open-list read after a failed connect), and the cause of a `backend.spec.ts` failure under load (the switcher did not appear after Connect): a list of the open connections read while the connect ran, and answered after it, cleared the header; the manager also read that list again on every header change. A list now clears only what the header showed when it was read (`headerVersion`), and the session's functions keep their identity | P2 | Open (STU-008 connect PR) |
-| TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI) | P2 | Open (STU-010 page PR) |
-| TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced, the viewer suites in the e2e job's required list) | P2 | Open (STU-013 page draft PR) |
+| TD-041 STU-010 page: parts that wait for other packages (open in the SQL editor and `SELECT … LIMIT 100` with #41, the DDL and policies tab with #38/STU-022 (in the STU-022 page PR), the data tab with the STU-013 page, the route `/c/:conn/t/:schema/:name`, a virtualized tree, the reference-app E2E in CI: its SQLite part runs and is required since the CI e2e-list PR, its PostgreSQL part not yet) | P2 | Open (STU-010 page PR) |
+| TD-042 STU-013 page (data viewer): what it leaves for later ("Open as SQL" with the sort and filters, the row estimate in the status line, sorting from the column header, typed filter values, the byte bound of a first page on SQLite columns whose declared type is not enforced; the viewer suites are required in CI since the CI e2e-list PR) | P2 | Open (STU-013 page draft PR) |
 | TD-030 moderate npm advisory in development tools only (`minimatch` through eslint; QA-8) | P3 | Open (watch) |
 | TD-031 build with the hashed backend pins in CI, and keep the two pins in step (QA-8) | P2 | Open (needs a `.github/` pull request) |
 | TD-032 STU-014 page deviations from 08 section 4.9: the route `/diagnostics` (like `/migrations`), English details and remedies (blocks STU-054 for the `STU-DX-*` texts, E-S3), no progress, no documentation link, no "OK" rows | P2 | Open (STU-014 page PR #39; `stu-014-ui-review.md` C-3) |
 | TD-033 STU-012 SQL editor MVP: what it leaves for later (drafts in the state database, the page/server splitter differences, error positions, column resizing, F6 inside the editor, the shell's workspace tabs, the heartbeat stream) | P2 | Open (STU-012 draft PR #41; review `stu-012-review.md` C-1..C-5 and L-1..L-8 done) |
 | TD-036 STU-025 parts outside the backend: the "Download report" button and the backup hints in the diagnostics view (STU-014 page, merged in #39), the report from the command line, the user-guide section | P2 | Partly done (TD-036 page PR: download, backup hints, page route `replace=True`, user guide); open: the command line |
-| TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass. Failures under load (3 workers, load average 14 on 4 CPUs), checked in the e2e-load PR: the cancel test of `editor-backend.spec.ts` failed because a cancel during the start request was lost (a product bug, fixed; reproduced against the real server by delaying `POST /api/queries`, and in `editor.spec.ts` with the harness option `startDelay`); its bound is now taken in the page (key to "Canceled" under 1 s, STU-T-020) instead of the wall time with `expect`'s retry schedule. Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" (1 000 rows of 180 KB) passed in every run, also with the renderer slowed 4x and 8x (`Emulation.setCPUThrottlingRate`): 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step), so only a step slower than 5 s, a renderer starved more than about 15x, fails it; no bound was changed. The M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails when the machine is far more loaded (load average 28) | P2 | Open (needs a `.github/` pull request; does not block STU-012) |
-| TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, `export.spec.ts` in the e2e job's required list, no server-side size estimate) | P2 | Open (export dialog PR) |
+| TD-037 STU-012: `editor.spec.ts` and `editor-backend.spec.ts` in the e2e job's list of suites that must pass | P2 | Done (CI e2e-list PR: every spec in `frontend/e2e` must pass without a skip, `screenshots.spec.ts` excepted) |
+| TD-043 STU-021 page: the export dialog; what it leaves to the data viewer (STU-013) and later (the file is held in the browser until it is saved, at most 1 GiB, no server-side size estimate; `export.spec.ts` is required in CI since the CI e2e-list PR) | P2 | Open (export dialog PR) |
+| TD-044 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -897,9 +898,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   between explorer, editor and result (TD-033).
 - **Acceptance "keyboard-only E2E for every main flow"** needs those flows (connect, explorer, query, cancel); query
   and cancel are covered since STU-012, connect and explorer follow with their pages.
-- **Required e2e suite:** `e2e/keyboard.spec.ts` runs in the CI job `e2e`, but the step "Every suite ran and none was
-  skipped" lists only `a11y`, `backend`, `contrast`, `dialogs` and `status`. Adding `keyboard.spec.ts` changes
-  `.github/workflows/ci.yml` and needs a workflow-change review (OA-003).
+- **Required e2e suite:** done in the CI e2e-list PR: the step "Every suite ran and none was skipped" requires every
+  spec in `frontend/e2e` but `screenshots.spec.ts`, `keyboard.spec.ts` included.
 - **Review of #16 (`stu-052-td021-review.md`, accepted):** L-1 (German palette says "Darstellung" like the settings
   view), L-2 (README: "no PyPI release is needed for now; a later publication needs a new decision and G-R") and L-3
   (tests for IME composition, a shortcut another handler took, Escape not reaching the page; mutants K9, K12, K19) are
@@ -952,8 +952,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 - **With STU-010, STU-013 and STU-023:** the explorer tree (WAI-ARIA tree), the data viewer's grid, the ER diagram's
   table alternative. Add their states to `a11y.spec.ts` and `a11y-audit.spec.ts`.
 - **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-007, a CI change).
-- **Required e2e suite:** `a11y-audit.spec.ts` runs in the CI job `e2e`, but is not in the list of suites that must
-  pass (a `.github/` change with a workflow-change review, OA-003; like `keyboard.spec.ts`, TD-020).
+- **Required e2e suite:** done in the CI e2e-list PR: `a11y-audit.spec.ts` must pass without a skip, like every spec
+  in `frontend/e2e` but `screenshots.spec.ts`.
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
   every MVP flow.
 
@@ -1001,9 +1001,9 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   with the runner's own `pg_dump` (18 or later on `ubuntu-26.04`), whose `NOT NULL col` form for a child table (rejected by
   PostgreSQL 17) the test rewrites to the server's form. An exact live comparison with a pg_dump of the server's
   major version in CI needs a pg_dump 17 client in that job (a `.github/` change, not made here); it was run locally
-  against PostgreSQL 17.10 with pg_dump 17.10. Recommended for a later workflow pull request (`.github/` is not
-  changed here): set `TABRION_STUDIO_TEST_LIVE_PG_DUMP=1` in the integration job, so the live comparison can never be
-  skipped silently if the runner's client becomes older than the server again, and print `pg_dump --version` there.
+  against PostgreSQL 17.10 with pg_dump 17.10. Done in the CI e2e-list PR: the integration job prints
+  `pg_dump --version` and sets `TABRION_STUDIO_TEST_LIVE_PG_DUMP=1`, so the live comparison can never be skipped
+  silently if the runner's client is missing or older than the server.
 
 ### TD-039 · Queries made when a PostgreSQL connection is opened (TABRION STU-022 review)
 
@@ -1081,8 +1081,12 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-037 · STU-012: the editor suites in the e2e job's required list
 
-- **Priority:** P2 Medium · **Status:** Open (needs a `.github/` pull request; does not block STU-012, review
-  `stu-012-review.md`) · **Refs:** `.github/workflows/ci.yml` (job `e2e`), OA-003
+- **Priority:** P2 Medium · **Status:** Done (CI e2e-list PR, workflow-change review; review `stu-012-review.md`) ·
+  **Refs:** `.github/workflows/ci.yml` (job `e2e`), OA-003
+- **Done:** the step "Every suite ran and none was skipped" now requires every test file Playwright runs from
+  `frontend/e2e` (its default `testMatch`, subfolders included) except `screenshots.spec.ts` (it takes screenshots
+  only when `STUDIO_SCREENSHOTS` names a folder), so both editor suites, and any spec added later, must pass with no
+  test skipped; `explorer-definitions.spec.ts` (STU-022 page, #54) is required that way since it reached master.
 - **Problem:** `e2e/editor.spec.ts` and `e2e/editor-backend.spec.ts` run in the CI job `e2e`, but the step "Every
   suite ran and none was skipped" does not list them, so a skipped editor suite would not fail the job. Adding them
   changes `.github/workflows/ci.yml` and needs a workflow-change review (OA-003), like `keyboard.spec.ts` (TD-020) and
@@ -1119,8 +1123,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     not bytes, so a larger file cannot be exported from the page today. A save straight to disk needs the File
     System Access API (Chromium only) or a download route without the CSRF header, which the access model of STU-003
     does not allow. Revisit with the desktop package.
-  - `e2e/export.spec.ts` and the export test in `e2e/editor-backend.spec.ts` run in the e2e job but are not in its
-    list of suites that must pass (with TD-037; needs a `.github/` pull request).
+  - Done: `e2e/export.spec.ts` and `e2e/editor-backend.spec.ts` (with its export test) must pass without a skip in
+    the e2e job since the CI e2e-list PR (TD-037).
   - #48 (server-side D-02, `confirmed_environment` on opening a connection) is adopted with the next master merge;
     the dialog opens no connection itself, so only the callers' connect paths change.
   - No estimate of the file's size before it starts (the server streams and does not count first).
@@ -1159,9 +1163,11 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
     `backend.spec.ts`, which the CI gate requires to run without a skip, stays complete) runs where
     `TABRION_STUDIO_E2E_PYTHON` and `TABRION_STUDIO_E2E_EXAMPLES` (tabrion's `examples` folder) are set, and its
     PostgreSQL part where `TABRION_STUDIO_E2E_PG_PARTS`, `TABRION_STUDIO_E2E_PG_MEASUREMENTS` and
-    `TABRION_STUDIO_E2E_PG_USER` are. CI sets none, so the spec is skipped there; the wiring (a tabrion checkout, a
-    PostgreSQL service, and the spec in the gate's required list) needs a `workflow-change-reviewed` `.github/`
-    pull request (lane J).
+    `TABRION_STUDIO_E2E_PG_USER` are. Since the CI e2e-list PR the job `e2e` checks out tabrion's `examples` at the
+    commit `constraints/tabrion-integration.txt` pins and sets `TABRION_STUDIO_E2E_EXAMPLES`, so the spec runs (its
+    SQLite part) and must pass without a skip like every spec. Open: its PostgreSQL part, which needs a PostgreSQL
+    service and the three URLs in that job (another `.github/` change). It is an `if` inside the test, not a skip,
+    so the gate does not see that it did not run (L-2 of the CI e2e-list workflow review).
   - SQLite's row count "on request with a timeout" (03 section 2 B, release 1) and the "no privileges" state (08:
     columns from the catalog, data not available) belong to the data tab (TD-042).
 
@@ -1196,9 +1202,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - **D-02 on the server:** the tab never opens a connection; the explorer opens it through the shared page
     confirmation, and since #48 the server checks `confirmed_environment` on `POST /api/connections` too (adopted
     with the master merge of `ed24015`; nothing in the tab changed).
-  - **CI:** `e2e/viewer.spec.ts` and `e2e/viewer-backend.spec.ts` run in the job `e2e` (every spec runs), but the
-    step "Every suite ran and none was skipped" does not list them; the coordinator's planned workflow-change pull
-    request adds them (like TD-037).
+  - **CI (done):** `e2e/viewer.spec.ts` and `e2e/viewer-backend.spec.ts` must pass without a skip in the job `e2e`
+    since the CI e2e-list PR (every spec but `screenshots.spec.ts`, TD-037).
   - **Filters in the query string:** the request-size bound (12 KB, M-1 of `stu-013-page-review.md`) keeps a rows
     request below h11's 16 KB head limit, so up to about 1,000 characters outside ASCII fit in all filters together.
     Longer values would need the filters in a body (a `POST` read route, or a server-side filter token).
