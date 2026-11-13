@@ -489,6 +489,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
+  (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
+  so numbers must be written in decimal) in the editor, the
+  export route and every other path; PostgreSQL sessions drop temporary tables when they go back to the pool
+  (`DISCARD TEMP`); the diagnostic `STU-DX-003` also reports `CREATE` on a schema (warning, error on PROD) and `TEMP`
+  on the database (an info on its own). (F-1)
+- STU-016 review, SQLite: the authorizer's function branch is an allowlist of SQLite's built-in reading functions,
+  so `fts3_tokenizer`, `fts5`, the FTS4 maintenance and R-tree debugging functions and anything a build adds are
+  denied; every SQLite session sets `trusted_schema = OFF` before the authorizer. (F-2)
+- STU-016 review, PostgreSQL side-effect functions: the statement check also refuses functions whose effect a
+  read-only transaction does not stop (other sessions, the WAL, replication slots and origins, transaction IDs,
+  server reloads and resets, server files, index maintenance, every `dblink` function, and `connectby` and
+  `xpath_table`, which run a query given as text); the list and the reason for each are in
+  `docs/architecture/connections.md`. (F-3)
 - Request bodies are capped while they stream in, before any route reads them (STU-016 review F-4). A body over the
   route's cap gets 413 without any of it being kept: a chunked body is stopped one chunk past the cap, and a declared
   `Content-Length` over the cap is never read into memory. Before the 413, the rest of the body is read and discarded
@@ -584,6 +598,8 @@ All notable changes to this project are documented here. The format follows
   After the review: the watcher also counts the page's own `securitypolicyviolation` events in every browser (WebKit's
   select exempt once per element), `connection-lost-backend.spec.ts` uses it too, and the Tab test also checks Tab
   without a result.
+- CI (TD-047, PR #67): the jobs `e2e (firefox)` and `e2e (webkit)` are required. They lost `continue-on-error` and
+  their `advisory` entries in `.github/ci-manifest.json`, so `ci-ok` fails when either fails, like `e2e`.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a

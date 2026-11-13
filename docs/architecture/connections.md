@@ -183,8 +183,14 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 | PostgreSQL | `default_transaction_read_only=on` for the session (tabrion); every statement in `Database.read()` (`BEGIN READ ONLY`, re-checked by tabrion before `COMMIT`, I-56) | one statement per transaction; `check_statement` refuses transaction control |
 
 **SQLite authorizer** (`sqlite_authorizer`, STU-T-024):
-- It allows reading, transactions and savepoints, recursive queries, functions other than `load_extension`, and
-  pragmas that only read (or set `query_only` on).
+- It allows reading, transactions and savepoints, recursive queries, pragmas that only read (or set `query_only`
+  on), and SQLite's built-in functions that only compute a value: an allowlist (`readonly._SQLITE_FUNCTIONS`: the
+  core scalar, aggregate, window, date, math and JSON functions, and the FTS3/4/5 and R-tree functions that only
+  read). Since the STU-016 review (F-2), every other function is denied, since reading needs none of them:
+  `load_extension`, `fts3_tokenizer`, `fts5`, `optimize` (FTS4 maintenance), `rtreenode` and `rtreedepth`
+  (debugging), `sqlite_log`, and any function a build or a later SQLite adds. A view of the file that calls a denied function fails to read.
+- Every SQLite connection sets `PRAGMA trusted_schema = OFF` before the authorizer is installed (tabrion's default
+  profile sets it too), so views and triggers of a file can call only functions marked innocuous.
 - It denies everything else: every write, every schema change (temporary objects included), `ATTACH`, `DETACH`
   (and so `VACUUM INTO`, which starts with an `ATTACH`), `ANALYZE`, `REINDEX`, and pragmas that set a value or act
   (`optimize`, `wal_checkpoint`, ...).
@@ -197,9 +203,17 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 - These `SET` forms are refused: `SET TRANSACTION`, `SET SESSION CHARACTERISTICS`, `SET [SESSION|LOCAL]
   default_transaction_read_only | transaction_read_only | ROLE | SESSION AUTHORIZATION`.
 - So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT`, `CLUSTER` and `DO`.
+- So is every statement with the word `INTO` outside a literal, a comment or a quoted identifier, in any of the
+  lexings the check reads (F-1 of the STU-016 review). `SELECT ... INTO` creates a table, and a read-only editor
+  never needs `INTO` (`INSERT INTO`, `MERGE INTO`, `REPLACE INTO` and `VACUUM INTO` are refused anyway). A number
+  directly followed by a letter, `_` or `$` is refused, and so are PostgreSQL 16's hexadecimal, octal, binary and
+  underscore number forms (`0x1f`, `1_000`) and SQLite's hexadecimal ones: write numbers in decimal. A column named `into` must be written as a quoted identifier (`"into"`; in
+  SQLite also `[into]` is read as the keyword by the PostgreSQL lexings, so it is refused). `into` inside a
+  dollar-quoted string (`$$...$$`) is refused too, since SQLite has no dollar quoting; use `'...'` there.
 - Since the STU-011 fix round, every other first word too: only `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a
   query, `SHOW` and `PRAGMA` pass (an allowlist; see [Query engine](queries.md), "Statements and session state").
-  PostgreSQL connections also get Studio's session settings as startup options and run `RESET ALL` on check-in.
+  PostgreSQL connections also get Studio's session settings as startup options and run `RESET ALL` on check-in
+  (after `DISCARD TEMP`, which drops temporary tables a statement may have left: F-1 of the STU-016 review).
 
 **One statement, enforced by the server (H-1 of `stu-009-review.md`):** every PostgreSQL connection uses
 `prepare_threshold=0` (`driver_options`). So every statement is a prepared statement on the extended query protocol,
@@ -214,8 +228,21 @@ comments and literals are left out and quoted identifiers unquoted, and `'...'` 
 backslash escapes, so `"set_config"(`, `set_config/**/(` and `pg_catalog.set_config (` are caught (R-L1 and I-R1 of
 the re-review). A Unicode-escaped identifier (`U&"..."`) is refused, since Studio does not decode it. `DO` blocks and the functions that run a query given as text (`query_to_xml`,
 `query_to_xmlschema`, `query_to_xml_and_xmlschema`, `cursor_to_xml`, `cursor_to_xmlschema`, `ts_stat`, `ts_rewrite`,
-`crosstab`, `dblink` and its forms) are refused as well, since the check cannot see inside a literal (R2-L1 of
-re-review 2). This is still a best-effort check, not the boundary: a database function that calls `set_config`, or
+`crosstab`, `connectby`, `xpath_table`, `dblink` and its forms) are refused as well, since the check cannot see inside a literal (R2-L1 of
+re-review 2). Since the STU-016 review (F-3), so are the functions whose effect a read-only transaction does not stop
+(`readonly._REFUSED_FUNCTIONS` and `_REFUSED_PREFIXES`, each justified there): `pg_terminate_backend` and
+`pg_cancel_backend` (a role may end its own other sessions, the application's among them when it shares the role);
+`pg_logical_emit_message`, `pg_switch_wal`, `pg_create_restore_point`, `pg_log_standby_snapshot`, the backup functions
+and the replication slot functions that create, drop, copy, advance or consume a slot (the WAL and its consumers);
+`txid_current` and `pg_current_xact_id` (they assign a transaction ID; the `_if_assigned` forms stay allowed);
+`pg_reload_conf`, `pg_rotate_logfile`, `pg_log_backend_memory_contexts`, `pg_promote`, the WAL replay pause and
+resume, `pg_import_system_collations`, every `pg_stat_reset*` function and `pg_stat_statements_reset` (the server);
+`lo_import`, `lo_export` and adminpack's `pg_file_*` writers (server files); `brin_summarize_new_values`,
+`brin_summarize_range`, `brin_desummarize_range` and `gin_clean_pending_list` (index changes outside the
+transaction's data); every `dblink*` function; and every
+`pg_replication_origin_*` function. The large-object writers (`lo_create`, `lo_put`, ...), `nextval` and `setval` are
+left to the database, which refuses them in a read-only transaction; the transaction-level advisory locks end with
+Studio's transaction and stay allowed. This is still a best-effort check, not the boundary: a database function that calls `set_config`, or
 a function of an extension Studio does not know that runs a query from text, is invisible in the text. SQLite's
 `execute` runs one statement only.
 
@@ -241,8 +268,10 @@ session's path.
 
 **Known limits** (documented in 03 section 5.1 and ADR R-S3):
 - `READ ONLY` does not stop functions with side effects (`dblink`, extensions, `COPY ... TO` through a function).
-  Only the role's privileges are a hard boundary, so production profiles should use a role without write
-  privileges. The diagnostics (STU-014) check this (`read_only_role`).
+  Only the role's
+  privileges are a hard boundary, so production profiles should use a role without write privileges, without
+  `CREATE` on any schema and without `TEMP` on the database. The diagnostics (STU-014) check this (`read_only_role`,
+  `STU-DX-003`).
 - libpq still reads other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`, `PGSSLROOTCERT`, ...)
   for what the URL leaves out; its password fallbacks are off (M-1). That is the user's environment, not the project
   file's. A project file can change only the fingerprinted fields.
@@ -252,8 +281,8 @@ session's path.
 | Test | Covers |
 |---|---|
 | `tests/security/test_connect_path.py` (PostgreSQL superuser) | TD-039: with `ALTER DATABASE ... SET search_path` putting a schema of another role, holding objects that raise when called, ahead of `pg_catalog`, opening a connection calls none of them; the dialect's default schema is the session's; user SQL sees the database's path on two sessions at once and on later queries, and reaches the planted objects (the control); an `hstore` value comes back as the server's text (L-2) |
-| `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
-| `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; a wrong password is `db.connection` without server text; `url` has no password |
+| `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; F-2: `fts3_tokenizer` (both forms), `fts5`, `optimize`, `rtreenode`, `rtreedepth` and `sqlite_log` are denied on every pooled session while FTS `MATCH` with its auxiliary functions, JSON, dates, math, window functions, `->>`, a view's functions and `pragma_table_info` still read, and `trusted_schema` is off on every session (set before the authorizer); writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
+| `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; F-1: `EXPLAIN ANALYZE SELECT ... INTO` (plain, `UNLOGGED`, `TEMPORARY`, schema-qualified, under `WITH`) and `SELECT ... INTO` are refused and `pg_class` has no such table afterwards, a writable CTE or `FOR UPDATE` under `EXPLAIN ANALYZE` fails in the server (`read_only`), and a temporary table left on a session (past the check) is gone at check-in, so it cannot shadow `pg_namespace`; F-3: `pg_terminate_backend` and `pg_cancel_backend` on another session of the same role, `pg_logical_emit_message` and the transaction-ID functions are refused, and that session stays alive; a wrong password is `db.connection` without server text; `url` has no password |
 | `tests/security/test_read_only.py` (STU-008) | the connection test's facts on SQLite (WAL, foreign keys, encoding; the file unchanged, nothing left open) and PostgreSQL (role, superuser, bypass RLS and encoding as the catalog says, time zone, TLS); facts that cannot be read leave the answer; only short printable text |
 | `tests/security/test_connections_api.py` | open, reuse, list, test and close through the API; a changed profile and a changed project file close the connection; a project file opens only after trust; refusals as fixed problems; session and CSRF required; D-02 on the server (TD-038); a SQLite file from the read that passed the check, with `profiles.toml` rewritten in between, and a project profile that is no longer the checked read (C-1 of the #48 review); shutdown disposes the engines |
 | `tests/unit/test_problems.py` | `DB_KINDS` is `tabrion.errors.Kind`; a `db.<kind>` problem takes only the kind and the SQLSTATE from the error |

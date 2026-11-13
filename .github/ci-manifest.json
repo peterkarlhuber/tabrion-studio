@@ -27,10 +27,7 @@
   },
   "pull_request_path_filtered": {},
   "path_filters": {},
-  "advisory": [
-    "ci.yml/e2e (firefox)",
-    "ci.yml/e2e (webkit)"
-  ],
+  "advisory": [],
   "nightly": {
     "nightly.yml": [
       "report"

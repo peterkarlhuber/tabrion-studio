@@ -30,7 +30,7 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 | SQ-02 | Host and Origin allowlist (DNS rebinding) | `security/access.py`: `127.0.0.1:<port>` only, the own Origin and same-origin fetch metadata on every API request | STU-T-001..003: `tests/security/test_access.py`; every API route: `tests/security/test_every_route.py` |
 | SQ-03 | Launch token, then an HttpOnly SameSite=Strict cookie and a CSRF header | `security/launch.py`, `security/sessions.py` | STU-T-004..006: `test_access.py`, `test_launch.py`; every API route: `test_every_route.py` |
 | SQ-04 | Secrets only in the backend | `config/secrets.py` (keyring without plain-text fallback, `env:`, `file:`), `tabrion.safe_url()`, log redaction in `logs.py` | STU-T-008/-009: `test_canary.py`, `test_secrets_api.py`, `test_log_process.py`, `test_diagnosis_report.py`; through the routes of the editor, viewer, export and diagnosis: `test_canary_flows.py` |
-| SQ-05 | Read-only enforced by the database | `services/connections.py`, `services/readonly.py` (SQLite `mode=ro`, `query_only`, authorizer; PostgreSQL read-only session and transactions), text check as a second layer. **Not met at `e186178`** (review F-1: a PostgreSQL statement form wrote despite the read-only transaction; F-2: the SQLite authorizer allowed a native function that must be refused); fixed in the read-only hardening PR, re-review pending | STU-T-010..013, -024: `tests/security/test_read_only.py` (PostgreSQL part in the `backend integration (PostgreSQL 17)` CI job) |
+| SQ-05 | Read-only enforced by the database | `services/connections.py`, `services/readonly.py` (SQLite `mode=ro`, `query_only`, `trusted_schema` off, authorizer with a function allowlist; PostgreSQL read-only session and transactions), text check as a second layer. **Not met at `e186178`** (review F-1, F-2); fixed in the read-only hardening PR (the text check refuses any `INTO`, the pool reset drops temporary tables, the authorizer allows only SQLite's built-in reading functions), re-review pending | STU-T-010..013, -024 and the F-1/F-2 tests: `tests/security/test_read_only.py` (PostgreSQL part in the `backend integration (PostgreSQL 17)` CI job), `test_queries.py` and `test_exports.py` (editor and export route) |
 | SQ-06 | Limits and cancel | `services/queries.py`, `viewer.py`, `exports.py`; limits in the configuration; request body caps enforced while the body streams in, before any route reads it (`security/body.py`, review F-4) | STU-T-018..020: `test_queries.py`, `test_viewer.py`, `test_exports.py`, `frontend/e2e/editor-backend.spec.ts`; body caps: `tests/security/test_body_limits.py` |
 | SQ-07 | PROD marking; no writes before G-S2 | Environment badge, frame and title (STU-051); D-02 on the server (`confirmed_environment`, TD-038); no write route exists (STU-026 is locked). **Not met at `e186178`** until F-1 is fixed (the server-side D-02 itself is met) | `test_read_only.py::test_td_038_*`, `test_connections_api.py`, frontend D-02 tests; `test_every_route.py` lists every route |
 | SQ-08 | Strict CSP, no foreign hosts | `CONTENT_SECURITY_POLICY` in `security/access.py`; no CDN, fonts or telemetry | STU-T-014: `test_access.py::test_csp_is_strict`; `frontend/e2e/network.spec.ts` (0 foreign hosts) |
@@ -46,14 +46,14 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-03 Token theft | One-time launch token in the fragment, redirect file 0600, session cookie | STU-T-005, -006 | Covered; TD-005 (spent URL in history) is an accepted risk |
 | T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. The state database with the history (STU-020): `tests/security/test_history.py` (0600, link and shared-file refusal, no parameter value in any byte); editor drafts are in browser storage (TD-033) |
 | T-05 Secret leaks | Redaction, canaries, safe URLs, Problem JSON without server text | STU-T-008, -009; `test_canary_flows.py` | Covered |
-| T-06 Accidental writes | Read-only in the database, prod marking | STU-T-010..013 (`test_read_only.py`) | **Not met at `e186178`** (review F-1); fixed with tests in the read-only hardening PR, re-review pending. The write mode is G-S2 |
+| T-06 Accidental writes | Read-only in the database, prod marking; the text check refuses `INTO` (F-1) and side-effect functions (F-3); `STU-DX-003` reports schema `CREATE` and database `TEMP` | STU-T-010..013 and the F-1/F-3 tests (`test_read_only.py`, `test_queries.py`, `test_exports.py`, `test_diagnostics.py`) | **Not met at `e186178`** (review F-1); fixed with tests in the read-only hardening PR, re-review pending. The write mode is G-S2 |
 | T-07 XSS through database text | React text only, ESLint rule against `dangerouslySetInnerHTML`, CSP | STU-T-014; no STU-T-015 label, in substance `test_access.py::test_eslint_forbids_dangerously_set_inner_html` and hostile-value tests of the views | Covered |
 | T-08 Hostile project | Project trust (D-01), bound to digests | STU-T-016, -017 (`test_project_trust.py`) | Covered |
 | T-09 Resource exhaustion | Row, byte and cell caps, timeouts, cancel, parallel limits; request body caps while streaming (review F-4) | STU-T-018..020; `test_body_limits.py` | Covered |
 | T-10 TLS downgrade | `STU-DX-002` for PROD without verify-full | STU-T-021 (`test_diagnostics.py`) | Covered as a finding; Studio does not refuse such a profile |
 | T-11 Supply chain | Locked dependencies, license policy, SBOM, audits | No STU-T-022 label; CI jobs `license and supply chain`, `dependency audit` | Covered; TD-030 (dev-only advisory), TD-031 (hashed pins in CI) |
 | T-12 Change log | Writes logged | STU-T-023 | Not applicable before G-S2 (no write mode) |
-| T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist | STU-T-024 (`test_read_only.py`) | **Not met at `e186178`** (review F-2: the authorizer allowed a function it must refuse); fixed with tests in the read-only hardening PR, re-review pending |
+| T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist, functions included (F-2); `trusted_schema` off | STU-T-024 and the F-2 tests (`test_read_only.py`) | **Not met at `e186178`** (review F-2); fixed with tests in the read-only hardening PR, re-review pending |
 | T-14 Network exposure | No `--host` | STU-T-025 | Covered |
 | T-15 Cached answers | `Cache-Control: no-store` | STU-T-026; every refusal in `test_every_route.py` | Covered |
 | T-16 Trusted project code (Alembic) | Code trust bound to file digests, isolated worker | `test_migrations.py` | Covered; the digest does not cover project modules that revision files import (documented; review F-7, owner decision) |
@@ -118,9 +118,14 @@ under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fai
 
 - Malware running as the same user can read everything the user can; Studio does not defend against it.
 - PostgreSQL `READ ONLY` is not a boundary against functions with side effects; the role's rights are. Diagnostics
-  report a read-only role that can write (`STU-DX-003`). The functions the independent review named (review F-3:
-  functions that act on other sessions of the same role, write to the WAL or manage replication) are refused by
-  Studio's statement check in the read-only hardening PR; other side-effect functions stay bounded by the role.
+  report a read-only role that can write (`STU-DX-003`, since F-1 also schema `CREATE` and database `TEMP`). Since
+  F-3 of the STU-016 review, the text check refuses the side-effect functions it knows: `pg_terminate_backend`,
+  `pg_cancel_backend`, `pg_logical_emit_message`, `txid_current`, `pg_current_xact_id`, the WAL, backup, replication
+  slot and replication origin functions, `pg_reload_conf`, `pg_rotate_logfile`, `pg_promote`, the statistics resets,
+  `lo_import`, `lo_export`, adminpack's file writers, the BRIN and GIN index maintenance functions, `connectby` and
+  `xpath_table` (which run a query given as text) and every `dblink` function (the list and the reason for each are
+  in [Connections](connections.md)). A function of the database or of an extension that Studio does not know is not
+  visible in the text; the role stays the boundary for it.
 - The warning before a destructive statement is UX, not protection.
 
 ## Independent review (first round)

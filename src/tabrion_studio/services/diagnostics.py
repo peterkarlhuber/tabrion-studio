@@ -18,8 +18,9 @@ the current schema; Studio's ``STU-DX-006`` replaces it (:data:`REPLACED_CODES`,
 * ``002`` (warning): ``sslmode`` ``disable``, ``allow`` or ``prefer`` to a host that is not loopback (T-10,
   STU-T-021), when tabrion did not already report the connection's TLS (``TAB-PG-010``, ``-011``);
 * ``003``: ``read_only_role = true``, but the role, or a role it can ``SET ROLE`` to, may write in a table, view,
-  foreign table or sequence: ``INSERT``, ``UPDATE``, ``DELETE``, ``TRUNCATE``, a column grant, ownership, superuser
-  (error for ``prod``);
+  foreign table or sequence: ``INSERT``, ``UPDATE``, ``DELETE``, ``TRUNCATE``, a column grant, ownership, superuser;
+  or may create objects: ``CREATE`` on a schema (warning, error for ``prod``). ``TEMP`` on the database alone (granted
+  to ``PUBLIC`` by default) is an info (F-1 of ``stu-016-security-review.md``);
 * ``004`` (warning): no ``statement_timeout`` for the role or the database, after the precedence of
   ``pg_db_role_setting`` (role in database, then role, then database); ``postgresql.conf`` cannot be read;
 * ``005`` (warning, SQLite): rows that break a foreign key (``PRAGMA foreign_key_check``);
@@ -106,6 +107,21 @@ _WRITABLE_SQL = (
     "ELSE pg_catalog.has_table_privilege(b.oid, c.oid, 'INSERT, UPDATE, DELETE, TRUNCATE') "
     "OR pg_catalog.has_any_column_privilege(b.oid, c.oid, 'INSERT, UPDATE') END) "
     "LIMIT 1000) AS writable"
+)
+#: STU-DX-003 also counts the schemas outside the system ones where such a role has ``CREATE`` (it can make tables,
+#: F-1 of ``stu-016-security-review.md``), and whether such a role has ``TEMP`` on the database.
+_CREATE_SQL = (
+    "SELECT count(*) FROM (SELECT 1 FROM pg_catalog.pg_namespace n "
+    "WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema' "
+    "AND EXISTS (SELECT 1 FROM pg_catalog.pg_roles b "
+    "WHERE pg_catalog.pg_has_role(current_user, b.oid, 'MEMBER') "
+    "AND pg_catalog.has_schema_privilege(b.oid, n.oid, 'CREATE')) "
+    "LIMIT 1000) AS creatable"
+)
+_TEMP_SQL = (
+    "SELECT count(*) FROM (SELECT 1 FROM pg_catalog.pg_roles b "
+    "WHERE pg_catalog.pg_has_role(current_user, b.oid, 'MEMBER') "
+    "AND pg_catalog.has_database_privilege(b.oid, pg_catalog.current_database(), 'TEMP') LIMIT 1) AS temporary"
 )
 _DEFAULT_WRITE_SQL = (
     "SELECT count(*) FROM pg_catalog.pg_default_acl d, pg_catalog.aclexplode(d.defaclacl) AS a "
@@ -345,15 +361,39 @@ class Diagnostics:
             return value if isinstance(value, int) else 0
 
         if profile.read_only_role:
-            writable = run.step("STU-DX-003", lambda: count(_WRITABLE_SQL), 0)
-            if writable > 0:
+            writable, creatable, temporary = run.step(
+                "STU-DX-003", lambda: (count(_WRITABLE_SQL), count(_CREATE_SQL), count(_TEMP_SQL)), (0, 0, 0)
+            )
+            if writable > 0 or creatable > 0:
+                parts = []
+                if writable > 0:
+                    parts.append(
+                        f"write in {writable}{'+' if writable >= 1000 else ''} table(s), view(s) or sequence(s) "
+                        "(INSERT, UPDATE, DELETE, TRUNCATE, a column grant or ownership)"
+                    )
+                if creatable > 0:
+                    parts.append(
+                        f"create tables in {creatable}{'+' if creatable >= 1000 else ''} schema(s) (CREATE on the "
+                        "schema)"
+                    )
+                if temporary > 0:
+                    parts.append("create temporary tables (TEMP on the database)")
                 found.append(_finding(
                     "STU-DX-003", "error" if prod else "warning", "The read-only role can write",
-                    "The profile says read_only_role, but the role, or a role it can SET ROLE to, may write in "
-                    f"{writable}{'+' if writable >= 1000 else ''} table(s), view(s) or sequence(s) (INSERT, UPDATE, "
-                    "DELETE, TRUNCATE, a column grant or ownership). Studio's session is read-only; the role is not.",
-                    "Connect with a role that has only SELECT (and USAGE on the schemas), and no membership in a "
-                    "role that can write.",
+                    "The profile says read_only_role, but the role, or a role it can SET ROLE to, may "
+                    f"{'; and '.join(parts)}. Studio's session is read-only; the role is not.",
+                    "Connect with a role that has only SELECT (and USAGE on the schemas), no CREATE on any schema, no "
+                    "TEMP on the database, and no membership in a role that can write.",
+                ))  # fmt: skip
+            elif temporary > 0:
+                found.append(_finding(
+                    "STU-DX-003", "info", "The read-only role can write",
+                    "The profile says read_only_role, but the role, or a role it can SET ROLE to, may create "
+                    "temporary tables (TEMP on the database; PostgreSQL grants it to PUBLIC by default). Studio "
+                    "refuses the statements that create them and drops temporary tables when a session goes back to "
+                    "its pool; the role itself is not limited.",
+                    "REVOKE TEMP ON DATABASE ... FROM PUBLIC (and from the role), and GRANT it to the roles that "
+                    "need it.",
                 ))  # fmt: skip
             if run.step("STU-DX-007", lambda: count(_DEFAULT_WRITE_SQL), 0) > 0:
                 found.append(_finding(

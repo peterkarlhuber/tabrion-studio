@@ -243,6 +243,21 @@ def test_writes_and_several_statements_are_refused(lite: tuple[QueryEngine, str,
     assert wait(engine.start(connection_id, "SELECT count(*) FROM part")).rows == [[3001]]
 
 
+def test_f1_statements_that_create_a_table_are_refused(lite: tuple[QueryEngine, str, Source]) -> None:
+    """F-1 of the STU-016 review: the word INTO outside a literal or quoted name is refused before any run."""
+    engine, connection_id, _ = lite
+    for sql in (
+        "SELECT * INTO t2 FROM part",
+        "EXPLAIN ANALYZE SELECT * INTO t2 FROM part",
+        "EXPLAIN QUERY PLAN SELECT 1 AS a INTO TEMP t2",
+        "WITH a AS (SELECT 1 AS x) SELECT * INTO t2 FROM a",
+    ):
+        with pytest.raises(StatementRefused) as raised:
+            engine.start(connection_id, sql)
+        assert raised.value.code == "studio.statement_refused"
+    assert wait(engine.start(connection_id, 'SELECT 1 AS "into"')).rows == [[1]]
+
+
 def test_the_connection_is_checked_through_the_registry(lite: tuple[QueryEngine, str, Source]) -> None:
     engine, connection_id, source = lite
     with pytest.raises(RegistryError):
@@ -432,6 +447,41 @@ def test_pg_stu_t_018_a_server_side_cursor_stops_the_transfer(pg: tuple[QueryEng
     assert (len(query.rows), query.truncated, query.state) == (10, "rows", "done")
     explain = wait(engine.start(connection_id, "EXPLAIN SELECT 1"))  # no cursor can hold EXPLAIN: a plain one
     assert explain.state == "done" and explain.rows
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_f1_the_editor_route_refuses_statements_that_create_a_table(
+    pg: tuple[QueryEngine, str, Source], tmp_path: Path
+) -> None:
+    """F-1 of the STU-016 review, through ``POST /api/queries``: refused with a problem code, and no table exists."""
+    engine, connection_id, _ = pg
+    name = f"studio_into_{uuid.uuid4().hex[:8]}"
+    studio = make_studio(tmp_path / "static", connections=engine.registry, queries=engine)
+    headers = {**studio.sign_in(), "Origin": ORIGIN}
+    connection = engine.registry.get(connection_id)
+    try:
+        for sql in (
+            f"explain analyze select 1 as a into {name}",
+            f"EXPLAIN (ANALYZE, COSTS OFF) SELECT 1 AS a INTO UNLOGGED {name}",
+            f"EXPLAIN ANALYZE SELECT 1 AS a INTO TEMPORARY {name}",
+            f"EXPLAIN ANALYZE WITH a AS (SELECT 1 AS x) SELECT * INTO {name} FROM a",  # noqa: S608 (a test-made name)
+        ):
+            answer = studio.client.post(
+                "/api/queries", json={"connection_id": connection_id, "sql": sql}, headers=headers
+            )
+            assert answer.status_code == 400 and answer.json()["code"] == "studio.statement_refused", answer.text
+            assert name not in answer.text
+        found = connection.fetch("SELECT count(*) FROM pg_catalog.pg_class WHERE relname = :n", {"n": name})
+        assert found == [(0,)]
+    finally:
+        assert PG_URL is not None
+        admin = sqlalchemy.create_engine(sqlalchemy.make_url(PG_URL).set(drivername="postgresql+psycopg"))
+        try:
+            with admin.begin() as c:  # what a failing run made, in the test role's own schema
+                c.exec_driver_sql(f"DROP TABLE IF EXISTS public.{name}")
+        finally:
+            admin.dispose()
 
 
 @pytest.mark.postgres
