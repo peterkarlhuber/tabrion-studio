@@ -216,6 +216,13 @@ def test_script_routes(static_dir: Path, project: Path) -> None:
     refused = studio.client.get("/api/scripts/file", params={"path": "../x.sql"}, headers=headers)
     assert (refused.status_code, refused.json()["code"]) == (400, "studio.script_invalid")
     assert "x.sql" not in refused.text
+    # A script larger than the 16 KB of an ordinary form passes the body cap in front of the routes.
+    large = "SELECT 1;\n" * 20_000
+    saved_large = studio.client.put(
+        "/api/scripts/file", json={"path": "large.sql", "content": large, "digest": None}, headers=headers
+    )
+    assert saved_large.status_code == 200, saved_large.text
+    assert (project / "large.sql").read_text() == large
     unknown = studio.client.put(
         "/api/scripts/file", json={"path": "a.sql", "content": "", "digest": None, "mode": 1}, headers=headers
     )

@@ -88,6 +88,7 @@ nav:
       - Building and testing: development/building.md
       - CI and supply chain: development/ci.md
       - Repository conventions: development/conventions.md
+      - Documentation checklist: development/docs-checklist.md
       - Tabrion API used: api-consumers.md
   - Architecture decisions:
       - adr/README.md

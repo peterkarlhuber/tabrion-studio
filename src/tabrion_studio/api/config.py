@@ -47,7 +47,8 @@ from tabrion_studio.problems import problem_response
 
 logger = logging.getLogger("tabrion_studio.config")
 _MAX_BODY = 4096
-_MAX_FORM_BODY = 16 * 1024
+#: The largest body of a profile or settings form (the largest body cap of any route but queries and exports).
+MAX_FORM_BODY = 16 * 1024
 _SETTINGS_KEYS = frozenset({"language", "theme", "density", "log_sql", "limits", "history"})
 _LIMIT_KEYS = frozenset({"max_rows", "statement_timeout_ms", "max_result_mb"})
 _HISTORY_KEYS = frozenset({"enabled", "retention_days"})
@@ -302,7 +303,7 @@ def add_config_routes(app: FastAPI, config: Configuration) -> None:
 
     async def save(request: Request, action: Any) -> Response:
         """Run one save of the user's files; every refusal is a problem with a fixed text."""
-        doc = _json_body(await request.body(), _MAX_FORM_BODY)
+        doc = _json_body(await request.body(), MAX_FORM_BODY)
         if doc is None or "digest" not in doc:
             return problem_response("access.bad_request")
         try:

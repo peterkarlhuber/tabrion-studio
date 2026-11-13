@@ -6,8 +6,9 @@ built frontend from ``static/``.
 
 Every request first passes :class:`tabrion_studio.security.access.AccessMiddleware` (STU-003): the Host allowlist,
 the Origin and fetch-metadata rules, JSON-only bodies, the session cookie plus CSRF header on every API route except
-the health check, the launch exchange and the control endpoints, and the security headers (CSP, ``no-store``) on
-every answer.
+the health check, the launch exchange and the control endpoints (which need the control token instead), and the
+security headers (CSP, ``no-store``) on every answer. Then :class:`tabrion_studio.security.body.BodyLimitMiddleware`
+caps the request body while it streams in (:data:`BODY_LIMITS`, STU-016 review F-4).
 
 Only two things count as activity for the idle timeout (review F-06): a control request with a valid token and any
 request with a valid session (the open tab's heartbeat among them). Health checks, static files, failed requests and
@@ -37,14 +38,16 @@ from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from tabrion_studio._version import __version__
-from tabrion_studio.api.config import Configuration, add_config_routes
+from tabrion_studio.api.config import MAX_FORM_BODY, Configuration, add_config_routes
 from tabrion_studio.api.connections import add_connection_routes
 from tabrion_studio.api.diagnostics import add_diagnostics_routes
 from tabrion_studio.api.explorer import add_explorer_routes
 from tabrion_studio.api.exports import add_export_routes
 from tabrion_studio.api.history import add_history_routes
 from tabrion_studio.api.migrations import add_migration_routes
+from tabrion_studio.api.queries import MAX_BODY as MAX_QUERY_BODY
 from tabrion_studio.api.queries import add_query_routes
+from tabrion_studio.api.scripts import MAX_BODY as MAX_SCRIPT_BODY
 from tabrion_studio.api.scripts import add_script_routes
 from tabrion_studio.api.viewer import add_viewer_routes
 from tabrion_studio.idle import IdleMonitor
@@ -53,6 +56,7 @@ from tabrion_studio.logs import register_secret
 from tabrion_studio.problems import code_for_status, problem_response
 from tabrion_studio.request_log import RequestLogMiddleware
 from tabrion_studio.security.access import AccessMiddleware
+from tabrion_studio.security.body import BodyLimit, BodyLimitMiddleware
 from tabrion_studio.security.launch import LAUNCH_PATH, LaunchTokens
 from tabrion_studio.security.sessions import Sessions, cookie_name
 from tabrion_studio.services.connections import ConnectionRegistry
@@ -76,6 +80,19 @@ CLIENT_ROUTES = ("/connections", "/explorer", "/sql", "/migrations", "/diagnosti
 #: How often expired launch tokens and their redirect files are removed.
 SWEEP_SECONDS = 5.0
 _MAX_BODY = 4096
+#: The body cap of every request (STU-016 review F-4): enforced while the body streams in, before a route reads it
+#: (:mod:`tabrion_studio.security.body`). The default is the largest cap of a JSON route's own check; each route keeps
+#: its own, often smaller, check. The SQL editor and the export take a statement of up to 512 K characters, and a
+#: script save (STU-020) a `.sql` file of up to 1 MB as JSON.
+DEFAULT_BODY_LIMIT = BodyLimit(MAX_FORM_BODY)
+BODY_LIMITS: dict[str, BodyLimit] = {
+    "/api/session": BodyLimit(_MAX_BODY),  # reached before a session exists
+    "/api/control/launch": BodyLimit(_MAX_BODY),
+    "/api/control/shutdown": BodyLimit(_MAX_BODY),
+    "/api/queries": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
+    "/api/exports": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
+    "/api/scripts/file": BodyLimit(MAX_SCRIPT_BODY, "studio.script_too_large"),
+}
 
 _NOT_BUILT = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>Tabrion Studio</title></head>
@@ -194,7 +211,15 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         exception_handlers={StarletteHTTPException: _http_error, RequestValidationError: _validation_error},
     )
     register_secret(runtime.control_token)  # never in a log record (STU-004)
-    app.add_middleware(AccessMiddleware, port=runtime.port, sessions=runtime.sessions, on_activity=runtime.idle.touch)
+    # Inside the access middleware: a request it refuses is never read (STU-016 review F-4).
+    app.add_middleware(BodyLimitMiddleware, default=DEFAULT_BODY_LIMIT, routes=BODY_LIMITS)
+    app.add_middleware(
+        AccessMiddleware,
+        port=runtime.port,
+        sessions=runtime.sessions,
+        control_token=runtime.control_token,
+        on_activity=runtime.idle.touch,
+    )
     # Added last, so it is the outermost middleware: it sees every refusal and catches every unexpected error.
     app.add_middleware(RequestLogMiddleware)
 
