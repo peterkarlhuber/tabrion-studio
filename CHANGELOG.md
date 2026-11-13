@@ -692,6 +692,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- STU-016 docs (G-S1 decisions; G-S1 itself is not yet granted): `docs/architecture/security-review-prep.md`
+  records the owner's acceptance on 2026-11-13 of the 13 recommendations of the G-S1 decision package (each option
+  A: decision, accepted residual risk, follow-up, whether it is a G-R precondition); the formal G-S1 confirmation on
+  a concrete master SHA is pending. `docs/development/release-checklist.md` lists the G-R preconditions from those
+  decisions (GR-1..GR-5: TD-002, TD-007, TD-003 with a check on a real Windows machine of device names and OneDrive
+  folders, TD-056) and the remaining install risks (`uv tool install` takes the lock's versions but does not verify
+  its hashes, pipx resolves afresh without hashes; pip with `--require-hashes` is the secured path), and notes review
+  R-1 under TD-061. `guide/installation.md` marks the hashed pip path as the secured one and the pipx/uv path as
+  less secured. The user guide (`guide/security.md`, `guide/connections.md`) and `architecture/connections.md` say
+  prominently that Studio's read-only checks are defense in depth and that a really read-only PostgreSQL role is
+  what makes write protection reliable, with a generic example of such a role (`GRANT USAGE`/`SELECT`, default
+  privileges, `PUBLIC` rights, functions with side effects); `guide/security.md` names the accepted residual risks.
+  `docs/TODO.md`: the affected TD entries and the STU-016 row updated, TD-062 (the JR-N1 PROD e2e test) added.
 - STU-028 docs: the user guide's index and the README name the 1.0 features on `master` (history, favorites,
   scripts, Format, completion, the ER diagram); `guide/installation.md` has a "pipx or uv" section (bash and
   PowerShell; `uv tool install` with the lock's versions, pipx with the Tabrion pin only, since pip refuses the
