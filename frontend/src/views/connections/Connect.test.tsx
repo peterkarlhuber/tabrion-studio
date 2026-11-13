@@ -239,10 +239,27 @@ describe('connection test', () => {
       { code: 'db.connection', kind: 'connection', status: 502, sqlstate: '28P01' },
       /refused the sign-in/,
     ],
-    [{ code: 'db.corrupt', kind: 'corrupt', status: 500 }, /not a SQLite database/],
+    [
+      { code: 'db.corrupt', kind: 'corrupt', status: 500 },
+      /not a SQLite database.*Check that the profile's path names the database file\./,
+    ],
+    // STU-050 (08 section 5 "Connect": the error shows the remedy): what to check, not only what went wrong.
     [
       { code: 'studio.database_missing', kind: 'not_found', status: 404 },
-      /SQLite file does not exist/,
+      /SQLite file does not exist\. Check the file path in the profile under Connections\./,
+    ],
+    [
+      { code: 'studio.database_unsafe', kind: 'not_found', status: 400 },
+      /is a link or changed.*not at a link/,
+    ],
+    [
+      { code: 'studio.secret_env_missing', kind: 'auth', status: 400 },
+      /is not set\. Set it before you start tabrion-studio/,
+    ],
+    [{ code: 'db.timeout', kind: 'timeout', status: 504 }, /in time\. Check that the server/],
+    [
+      { code: 'studio.connection_failed', kind: 'connection', status: 502 },
+      /could not reach the database\. Check the host and the port of the profile/,
     ],
     [
       { code: 'db.brand_new', kind: 'brand_new', status: 500, detail: 'server <b>text</b>' },
