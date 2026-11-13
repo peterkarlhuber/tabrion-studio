@@ -271,6 +271,62 @@ test('cancel stops an endless query within a second (STU-T-020)', async ({ page 
   expect(violations).toEqual([]);
 });
 
+test('a cancel while the start answer is held back reaches the server; the next query runs at once (#56 L-1)', async ({
+  page,
+}) => {
+  const violations = await signIn(page);
+  await openEditor(page);
+  await type(
+    page,
+    'with recursive c(n) as (select 1 union all select n + 1 from c) select count(*) from c',
+  );
+  // The server starts the query; its answer reaches the page only after Ctrl+., so the page has no query id when the
+  // user cancels (a slow start answer under load).
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let queryId = '';
+  await page.route('**/api/queries', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    queryId = ((await response.json()) as { query_id: string }).query_id;
+    await held;
+    return route.fulfill({ response });
+  });
+  const cancels: string[] = [];
+  page.on('request', (request) => {
+    if (
+      request.method() === 'POST' &&
+      /^\/api\/queries\/[^/]+\/cancel$/.test(new URL(request.url()).pathname)
+    ) {
+      cancels.push(new URL(request.url()).pathname);
+    }
+  });
+  await page.locator('.cm-content').press('Control+Enter');
+  await expect.poll(() => queryId).not.toBe('');
+  await expect(page.getByRole('progressbar', { name: 'Query running' })).toBeVisible();
+  await page.keyboard.press('Control+.');
+  expect(cancels).toEqual([]);
+  release();
+  await expect(page.getByTestId('result-status')).toHaveText(/^Canceled after \d+\.\d s\.$/, {
+    timeout: 5_000,
+  });
+  expect(cancels).toEqual([`/api/queries/${queryId}/cancel`]);
+  // The server's query is canceled, not only the page's view of it.
+  expect(((await apiJson(page, `/api/queries/${queryId}`)) as { state?: string }).state).toBe(
+    'canceled',
+  );
+  await page.unroute('**/api/queries');
+  // The connection's session is free: the next query does not wait behind the endless one (30 s timeout).
+  await type(page, 'select 42');
+  const next = Date.now();
+  await page.getByTestId('editor-run').click();
+  await expect(page.getByRole('grid').getByRole('gridcell').first()).toHaveText('42');
+  expect(Date.now() - next).toBeLessThan(5_000);
+  expect(violations).toEqual([]);
+});
+
 test('100 000 rows stay within the memory limit (03 section 10: 300 MB)', async ({ page }) => {
   test.setTimeout(180_000);
   const violations = await signIn(page);
