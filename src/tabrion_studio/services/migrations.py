@@ -41,7 +41,7 @@ from tabrion_studio.problems import problem
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tabrion_studio.services.levuvo_migrations import levuvo_formats
 
-__all__ = ["NOT_TRUSTED", "WORKER_TIMEOUT_S", "Migrations", "run_worker", "worker_environment"]
+__all__ = ["NOT_TRUSTED", "WORKER_TIMEOUT_S", "Migrations", "run_worker", "worker_command", "worker_environment"]
 
 #: How long the worker may take, connecting included, before it is killed.
 WORKER_TIMEOUT_S = 30.0
@@ -80,6 +80,9 @@ _WORKER_VARIABLES = (
 #: Starts the worker from the same ``tabrion_studio`` package as Studio, in isolated mode (``-I``: no
 #: ``PYTHON*`` variables, no user site, no current folder on ``sys.path``).
 _BOOT = "import sys; sys.path.insert(0, sys.argv[1]); from tabrion_studio.services.migration_worker import main; main()"
+#: ``-I``: no environment variables, no user site, no current folder on ``sys.path``; ``-S``: the worker runs
+#: :func:`site.main` itself, after its import guard is in place (review C-1 of F-7); ``-B``: no bytecode written.
+_FLAGS = ("-I", "-S", "-B")
 _ALEMBIC_TABLE = {
     "sqlite": "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = 'alembic_version'",
     # Under the session's search_path (current_schemas), so every operator and function is qualified (STU-022 H-1).
@@ -100,17 +103,23 @@ def worker_environment(environ: dict[str, str] | None = None) -> dict[str, str]:
     return {name: source[name] for name in _WORKER_VARIABLES if name in source}
 
 
+def worker_command() -> list[str]:
+    """The worker's command line: this interpreter, the flags, the boot code and the folder that holds
+    :mod:`tabrion_studio`."""
+    package_root = str(Path(tabrion_studio.__file__).resolve().parent.parent)
+    return [sys.executable, *_FLAGS, "-c", _BOOT, package_root]
+
+
 def run_worker(request: dict[str, Any], *, cwd: Path, timeout_s: float = WORKER_TIMEOUT_S) -> dict[str, Any]:
     """Run :mod:`.migration_worker` with ``request`` on its standard input; its answer, or ``{error}``.
 
     Bounded in time and size whatever the project's code does: the answer is read up to its line end or
     :data:`MAX_ANSWER_BYTES`, never until the pipe closes (a child that left the process group may keep it open), and
     after ``timeout_s`` the worker's process group is killed and nothing more is waited for."""
-    package_root = str(Path(tabrion_studio.__file__).resolve().parent.parent)
     posix = _POSIX
     deadline = time.monotonic() + timeout_s
     process = subprocess.Popen(  # noqa: S603 - a fixed command: this interpreter and the worker module
-        [sys.executable, "-I", "-B", "-c", _BOOT, package_root],
+        worker_command(),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,

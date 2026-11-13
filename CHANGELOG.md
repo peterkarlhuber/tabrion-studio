@@ -515,6 +515,19 @@ All notable changes to this project are documented here. The format follows
   PR #65 and PR #66). `security-review-prep.md` and `docs/TODO.md` record this and the owner decisions still open
   for G-S1 (F-5/TD-033, F-6/TD-031, F-7/T-16, TD-005, TD-002/TD-007, TD-003/TD-008, the PostgreSQL read-only model);
   G-S1 is not passed, and the human review before a public release (STU-028, G-R) stays required. New TD-053.
+- STU-016 review F-7 (T-16, TD-054): the migration code trust also covers the project modules under the
+  `prepend_sys_path` folders (every `*.py` in identifier-named folders, by path and bytes), so a changed or new
+  module asks for trust again. The digest is versioned: a project trusted before needs trust again. Over the caps
+  (5 000 modules, 32 MB, 256 KB per module) or with a link out of the project, the code cannot be trusted. The
+  worker runs only the hashed module bytes, and the trust dialog lists the modules and says what is checked (en/de).
+  Review C-1 of the fix: project folders on the interpreter's path are loaded through the hashed loader too. An
+  import guard first on `sys.meta_path` holds every finder (also those of an editable install in Studio's
+  environment) to the hashed bytes for any module in the project folder outside Studio's installation, and refuses
+  the rest; the worker starts with `-S` and runs `site.main()` under the guard. Studio running from a source
+  checkout inside the project does not read the revisions (fail closed). The page names the file when the trust
+  state is invalid because of one file (`issue_file`, review I-1). Delta review: the guard goes back to the front of
+  `sys.meta_path` after `site.main()`, and the worker fails closed when a finder is in front of it before the
+  revisions are read (C-2); a namespace package from Python's path finder is no longer refused (N-1).
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
   (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
   so numbers must be written in decimal) in the editor, the

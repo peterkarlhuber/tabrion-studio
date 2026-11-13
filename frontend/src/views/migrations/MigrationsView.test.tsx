@@ -25,7 +25,10 @@ function trust(extra: Record<string, unknown> = {}) {
     digest: DIGEST,
     script_location: 'migrations',
     revision_files: ['0001_init.py', HOSTILE_FILE],
+    import_roots: ['.'],
+    module_files: ['shop/models.py', `shop/${HOSTILE_FILE}`],
     issue: null,
+    issue_file: null,
     notice: 'server text that the page does not show',
     ...extra,
   };
@@ -175,6 +178,17 @@ describe('migration status view: code trust (T-16)', () => {
     ).toEqual(['0001_init.py', 'evil\\u202Eyp.py']);
     expect(within(dialog).getByTestId('trust-code-config')).toHaveTextContent('alembic.ini');
     expect(within(dialog).getByTestId('trust-code-config')).toHaveTextContent('migrations');
+    // The project modules in the prepend_sys_path folders are covered too (F-7), and the dialog says so.
+    expect(dialog).toHaveAccessibleDescription(/project modules in the prepend_sys_path folders/);
+    const modules = within(dialog).getByTestId('trust-code-modules');
+    expect(within(modules).getByRole('heading')).toHaveTextContent(
+      'Project modules (prepend_sys_path) (2)',
+    );
+    expect(
+      within(modules)
+        .getAllByRole('listitem')
+        .map((item) => item.querySelector('code')?.textContent),
+    ).toEqual(['shop/models.py', 'shop/evil\\u202Eyp.py']);
     expect(dialog.textContent).not.toContain(BIDI);
     expect(dialog.textContent).not.toContain('server text');
     await user.click(within(dialog).getByRole('button', { name: 'Trust and run' }));
@@ -320,6 +334,25 @@ describe('migration status view: code trust (T-16)', () => {
       ),
     );
     third.unmount();
+
+    const named = server({
+      'GET /api/project/code-trust': () =>
+        json(
+          trust({
+            state: 'invalid',
+            digest: null,
+            issue: 'migrations.modules_too_large',
+            issue_file: `shop/big${BIDI}.py`,
+          }),
+        ),
+    });
+    const fourth = render(<MigrationsView fetcher={named.fetcher} />);
+    await waitFor(() =>
+      expect(screen.getByTestId('code-trust-state')).toHaveTextContent(
+        'are larger than Studio checks. The file: shop/big\\u202E.py',
+      ),
+    );
+    fourth.unmount();
 
     const down = server({ 'GET /api/project/code-trust': () => problem(500, 'studio.internal') });
     render(<MigrationsView fetcher={down.fetcher} />);
@@ -483,8 +516,13 @@ describe('migration API parsing', () => {
       digest: null,
       scriptLocation: null,
       revisionFiles: ['a.py'],
+      moduleFiles: [],
       issue: null,
+      issueFile: null,
     });
+    expect(parseCodeTrust({ state: 'trusted', module_files: ['m.py', null] })?.moduleFiles).toEqual(
+      ['m.py'],
+    );
     expect(parseMigrations('x')).toBeNull();
     const parsed = parseMigrations({
       connection_id: 'c1',

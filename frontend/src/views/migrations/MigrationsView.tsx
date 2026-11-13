@@ -50,6 +50,9 @@ const ISSUES = new Set([
   'file_name',
   'unreadable',
   'changed',
+  'too_many_modules',
+  'modules_too_large',
+  'link_outside',
 ]);
 
 function issueReason(t: TFunction, issue: string | null): string {
@@ -291,7 +294,13 @@ function CodeTrustCard({
   let body: string;
   if (trust === null) body = t('migrations.code.unavailable');
   else if (trust.state === 'invalid')
-    body = t('migrations.code.invalid', { reason: issueReason(t, trust.issue) });
+    body =
+      trust.issueFile === null
+        ? t('migrations.code.invalid', { reason: issueReason(t, trust.issue) })
+        : t('migrations.code.invalidFile', {
+            reason: issueReason(t, trust.issue),
+            file: cutText(trust.issueFile),
+          });
   else body = t(`migrations.code.${trust.state}`, { count: trust.revisionFiles.length });
   return (
     <section className={viewStyles.card} aria-labelledby="migrations-code" data-testid="code-trust">
@@ -541,6 +550,7 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
           configFile={trust.configFile ?? 'alembic.ini'}
           scriptLocation={trust.scriptLocation}
           revisionFiles={trust.revisionFiles}
+          moduleFiles={trust.moduleFiles}
           stale={stale}
           onReject={() => setDialog(null)}
           onTrust={() => void trustNow(trust.digest ?? '')}

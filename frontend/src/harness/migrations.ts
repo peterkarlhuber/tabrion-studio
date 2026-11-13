@@ -10,6 +10,8 @@ export function codeTrust(trusted: boolean) {
     digest: CODE_DIGEST,
     script_location: 'migrations',
     revision_files: ['0001_parts.py', '0002_measurements.py', '0003_indexes.py'],
+    import_roots: ['.'],
+    module_files: ['shop_models.py'],
     issue: null,
     notice: '',
   };
