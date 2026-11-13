@@ -69,9 +69,10 @@
 | TD-044 Joint regression JR-1: `tabrion-studio` ended with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered output) when its stdout reader was gone before a clean stop (the last "stopped" line); now that line is dropped and the exit stays 0, other output errors still raise | P3 | Done (PR #57; `joint-regression-2026-11-12.md`) |
 | TD-045 SQL editor under load and cancel feedback (e2e-load PR #56). Failures with 3 workers at load average 14 on 4 CPUs: `editor-backend.spec.ts` "cancel stops an endless query within a second" failed because a cancel during the start request was lost (a product bug, fixed in #56; covered by Vitest, `editor.spec.ts` with the harness option `startDelay`, and `editor-backend.spec.ts` with the start answer held back on the real server); its bound is taken in the page (key to "Canceled" under 1 s, STU-T-020). Not reproduced: `editor.spec.ts` "wide rows stay within the memory limit too" passed in every run, also with the renderer slowed 4x and 8x: 20 row fetches, each chunk once, the heap 85 MB after GC (bound 140 MB), the slowest scroll step 2.8 s at 8x (bound 5 s per step); no bound was changed. Open: L-2 of `editor-cancel-start-review.md`, a cancel request that fails (`POST /api/queries/{id}/cancel` not 202) says nothing and the page keeps showing "Running …" (a notice or one retry); the M-2 test "while connecting …" assumes its keys land within the 800 ms connect delay and fails at load average 28 | P3 | Open |
 | TD-046 STU-050 UX acceptance: what the MVP does not meet yet (start page project chooser, the copyable migration command, status bar and switcher facts, QA-S1, the editor's completion list, the explorer's layout; `docs/architecture/ux-acceptance.md` B-1..B-7) | P2 | Open (STU-050 PR) |
-| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | In progress (read-only hardening PR) |
+| TD-048 STU-016 review F-1..F-3 (read-only path, SQLite functions, PostgreSQL side-effect functions): the re-review, the owner's choices and the limits that stay | P0 | Done (PR #66; independent re-review accepted at `2a8a229`) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
-| STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), the control token checked in the access middleware for every control path but the proof and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (request-limits PR); re-review pending |
+| TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
+| STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
 
@@ -382,7 +383,7 @@ merge after OA-004.
 | TABRION STU-052 | Keyboard and command palette | P2 | STU-012 | Done (first part in the STU-052 PR, the rest in the STU-052 rest PR): the command palette, the shortcut help, the editor shortcuts (STU-012), F6/Shift+F6 over the shell and over the panes of the explorer and the SQL editor, keyboard-only E2E of every main flow of the MVP (connect with D-02, explorer, query, cancel; `e2e/keyboard.spec.ts`). `keyboard.spec.ts` is required in CI since the CI e2e-list PR. Left for 1.0: format and history (STU-020, TD-020) |
 | TABRION STU-053 | Accessibility audit MVP | P2 | STU-050 | In progress: the shell (first PR, F-1..F-5) and the work pages (editor, grid, export, explorer, data viewer, DDL, Policies, row count, diagnostics, D-02; second PR, F-6) are audited in `docs/architecture/accessibility.md` and `e2e/a11y-audit.spec.ts`, with no open AA violation. The rest is TD-022 |
 | TABRION STU-050 | UX acceptance | P1 | STU-008..STU-015, STU-051, QA-9 | In progress (STU-050 PR): the checklist `docs/architecture/ux-acceptance.md` (every criterion of 08 sections 3 to 6 and of the plan's acceptance, each with its test or manual check), run on 2026-11-13 against the built app with SQLite and PostgreSQL 16 (scram) in Chromium: met for what the MVP covers. New `e2e/ux-acceptance.spec.ts` (08 section 5 "First start" under 60 s and "Connect" with the remedy, against a real server). Fixed: the start page leads to the views (it said they "arrive with the next versions"), eight connection failures name the remedy, the migration view's empty status box. Open: Firefox and WebKit (TD-047), the "Connection lost" banner (TD-034, parallel lane), QA-S1 and the rest of TD-046 |
-| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Preparation in progress (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). The gate itself, the independent review and its re-review are not done; G-S1 is decided by the owner, and a human security review before a public release stays mandatory |
+| TABRION STU-016 | MVP hardening and security review (G-S1) | P0 | all of the above | Independent review done and accepted (re-review at `2a8a229`); waiting on the owner's decision G-S1. Preparation done (STU-016 prep PR): the G-S1 readiness checklist `docs/architecture/security-review-prep.md` and an internal pre-review pass (the access rules on every API route, the security headers pinned literally, a canary through the editor, viewer, export and diagnosis routes; review `stu-016-prep-review.md` C-1, C-2, L-1..L-3 done). Independent review done and accepted: the first round at `e186178` was not accepted, its fixes (PR #65, PR #66) were re-reviewed and the review accepted at `2a8a229`. Waiting on the owner's decision G-S1 (open owner decisions F-5/TD-033, F-6/TD-031, F-7/T-16 and the rest listed in `security-review-prep.md`); a human security review before a public release (STU-028, G-R) stays mandatory |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27; the docs part in the STU-017 docs PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The docs PR adds the documentation checklist `docs/development/docs-checklist.md` (every requirement of 03 §10 and 09 mapped to its page and check, D-1..D-23), the clean-install test (manual on Linux on 2026-11-13 from a locally built wheel of master `7093bea`: install with the Tabrion pin, start without Node.js, sign-in link, a SQLite profile saved, tested and connected read-only, the explorer and the data viewer, `--stop`; passed. Automated: `scripts/smoke_wheel.py` now installs with the pin and signs in, connects a SQLite profile and reads its rows, in the `packaging` job on Linux, macOS and Windows), install from a wheel, troubleshooting for installing, the views and the `--stop` failures (I-5), the residual risks on the security page, the README status and install command (it had no Tabrion pin and failed), and the settings page (the timeout applies on connect; `log_sql` is saved but not used, TD-013). Open: the tag `v0.1.0` (a separate step after G-S1; no publication, G-R) and the build-only release workflow; the rest is TD-023 |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor), STU-028 (release preparation, G-R); STU-021
@@ -1161,8 +1162,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
 
 ### TD-048 · STU-016 review F-1..F-3: read-only path, SQLite functions, side-effect functions
 
-- **Priority:** P0 (G-S1) · **Status:** In progress (read-only hardening PR) · **Refs:** STU-016 independent security
-  review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
+- **Priority:** P0 (G-S1) · **Status:** Done (PR #66; independent re-review accepted at `2a8a229`) · **Refs:**
+  STU-016 independent security review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
   documents), SQ-05, SQ-07, T-06, T-13, `docs/architecture/connections.md`, `docs/architecture/diagnostics.md`
 - **Done in the PR:** F-1: `check_statement` refuses any `INTO` outside literals, comments and quoted identifiers in
   every lexing, and a number directly followed by a word character;
@@ -1173,7 +1174,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   the BRIN/GIN index maintenance functions (list and reasons in `connections.md`). The prep page's SQ-05, T-06 and T-13 rows and its residual-risk line say what the review
   found. Tests in `test_read_only.py`, `test_queries.py`, `test_exports.py` and `test_diagnostics.py`, the
   PostgreSQL ones in the PostgreSQL 17 CI job.
-- **Open:** the re-review on merged SHAs (G-S1); the owner's decisions recorded with the review. Limits that stay:
+- **Re-review:** done on master `2a8a229` (the merge of PR #66) and accepted, with F-4, F-8 and F-9 of PR #65; the
+  owner's decisions for G-S1 are listed in `security-review-prep.md`. The message for a denied SQLite function is
+  TD-053.
+- **Limits that stay:**
   the text check is best effort, so a function of the database or of an unknown extension with side effects is
   still limited only by the role; a SQLite column named `into` must be written `"into"` (`[into]` and backticks are
   refused, since the PostgreSQL lexings read them as the keyword); `TEMP` stays an info, not a warning, since
@@ -1275,6 +1279,15 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   switch starts no transition…" (motion on, both directions: no `transitionrun`, no serious axe violation; it fails
   without the fix) and a Vitest of the attribute sequence. The other axe checks after a theme switch run in the
   harness under reduced motion, and `editor-backend.spec.ts` is the only real-server spec that switches the theme.
+
+### TD-053 · SQLite: a denied function surfaces as `db.unknown`, not `db.permission`
+
+- **Priority:** P3 Low · **Status:** Open · **Refs:** re-review of the STU-016 security review at `2a8a229` (an info
+  note, not a security issue), TD-048, F-2
+- **What:** when the SQLite authorizer denies a function (since F-2 every function outside SQLite's built-in reading
+  functions), SQLite reports "not authorized", which Studio maps to the problem `db.unknown`. The statement is
+  refused as it should be, but the message is vaguer than the one for a denied table or pragma.
+- **Next step:** map SQLite's "not authorized" error to `db.permission`, with a test for a denied function.
 
 ### TD-050 · Joint regression JR-N2: `backend.spec.ts` left its temp directory behind
 

@@ -493,6 +493,10 @@ All notable changes to this project are documented here. The format follows
   `update` regenerates it (`docs/development/ci.md`, "Hashed runtime pins"). The CI wheel builds now take the build
   backend from the hashed `build-constraints.txt`.
 
+- STU-016: the independent security review was re-run on master `2a8a229` and accepted (F-1..F-4, F-8, F-9 fixed in
+  PR #65 and PR #66). `security-review-prep.md` and `docs/TODO.md` record this and the owner decisions still open
+  for G-S1 (F-5/TD-033, F-6/TD-031, F-7/T-16, TD-005, TD-002/TD-007, TD-003/TD-008, the PostgreSQL read-only model);
+  G-S1 is not passed, and the human review before a public release (STU-028, G-R) stays required. New TD-053.
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
   (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
   so numbers must be written in decimal) in the editor, the
