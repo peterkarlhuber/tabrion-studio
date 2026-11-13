@@ -12,6 +12,7 @@ import io
 import logging
 from pathlib import Path
 import sqlite3
+import tomllib
 from typing import Any
 import uuid
 
@@ -24,6 +25,7 @@ from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.project import ProjectConfig, TrustError
 from tabrion_studio.config.secrets import KeyringStore, Secrets, SessionSecrets
 from tabrion_studio.config.user import UserConfig
+from tabrion_studio.config.writer import toml_string
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tabrion_studio.services.connections import ConnectionRegistry
 from tests.support.access import ORIGIN, make_studio
@@ -324,9 +326,14 @@ def test_td034_health_of_a_gone_or_stale_connection(env: Env) -> None:
     other = env.db.with_name("moved.db")
     _database(other)
     # Changed on disk behind Studio's back: the connection is closed only when it is used next.
+    # The file holds the path as a TOML string (a Windows path's backslashes escaped), so that form is replaced.
     file = env.config_dir / "profiles.toml"
-    file.write_text(file.read_text(encoding="utf-8").replace(str(env.db), str(other)), encoding="utf-8")
+    before = file.read_text(encoding="utf-8")
+    assert before.count(toml_string(str(env.db))) == 1
+    file.write_text(before.replace(toml_string(str(env.db)), toml_string(str(other))), encoding="utf-8")
+    assert tomllib.loads(file.read_text(encoding="utf-8"))["profile"][0]["path"] == str(other)
     stale = env.send("GET", f"/api/connections/{opened}/health")
+    assert stale.status_code == 409, stale.text
     assert stale.json()["code"] == "studio.connection_stale"
     assert env.registry.list() == []
 
