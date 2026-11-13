@@ -54,6 +54,11 @@ const SAME_IN_BOTH = new Set([
   'explorer.indexes.name',
   'explorer.extensions.version',
   'explorer.extensions.schema',
+  // STU-023: the ER diagram's schema picker, zoom percentage and key lines (names and arrows only).
+  'explorer.er.schema',
+  'explorer.er.zoom',
+  'explorer.er.list.reference',
+  'explorer.er.list.referenced',
   // STU-022: the DDL and policies tabs, technical terms German uses as they are.
   'explorer.tabs.ddl',
   'explorer.tabs.policies',

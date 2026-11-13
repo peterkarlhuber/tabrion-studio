@@ -12,6 +12,8 @@ export interface HarnessOptions {
   check?: string;
   /** scenario=editor: the first tab's draft. */
   sql?: string;
+  /** scenario=explorer: `150` gives the PostgreSQL schema `audit` 150 tables for the ER diagram (STU-023). */
+  er?: string;
 }
 
 /** Open the e2e harness (src/harness/main.tsx) and wait until the shell or the notice is rendered. */
@@ -219,6 +221,52 @@ export async function pageViolationEvents(page: Page): Promise<string[] | null> 
 /** No CSP report, no violation event and no page error so far (recordViolations), in every browser. */
 export async function expectNoViolations(page: Page, violations: string[]): Promise<void> {
   await settleConsole(page);
-  expect(violations).toEqual([]);
-  expect(await pageViolationEvents(page)).toEqual([]);
+  // Both channels in one assertion, so a failure shows the page's events (directive, target) with the reports.
+  expect({ reports: violations, events: await pageViolationEvents(page) }).toEqual({
+    reports: [],
+    events: [],
+  });
+}
+
+/** Where watchSelects keeps the `<select>` elements that were not in the document one task after they were made. */
+const DETACHED_SELECTS = 'studioDetachedSelects';
+
+/**
+ * TD-052: WebKit reports its own inline style of every `<select>` (WEBKIT_SELECT_CSP_REPORT) with a violation event
+ * that reaches the select only while it is in the document; otherwise the event goes to the document, and the CSP
+ * watcher rightly counts it (the STU-023 diagram's schema picker, rendered by a Suspense retry that React committed a
+ * task later, failed `e2e (webkit)` that way). This records, in every browser, each `<select>` the page creates that
+ * is not in the document one task later, so the cause is seen in Chromium too. Call it before the page loads.
+ */
+export async function watchSelects(page: Page): Promise<void> {
+  await page.addInitScript((key: string) => {
+    const own = window as unknown as Record<string, unknown>;
+    if (own[key] !== undefined) return;
+    const detached: string[] = [];
+    own[key] = detached;
+    const create = Document.prototype.createElement;
+    Document.prototype.createElement = function (
+      this: Document,
+      name: string,
+      options?: ElementCreationOptions,
+    ) {
+      const element = create.call(this, name, options);
+      if (element instanceof HTMLSelectElement) {
+        setTimeout(() => {
+          if (!element.isConnected)
+            detached.push(element.getAttribute('data-testid') ?? element.id ?? 'select');
+        });
+      }
+      return element;
+    } as typeof Document.prototype.createElement;
+  }, DETACHED_SELECTS);
+}
+
+/** The selects watchSelects saw outside the document one task after they were made (null without the watch). */
+export async function detachedSelects(page: Page): Promise<string[] | null> {
+  await settleConsole(page);
+  return page.evaluate(
+    (key) => ((window as unknown as Record<string, unknown>)[key] as string[] | undefined) ?? null,
+    DETACHED_SELECTS,
+  );
 }
