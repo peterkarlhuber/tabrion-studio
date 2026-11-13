@@ -1,7 +1,10 @@
 # Installation
 
 There is no release yet, and Studio is not published to PyPI. You install it from a commit of the Git repository:
-the commit SHA is the version you pin (owner decision 2026-11-08).
+the commit SHA is the version you pin (owner decision 2026-11-08). A tag, once there is one, names such a commit, and
+you install it the same way. Publishing Studio anywhere (PyPI, a GitHub Release) needs the owner's approval G-R for
+that version and, before the first public release, a human security review
+([Release checklist](../development/release-checklist.md)).
 
 ## Requirements
 
@@ -63,8 +66,9 @@ virtual environment of Python 3.13 or later already comes with a recent enough p
 there.
 
 The wheel contains the built frontend. A build without it stops with a message that names
-`scripts/build_frontend.py`. For the same reason, `pip install git+https://…@<SHA>` does not work: the built frontend
-is not in Git.
+`scripts/build_frontend.py`. For the same reason, installing straight from a Git URL (`pip install git+https://…@<SHA>`,
+`uv tool install git+https://…@<tag>` or `pipx install git+https://…`) does not work: the built frontend is not in
+Git. Build it once and install the folder or a wheel, as below.
 
 ### Or: build a wheel first
 
@@ -108,10 +112,44 @@ distribution found for tabrion`. `PIP_CONSTRAINT` and `PIP_REQUIRE_HASHES` pin t
 `build-constraints.txt`, so the same sources give the same wheel. In bash they apply to the build command only; in
 PowerShell they stay set, so the block removes them before installing (the install would require hashes too).
 
-### Other tools
+### pipx or uv
 
-A tool such as `pipx` works too (`pipx install . --pip-args "-c constraints/tabrion-integration.txt"` after the
-frontend build).
+`uv tool` and `pipx` install Studio into an environment of their own and put the `tabrion-studio` command on your
+`PATH`. Neither checks the SHA-256 of the files it downloads, so use them only if you accept that; the main path
+above (pip with `--require-hashes`) is the one that checks every file. Both install the wheel built above.
+
+**uv (recommended of the two):** it takes the lock's exact versions and the Tabrion pin.
+
+```bash
+uv tool install dist/tabrion_studio-*.whl -c constraints/runtime-lock.txt -c constraints/tabrion-integration.txt
+```
+
+`uv tool install` reads the lock only as version constraints: with uv 0.11.32 it installed a file even when every
+hash of that package in the lock was wrong. (`uv pip install` with the same constraints does refuse a wrong hash;
+`uv tool install` does not.)
+
+**pipx (no hash check, resolves afresh):** give it the Tabrion pin only. pipx's default installer is pip, and pip
+switches to hash-checking mode when a constraints file has hashes, then refuses the wheel itself (it has no hash in
+the lock); so do not pass `constraints/runtime-lock.txt` to pipx. pipx then resolves the dependencies from PyPI within
+the ranges of `pyproject.toml`, without the lock's versions and without hashes.
+
+```bash
+pipx install dist/tabrion_studio-*.whl --pip-args "-c constraints/tabrion-integration.txt"
+```
+
+On Windows, in PowerShell, name the wheel's full file name (PowerShell does not expand `*` for these tools either,
+see above):
+
+```powershell
+uv tool install dist\<wheel file name> -c constraints\runtime-lock.txt -c constraints\tabrion-integration.txt
+pipx install dist\<wheel file name> --pip-args "-c constraints\tabrion-integration.txt"
+```
+
+Both commands (the bash form) were run on Linux on 2026-11-13: uv, and pipx with pip as its installer (no uv on
+`PATH`); see the [Release checklist](../development/release-checklist.md#clean-install-2026-11-13-linux). They are
+not yet run on macOS and Windows. To update, build the new wheel and run the same command with `--force`
+(`uv tool install --force`, `pipx install --force`); to uninstall, `uv tool uninstall tabrion-studio` or
+`pipx uninstall tabrion-studio`.
 
 ### Check the installation
 

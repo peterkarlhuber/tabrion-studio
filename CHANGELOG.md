@@ -17,7 +17,19 @@ All notable changes to this project are documented here. The format follows
   as well as English. The diagnostics route sends each one's facts as `params` (counts, setting names, the `sslmode`,
   the checks that did not run), and the page words them from its translations; tabrion's `TAB-*` texts stay English
   and marked as such. The JSON diagnosis report carries the `params` too.
-
+- STU-028 (release preparation only; G-R not granted, nothing is tagged or published): the 1.0 release checklist
+  `docs/development/release-checklist.md` (every step with its check and state; hard stops G-S1, the mandatory human
+  security review before any public release, E-QA2, and G-R per publication), and `scripts/release_bom.py`, which
+  writes the release SBOM (CycloneDX 1.5) and the third-party license report (with the psycopg LGPL-3.0 notice and
+  the frontend licenses) from the runtime lock, the Tabrion pin and the shipped packages of the npm lockfile, with
+  the STU-031 license policy (copyleft, unknown, missing or stale license records fail; `--strict` for the release
+  run) and the same bytes for the same inputs; tested offline (`tests/supply_chain/test_release_bom.py`). The
+  clean install of master `d72a14f` on Linux (`smoke_wheel.py`, `uv tool install`, and `pipx install` with pip as
+  its installer and the Tabrion pin only) is recorded there. `scripts/collect_licenses.py` also records the Git
+  commit of a VCS install (PEP 610 `direct_url.json`; never a URL with user information), and `release_bom.py`
+  fails when a Tabrion record is not of the pinned commit. Every license record of a name, from every `--licenses`
+  file, is judged, so the result does not depend on the order of the files. `check_licenses.py` gains the shared
+  helpers `npm_license` and `npm_allowed`.
 - TD-033 drafts part (security review F-5): the SQL editor's drafts (each tab's title, profile, text and script
   binding, and the open tab) are kept in Studio's state database `state.sqlite` (0600) behind the authenticated
   `GET`/`PUT /api/drafts` (session cookie and CSRF header; a tab with any field but the known ones is refused, so a
@@ -693,6 +705,10 @@ All notable changes to this project are documented here. The format follows
 - TD-032: the English `detail` and `remedy` of Studio's findings and backup hints use plurals ("2 rows" instead of
   "2 row(s)"), and the check names in `STU-DX-008` are made from `params`; the page's note that texts are English now
   shows only when one of tabrion's texts is listed.
+- STU-028 docs: the user guide's index and the README name the 1.0 features on `master` (history, favorites,
+  scripts, Format, completion, the ER diagram); `guide/installation.md` has a "pipx or uv" section (bash and
+  PowerShell; `uv tool install` with the lock's versions, pipx with the Tabrion pin only, since pip refuses the
+  hashed lock as a pipx constraint; it says that neither checks the lock's hashes) and says that no Git-URL install works (the wording of 03 §4.6; a note in ADR 0001); the docs checklist gains D-24..D-26.
 - STU-020 (E-1 and the Info item of the delta review): script names may hold the zero-width non-joiner U+200C and the
   zero-width joiner U+200D between two letters or marks (Persian `می‌خواهم.sql`, Indic conjuncts; a ZWJ also inside
   an emoji sequence) and the ideographic space U+3000 inside a name, like U+0020 (Japanese `売上　集計.sql`). A

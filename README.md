@@ -14,9 +14,10 @@ migration states and Tabrion profiles.
 
 > **Status: MVP in development, not released.** On `master`: starting and signing in, connection profiles with the
 > project's trust dialog and saved passwords, read-only connections to SQLite and PostgreSQL, the explorer with DDL
-> and row-level security policies, the data viewer, the SQL editor (reading statements only) with CSV and JSON
-> export, the migration status, the diagnostics with backup hints and the report, the settings, the keyboard and the
-> command palette, in English and German. Studio never writes to a database. The independent security review of the
+> and row-level security policies and the ER diagram, the data viewer, the SQL editor (reading statements only) with
+> CSV and JSON export, project scripts, formatting and completion, the query history and favorite connections, the
+> migration status, the diagnostics with backup hints and the report, the settings, the keyboard and the command
+> palette, in English and German. Studio never writes to a database. The independent security review of the
 > MVP (G-S1) is still open.
 > There is no release; nothing is published to PyPI, and no PyPI release is needed for now: distribution is by Git
 > SHA pin (owner decision 2026-11-08). A later publication would need a new decision and the owner's approval G-R.
@@ -49,7 +50,7 @@ PowerShell commands for Windows.
 ## Usage
 
 The [user guide](docs/guide/index.md) explains installing, starting, connections, the explorer, the data viewer, the
-SQL editor, the migration status, diagnostics, settings, the security model and troubleshooting.
+SQL editor, the query history and favorites, the migration status, diagnostics, settings, the security model and troubleshooting.
 
 ```bash
 tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]
