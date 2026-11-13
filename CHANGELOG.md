@@ -473,7 +473,8 @@ All notable changes to this project are documented here. The format follows
 ### Security
 
 - STU-016 review, read-only path: the statement check refuses write-capable statement forms on the read-only path
-  (any `INTO` outside literals, comments and quoted identifiers) in the editor, the
+  (any `INTO` outside literals, comments and quoted identifiers, and a number directly followed by a word character,
+  so numbers must be written in decimal) in the editor, the
   export route and every other path; PostgreSQL sessions drop temporary tables when they go back to the pool
   (`DISCARD TEMP`); the diagnostic `STU-DX-003` also reports `CREATE` on a schema (warning, error on PROD) and `TEMP`
   on the database (an info on its own). (F-1)

@@ -502,6 +502,22 @@ def test_f2_the_trusted_schema_pragma_runs_before_the_authorizer(monkeypatch: py
         ("SELECT 0o17into t2", "studio.statement_refused"),
         ("SELECT 0b101into t2", "studio.statement_refused"),
         ("SELECT 1_000into t2", "studio.statement_refused"),
+        # D-1 of the delta review: a number followed directly by a word character is refused.
+        ("select 1_$q$, pg_terminate_backend(pid) from pg_stat_activity", "studio.statement_refused"),
+        ("select 0x_$a$, pg_advisory_lock(1)", "studio.statement_refused"),
+        ("select 1_$q$, connectby('x','k','p','1',0)", "studio.statement_refused"),
+        ("select 1_$q$, pg_advisory_lock(1)", "studio.statement_refused"),
+        ("select 0x_$a$, pg_terminate_backend(1)", "studio.statement_refused"),
+        ("select 0b_$a$, pg_terminate_backend(1)", "studio.statement_refused"),
+        ("select 1e1_$q$, pg_terminate_backend(1)", "studio.statement_refused"),
+        ("select .5_$q$, pg_terminate_backend(1)", "studio.statement_refused"),
+        ("explain analyze select 1 as a --\r, 0x_$a$ into t", "studio.statement_refused"),
+        ("explain analyze select 1 as a --\r, 1_$a$ into t", "studio.statement_refused"),
+        ("explain analyze select 1 as a --\r, 0xa$a$ into t", "studio.statement_refused"),
+        ("SELECT 1abc", "studio.statement_refused"),
+        ("SELECT 1$", "studio.statement_refused"),
+        ("SELECT 0x1f, 0o17, 0b101", "studio.statement_refused"),
+        ("SELECT 1_000", "studio.statement_refused"),
         # N-2 and N-3 of the fix review: a query given as text, and index maintenance.
         ("SELECT * FROM connectby('t', 'k', 'p', '1', 0) AS t(k int, p int, l int)", "studio.statement_refused"),
         ("SELECT * FROM xpath_table('k', 'd', 't', '/a', 'true') AS t(k int, a text)", "studio.statement_refused"),
@@ -551,9 +567,9 @@ def test_statements_studio_refuses(sql: str, code: str) -> None:
         "SELECT pg_backend_pid(), pg_stat_get_activity(NULL)",
         "SELECT * FROM pg_stat_activity",
         "SELECT pg_stat_reset_time FROM t",
-        # Numbers in every form still pass.
-        "SELECT 1e1 AS a, 1.5e-3, .5, 1., 0x1f, 0o17, 0b101, 1_000 FROM t",
-        "SELECT 1e1intox FROM t",
+        # Decimal numbers still pass.
+        "SELECT 1e1 AS a, 1.5e-3, .5, 1., 1.e1, 2E+3, 10 FROM t WHERE x = 1",
+        "SELECT $1, 1::int, t1.a, a1e1 FROM t1",
     ],
 )
 def test_statements_studio_passes_on(sql: str) -> None:
@@ -664,20 +680,29 @@ def test_r2_l1_line_comments_are_lexed_in_linear_time(name: str) -> None:
     assert time.perf_counter() - started < 2.0  # about 0.3 s; it was 10 s before the fix
 
 
+JUNK = readonly_module._NUMBER_JUNK
+
+
 @pytest.mark.parametrize(
     ("sql", "tokens"),
     [
-        ("select 1e1into x", ["select", "1e1", "into", "x"]),
-        ("select 1.5E-3into x", ["select", "1.5E-3", "into", "x"]),
-        ("select .5e1into x", ["select", ".5e1", "into", "x"]),
-        ("select 1.into x", ["select", "1.", "into", "x"]),
-        ("select 1einto x", ["select", "1", "einto", "x"]),
-        ("select 0x1finto, 0o17into, 0b1into", ["select", "0x1f", "into", ",", "0o17", "into", ",", "0b1", "into"]),
-        ("select t.a, 1_000, a1e1", ["select", "t", ".", "a", ",", "1_000", ",", "a1e1"]),
+        ("select 1e1into x", ["select", "1e1", JUNK, "into", "x"]),
+        ("select 1.5E-3into x", ["select", "1.5E-3", JUNK, "into", "x"]),
+        ("select .5e1into x", ["select", ".5e1", JUNK, "into", "x"]),
+        ("select 1.into x", ["select", "1.", JUNK, "into", "x"]),
+        ("select 1einto x", ["select", "1", JUNK, "einto", "x"]),
+        ("select 0x1f, 1_000", ["select", "0", JUNK, "x1f", ",", "1", JUNK, "_000"]),
+        # D-1: a word character after a number never opens a dollar quote.
+        ("select 1_$q$, f(1)", ["select", "1", JUNK, "_$q$", ",", "f", "(", "1", ")"]),
+        (
+            "select t.a, 1.5, .5e3, a1e1, 1 + 2",
+            ["select", "t", ".", "a", ",", "1.5", ",", ".5e3", ",", "a1e1", ",", "1", "+", "2"],
+        ),
     ],
 )
 def test_n1_a_numeric_literal_is_one_token_in_every_reading(sql: str, tokens: list[str]) -> None:
-    """N-1 of the fix review: a letter right after a number starts a new word, in each of the three readings."""
+    """N-1 and D-1 of the fix review: a number is one token in each of the three readings, and a word character right
+    after it is marked, so the text is refused."""
     for backslash, sqlite in readonly_module._READINGS:
         assert readonly_module._tokens(sql, backslash_strings=backslash, sqlite=sqlite) == tokens
 

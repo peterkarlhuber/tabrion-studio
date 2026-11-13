@@ -205,8 +205,9 @@ different environment, or if `database_file` now resolves elsewhere, the connect
 - So are `COPY`, `LOAD`, `NOTIFY`, `LISTEN`, `UNLISTEN`, `LOCK`, `VACUUM`, `CHECKPOINT`, `CLUSTER` and `DO`.
 - So is every statement with the word `INTO` outside a literal, a comment or a quoted identifier, in any of the
   lexings the check reads (F-1 of the STU-016 review). `SELECT ... INTO` creates a table, and a read-only editor
-  never needs `INTO` (`INSERT INTO`, `MERGE INTO`, `REPLACE INTO` and `VACUUM INTO` are refused anyway). A numeric
-  literal is one token, so a word written right after a number is still seen as a word. A column named `into` must be written as a quoted identifier (`"into"`; in
+  never needs `INTO` (`INSERT INTO`, `MERGE INTO`, `REPLACE INTO` and `VACUUM INTO` are refused anyway). A number
+  directly followed by a letter, `_` or `$` is refused, and so are PostgreSQL 16's hexadecimal, octal, binary and
+  underscore number forms (`0x1f`, `1_000`) and SQLite's hexadecimal ones: write numbers in decimal. A column named `into` must be written as a quoted identifier (`"into"`; in
   SQLite also `[into]` is read as the keyword by the PostgreSQL lexings, so it is refused). `into` inside a
   dollar-quoted string (`$$...$$`) is refused too, since SQLite has no dollar quoting; use `'...'` there.
 - Since the STU-011 fix round, every other first word too: only `SELECT`, `WITH`, `VALUES`, `TABLE`, `EXPLAIN` of a

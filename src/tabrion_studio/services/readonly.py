@@ -284,12 +284,12 @@ _REFUSED_PREFIXES = ("dblink", "pg_stat_reset", "pg_replication_origin_")
 _BLANK = re.compile(r"[ \t\n\r\f\v]*+(?:--[^\n\r]*+[ \t\n\r\f\v]*+)*+")
 _SQLITE_BLANK = re.compile(r"[ \t\n\r\f\v]*+(?:--[^\n]*+[ \t\n\r\f\v]*+)*+")
 _DOLLAR_TAG = re.compile(r"\$(?:[A-Za-z_\u0080-\U0010ffff][A-Za-z0-9_\u0080-\U0010ffff]*)?\$")
-#: A numeric literal as one token: hexadecimal, octal and binary integers (PostgreSQL 16), or digits with ``_``
-#: separators, a decimal point and an exponent (also ``.5``).
-_NUMBER = re.compile(
-    r"0[xX][0-9a-fA-F_]++|0[oO][0-7_]++|0[bB][01_]++"
-    r"|(?:[0-9][0-9_]*+(?:\.[0-9_]*+)?+|\.[0-9][0-9_]*+)(?:[eE][+-]?[0-9]++)?+"
-)
+#: A numeric literal as one token: digits, a decimal point and an exponent (also ``.5``), the forms every supported
+#: PostgreSQL version and SQLite read alike.
+_NUMBER = re.compile(r"(?:[0-9]++(?:\.[0-9]*+)?+|\.[0-9]++)(?:[eE][+-]?[0-9]++)?+")
+#: A number followed directly by a word character (``1abc``, ``1_``, ``1$``, ``0x1f``): the servers do not agree on how
+#: to read it, so Studio refuses it.
+_NUMBER_JUNK = "\x00junk"
 #: A Unicode-escaped quoted identifier (``U&"\0073et_config"``): Studio does not decode them, so it refuses them.
 _UNICODE_IDENTIFIER = "\x00u&"
 
@@ -382,9 +382,11 @@ def _lex(sql: str, *, backslash_strings: bool, sqlite: bool = False) -> list[tup
             close = sql.find(match.group(), match.end())
             index = size if close < 0 else close + len(match.group())
         elif (number := _NUMBER.match(sql, index)) is not None:
-            # A numeric literal is one token, and a letter right after it starts a new word.
+            # A numeric literal is one token; a word character right after it is refused (:data:`_NUMBER_JUNK`).
             tokens.append((number.group(), False))
             index = number.end()
+            if index < size and _is_word_char(sql[index]):
+                tokens.append((_NUMBER_JUNK, False))
         elif _is_word_start(char):
             end = index + 1
             while end < size and _is_word_char(sql[end]):
@@ -503,6 +505,11 @@ def _explains_a_query(tokens: list[str]) -> bool:
     return index < len(tokens) and tokens[index] in _QUERY_WORDS
 
 
+def _has_number_junk(lexings: list[list[tuple[str, bool]]]) -> bool:
+    """Whether a number is followed directly by a word character in any reading (:data:`_NUMBER_JUNK`)."""
+    return any(token == _NUMBER_JUNK and not quoted for lexed in lexings for token, quoted in lexed)
+
+
 def _writes_into(lexings: list[list[tuple[str, bool]]]) -> bool:
     """Whether the text of ``lexings`` (:func:`_lexings`) has the word ``INTO`` in any reading (F-1 of the STU-016
     review).
@@ -552,7 +559,7 @@ def check_statement(sql: str) -> str:
     lexings = _lexings(statement)  # once per reading; every check below reads these
     if not _first_word(lexings):  # no word, or the readings disagree where the statement starts (R-H1)
         raise StatementRefused("studio.statement_empty" if not lexings[0] else "studio.statement_refused")
-    if _calls_refused_function(lexings) or _writes_into(lexings):
+    if _calls_refused_function(lexings) or _writes_into(lexings) or _has_number_junk(lexings):
         raise StatementRefused("studio.statement_refused")
     for lexed in lexings:
         _check_words(_leading_words(lexed))

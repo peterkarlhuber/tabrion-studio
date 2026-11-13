@@ -1140,7 +1140,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   review (F-1 High, F-2 Medium, F-3 Low, F-9 in part; the report with its reproductions stays with the planning
   documents), SQ-05, SQ-07, T-06, T-13, `docs/architecture/connections.md`, `docs/architecture/diagnostics.md`
 - **Done in the PR:** F-1: `check_statement` refuses any `INTO` outside literals, comments and quoted identifiers in
-  every lexing, numeric literals lexed as one token;
+  every lexing, and a number directly followed by a word character;
   the PostgreSQL pool reset runs `DISCARD TEMP`; `STU-DX-003` reports schema `CREATE` (warning, error on PROD) and
   database `TEMP` (info on its own). F-2: the SQLite authorizer allows only SQLite's built-in reading functions
   (`fts3_tokenizer` and the rest denied), and every SQLite session sets `trusted_schema = OFF`. F-3: the statement
@@ -1152,7 +1152,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   the text check is best effort, so a function of the database or of an unknown extension with side effects is
   still limited only by the role; a SQLite column named `into` must be written `"into"` (`[into]` and backticks are
   refused, since the PostgreSQL lexings read them as the keyword); `TEMP` stays an info, not a warning, since
-  PostgreSQL grants it to `PUBLIC` by default.
+  PostgreSQL grants it to `PUBLIC` by default; hexadecimal, octal, binary and underscore number forms are refused
+  (write numbers in decimal).
 
 ### TD-047 · STU-050: the e2e suites on Firefox and WebKit
 
