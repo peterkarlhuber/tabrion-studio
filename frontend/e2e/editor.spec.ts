@@ -133,11 +133,7 @@ test('Tab leaves the editor and Shift+Tab returns; the shortcuts describe the te
   await expect(text).toHaveAccessibleDescription(
     /Ctrl\+(↵|Enter) runs the statement at the cursor/,
   );
-  // With a result there is a control after the editor, so Tab has somewhere to go in every browser: past the last
-  // control of the page Chromium leaves for its own UI, while Firefox has none and keeps the focus (TD-047).
-  await focusEditor(page);
-  await page.keyboard.press('Control+Enter');
-  await expect(page.getByRole('grid', { name: 'Result 1' })).toBeVisible();
+  const tabKeys = () => page.evaluate(() => (window as unknown as { tabKeys: boolean[] }).tabKeys);
   await page.evaluate(() => {
     const seen: boolean[] = [];
     (window as unknown as { tabKeys: boolean[] }).tabKeys = seen;
@@ -145,18 +141,25 @@ test('Tab leaves the editor and Shift+Tab returns; the shortcuts describe the te
       if (event.key === 'Tab') seen.push(event.defaultPrevented);
     });
   });
+  // Without a result the editor is the page's last control: Tab is left to the browser (not prevented, no tab
+  // inserted) in every browser, wherever the browser then puts the focus. Past the last control Chromium leaves for
+  // its own UI, while headless Firefox has none and keeps the focus (TD-047).
   await focusEditor(page);
   await page.keyboard.press('Tab');
-  // The editor leaves Tab to the browser (not prevented, no tab inserted) and the focus goes to the next control.
+  expect(await tabKeys()).toEqual([false]);
+  await expect(page.locator('.cm-content')).toHaveText('select 1');
+  // With a result there is a control after the editor, so the focus has somewhere to go in every browser.
+  await focusEditor(page);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByRole('grid', { name: 'Result 1' })).toBeVisible();
+  await focusEditor(page);
+  await page.keyboard.press('Tab');
   await expect(page.getByTestId('export-open')).toBeFocused();
   await expect(page.locator('.cm-content')).toHaveText('select 1');
   await page.keyboard.press('Shift+Tab');
   await expect(page.locator('.cm-content')).toBeFocused();
   await expect(page.locator('.cm-content')).toHaveText('select 1');
-  expect(await page.evaluate(() => (window as unknown as { tabKeys: boolean[] }).tabKeys)).toEqual([
-    false,
-    false,
-  ]);
+  expect(await tabKeys()).toEqual([false, false, false]);
 });
 
 test('while connecting: a second run starts nothing, Ctrl+. and closing the tab start no query (M-2)', async ({

@@ -547,6 +547,9 @@ All notable changes to this project are documented here. The format follows
   editor checks the focus lands on the next control; the tooltip test reaches `:focus-visible` with Tab; Copy DDL is
   checked for the exact text in every browser; the saved script's offered name is checked as the page offers it;
   the keyboard-only connect flow reaches "Connect" with Shift+Tab instead of relying on the focus wrapping around.
+  After the review: the watcher also counts the page's own `securitypolicyviolation` events in every browser (WebKit's
+  select exempt once per element), `connection-lost-backend.spec.ts` uses it too, and the Tab test also checks Tab
+  without a result.
 - The view paths `/connections` and `/settings` answer `HEAD` as well as `GET`, like `/` and the static files
   (review U-4).
 - The dialog's initial focus escapes the action ID in its selector (`CSS.escape`), so an ID with a quote or a

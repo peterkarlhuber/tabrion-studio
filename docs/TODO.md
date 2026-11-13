@@ -966,7 +966,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   fixed; D-1 records why grid cells cut with "…" have no `title` (the cell detail shows the whole value).
 - **With STU-023 and STU-016:** the ER diagram's table alternative and the STU-016 pages. Add their states to the
   pages' axe tests and to `WORK_PAGES` in `a11y-audit.spec.ts`.
-- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts` (TD-047, a CI change).
+- **Firefox and WebKit** runs of `a11y.spec.ts` and `a11y-audit.spec.ts`: done in the jobs `e2e (firefox)` and
+  `e2e (webkit)` (PR #59, green with PR #63); left: making those jobs required (TD-047).
 - **Required e2e suite:** done in the CI e2e-list PR: `a11y-audit.spec.ts` must pass without a skip, like every spec
   in `frontend/e2e` but `screenshots.spec.ts`.
 - **Final report:** the STU-053 acceptance ("report without open WCAG 2.2 AA violations") is met after STU-050 over
@@ -1175,7 +1176,7 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
      markup has none (its styles are CSS files and constructed style sheets), and Chromium and Firefox report nothing.
      The same run showed that WebKit words a refused `style` attribute or `<style>` of the page with exactly the same
      text, so a filter by text would have hidden real violations. The shared watcher `recordViolations`
-     (`e2e/support.ts`, used by `backend`, `editor-backend`, `explorer-reference` and `viewer-backend`) therefore
+     (`e2e/support.ts`, used by every real-server suite) therefore
      leaves a WebKit report out only when it is paired with such an event (a `style-src-attr` violation of a
      `<select>` without a `style` attribute, marked by an init script); `expectNoViolations` waits until the page's
      events have arrived. `csp.spec.ts` checks in every browser that a refused `<style>` and `style` attribute are
@@ -1202,6 +1203,17 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
      from "Test connection", the page's last control, to reach "Connect" right before it, which works only where the
      focus wraps around through the browser's UI (Chromium). The same headless-Firefox behavior as 2, no trap: the
      test reaches "Connect" with one Shift+Tab (`tabTo` takes the key).
+- **After the review `td-047-review.md` (ACCEPTED WITH CONDITIONS):** F-1, `connection-lost-backend.spec.ts` (PR #64)
+  had the old watcher (vacuous in Firefox, failing on WebKit's select report): it uses `recordViolations` and
+  `expectNoViolations`, so every real-server suite does. F-2, the a11y line of TD-031 updated. F-3, the pairing is
+  per element and no longer rests on the console alone: the init script of `recordViolations` keeps every
+  `securitypolicyviolation` event of the page in the page, in every browser, except WebKit's own of a `<select>`
+  without a `style` attribute, and that only once per select element; `expectNoViolations` requires that list empty
+  too, so a violation counts whatever a browser writes to its console. Left: a `style` attribute of a select removed
+  before its event is dispatched would pass as WebKit's own (contrived; Chromium and Firefox have no exception).
+  `csp.spec.ts` adds a `<select>` with a refused `style` attribute, which must count in every browser. F-4, the Tab
+  test also presses Tab without a result (the editor is then the page's last control) and checks it is not
+  prevented and the text unchanged.
 
 ### TD-043 · STU-021 page: the export dialog, and what it leaves for later
 
