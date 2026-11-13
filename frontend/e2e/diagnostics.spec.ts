@@ -67,6 +67,18 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       await expect(owner.locator('[lang]')).toHaveCount(0);
       const tabrion = page.getByTestId('diagnostics-finding').filter({ hasText: 'TAB-PG-002' });
       await expect(tabrion.getByTestId('diagnostics-detail')).toHaveAttribute('lang', 'en');
+      // Only tabrion's TAB-* entries keep lang="en": no STU-* finding or hint has any English-marked text.
+      const marked = page.locator(
+        '[data-testid="diagnostics-finding"], [data-testid="diagnostics-hint"]',
+      );
+      for (const item of await marked.all()) {
+        const code = (await item.getByTestId('diagnostics-code').textContent()) ?? '';
+        if (code.startsWith('STU-')) await expect(item.locator('[lang]')).toHaveCount(0);
+        else expect(code).toMatch(/^TAB-/);
+      }
+      // tabrion's title, detail and remedy: the only English-marked texts of the result.
+      const english = page.locator('[data-testid="diagnostics-diagnosis"] [lang="en"]');
+      await expect(english).toHaveCount(3);
       // The schema name from the database is escaped (U-1).
       await expect(page.getByTestId('diagnostics-findings')).toContainText('audit\\u202Egol');
       // TD-036: the backup hints in their own section, not counted in the summary.
