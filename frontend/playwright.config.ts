@@ -29,11 +29,13 @@ const BROWSERS = {
   webkit: { ...devices['Desktop Safari'] },
 } as const;
 type Browser = keyof typeof BROWSERS;
-const wanted = (process.env.STUDIO_E2E_BROWSERS ?? 'chromium')
-  .split(',')
-  .map((name) => name.trim());
+// Each browser once, in the order given; an unknown name (also an inherited one such as "toString") throws.
+const wanted = [
+  ...new Set((process.env.STUDIO_E2E_BROWSERS ?? 'chromium').split(',').map((name) => name.trim())),
+];
 for (const name of wanted) {
-  if (!(name in BROWSERS)) throw new Error(`STUDIO_E2E_BROWSERS: unknown browser ${name}`);
+  if (!Object.hasOwn(BROWSERS, name))
+    throw new Error(`STUDIO_E2E_BROWSERS: unknown browser ${name}`);
 }
 
 export default defineConfig({

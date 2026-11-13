@@ -4,7 +4,8 @@ name: CI
 # ci-ok.yml aggregates them and posts the commit status "ci-ok" on the pull request head. Actions are pinned by full
 # commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
 # them: "openapi in sync" (STU-008, TD-011). The "e2e" job (Chromium
-# and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke, Firefox and WebKit.
+# and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke; Firefox and WebKit run
+# the same suites in the job "e2e (<browser>)" (STU-050, TD-047), advisory in the manifest until both are green.
 # Nothing here releases or publishes anything (G-R).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): every install of Studio takes the tabrion
 # commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py).
@@ -382,8 +383,16 @@ jobs:
               for spec in suite.get("specs", []):
                   for test in spec["tests"]:
                       status = test["status"]
-                      reasons = [a.get("description", "") for a in test.get("annotations", []) if a.get("type") == "skip"]
-                      if status == "skipped" and reasons and all(r.startswith("chromium only:") for r in reasons):
+                      annotations = test.get("annotations", [])
+                      reasons = [a.get("description", "") for a in annotations if a.get("type") == "skip"]
+                      # Only a plain skip with a "chromium only:" reason; a fixme or fail annotation never counts.
+                      flagged = any(a.get("type") in ("fixme", "fail") for a in annotations)
+                      if (
+                          status == "skipped"
+                          and reasons
+                          and not flagged
+                          and all(r.startswith("chromium only:") for r in reasons)
+                      ):
                           status = "chromium only"
                       counts[(file, status)] += 1
               for child in suite.get("suites", []):
