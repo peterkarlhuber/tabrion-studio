@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-016 preparation (not the gate G-S1): `docs/architecture/security-review-prep.md`, a readiness checklist that
+  maps SQ-01..SQ-08 and the threat model T-01..T-16 to their code and tests, lists the open security-relevant TD rows,
+  the residual risks and the points for the human reviewer. Two security tests from the internal pre-review:
+  `tests/security/test_every_route.py` (every API route of the full application, read from the app itself, needs the
+  session and the CSRF header, unsafe methods refuse other sites and non-JSON bodies, every refusal carries the CSP
+  and `no-store`, and nothing on disk changes) and `tests/security/test_canary_flows.py` (a canary in the database,
+  parameters, SQL text, a viewer filter and export parameters reaches no log line and no problem answer).
+  `docs/TODO.md`: the package rows of STU-012, STU-022 and STU-025 are done with their PR numbers, and merged pages
+  carry their PR numbers instead of "draft".
 - STU-022 in the explorer page: a **DDL** tab for every object (a sequence shows its DDL on its own) with **Copy
   DDL**, a **Policies** tab for a PostgreSQL table (row-level security on and forced, the owner and the connection's
   role, whether the policies bind that role and why not, a warning when RLS is on without a policy, every policy with
