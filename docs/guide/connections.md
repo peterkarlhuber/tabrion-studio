@@ -81,8 +81,12 @@ read-only mode does not stop every effect of a function (for example one that ca
 through an extension). Only the role's rights limit what such a function can do.
 
 A role of its own, separate from the role your application uses (a role can end its own other sessions), with only
-`SELECT` and `USAGE`. A generic example, run as the database owner or an administrator; replace `appdb`, `app` and
-`app_owner` with your database, schema and the role that creates the tables:
+`SELECT` and `USAGE`. A generic example; replace `appdb`, `app` and `app_owner` with your database, your schema and
+the role that owns the schema's tables. The example has two parts, because each part needs a different role.
+
+First, as a superuser, or as a role that has `CREATEROLE` and owns the database (`CREATE ROLE` needs the first, the
+database grants need the second): create the role, let it connect, and take back the rights PostgreSQL gives every
+role:
 
 ```sql
 CREATE ROLE studio_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
@@ -90,24 +94,40 @@ CREATE ROLE studio_reader LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
 \password studio_reader
 
 GRANT CONNECT ON DATABASE appdb TO studio_reader;
+REVOKE TEMP ON DATABASE appdb FROM PUBLIC;       -- then GRANT TEMP ON DATABASE appdb to the roles that need it
+-- PostgreSQL 14 and lower only:
+-- REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+```
+
+Then as `app_owner` (the role that owns the schema and its tables) or a superuser. Granting on the existing tables
+needs their owner, and `ALTER DEFAULT PRIVILEGES FOR ROLE app_owner` needs membership in `app_owner`; the database
+owner alone gets "permission denied":
+
+```sql
 GRANT USAGE ON SCHEMA app TO studio_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA app TO studio_reader;      -- the tables and views that exist now
 
 -- tables that app_owner creates later in that schema:
 ALTER DEFAULT PRIVILEGES FOR ROLE app_owner IN SCHEMA app GRANT SELECT ON TABLES TO studio_reader;
+-- functions that app_owner creates later are not executable by every role:
+ALTER DEFAULT PRIVILEGES FOR ROLE app_owner REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
 ```
 
 - **Nothing else:** no `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE` or sequence `UPDATE`, no ownership, and no
   membership in another role (`GRANT other_role TO studio_reader`): a role it is a member of counts too.
+  `NOINHERIT` is not enough, because a member can still `SET ROLE` to that role; the reading role must be a member
+  of no other role.
 - **Default privileges:** `GRANT ... ON ALL TABLES` covers only the tables that exist now; `ALTER DEFAULT PRIVILEGES`
   covers those the named role creates later. Check that no default privilege grants write access to the role or to
   `PUBLIC` (the diagnostics report one, `STU-DX-007`).
-- **`PUBLIC`:** PostgreSQL grants some rights to every role. `TEMP` on the database is granted to `PUBLIC` by default
-  (`REVOKE TEMP ON DATABASE appdb FROM PUBLIC` takes it back; grant it again to the roles that need it), and before
-  PostgreSQL 15 so is `CREATE` on the schema `public` (`REVOKE CREATE ON SCHEMA public FROM PUBLIC`).
-- **Functions:** `EXECUTE` on new functions is granted to `PUBLIC` by default, and a function declared
-  `SECURITY DEFINER` runs with its owner's rights. Know which functions with side effects exist in the database, and
-  revoke `EXECUTE` on them from `PUBLIC` where the reading role must not call them. Studio does not check this.
+- **`PUBLIC`:** PostgreSQL grants some rights to every role. `TEMP` on the database is granted to `PUBLIC` by default,
+  and before PostgreSQL 15 so is `CREATE` on the schema `public`; the first part of the example takes both back.
+  Without that, the diagnosis reports the role (`STU-DX-003`).
+- **Functions:** `EXECUTE` on functions is granted to `PUBLIC` by default, and a function declared
+  `SECURITY DEFINER` runs with its owner's rights. The `REVOKE EXECUTE ON FUNCTIONS` default above covers only
+  functions `app_owner` creates later (grant `EXECUTE` again to the roles that need it). For the functions that
+  exist now: know which ones have side effects, and revoke `EXECUTE` on them from `PUBLIC` where the reading role
+  must not call them. Studio does not check this.
 
 Run the diagnosis on the profile with **read-only role** set afterwards; a role that can still write or create is
 reported.
