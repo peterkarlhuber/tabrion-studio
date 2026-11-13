@@ -8,7 +8,7 @@ the diagnosis report (Markdown or JSON, without secrets).
 
 | Route | Answer |
 |---|---|
-| `POST /api/connections/{id}/diagnostics` | `{connection_id, engine, environment, ran_at, findings: [{code, severity, title, detail, remedy, source}], counts: {error, warning, info}, backup: {hints: [...], facts: {...}}}` |
+| `POST /api/connections/{id}/diagnostics` | `{connection_id, engine, environment, ran_at, findings: [{code, severity, title, detail, remedy, source, params?}], counts: {error, warning, info}, backup: {hints: [...], facts: {...}}}`; Studio's own findings and hints carry `params` ([Studio's texts in en/de](#studios-texts-in-ende-td-032)) |
 | `POST /api/connections/{id}/diagnostics/cancel` | 202 `{"canceled": true \| false}`: stops the running diagnoses of that connection within a second |
 | `POST /api/connections/{id}/diagnostics/report` | Body `{"format": "markdown" \| "json"}`. 200 with the report as a file: `Content-Disposition: attachment; filename="tabrion-studio-diagnosis-<engine>-<environment>-<UTC time>.md"` (or `.json`). See [Diagnosis report](#diagnosis-report-stu-025). |
 
@@ -17,6 +17,45 @@ not because it changes anything. Like every `POST`, it needs the session, the CS
 
 Findings are sorted by severity (`error`, `warning`, `info`) and then by code. `source` is `tabrion` or `studio`.
 No finding names a file path, a password or a value.
+
+## Studio's texts in en/de (TD-032)
+
+E-S3 (08) asks for German and English complete in 1.0, and STU-054 tests it. tabrion's findings (`TAB-*`) come with
+tabrion's English text only, but Studio's own findings and backup hints (`STU-DX-*`, `STU-BK-*`) are worded by the
+page in the user's language:
+
+- Each of Studio's findings and hints carries `params`, the facts its text needs, and nothing else: counts, booleans,
+  fixed words of Studio and the profile's `sslmode` (one of the values the profile schema allows). No name, path,
+  host, user, value or SQL text.
+- The page words them from `diagnostics.texts` of its i18n files (`frontend/src/views/diagnostics/studioText.ts`),
+  with i18next's plural forms. It checks every field first; `params` that do not fit (a missing count, an unknown
+  word) are not worded, and the page shows the server's English `detail` and `remedy` instead, marked `lang="en"`
+  like tabrion's (fail closed). The note above the list ("Details and remedies from tabrion are its own English
+  text.") is shown only when such a text is listed.
+- The server keeps sending `detail` and `remedy`, the English text made from the same `params` and the same templates
+  (`services/diagnosis_texts.py`): older clients, the report and the command line use them. The templates there are
+  exactly the page's English `diagnostics.texts`, and `frontend/src/views/diagnostics/studioTexts.cases.json` holds
+  cases that both sides must word alike (pytest against the server, Vitest against the page's English).
+
+| Code | `params` |
+|---|---|
+| `STU-DX-001` | `sslmode` (text, or `null` when the profile sets none) |
+| `STU-DX-002` | `sslmode` (`disable`, `allow` or `prefer`) |
+| `STU-DX-003` | `writable`, `creatable` (counts, at most 1000: "1000+"), `temporary` (boolean). Both counts 0 is the info "TEMP alone". |
+| `STU-DX-004`, `-007` | none (`{}`) |
+| `STU-DX-005` | `rows` (count, at most 1000) |
+| `STU-DX-006` | `owned` (count, at most 1000), `prod` (boolean: the remedy names 03 section 5.4) |
+| `STU-DX-008` | `reason` (`canceled` or `time_limit`), `time_limit_s` (number), `skipped` (the checks that did not run: `tabrion`, `tabrion_integrity`, `backup` or a code `STU-DX-NNN`) |
+| `STU-DX-009` | `cause` (`definition`: a broken foreign key definition; `unreadable`: busy, locked or not readable) |
+| `STU-DX-010` | `missing` (the setting names among `lock_timeout`, `idle_in_transaction_session_timeout`, `application_name`) |
+| `STU-BK-002` | `amount` (count) and `unit` (`minutes`, `hours` or `days`) |
+| `STU-BK-003` | `files` (count) |
+| `STU-BK-005` | `max_entries` (10 000) |
+| `STU-BK-011` | `failures` (count) |
+| `STU-BK-001`, `-004`, `-010`, `-012`, `-013`, `-014` | none (`{}`) |
+
+The English wording changed with it: proper plurals instead of "row(s)" and "table(s)". The diagnosis report stays
+English (it is meant to be passed on); its JSON form carries the `params` of Studio's entries too.
 
 **Time limit and cancel (M-1 of `stu-014-review.md`).** A diagnosis runs at most the connection's statement timeout
 (the profile's, else 30 s, 15 s on `prod`; 03 section 5.3). Then, or after the cancel route, every running statement
@@ -91,8 +130,8 @@ It only reads; nothing on the page writes to a database.
   does not take (`{"canceled": false}` or a failed request) says so and can be tried again (L-1 of
   `stu-014-ui-review.md`).
 - **Backup hints (TD-036).** The answer's `backup.hints` (`STU-BK-*`) are listed under their own heading "Backups"
-  below the findings, shown like findings (severity, code, en/de title of Studio's codes, the server's English detail
-  and remedy, escaped and capped), at most 20, and not counted in the summary. The facts are not shown. A `backup`
+  below the findings, shown like findings (severity, code, en/de title, detail and remedy of Studio's codes,
+  TD-032), at most 20, and not counted in the summary. The facts are not shown. A `backup`
   without a hints list says that the hints could not be read (never "no hints"); an answer without `backup` shows no
   section. No hints from a run that did not check the backups (`STU-DX-008` among the findings, or the facts
   `searched: false` / `archive_mode: null`) says "Backups were not checked in this run" (L-1 of the TD-036 review). Since the page shows the hints, the page route passes `replace=True` like the report, so `TAB-PG-020`
@@ -114,8 +153,9 @@ It only reads; nothing on the page writes to a database.
 - **Findings.** A summary counts the findings per severity ("1 error · 2 warnings · 1 note", or "No findings").
   Each finding shows its severity as an icon and a word (never colour alone; the left border repeats it), its code,
   title, detail, remedy and source (tabrion or Studio). The titles of Studio's own codes `STU-DX-001..010` are the
-  page's en/de text (a test keeps the English ones equal to the backend's). Every other text is the server's
-  English text: it is marked `lang="en"`, and a hint above the list says so. The result names the profile, its
+  page's en/de text (a test keeps the English ones equal to the backend's), and so are their details and remedies,
+  worded from `params` ([above](#studios-texts-in-ende-td-032)). tabrion's texts are the server's English text: they
+  are marked `lang="en"`, and a hint above the list says so when one is listed. The result names the profile, its
   environment badge (PROD if the profile or the server says so) and the time of the run. The finished summary is
   announced in a status region.
 - **Untrusted text (U-1).** tabrion's details and remedies name schemas and extensions, so every server text is
@@ -129,14 +169,18 @@ It only reads; nothing on the page writes to a database.
   own, never as a lesser one. The page counts the findings itself and does not use `counts`.
 
 Deviations from 08 section 4.9 (TD-032): the route `/diagnostics` with a profile picker instead of
-`/c/:conn/diagnostics` (no connection workspace yet, TD-011; like `/migrations`), English details and remedies, no
-progress display (the backend reports none), no documentation link per finding and no "OK" rows. The report export
-and the backup hints of STU-025 are on the page since TD-036; the report from the command line is still open (TD-036).
+`/c/:conn/diagnostics` (no connection workspace yet, TD-011; like `/migrations`), no progress display (the backend
+reports none), no documentation link per finding and no "OK" rows. Studio's details and remedies are en/de since
+TD-032; tabrion's stay English (labelled). The report export and the backup hints of STU-025 are on the page since
+TD-036, and the report from the command line is `tabrion-studio diagnose` ([below](#the-report-from-the-command-line-td-036)).
 
 Page tests: `DiagnosticsView.test.tsx` (run, D-02, run again, escaping and caps, the fail-closed parser, cancel
 before and during the run, profile switch and unmount, problems, German; TD-036: the backup hints, their parser and
 caps, both downloads, the file name rule, refusals and a wrong media type, cancel, switch and unmount during a report,
-the keyboard focus, D-02 through the shared page session),
+the keyboard focus, D-02 through the shared page session; TD-032: Studio's details and remedies in German and
+English without `lang="en"`, the note only with tabrion's text, the fall-back to the server's English for params that
+do not fit), `studioText.test.ts` (every shared case in English as the server words it and in German with every
+placeholder filled, German plurals, 21 kinds of params that are not worded),
 `tests/unit/test_diagnostics_page.py` (the page's `STU-DX-*` and `STU-BK-*` titles against the backend's), axe in jsdom (`a11y.test.tsx`) and
 in Chromium in light and dark, English and German, with the findings shown and while a run is canceled
 (`e2e/diagnostics.spec.ts`, `e2e/a11y.spec.ts`). Against a real `tabrion-studio` (`e2e/backend.spec.ts`, with
@@ -239,7 +283,7 @@ Code: `services/diagnosis_report.py`, route in `api/diagnostics.py`.
 | Format | Media type | Content |
 |---|---|---|
 | `markdown` | `text/markdown; charset=utf-8` | A title, a list (time, versions, profile, engine, environment, on PostgreSQL the read-only role expectation and `sslmode`, counts), the findings and backup hints (one heading each with severity, code and title, then detail, remedy and source), a table of the backup facts and a closing line that names what was left out. |
-| `json` | `application/json` | `{report: "tabrion-studio-diagnosis", format_version: 1, generated_at, studio_version, tabrion_version, connection: {profile, engine, environment, read_only, read_only_role?, sslmode?}, diagnosis: {ran_at, counts, findings}, backup: {hints, facts}, left_out}` |
+| `json` | `application/json` | `{report: "tabrion-studio-diagnosis", format_version: 1, generated_at, studio_version, tabrion_version, connection: {profile, engine, environment, read_only, read_only_role?, sslmode?}, diagnosis: {ran_at, counts, findings}, backup: {hints, facts}, left_out}`; Studio's findings and hints also carry their `params` (TD-032, an added field, so `format_version` stays 1) |
 
 **Without secrets (09 STU-025 acceptance; T-05, SQ-04).** The report is built from an allowlist, never from the
 profile or the connection as a whole:
@@ -265,16 +309,59 @@ profile or the connection as a whole:
   anything shaped like a URL password, a `password=`-style pair, a bearer token, an `Authorization` header or the
   session cookie with `[redacted]`. A tabrion finding that ever carried such text would be cut there.
 
+The report is English in both formats, whatever the page's language: it is a file meant to be passed on (an issue,
+a ticket), and the reader's language is not known. Studio's entries in it are the server's English text, made from
+the same `params` as the page's wording (TD-032).
+
 **Markdown from database text (T-07).** Some details hold names from the database (tabrion names schemas and
 extensions). In the Markdown report every such text is put on one line (controls and line separators become spaces),
 never starts a line, and has the characters of inline markup escaped with a backslash (`` \ ` * _ [ ] < > ! | ~ & # @ ``; `@` for mentions and e-mail autolinks, L-1),
 and `://` and `www.` are broken up, so a name cannot become a link, an image, HTML, a table cell or a heading where
 the report is rendered. The JSON report is plain JSON.
 
+### The report from the command line (TD-036)
+
+03 section 1 says that agents and CI can make the diagnosis report from the command line:
+
+```
+tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE] [--confirm-prod]
+                        [--state-dir DIR] [--config-dir DIR]
+```
+
+`src/tabrion_studio/diagnose_cli.py` (dispatched by `cli.main` when the first argument is `diagnose`, imported only
+then). It starts no server and takes no instance lock; it builds the same `Configuration` as the server for PROJECT
+(the user's `profiles.toml` and `settings.toml`, the project file and its trust record in the state directory, the
+keyring), opens the profile's read-only connection with `ConnectionRegistry.open`, and writes
+`DiagnosisReports.build` of that connection, the route's code, so the allowlist, the `[role]`/`[database]`
+replacement, the log redaction and `studio.report_unavailable` are the same. The connection is closed at the end.
+
+- **Profiles.** `--profile` is the API id (`user:<name>`, `project:<name>`) or a name that only one profile has
+  (otherwise exit 2 with the ids). Project profiles exist only while the project file is trusted
+  (`Configuration.entries`); the trust is given in D-01 in the browser, never by this command. An untrusted or
+  changed project file gives "Profile not found" with a note on D-01.
+- **PROD (D-02).** The page asks D-02 once per page session; the command has no session and no dialog, so
+  `--confirm-prod` is the confirmation, given on every run (no environment variable, no setting). Without it a PROD
+  profile is refused before anything connects (exit 2). The flag is passed on as `confirmed_environment="prod"`, and
+  the registry checks it against the read of the profile it connects to (`require_prod_confirmation`, TD-038), so a
+  profile that becomes PROD between the command's look and the open is refused there too
+  (`studio.prod_confirmation_required`). Nothing is weaker than the page: the connection is the same read-only one.
+- **Secrets.** As in the server (keyring, `env:`, `file:`); the command never prompts, so a missing password is
+  `studio.secret_missing` (exit 1).
+- **Output.** The report to standard output, or with `--output` to that file (the server's file name is printed on
+  standard error). Refusals are the problem catalog's fixed English title, detail and hint with the code
+  (`db.<kind>` for a database that does not answer), never an exception's text. Log records go to standard error
+  at warning level and above, through the log redaction; there is no log file.
+- **Exit codes.** 0 written; 1 not made (a database, secret, trust or report problem, or an unexpected error); 2 a
+  usage error (bad options, an unknown or ambiguous profile, PROD not confirmed).
+
+A project folder named `diagnose` is given as `./diagnose`.
+
 ### Tests
 
 | Test | Covers |
 |---|---|
+| `tests/security/test_diagnose_cli.py` (TD-036) | Markdown to standard output and JSON to a file (with Studio's `params`), by id and by name; the canary folder and file name in neither; `tabrion-studio diagnose` through `cli.main` and both `--help` texts; PROD refused without `--confirm-prod` before any open, and written with it; a profile that becomes PROD before the open refused by the registry; a project profile only after trust; an ambiguous and an unknown name; a missing `env:` password and a missing file as catalog texts without the variable's name; an unreachable server as `db.connection` without the password; on PostgreSQL (marker `postgres`) neither format holds the password, host, port, user or database name. |
+| `tests/unit/test_diagnostics_page.py` (TD-032) | The page's English `diagnostics.texts` equal `diagnosis_texts.TEXTS`; German has the same keys; the shared cases are the server's English and use every template; `_finding` and `_hint` carry `params`. |
 | `tests/security/test_diagnosis_report.py` (backup hints) | SQLite: no backup, a fresh private backup, a backup older than the data by hours and by days, the `-wal` file as a change, a backup readable by others, what does not count (no header, another name, `.tmp`, a link, a folder, a FIFO, a subfolder that is not the database's own), the entry bound, an unreadable subfolder, no path or name in hints or facts. PostgreSQL: every rule of the table with `prod`, the facts, `TAB-PG-020` replaced only in a run with hints, an unreadable archiver; against the server, the archiver query passes the statement check and reads. The time limit skips the hints and names them in `STU-DX-008`. |
 | `tests/security/test_diagnosis_report.py` (report) | Both formats (media type, file name, JSON keys and times, Markdown headings), the hostile Markdown text, the route (`Content-Disposition`, `no-store`, the view's `backup`, `studio.report_invalid` for other formats and bodies, an unknown connection, the CSRF and session checks). |
 | `tests/security/test_diagnosis_report.py` (canaries) | `tabrion-canary-<uuid>` as the SQLite file's folder and name, a backup's name, a stored value and a parameter value, with the session, CSRF, launch and control tokens and secret-shaped finding texts (URL passwords, DSN `password=`, bearer, API key, cookie) over HTTP; on PostgreSQL as the role's password, its `application_name` setting, a stored value and a parameter value, with DSN-shaped texts (marker `postgres_superuser`). Neither format nor the log holds the canary; the PostgreSQL report holds no host, port, user or database name. A registered secret in any finding text is redacted. |

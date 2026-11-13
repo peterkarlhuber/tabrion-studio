@@ -104,3 +104,23 @@ def test_every_studio_install_without_dependencies_follows_the_hashed_lock() -> 
 
 def test_the_docs_checklist_is_in_the_navigation() -> None:
     assert "development/docs-checklist.md" in _nav_pages()
+
+
+def test_every_diagnose_option_has_a_row_in_the_diagnostics_guide() -> None:
+    """TD-036: ``tabrion-studio diagnose`` is documented with every option, next to the report it writes."""
+    from tabrion_studio.diagnose_cli import build_parser as diagnose_parser
+
+    text = (GUIDE / "diagnostics.md").read_text(encoding="utf-8")
+    options = [
+        option
+        for action in diagnose_parser()._actions
+        for option in action.option_strings
+        if option.startswith("--") and option != "--help"
+    ]
+    assert "--confirm-prod" in options  # the parser was read
+    rows = {
+        option
+        for row in re.findall(r"^\| (`--.*?) \|", text, re.MULTILINE)
+        for option in re.findall(r"`(--[a-z-]+)`", row)
+    }
+    assert [option for option in options if option not in rows] == []

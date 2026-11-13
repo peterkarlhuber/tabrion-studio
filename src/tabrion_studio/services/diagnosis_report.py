@@ -6,7 +6,8 @@ in an issue. 09's acceptance is "report without secrets (canary test)", so the r
 
 * **In it:** the report's time, Studio's and tabrion's versions, the profile's name, engine and environment; on
   PostgreSQL whether the profile expects a read-only role and its ``sslmode``; every finding and backup hint (code,
-  severity, title, detail, remedy, source) with their counts, and the backup facts (counts, times, ``archive_mode``).
+  severity, title, detail, remedy, source; for Studio's own also ``params`` in the JSON report, TD-032) with their
+  counts, and the backup facts (counts, times, ``archive_mode``).
 * **Never in it:** a password or other secret, a token of the process, a connection URL or DSN, the host, port, user
   or database name, a file path or file name, the connection ID and any SQL text or parameter value. Studio's own
   findings and hints name none of these. tabrion's may name schemas and extensions, and a schema is often named after
@@ -135,9 +136,14 @@ def hide_names(text: str, names: dict[str, str]) -> str:
     return text
 
 
-def _item(entry: dict[str, Any]) -> dict[str, str]:
+def _item(entry: dict[str, Any]) -> dict[str, Any]:
     keys = ("code", "severity", "title", "detail", "remedy", "source")
-    return {key: str(entry.get(key, "")) for key in keys}
+    item: dict[str, Any] = {key: str(entry.get(key, "")) for key in keys}
+    if item["source"] == "studio" and isinstance(entry.get("params"), dict):
+        # TD-032: Studio's facts behind its English text (counts, setting names, sslmode, the checks that did not
+        # run), the same the page words in en/de. Only Studio's own: they never name the role, database or a path.
+        item["params"] = dict(entry["params"])
+    return item
 
 
 @dataclass

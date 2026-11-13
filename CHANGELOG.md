@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- TD-036 (STU-025): `tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE]
+  [--confirm-prod]` writes the diagnosis report of one profile from the command line, for scripts, CI and agents,
+  without a running Studio. It is the report of the download (the same allowlist: no password, token, URL or DSN,
+  host, port, user or database name, path or value). Project profiles count only after you trusted them in Studio;
+  a PROD profile needs `--confirm-prod` on every run, and the connection checks it again on the profile it opens. No
+  password prompt; refusals are Studio's fixed texts; exit codes 0 (written), 1 (not made), 2 (usage).
+- TD-032: Studio's own findings and backup hints (`STU-DX-*`, `STU-BK-*`) show their details and remedies in German
+  as well as English. The diagnostics route sends each one's facts as `params` (counts, setting names, the `sslmode`,
+  the checks that did not run), and the page words them from its translations; tabrion's `TAB-*` texts stay English
+  and marked as such. The JSON diagnosis report carries the `params` too.
+
 - TD-033 drafts part (security review F-5): the SQL editor's drafts (each tab's title, profile, text and script
   binding, and the open tab) are kept in Studio's state database `state.sqlite` (0600) behind the authenticated
   `GET`/`PUT /api/drafts` (session cookie and CSRF header; a tab with any field but the known ones is refused, so a
@@ -679,6 +690,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- TD-032: the English `detail` and `remedy` of Studio's findings and backup hints use plurals ("2 rows" instead of
+  "2 row(s)"), and the check names in `STU-DX-008` are made from `params`; the page's note that texts are English now
+  shows only when one of tabrion's texts is listed.
 - STU-020 (E-1 and the Info item of the delta review): script names may hold the zero-width non-joiner U+200C and the
   zero-width joiner U+200D between two letters or marks (Persian `می‌خواهم.sql`, Indic conjuncts; a ZWJ also inside
   an emoji sequence) and the ideographic space U+3000 inside a name, like U+0020 (Japanese `売上　集計.sql`). A

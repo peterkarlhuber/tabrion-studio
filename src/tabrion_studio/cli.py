@@ -5,6 +5,10 @@
 the command asks it for a new launch, opens that and exits; it never starts a second server. ``--stop`` ends the
 running instance.
 
+``tabrion-studio diagnose [PROJECT] --profile PROFILE ...`` writes the diagnosis report of one profile without a
+server (STU-025, TD-036; :mod:`tabrion_studio.diagnose_cli`). A project folder named ``diagnose`` is given as
+``./diagnose``.
+
 The browser is opened with the ``file://`` path of a private redirect file, never with the launch URL itself: the
 URL carries a one-time token, and the arguments of the browser process are visible to every local user (review F-02).
 Only ``--print-url`` shows a launch URL, in this terminal.
@@ -70,6 +74,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tabrion-studio",
         description="Tabrion Studio: a local developer tool for SQLite and PostgreSQL databases.",
+        epilog="tabrion-studio diagnose --help: the diagnosis report of one profile on the command line.",
     )
     parser.add_argument("project", nargs="?", default=".", help="project folder (default: the current folder)")
     parser.add_argument(
@@ -124,7 +129,13 @@ def _warn_about_a_sandboxed_browser(state_dir: Path, err: TextIO) -> None:
 def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
     out = sys.stdout if out is None else out
     err = sys.stderr
-    args = build_parser().parse_args(argv)
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments[:1] == ["diagnose"]:
+        # The report on the command line (TD-036); imported only here, so a plain start loads none of it.
+        from tabrion_studio import diagnose_cli
+
+        return diagnose_cli.main(arguments[1:], out, err)
+    args = build_parser().parse_args(arguments)
     project = Path(args.project).expanduser()
     if not project.is_dir():
         print(f"tabrion-studio: not a folder: {project}", file=err)

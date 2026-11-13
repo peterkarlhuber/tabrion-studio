@@ -5,7 +5,11 @@ tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout
                [--state-dir DIR] [--log-dir DIR] [--config-dir DIR]
 tabrion-studio --stop [PROJECT]
 tabrion-studio --version
+tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--output FILE] [--confirm-prod]
 ```
+
+`tabrion-studio diagnose` writes the diagnosis report of one profile without starting Studio; its options are in
+[Diagnostics](diagnostics.md#the-report-from-the-command-line).
 
 ## Start
 

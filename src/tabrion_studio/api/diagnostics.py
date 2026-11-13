@@ -1,11 +1,12 @@
 """Diagnostics routes (03 sections 2 G and 6, STU-014, STU-025). They read; nothing here changes a database.
 
-* ``POST /api/connections/{id}/diagnostics``: runs the diagnosis of an open connection and answers
-  ``{connection_id, engine, environment, ran_at, findings: [{code, severity, title, detail, remedy, source}],
-  counts: {error, warning, info}, backup: {hints: [...], facts: {...}}}``. A ``POST`` because it runs checks against
-  the database (``PRAGMA quick_check`` on SQLite can take a while), never because it changes anything; the access
-  middleware asks for the CSRF header. A diagnosis stops at the connection's statement timeout; the checks it could
-  not run are named in ``STU-DX-008``. ``backup`` holds the backup hints (``STU-BK-*``, STU-025), which are not
+* ``POST /api/connections/{id}/diagnostics``: runs the diagnosis of an open connection and answers ``{connection_id,
+  engine, environment, ran_at, findings: [{code, severity, title, detail, remedy, source, params?}], counts: {error,
+  warning, info}, backup: {hints: [...], facts: {...}}}``. Studio's own findings and hints carry ``params``, the facts
+  the page words in en/de (TD-032); ``detail`` and ``remedy`` are their English text. A ``POST`` because it runs checks
+  against the database (``PRAGMA quick_check`` on SQLite can take a while), never because it changes anything; the
+  access middleware asks for the CSRF header. A diagnosis stops at the connection's statement timeout; the checks it
+  could not run are named in ``STU-DX-008``. ``backup`` holds the backup hints (``STU-BK-*``, STU-025), which are not
   findings and not in ``counts``. The page shows the hints (TD-036), so tabrion's ``TAB-PG-020`` gives way to
   ``STU-BK-010`` here as in the report (D-2 of the delta review of STU-025).
 * ``POST /api/connections/{id}/diagnostics/cancel``: 202 ``{"canceled": true|false}``; stops the running diagnoses

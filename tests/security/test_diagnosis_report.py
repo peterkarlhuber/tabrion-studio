@@ -135,7 +135,10 @@ def test_a_backup_older_than_the_data(tmp_path: Path, behind: float, severity: s
         touch(wal, NOW - 60)
     doc = backup_hints.sqlite_hints(database, clock=lambda: NOW)
     assert hint_codes(doc) == {"STU-BK-002": severity}
-    assert ("8 day(s)" if behind > DAY else "2 hour(s)") in doc["hints"][0]["detail"]
+    assert ("8 days" if behind > DAY else "2 hours") in doc["hints"][0]["detail"]
+    assert doc["hints"][0]["params"] == (
+        {"amount": 8, "unit": "days"} if behind > DAY else {"amount": 2, "unit": "hours"}
+    )
 
 
 @posix
@@ -158,7 +161,8 @@ def test_a_backup_readable_by_others(tmp_path: Path) -> None:
     doc = backup_hints.sqlite_hints(database, clock=lambda: NOW)
     assert hint_codes(doc) == {"STU-BK-003": "warning"}
     assert doc["facts"]["backups_found"] == 2 and doc["facts"]["backups_readable_by_others"] == 1
-    assert doc["hints"][0]["detail"].startswith("1 backup file(s)")
+    assert doc["hints"][0]["detail"].startswith("1 backup file can be read")
+    assert doc["hints"][0]["params"] == {"files": 1}
 
 
 @posix
