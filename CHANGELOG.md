@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-016 preparation (not the gate G-S1): `docs/architecture/security-review-prep.md`, a readiness checklist that
+  maps SQ-01..SQ-08 and the threat model T-01..T-16 to their code and tests, lists the open security-relevant TD rows,
+  the residual risks and the points for the human reviewer. Two security tests from the internal pre-review:
+  `tests/security/test_every_route.py` (every API route of the full application, read from the app itself, needs the
+  session and the CSRF header and refuses other sites, unsafe methods refuse non-JSON bodies, every refusal carries
+  the security headers, and nothing on disk changes; the only other `/api/` route is `/api/openapi.json`) and
+  `tests/security/test_canary_flows.py` (a canary in the database, parameters, SQL text, a viewer filter and export
+  parameters reaches no log line and no problem answer of the editor, viewer, export and diagnosis routes; exports
+  Studio refuses included). The security headers are pinned literally in the tests
+  (`test_security_headers_are_pinned`), not compared with the code's own constant.
+  `docs/TODO.md`: the package rows of STU-012, STU-022 and STU-025 are done with their PR numbers, and merged pages
+  carry their PR numbers instead of "draft".
 - STU-052 (rest of TD-020): F6 and Shift+F6 also step through the panes of the main area (08 section 7,
   "Explorer/Editor/Ergebnis"): in the explorer the tree (its current item) and the details (the selected tab), in the
   SQL editor the SQL text, the first parameter value and the result grid. On other pages F6 stops at the main area as
