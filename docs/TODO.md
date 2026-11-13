@@ -1109,6 +1109,28 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   workflow change with its own review); fix what fails in either browser. The step summary shows the "Chromium only"
   count per suite (expected 2 in `editor.spec.ts`, 2 in `editor-backend.spec.ts`, 1 in `viewer-backend.spec.ts`).
 - **Locally:** the agent sandbox has only a Chromium build, so these runs exist only in CI.
+- **First CI run (`9741eb7`, run 43343286134):** Firefox 251 passed, 3 failed, 35 skipped (30 screenshots and the 5
+  "chromium only" heap tests); WebKit 236 passed, 7 failed, 32 skipped (screenshots and "chromium only"), the rest of
+  its serial suites did not run after a failure. The gate step did not run, because the test step failed first, so
+  F-3 (the "chromium only" accounting from the annotations) still needs a run with every test passing. Root causes,
+  each to fix in its own follow-up, without a skip unless the feature is Chromium-only:
+  1. **WebKit, CSP:** "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear
+     in the style-src directive" is logged once each time a `<select>` is created (the diagnostics, explorer, data
+     tab, editor and parameter panel selects; trace times match each one). It fails five real-server tests
+     (`backend.spec.ts:331`, `editor-backend.spec.ts:164`, `explorer-reference.spec.ts:132`,
+     `viewer-backend.spec.ts:191`). Pages without a `<select>` have none, and Chromium and Firefox have none. The
+     likely cause is WebKit's own user-agent styles of the select; confirm with a minimal page under the same CSP
+     before a test treats the message as the browser's.
+  2. **Firefox, keyboard:** `editor.spec.ts:125`. After Tab the editor keeps the focus and its text changes, so Tab
+     in the SQL editor (CodeMirror in a shadow root, `indentWithTab: false`) seems to insert a tab instead of moving
+     on. This is a possible keyboard trap (WCAG 2.1.2), so it is a product bug to confirm and fix, not a test change.
+  3. **Firefox and WebKit, test:** `a11y-audit.spec.ts:334` reaches `:focus-visible` with `Shift` plus
+     `element.focus()` after a mouse click; only Chromium then treats the focus as keyboard focus. Reach it with Tab.
+  4. **Firefox and WebKit, test:** `explorer-definitions.spec.ts:64` calls `grantPermissions(['clipboard-read',
+     'clipboard-write'])`, which only Chromium knows. Check Copy DDL another way there, for example through the
+     page's copy result or a stub of `navigator.clipboard.writeText`.
+  5. **WebKit, test:** `editor.spec.ts:327` expects the saved script as "Query 2.sql"; WebKit's download reports
+     "Query_2.sql". Assert the name the page offers (the link's `download`) and accept the browser's spelling of it.
 
 ### TD-043 · STU-021 page: the export dialog, and what it leaves for later
 
