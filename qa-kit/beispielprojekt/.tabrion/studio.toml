@@ -1,0 +1,14 @@
+# Project profiles for Tabrion Studio (schema version 1). Paths are relative to the project folder.
+version = 1
+
+[[profile]]
+name = "Shop (DEV)"
+engine = "sqlite"
+path = "daten/shop.sqlite"
+environment = "dev"
+
+[[profile]]
+name = "Shop (PROD)"
+engine = "sqlite"
+path = "daten/shop-prod.sqlite"
+environment = "prod"

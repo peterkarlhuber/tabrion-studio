@@ -1,0 +1,50 @@
+# Throwaway smoke test of the local QA-S1 test kit on Windows and macOS. Lives only on the branch
+# claude/project-thread-rdo6g3-qakit, which is never merged and is deleted after the run.
+name: QA kit smoke
+
+on:
+  push:
+    branches: [claude/project-thread-rdo6g3-qakit]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qa-kit-smoke
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: QA kit smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            system: windows
+          - os: macos-latest
+            system: macos
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - name: Fetch uv 0.11.32 from PyPI (SHA-256 checked)
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+        run: python qa-kit/fetch_uv.py "$SYSTEM" qa-kit/uvdl
+      - name: Build the kit
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+        run: python qa-kit/build_kit.py qa-kit/runtime-lock.txt "CI smoke build" "$SYSTEM"
+      - name: Unpack below the home folder and smoke-test (managed Python download included)
+        shell: bash
+        env:
+          SYSTEM: ${{ matrix.system }}
+        run: python qa-kit/smoke.py "qa-kit/out/TabrionStudio-QA-$SYSTEM.zip"
