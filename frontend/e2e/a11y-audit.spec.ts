@@ -100,7 +100,7 @@ const WORK_PAGES: State[] = [
       await page.getByTestId('explorer-open').click();
       await page.getByTestId('explorer-view-diagram').click();
       await expect(page.getByTestId('er-box')).toHaveCount(6);
-      await page.getByTestId('er-choose').locator('summary').click();
+      await page.getByTestId('er-choose-toggle').click();
     },
   ],
   [

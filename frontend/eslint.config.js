@@ -27,6 +27,12 @@ export default tseslint.config(
           selector: "JSXAttribute[name.name='dangerouslySetInnerHTML']",
           message: 'dangerouslySetInnerHTML is forbidden (threat T-07).',
         },
+        // TD-052: WebKit refuses the inline style of a <details> element's own shadow tree under the CSP
+        // (style-src 'self') and reports a violation; a disclosure is a button with aria-expanded.
+        {
+          selector: "JSXOpeningElement[name.name='details']",
+          message: '<details> is forbidden: WebKit reports a CSP violation for it (TD-052).',
+        },
       ],
     },
   },

@@ -212,9 +212,12 @@ and by the header.
     font (no measuring in the page), the connected tables through dagre (left to right, referenced tables first, the
     line routes from dagre), tables without a line packed in rows below. The page measures that step and says it
     ("Tables: 150, relationships: 170, layout: 120 ms."); the acceptance of 09 is 150 tables in under 2 s. The diagram
-    shows at most 150 tables (03 section 2 E): a larger schema shows its first 150 by name and says so; **Tables** lists
-    every table with a filter, and **Show N tables** applies a new choice (a click on a checkbox does not lay out
-    again). **Lay out again** runs the layout again and fits the view.
+    shows at most 150 tables (03 section 2 E): a larger schema shows its first 150 by name and says so; **Tables** (a
+    button with `aria-expanded`, not a `<details>`: see CSP below) opens a list of every table with a filter, rendered
+    only while it is open, and **Show N tables** applies a new choice (a click on a checkbox does not lay out again).
+    **Lay out again** measures the layout again and fits the view; the boxes are rebuilt only when the new layout
+    places them differently (`sameLayout`; dagre is deterministic). The boxes get their translated texts from the
+    canvas, so 150 boxes hold no translation or xyflow hooks of their own.
   - **View:** pan with the mouse or touch, zoom with the wheel or the zoom buttons (**Zoom out**, the zoom level,
     **Zoom in**, **Fit to view**), an overview map. Boxes cannot be dragged or connected, nothing is selectable: the
     diagram only reads.
@@ -231,12 +234,18 @@ and by the header.
     canvas would pass 16 million pixels or 16 000 pixels a side (WebKit's limits); it does not go through an `<img>`
     of the SVG, which the CSP (`img-src 'self'`) refuses for `blob:` and `data:` URLs. The colors are the page's
     tokens, so a dark page saves a dark diagram.
-  - **CSP:** xyflow and d3 set their inline styles through the CSSOM (`element.style`, `style.setProperty`), which
-    `style-src 'self'` allows; xyflow's style sheet is bundled into the page's CSS. `global.css` gives every `svg`
+  - **CSP:** React, xyflow and d3 set their inline styles through the CSSOM (`element.style`, `style.setProperty`),
+    which `style-src 'self'` does not refuse; none of them adds a `<style>` element or a `style` attribute in the parts
+    used, and xyflow's style sheet is bundled into the page's CSS. WebKit refuses the user-agent style of a `<details>`
+    under the CSP and reports a violation that is not the `<select>` of TD-047 (CI run of the first STU-023 head,
+    `e2e/csp.spec.ts` probes it in each browser), so the product renders no `<details>` (an ESLint rule) and the choice
+    of tables is a disclosure button. `global.css` gives every `svg`
     `max-width: 100%`; xyflow's edge layers sit in a box without width, and an `svg` of width 0 is not drawn, so the
     diagram resets it for its own `svg` elements.
   - **Fail closed and U-1:** a table without a name or column list, a column without a name, a primary key or key
-    column list that is not a list of names, or a key without its referenced table refuses the whole answer
+    column list that is not a list of names, a key without columns, one whose referenced columns are not one per key
+    column (none at all is allowed: SQLite names none when the target has no primary key), or a key without its
+    referenced table refuses the whole answer
     (`studio.answer_invalid`); an answer for another schema or connection too. Every name is escaped and capped at 40
     characters (types at 24) with a visible "…".
 
@@ -256,8 +265,9 @@ TD-052.
 | `frontend/src/views/explorer/ExplorerView.test.tsx`, `tree.test.ts`, `src/api/explorer.test.ts` | the page: D-02, the tree keyboard, the filter, the detail tabs, U-1 escaping and caps, stale answers, focus, fail-closed parsing, no write |
 | `frontend/src/views/explorer/Definitions.test.tsx` | STU-022 in the page: one GET on the given connection per panel, the DDL escaped per line with its line breaks, the cut note, Copy DDL (exact text, refused clipboard), the policies' facts, reasons and rows (escaped), fail-closed answers, an answer for another object or connection refused, late answers dropped, the row count on request and its timeout |
 | `frontend/e2e/explorer-definitions.spec.ts` | the DDL and policies tabs and the row count in Chromium with axe (light/dark, en/de); the DDL region takes the focus and keeps hostile text escaped; Copy DDL; no write but the connection open |
-| `tests/security/test_explorer.py` (STU-023) | the diagram of `main` (503 tables, the view left out; columns, composite and plain primary keys, the key out), unknown and hostile schema names refused, the bound of `MAX_DIAGRAM_TABLES` (refused before any reflection), the route; on PostgreSQL the 502 tables of a schema, the key with its schema, keys into `public` and another schema named, a partitioned table's key once |
-| `frontend/src/views/explorer/er/layout.test.ts` | STU-023 acceptance: 150 tables with 300 keys and up to 30 columns laid out in under 2 s, measured on the layout (`timedScene`); no two boxes overlap, every line routed, keys marked, 20 columns and a count, names escaped and capped, keys to tables not shown kept out of the drawing, loose tables packed in rows, at most 150 tables |
-| `frontend/src/views/explorer/er/exportImage.test.ts`, `ErDiagram.test.tsx` | the SVG (a well-formed standalone document; no `style`, script, link or outside URL; XML-escaped hostile names), file names, the PNG's scale limits and drawing; the view: one GET per schema, the table alternative, the choice and its 150 bound, both exports, a refused PNG, problems, a connection that is gone, fail-closed answers |
+| `tests/security/test_explorer.py` (STU-023) | the diagram of `main` (503 tables, the view left out; columns, composite and plain primary keys, the key out), unknown and hostile schema names refused, an unknown schema rebuilding the catalog at most every few seconds, the bound of `MAX_DIAGRAM_TABLES` (refused before any reflection), the route; on PostgreSQL the 502 tables of a schema, the key with its schema, keys into `public` and another schema named, a partitioned table's key once |
+| `frontend/src/views/explorer/er/layout.perf.test.ts` | STU-023 acceptance: 150 tables with 300 keys and up to 30 columns laid out in under 2 s of wall time and of CPU time (`process.cpuUsage`), measured on the layout (`timedScene`); `npm test` runs it after the other tests, alone in one worker (Vitest project `perf`) |
+| `frontend/src/views/explorer/er/layout.test.ts` | the scene of 150 dense tables: no two boxes overlap, every line routed, keys marked, 20 columns and a count, names escaped and capped, keys to tables not shown kept out of the drawing, loose tables packed in rows, at most 150 tables, the same layout every time (`sameLayout`) |
+| `frontend/src/views/explorer/er/exportImage.test.ts`, `ErDiagram.test.tsx` | the SVG (a well-formed standalone document; no `style`, script, link or outside URL; XML-escaped hostile names; U+FFFE, U+FFFF, controls and lone surrogates shown as `\uXXXX` so it always parses), file names, the PNG's scale limits and drawing; the view: one GET per schema, the table alternative, the choice (a button with `aria-expanded`, no `<details>`; its list rendered only while open) and its 150 bound, both exports, a refused PNG, problems, a connection that is gone, fail-closed answers |
 | `frontend/e2e/er-diagram.spec.ts` | STU-023 in Chromium: axe (light/dark, en/de) on the diagram and its choice, 150 tables laid out in under 2 s as the page measures it, the SVG and PNG downloads (150 boxes, 170 lines, no remote reference, no request while saving), the keyboard path from a box to the tree; `e2e/backend.spec.ts` runs the diagram and both exports on a real server under the CSP |
 | `frontend/e2e/explorer.spec.ts` | the page in Chromium with axe (light/dark, en/de) and keyboard-only; `e2e/explorer-reference.spec.ts` against the parts and measurements reference apps (skipped without its variables, TD-041) |

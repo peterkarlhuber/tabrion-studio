@@ -252,3 +252,34 @@ export function timedScene(
   const scene = buildScene(schema, tables);
   return { scene, ms: now() - started };
 }
+
+/** Whether two scenes place the same boxes and route the same lines alike ("Lay out again" keeps the shown one). */
+export function sameLayout(a: ErScene, b: ErScene): boolean {
+  if (a.width !== b.width || a.height !== b.height) return false;
+  if (a.boxes.length !== b.boxes.length || a.lines.length !== b.lines.length) return false;
+  const boxesAlike = a.boxes.every((box, index) => {
+    const other = b.boxes[index];
+    return (
+      other !== undefined &&
+      other.id === box.id &&
+      other.x === box.x &&
+      other.y === box.y &&
+      other.width === box.width &&
+      other.height === box.height
+    );
+  });
+  return (
+    boxesAlike &&
+    a.lines.every((line, index) => {
+      const other = b.lines[index];
+      return (
+        other !== undefined &&
+        other.id === line.id &&
+        other.points.length === line.points.length &&
+        line.points.every(
+          (point, at) => other.points[at]?.x === point.x && other.points[at]?.y === point.y,
+        )
+      );
+    })
+  );
+}

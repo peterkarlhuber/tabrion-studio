@@ -155,6 +155,36 @@ def test_the_diagram_of_an_unknown_schema_is_refused(lite: tuple[Explorer, str, 
     assert raised.value.code == "studio.object_not_found"
 
 
+def test_the_diagram_of_an_unknown_schema_rebuilds_the_catalog_at_most_every_few_seconds(
+    lite: tuple[Explorer, str, Source],
+) -> None:
+    """L-2 of the STU-023 review: a schema created after the catalog was built gets the one throttled rebuild of
+    ``known`` before it is refused, so the diagram does not need the explorer's Refresh."""
+    explorer, connection_id, _ = lite
+    now = [1000.0]
+    explorer.clock = lambda: now[0]
+    builds: list[int] = []
+    real = explorer._catalog
+
+    def counting(*args: Any) -> dict[str, Any]:
+        builds.append(1)
+        return real(*args)
+
+    explorer._catalog = counting  # type: ignore[method-assign,assignment]
+    for _ in range(5):
+        with pytest.raises(ExplorerError):
+            explorer.diagram(connection_id, "later")
+    assert len(builds) == 1  # the first build; a catalog younger than 5 s is not rebuilt
+    now[0] += 6.0
+    with pytest.raises(ExplorerError) as raised:
+        explorer.diagram(connection_id, "later")
+    assert raised.value.code == "studio.object_not_found" and len(builds) == 2
+    # A schema the catalog knows is read without a rebuild.
+    now[0] += 6.0
+    assert explorer.diagram(connection_id, "main")["schema"] == "main"
+    assert len(builds) == 2
+
+
 def test_the_diagram_is_bounded(lite: tuple[Explorer, str, Source], monkeypatch: pytest.MonkeyPatch) -> None:
     """A schema with more tables than one answer holds is refused before anything is reflected."""
     explorer, connection_id, _ = lite

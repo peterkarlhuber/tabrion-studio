@@ -46,7 +46,7 @@ for (const theme of ['light', 'dark'] as Theme[]) {
       await expect(page.getByTestId('er-box')).toHaveCount(6);
       await expect(page.getByTestId('er-list-row')).toHaveCount(6);
       expect(await seriousViolations(page)).toEqual([]);
-      await page.getByTestId('er-choose').locator('summary').click();
+      await page.getByTestId('er-choose-toggle').click();
       await expect(page.getByTestId('er-choose-filter')).toBeVisible();
       expect(await seriousViolations(page)).toEqual([]);
       // PostgreSQL: the schema public, one key.
@@ -140,7 +140,7 @@ test('keyboard: a table of the diagram opens it in the explorer; the choice chan
   await openDiagram(page);
   await expect(page.getByTestId('er-box')).toHaveCount(6);
   // The boxes' buttons are in the tab order, in name order, right after the choice of tables.
-  await page.getByTestId('er-choose').locator('summary').focus();
+  await page.getByTestId('er-choose-toggle').focus();
   await page.keyboard.press('Tab');
   await expect(
     page
@@ -162,7 +162,7 @@ test('keyboard: a table of the diagram opens it in the explorer; the choice chan
   // The choice: clear it, pick two, apply.
   await page.getByTestId('explorer-view-diagram').click();
   await expect(page.getByTestId('er-box')).toHaveCount(6);
-  await page.getByTestId('er-choose').locator('summary').click();
+  await page.getByTestId('er-choose-toggle').click();
   await page.getByTestId('er-choose-none').click();
   await expect(page.getByTestId('er-choose-apply')).toHaveAttribute('aria-disabled', 'true');
   await page.getByRole('checkbox', { name: 'part', exact: true }).check();
@@ -172,7 +172,7 @@ test('keyboard: a table of the diagram opens it in the explorer; the choice chan
   await expect(page.getByTestId('er-status')).toHaveText(
     /^Tables: 2, relationships: 1, layout: \d+ ms\.$/,
   );
-  await expect(page.getByTestId('er-choose').locator('summary')).toHaveText('Tables: 2 of 6');
+  await expect(page.getByTestId('er-choose-toggle')).toHaveText('Tables: 2 of 6');
   // The table alternative: part's key to material, material referenced by part.
   const list = page.getByTestId('er-list');
   await expect(

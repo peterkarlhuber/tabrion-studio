@@ -434,6 +434,20 @@ describe('parseDiagram and fetchDiagram (STU-023)', () => {
       ],
     });
     expect(loose?.tables[0]?.foreignKeys[0]).toMatchObject({ name: null, referredSchema: 'audit' });
+    // SQLite names no referenced column when the target has no primary key: the key is kept.
+    const implicit = parseDiagram({
+      ...answer,
+      tables: [
+        {
+          ...answer.tables[1],
+          foreign_keys: [{ columns: ['a'], referred_table: 't', referred_columns: [] }],
+        },
+      ],
+    });
+    expect(implicit?.tables[0]?.foreignKeys[0]).toMatchObject({
+      columns: ['a'],
+      referredColumns: [],
+    });
   });
 
   const table = answer.tables[1] as Record<string, unknown>;
@@ -455,6 +469,17 @@ describe('parseDiagram and fetchDiagram (STU-023)', () => {
     [
       'a key with a column that is not a name',
       { ...answer, tables: [{ ...table, foreign_keys: [{ ...key, columns: [null] }] }] },
+    ],
+    [
+      'a key without columns',
+      { ...answer, tables: [{ ...table, foreign_keys: [{ ...key, columns: [] }] }] },
+    ],
+    [
+      'a key with more referenced columns than its own',
+      {
+        ...answer,
+        tables: [{ ...table, foreign_keys: [{ ...key, referred_columns: ['id', 'other'] }] }],
+      },
     ],
     [
       'a key name that is not text',

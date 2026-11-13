@@ -64,9 +64,28 @@ export const FONT_FAMILY =
 const FONT_SIZE = 12;
 const ARROW = 9;
 
-/** Text for XML content and attribute values. */
+/** Whether a code point is a `Char` of XML 1.0 (section 2.2): not a control but tab, newline and return; no surrogate; not U+FFFE or U+FFFF. */
+function xmlChar(code: number): boolean {
+  return (
+    code === 0x9 ||
+    code === 0xa ||
+    code === 0xd ||
+    (code >= 0x20 && code <= 0xd7ff) ||
+    (code >= 0xe000 && code <= 0xfffd) ||
+    (code >= 0x10000 && code <= 0x10ffff)
+  );
+}
+
+/**
+ * Text for XML content and attribute values. A code point XML 1.0 does not allow (U+FFFE, U+FFFF, a lone surrogate, a
+ * control that `visible()` did not already show) becomes a visible `\uXXXX`, so the document always parses.
+ */
 export function xml(value: string): string {
-  return value
+  return Array.from(value, (char) => {
+    const code = char.codePointAt(0) ?? 0;
+    return xmlChar(code) ? char : `\\u${code.toString(16).toUpperCase().padStart(4, '0')}`;
+  })
+    .join('')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

@@ -20,7 +20,7 @@ npm run build          # tsc -b && vite build -> frontend/dist
 npm run lint           # eslint (typescript-eslint strict, jsx-a11y, react-hooks)
 npm run format:check   # prettier
 npm run typecheck      # tsc -b (strict)
-npm test               # vitest
+npm test               # vitest: the unit tests, then the timed acceptance tests (*.perf.test.ts) alone in one worker
 ```
 
 Browser tests (Playwright with axe; STU-005, STU-051). They start the Vite development server themselves and use the

@@ -63,6 +63,35 @@ describe('the SVG', () => {
     expect(xml(`a&<>"'`)).toBe('a&amp;&lt;&gt;&quot;&apos;');
   });
 
+  it('stays a well-formed document with names XML does not allow (U+FFFE, U+FFFF, controls)', () => {
+    const odd = 'a\uFFFFb\u0001c\uFFFEd\uD800e';
+    const tables = buildScene(`s${odd}`, [
+      {
+        name: `t${odd}`,
+        kind: 'table',
+        columns: [{ name: `c${odd}`, type: `y${odd}`, nullable: false }],
+        primaryKey: [`c${odd}`],
+        foreignKeys: [
+          {
+            name: `k${odd}`,
+            columns: [`c${odd}`],
+            referredSchema: `s${odd}`,
+            referredTable: `t${odd}`,
+            referredColumns: [`c${odd}`],
+          },
+        ],
+      },
+    ]);
+    const svg = sceneSvg(tables, LIGHT_PALETTE, { ...TEXTS, title: `ER diagram of s${odd}` });
+    const parsed = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    expect(parsed.getElementsByTagName('parsererror')).toHaveLength(0);
+    // Each refused code point is shown, never dropped: the table, its column, its type, the key and the title.
+    expect(svg).toContain('>ta\\uFFFFb\\u0001c\\uFFFEd\\uD800e<');
+    expect(svg).toContain('<title>ka\\uFFFFb\\u0001c\\uFFFEd\\uD800e -&gt; ta\\uFFFFb');
+    expect(svg).toContain('<title>ER diagram of sa\\uFFFFb');
+    expect(xml('\uFFFF\uFFFE\u0000\t\n\r😀')).toBe('\\uFFFF\\uFFFE\\u0000\t\n\r😀');
+  });
+
   it('takes the colors of the page and nothing else', () => {
     document.documentElement.style.setProperty('--tb-color-bg', '#0e1013');
     document.documentElement.style.setProperty('--tb-color-text', 'url(https://example.invalid/x)');

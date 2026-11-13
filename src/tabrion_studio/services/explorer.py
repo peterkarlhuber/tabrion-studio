@@ -87,7 +87,10 @@ _PG_SCHEMA_FOREIGN_KEYS_SQL = (
     "ORDER BY sc.relname, con.conname"
 )
 #: STU-023: the most tables one diagram answer holds. The page draws at most 150 of them (03 section 2 E); a schema
-#: with more is listed for the page's selection, up to this bound, so that one answer stays a few megabytes at most.
+#: with more is listed for the page's selection, up to this bound. Each table comes with all its columns (the page
+#: lists 20 per box and the table alternative needs the key columns), so the size of an answer grows with the columns
+#: too: a few megabytes for typical schemas, more for one of 1000 tables with hundreds of columns each (PostgreSQL
+#: allows 1600). The read runs under the profile's statement timeout like every catalog read.
 MAX_DIAGRAM_TABLES = 1000
 #: The kinds a diagram shows: the ones that can have keys.
 _DIAGRAM_KINDS = ("table", "foreign_table")
@@ -270,14 +273,18 @@ class Explorer:
         every per-object route, also STU-022's DDL, policies and row count)."""
         doc = self.catalog(connection_id)
         kind = self._kind(doc, schema, name)
-        if kind is None and doc["cached"] and self.clock() - doc["built_at"] >= REBUILD_AFTER_S:
-            # Created since the catalog was built? One fresh look before refusing, at most every few seconds per
-            # connection, so that unknown names cannot keep the pool busy with rebuilds (L-3).
+        if kind is None and self._may_rebuild(doc):
             doc = self.catalog(connection_id, refresh=True)
             kind = self._kind(doc, schema, name)
         if kind is None:
             raise ExplorerError("studio.object_not_found")
         return self.registry.get(connection_id), kind
+
+    def _may_rebuild(self, doc: dict[str, Any]) -> bool:
+        """Whether a name the catalog does not know may get one fresh look before it is refused: created since the
+        catalog was built? At most every few seconds per connection, so that unknown names cannot keep the pool busy
+        with rebuilds (L-3 of stu-010; ``known`` and ``diagram``)."""
+        return bool(doc["cached"]) and self.clock() - doc["built_at"] >= REBUILD_AFTER_S
 
     @staticmethod
     def _kind(doc: dict[str, Any], schema: str, name: str) -> str | None:
@@ -477,10 +484,13 @@ class Explorer:
     def diagram(self, connection_id: object, schema: str) -> dict[str, Any]:
         """The tables of ``schema`` for the ER diagram: ``{connection_id, engine, schema, tables: [{name, kind,
         columns: [{name, type, nullable}], primary_key: [column], foreign_keys: [{name, columns, referred_schema,
-        referred_table, referred_columns}]}]}``, sorted by name. A schema outside the catalog is
-        ``studio.object_not_found``, one with more than :data:`MAX_DIAGRAM_TABLES` tables ``studio.diagram_too_large``.
-        Three catalog reads for the whole schema (columns, primary keys, foreign keys), never one per table."""
+        referred_table, referred_columns}]}]}``, sorted by name. A schema outside the catalog (after the one throttled
+        rebuild of ``known``) is ``studio.object_not_found``, one with more than :data:`MAX_DIAGRAM_TABLES` tables
+        ``studio.diagram_too_large``. Three catalog reads for the whole schema (columns, primary keys, foreign keys),
+        never one per table."""
         doc = self.catalog(connection_id)
+        if schema not in doc["schemas"] and self._may_rebuild(doc):
+            doc = self.catalog(connection_id, refresh=True)
         if schema not in doc["schemas"]:
             raise ExplorerError("studio.object_not_found")
         kinds = {

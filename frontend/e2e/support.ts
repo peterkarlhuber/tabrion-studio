@@ -221,6 +221,9 @@ export async function pageViolationEvents(page: Page): Promise<string[] | null> 
 /** No CSP report, no violation event and no page error so far (recordViolations), in every browser. */
 export async function expectNoViolations(page: Page, violations: string[]): Promise<void> {
   await settleConsole(page);
-  expect(violations).toEqual([]);
-  expect(await pageViolationEvents(page)).toEqual([]);
+  // Both channels in one assertion, so a failure shows the page's events (directive, target) with the reports.
+  expect({ reports: violations, events: await pageViolationEvents(page) }).toEqual({
+    reports: [],
+    events: [],
+  });
 }

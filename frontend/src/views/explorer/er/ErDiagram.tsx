@@ -10,8 +10,12 @@
  *   order; the view follows the focus. The canvas has its own zoom buttons. The same tables and keys are listed in a
  *   table below the diagram (08 section 4.7: "Tabellen-Alternative", required).
  * - **Exports:** SVG and PNG drawn in the page from the shown scene (`exportImage.ts`), no remote resource.
- * - **CSP:** xyflow and d3 set inline styles through the CSSOM only (`element.style`), which `style-src 'self'`
- *   allows; xyflow's style sheet is bundled. `e2e/backend.spec.ts` runs this view under Studio's CSP.
+ * - **CSP:** React, xyflow and d3 set their inline styles through `element.style` (the CSSOM), which `style-src
+ *   'self'` does not refuse; none of them adds a `<style>` element or a `style` attribute in the parts used (searched),
+ *   and xyflow's style sheet is bundled. Built-in elements are another matter in WebKit, which refuses the style of
+ *   their own shadow trees: a `<select>` (TD-047) and a `<details>`. The choice of tables is therefore a button with
+ *   `aria-expanded`, not a `<details>` (TD-052; ESLint forbids `<details>`). `e2e/backend.spec.ts` runs this view
+ *   under Studio's CSP in each browser.
  */
 import {
   BaseEdge,
@@ -31,7 +35,7 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Download, Maximize, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
+import { ChevronRight, Download, Maximize, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { memo, useEffect, useId, useMemo, useRef, useState, type FocusEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -53,6 +57,7 @@ import {
   defaultChoice,
   MAX_DIAGRAM_TABLES,
   NAME_CAP,
+  sameLayout,
   shown,
   timedScene,
   type ErBox,
@@ -78,9 +83,22 @@ type Load =
   | { status: 'problem'; problem: Problem }
   | { status: 'ready'; diagram: Diagram };
 
+/** The texts of every box, translated once per diagram (not one translation hook in each of 150 boxes). */
+interface BoxTexts {
+  foreign: string;
+  keys: Record<'pk' | 'fk' | 'pkfk', string>;
+}
+
 interface BoxData extends Record<string, unknown> {
   box: ErBox;
+  /** "Show … in the explorer". */
+  open: string;
+  /** "+ N more columns", or '' when every column is listed. */
+  more: string;
+  texts: BoxTexts;
   onShow: (name: string) => void;
+  /** Bring the box into view (it was reached with the keyboard). */
+  onFocusBox: (box: ErBox) => void;
 }
 interface LineData extends Record<string, unknown> {
   line: ErLine;
@@ -88,25 +106,14 @@ interface LineData extends Record<string, unknown> {
 type BoxNode = Node<BoxData, 'box'>;
 type LineEdge = Edge<LineData, 'line'>;
 
-function keyLabel(t: TFunction, mark: ErBox['columns'][number]['key']): string {
-  if (mark === 'pkfk') return t('explorer.er.pkfk');
-  if (mark === 'pk') return t('explorer.er.pk');
-  return mark === 'fk' ? t('explorer.er.fk') : '';
-}
-
-function TableBox({ data }: NodeProps<BoxNode>) {
-  const { t } = useTranslation();
-  const { setCenter, getZoom } = useReactFlow();
-  const { box, onShow } = data;
+/** Memoized, without hooks: a box renders again only when its own data changes. */
+const TableBox = memo(function TableBox({ data }: NodeProps<BoxNode>) {
+  const { box, open, more, texts, onShow, onFocusBox } = data;
   // Names and types are cut with "…" when the text needs more room than the layout gave it (larger text spacing,
   // 1.4.12): the whole text is in the title, as everywhere a cut is shown.
   // A box reached with the keyboard is brought into view (a pointer click is already where the user looks).
   const follow = (event: FocusEvent<HTMLButtonElement>) => {
-    if (!event.currentTarget.matches(':focus-visible')) return;
-    void setCenter(box.x + box.width / 2, box.y + box.height / 2, {
-      zoom: Math.max(getZoom(), 0.8),
-      duration: 0,
-    });
+    if (event.currentTarget.matches(':focus-visible')) onFocusBox(box);
   };
   return (
     <div className={styles.box} data-testid="er-box" data-table={box.id}>
@@ -127,13 +134,13 @@ function TableBox({ data }: NodeProps<BoxNode>) {
         className={`${styles.boxName} nodrag nopan`}
         onClick={() => onShow(box.id)}
         onFocus={follow}
-        aria-label={t('explorer.er.open', { name: box.label })}
+        aria-label={open}
       >
         <span className={styles.boxLabel} title={box.label}>
           {box.label}
         </span>
         {box.kind === 'foreign_table' ? (
-          <span className={styles.boxKind}>{t('explorer.er.foreign')}</span>
+          <span className={styles.boxKind}>{texts.foreign}</span>
         ) : null}
       </button>
       <ul className={styles.columns}>
@@ -149,7 +156,7 @@ function TableBox({ data }: NodeProps<BoxNode>) {
                   <span aria-hidden="true">
                     {column.key === 'pkfk' ? 'PF' : column.key.toUpperCase()}
                   </span>
-                  <span className="tb-sr-only">{keyLabel(t, column.key)}</span>
+                  <span className="tb-sr-only">{texts.keys[column.key]}</span>
                 </>
               )}
             </span>
@@ -157,13 +164,11 @@ function TableBox({ data }: NodeProps<BoxNode>) {
             <span className={styles.columnType}>{column.type}</span>
           </li>
         ))}
-        {box.hidden > 0 ? (
-          <li className={styles.more}>{t('explorer.er.more', { count: box.hidden })}</li>
-        ) : null}
+        {more !== '' ? <li className={styles.more}>{more}</li> : null}
       </ul>
     </div>
   );
-}
+});
 
 function pathOf(line: ErLine): string {
   return line.points
@@ -216,43 +221,61 @@ function ZoomBar() {
   );
 }
 
-/** A new scene (another choice, "Lay out again") is fitted into the view once xyflow has its boxes. */
-function FitOnChange({ scene }: { scene: ErScene }) {
+/** A new scene (another choice) or "Lay out again" (`runs`) is fitted into the view once xyflow has its boxes. */
+function FitOnChange({ scene, runs }: { scene: ErScene; runs: number }) {
   const { fitView } = useReactFlow();
   const ready = useNodesInitialized();
   useEffect(() => {
     if (ready) void fitView({ padding: 0.08, maxZoom: 1, duration: 0 });
-  }, [ready, scene, fitView]);
+  }, [ready, scene, runs, fitView]);
   return null;
 }
 
 /** Memoized: editing the choice of tables re-renders the panel, not the 150 boxes. */
 const Canvas = memo(function Canvas({
   scene,
+  runs,
   label,
   onShow,
 }: {
   scene: ErScene;
+  /** How often "Lay out again" ran on this scene: the view is fitted again, the boxes stay. */
+  runs: number;
   label: string;
   onShow: (name: string) => void;
 }) {
   const { t } = useTranslation();
-  const nodes = useMemo<BoxNode[]>(
-    () =>
-      scene.boxes.map((box) => ({
-        id: box.id,
-        type: 'box',
-        position: { x: box.x, y: box.y },
-        width: box.width,
-        height: box.height,
-        data: { box, onShow },
-        draggable: false,
-        selectable: false,
-        connectable: false,
-        focusable: false,
-      })),
-    [scene, onShow],
-  );
+  const { setCenter, getZoom } = useReactFlow();
+  const nodes = useMemo<BoxNode[]>(() => {
+    const texts: BoxTexts = {
+      foreign: t('explorer.er.foreign'),
+      keys: { pk: t('explorer.er.pk'), fk: t('explorer.er.fk'), pkfk: t('explorer.er.pkfk') },
+    };
+    const onFocusBox = (box: ErBox) =>
+      void setCenter(box.x + box.width / 2, box.y + box.height / 2, {
+        zoom: Math.max(getZoom(), 0.8),
+        duration: 0,
+      });
+    return scene.boxes.map((box) => ({
+      id: box.id,
+      type: 'box',
+      position: { x: box.x, y: box.y },
+      width: box.width,
+      height: box.height,
+      data: {
+        box,
+        open: t('explorer.er.open', { name: box.label }),
+        more: box.hidden > 0 ? t('explorer.er.more', { count: box.hidden }) : '',
+        texts,
+        onShow,
+        onFocusBox,
+      },
+      draggable: false,
+      selectable: false,
+      connectable: false,
+      focusable: false,
+    }));
+  }, [scene, onShow, t, setCenter, getZoom]);
   const edges = useMemo<LineEdge[]>(
     () =>
       scene.lines.map((line) => ({
@@ -303,7 +326,7 @@ const Canvas = memo(function Canvas({
         ariaLabelConfig={aria}
         className={styles.flow}
       >
-        <FitOnChange scene={scene} />
+        <FitOnChange scene={scene} runs={runs} />
         <ZoomBar />
         <MiniMap
           pannable
@@ -459,13 +482,20 @@ export function ErDiagram({
   const { t } = useTranslation();
   const schemaId = useId();
   const filterId = useId();
+  const chooseId = useId();
   const [schema, setSchema] = useState(() => defaultSchema(catalog));
   const [answer, setAnswer] = useState<Answer | null>(null);
   /** The tables in the diagram, and the choice being edited under "Tables". */
   const [chosen, setChosen] = useState<Set<string>>(() => new Set());
   const [draft, setDraft] = useState<Set<string>>(() => new Set());
   const [filter, setFilter] = useState('');
-  const [relayout, setRelayout] = useState(0);
+  const [choosing, setChoosing] = useState(false);
+  /** "Lay out again" on the shown choice: the count belongs to that choice (a new choice starts at 0). */
+  const [relayout, setRelayout] = useState<{ of: ReadonlySet<string> | null; runs: number }>({
+    of: null,
+    runs: 0,
+  });
+  const runs = relayout.of === chosen ? relayout.runs : 0;
   const [message, setMessage] = useState('');
   const [exportProblem, setExportProblem] = useState('');
   const onGoneRef = useRef(onGone);
@@ -507,15 +537,26 @@ export function ErDiagram({
         ? { status: 'ready', diagram: current.diagram }
         : { status: 'problem', problem: current.problem };
   const diagram = current?.ok === true ? current.diagram : null;
-  // The layout, measured (09 STU-023: 150 tables in under 2 s); `relayout` runs it again ("Lay out again").
-  const laidOut = useMemo(
-    () =>
-      diagram === null
-        ? null
-        : { ...timedScene(diagram.schema, chosenTables(diagram, chosen)), relayout },
-    [diagram, chosen, relayout],
+  // The layout, measured (09 STU-023: 150 tables in under 2 s). "Lay out again" measures it again; the boxes and
+  // lines are rebuilt only when the new layout places them differently (dagre is deterministic, so it does not).
+  const first = useMemo(
+    () => (diagram === null ? null : timedScene(diagram.schema, chosenTables(diagram, chosen))),
+    [diagram, chosen],
   );
-  const scene = laidOut?.scene ?? null;
+  const again = useMemo(
+    () =>
+      diagram === null || runs === 0
+        ? null
+        : timedScene(diagram.schema, chosenTables(diagram, chosen)),
+    [diagram, chosen, runs],
+  );
+  const laidOut = again ?? first;
+  const scene =
+    first === null
+      ? null
+      : again === null || sameLayout(first.scene, again.scene)
+        ? first.scene
+        : again.scene;
 
   const show = useMemo(
     () => (name: string) => {
@@ -616,7 +657,11 @@ export function ErDiagram({
             icon={<RefreshCw />}
             aria-disabled={scene === null || undefined}
             onClick={() => {
-              if (scene !== null) setRelayout((n) => n + 1);
+              if (scene !== null)
+                setRelayout((current) => ({
+                  of: chosen,
+                  runs: (current.of === chosen ? current.runs : 0) + 1,
+                }));
             }}
             data-testid="er-relayout"
           >
@@ -676,85 +721,101 @@ export function ErDiagram({
         </p>
       ) : null}
       {diagram !== null && total > 0 ? (
-        <details className={styles.choose} data-testid="er-choose">
-          <summary>{t('explorer.er.choose.summary', { count: chosen.size, total })}</summary>
-          <div className={styles.chooseBody}>
-            <div className={styles.chooseTools}>
-              <label htmlFor={filterId} className="tb-sr-only">
-                {t('explorer.er.choose.filter')}
-              </label>
-              <input
-                id={filterId}
-                type="search"
-                className={connectionStyles.input}
-                placeholder={t('explorer.er.choose.filter')}
-                value={filter}
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => setFilter(event.target.value)}
-                data-testid="er-choose-filter"
-              />
-              <Button
-                size="sm"
-                onClick={() => setDraft(defaultChoice(diagram))}
-                data-testid="er-choose-all"
-              >
-                {t('explorer.er.choose.all', { max: MAX_DIAGRAM_TABLES })}
-              </Button>
-              <Button size="sm" onClick={() => setDraft(new Set())} data-testid="er-choose-none">
-                {t('explorer.er.choose.none')}
-              </Button>
-              <Button
-                size="sm"
-                variant="primary"
-                aria-disabled={!changed || draft.size === 0 || undefined}
-                onClick={() => {
-                  if (changed && draft.size > 0) setChosen(new Set(draft));
-                }}
-                data-testid="er-choose-apply"
-              >
-                {t('explorer.er.choose.apply', { count: draft.size })}
-              </Button>
+        // A button that shows and hides the choice, not <details>: WebKit refuses the inline style of the
+        // <details> element's own shadow tree under style-src 'self' and reports a CSP violation (TD-052).
+        <div className={styles.choose} data-testid="er-choose">
+          <button
+            type="button"
+            className={styles.chooseToggle}
+            aria-expanded={choosing}
+            aria-controls={choosing ? chooseId : undefined}
+            onClick={() => setChoosing((open) => !open)}
+            data-testid="er-choose-toggle"
+          >
+            <ChevronRight aria-hidden="true" className={styles.chooseIcon} />
+            {t('explorer.er.choose.summary', { count: chosen.size, total })}
+          </button>
+          {/* Rendered only while open: a closed choice costs no rows (150 labels) in the diagram's commit. */}
+          {choosing ? (
+            <div id={chooseId} className={styles.chooseBody}>
+              <div className={styles.chooseTools}>
+                <label htmlFor={filterId} className="tb-sr-only">
+                  {t('explorer.er.choose.filter')}
+                </label>
+                <input
+                  id={filterId}
+                  type="search"
+                  className={connectionStyles.input}
+                  placeholder={t('explorer.er.choose.filter')}
+                  value={filter}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setFilter(event.target.value)}
+                  data-testid="er-choose-filter"
+                />
+                <Button
+                  size="sm"
+                  onClick={() => setDraft(defaultChoice(diagram))}
+                  data-testid="er-choose-all"
+                >
+                  {t('explorer.er.choose.all', { max: MAX_DIAGRAM_TABLES })}
+                </Button>
+                <Button size="sm" onClick={() => setDraft(new Set())} data-testid="er-choose-none">
+                  {t('explorer.er.choose.none')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="primary"
+                  aria-disabled={!changed || draft.size === 0 || undefined}
+                  onClick={() => {
+                    if (changed && draft.size > 0) setChosen(new Set(draft));
+                  }}
+                  data-testid="er-choose-apply"
+                >
+                  {t('explorer.er.choose.apply', { count: draft.size })}
+                </Button>
+              </div>
+              <p className={connectionStyles.hint} aria-live="polite">
+                {draft.size === 0
+                  ? t('explorer.er.choose.empty')
+                  : full
+                    ? t('explorer.er.choose.limit', { max: MAX_DIAGRAM_TABLES })
+                    : ''}
+              </p>
+              <fieldset className={styles.chooseList}>
+                <legend className="tb-sr-only">{t('explorer.er.choose.legend')}</legend>
+                {listed.map((table) => {
+                  const checked = draft.has(table.name);
+                  return (
+                    <label key={table.name} className={styles.chooseItem}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={!checked && full}
+                        onChange={() =>
+                          setDraft((current) => {
+                            const next = new Set(current);
+                            if (next.has(table.name)) next.delete(table.name);
+                            else if (next.size < MAX_DIAGRAM_TABLES) next.add(table.name);
+                            return next;
+                          })
+                        }
+                      />
+                      <span>{shown(table.name, NAME_CAP)}</span>
+                    </label>
+                  );
+                })}
+              </fieldset>
             </div>
-            <p className={connectionStyles.hint} aria-live="polite">
-              {draft.size === 0
-                ? t('explorer.er.choose.empty')
-                : full
-                  ? t('explorer.er.choose.limit', { max: MAX_DIAGRAM_TABLES })
-                  : ''}
-            </p>
-            <fieldset className={styles.chooseList}>
-              <legend className="tb-sr-only">{t('explorer.er.choose.legend')}</legend>
-              {listed.map((table) => {
-                const checked = draft.has(table.name);
-                return (
-                  <label key={table.name} className={styles.chooseItem}>
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={!checked && full}
-                      onChange={() =>
-                        setDraft((current) => {
-                          const next = new Set(current);
-                          if (next.has(table.name)) next.delete(table.name);
-                          else if (next.size < MAX_DIAGRAM_TABLES) next.add(table.name);
-                          return next;
-                        })
-                      }
-                    />
-                    <span>{shown(table.name, NAME_CAP)}</span>
-                  </label>
-                );
-              })}
-            </fieldset>
-          </div>
-        </details>
+          ) : null}
+        </div>
       ) : null}
       {diagram !== null && scene !== null && scene.boxes.length > 0 ? (
         <>
           <ReactFlowProvider>
             <Canvas
               scene={scene}
+              runs={runs}
               label={t('explorer.er.canvas', {
                 schema: shown(schema, NAME_CAP),
                 count: scene.boxes.length,

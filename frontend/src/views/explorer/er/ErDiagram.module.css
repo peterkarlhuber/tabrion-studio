@@ -31,10 +31,26 @@
   flex-wrap: wrap;
   gap: var(--tb-space-2);
 }
-.choose summary {
-  cursor: pointer;
+.chooseToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--tb-space-1);
   min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-weight: var(--tb-weight-semibold);
+  cursor: pointer;
+}
+.chooseIcon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.chooseToggle[aria-expanded='true'] .chooseIcon {
+  transform: rotate(90deg);
 }
 .chooseBody {
   display: flex;

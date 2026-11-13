@@ -461,6 +461,10 @@ test('STU-023: the ER diagram of a real SQLite database, its exports, under the 
   await expect(page.getByTestId('er-canvas').locator('.react-flow__edge-path')).toHaveCount(3);
   await page.getByTestId('er-zoom-in').click();
   await page.getByTestId('er-fit').click();
+  // The choice of tables, opened: a button and the list it shows (no <details>, which WebKit refuses, TD-052).
+  await page.getByTestId('er-choose-toggle').click();
+  await expect(page.getByTestId('er-choose-toggle')).toHaveAttribute('aria-expanded', 'true');
+  await expect(page.getByRole('checkbox', { name: 'note', exact: true })).toBeChecked();
   for (const scheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme: scheme });
     expect(await seriousViolations(page)).toEqual([]);

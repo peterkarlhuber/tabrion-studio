@@ -593,7 +593,11 @@ export function parseDiagram(body: unknown): Diagram | null {
         columnsOut === null ||
         referred === null ||
         keyName === INVALID ||
-        referredSchema === INVALID
+        referredSchema === INVALID ||
+        columnsOut.length === 0 ||
+        // One referenced column per key column; none at all when SQLite names no target column (a referenced table
+        // without a primary key, or one that does not exist).
+        (referred.length > 0 && referred.length !== columnsOut.length)
       ) {
         return null;
       }

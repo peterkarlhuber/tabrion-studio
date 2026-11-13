@@ -1,7 +1,7 @@
 /**
- * STU-023: the ER diagram's scene. The acceptance of 09 ("150 Tabellen < 2 s Layout") is measured here on the layout
- * itself (`timedScene`, `performance.now()` around boxes, dagre and packing), with a dense schema: 150 tables of up to
- * 30 columns and 300 keys. The browser measures it again in `e2e/er-diagram.spec.ts`.
+ * STU-023: the ER diagram's scene. The acceptance of 09 ("150 Tabellen < 2 s Layout") is timed in
+ * `layout.perf.test.ts`, alone in one worker (`npm test`, project "perf"); the browser measures it again in
+ * `e2e/er-diagram.spec.ts`.
  */
 import type { Diagram, DiagramTable } from '../../../api/explorer';
 import { HOSTILE_TABLE, largeDiagram } from '../../../harness/explorer';
@@ -13,65 +13,17 @@ import {
   GEOMETRY,
   MAX_BOX_COLUMNS,
   MAX_DIAGRAM_TABLES,
+  sameLayout,
   timedScene,
   type ErBox,
 } from './layout';
-
-/** A fixed pseudo-random sequence (the same schema in every run). */
-function random(seed: number): () => number {
-  let state = seed;
-  return () => {
-    state = (state * 1_103_515_245 + 12_345) % 2_147_483_648;
-    return state / 2_147_483_648;
-  };
-}
-
-/** `count` tables; each references up to three earlier ones (some twice, one itself), 300 keys in all for 150. */
-function denseSchema(count: number): DiagramTable[] {
-  const next = random(23);
-  const name = (index: number) =>
-    `table_${String(index).padStart(3, '0')}_${'x'.repeat(index % 13)}`;
-  return Array.from({ length: count }, (_, index) => {
-    const keys = index === 0 ? 0 : Math.min(index, index % 5 === 0 ? 4 : 2);
-    const foreignKeys = Array.from({ length: keys }, (_, key) => ({
-      name: `fk_${index}_${key}`,
-      columns: [`ref_${key}`],
-      referredSchema: 'public',
-      referredTable: name(index === 7 && key === 0 ? 7 : Math.floor(next() * index)),
-      referredColumns: ['id'],
-    }));
-    const columns = 4 + Math.floor(next() * 27);
-    return {
-      name: name(index),
-      kind: 'table',
-      columns: Array.from({ length: columns }, (_, column) => ({
-        name: column === 0 ? 'id' : column <= keys ? `ref_${column - 1}` : `column_${column}`,
-        type: column % 3 === 0 ? 'TIMESTAMP WITH TIME ZONE' : 'BIGINT',
-        nullable: column > 0,
-      })),
-      primaryKey: ['id'],
-      foreignKeys,
-    };
-  });
-}
+import { denseSchema } from './denseSchema';
 
 function overlaps(a: ErBox, b: ErBox): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
-describe('the layout of 150 tables (09 STU-023 acceptance)', () => {
-  it('takes under 2 s, measured on the layout itself', () => {
-    const tables = denseSchema(150);
-    expect(tables.reduce((sum, table) => sum + table.foreignKeys.length, 0)).toBeGreaterThanOrEqual(
-      300,
-    );
-    const { scene, ms } = timedScene('public', tables);
-    expect(scene.boxes).toHaveLength(150);
-    expect(scene.lines.length).toBeGreaterThanOrEqual(300);
-    expect(ms).toBeGreaterThan(0);
-    expect(ms).toBeLessThan(2000);
-  });
-
+describe('the layout of 150 tables', () => {
   it('places every box apart, inside the scene, and routes every line', () => {
     const { scene } = timedScene('public', denseSchema(150));
     for (const [index, box] of scene.boxes.entries()) {
@@ -87,6 +39,20 @@ describe('the layout of 150 tables (09 STU-023 acceptance)', () => {
   it('uses the time the clock gives', () => {
     const times = [10, 25.5];
     expect(timedScene('audit', [], () => times.shift() ?? 0).ms).toBe(15.5);
+  });
+
+  it('is the same every time, so "Lay out again" keeps the shown boxes', () => {
+    const tables = denseSchema(40);
+    const first = buildScene('public', tables);
+    expect(sameLayout(first, buildScene('public', tables))).toBe(true);
+    const moved = buildScene('public', tables);
+    (moved.boxes[3] as ErBox).x += 1;
+    expect(sameLayout(first, moved)).toBe(false);
+    const rerouted = buildScene('public', tables);
+    const point = rerouted.lines[0]?.points[0];
+    if (point !== undefined) point.y += 1;
+    expect(sameLayout(first, rerouted)).toBe(false);
+    expect(sameLayout(first, buildScene('public', tables.slice(1)))).toBe(false);
   });
 });
 
