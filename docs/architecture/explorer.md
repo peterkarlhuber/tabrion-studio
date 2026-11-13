@@ -63,7 +63,7 @@ catalog and Studio always quotes it as an identifier (`quoted_name(..., quote=Tr
 included.
 
 **Fixed catalog search path.** On PostgreSQL every catalog read of Studio's own (`fetch` with `catalog=True`, the
-default, and the reflection of `tabrion_compat.inspector`) first sets `search_path` to `pg_catalog, pg_temp` for its
+default, and the reflection through `Database.inspector()`, pinned by `tabrion_compat.pin_catalog_path`) first sets `search_path` to `pg_catalog, pg_temp` for its
 own read transaction (`set_config(..., true)`, `tabrion_compat.CATALOG_SEARCH_PATH`). This hardens Studio's fixed
 catalog text against object resolution through user schemas: names in it resolve in `pg_catalog` only, and the
 flagged queries also name `pg_catalog` operators and aggregates explicitly. The setting is transaction-local and is
@@ -138,11 +138,12 @@ it is a bound value, never part of a statement's text. A schema with more than 1
 refused with `studio.diagram_too_large` (422) before anything is reflected, so one answer stays a few megabytes at
 most; the page draws at most 150 tables anyway (03 section 2 E).
 
-## Reflection on tabrion 0.1
+## Reflection
 
-The spec uses `Database.inspector()` (tabrion 0.2, TAB-033). Until then, `services/tabrion_compat.inspector` builds
-a SQLAlchemy `Inspector` on the connection of a `Database.read()` transaction. The move to 0.2 changes that function
-only (TODO TD-013). The extensions and the row estimate are fixed statements of Studio's own, with bound parameters,
+Reflection uses tabrion 0.2's `Database.inspector()` (TAB-033; since TD-013, before it the shim
+`tabrion_compat.inspector`): a SQLAlchemy `Inspector` on the connection of its own `Database.read()` transaction.
+On PostgreSQL, `tabrion_compat.pin_catalog_path` sets the fixed catalog search path on that connection before the
+first catalog query. The extensions and the row estimate are fixed statements of Studio's own, with bound parameters,
 sent through `OpenConnection.fetch`. The SQLite facts are reading pragmas, which Studio's authorizer allows.
 
 Database values such as defaults, check texts and comments are the database's own text. The page shows them as text.

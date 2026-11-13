@@ -159,6 +159,7 @@ def test_a_plain_password_is_refused_without_echo(env: Env) -> None:
         ({**PG, "port": 70000}, [{"pointer": "profile.port", "code": "config.range"}]),
         ({**SQLITE, "host": "h"}, [{"pointer": "profile.host", "code": "config.not_for_engine"}]),
         ({**SQLITE, "path": "//attacker.example/s/x.db"}, [{"pointer": "profile.path", "code": "config.network_path"}]),
+        ({**SQLITE, "path": "%2F%2Fhost/s/x.db"}, [{"pointer": "profile.path", "code": "config.url_character"}]),
         ({**PG, f"x-{CANARY}": 1}, [{"pointer": "profile", "code": "config.unknown_key"}]),
         ({**PG, "name": "a\nb"}, [{"pointer": "profile.name", "code": "config.control_character"}]),
         ("not a profile", [{"pointer": "profile", "code": "config.type"}]),
