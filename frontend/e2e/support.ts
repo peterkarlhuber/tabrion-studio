@@ -1,5 +1,5 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page } from '@playwright/test';
+import { expect, type ConsoleMessage, type Page } from '@playwright/test';
 
 export type Theme = 'light' | 'dark';
 
@@ -66,4 +66,54 @@ export function foreignRequests(page: Page, origin: () => string): string[] {
   watch(page);
   context.on('page', watch);
   return foreign;
+}
+
+/**
+ * The console report WebKit logs once for every `<select>` a page under `style-src 'self'` creates (TD-047). It is
+ * the browser's own: `e2e/csp.spec.ts` shows it on a page with nothing but a plain `<select>` under Studio's CSP, and
+ * no report for the other form controls or in Chromium and Firefox. Studio's markup has no inline style for it to
+ * refuse (its styles are CSS files and constructed style sheets).
+ */
+export const WEBKIT_SELECT_CSP_REPORT =
+  "Refused to apply a stylesheet because its hash, its nonce, or 'unsafe-inline' does not appear in the style-src directive of the Content Security Policy.";
+
+/**
+ * Whether a console message is WebKit's report for a `<select>` and nothing else: only in WebKit, an error with
+ * exactly that text, reported for the document itself at line 0, column 0 (a refused `<style>` or `style` attribute
+ * in Studio's HTML would name its line). The same flows run in Chromium and Firefox with no exception, so a real
+ * inline style of Studio still fails there.
+ */
+export function isWebKitSelectReport(page: Page, message: ConsoleMessage): boolean {
+  if (page.context().browser()?.browserType().name() !== 'webkit') return false;
+  const { url, lineNumber, columnNumber } = message.location();
+  let sameOrigin: boolean;
+  try {
+    sameOrigin = new URL(url).origin === new URL(page.url()).origin;
+  } catch {
+    sameOrigin = false;
+  }
+  return (
+    message.type() === 'error' &&
+    message.text() === WEBKIT_SELECT_CSP_REPORT &&
+    sameOrigin &&
+    lineNumber === 0 &&
+    columnNumber === 0
+  );
+}
+
+/**
+ * Record the page's CSP reports and its errors. Chromium and WebKit begin a report with "Refused to", Firefox with
+ * "Content-Security-Policy:" (hyphenated); `e2e/csp.spec.ts` shows that each browser's report is heard. The only
+ * report left out is WebKit's own for a `<select>` (isWebKitSelectReport).
+ */
+export function recordViolations(page: Page): string[] {
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    const text = message.text();
+    if (!/Content[- ]Security[- ]Policy|Refused to/i.test(text)) return;
+    if (isWebKitSelectReport(page, message)) return;
+    violations.push(text);
+  });
+  page.on('pageerror', (error) => violations.push(String(error)));
+  return violations;
 }

@@ -64,8 +64,23 @@ for (const theme of ['light', 'dark'] as Theme[]) {
 test('the DDL region takes the focus, keeps hostile text escaped, and Copy DDL copies the exact text', async ({
   page,
   context,
+  browserName,
 }) => {
-  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  // Only Chromium knows the clipboard permissions, so a page can read the clipboard back there alone (TD-047). In
+  // every browser the text the page writes is recorded on its way to the real clipboard, whose answer still decides
+  // what the page says.
+  if (browserName === 'chromium')
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.addInitScript(() => {
+    const written: string[] = [];
+    (window as unknown as { written: string[] }).written = written;
+    const clipboard = navigator.clipboard;
+    const writeText = clipboard.writeText.bind(clipboard);
+    clipboard.writeText = (text: string) => {
+      written.push(text);
+      return writeText(text);
+    };
+  });
   await openHarness(page, { scenario: 'explorer', path: '/explorer' });
   await page.getByTestId('explorer-open').click();
   await page.getByRole('treeitem', { name: /^notes/ }).click();
@@ -80,8 +95,16 @@ test('the DDL region takes the focus, keeps hostile text escaped, and Copy DDL c
   await expect(page.getByRole('button', { name: 'Copy DDL' })).toBeFocused();
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('ddl-copy-status')).toHaveText('The DDL is on the clipboard.');
-  const copied = await page.evaluate(() => navigator.clipboard.readText());
-  expect(copied).toContain('"notes‮txt.exe\nx"');
+  // Exactly the DDL the server sent (src/harness/explorer.ts), control characters and markup included, once.
+  expect(await page.evaluate(() => (window as unknown as { written: string[] }).written)).toEqual([
+    'CREATE TABLE "notes\u202etxt.exe\nx" (body\u202eevil TEXT) -- \\ \r<b>bold</b>;\n\n',
+  ]);
+  if (browserName === 'chromium') {
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    expect(copied).toBe(
+      'CREATE TABLE "notes\u202etxt.exe\nx" (body\u202eevil TEXT) -- \\ \r<b>bold</b>;\n\n',
+    );
+  }
   const sent = await writes(page);
   expect(sent.map((w) => `${w.method} ${w.url}`)).toEqual(['POST /api/connections']);
 });

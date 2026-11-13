@@ -336,9 +336,11 @@ test('a click beside a focused link or button does not activate it through its t
 }) => {
   await open(page, {});
   const link = page.getByRole('link', { name: 'Connections' });
-  // Keyboard focus shows the tooltip (:focus-visible) over the main area.
-  await page.keyboard.press('Shift');
-  await link.focus();
+  // Keyboard focus shows the tooltip (:focus-visible) over the main area. It is reached with Tab: only Chromium
+  // also treats element.focus() after a lone Shift as keyboard focus (TD-047).
+  await page.getByRole('link', { name: 'Start' }).focus();
+  await page.keyboard.press('Tab');
+  await expect(link).toBeFocused();
   expect(await link.evaluate(tooltipOf)).toBe('"Connections"');
   const box = await link.boundingBox();
   if (box === null) throw new Error('no link box');
@@ -348,8 +350,10 @@ test('a click beside a focused link or button does not activate it through its t
   await expect(page.getByRole('heading', { level: 1 })).not.toHaveText('Connections');
 
   const button = page.getByTestId('open-palette');
-  await page.keyboard.press('Shift');
-  await button.focus();
+  // After the mouse click: back to the button with the keyboard, from its neighbor.
+  await page.getByTestId('open-help').focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(button).toBeFocused();
   expect(await button.evaluate(tooltipOf)).not.toBeNull();
   const buttonBox = await button.boundingBox();
   if (buttonBox === null) throw new Error('no button box');

@@ -21,7 +21,7 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { foreignRequests, seriousViolations } from './support';
+import { foreignRequests, recordViolations, seriousViolations } from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-studio');
@@ -92,11 +92,7 @@ function newLink(): string {
 }
 
 async function signIn(page: Page): Promise<string[]> {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
-  });
-  page.on('pageerror', (error) => violations.push(String(error)));
+  const violations = recordViolations(page);
   const link = links.shift();
   expect(link, 'one sign-in link per test').toBeDefined();
   await page.goto(link as string);

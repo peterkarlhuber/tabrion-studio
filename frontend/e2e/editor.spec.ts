@@ -5,6 +5,8 @@
  * 100 000 rows within the memory limit of 03 section 10 (300 MB), and axe in light/dark x en/de.
  * The same flows against a real `tabrion-studio` are in e2e/editor-backend.spec.ts.
  */
+import { readFileSync } from 'node:fs';
+
 import { test, expect, type Page } from '@playwright/test';
 
 import { openHarness, seriousViolations, type Theme } from './support';
@@ -131,11 +133,30 @@ test('Tab leaves the editor and Shift+Tab returns; the shortcuts describe the te
   await expect(text).toHaveAccessibleDescription(
     /Ctrl\+(↵|Enter) runs the statement at the cursor/,
   );
+  // With a result there is a control after the editor, so Tab has somewhere to go in every browser: past the last
+  // control of the page Chromium leaves for its own UI, while Firefox has none and keeps the focus (TD-047).
+  await focusEditor(page);
+  await page.keyboard.press('Control+Enter');
+  await expect(page.getByRole('grid', { name: 'Result 1' })).toBeVisible();
+  await page.evaluate(() => {
+    const seen: boolean[] = [];
+    (window as unknown as { tabKeys: boolean[] }).tabKeys = seen;
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Tab') seen.push(event.defaultPrevented);
+    });
+  });
   await focusEditor(page);
   await page.keyboard.press('Tab');
-  await expect(page.locator('.cm-content')).not.toBeFocused();
+  // The editor leaves Tab to the browser (not prevented, no tab inserted) and the focus goes to the next control.
+  await expect(page.getByTestId('export-open')).toBeFocused();
+  await expect(page.locator('.cm-content')).toHaveText('select 1');
   await page.keyboard.press('Shift+Tab');
   await expect(page.locator('.cm-content')).toBeFocused();
+  await expect(page.locator('.cm-content')).toHaveText('select 1');
+  expect(await page.evaluate(() => (window as unknown as { tabKeys: boolean[] }).tabKeys)).toEqual([
+    false,
+    false,
+  ]);
 });
 
 test('while connecting: a second run starts nothing, Ctrl+. and closing the tab start no query (M-2)', async ({
@@ -326,6 +347,7 @@ test('a result cut at its row limit loads up to the max_rows setting', async ({ 
 
 test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab', async ({
   page,
+  browserName,
 }) => {
   await openEditor(page, 'select 1');
   await page.keyboard.press('Alt+t');
@@ -347,10 +369,25 @@ test('tabs: Alt+T opens one, drafts survive a reload, D-06 guards a changed tab'
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('editor-tab')).toHaveCount(2);
   await page.keyboard.press('Alt+w');
+  // The name the page offers is the link's `download` attribute; the link is gone right after its click.
+  await page.evaluate(() => {
+    const offered: string[] = [];
+    (window as unknown as { offered: string[] }).offered = offered;
+    const click = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      if (this.hasAttribute('download')) offered.push(this.download);
+      click.call(this);
+    };
+  });
   const downloading = page.waitForEvent('download');
   await dialog.getByRole('button', { name: 'Save' }).click();
   const file = await downloading;
-  expect(file.suggestedFilename()).toBe('Query 2.sql');
+  expect(await page.evaluate(() => (window as unknown as { offered: string[] }).offered)).toEqual([
+    'Query 2.sql',
+  ]);
+  // WebKit saves it with an underscore for the space (TD-047); the other browsers keep the offered name.
+  expect(file.suggestedFilename()).toBe(browserName === 'webkit' ? 'Query_2.sql' : 'Query 2.sql');
+  expect(readFileSync(await file.path(), 'utf-8')).toBe('select 2');
   await expect(page.getByTestId('editor-tab')).toHaveCount(1);
   // The drafts are stored under the project's key, never the shared one; parameter values are never part of them.
   const stored = await page.evaluate(() =>

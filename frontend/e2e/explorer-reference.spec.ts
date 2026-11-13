@@ -17,7 +17,7 @@ import { join } from 'node:path';
 
 import { test, expect, type Page } from '@playwright/test';
 
-import { seriousViolations } from './support';
+import { recordViolations, seriousViolations } from './support';
 
 const python = process.env.TABRION_STUDIO_E2E_PYTHON;
 const examples = process.env.TABRION_STUDIO_E2E_EXAMPLES;
@@ -71,11 +71,7 @@ test.afterAll(() => {
 });
 
 async function signIn(page: Page): Promise<string[]> {
-  const violations: string[] = [];
-  page.on('console', (message) => {
-    if (/Content Security Policy|Refused to/i.test(message.text())) violations.push(message.text());
-  });
-  page.on('pageerror', (error) => violations.push(String(error)));
+  const violations = recordViolations(page);
   await page.goto(link);
   await expect(page.getByTestId('backend-status')).toContainText('Local server');
   return violations;
