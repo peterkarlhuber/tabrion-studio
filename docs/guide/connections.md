@@ -51,6 +51,9 @@ When the profile's password is not stored yet, the password dialog opens, and th
 after you saved it. A failure says what to check (host, port and firewall; user and password; the TLS mode; a file
 that is no SQLite database), never the database server's own message.
 
+**Favorite** (the star) marks a profile: the start page lists your favorites and the connections you opened last,
+each with **Connect** ([Query history and favorites](history.md)).
+
 **Edit** changes a profile (its name stays), **Delete** removes it and its saved password (the dialog's default is
 Cancel), **Enter password** and **Remove saved password** manage the password.
 

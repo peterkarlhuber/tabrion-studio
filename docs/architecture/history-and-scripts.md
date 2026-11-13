@@ -135,6 +135,31 @@ PROD profile never loads a large catalog without a click. So `GET /api/connectio
 answers only a catalog the explorer has already read, and otherwise `studio.catalog_not_loaded` (404). The page asks
 this way for PROD and reads the catalog in full only after the user's click.
 
+## The page
+
+- **History** (`frontend/src/views/history/`, route `/history`, ⌘Y / Ctrl+H, 08 section 7): the entries with their
+  profile, environment badge, state and parameter names, shown as text (`lib/visible`); profile filter and search on
+  the server; "Open in editor" hands the statement to a new editor tab (`editor/handoff.ts`) and never runs it, so the
+  parameter panel asks for the values again; delete one entry, or all of them or one profile's after the
+  confirmation (the safe option has the focus). The settings view has the `[history]` settings and "Delete history".
+- **Favorites**: the star in the connection manager's details (`aria-pressed`), and on the start page the favorites
+  and recently opened profiles. "Connect" there only asks the connection manager (`connections/pending.ts`, page
+  memory, never stored) to select the profile and run its own Connect: D-02 for PROD and the password dialog stay
+  where they are. Without the state database the star and the lists are not shown.
+- **Scripts** (`editor/ScriptDialogs.tsx`): "Open…" lists the scripts and opens one in a new tab; "Save" (⌘S /
+  Ctrl+S, and D-06's Save) writes a tab back to its script with the digest it read, or asks for a path for a new one
+  (checked on the page like on the server); `studio.script_stale` and `studio.script_exists` ask before
+  `overwrite: true`; "Download instead" keeps STU-012's download. A tab remembers its script path and digest in its
+  draft. CodeMirror works with `\n`: a script read with CRLF line endings is shown with `\n` and saved with CRLF again.
+- **Format** (`editor/formatSql.ts`): sql-formatter (MIT, named in 03 section 3.2), loaded on first use, in the
+  PostgreSQL or SQLite language, upper-case keywords, `:name` parameters kept. The selection or the whole text is
+  replaced in one undoable change; a text the formatter cannot parse stays unchanged.
+- **Completion** (`editor/completion.ts`): keywords of the dialect always; the schemas, tables and views of the
+  catalog of the tab's open connection (the page opens no connection for it); the columns after `table.` from that
+  table's detail, on DEV and TEST only. On PROD only `cached_only=true`, and "Load names" (through the D-02 guard)
+  reads the catalog after the click. The completion list closes when a missing parameter takes the focus (B-6 of
+  `ux-acceptance.md`).
+
 ## Tests
 
 | Test | What it shows |
@@ -142,3 +167,6 @@ this way for PROD and reads the catalog in full only after the user's click.
 | `tests/security/test_history.py` | `state.sqlite` is 0600 and opened lazily; a link or a file others may write is refused (`studio.state_unavailable`, queries run on); the canary value of a parameter is in no answer, no file byte and no log record; off, retention, the entry and size caps; paging, search and the profile filter; project scopes; deletes leave no text in the file; favorites and recent profiles; `cached_only` |
 | `tests/security/test_scripts.py` | only `.sql` files in the project; every refused path form (traversal, drive, UNC, automount, hidden folder, control character); no link is followed, inside or out; atomic save with the mode kept; stale, exists, folder missing, size and encoding |
 | `tests/security/test_every_route.py` | the new routes need a session and the CSRF header, refuse other sites and need JSON |
+| `frontend/src/views/history/HistoryView.test.tsx`, `src/views/editor/EditorView.test.tsx` (STU-020 block), `src/views/editor/completion.test.ts`, `src/api/history.test.ts`, `src/views/connections/ConnectionsView.test.tsx` | the page: history list, filters, open and delete; scripts open, save, overwrite, CRLF; format; completion and its PROD rule; favorites, start page, history settings |
+| `frontend/e2e/history.spec.ts` | the flows in the harness, keyboard only where it matters (Ctrl+H, the dialogs), axe light and dark in English and German |
+| `frontend/e2e/history-backend.spec.ts` | 09 STU-020's acceptance against a real server: favorite made and opened, history without the parameter value (page, answer and state folder), script saved and opened, completion from the catalog |

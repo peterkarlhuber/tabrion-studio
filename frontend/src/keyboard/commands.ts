@@ -12,7 +12,7 @@ import { navigate, type Route } from '../router';
 import type { Density, ThemePreference } from '../theme';
 import { editorActions } from './editorActions';
 import { focusRegion } from './regions';
-import { SHORTCUTS, type Shortcut } from './shortcuts';
+import { detectPlatform, shortcutFor, SHORTCUTS, type Platform, type Shortcut } from './shortcuts';
 
 export type CommandGroup = 'navigate' | 'editor' | 'appearance' | 'help';
 
@@ -32,6 +32,8 @@ export interface CommandContext {
   theme: ThemePreference;
   density: Density;
   openHelp: () => void;
+  /** The keys shown (the history's differ on a Mac); the browser's platform when not given. */
+  platform?: Platform;
 }
 
 const PAGES: { path: Route; key: string }[] = [
@@ -39,6 +41,7 @@ const PAGES: { path: Route; key: string }[] = [
   { path: '/connections', key: 'nav.connections' },
   { path: '/explorer', key: 'nav.explorer' },
   { path: '/sql', key: 'nav.sql' },
+  { path: '/history', key: 'nav.history' },
   { path: '/migrations', key: 'nav.migrations' },
   { path: '/diagnostics', key: 'nav.diagnostics' },
   { path: '/settings', key: 'nav.settings' },
@@ -95,11 +98,25 @@ function editorCommands(t: TFunction, path: string): Command[] {
       shortcut: SHORTCUTS.save,
       run: actions.save,
     },
+    { id: 'editor:open', label: t('editor.actions.openScript'), run: actions.openScript },
+    {
+      id: 'editor:format',
+      label: t('editor.actions.format'),
+      shortcut: SHORTCUTS.format,
+      run: actions.format,
+    },
   ].map((command) => ({ ...command, group: 'editor' as const }));
   return commands;
 }
 
-export function buildCommands({ t, path, theme, density, openHelp }: CommandContext): Command[] {
+export function buildCommands({
+  t,
+  path,
+  theme,
+  density,
+  openHelp,
+  platform = detectPlatform(),
+}: CommandContext): Command[] {
   const locale = currentLocale();
   return [
     ...editorCommands(t, path),
@@ -107,6 +124,7 @@ export function buildCommands({ t, path, theme, density, openHelp }: CommandCont
       id: `go:${page.path}`,
       group: 'navigate',
       label: t('keyboard.commands.goTo', { page: t(page.key) }),
+      ...(page.path === '/history' ? { shortcut: shortcutFor('history', platform) } : {}),
       current: path === page.path,
       run: () => {
         navigate(page.path);

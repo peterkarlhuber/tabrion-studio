@@ -18,12 +18,31 @@
  *   visible rows and holds at most 10 000 rows and 64 MB (`rowCache.ts`). A result cut at its row limit offers to
  *   load up to the `max_rows` setting. A profile change clears the tab's results (they belong to their profile).
  * - **Cancel:** ⌘./Ctrl+. or Escape in the results, or the button; "Canceled after 4.2 s".
+ * - **Scripts (STU-020):** "Open" lists the `.sql` scripts of the project folder and opens one in a new tab; "Save"
+ *   (⌘S/Ctrl+S) writes the tab back to its script, bound to the bytes it read (a script changed on disk asks before
+ *   it is overwritten), or asks for a path in the project for a new one; a download stays possible. "Format"
+ *   (⌥⇧F/Alt+Shift+F) formats the selection or the whole text with sql-formatter, as one undoable change.
+ * - **Completion (STU-020):** keywords, and the schemas, tables and views of the explorer's catalog of the tab's
+ *   connection once it is open (`completion.ts`); on a PROD profile only a catalog already read, or after the click
+ *   on "Load names" (03 section 5.4). Columns after `table.` on DEV and TEST profiles.
  * - **Export (STU-021, TD-043):** "Export…" on a finished result opens the export dialog (`ExportDialog`) for that
  *   statement with the parameters it ran with, on the connection the result came from (D-02 through the shared guard
  *   first; the dialog never opens a connection). The server runs the statement again, read-only.
  */
+import type { CompletionSource } from '@codemirror/autocomplete';
 import type { TFunction } from 'i18next';
-import { Download, FileDown, Play, Plus, Square, SquareTerminal, X } from 'lucide-react';
+import {
+  Download,
+  FileDown,
+  FolderOpen,
+  ListTree,
+  Play,
+  Plus,
+  Square,
+  SquareTerminal,
+  TextAlignStart,
+  X,
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -37,9 +56,11 @@ import {
 import { useTranslation } from 'react-i18next';
 
 import { closeConnection, openConnection, PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
+import { fetchCatalog, fetchTable, type Catalog } from '../../api/explorer';
 import { OFFLINE, type Problem } from '../../api/problem';
 import { fetchProfiles, fetchSettings, type ProfileItem } from '../../api/profiles';
 import { fetchProject } from '../../api/project';
+import { readScript, saveScript, scriptTitle } from '../../api/scripts';
 import {
   cancelQuery,
   followQuery,
@@ -65,13 +86,22 @@ import { useConnect } from '../connections/useConnect';
 import { LOST_CODES } from '../../connectionWatch';
 import { prodKey, useConnectionSession, useReconnected } from '../../workspace';
 import { CellDetail, type OpenCell } from './CellDetail';
+import {
+  columnKey,
+  defaultSchemaOf,
+  namespaceOf,
+  qualifierBefore,
+  relationNamed,
+} from './completion';
 import { takeHandoff } from './handoff';
 import { draftsKey, readDrafts, writeDrafts, type DraftTab } from './drafts';
 import { formatCount, formatMs, formatSeconds } from './format';
+import { formatSql } from './formatSql';
 import { ParamPanel, paramFieldId } from './ParamPanel';
 import { paramValue, type ParamInput, type ParamProblem } from './params';
 import { ResultGrid } from './ResultGrid';
 import { RowCache } from './rowCache';
+import { OpenScriptDialog, OverwriteScriptDialog, SaveScriptDialog } from './ScriptDialogs';
 import { SqlEditor, type SqlEditorHandle } from './SqlEditor';
 import {
   placeholders,
@@ -158,6 +188,18 @@ export function scriptFileName(title: string): string {
   const name = title.replace(/[\u0000-\u001f\u007f<>:"/\\|?*]+/g, '_').trim() || 'query';
   return `${name.slice(0, 100)}.sql`;
 }
+
+/** The script dialogs (STU-020): open, save (a path for a new script) and overwrite (changed or appeared on disk). */
+type ScriptDialogState =
+  | { kind: 'open'; problem: Problem | null }
+  | { kind: 'save'; tabId: string; path: string; problem: Problem | null; thenClose: boolean }
+  | {
+      kind: 'overwrite';
+      tabId: string;
+      path: string;
+      reason: 'stale' | 'exists';
+      thenClose: boolean;
+    };
 
 function download(name: string, text: string): void {
   const url = URL.createObjectURL(new Blob([text], { type: 'application/sql;charset=utf-8' }));
@@ -295,6 +337,18 @@ export function EditorView({
   const [exporting, setExporting] = useState<StatementResult | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [focusTab, setFocusTab] = useState<string | null>(null);
+  const [scriptDialog, setScriptDialog] = useState<ScriptDialogState | null>(null);
+  /**
+   * The catalog for completion (STU-020) and the connection it belongs to; `catalog` is null when it is not loaded
+   * (a PROD profile before "Load names") or could not be read.
+   */
+  const [completionCatalog, setCompletionCatalog] = useState<{
+    connectionId: string;
+    catalog: Catalog | null;
+  } | null>(null);
+  const completionAsked = useRef<string | null>(null);
+  /** The columns read for completion, by table (`completion.ts` `columnKey`); emptied with a new catalog. */
+  const columnCache = useRef(new Map<string, readonly string[]>());
   const controllers = useRef(new Map<string, Controller>());
   // D-02 through the page's shared confirmations (STU-008 `useConnect`): a PROD database confirmed in the connection
   // manager is not asked again here, and a profile whose target changed asks again.
@@ -383,6 +437,91 @@ export function EditorView({
   const running = run?.running ?? false;
   const tabParams = useMemo(() => (tab ? (params[tab.id] ?? {}) : {}), [params, tab]);
   const names = useMemo(() => (tab ? placeholders(tab.sql, dialect) : []), [tab, dialect]);
+  const isProd = profile?.environment === 'prod';
+  // The open connection of the tab's profile: completion reads that connection's catalog, never opens one.
+  const completionConnection =
+    tab === null
+      ? null
+      : run !== undefined && run.profileId === tab.profileId && run.connectionId !== null
+        ? run.connectionId
+        : (connections.current.get(tab.profileId) ?? null);
+  /** What the editor's text is now, for the steps that wait (Format). */
+  const textNow = useRef<{ id: string; sql: string } | null>(null);
+  useLayoutEffect(() => {
+    textNow.current = tab === null ? null : { id: tab.id, sql: tab.sql };
+  });
+
+  // Completion: the catalog of the tab's connection, once per connection; on PROD only one already read (03 5.4).
+  useEffect(() => {
+    if (completionConnection === null || completionAsked.current === completionConnection) return;
+    completionAsked.current = completionConnection;
+    let active = true;
+    void fetchCatalog(fetcher, completionConnection, isProd ? 'cached' : false).then((result) => {
+      if (!active) return;
+      columnCache.current = new Map();
+      setCompletionCatalog({
+        connectionId: completionConnection,
+        catalog: result.ok ? result.value : null,
+      });
+    });
+    return () => {
+      active = false;
+      if (completionAsked.current === completionConnection) completionAsked.current = null;
+    };
+  }, [completionConnection, fetcher, isProd]);
+
+  const shownCatalog =
+    completionCatalog !== null && completionCatalog.connectionId === completionConnection
+      ? completionCatalog
+      : null;
+  const completionSchema = useMemo(
+    () => (shownCatalog?.catalog ? namespaceOf(shownCatalog.catalog, new Map()) : undefined),
+    [shownCatalog],
+  );
+  // The columns after `table.`: one table's detail, on DEV and TEST only (a PROD profile reads nothing by itself).
+  const completionSource = useMemo<CompletionSource | undefined>(() => {
+    const catalog = shownCatalog?.catalog;
+    const connectionId = shownCatalog?.connectionId;
+    if (!catalog || connectionId === undefined || isProd) return undefined;
+    return async (context) => {
+      const line = context.state.doc.lineAt(context.pos);
+      const found = qualifierBefore(line.text.slice(0, context.pos - line.from));
+      if (found === null) return null;
+      const object = relationNamed(catalog, found.qualifier, dialect);
+      if (object === null) return null;
+      const key = columnKey(object);
+      let columns = columnCache.current.get(key);
+      if (columns === undefined) {
+        const detail = await fetchTable(fetcher, connectionId, object.schema, object.name);
+        if (!detail.ok) return null;
+        columns = detail.value.columns.map((column) => column.name);
+        columnCache.current.set(key, columns);
+      }
+      if (context.aborted) return null;
+      return {
+        from: line.from + found.from,
+        options: columns.map((label) => ({ label, type: 'property' })),
+        validFor: /^[\w$]*$/,
+      };
+    };
+  }, [dialect, fetcher, isProd, shownCatalog]);
+
+  /** "Load names" on PROD: the full catalog after the user's click (D-02 passed when the connection was opened). */
+  const loadNames = useCallback(() => {
+    if (profile === null || completionConnection === null) return;
+    const connectionId = completionConnection;
+    prodGuard(profile, () => {
+      void fetchCatalog(fetcher, connectionId).then((result) => {
+        if (!result.ok) {
+          setNotice(problemText(t, result.problem));
+          return;
+        }
+        columnCache.current = new Map();
+        setCompletionCatalog({ connectionId, catalog: result.value });
+        setNotice(t('editor.completion.loaded'));
+      });
+    });
+  }, [completionConnection, fetcher, prodGuard, profile, t]);
 
   // The running clock (08 section 4.4: "running time counter").
   useEffect(() => {
@@ -736,7 +875,8 @@ export function EditorView({
           if (!checked.ok) {
             setParamProblem({ name, problem: checked.problem });
             setNotice(t(`editor.params.problem.${checked.problem}`, { name }));
-            // 08 section 5: the panel's field of the missing value gets the focus.
+            // 08 section 5: the panel's field of the missing value gets the focus; the completion list closes (B-6).
+            editor.current?.closeCompletion();
             window.setTimeout(
               () => document.getElementById(paramFieldId(prefix, name))?.focus(),
               0,
@@ -836,20 +976,160 @@ export function EditorView({
     [removeTab, tabs],
   );
 
-  const save = useCallback(
-    (item: DraftTab | null = tab) => {
-      if (item === null) return;
+  /** Save as a download (the browser's folder, outside the project): STU-012's way, still offered. */
+  const downloadTab = useCallback(
+    (item: DraftTab) => {
       download(scriptFileName(item.title), item.sql);
       updateTab(item.id, { savedSql: item.sql });
       setNotice(t('editor.saved', { name: scriptFileName(item.title) }));
     },
-    [t, tab, updateTab],
+    [t, updateTab],
   );
 
+  /**
+   * Write `item` to the project script `path`, bound to the digest the tab read (null for a new script). A script
+   * that changed or appeared on disk asks before it is overwritten; another refusal shows in the save dialog.
+   */
+  const writeScript = useCallback(
+    async (item: DraftTab, path: string, overwrite: boolean, thenClose: boolean) => {
+      const same = item.scriptPath === path;
+      const digest = same ? (item.scriptDigest ?? null) : null;
+      // A script whose lines end in CRLF on disk keeps them (the server writes the bytes it gets).
+      const content = same && item.scriptCrlf === true ? item.sql.replace(/\n/g, '\r\n') : item.sql;
+      const result = await saveScript(fetcher, { path, content, digest, overwrite });
+      if (!result.ok) {
+        const code = result.problem.code;
+        setScriptDialog(
+          code === 'studio.script_stale' || code === 'studio.script_exists'
+            ? {
+                kind: 'overwrite',
+                tabId: item.id,
+                path,
+                reason: code === 'studio.script_stale' ? 'stale' : 'exists',
+                thenClose,
+              }
+            : { kind: 'save', tabId: item.id, path, problem: result.problem, thenClose },
+        );
+        return;
+      }
+      updateTab(item.id, {
+        savedSql: item.sql,
+        scriptPath: path,
+        scriptDigest: result.value.digest,
+        title: scriptTitle(path),
+        scriptCrlf: same && item.scriptCrlf === true,
+      });
+      setScriptDialog(null);
+      setNotice(t('editor.scripts.saved', { path: visible(path) }));
+      if (thenClose) removeTab(item.id);
+    },
+    [fetcher, removeTab, t, updateTab],
+  );
+
+  /** "Save": back to the tab's script, else a path for a new one (D-06's "Save" too, then the tab closes). */
+  const save = useCallback(
+    (item: DraftTab | null = tab, thenClose = false) => {
+      if (item === null) return;
+      if (item.scriptPath !== undefined) {
+        void writeScript(item, item.scriptPath, false, thenClose);
+        return;
+      }
+      setScriptDialog({
+        kind: 'save',
+        tabId: item.id,
+        path: scriptFileName(item.title),
+        problem: null,
+        thenClose,
+      });
+    },
+    [tab, writeScript],
+  );
+
+  /** Open a project script in a tab (the tab that has it already, if any). */
+  const openScript = useCallback(
+    async (path: string) => {
+      const result = await readScript(fetcher, path);
+      if (!result.ok) {
+        setScriptDialog({ kind: 'open', problem: result.problem });
+        return;
+      }
+      setScriptDialog(null);
+      const existing = tabs.find((item) => item.scriptPath === path);
+      if (existing !== undefined) {
+        setActiveId(existing.id);
+        setNotice(t('editor.scripts.alreadyOpen', { path: visible(path) }));
+        return;
+      }
+      const file = result.value;
+      // The editor works with `\n` (CodeMirror turns CRLF into it); a CRLF script is saved with CRLF again.
+      const crlf = file.content.includes('\r\n');
+      const text = crlf ? file.content.replace(/\r\n/g, '\n') : file.content;
+      const created: DraftTab = {
+        ...newTab(nextNumber(tabs, t), tab?.profileId ?? profiles?.[0]?.id ?? '', t),
+        title: scriptTitle(file.path),
+        sql: text,
+        savedSql: text,
+        scriptPath: file.path,
+        scriptDigest: file.digest,
+        ...(crlf ? { scriptCrlf: true } : {}),
+      };
+      known.current.add(created.id);
+      setTabs((list) => [...list, created]);
+      setActiveId(created.id);
+      setFocusTab(created.id);
+      setNotice(t('editor.scripts.opened', { path: visible(file.path) }));
+    },
+    [fetcher, profiles, t, tab, tabs],
+  );
+
+  /** Format the selection, or the whole text, as one undoable change. */
+  const format = useCallback(async () => {
+    if (tab === null) return;
+    const selection = editor.current?.selection() ?? { from: 0, to: 0, head: 0 };
+    const whole = selection.from === selection.to;
+    const from = whole ? 0 : selection.from;
+    const to = whole ? tab.sql.length : selection.to;
+    const source = tab.sql.slice(from, to);
+    if (source.trim() === '') return;
+    const formatted = await formatSql(source, dialect);
+    // The text changed while the formatter loaded: nothing is replaced.
+    const now = textNow.current;
+    if (now === null || now.id !== tab.id || now.sql.slice(from, to) !== source) return;
+    if (formatted === null) {
+      setNotice(t('editor.formatFailed'));
+      return;
+    }
+    editor.current?.replace(from, to, formatted);
+    setNotice(t(whole ? 'editor.formatted' : 'editor.formattedSelection'));
+  }, [dialect, t, tab]);
+
   // The palette's editor commands (08 section 1) and the page's own shortcuts (08 section 7).
-  const latest = useRef({ runCurrent, runScript, cancel, addTab, closeTab, save, running, tab });
+  const askOpen = useCallback(() => setScriptDialog({ kind: 'open', problem: null }), []);
+  const latest = useRef({
+    runCurrent,
+    runScript,
+    cancel,
+    addTab,
+    closeTab,
+    save,
+    askOpen,
+    format,
+    running,
+    tab,
+  });
   useLayoutEffect(() => {
-    latest.current = { runCurrent, runScript, cancel, addTab, closeTab, save, running, tab };
+    latest.current = {
+      runCurrent,
+      runScript,
+      cancel,
+      addTab,
+      closeTab,
+      save,
+      askOpen,
+      format,
+      running,
+      tab,
+    };
   });
   useEffect(() => {
     setEditorActions({
@@ -862,6 +1142,8 @@ export function EditorView({
         if (current !== null) latest.current.closeTab(current.id);
       },
       save: () => latest.current.save(latest.current.tab),
+      openScript: () => latest.current.askOpen(),
+      format: () => void latest.current.format(),
       running: () => latest.current.running,
     });
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -880,6 +1162,7 @@ export function EditorView({
           },
         ],
         ['save', () => latest.current.save(latest.current.tab)],
+        ['format', () => void latest.current.format()],
       ];
       for (const [id, action] of actions) {
         if (matches(event, SHORTCUTS[id], platform)) {
@@ -1073,6 +1356,18 @@ export function EditorView({
             <AccessModeChip environment={profile.environment} />
           </>
         ) : null}
+        {isProd && shownCatalog !== null && shownCatalog.catalog === null ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<ListTree />}
+            onClick={loadNames}
+            title={t('editor.completion.loadHint')}
+            data-testid="editor-load-names"
+          >
+            {t('editor.completion.load')}
+          </Button>
+        ) : null}
         <span className={styles.toolbarSpacer} />
         <Button
           variant="primary"
@@ -1111,6 +1406,25 @@ export function EditorView({
         </Button>
         <Button
           size="sm"
+          icon={<TextAlignStart />}
+          onClick={() => void format()}
+          aria-keyshortcuts={ariaShortcut(SHORTCUTS.format, platform)}
+          title={keys('format')}
+          data-testid="editor-format"
+        >
+          {t('editor.actions.format')}
+        </Button>
+        <Button
+          size="sm"
+          icon={<FolderOpen />}
+          aria-haspopup="dialog"
+          onClick={askOpen}
+          data-testid="editor-open"
+        >
+          {t('editor.actions.openScript')}
+        </Button>
+        <Button
+          size="sm"
           icon={<Download />}
           onClick={() => save(tab)}
           aria-keyshortcuts={ariaShortcut(SHORTCUTS.save, platform)}
@@ -1138,6 +1452,9 @@ export function EditorView({
           onRunScript={runScript}
           onCancel={cancel}
           focusOnCreate={focusTab === tab.id}
+          schema={completionSchema}
+          defaultSchema={defaultSchemaOf(dialect)}
+          completionSource={completionSource}
         />
       </div>
 
@@ -1336,12 +1653,55 @@ export function EditorView({
             setClosing(null);
           }}
           onSave={() => {
-            save(closing);
-            removeTab(closing.id);
+            save(closing, true);
             setClosing(null);
           }}
         />
       ) : null}
+      {scriptDialog?.kind === 'open' ? (
+        <OpenScriptDialog
+          fetcher={fetcher}
+          problem={scriptDialog.problem}
+          onOpen={(path) => void openScript(path)}
+          onCancel={() => setScriptDialog(null)}
+        />
+      ) : null}
+      {scriptDialog?.kind === 'save'
+        ? (() => {
+            const item = tabs.find((entry) => entry.id === scriptDialog.tabId);
+            if (item === undefined) return null;
+            return (
+              <SaveScriptDialog
+                key={`${item.id}-${scriptDialog.path}`}
+                initialPath={scriptDialog.path}
+                problem={scriptDialog.problem}
+                onSave={(path) => void writeScript(item, path, false, scriptDialog.thenClose)}
+                onDownload={() => {
+                  downloadTab(item);
+                  setScriptDialog(null);
+                  if (scriptDialog.thenClose) removeTab(item.id);
+                }}
+                onCancel={() => setScriptDialog(null)}
+              />
+            );
+          })()
+        : null}
+      {scriptDialog?.kind === 'overwrite'
+        ? (() => {
+            const item = tabs.find((entry) => entry.id === scriptDialog.tabId);
+            if (item === undefined) return null;
+            return (
+              <OverwriteScriptDialog
+                path={scriptDialog.path}
+                reason={scriptDialog.reason}
+                onOverwrite={() =>
+                  void writeScript(item, scriptDialog.path, true, scriptDialog.thenClose)
+                }
+                onCancel={() => setScriptDialog(null)}
+              />
+            );
+          })()
+        : null}
     </div>
   );
 }

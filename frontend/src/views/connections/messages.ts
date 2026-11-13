@@ -56,6 +56,17 @@ const PROBLEMS = new Set([
   // The diagnosis report (STU-025, TD-036).
   'report_invalid',
   'report_unavailable',
+  // The state database, the history, favorites, completion and scripts (STU-020).
+  'state_unavailable',
+  'favorites_full',
+  'catalog_not_loaded',
+  'script_invalid',
+  'script_not_found',
+  'script_unreadable',
+  'script_too_large',
+  'script_exists',
+  'script_stale',
+  'script_folder_missing',
   'offline',
 ]);
 

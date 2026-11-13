@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-020 (page): **Query history** (`/history`, ⌘Y / Ctrl+H): the statements you ran with their profile,
+  environment, state and parameter names, never the values; filter by profile, search, "Open in editor" (runs
+  nothing; the values are asked again), delete one or all after a confirmation; history settings and "Delete history"
+  in Settings. **Favorites**: a star in the connection manager; the start page lists favorite and recently opened
+  connections with Connect (through the manager, D-02 for PROD). **Scripts** in the SQL editor: Open… lists the
+  project's `.sql` files, Save (⌘S / Ctrl+S, and D-06's Save) writes back to the script or asks for a path in the
+  project, asks before overwriting a script that changed on disk, keeps CRLF line endings; "Download instead" stays.
+  **Format** (⌥⇧F / Alt+Shift+F, sql-formatter 15.9.0, MIT) of the selection or the whole text as one undoable
+  change. **Completion** of schemas, tables and views from the catalog of the open connection and of columns after
+  `table.` (DEV and TEST); on PROD only a catalog already read, or after "Load names". The completion list now closes
+  when a missing parameter takes the focus (TD-046 B-6). A history step on the start page.
 - STU-020 (backend): Studio's state database `state.sqlite` in the state folder (0600, opened through
   `tabrion.sqlite.connect`, links refused, `secure_delete`); the query history of every finished query, per profile
   and project, with the statement text and its placeholder names but never a parameter value (`GET /api/history`,

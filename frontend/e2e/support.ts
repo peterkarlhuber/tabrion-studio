@@ -12,6 +12,9 @@ export interface HarnessOptions {
   check?: string;
   /** scenario=editor: the first tab's draft. */
   sql?: string;
+  /** STU-020: favorite and recently opened profile ids, separated by commas. */
+  favorites?: string;
+  recent?: string;
 }
 
 /** Open the e2e harness (src/harness/main.tsx) and wait until the shell or the notice is rendered. */

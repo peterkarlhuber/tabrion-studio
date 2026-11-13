@@ -99,6 +99,8 @@ Found or confirmed by this acceptance; each is in TD-046 unless another item alr
 
 - **B-1** 4.1: no project chooser, recently opened list or "Open SQLite file" on the start page. Studio serves one
   project folder per process (`docs/architecture/process-model.md`); "recently opened" is 1.0 (03 section 2 A).
+  The STU-020 page PR adds favorite and recently opened *connections* to the start page; a project chooser and
+  "Open SQLite file" stay open.
 - **B-2** Firefox and WebKit (TD-047; the advisory jobs came with PR #59). First CI run on `9741eb7`: Firefox 251
   passed, 3 failed; WebKit 236 passed, 7 failed (the rest did not run or are the screenshots and the five "chromium
   only" heap tests). Root causes as far as known: (1) WebKit logs "Refused to apply a stylesheet" under the CSP each
@@ -112,7 +114,8 @@ Found or confirmed by this acceptance; each is in TD-046 unless another item alr
   bar's running queries (count, list with cancel) and the last query's rows and time (role and database are TD-034).
 - **B-5** QA-S1 usability session (needs the owner).
 - **B-6** SQL editor: after a run stops at a missing parameter, the focus moves to the parameter field, but
-  CodeMirror's completion list stays open over the editor.
+  CodeMirror's completion list stays open over the editor. Done in the STU-020 page PR: the list closes when the
+  field takes the focus (`EditorView.test.tsx`).
 - **B-7** Explorer at 1280 × 800: the connection card takes the upper half of the page, so the tree and the detail
   start below the fold; 08 section 4.3 keeps the explorer as a sidebar beside the detail.
 - TD-032, TD-033, TD-034, TD-041, TD-042, TD-043, TD-020, TD-022 as named in the tables.

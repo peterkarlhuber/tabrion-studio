@@ -12,7 +12,9 @@
  * editor: the profiles and a fake query engine for the SQL editor of STU-012, with `sql` as the first tab's draft,
  * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
  * catalogs and details of STU-010 and the data viewer's pages of STU-013), `path` (/, /connections, /explorer, /sql,
- * /migrations, /diagnostics, /settings),
+ * /history, /migrations, /diagnostics, /settings). In every scenario the fake answers STU-020's routes
+ * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
+ * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
  * `theme` (light, dark) and `lang` (en, de).
  */
 import { StrictMode, useState, type ReactElement } from 'react';
@@ -38,6 +40,7 @@ import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
 import { draftsKey } from '../views/editor/drafts';
+import { createHistoryServer } from './history';
 import { createQueryServer } from './queries';
 import { PROFILES, SETTINGS, TEST_RESULTS } from './profiles';
 import { DIFF, HOSTILE_REVIEW, INVALID_PROJECT, REVIEW } from './trust';
@@ -74,6 +77,18 @@ const queryServer = createQueryServer({
   startDelayMs: Number(params.get('startDelay') ?? 0),
 });
 (window as unknown as { queryLog: unknown }).queryLog = queryServer.log;
+/** STU-020's routes; e2e reads what the page sent (`window.historyLog`). */
+const listParam = (name: string) => (params.get(name) ?? '').split(',').filter((id) => id !== '');
+const historyServer = createHistoryServer({
+  disabled: params.get('historyOff') === '1',
+  favorites: listParam('favorites'),
+  recent: listParam('recent'),
+  scripts: {
+    'sql/report.sql': 'select id, label\nfrom parts\nwhere id = :id;\n',
+    'sql/parts.sql': 'select count(*) from parts;\n',
+  },
+});
+(window as unknown as { historyLog: unknown }).historyLog = historyServer.log;
 const draft = params.get('sql');
 /** The project folder of the editor scenario: its drafts are stored under that project's key (L-5). */
 const EDITOR_PROJECT = '/home/demo/parts';
@@ -200,6 +215,11 @@ function lostAnswer(url: string, method: string): Response | null {
 const fakeServer: typeof fetch = async (input, init) => {
   const lost = lostAnswer(String(input), init?.method ?? 'GET');
   if (lost !== null) return lost;
+  // STU-020's own routes, in every scenario (the catalog for completion comes after the scenarios' own).
+  if (/^\/api\/(history|favorites|scripts)(\/|\?|$)/.test(String(input))) {
+    const answer = historyServer.handle(String(input), init);
+    if (answer !== null) return answer;
+  }
   if (scenario === 'connections') {
     const url = String(input);
     const method = init?.method ?? 'GET';
@@ -321,6 +341,8 @@ const fakeServer: typeof fetch = async (input, init) => {
     const answer = explorerAnswer(url, method, typeof init?.body === 'string' ? init.body : '');
     if (answer !== null) return answer;
   }
+  const stu020 = historyServer.handle(String(input), init);
+  if (stu020 !== null) return stu020;
   if (String(input) === '/api/heartbeat') {
     counters.heartbeats += 1;
     return scenario === 'ended'

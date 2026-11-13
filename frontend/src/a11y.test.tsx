@@ -17,6 +17,7 @@ import {
   UnsavedScriptDialog,
 } from './components/dialogs/StudioDialogs';
 import { ExportDialog } from './components/export/ExportDialog';
+import { createHistoryServer } from './harness/history';
 import { codeTrust } from './harness/migrations';
 import { createQueryServer } from './harness/queries';
 import { PROFILES, SETTINGS } from './harness/profiles';
@@ -29,6 +30,12 @@ import type { SessionState } from './session';
 import { DeleteProfileDialog, PasswordDialog } from './views/connections/ConnectionDialogs';
 import { ConnectionWizard } from './views/connections/ConnectionWizard';
 import { EditorView } from './views/editor/EditorView';
+import {
+  OpenScriptDialog,
+  OverwriteScriptDialog,
+  SaveScriptDialog,
+} from './views/editor/ScriptDialogs';
+import { DeleteHistoryDialog } from './views/history/HistoryDialogs';
 import type { Workspace } from './workspace';
 
 const health: typeof fetch = async () =>
@@ -68,6 +75,15 @@ const migrations: typeof fetch = async (input) => {
 const queryServer = createQueryServer();
 const editor: typeof fetch = async (input, init) =>
   (await queryServer.handle(String(input), init)) ?? profiles(input);
+
+/** STU-020: the history, favorites and scripts of the harness. */
+const historyServer = createHistoryServer({
+  favorites: ['project:parts-dev'],
+  recent: ['user:measure-central'],
+  scripts: { 'sql/report.sql': 'select 1' },
+});
+const history: typeof fetch = async (input, init) =>
+  historyServer.handle(String(input), init) ?? profiles(input);
 
 const PAGES: [string, string, () => ReactElement][] = [
   [
@@ -167,6 +183,34 @@ const PAGES: [string, string, () => ReactElement][] = [
   ['migrations (STU-015)', '/migrations', () => <App fetcher={migrations} heartbeat={false} />],
   ['explorer (STU-010)', '/explorer', () => <App fetcher={profiles} heartbeat={false} />],
   ['SQL editor (STU-012)', '/sql', () => <EditorView fetcher={editor} />],
+  ['query history (STU-020)', '/history', () => <App fetcher={history} heartbeat={false} />],
+  ['start page with favorites (STU-020)', '/', () => <App fetcher={history} heartbeat={false} />],
+  [
+    'open script (STU-020)',
+    '/',
+    () => <OpenScriptDialog fetcher={history} problem={null} onOpen={noop} onCancel={noop} />,
+  ],
+  [
+    'save script (STU-020)',
+    '/',
+    () => (
+      <SaveScriptDialog
+        initialPath="Query 1.sql"
+        problem={{ code: 'studio.script_folder_missing', kind: 'config', status: 404, logId: null }}
+        onSave={noop}
+        onDownload={noop}
+        onCancel={noop}
+      />
+    ),
+  ],
+  [
+    'overwrite script (STU-020)',
+    '/',
+    () => (
+      <OverwriteScriptDialog path="sql/a.sql" reason="stale" onOverwrite={noop} onCancel={noop} />
+    ),
+  ],
+  ['delete history (STU-020)', '/', () => <DeleteHistoryDialog onDelete={noop} onCancel={noop} />],
   ['diagnostics (STU-014)', '/diagnostics', () => <App fetcher={profiles} heartbeat={false} />],
   [
     'trust the migration code (STU-015)',

@@ -31,6 +31,10 @@ export const SHORTCUTS = {
   newTab: { key: 't', alt: true },
   closeTab: { key: 'w', alt: true },
   save: { key: 's', mod: true },
+  /** STU-020, 08 section 7: format the SQL (⌥⇧F on a Mac, Alt+Shift+F elsewhere). */
+  format: { key: 'f', alt: true, shift: true },
+  /** STU-020, 08 section 7: the query history; Ctrl+H on Windows and Linux, ⌘Y on a Mac (`MAC_SHORTCUTS`). */
+  history: { key: 'h', mod: true },
   /** On the explorer page (STU-010): the object filter. The browser's print dialog stays on every other page. */
   explorerFilter: { key: 'p', mod: true },
 } as const satisfies Record<string, Shortcut>;
@@ -39,7 +43,13 @@ export const SHORTCUTS = {
  * The shortcuts of the whole page, those of the SQL editor's page and those of the explorer's (the help lists them in
  * three groups).
  */
-export const PAGE_SHORTCUTS: ShortcutId[] = ['palette', 'help', 'nextRegion', 'previousRegion'];
+export const PAGE_SHORTCUTS: ShortcutId[] = [
+  'palette',
+  'help',
+  'nextRegion',
+  'previousRegion',
+  'history',
+];
 export const EDITOR_SHORTCUTS: ShortcutId[] = [
   'run',
   'runScript',
@@ -47,10 +57,21 @@ export const EDITOR_SHORTCUTS: ShortcutId[] = [
   'newTab',
   'closeTab',
   'save',
+  'format',
 ];
 export const EXPLORER_SHORTCUTS: ShortcutId[] = ['explorerFilter'];
 
 export type ShortcutId = keyof typeof SHORTCUTS;
+
+/** Where macOS has another key than the other platforms (08 section 7: the history is ⌘Y there, Ctrl+H elsewhere). */
+export const MAC_SHORTCUTS: Partial<Record<ShortcutId, Shortcut>> = {
+  history: { key: 'y', mod: true },
+};
+
+/** The shortcut of `id` on `platform`. */
+export function shortcutFor(id: ShortcutId, platform: Platform): Shortcut {
+  return (platform === 'mac' ? MAC_SHORTCUTS[id] : undefined) ?? SHORTCUTS[id];
+}
 
 interface NavigatorLike {
   platform?: string;

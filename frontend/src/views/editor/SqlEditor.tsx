@@ -10,10 +10,14 @@
  *
  * **Keyboard.** Tab moves the focus on (no tab trap, WCAG 2.1.2); ⌘↵/Ctrl+Enter runs, ⇧⌘↵/Shift+Ctrl+Enter runs the
  * script, ⌘./Ctrl+. cancels (08 section 7).
+ *
+ * **Completion (STU-020).** The dialect's keywords, and with `schema` the schemas, tables and views of the explorer's
+ * catalog (`completion.ts`); `completionSource` adds what needs a request (the columns after `table.`).
  */
-import { PostgreSQL, sql as sqlLanguage, SQLite } from '@codemirror/lang-sql';
+import { closeCompletion, type CompletionSource } from '@codemirror/autocomplete';
+import { PostgreSQL, sql as sqlLanguage, SQLite, type SQLNamespace } from '@codemirror/lang-sql';
 import { defaultHighlightStyle, HighlightStyle, syntaxHighlighting } from '@codemirror/language';
-import { Prec } from '@codemirror/state';
+import { EditorState, Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { useCodeMirror } from '@uiw/react-codemirror';
 import {
@@ -34,6 +38,10 @@ export interface SqlEditorHandle {
   selection(): { from: number; to: number; head: number };
   /** Select a range, scroll it into view and focus the editor (a message's "go to statement"). */
   select(from: number, to: number): void;
+  /** Replace a range with `text` as one undoable change, select the new text and focus the editor (Format). */
+  replace(from: number, to: number, text: string): void;
+  /** Close the completion list (the focus moves elsewhere; B-6 of ux-acceptance.md). */
+  closeCompletion(): void;
   focus(): void;
 }
 
@@ -53,7 +61,24 @@ export interface SqlEditorProps {
   onCancel: () => void;
   /** Focus the text as soon as the editor exists (a new tab). */
   focusOnCreate?: boolean;
+  /** The catalog's schemas, tables and views for completion (STU-020). */
+  schema?: SQLNamespace;
+  /** The schema whose tables complete without a prefix. */
+  defaultSchema?: string;
+  /** A further completion source (the columns after `table.`). */
+  completionSource?: CompletionSource;
 }
+
+/**
+ * CodeMirror's basic setup, one object for the editor's life: `useCodeMirror` reconfigures the editor whenever it gets
+ * a new object, which also drops a completion list still waiting for an asynchronous source (the columns, STU-020).
+ */
+const BASIC_SETUP = {
+  foldGutter: false,
+  highlightActiveLineGutter: true,
+  syntaxHighlighting: false,
+  tabSize: 2,
+} as const;
 
 /** The id of the description inside the shadow root. */
 const DESCRIPTION_ID = 'sql-editor-description';
@@ -129,15 +154,18 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
     onRunScript,
     onCancel,
     focusOnCreate = false,
+    schema,
+    defaultSchema,
+    completionSource,
   },
   ref,
 ) {
   const host = useRef<HTMLDivElement>(null);
   const [mount, setMount] = useState<{ root: ShadowRoot; element: HTMLDivElement } | null>(null);
-  const handlers = useRef({ onRun, onRunScript, onCancel, onChange });
+  const handlers = useRef({ onRun, onRunScript, onCancel, onChange, completionSource });
   useEffect(() => {
-    handlers.current = { onRun, onRunScript, onCancel, onChange };
-  }, [onRun, onRunScript, onCancel, onChange]);
+    handlers.current = { onRun, onRunScript, onCancel, onChange, completionSource };
+  }, [onRun, onRunScript, onCancel, onChange, completionSource]);
 
   useLayoutEffect(() => {
     const element = host.current;
@@ -164,9 +192,21 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
     if (text) text.textContent = description;
   }, [mount, description]);
 
+  const extraSource = useMemo<CompletionSource>(
+    () => (context) => handlers.current.completionSource?.(context) ?? null,
+    [],
+  );
+
   const extensions = useMemo(
     () => [
-      sqlLanguage({ dialect: dialect === 'sqlite' ? SQLite : PostgreSQL, upperCaseKeywords: true }),
+      sqlLanguage({
+        dialect: dialect === 'sqlite' ? SQLite : PostgreSQL,
+        upperCaseKeywords: true,
+        ...(schema !== undefined ? { schema, defaultSchema } : {}),
+      }),
+      // The extra source through a ref: a new source does not rebuild the editor's extensions. The function is the
+      // same one on every lookup, because CodeMirror matches a finished query to its source by identity.
+      EditorState.languageData.of(() => [{ autocomplete: extraSource }]),
       Prec.highest(
         keymap.of([
           { key: 'Mod-Enter', run: () => (handlers.current.onRun(), true) },
@@ -185,7 +225,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       theme,
       highlight,
     ],
-    [dialect, label],
+    [dialect, label, schema, defaultSchema, extraSource],
   );
 
   const stableChange = useMemo(() => (next: string) => handlers.current.onChange(next), []);
@@ -199,12 +239,7 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
     autoFocus: focusOnCreate,
     height: '100%',
     indentWithTab: false,
-    basicSetup: {
-      foldGutter: false,
-      highlightActiveLineGutter: true,
-      syntaxHighlighting: false,
-      tabSize: 2,
-    },
+    basicSetup: BASIC_SETUP,
   });
 
   useEffect(() => {
@@ -227,6 +262,21 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
           scrollIntoView: true,
         });
         view.focus();
+      },
+      replace(from: number, to: number, text: string) {
+        if (view === undefined) return;
+        const length = view.state.doc.length;
+        const start = Math.min(from, length);
+        view.dispatch({
+          changes: { from: start, to: Math.min(to, length), insert: text },
+          selection: { anchor: start, head: start + text.length },
+          scrollIntoView: true,
+          userEvent: 'input.format',
+        });
+        view.focus();
+      },
+      closeCompletion() {
+        if (view !== undefined) closeCompletion(view);
       },
       focus() {
         view?.focus();

@@ -57,6 +57,7 @@ describe('App', () => {
         '/connections',
         '/explorer',
         '/sql',
+        '/history',
         '/migrations',
         '/diagnostics',
       ]);
