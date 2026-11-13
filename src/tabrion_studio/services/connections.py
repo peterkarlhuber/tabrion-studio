@@ -247,7 +247,14 @@ def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
 
 
 def _install_authorizer(dbapi_connection: Any, _record: Any) -> None:
+    """Pool ``connect`` listener (SQLite): ``trusted_schema`` off, then Studio's authorizer.
+
+    ``PRAGMA trusted_schema = OFF`` (F-2 of ``stu-016-security-review.md``, defense in depth; tabrion's default
+    profile sets it too) keeps a view or trigger of the database file from calling a function that is not marked
+    innocuous. It runs first: the authorizer denies setting any pragma but ``query_only``.
+    """
     if isinstance(dbapi_connection, sqlite3.Connection):
+        dbapi_connection.execute("PRAGMA trusted_schema = OFF")
         dbapi_connection.set_authorizer(sqlite_authorizer)
 
 
