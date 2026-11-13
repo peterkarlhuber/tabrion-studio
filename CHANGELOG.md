@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Accessibility audit of the work pages (STU-053, second part; `docs/architecture/accessibility.md`): the SQL
+  editor with its grid, cell detail and export dialog, the explorer's tree, Data, DDL and Policies tabs and Count
+  rows, the diagnostics report and D-02 in the connection manager. For each, `e2e/a11y-audit.spec.ts` checks target
+  size, reflow at 320 px and at 200 % zoom, every Tab stop's focus ring (an open dialog keeps the focus), text
+  spacing and reduced motion, and that each action's result is said in a live region (WCAG 4.1.3).
 - STU-022 in the explorer page: a **DDL** tab for every object (a sequence shows its DDL on its own) with **Copy
   DDL**, a **Policies** tab for a PostgreSQL table (row-level security on and forced, the owner and the connection's
   role, whether the policies bind that role and why not, a warning when RLS is on without a policy, every policy with
@@ -512,6 +517,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The export dialog's format, column and option choices are 24 px high targets; they were 21 px (STU-053 F-6,
+  WCAG 2.5.8).
 - `tabrion-studio` no longer ends with a `BrokenPipeError` traceback and a non-zero exit status (1, or 120 with buffered
   output) when the terminal or the parent process stopped reading its output before a clean stop; the last line is
   dropped and the exit status stays 0. Other errors writing that line are still raised (TD-044, joint regression JR-1).
