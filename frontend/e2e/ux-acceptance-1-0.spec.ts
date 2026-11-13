@@ -331,17 +331,26 @@ test('setup: a DEV and a PROD profile on the same SQLite file', async ({ page })
   }
 });
 
-for (const language of ['de', 'en'] as const) {
-  test(`${language}: the 1.0 tour (DDL, ER diagram, query, Format, export, history, migrations, diagnosis)`, async ({
-    page,
-  }) => {
-    const t = (key: string) => text(language, key);
-    const foreign = foreignRequests(page, () => base);
-    await watchSelects(page);
-    const violations = await signIn(page);
-    await chooseLanguage(page, language);
-    await checkStep(page, language, 'settings');
+/**
+ * Sign in, choose the tour's language in the settings (kept in settings.toml, as a user does) and check that page.
+ * Each part of the tour starts here, so each is a test of its own.
+ */
+async function startTour(
+  page: Page,
+  language: Language,
+): Promise<{ foreign: string[]; violations: string[] }> {
+  const foreign = foreignRequests(page, () => base);
+  await watchSelects(page);
+  const violations = await signIn(page);
+  await chooseLanguage(page, language);
+  await checkStep(page, language, 'settings');
+  return { foreign, violations };
+}
 
+for (const language of ['de', 'en'] as const) {
+  test(`${language}, the 1.0 tour: the DDL of a table and the ER diagram`, async ({ page }) => {
+    const t = (key: string) => text(language, key);
+    const { foreign, violations } = await startTour(page, language);
     // 08 section 4.3 with STU-022: the DDL of a table, read from the real database.
     await page.getByRole('link', { name: t('nav.explorer') }).click();
     await page.getByLabel(t('explorer.profile')).selectOption({ label: 'e2e-shop (DEV)' });
@@ -359,6 +368,15 @@ for (const language of ['de', 'en'] as const) {
     await expect(page.getByTestId('er-list-row')).not.toHaveCount(0);
     await checkStep(page, language, 'ER diagram');
 
+    expect(foreign).toEqual([]);
+    await expectNoViolations(page, violations);
+  });
+
+  test(`${language}, the 1.0 tour: a query with a parameter, Format, the export dialog and the history`, async ({
+    page,
+  }) => {
+    const t = (key: string) => text(language, key);
+    const { foreign, violations } = await startTour(page, language);
     // 08 section 4.4 with STU-020 and STU-021: a query with a parameter, Format, the export dialog.
     expect((await api(page, 'PUT', '/api/drafts', { tabs: [], active_tab: null })).status).toBe(
       200,
@@ -398,6 +416,13 @@ for (const language of ['de', 'en'] as const) {
     await expect(entry).not.toContainText('Steel');
     await checkStep(page, language, 'history');
 
+    expect(foreign).toEqual([]);
+    await expectNoViolations(page, violations);
+  });
+
+  test(`${language}, the 1.0 tour: the migration status and a diagnosis`, async ({ page }) => {
+    const t = (key: string) => text(language, key);
+    const { foreign, violations } = await startTour(page, language);
     // 08 section 4.8 with STU-024: the migration status of the file (SQLite's user_version).
     await page.getByRole('link', { name: t('nav.migrations') }).click();
     await page.getByLabel(t('migrations.status.profile')).selectOption({ label: 'e2e-shop (DEV)' });

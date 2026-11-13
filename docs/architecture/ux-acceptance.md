@@ -147,7 +147,10 @@ stays locked behind G-S2 and is outside this acceptance; the checks below prove 
 
 **Acceptance run:** 2026-11-13, the STU-054 branch started on master `d72a14f`, the built frontend in a real
 `tabrion-studio` (`scripts/build_frontend.py`, the package from the branch's `src`), SQLite, Chromium 1243 (headless
-shell); Firefox and WebKit run the same suites in CI (jobs `e2e (firefox)` and `e2e (webkit)`). PostgreSQL criteria
+shell); Firefox and WebKit run the same suites in CI (jobs `e2e (firefox)` and `e2e (webkit)`). The whole e2e run:
+359 passed, 31 skipped (`screenshots.spec.ts`; `explorer-reference.spec.ts` without the reference apps), 2 failed
+because the shared machine's disk was full during the run (`ENOSPC` when the browser context closed), and both
+passed alone afterwards; Vitest 1 993 passed. PostgreSQL criteria
 (Levuvo formats, DDL against `pg_dump`) run in the `backend integration` job. Result: every 1.0 criterion that 1.0
 builds is met except the German diagnosis texts (UX-10-L4), which wait on TD-032; STU-054 is accepted once TD-032
 is merged and the owner has decided the items under [Open for 1.0](#open-for-10).
