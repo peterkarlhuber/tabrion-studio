@@ -9,9 +9,12 @@
  * the main area itself after "Go to …", or on a page's toolbar between two panes) moves to the next stop after it in
  * the page's order, or to the last one before it.
  *
- * An area gets the focus on its entry (an element with `data-region-entry`, or the first control inside it: the SQL
- * text in the editor's shadow root, the first parameter value, the tree's current item, the result grid), else on its current item (the selected tab, the active navigation
- * link), else on its first control, else on itself (`tabindex="-1"`).
+ * An area whose markup sets `tabindex="-1"` (the main area, the status bar) is focused itself. Any other area gets
+ * the focus on its entry (an element with `data-region-entry`, or the first control inside it: the SQL text in the
+ * editor's shadow root, the first parameter value, the tree's current item, the result grid), else on its current
+ * item (the selected tab, the active navigation link), else on its first control, else on itself. A pane focused
+ * itself because it was empty gets a `tabindex="-1"` only until the focus leaves it (C-1 of `stu-052b-review.md`), so
+ * the next F6 finds the grid or the selected tab that appeared meanwhile.
  */
 
 const FOCUSABLE =
@@ -27,12 +30,17 @@ export function stops(root: ParentNode = document): HTMLElement[] {
 }
 
 function target(region: HTMLElement): HTMLElement {
-  if (region.tabIndex === -1 && region.hasAttribute('tabindex')) return region;
+  if (region.getAttribute('tabindex') === '-1' && !('regionTabindex' in region.dataset)) {
+    return region;
+  }
   for (const entry of region.querySelectorAll<HTMLElement>('[data-region-entry]')) {
-    // The SQL editor lives in a shadow root (its styles under the CSP, STU-012): look inside it too.
+    // The SQL editor lives in a shadow root (its styles under the CSP, STU-012): look inside it too, for the text
+    // first (a panel or gutter control of CodeMirror could come before it; I-2 of stu-052b-review.md).
+    const shadow = entry.shadowRoot;
     const inner = entry.matches(FOCUSABLE)
       ? entry
-      : (entry.shadowRoot?.querySelector<HTMLElement>(FOCUSABLE) ??
+      : (shadow?.querySelector<HTMLElement>('[contenteditable="true"]') ??
+        shadow?.querySelector<HTMLElement>(FOCUSABLE) ??
         entry.querySelector<HTMLElement>(FOCUSABLE));
     if (inner !== null) return inner;
   }
@@ -71,10 +79,26 @@ export function moveRegion(direction: 1 | -1, root: ParentNode = document): stri
 function focusArea(region: HTMLElement): void {
   const element = target(region);
   if (element === region) {
-    if (!region.hasAttribute('tabindex')) region.tabIndex = -1;
+    // A pane without a control is focusable only while it has the focus: its tabindex goes when the focus leaves,
+    // so it never stands in for the entry that appears later (C-1 of stu-052b-review.md).
+    const added = !region.hasAttribute('tabindex');
+    if (added) {
+      region.tabIndex = -1;
+      region.dataset.regionTabindex = '';
+    }
     // An area has no focus ring of its own (tabindex -1); a keyboard move shows one until the focus leaves.
     region.dataset.regionFocus = '';
-    region.addEventListener('blur', () => delete region.dataset.regionFocus, { once: true });
+    region.addEventListener(
+      'blur',
+      () => {
+        delete region.dataset.regionFocus;
+        if (added) {
+          region.removeAttribute('tabindex');
+          delete region.dataset.regionTabindex;
+        }
+      },
+      { once: true },
+    );
   }
   element.focus();
 }

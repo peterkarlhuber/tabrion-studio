@@ -173,6 +173,12 @@ test('keyboard only: the explorer, with F6 between the tree and the details', as
   // F6 from "Open" (between the areas): the tree's current item, then the details, then the status bar.
   await page.keyboard.press('F6');
   await expect(page.getByRole('treeitem', { name: 'Database file' })).toBeFocused();
+  // The details before an object is chosen: nothing to focus, so the pane itself (C-1 of stu-052b-review.md: after
+  // the choice F6 must still find the selected tab).
+  await page.keyboard.press('F6');
+  await expect(page.getByTestId('explorer-detail')).toBeFocused();
+  await page.keyboard.press('Shift+F6');
+  await expect(page.getByRole('treeitem', { name: 'Database file' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('p');
@@ -214,6 +220,15 @@ test('keyboard only: a query with a parameter, then a cancel, with F6 through ed
   await expect(page.getByRole('link', { name: 'SQL editor' })).toBeFocused();
   await page.keyboard.press('F6');
   await expect(sql).toBeFocused();
+  // Before the first run the result is empty: F6 focuses the pane itself (C-1 of stu-052b-review.md: after the run
+  // F6 must still reach the grid, checked below).
+  const results = page.getByTestId('results');
+  await page.keyboard.press('F6');
+  await page.keyboard.press('F6');
+  await expect(results).toBeFocused();
+  await page.keyboard.press('Shift+F6');
+  await page.keyboard.press('Shift+F6');
+  await expect(sql).toBeFocused();
   await page.keyboard.press('Control+End');
   await page.keyboard.press('Control+Enter');
   // The missing value stops the run and gets the focus (08 section 5).
@@ -242,7 +257,9 @@ test('keyboard only: a query with a parameter, then a cancel, with F6 through ed
   await page.keyboard.press('Control+Enter');
   await expect(page.getByRole('progressbar', { name: 'Query running' })).toBeVisible();
   await page.keyboard.press('F6');
-  await expect(page.getByTestId('results')).toContainText('Running');
+  await expect(results).toContainText('Running');
+  // L-1 of stu-052b-review.md: the focus is in the result, where Escape cancels.
+  expect(await results.evaluate((element) => element.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('result-status')).toHaveText(/^Canceled after \d+\.\d s\.$/);
   await page.keyboard.press('Shift+F6');

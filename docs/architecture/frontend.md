@@ -128,10 +128,12 @@ for matching and for display, so the palette, the help and the header buttons al
   editor's `editor`, `parameters` (only with `:name` placeholders) and `result`. F6 stops at the areas that hold no
   other area, so on those pages it steps through the panes instead of the main area. A focus outside every stop (the
   main area itself after "Go to …", a toolbar between two panes) moves to the next stop after it in the page's order,
-  or with Shift+F6 to the last one before it. F6 focuses an area's entry (`data-region-entry`: the tree's current
-  item, the result grid, the first parameter value, the SQL text inside the editor's shadow root), else its current item (the active
-  navigation link, the selected tab), else its first control, else the area itself, which then shows the focus ring
-  (`data-region-focus`, WCAG 2.4.7).
+  or with Shift+F6 to the last one before it. An area whose markup sets `tabindex="-1"` (the main area, the status
+  bar) is focused itself. Any other area gets the focus on its entry (`data-region-entry`: the tree's current item,
+  the result grid, the first parameter value, the SQL text inside the editor's shadow root), else its current item
+  (the active navigation link, the selected tab), else its first control, else the area itself, which then shows the
+  focus ring (`data-region-focus`, WCAG 2.4.7). An empty pane focused that way is focusable only until the focus
+  leaves it, so the next F6 finds the grid or the tab that appeared meanwhile (C-1 of `stu-052b-review.md`).
 - While any modal dialog is open, the page shortcuts do nothing: the dialog owns the keyboard.
 - The SQL editor's shortcuts work on its page; the help lists them in a group of their own and the palette offers
   its commands (`src/keyboard/editorActions.ts`) while the page is shown. A shortcut with ⌥ matches the physical key

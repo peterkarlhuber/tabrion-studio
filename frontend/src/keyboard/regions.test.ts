@@ -114,6 +114,40 @@ describe('F6 over the panes of the main area', () => {
     expect(detail).toHaveAttribute('data-region-focus');
     moveRegion(1);
     expect(detail).not.toHaveAttribute('data-region-focus');
+    expect(detail).not.toHaveAttribute('tabindex'); // focusable only while it had the focus
+  });
+
+  it('finds the entry that appeared after the pane was focused empty (C-1 of stu-052b-review.md)', () => {
+    page(
+      EDITOR.replace('<div role="grid" tabindex="0" id="grid"></div>', '').replace(
+        '<div role="tablist"><button role="tab" aria-selected="true" id="result-tab">Result</button></div>',
+        '',
+      ),
+    );
+    document.getElementById('param')?.focus();
+    expect(moveRegion(1)).toBe('result');
+    const result = document.querySelector<HTMLElement>('[data-region="result"]');
+    expect(document.activeElement).toBe(result); // nothing to focus yet: the pane itself
+    // A query ran: the grid is there now.
+    const grid = document.createElement('div');
+    grid.setAttribute('role', 'grid');
+    grid.tabIndex = 0;
+    grid.id = 'grid';
+    result?.querySelector('[data-region-entry]')?.append(grid);
+    expect(moveRegion(-1)).toBe('parameters');
+    expect(moveRegion(1)).toBe('result');
+    expect(focused()).toBe('grid');
+    expect(result).not.toHaveAttribute('tabindex');
+  });
+
+  it('keeps an area whose markup sets tabindex="-1" as its own target', () => {
+    page('<h1>Settings</h1><button id="b">Save</button>');
+    expect(focusRegion('main')).toBe(true);
+    expect(focused()).toBe('main');
+    moveRegion(1);
+    expect(document.getElementById('main')).toHaveAttribute('tabindex', '-1');
+    expect(moveRegion(-1)).toBe('main');
+    expect(focused()).toBe('main');
   });
 });
 
@@ -131,5 +165,18 @@ describe('an entry with a shadow root', () => {
     expect(root?.activeElement).toBe(text);
     expect(document.activeElement).toBe(host); // the page sees the host, so F6 knows the area
     expect(moveRegion(1)).toBe('statusbar');
+  });
+
+  it('prefers the text to another control of the shadow root (I-2 of stu-052b-review.md)', () => {
+    page('<div data-region="editor"><div id="host" data-region-entry=""></div></div>');
+    const root = document.getElementById('host')?.attachShadow({ mode: 'open' });
+    const panel = document.createElement('button');
+    panel.textContent = 'Close search';
+    const text = document.createElement('div');
+    text.setAttribute('contenteditable', 'true');
+    root?.append(panel, text);
+    document.querySelector<HTMLElement>('header a')?.focus();
+    expect(moveRegion(1)).toBe('editor');
+    expect(root?.activeElement).toBe(text);
   });
 });

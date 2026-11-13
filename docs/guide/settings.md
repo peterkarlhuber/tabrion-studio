@@ -32,6 +32,10 @@ with "Rewrite file and save".
 | Shift+F6 | Shift+F6 | move to the previous area |
 | Esc | Esc | close the palette or a dialog |
 
+F6 moves between areas, Tab between the controls inside one. The explorer's connection section and the SQL
+editor's toolbar (connection, Run, Run script, Cancel, Save) are not areas of their own: reach the toolbar with
+Shift+Tab from the SQL text, and the explorer's connection section with Shift+Tab (past "Refresh") from its filter.
+
 The SQL editor has shortcuts of its own (run, run script, cancel, new and close tab, save); they are listed in
 [SQL editor](sql-editor.md) and in the shortcut list.
 
