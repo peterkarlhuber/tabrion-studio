@@ -221,7 +221,7 @@ def _write_in_folder(target: Path, body: bytes, *, force: bool, protected: set[s
             if force:
                 os.replace(tmp, name, src_dir_fd=folder, dst_dir_fd=folder)  # replaces a link itself
             else:
-                os.link(tmp, name, src_dir_fd=folder, dst_dir_fd=folder)  # fails when name exists, atomically
+                os.link(tmp, name, src_dir_fd=folder, dst_dir_fd=folder, follow_symlinks=False)  # fails if name exists
                 os.unlink(tmp, dir_fd=folder)
         except BaseException:
             with contextlib.suppress(OSError):
@@ -247,7 +247,7 @@ def _write_by_path(target: Path, body: bytes, *, force: bool) -> None:
         elif sys.platform == "win32":
             os.rename(tmp, target)  # fails when target exists
         else:
-            os.link(tmp, target)  # fails when target exists, atomically
+            os.link(tmp, target, follow_symlinks=False)  # fails when target exists, atomically
             os.unlink(tmp)
     except BaseException:
         with contextlib.suppress(OSError):

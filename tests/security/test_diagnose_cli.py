@@ -470,3 +470,49 @@ def test_d1_the_opened_folder_is_checked_again_and_a_swap_before_opening_is_refu
     assert env.db.read_bytes() == before
     assert sorted(path.name for path in env.db.parent.iterdir()) == [env.db.name]
     assert list(real.iterdir()) == []
+
+
+@posix
+@pytest.mark.parametrize("force", [False, True])
+def test_d1_a_failed_final_step_leaves_no_temporary_file(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, force: bool
+) -> None:
+    env.profiles(env.sqlite_profile())
+    real = tmp_path / "reports"
+    real.mkdir()
+    before = env.db.read_bytes()
+
+    def fail(*args: object, **kwargs: object) -> None:
+        raise OSError("the final step failed")
+
+    monkeypatch.setattr(os, "replace" if force else "link", fail)
+    args = ["--profile", "shop", "--output", str(real / "report.md")]
+    code, _, err = env.run(*args, *(["--force"] if force else []))
+    assert code == diagnose_cli.EXIT_ERROR, err
+    assert list(real.iterdir()) == []
+    assert env.db.read_bytes() == before
+
+
+@posix
+def test_d1_a_temporary_file_swapped_for_a_link_never_links_the_database(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.profiles(env.sqlite_profile())
+    real = tmp_path / "reports"
+    real.mkdir()
+    before = env.db.read_bytes()
+    synced = os.fsync
+
+    def sync_then_swap(fd: int) -> None:
+        synced(fd)
+        (tmp,) = real.iterdir()
+        tmp.unlink()
+        tmp.symlink_to(env.db)
+
+    monkeypatch.setattr(os, "fsync", sync_then_swap)
+    env.run("--profile", "shop", "--output", str(real / "report.md"))
+    report = os.stat(real / "report.md", follow_symlinks=False)
+    database = os.stat(env.db)
+    assert (report.st_dev, report.st_ino) != (database.st_dev, database.st_ino)
+    assert database.st_nlink == 1
+    assert env.db.read_bytes() == before

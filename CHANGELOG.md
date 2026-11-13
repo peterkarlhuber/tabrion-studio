@@ -609,7 +609,8 @@ All notable changes to this project are documented here. The format follows
 
 - `tabrion-studio diagnose --output`: hardened against a folder swap. On POSIX the output folder is opened once and
   the checks, the temporary file and the final move all act on that opened folder; the guide now says that a folder
-  link in the path is followed and what Windows does (review D-1 of PR #85).
+  link in the path is followed and what Windows does (review D-1 of PR #85). The final move never follows a link
+  at the temporary file's name, and a failed move leaves no temporary file (review L-1, L-2 of PR #88).
 - Drafts (G-S1 delta audit A-1): a draft text deleted while another connection was reading the state database (for
   example a second Studio instance on the same state folder) could stay in `state.sqlite-wal` until the next history
   activity, settings save, start or close, and with `[history] enabled = false` longer. Every read and save of the
