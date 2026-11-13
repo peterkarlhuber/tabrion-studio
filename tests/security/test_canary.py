@@ -324,6 +324,44 @@ def test_a_failing_lifespan_of_any_app_logs_no_traceback_text(logs: Logs) -> Non
     assert "Application startup failed. Exiting." in messages
 
 
+def _failing_lifespan_app() -> FastAPI:
+    @contextlib.asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        raise RuntimeError(f"cannot connect postgresql://u:x@h DETAIL: Key (email)=({CANARY})")
+        yield  # pragma: no cover
+
+    return FastAPI(lifespan=lifespan)
+
+
+def test_uvicorns_own_logging_config_from_earlier_does_not_bypass_redaction(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """TD-055: another Uvicorn in the process configured its loggers (own stderr handler, no propagation) first."""
+    uvicorn.Config(FastAPI())  # the default log_config: logging.config.dictConfig(uvicorn.config.LOGGING_CONFIG)
+    console = io.StringIO()
+    setup = configure_logging(tmp_path / "logs", "studio-test", level=logging.DEBUG, console=console)
+    try:
+        _serve_until_lifespan_fails(_failing_lifespan_app())
+        logs = Logs(setup, console)
+        _assert_no_canary(logs.everything() + capsys.readouterr().err)
+        messages = [str(record["message"]) for record in logs.records() if record["logger"] == "uvicorn.error"]
+        assert "[traceback text redacted]" in messages
+    finally:
+        setup.close()
+        forget_secrets()
+
+
+def test_uvicorns_own_logging_config_from_later_does_not_bypass_redaction(
+    logs: Logs, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """TD-055: Uvicorn's loggers configured again after Studio's: their own handler only sees redacted records."""
+    uvicorn.Config(FastAPI())
+    _serve_until_lifespan_fails(_failing_lifespan_app())
+    err = capsys.readouterr().err
+    _assert_no_canary(logs.everything() + err)
+    assert "[traceback text redacted]" in err
+
+
 def test_a_failing_studio_startup_is_logged_with_frames_only(
     static_dir: Path, logs: Logs, monkeypatch: pytest.MonkeyPatch
 ) -> None:

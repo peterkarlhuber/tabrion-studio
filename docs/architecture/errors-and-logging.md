@@ -66,6 +66,14 @@ messages in the traceback text (`tests/security/test_canary.py`).
 `configure_logging` installs two handlers on the root logger, so Studio's loggers (`tabrion_studio.*`), Uvicorn's
 (`log_config=None`) and asyncio's all pass the same redaction:
 
+It also takes over the loggers that carry exception text, `uvicorn`, `uvicorn.error`, `uvicorn.access`,
+`uvicorn.asgi` and `asyncio` (`logs.OWNED_LOGGERS`, TD-055): their own handlers are removed, they propagate to the
+root logger again, and the redaction filters sit on the loggers themselves. Uvicorn's default `log_config` (any
+`uvicorn.Config` built without `log_config=None` in the same process, or another program's `dictConfig`) gives
+`uvicorn` a stderr handler and `propagate=False`; without the takeover, a failed lifespan's traceback text would
+bypass Studio's handlers and be printed as it is. A handler added to these loggers later still gets only redacted
+records. `LogSetup.close()` restores the earlier state.
+
 | Handler | Format | Level | Where |
 |---|---|---|---|
 | file | JSON lines | INFO | `<log dir>/studio-<key>.log`, one file per project instance (named like its info file) |

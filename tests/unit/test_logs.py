@@ -19,6 +19,7 @@ from tabrion_studio.logs import (
     MAX_BYTES,
     MAX_TRACEBACK,
     MESSAGE_REDACTED,
+    OWNED_LOGGERS,
     REDACTED,
     PrivateRotatingFileHandler,
     RedactionFilter,
@@ -62,6 +63,28 @@ def test_file_gets_json_lines_and_console_gets_warnings(tmp_path: Path, console:
     assert "ready on" not in text  # INFO stays in the file
     assert text.count("\n") == 1 and "two\\x0alines" in text  # one line per record, no log injection
     assert setup.handlers == []  # close() removed them from the root logger
+
+
+def test_owned_loggers_are_taken_over_and_given_back(tmp_path: Path, console: io.StringIO) -> None:
+    # TD-055: Uvicorn's own handler and propagate=False (its default log_config) would bypass the root handlers.
+    uvicorn_logger = logging.getLogger("uvicorn")
+    foreign = logging.StreamHandler(io.StringIO())
+    uvicorn_logger.addHandler(foreign)
+    uvicorn_logger.propagate = False
+    setup = configure_logging(tmp_path / "logs", "studio-x", console=console)
+    try:
+        for name in OWNED_LOGGERS:
+            logger = logging.getLogger(name)
+            assert logger.handlers == [] and logger.propagate and not logger.disabled
+            assert any(isinstance(item, RedactionFilter) for item in logger.filters)
+        logging.getLogger("uvicorn.error").error("Traceback (most recent call last):\nRuntimeError: value-55")
+    finally:
+        setup.close()
+    assert setup.file is not None
+    assert "value-55" not in setup.file.read_text(encoding="utf-8")
+    assert [r["message"] for r in _records(setup.file)] == ["[traceback text redacted]"]
+    assert uvicorn_logger.handlers == [foreign] and uvicorn_logger.propagate is False
+    assert all(not logging.getLogger(name).filters for name in OWNED_LOGGERS)
 
 
 @posix_only

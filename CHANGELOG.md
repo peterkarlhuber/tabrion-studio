@@ -485,6 +485,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- TD-055: Studio's log redaction no longer depends on Uvicorn's loggers being unconfigured. `configure_logging`
+  takes over Uvicorn's and asyncio's loggers (their own handlers removed, propagation on, the redaction filters on the
+  loggers themselves) and restores them on close, so a `uvicorn.Config` with the default `log_config` or another
+  `dictConfig` in the same process cannot make Uvicorn print a failed lifespan's traceback text unredacted. The
+  `tabrion-studio` command was not affected (it passes `log_config=None`). Tests restore the logging state after
+  each one, which fixes the lifespan canary failing after `tests/unit/test_server.py`.
+
 - Security review F-6 / TD-031: the Python runtime dependencies are installed from the hashed lock
   `constraints/runtime-lock.txt` (exact versions, SHA-256 of every file, `pip --require-hashes --no-deps`, wheels
   only) in every `ci.yml` job, in `scripts/smoke_wheel.py` and in the installation guide; Tabrion stays pinned by its full

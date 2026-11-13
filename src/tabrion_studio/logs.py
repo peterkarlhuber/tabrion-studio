@@ -27,6 +27,13 @@ logger, so that Studio's own loggers (``tabrion_studio.*``), Uvicorn's and async
    lifespan logs the exception itself with ``exc_info`` (frames only).
 3. Only the fields of :data:`EXTRA_FIELDS` reach the output, scrubbed and length-capped; anything else that a caller
    passes in ``extra`` is dropped.
+4. **The loggers that carry exception text (:data:`OWNED_LOGGERS`: Uvicorn's and asyncio's) are taken over**
+   (TD-055): :func:`configure_logging` removes their own handlers, turns propagation on and puts the redaction filters
+   on the loggers themselves. Uvicorn's default ``log_config`` (any ``uvicorn.Config`` built without
+   ``log_config=None`` in the same process, or a ``dictConfig`` of the embedding program) gives ``uvicorn`` a stderr
+   handler and ``propagate=False``; without the takeover, Uvicorn's records would bypass the redacting handlers on the
+   root logger and a failed lifespan's traceback text would be printed as it is. The logger filters also scrub a
+   record before a handler that is added to these loggers later. :meth:`LogSetup.close` restores the earlier state.
 
 Studio never logs SQL parameter values, result rows, passwords or full connection URLs; SQL text is logged only at
 DEBUG after the opt-in ``log_sql = true``, cut to 2 KB (STU-011). Uvicorn's access log is off; the request log of
@@ -390,6 +397,22 @@ class PrivateRotatingFileHandler(RotatingFileHandler):
             raise
 
 
+#: The loggers whose records carry exception text (Uvicorn logs a failed lifespan's traceback as its message, asyncio
+#: the reprs of tasks): :func:`configure_logging` makes them propagate to its handlers and filters them itself (TD-055).
+OWNED_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access", "uvicorn.asgi", "asyncio")
+
+
+@dataclass
+class _LoggerState:
+    """What :func:`configure_logging` changed on one of :data:`OWNED_LOGGERS`; :meth:`LogSetup.close` restores it."""
+
+    logger: logging.Logger
+    handlers: list[logging.Handler]
+    propagate: bool
+    disabled: bool
+    filters: list[logging.Filter]
+
+
 @dataclass
 class LogSetup:
     """The handlers :func:`configure_logging` installed; :meth:`close` removes them again."""
@@ -397,6 +420,7 @@ class LogSetup:
     file: Path | None
     handlers: list[logging.Handler] = field(default_factory=list)
     previous_level: int = logging.WARNING
+    owned: list[_LoggerState] = field(default_factory=list)
 
     def close(self) -> None:
         root = logging.getLogger()
@@ -405,6 +429,30 @@ class LogSetup:
             handler.close()
         root.setLevel(self.previous_level)
         self.handlers.clear()
+        for state in reversed(self.owned):
+            for item in state.filters:
+                state.logger.removeFilter(item)
+            for handler in state.handlers:
+                state.logger.addHandler(handler)
+            state.logger.propagate = state.propagate
+            state.logger.disabled = state.disabled
+        self.owned.clear()
+
+
+def _take_over(filters: list[logging.Filter]) -> list[_LoggerState]:
+    """Route :data:`OWNED_LOGGERS` to the root handlers and filter them on the logger itself (TD-055)."""
+    states: list[_LoggerState] = []
+    for name in OWNED_LOGGERS:
+        logger = logging.getLogger(name)
+        state = _LoggerState(logger, list(logger.handlers), logger.propagate, logger.disabled, filters)
+        for handler in state.handlers:
+            logger.removeHandler(handler)
+        logger.propagate = True
+        logger.disabled = False
+        for item in filters:
+            logger.addFilter(item)
+        states.append(state)
+    return states
 
 
 class _DbMessageFilter(DbErrorRedactionFilter):
@@ -470,6 +518,7 @@ def configure_logging(
     for handler in handlers:
         root.addHandler(handler)
     setup.handlers = handlers
+    setup.owned = _take_over([redaction, db_redaction])
     root.setLevel(min(level, console_level))
     if failure is not None:
         logging.getLogger("tabrion_studio.logs").warning(
