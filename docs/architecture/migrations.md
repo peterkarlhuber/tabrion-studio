@@ -2,6 +2,9 @@
 
 STU-015 (03 section 2 F) shows the migration status of an open connection: Alembic, and SQLite's `user_version`.
 STU-024 adds the Levuvo formats Nodestro, Axentra and Orkexa on PostgreSQL. Studio only reads and never migrates.
+This stays so with the planned Schema Designer (Studio 1.2, CR-DBX, locked until G-S3): for an Alembic project it only
+generates a revision file into the trusted project and never runs `env.py` or an upgrade; direct execution of a plan
+is limited to DEV and TEST databases without migration management ([STU-ADR-0005](../adr/0005-crdbx-write-and-admin-gates.md), E-X4).
 
 ## Routes
 
