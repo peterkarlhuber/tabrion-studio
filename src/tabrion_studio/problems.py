@@ -400,6 +400,14 @@ CATALOG: dict[str, Entry] = {
     "studio.explorer_engine": Entry(
         409, ProblemKind.REQUEST, "Not for this database", "This information exists only for the other engine."
     ),
+    # ER diagram (STU-023).
+    "studio.diagram_too_large": Entry(
+        422,
+        ProblemKind.REQUEST,
+        "Schema too large for a diagram",
+        "The schema has more than 1000 tables, more than one diagram answer holds.",
+        "Use the explorer's tree and the Relationships tab for this schema.",
+    ),
     # Queries (STU-011).
     "studio.query_not_found": Entry(
         404,

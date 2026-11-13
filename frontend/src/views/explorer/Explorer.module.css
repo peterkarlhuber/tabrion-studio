@@ -15,6 +15,15 @@
   min-width: min(18rem, 100%);
   max-width: 100%;
 }
+.views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-space-2);
+}
+.views [aria-pressed='true'] {
+  border-color: var(--tb-color-primary);
+  background: var(--tb-color-primary-subtle);
+}
 .workspace {
   display: grid;
   grid-template-columns: minmax(15rem, 22rem) minmax(0, 1fr);
