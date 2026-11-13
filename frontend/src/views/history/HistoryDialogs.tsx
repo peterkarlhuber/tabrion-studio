@@ -26,7 +26,7 @@ export function DeleteHistoryDialog({
               interpolation: { escapeValue: false },
             })
       }
-      description={t('history.deleteBody')}
+      description={t(profileName === undefined ? 'history.deleteAllBody' : 'history.deleteBody')}
       initialFocus="cancel"
       onCancel={onCancel}
       actions={[

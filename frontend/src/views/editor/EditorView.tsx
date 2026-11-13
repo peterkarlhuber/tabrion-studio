@@ -393,6 +393,7 @@ export function EditorView({
         };
         first = drafts === null ? [created] : [...first, created];
         activeTab = created.id;
+        if (handed.notice !== undefined) setNotice(handed.notice);
       }
       for (const item of first) known.current.add(item.id);
       setProfiles(items);
@@ -1061,8 +1062,10 @@ export function EditorView({
         return;
       }
       const file = result.value;
-      // The editor works with `\n` (CodeMirror turns CRLF into it); a CRLF script is saved with CRLF again.
-      const crlf = file.content.includes('\r\n');
+      // A script whose lines all end in CRLF is edited with `\n` and saved with CRLF again. A script with mixed line
+      // endings (or a lone CR) is edited as it is: the editor keeps every CR (SqlEditor), so it is saved byte for byte.
+      const crlf =
+        file.content.includes('\r\n') && !/[\r\n]/.test(file.content.replace(/\r\n/g, ''));
       const text = crlf ? file.content.replace(/\r\n/g, '\n') : file.content;
       const created: DraftTab = {
         ...newTab(nextNumber(tabs, t), tab?.profileId ?? profiles?.[0]?.id ?? '', t),
@@ -1284,7 +1287,7 @@ export function EditorView({
                   data-testid="editor-tab"
                 >
                   <span className={styles.tabTitle}>
-                    {item.title}
+                    {visible(item.title)}
                     {dirty(item) ? (
                       <span className={styles.dirtyMark}>
                         <span aria-hidden="true"> •</span>
@@ -1303,7 +1306,7 @@ export function EditorView({
                   ) : null}
                 </button>
                 <IconButton
-                  label={t('editor.tabs.close', { name: item.title })}
+                  label={t('editor.tabs.close', { name: visible(item.title) })}
                   icon={<X />}
                   className={styles.tabClose}
                   onClick={() => closeTab(item.id)}

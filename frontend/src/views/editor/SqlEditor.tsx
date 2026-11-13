@@ -11,6 +11,10 @@
  * **Keyboard.** Tab moves the focus on (no tab trap, WCAG 2.1.2); ⌘↵/Ctrl+Enter runs, ⇧⌘↵/Shift+Ctrl+Enter runs the
  * script, ⌘./Ctrl+. cancels (08 section 7).
  *
+ * **Line endings (STU-020).** A text that holds a carriage return when its editor is created (a script with mixed line
+ * endings) is edited with `\n` as the only line separator: every CR stays in the text, shown as a marked character,
+ * and the script is saved byte for byte. Any other text is edited as usual (CodeMirror reads CRLF and CR as `\n`).
+ *
  * **Completion (STU-020).** The dialect's keywords, and with `schema` the schemas, tables and views of the explorer's
  * catalog (`completion.ts`); `completionSource` adds what needs a request (the columns after `table.`).
  */
@@ -192,6 +196,9 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
     if (text) text.textContent = description;
   }, [mount, description]);
 
+  // Decided once per editor (each tab has its own): see "Line endings" above.
+  const [keepCarriageReturns] = useState(() => value.includes('\r'));
+
   const extraSource = useMemo<CompletionSource>(
     () => (context) => handlers.current.completionSource?.(context) ?? null,
     [],
@@ -224,8 +231,9 @@ export const SqlEditor = forwardRef<SqlEditorHandle, SqlEditorProps>(function Sq
       }),
       theme,
       highlight,
+      ...(keepCarriageReturns ? [EditorState.lineSeparator.of('\n')] : []),
     ],
-    [dialect, label, schema, defaultSchema, extraSource],
+    [dialect, label, schema, defaultSchema, extraSource, keepCarriageReturns],
   );
 
   const stableChange = useMemo(() => (next: string) => handlers.current.onChange(next), []);

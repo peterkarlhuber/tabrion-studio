@@ -94,7 +94,11 @@ describe('script answers (STU-020)', () => {
   it('reads the list and a file', () => {
     expect(
       parseScriptList({ scripts: [{ path: 'a.sql', size: 3 }, { path: 1 }], truncated: true }),
-    ).toEqual({ scripts: [{ path: 'a.sql', size: 3 }], truncated: true });
+    ).toEqual({ scripts: [{ path: 'a.sql', size: 3 }], truncated: true, skippedLinks: 0 });
+    expect(parseScriptList({ scripts: [], truncated: false, skipped_links: 2 })?.skippedLinks).toBe(
+      2,
+    );
+    expect(parseScriptList({ scripts: [], skipped_links: 'x' })?.skippedLinks).toBe(0);
     expect(parseScriptFile({ path: 'a.sql', content: 'x', digest: 'd' })).toEqual({
       path: 'a.sql',
       content: 'x',
@@ -110,7 +114,14 @@ describe('script answers (STU-020)', () => {
   });
 
   it('checks a path like the server does, and names a tab after the script', () => {
-    for (const ok of ['a.sql', 'sql/reports/b.SQL', 'x y.sql'])
+    for (const ok of [
+      'a.sql',
+      'sql/reports/b.SQL',
+      'x y.sql',
+      'console.sql',
+      'com10.sql',
+      'a~b.sql',
+    ])
       expect(validScriptPath(ok)).toBe(true);
     for (const bad of [
       '',
@@ -126,6 +137,18 @@ describe('script answers (STU-020)', () => {
       ' a.sql',
       'a\n.sql',
       `${'x'.repeat(520)}.sql`,
+      // Windows device names, 8.3 short names, trailing dots and format characters (the server's rules).
+      'nul.sql',
+      'CON.sql',
+      'com1.sql',
+      'lpt\u00b9.sql',
+      'conin$.sql',
+      'aux/x.sql',
+      'GIT~1/x.sql',
+      'sql./x.sql',
+      'a.sql.',
+      'a\u202Eb.sql',
+      'a\u200Bb.sql',
     ]) {
       expect(validScriptPath(bad)).toBe(false);
     }

@@ -67,6 +67,11 @@ const PROBLEMS = new Set([
   'script_exists',
   'script_stale',
   'script_folder_missing',
+  'script_link',
+  'script_permission_denied',
+  'script_locked',
+  'script_disk_full',
+  'script_write_failed',
   'offline',
 ]);
 

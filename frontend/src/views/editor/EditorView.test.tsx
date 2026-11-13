@@ -1090,6 +1090,48 @@ describe('EditorView: scripts, format and completion (STU-020)', () => {
     });
   });
 
+  it('keeps mixed line endings of a script byte for byte: nothing is made uniform on save', async () => {
+    const user = userEvent.setup();
+    const mixed = 'select 1;\r\nselect 2;\nselect 3;\rselect 4;';
+    const scripts = scriptServer({ 'mixed.sql': { content: mixed, digest: DIGEST_A } });
+    setup({ sql: 'select 0' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    await user.click(await screen.findByRole('button', { name: 'mixed.sql' }));
+    const text = await screen.findByRole('textbox', { name: 'SQL of mixed' });
+    expect(screen.getAllByTestId('editor-tab')[1]).not.toHaveTextContent('not saved');
+    fireEvent.keyDown(text, { key: 's', ctrlKey: true });
+    await waitFor(() => expect(scripts.puts).toHaveLength(1));
+    expect(scripts.puts[0]).toMatchObject({ content: mixed, digest: DIGEST_A });
+  });
+
+  it('says how many links the script list left out', async () => {
+    const user = userEvent.setup();
+    const before = (url: string): Response | null =>
+      url === '/api/scripts'
+        ? json({ scripts: [{ path: 'a.sql', size: 1 }], truncated: false, skipped_links: 2 })
+        : null;
+    setup({ sql: 'select 0' }, { before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    expect(await screen.findByTestId('script-skipped-links')).toHaveTextContent(
+      '2 links were left out',
+    );
+  });
+
+  it('shows a script name with a bidi control escaped in its tab', async () => {
+    const user = userEvent.setup();
+    const scripts = scriptServer({ 'a\u202Eb.sql': { content: 'select 1', digest: DIGEST_A } });
+    setup({ sql: 'select 0' }, { before: scripts.before });
+    await editor();
+    await user.click(screen.getByTestId('editor-open'));
+    await user.click(await screen.findByRole('button', { name: 'a\\u202Eb.sql' }));
+    await waitFor(() =>
+      expect(screen.getAllByTestId('editor-tab')[1]).toHaveTextContent('a\\u202Eb'),
+    );
+    expect(screen.getAllByTestId('editor-tab')[1]?.textContent).not.toContain('\u202E');
+  });
+
   it('asks for a path for a new script; a script that exists or changed is overwritten only on request', async () => {
     const user = userEvent.setup();
     const scripts = scriptServer({ 'taken.sql': { content: 'old', digest: DIGEST_A } });
