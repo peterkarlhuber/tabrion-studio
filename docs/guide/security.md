@@ -62,9 +62,9 @@ Studio is a tool for one person on one computer. In short:
 - **Drafts are SQL text on disk.** The SQL editor keeps your tabs' text in Studio's private state database (0600, in
   the state folder), never in the browser's storage. It is kept until you close the tab, or until the project's
   editor has not been opened or changed for the history's retention days. Do not type secrets into the SQL itself; give them as parameters.
-- **Not reviewed for publication yet.** The independent security review of the MVP is accepted, and the owner accepted
-  the recommendations for G-S1 on 2026-11-13; the formal G-S1 confirmation and a human security review before a
-  public release are still open. Studio is not released.
+- **Not reviewed for publication yet.** The independent security review of the MVP is accepted, and the security
+  gate G-S1 passed on 2026-11-13 (master `9a5d4fa`). That is not a release approval: the mandatory human security
+  review before any public release is still open, and the Data Editor stays locked. Studio is not released.
 
 The technical details and their tests are in [Access protection](../architecture/access-protection.md),
 [Configuration and project trust](../architecture/configuration.md), [Secret management](../architecture/secrets.md)

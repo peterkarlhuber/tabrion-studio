@@ -415,3 +415,58 @@ def test_m2_a_message_naming_a_profile_survives_an_ascii_error_stream(env: Env) 
     assert diagnose_cli.main(args, io.StringIO(), err) == diagnose_cli.EXIT_USAGE
     err.flush()
     assert b"user:pr\\xfcf is marked as PROD" in raw.getvalue()
+
+
+# Follow-up to the PR #85 review, D-1: the write stays in the folder that was opened and checked.
+@posix
+def test_d1_a_folder_link_swapped_after_the_check_cannot_redirect_the_write(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.profiles(env.sqlite_profile())
+    assert diagnose_cli._IN_FOLDER
+    real = tmp_path / "reports"
+    real.mkdir()
+    link = tmp_path / "folder-link"
+    link.symlink_to(real)
+    before = env.db.read_bytes()
+
+    def swap(folder: int) -> None:
+        link.unlink()
+        link.symlink_to(env.db.parent)  # now the path names the database itself
+
+    monkeypatch.setattr(diagnose_cli, "_folder_opened", swap)
+    code, _, err = env.run("--profile", "shop", "--output", str(link / env.db.name), "--force")
+    assert code == diagnose_cli.EXIT_OK, err
+    assert env.db.read_bytes() == before
+    assert (real / env.db.name).read_bytes().startswith(b"# Tabrion Studio diagnosis report")
+    assert sorted(path.name for path in real.iterdir()) == [env.db.name]  # no temporary file left
+    assert sorted(path.name for path in env.db.parent.iterdir()) == [env.db.name]
+
+
+@posix
+def test_d1_the_opened_folder_is_checked_again_and_a_swap_before_opening_is_refused(
+    env: Env, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    env.profiles(env.sqlite_profile())
+    real = tmp_path / "reports"
+    real.mkdir()
+    link = tmp_path / "folder-link"
+    link.symlink_to(real)
+    before = env.db.read_bytes()
+    checked = diagnose_cli._check_output
+
+    def check_then_swap(target: Path, *, force: bool, protected: set[str]) -> None:
+        checked(target, force=force, protected=protected)
+        if protected:  # the check before the write: the folder link changes right after it
+            link.unlink()
+            link.symlink_to(env.db.parent)
+
+    monkeypatch.setattr(diagnose_cli, "_check_output", check_then_swap)
+    for name in (env.db.name, f"{env.db.name}-wal"):
+        link.unlink()
+        link.symlink_to(real)
+        code, _, err = env.run("--profile", "shop", "--output", str(link / name), "--force")
+        assert code == diagnose_cli.EXIT_USAGE and "never changes a database" in err, (name, err)
+    assert env.db.read_bytes() == before
+    assert sorted(path.name for path in env.db.parent.iterdir()) == [env.db.name]
+    assert list(real.iterdir()) == []

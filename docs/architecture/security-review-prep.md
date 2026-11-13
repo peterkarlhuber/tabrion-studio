@@ -9,8 +9,9 @@ State: prepared at master `e9df576`; updated after the first independent review 
 [Independent review](#independent-review-first-round)) and after its re-review on master `2a8a229`, which accepted
 the review (section [Re-review](#re-review-on-2a8a229)). The accepted review is the input to G-S1, not the gate.
 On 2026-11-13 the owner accepted every recommendation of the G-S1 decision package (13 points, each option A,
-section [Owner decisions](#owner-decisions-on-2026-11-13)); the formal G-S1 confirmation on a concrete master SHA is
-still pending. Sensitive specifics of the pre-review and of the review, such as reproduction steps, are kept outside the
+section [Owner decisions](#owner-decisions-on-2026-11-13)). **G-S1 passed** for master `9a5d4faa69f1c974999d258b36258fbc10b3323f`: the owner granted it
+on the condition that all 21 required CI jobs are green on that SHA, which was met on 2026-11-13 (run 43457105100).
+G-R is not granted. Sensitive specifics of the pre-review and of the review, such as reproduction steps, are kept outside the
 repository, with the planning documents.
 
 ## What G-S1 asks
@@ -22,17 +23,18 @@ From the security and quality plan (doc 07, gate table) and the backlog entry of
 | SQ-01..SQ-08 green, each with its STU-T tests | Ready for review | [SQ requirements](#sq-01sq-08) below |
 | SQ-01..SQ-08 after the independent review | Met in the review: SQ-05 and SQ-07 (review F-1, F-2) and SQ-06 (F-4) fixed (PR #65/#66), independent re-review accepted at `2a8a229` | [Re-review](#re-review-on-2a8a229) below |
 | Every threat-model measure (doc 03 section 7.3, T-01..T-16) proven by a test | Met in the review: T-06 and T-13 (review F-1, F-2) fixed (PR #66), independent re-review accepted at `2a8a229`; T-16: F-7 fixed in PR #75 (TD-054), re-check accepted at `d33f89d`; the write-mode rows are G-S2 | [Threat model](#threat-model-t-01t-16) below |
-| Review report "accepted": a first review, the fixes, a re-review on merged SHAs | Met: the first independent review (`e186178`) was not accepted; its findings were fixed (PR #65/#66), independent re-review accepted at `2a8a229`. G-S1 itself is the owner's decision: the 13 recommendations were accepted on 2026-11-13 ([Owner decisions](#owner-decisions-on-2026-11-13)); the formal confirmation on a master SHA is pending | [Independent review](#independent-review-first-round), [re-review](#re-review-on-2a8a229) below |
+| Review report "accepted": a first review, the fixes, a re-review on merged SHAs | Met: the first independent review (`e186178`) was not accepted; its findings were fixed (PR #65/#66), independent re-review accepted at `2a8a229`. G-S1 itself is the owner's decision: the 13 recommendations were accepted on 2026-11-13 ([Owner decisions](#owner-decisions-on-2026-11-13)); **G-S1 passed** for master `9a5d4faa69f1c974999d258b36258fbc10b3323f` (all 21 required CI jobs green, run 43457105100, 2026-11-13) | [Independent review](#independent-review-first-round), [re-review](#re-review-on-2a8a229) below |
 | `npm audit --omit=dev` without High | Met (0 findings at `e9df576`) | CI job `dependency audit` |
 | axe: 0 serious or critical | Met for the existing views (`e2e`, every view in light and dark, en and de) | `frontend/e2e/*.spec.ts`, `docs/architecture/accessibility.md`; the rest of STU-053 is TD-022 |
 
 ## Owner decisions on 2026-11-13
 
 !!! warning "G-S1 status"
-    The owner accepted the recommendations on 2026-11-13; formal G-S1 confirmation on a concrete master SHA
-    pending. Until it is recorded here and in `docs/TODO.md` (STU-016), G-S1 is **not** granted. G-R stays locked,
-    the human security review before any publication (STU-028, E-QA2) stays mandatory, STU-026 (Data Editor) stays
-    locked behind G-S2, and nothing is tagged or published.
+    **G-S1 passed** for master `9a5d4faa69f1c974999d258b36258fbc10b3323f`. The owner accepted the recommendations on 2026-11-13 and
+    granted G-S1 for that SHA on the condition that all 21 required CI jobs are green on it; the condition was met
+    on 2026-11-13 (run 43457105100). G-R is **not** granted: the mandatory human security review before any public
+    release (STU-028, E-QA2) remains, STU-026 (Data Editor) stays locked behind G-S2, and nothing is tagged or
+    published.
 
 The G-S1 decision package (planning documents, `g-s1/g-s1-entscheidungspaket.md`, state master `d72a14f`) put 13
 points to the owner. On 2026-11-13 (14:18 UTC) the owner accepted every recommendation, each **option A**. The table
