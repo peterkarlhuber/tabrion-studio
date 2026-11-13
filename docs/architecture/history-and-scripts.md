@@ -107,9 +107,11 @@ folder. They now live in the state database, one document per project (the proje
   page replaces lone surrogates with U+FFFD before it sends, as `String.prototype.toWellFormed` does.
 - **Caps.** 32 tabs, 512 K characters per text (the statement cap), 2 M characters of text in all
   (`studio.drafts_too_large`, 413), and the body cap of the route (12 MB plus about 700 KB, enforced while the body
-  streams in). Before the body is parsed, a scan with the strings blanked counts its structure (`{ [ , :`): more than
-  4,096, far beyond a valid document, is `access.bad_request`, so a body of millions of tiny values never becomes
-  millions of Python objects. The page leaves out a text over the cap of one text, and the largest texts first while
+  streams in). Before the body is parsed, one pass counts its structure outside strings (`{ [ , :`) and its strings:
+  more than 4,096 structural characters or 4,097 strings, far beyond a valid document, is `access.bad_request`, so a
+  body of millions of tiny values never becomes millions of Python objects. The pass reads each byte once and stops
+  at the limit, so its time is linear in the body's size (review delta N-1). A body at the cap is scanned in well
+  under a second. The page leaves out a text over the cap of one text, and the largest texts first while
   all are over theirs; the tab still works.
 - **Merge by tab.** `known` is every tab id the page has had. Stored tabs it does not name (another page of the same
   project added them) are kept after the page's own, within the caps; the tabs it closed go. Without `known`, the
@@ -134,7 +136,8 @@ folder. They now live in the state database, one document per project (the proje
   them after the server's tabs, and sends them with its first save. Once the server accepted a save, these two keys
   are removed. Other projects' keys stay: their folder cannot be told from the hash, so only that project's editor,
   started on the same port, can move them. The keys stay as well while the server cannot store the drafts, and when
-  not all of them fit the caps (a tab beyond 32, text beyond 2 M characters), so nothing is lost. The page never writes a draft to `localStorage`, `sessionStorage` or IndexedDB.
+  not all of them fit the caps (a tab beyond 32, text beyond 2 M characters), so nothing is lost. The fit is checked
+  on the two keys together (review delta N-2): 20 tabs in each are 40, so both keys stay. The page never writes a draft to `localStorage`, `sessionStorage` or IndexedDB.
 
 No log record holds a draft's text, title or script path.
 

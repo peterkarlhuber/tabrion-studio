@@ -112,7 +112,7 @@ checks, so a refused request is never read, and caps the body while it streams i
 | `/api/session` (before a session exists), `/api/control/launch`, `/api/control/shutdown` | 4 KB | 413 `access.body_too_large` |
 | `/api/queries`, `/api/exports` (a statement of up to 512 K characters plus parameters) | 2 MB | 413 `studio.query_too_large` |
 | `/api/scripts/file` (STU-020: a `.sql` script of up to 1 MB as JSON, whose escapes can make it six times as long) | 6 MB + 8 KB | 413 `studio.script_too_large` |
-| `/api/drafts` (TD-033: the editor drafts, 2 M characters of text as JSON plus the tabs' other fields and the known tab ids; a body with more than 4,096 structural characters outside strings is refused before it is parsed) | 12 MB + about 700 KB | 413 `studio.drafts_too_large` |
+| `/api/drafts` (TD-033: the editor drafts, 2 M characters of text as JSON plus the tabs' other fields and the known tab ids; a body with more than 4,096 structural characters outside strings or more than 4,097 strings is refused before it is parsed, by one linear pass) | 12 MB + about 700 KB | 413 `studio.drafts_too_large` |
 | Every other path | 16 KB (the largest cap of a route's own check: the profile and settings forms) | 413 `access.body_too_large` |
 
 A malformed or repeated `Content-Length` is 400 `access.bad_request`. A chunked body is read chunk by chunk and

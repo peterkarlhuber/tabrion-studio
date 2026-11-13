@@ -231,6 +231,8 @@ export function hasLegacyDrafts(projectPath: string): boolean {
 /**
  * The drafts an earlier version kept in this browser for this project: its own key, then the unscoped key (written
  * while the project's folder was not known). Only read: `clearLegacyDrafts` removes them once the server has them.
+ * The two keys together can have more than `MAX_TABS` tabs: they are all returned, so that `legacyKept` sees every
+ * one of them and both keys stay when they do not fit (review delta N-2).
  */
 export function readLegacyDrafts(projectPath: string): Drafts | null {
   const stored = (key: string) => {
@@ -241,7 +243,7 @@ export function readLegacyDrafts(projectPath: string): Drafts | null {
     }
   };
   const own = projectPath === '' ? null : stored(draftsKey(projectPath));
-  return mergeDrafts(own, stored(DRAFTS_KEY));
+  return unionDrafts(own, stored(DRAFTS_KEY));
 }
 
 /**
@@ -269,13 +271,20 @@ export function legacyKept(merged: Drafts, legacy: Drafts): boolean {
   return legacy.tabs.every((tab) => ids.has(tab.id)) && total <= MAX_TOTAL_CHARS;
 }
 
-/** `first`'s tabs, then `second`'s tabs that `first` does not have (by id), within the tab cap. */
-export function mergeDrafts(first: Drafts | null, second: Drafts | null): Drafts | null {
+/** `first`'s tabs, then `second`'s tabs that `first` does not have (by id), all of them. */
+function unionDrafts(first: Drafts | null, second: Drafts | null): Drafts | null {
   if (first === null) return second;
   if (second === null) return first;
   const ids = new Set(first.tabs.map((tab) => tab.id));
   return {
-    tabs: [...first.tabs, ...second.tabs.filter((tab) => !ids.has(tab.id))].slice(0, MAX_TABS),
+    tabs: [...first.tabs, ...second.tabs.filter((tab) => !ids.has(tab.id))],
     activeTab: first.activeTab,
   };
+}
+
+/** `first`'s tabs, then `second`'s tabs that `first` does not have (by id), within the tab cap. */
+export function mergeDrafts(first: Drafts | null, second: Drafts | null): Drafts | null {
+  const union = unionDrafts(first, second);
+  if (union === null || union.tabs.length <= MAX_TABS) return union;
+  return { ...union, tabs: union.tabs.slice(0, MAX_TABS) };
 }

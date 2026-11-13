@@ -16,15 +16,19 @@ import io
 import json
 import logging
 from pathlib import Path
+import random
 import stat
 import sys
+import time
 from typing import Any
 import uuid
 
 import pytest
 from tabrion.sqlite import SQLiteProfile, connect, migrate
 
+from tabrion_studio.api import drafts as drafts_api
 from tabrion_studio.api.config import Configuration
+from tabrion_studio.api.drafts import MAX_BODY
 from tabrion_studio.app import BODY_LIMITS
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.schema import Settings
@@ -494,6 +498,99 @@ def test_structure_inside_strings_does_not_count(env: Env) -> None:
     answer = env.put({"tabs": [_tab("a", sql), {**_tab("b"), "title": 'say "{[,:]}"'}], "active_tab": "a"})
     assert answer.status_code == 200, answer.text
     assert env.get().json()["drafts"]["tabs"][0]["sql"] == sql
+
+
+def _at_cap(prefix: bytes, unit: bytes, suffix: bytes = b"") -> bytes:
+    return prefix + unit * ((MAX_BODY - len(prefix) - len(suffix)) // len(unit)) + suffix
+
+
+ADVERSARIAL = {
+    "escaped quotes in an unterminated string": _at_cap(b'{"tabs":"', b'\\"'),
+    "the same with a trailing backslash": _at_cap(b'{"tabs":"', b'\\"', b"\\"),
+    "text and escaped quotes": _at_cap(b'{"tabs":"', b'a\\"'),
+    "backslashes only": _at_cap(b'{"tabs":"', b"\\"),
+    "quotes only": _at_cap(b"", b'"'),
+    "empty strings and commas": _at_cap(b'{"tabs":[', b'"",'),
+    "quotes and colons": _at_cap(b"", b'":'),
+    "open brackets": _at_cap(b"", b"["),
+}
+
+
+@pytest.mark.parametrize("raw", ADVERSARIAL.values(), ids=ADVERSARIAL.keys())
+def test_the_scan_of_a_body_at_the_cap_is_linear(raw: bytes) -> None:
+    """Delta N-1: an unterminated string of escaped quotes took time growing with the square of its size (a week at
+    the cap, holding the GIL). Each such body at the cap is now refused within a fixed bound of process time."""
+    assert len(raw) <= MAX_BODY
+    started = time.process_time()
+    assert drafts_api._parse(raw) is None
+    assert time.process_time() - started < 2.0
+
+
+def test_a_body_at_the_cap_through_the_route_is_refused_quickly(env: Env) -> None:
+    raw = ADVERSARIAL["escaped quotes in an unterminated string"]
+    started = time.process_time()
+    answer = env.studio.client.put(
+        "/api/drafts", content=raw, headers={**env.headers, "Content-Type": "application/json"}
+    )
+    assert time.process_time() - started < 2.0
+    assert answer.status_code == 400
+    assert answer.json()["code"] == "access.bad_request"
+
+
+def test_a_valid_document_at_the_cap_is_scanned_quickly_and_parsed() -> None:
+    raw = b'{"tabs":"' + b'\\"' * ((MAX_BODY - 11) // 2) + b'"}'
+    assert len(raw) <= MAX_BODY
+    started = time.process_time()
+    assert drafts_api._parse(raw) == {"tabs": '"' * ((MAX_BODY - 11) // 2)}
+    assert time.process_time() - started < 2.0
+
+
+def _random_value(rng: random.Random, depth: int) -> Any:
+    alphabet = ['"', "\\", "{", "}", "[", "]", ",", ":", " ", "a", "\n", "\u00e9", "\U0001f600", "\x00", "/"]
+    kind = rng.randrange(6 if depth < 4 else 3)
+    if kind == 0:
+        return "".join(rng.choice(alphabet) for _ in range(rng.randrange(12)))
+    if kind == 1:
+        return rng.choice([0, -1, 2.5, True, False, None])
+    if kind == 2:
+        return "".join(rng.choice(alphabet) for _ in range(rng.randrange(3)))
+    if kind == 3:
+        return [_random_value(rng, depth + 1) for _ in range(rng.randrange(5))]
+    return {_random_value(rng, 4): _random_value(rng, depth + 1) for _ in range(rng.randrange(5))}
+
+
+def _true_shape(value: Any) -> tuple[int, int]:
+    """The structural characters and strings of ``json.dumps(value)``, from the value itself."""
+    if isinstance(value, str):
+        return 0, 1
+    if isinstance(value, list):
+        inner = [_true_shape(item) for item in value]
+        return 1 + max(len(value) - 1, 0) + sum(s for s, _ in inner), sum(n for _, n in inner)
+    if isinstance(value, dict):
+        inner = [_true_shape(item) for item in value.values()]
+        structure = 1 + len(value) + max(len(value) - 1, 0) + sum(s for s, _ in inner)
+        return structure, len(value) + sum(n for _, n in inner)
+    return 0, 0
+
+
+def test_the_scan_counts_exactly_the_structure_of_random_documents() -> None:
+    """Fuzz equivalence: for random JSON, with quotes, backslashes and structure inside its strings, the scan counts
+    what the parsed document has, and the parse returns that document."""
+    rng = random.Random(20261113)  # noqa: S311 - a fixed seed for a repeatable fuzz test, not a secret
+    for _ in range(3_000):
+        value = _random_value(rng, 0)
+        for raw in (
+            json.dumps(value).encode(),
+            json.dumps(value, ensure_ascii=False, indent=1).encode("utf-8", "surrogatepass"),
+        ):
+            shape = drafts_api._shape(raw)
+            assert shape == _true_shape(value), raw
+            if shape[0] <= drafts_api.MAX_STRUCTURE:
+                try:
+                    expected = json.loads(raw)
+                except ValueError:
+                    continue
+                assert drafts_api._parse(raw) == expected
 
 
 def test_a_failed_migration_keeps_the_data_and_the_copy_until_a_later_one_succeeds(

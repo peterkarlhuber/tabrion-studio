@@ -191,6 +191,25 @@ describe('drafts of an earlier version in browser storage (migration)', () => {
     expect(kept(heavy, legacyDrafts)).toBe(false);
   });
 
+  it('stay in both keys when the two together have more tabs than the cap (review delta N-2)', () => {
+    const many = (prefix: string, count: number) =>
+      Array.from({ length: count }, (_, i) => tab(`${prefix}${i}`, `${prefix} ${i}`));
+    localStorage.setItem(draftsKey('/p'), legacy(many('own', 20)));
+    localStorage.setItem(DRAFTS_KEY, legacy(many('unscoped', 20)));
+    const read = readLegacyDrafts('/p');
+    // All 40 tabs are read, not the first 32: the fit check sees the tabs the cap would leave out.
+    expect(read?.tabs).toHaveLength(40);
+    const merged = mergeDrafts(null, read);
+    expect(merged?.tabs).toHaveLength(MAX_TABS);
+    expect(merged !== null && read !== null && legacyKept(merged, read)).toBe(false);
+    // Within the cap together, they are kept and can be removed.
+    localStorage.setItem(DRAFTS_KEY, legacy(many('unscoped', 12)));
+    const fits = readLegacyDrafts('/p');
+    const all = mergeDrafts(null, fits);
+    expect(fits?.tabs).toHaveLength(MAX_TABS);
+    expect(all !== null && fits !== null && legacyKept(all, fits)).toBe(true);
+  });
+
   it('keep their key per project (L-5) and cannot be read when malformed', () => {
     const one = draftsKey('/home/a/project');
     expect(one).not.toBe(draftsKey('/home/b/project'));

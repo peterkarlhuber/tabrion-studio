@@ -122,6 +122,9 @@ async function api(page: Page, method: string, path: string, body: unknown): Pro
 }
 
 async function openEditor(page: Page): Promise<void> {
+  // The drafts live in Studio's state database now (TD-033), not in this test's fresh browser context: each test starts
+  // without the tabs an earlier test left, on the first profile.
+  expect(await api(page, 'PUT', '/api/drafts', { tabs: [], active_tab: null })).toBe(200);
   await page.getByRole('link', { name: 'SQL editor' }).click();
   await expect(page.locator('.cm-content')).toBeVisible();
   await expect(page.getByTestId('editor-profile')).toHaveValue(/e2e-parts/);
@@ -228,6 +231,8 @@ test('a script saved into the project folder opens again', async ({ page }) => {
   );
   // A path outside the project is refused by the page and by the server.
   await page.getByTestId('editor-new-tab').click();
+  // The new tab's editor is mounted and takes the focus after the click; the text is typed into it only then.
+  await expect(page.locator('.cm-content')).toBeFocused();
   await page.keyboard.insertText('select 1');
   await page.keyboard.press('Control+s');
   await dialog.getByTestId('script-path').fill('../outside.sql');
@@ -276,6 +281,8 @@ test('a script with mixed line endings is saved byte for byte; Format runs under
   );
   // Format loads sql-formatter on demand; the strict CSP allows it (no eval).
   await page.getByTestId('editor-new-tab').click();
+  // The new tab's editor is mounted and takes the focus after the click; the text is typed into it only then.
+  await expect(page.locator('.cm-content')).toBeFocused();
   await page.keyboard.insertText('select id,material from parts where id=:id');
   await page.keyboard.press('Alt+Shift+F');
   await expect(page.getByTestId('editor-notice')).toContainText('Formatted.');

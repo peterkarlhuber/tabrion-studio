@@ -15,7 +15,7 @@ import { PROFILES, SETTINGS } from '../../harness/profiles';
 import { editorActions } from '../../keyboard/editorActions';
 import type { SaveFile } from '../../lib/download';
 import { createDraftsServer } from '../../harness/drafts';
-import { DRAFTS_KEY, draftsKey, MAX_DRAFT_CHARS } from './drafts';
+import { DRAFTS_KEY, draftsKey, MAX_DRAFT_CHARS, MAX_TABS } from './drafts';
 import { handToEditor } from './handoff';
 import { EditorView, queryProblemText, scriptFileName } from './EditorView';
 import type { SqlEditorHandle, SqlEditorProps } from './SqlEditor';
@@ -491,6 +491,32 @@ describe('EditorView', () => {
     // Saved within the caps (a text left out), and the key stays, unchanged, so that nothing is lost.
     expect(drafts.log.puts.length).toBeGreaterThan(0);
     expect(localStorage.getItem(draftsKey('/work/parts'))).toBe(legacy);
+  });
+
+  it('keeps both old keys when together they have more tabs than the cap (review delta N-2)', async () => {
+    const many = (prefix: string, count: number) =>
+      JSON.stringify({
+        tabs: Array.from({ length: count }, (_, i) => ({
+          id: `${prefix}${i}`,
+          title: `${prefix} ${i}`,
+          sql: 'select 5',
+        })),
+        activeTab: `${prefix}0`,
+      });
+    const own = many('own', 20);
+    const unscoped = many('unscoped', 20);
+    localStorage.setItem(draftsKey('/work/parts'), own);
+    localStorage.setItem(DRAFTS_KEY, unscoped);
+    const { drafts } = setup(undefined, { projectPath: '/work/parts' });
+    expect(await screen.findAllByTestId('editor-tab')).toHaveLength(MAX_TABS);
+    fireEvent.change(screen.getByRole('textbox', { name: 'SQL of own 0' }), {
+      target: { value: 'select 9' },
+    });
+    await afterDraftSave();
+    // 32 of the 40 tabs are saved; the other 8 are only in the old keys, so both stay as they were.
+    expect(drafts.current()?.tabs).toHaveLength(MAX_TABS);
+    expect(localStorage.getItem(draftsKey('/work/parts'))).toBe(own);
+    expect(localStorage.getItem(DRAFTS_KEY)).toBe(unscoped);
   });
 
   it('keeps the old browser drafts while the server cannot store them, and writes none', async () => {

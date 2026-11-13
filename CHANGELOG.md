@@ -18,7 +18,8 @@ All notable changes to this project are documented here. The format follows
   `[history] retention_days` also applies to drafts (counted from the project's last save; opening the editor saves);
   `enabled = false` and "Delete history" leave them. A save or read that removed text checkpoints the write-ahead
   log; a lone surrogate is refused (`studio.invalid_request`; the page replaces it with U+FFFD), and a body with far
-  more values than a drafts document is refused before it is parsed. The state database moves to schema version 2
+  more values than a drafts document is refused before it is parsed, by a scan that reads each byte once. Old drafts
+  stay in browser storage unless both of this project's keys together fit the caps. The state database moves to schema version 2
   (table `drafts`; a file with data is copied 0600 before the migration and the copy removed after it; after a
   failed migration it stays until a later one succeeds; no downgrade to an older Studio).
 - STU-020 (page): **Query history** (`/history`, ⌘Y / Ctrl+H): the statements you ran with their profile,

@@ -1116,7 +1116,10 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   drafts"). Review `f5-drafts-review.md` (accepted with conditions): finding 1 (lone surrogate refused, not a 500),
   2 (write-ahead log checkpointed after a save that removed text), 3 (only this project's keys removed, and only when
   all old drafts fit), 4 (structure scan before parsing), 5 (retention wording in the guide), 6 (failed migration and
-  no downgrade documented) and 7 (failed-migration test, `expect.poll` for the e2e waits) done. Tests: `tests/security/test_drafts.py`,
+  no downgrade documented) and 7 (failed-migration test, `expect.poll` for the e2e waits) done. Delta review on
+  3feb437: N-1 (the structure scan was not linear in the worst case; now one linear pass, tested at the body
+  cap within a process-time bound and against random documents) and N-2 (the fit check of old drafts covers both keys
+  together) done. Tests: `tests/security/test_drafts.py`,
   `src/views/editor/drafts.test.ts`, `EditorView.test.tsx`, `e2e/editor.spec.ts`, `e2e/drafts-backend.spec.ts`.
 - **Statement splitting:** the page splits scripts with its own scanner (`sqlScan.ts`) instead of
   `tabrion.sql.split_statements`; the server checks every statement again, so a different reading is refused, never

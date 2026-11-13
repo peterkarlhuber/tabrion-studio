@@ -30,18 +30,44 @@ from tabrion_studio.services.state import StateUnavailable
 #: Every text as JSON (an escape can make a character up to six bytes long), plus the ids, titles, profiles, script
 #: paths and the known ids.
 MAX_BODY = 6 * MAX_TOTAL_CHARS + 6 * (MAX_TABS * 1400 + MAX_KNOWN * 70)
-#: JSON strings, matched without backtracking (an unterminated one is left as it is and fails the parse).
-_STRING = re.compile(rb'"(?:[^"\\]++|\\.)*+"', re.DOTALL)
+#: One JSON string from its opening quote. Each part is taken possessively, and a string without a closing quote runs
+#: to the end of the body, so the match never fails and no byte is looked at twice: a scan of the body is linear in
+#: its size (review delta N-1).
+_STRING = re.compile(rb'"(?:[^"\\]++|\\.)*+(?:"|\\?\Z)', re.DOTALL)
 #: The most structural characters (``{ [ , :`` outside strings) a valid document has: 32 tabs of 8 fields, 1024 known
 #: ids and the top level, with room to spare. A body of millions of tiny values would otherwise cost hundreds of MB
 #: to parse before the caps refuse it (review finding 4).
 MAX_STRUCTURE = 4096
+#: The most strings: in a valid document each one is a key before a ``:`` or a value after ``{ [ , :`` (or the whole
+#: document), so there is at most one more than the structural characters.
+MAX_STRINGS = MAX_STRUCTURE + 1
+_STRUCTURE = (b"{", b"[", b",", b":")
+
+
+def _shape(raw: bytes) -> tuple[int, int]:
+    """The structural characters outside strings and the strings of the body, counted until either limit is passed.
+
+    One pass from the start: the bytes between strings are counted in C (``bytes.count``), and each string is skipped
+    with :data:`_STRING`. It stops as soon as a limit is passed, so it does at most ``MAX_STRINGS + 1`` steps of Python
+    and reads each byte once.
+    """
+    structure = 0
+    strings = 0
+    outside = 0
+    for match in _STRING.finditer(raw):
+        start, end = match.span()
+        structure += sum(raw.count(char, outside, start) for char in _STRUCTURE)
+        strings += 1
+        if structure > MAX_STRUCTURE or strings > MAX_STRINGS:
+            return structure, strings
+        outside = end
+    return structure + sum(raw.count(char, outside) for char in _STRUCTURE), strings
 
 
 def _parse(raw: bytes) -> object:
     """The document, or None when it is not JSON or has far more values than a drafts document can have."""
-    skeleton = _STRING.sub(b'""', raw)
-    if sum(skeleton.count(char) for char in (b"{", b"[", b",", b":")) > MAX_STRUCTURE:
+    structure, strings = _shape(raw)
+    if structure > MAX_STRUCTURE or strings > MAX_STRINGS:
         return None
     try:
         return json.loads(raw)
