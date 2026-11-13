@@ -12,6 +12,8 @@ fixed texts with bound parameters (names from the request are values, never part
   check constraints, indexes and, for PostgreSQL, the row estimate (``pg_class.reltuples``). An object that is not in
   the catalog is ``studio.object_not_found``.
 * **Extensions (PostgreSQL):** name, version, schema, the default version available, and whether an update exists.
+* **Diagram (STU-023):** the tables of one schema with their columns (name, type, nullable), primary key and outgoing
+  foreign keys, in one answer for the ER diagram of the page; at most :data:`MAX_DIAGRAM_TABLES` tables.
 * **SQLite facts:** ``journal_mode``, ``user_version``, ``page_size``, ``page_count``, ``foreign_keys``, the file's
   size and permission bits, and per table whether it is ``STRICT`` or ``WITHOUT ROWID`` (``PRAGMA table_list``).
 
@@ -36,7 +38,7 @@ import sqlalchemy
 
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 
-__all__ = ["KINDS", "Explorer", "ExplorerError", "Reflected"]
+__all__ = ["KINDS", "MAX_DIAGRAM_TABLES", "Explorer", "ExplorerError", "Reflected"]
 
 _T = TypeVar("_T")
 
@@ -68,6 +70,30 @@ _PG_FOREIGN_KEYS_SQL = (
     "OR (tn.nspname = :schema AND tc.relname = :name)) "
     "ORDER BY sn.nspname, sc.relname, con.conname"
 )
+#: STU-023: the foreign keys out of every table of one schema, from the catalog like ``_PG_FOREIGN_KEYS_SQL`` (M-1):
+#: the referenced schema is always named, and a partitioned table's key is listed once (``conparentid = 0``).
+_PG_SCHEMA_FOREIGN_KEYS_SQL = (
+    "SELECT con.conname, sc.relname, tn.nspname, tc.relname, "
+    "ARRAY(SELECT a.attname::text FROM unnest(con.conkey) WITH ORDINALITY k(n, i) "
+    "JOIN pg_catalog.pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = k.n ORDER BY k.i), "
+    "ARRAY(SELECT a.attname::text FROM unnest(con.confkey) WITH ORDINALITY k(n, i) "
+    "JOIN pg_catalog.pg_attribute a ON a.attrelid = con.confrelid AND a.attnum = k.n ORDER BY k.i) "
+    "FROM pg_catalog.pg_constraint con "
+    "JOIN pg_catalog.pg_class sc ON sc.oid = con.conrelid "
+    "JOIN pg_catalog.pg_namespace sn ON sn.oid = sc.relnamespace "
+    "JOIN pg_catalog.pg_class tc ON tc.oid = con.confrelid "
+    "JOIN pg_catalog.pg_namespace tn ON tn.oid = tc.relnamespace "
+    "WHERE con.contype = 'f' AND con.conparentid = 0 AND sn.nspname = :schema "
+    "ORDER BY sc.relname, con.conname"
+)
+#: STU-023: the most tables one diagram answer holds. The page draws at most 150 of them (03 section 2 E); a schema
+#: with more is listed for the page's selection, up to this bound. Each table comes with all its columns (the page
+#: lists 20 per box and the table alternative needs the key columns), so the size of an answer grows with the columns
+#: too: a few megabytes for typical schemas, more for one of 1000 tables with hundreds of columns each (PostgreSQL
+#: allows 1600). The read runs under the profile's statement timeout like every catalog read.
+MAX_DIAGRAM_TABLES = 1000
+#: The kinds a diagram shows: the ones that can have keys.
+_DIAGRAM_KINDS = ("table", "foreign_table")
 #: STU-022: ``pg_class.reltuples``, ``-1`` before the first ``VACUUM``/``ANALYZE`` (``None``); a partitioned table
 #: without an estimate of its own gets the sum of its partitions' when each of them has one.
 _ESTIMATE_SQL = (
@@ -247,14 +273,18 @@ class Explorer:
         every per-object route, also STU-022's DDL, policies and row count)."""
         doc = self.catalog(connection_id)
         kind = self._kind(doc, schema, name)
-        if kind is None and doc["cached"] and self.clock() - doc["built_at"] >= REBUILD_AFTER_S:
-            # Created since the catalog was built? One fresh look before refusing, at most every few seconds per
-            # connection, so that unknown names cannot keep the pool busy with rebuilds (L-3).
+        if kind is None and self._may_rebuild(doc):
             doc = self.catalog(connection_id, refresh=True)
             kind = self._kind(doc, schema, name)
         if kind is None:
             raise ExplorerError("studio.object_not_found")
         return self.registry.get(connection_id), kind
+
+    def _may_rebuild(self, doc: dict[str, Any]) -> bool:
+        """Whether a name the catalog does not know may get one fresh look before it is refused: created since the
+        catalog was built? At most every few seconds per connection, so that unknown names cannot keep the pool busy
+        with rebuilds (L-3 of stu-010; ``known`` and ``diagram``)."""
+        return bool(doc["cached"]) and self.clock() - doc["built_at"] >= REBUILD_AFTER_S
 
     @staticmethod
     def _kind(doc: dict[str, Any], schema: str, name: str) -> str | None:
@@ -448,6 +478,101 @@ class Explorer:
                     }
                 )
         return outgoing, incoming
+
+    # Diagram (STU-023)
+
+    def diagram(self, connection_id: object, schema: str) -> dict[str, Any]:
+        """The tables of ``schema`` for the ER diagram: ``{connection_id, engine, schema, tables: [{name, kind,
+        columns: [{name, type, nullable}], primary_key: [column], foreign_keys: [{name, columns, referred_schema,
+        referred_table, referred_columns}]}]}``, sorted by name. A schema outside the catalog (after the one throttled
+        rebuild of ``known``) is ``studio.object_not_found``, one with more than :data:`MAX_DIAGRAM_TABLES` tables
+        ``studio.diagram_too_large``. Three catalog reads for the whole schema (columns, primary keys, foreign keys),
+        never one per table."""
+        doc = self.catalog(connection_id)
+        if schema not in doc["schemas"] and self._may_rebuild(doc):
+            doc = self.catalog(connection_id, refresh=True)
+        if schema not in doc["schemas"]:
+            raise ExplorerError("studio.object_not_found")
+        kinds = {
+            str(item["name"]): str(item["kind"])
+            for item in doc["objects"]
+            if item["schema"] == schema and item["kind"] in _DIAGRAM_KINDS
+        }
+        if len(kinds) > MAX_DIAGRAM_TABLES:
+            raise ExplorerError("studio.diagram_too_large")
+        connection = self.registry.get(connection_id)
+        sqlite = connection.engine == "sqlite"
+        key = None if sqlite else schema
+        names = sorted(kinds)
+
+        def read(
+            found: sqlalchemy.Inspector,
+        ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, list[str]], dict[str, list[dict[str, Any]]]]:
+            if not names:
+                return {}, {}, {}
+            with warnings.catch_warnings():
+                # A type SQLAlchemy does not know reflects as NullType with a warning (see ``columns``).
+                warnings.simplefilter("ignore", sqlalchemy.exc.SAWarning)
+                reflected = found.get_multi_columns(schema=key, filter_names=names)
+            columns = {
+                str(table): [
+                    {
+                        "name": str(column["name"]),
+                        "type": _type_name(column["type"]),
+                        "nullable": bool(column.get("nullable", True)),
+                    }
+                    for column in found_columns
+                ]
+                for (_, table), found_columns in reflected.items()
+            }
+            primary = {
+                str(table): [str(n) for n in (pk or {}).get("constrained_columns") or []]
+                for (_, table), pk in found.get_multi_pk_constraint(schema=key, filter_names=names).items()
+            }
+            outgoing: dict[str, list[dict[str, Any]]] = {}
+            if sqlite:  # SQLite has one schema, so its reflection is exact; PostgreSQL's keys come from the catalog
+                for (_, table), keys in found.get_multi_foreign_keys(schema=key, filter_names=names).items():
+                    outgoing[str(table)] = [
+                        {
+                            "name": fk.get("name"),
+                            "columns": list(fk["constrained_columns"]),
+                            "referred_schema": fk.get("referred_schema") or schema,
+                            "referred_table": fk["referred_table"],
+                            "referred_columns": list(fk["referred_columns"]),
+                        }
+                        for fk in keys
+                    ]
+            return columns, primary, outgoing
+
+        columns, primary, outgoing = self._reflect(connection, read)
+        if not sqlite and names:
+            for key_name, table, to_schema, to_table, key_columns, referred in connection.fetch(
+                _PG_SCHEMA_FOREIGN_KEYS_SQL, {"schema": schema}
+            ):
+                outgoing.setdefault(str(table), []).append(
+                    {
+                        "name": key_name,
+                        "columns": list(key_columns),
+                        "referred_schema": to_schema,
+                        "referred_table": to_table,
+                        "referred_columns": list(referred),
+                    }
+                )
+        return {
+            "connection_id": connection.id,
+            "engine": connection.engine,
+            "schema": schema,
+            "tables": [
+                {
+                    "name": name,
+                    "kind": kinds[name],
+                    "columns": columns.get(name, []),
+                    "primary_key": primary.get(name, []),
+                    "foreign_keys": outgoing.get(name, []),
+                }
+                for name in names
+            ],
+        }
 
     # Engine specifics
 

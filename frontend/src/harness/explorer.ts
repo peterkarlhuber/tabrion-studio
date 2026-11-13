@@ -412,8 +412,131 @@ function byName(query: string | undefined, answers: Record<string, object>): Res
   return name in answers ? json(answers[name]) : problem('studio.object_not_found', 404);
 }
 
+interface Detail {
+  columns?: { name: string; type: string; nullable: boolean }[];
+  primary_key?: { columns: string[] } | null;
+  foreign_keys?: object[];
+  referenced_by?: {
+    name: string;
+    schema: string;
+    table: string;
+    columns: string[];
+    referred_columns: string[];
+  }[];
+}
+
+/** The diagram answer of STU-023 for `schema`, built from the catalog and the table details above. */
+function diagramOf(
+  catalog: typeof SQLITE_CATALOG | typeof PG_CATALOG,
+  tables: Record<string, object>,
+  schema: string,
+) {
+  // The keys into a table with a detail (referenced_by) are the keys out of the tables without one.
+  const incoming = new Map<string, object[]>();
+  for (const [target, detail] of Object.entries(tables) as [string, Detail][]) {
+    for (const key of detail.referenced_by ?? []) {
+      if (key.schema !== schema || key.table in tables) continue;
+      const keys = incoming.get(key.table) ?? [];
+      keys.push({
+        name: key.name,
+        columns: key.columns,
+        referred_schema: schema,
+        referred_table: target,
+        referred_columns: key.referred_columns,
+      });
+      incoming.set(key.table, keys);
+    }
+  }
+  return {
+    connection_id: catalog.connection_id,
+    engine: catalog.engine,
+    schema,
+    tables: catalog.objects
+      .filter((item) => item.schema === schema && item.kind === 'table')
+      .map((item) => {
+        const detail = (tables[item.name] ?? {}) as Detail;
+        return {
+          name: item.name,
+          kind: item.kind,
+          columns: (detail.columns ?? [{ name: 'id', type: 'INTEGER', nullable: false }]).map(
+            ({ name, type, nullable }) => ({ name, type, nullable }),
+          ),
+          primary_key: detail.primary_key?.columns ?? ['id'],
+          foreign_keys: detail.foreign_keys ?? incoming.get(item.name) ?? [],
+        };
+      }),
+  };
+}
+
+/**
+ * `er=150` in the harness: the PostgreSQL schema `audit` answers 150 tables for the diagram (STU-023 acceptance, 150
+ * tables laid out in under 2 s): a tree of keys (each table points at its parent), every seventh table also at a
+ * second one, one table with 30 columns, and one key into `public` (outside the diagram).
+ */
+export function largeDiagram(count = 150) {
+  const name = (index: number) => `audit_${String(index).padStart(3, '0')}`;
+  return {
+    connection_id: 'c-pg',
+    engine: 'postgresql',
+    schema: 'audit',
+    tables: Array.from({ length: count }, (_, index) => {
+      const keys: object[] = [];
+      if (index > 0) {
+        keys.push({
+          name: `${name(index)}_parent_fkey`,
+          columns: ['parent_id'],
+          referred_schema: 'audit',
+          referred_table: name(Math.floor((index - 1) / 2)),
+          referred_columns: ['id'],
+        });
+      }
+      if (index % 7 === 6) {
+        keys.push({
+          name: `${name(index)}_other_fkey`,
+          columns: ['other_id'],
+          referred_schema: 'audit',
+          referred_table: name((index * 5) % count),
+          referred_columns: ['id'],
+        });
+      }
+      if (index === 1) {
+        keys.push({
+          name: 'audit_001_device_fkey',
+          columns: ['device_id'],
+          referred_schema: 'public',
+          referred_table: 'device',
+          referred_columns: ['id'],
+        });
+      }
+      const extra = index === 3 ? 26 : index % 5;
+      return {
+        name: name(index),
+        kind: 'table',
+        columns: [
+          { name: 'id', type: 'BIGINT', nullable: false },
+          { name: 'parent_id', type: 'BIGINT', nullable: true },
+          { name: 'other_id', type: 'BIGINT', nullable: true },
+          { name: 'created_at', type: 'TIMESTAMP WITH TIME ZONE', nullable: false },
+          ...Array.from({ length: extra }, (_, column) => ({
+            name: `field_${column}`,
+            type: 'TEXT',
+            nullable: true,
+          })),
+        ],
+        primary_key: ['id'],
+        foreign_keys: keys,
+      };
+    }),
+  };
+}
+
 /** The explorer's answer to one request, or null when the request is not the explorer's. */
-export function explorerAnswer(url: string, method: string, body?: string): Response | null {
+export function explorerAnswer(
+  url: string,
+  method: string,
+  body?: string,
+  options: { largeDiagram?: boolean } = {},
+): Response | null {
   if (url === '/api/connections' && method === 'POST') {
     const sqlite = body?.includes('"project:parts-dev"') ?? false;
     let profileId = sqlite ? 'project:parts-dev' : 'user:measure';
@@ -442,6 +565,15 @@ export function explorerAnswer(url: string, method: string, body?: string): Resp
       const tables = sqlite ? SQLITE_TABLES : PG_TABLES;
       const name = params.get('name') ?? '';
       return name in tables ? json(tables[name]) : problem('studio.object_not_found', 404);
+    }
+    case 'diagram': {
+      const schema = new URLSearchParams(query ?? '').get('schema') ?? '';
+      const catalog = sqlite ? SQLITE_CATALOG : PG_CATALOG;
+      if (!catalog.schemas.includes(schema)) return problem('studio.object_not_found', 404);
+      if (!sqlite && schema === 'audit' && options.largeDiagram === true) {
+        return json(largeDiagram());
+      }
+      return json(diagramOf(catalog, sqlite ? SQLITE_TABLES : PG_TABLES, schema));
     }
     case 'sqlite-info':
       return sqlite ? json(SQLITE_INFO) : problem('studio.explorer_engine', 409);

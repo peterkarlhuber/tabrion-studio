@@ -427,6 +427,66 @@
       "copy": "Namen kopieren",
       "copied": "Name kopiert.",
       "copyFailed": "Der Name konnte nicht kopiert werden."
+    },
+    "view": {
+      "label": "Ansicht",
+      "objects": "Objekte",
+      "diagram": "ER-Diagramm"
+    },
+    "er": {
+      "title": "ER-Diagramm",
+      "schema": "Schema",
+      "loading": "Tabellen werden gelesen …",
+      "loadFailed": "Das ER-Diagramm konnte nicht geladen werden. Lade die Seite neu und versuche es noch einmal.",
+      "noTables": "Dieses Schema hat keine Tabellen.",
+      "status": "Tabellen: {{count}}, Beziehungen: {{lines}}, Layout: {{ms}} ms.",
+      "capped": "Das Schema hat {{total}} Tabellen; ein Diagramm zeigt höchstens {{max}}. Es zeigt die ersten {{max}} nach Namen; andere wählen Sie unter „Tabellen“.",
+      "choose": {
+        "summary": "Tabellen: {{count}} von {{total}}",
+        "legend": "Tabellen im Diagramm",
+        "filter": "Tabellen filtern",
+        "all": "Die ersten {{max}} wählen",
+        "none": "Leeren",
+        "apply_one": "{{count}} Tabelle zeigen",
+        "apply_other": "{{count}} Tabellen zeigen",
+        "limit": "Ein Diagramm fasst höchstens {{max}} Tabellen.",
+        "empty": "Wählen Sie mindestens eine Tabelle."
+      },
+      "layout": "Neu anordnen",
+      "svg": "Als SVG speichern",
+      "png": "Als PNG speichern",
+      "saved": "{{name}} gespeichert.",
+      "pngFailed": "Der Browser konnte das PNG nicht zeichnen. Speichern Sie das Diagramm als SVG.",
+      "fileTitle": "ER-Diagramm von {{schema}}",
+      "zoomIn": "Vergrößern",
+      "zoomOut": "Verkleinern",
+      "fit": "An Ansicht anpassen",
+      "zoom": "{{percent}} %",
+      "minimap": "Übersicht des Diagramms",
+      "canvas": "ER-Diagramm von {{schema}} mit {{count}} Tabellen. Die Tabelle darunter listet dieselben Tabellen und Beziehungen.",
+      "open": "{{name}} im Explorer zeigen",
+      "more_one": "+ {{count}} weitere Spalte",
+      "more_other": "+ {{count}} weitere Spalten",
+      "pk": "Primärschlüssel",
+      "fk": "Fremdschlüssel",
+      "pkfk": "Primär- und Fremdschlüssel",
+      "foreign": "(fremd)",
+      "unnamed": "Schlüssel ohne Namen",
+      "aria": {
+        "node": "Eine Tabelle des Diagramms.",
+        "edge": "Ein Fremdschlüssel des Diagramms.",
+        "controls": "Steuerung des Diagramms"
+      },
+      "list": {
+        "caption": "Tabellen und Beziehungen von {{schema}}",
+        "table": "Tabelle",
+        "primaryKey": "Primärschlüssel",
+        "references": "Verweist auf",
+        "referencedBy": "Wird referenziert von",
+        "reference": "{{name}}: ({{columns}}) → {{target}} ({{referred}})",
+        "referenced": "{{table}} ({{columns}}), {{name}}",
+        "outside": "(nicht im Diagramm)"
+      }
     }
   },
   "migrations": {
@@ -796,6 +856,7 @@
     "secret_file_unreadable": "Die Passwortdatei fehlt, ist leer, größer als 4 KB oder nicht UTF-8.",
     "object_not_found": "Das Objekt ist nicht mehr im Katalog der Datenbank. Aktualisiere den Katalog.",
     "explorer_engine": "Diese Angabe gibt es nur für die andere Datenbank-Engine.",
+    "diagram_too_large": "Das Schema hat mehr als 1000 Tabellen, mehr als ein Diagramm lesen kann. Nutzen Sie den Baum und den Reiter Beziehungen.",
     "db": {
       "connection": "Studio konnte keine Verbindung herstellen. Prüfe Host und Port (eine Firewall kann sie blockieren), Benutzer und Passwort und den TLS-Modus (verify-full verlangt ein vertrauenswürdiges Serverzertifikat; verify-ca oder eine CA-Datei kann helfen).",
       "auth": "Die Datenbank hat die Anmeldung abgelehnt. Prüfe Benutzer und Passwort.",

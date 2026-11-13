@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-023, the ER diagram: **ER diagram** next to **Objects** in the explorer draws the tables of one schema (at most
+  150; **Tables** chooses them) with their columns, keys and a line for each foreign key, laid out by dagre and shown
+  with @xyflow/react 12 (pan, zoom, overview map); 150 tables are laid out in under 2 s, and the page says how long
+  it took. A table under the diagram lists the same tables and keys as text; every box's name is a button in the
+  Tab order that shows the table in the tree. **Save as SVG** and **Save as PNG** (twice the size) are drawn in the
+  page from the diagram, without any remote resource. New read route `GET /api/connections/{id}/diagram?schema=`
+  (tables, columns, primary keys and keys out of a schema in three catalog reads; `studio.diagram_too_large` past
+  1000 tables). New frontend dependencies `@xyflow/react` 12.12.0 and `@dagrejs/dagre` 3.1.3 (MIT, named in the
+  plan). `npm test` runs the timed acceptance tests (`*.perf.test.ts`) after the unit tests, alone in one worker.
+  Open items: TD-052.
 - TD-008 (review C-2): the required CI job `T-2 path checks (windows-latest)` runs the T-2 path tests by name on
   Windows (no `nt._getfinalpathname` for a UNC value from the project file) and fails when one of them is missing,
   skipped or failed.

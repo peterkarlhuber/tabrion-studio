@@ -15,6 +15,23 @@ only reads here: there is nothing that changes the database.
 
 **Refresh** reads the catalog again on the open connection. It never opens a new one.
 
+## ER diagram
+
+**ER diagram** (next to **Objects**, once a database is open) draws the tables of one **Schema** as boxes with their
+columns and a line for each foreign key, pointing at the table it references. PK and FK mark the key columns; a box
+lists up to 20 columns and counts the rest.
+
+- Drag the background to move, use the mouse wheel or **Zoom in**, **Zoom out** and **Fit to view** to zoom. The
+  overview map in the corner shows where you are.
+- A diagram shows at most 150 tables. Open **Tables** to choose which ones (filter by name, then **Show N tables**).
+  A larger schema starts with its first 150 by name.
+- Click a table's name, or reach it with Tab and press Enter, to show it in the tree with its details.
+- The table under the diagram lists the same tables and keys as text, including keys to tables that are not drawn.
+- **Save as SVG** and **Save as PNG** save the whole diagram, not only the part on the screen, in the page's light or
+  dark colors. Nothing is sent anywhere to make the files.
+- **Lay out again** arranges the boxes again and fits them into the view. The status line says how long the layout
+  took.
+
 ## DDL
 
 The **DDL** tab shows the statements that create the object:
