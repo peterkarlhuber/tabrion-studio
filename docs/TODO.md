@@ -1105,8 +1105,12 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   CSRF checks; a tab with an unknown field is refused, so a parameter value has no place in a draft; caps of 32 tabs,
   512 K characters per text and 2 M in all. Pages of one project merge by tab on the server (`known`). Nothing is
   written to browser storage; drafts of earlier versions in `localStorage` are moved to the server once and every
-  draft key is removed afterwards. `[history] retention_days` applies to drafts, `enabled = false` and "Delete
-  history" do not (`docs/architecture/history-and-scripts.md`, "Editor drafts"). Tests: `tests/security/test_drafts.py`,
+  draft key of this project is removed afterwards (other projects' keys stay). `[history] retention_days` applies to
+  drafts, `enabled = false` and "Delete history" do not (`docs/architecture/history-and-scripts.md`, "Editor
+  drafts"). Review `f5-drafts-review.md` (accepted with conditions): finding 1 (lone surrogate refused, not a 500),
+  2 (write-ahead log checkpointed after a save that removed text), 3 (only this project's keys removed, and only when
+  all old drafts fit), 4 (structure scan before parsing), 5 (retention wording in the guide), 6 (failed migration and
+  no downgrade documented) and 7 (failed-migration test, `expect.poll` for the e2e waits) done. Tests: `tests/security/test_drafts.py`,
   `src/views/editor/drafts.test.ts`, `EditorView.test.tsx`, `e2e/editor.spec.ts`, `e2e/drafts-backend.spec.ts`.
 - **Statement splitting:** the page splits scripts with its own scanner (`sqlScan.ts`) instead of
   `tabrion.sql.split_statements`; the server checks every statement again, so a different reading is refused, never

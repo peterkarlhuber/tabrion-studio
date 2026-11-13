@@ -6,9 +6,10 @@
  * API, `GET` and `PUT /api/drafts` (docs/architecture/history-and-scripts.md, "Editor drafts"), one document per
  * project. They used to live in `localStorage`, which belongs to the port-scoped origin `http://127.0.0.1:<port>`, so
  * a later program on the same port in the same browser profile could read them. Nothing is written to browser storage
- * any more. Drafts an earlier version left there are read once (`readLegacyDrafts`), saved to the server with the
- * page's first save, and then every such key is removed (`clearLegacyDrafts`); while the server cannot keep them, the
- * old keys stay so that nothing is lost.
+ * any more. Drafts an earlier version left there for this project (its own key and the unscoped key) are read once
+ * (`readLegacyDrafts`), saved to the server with the page's first save, and then those two keys are removed
+ * (`clearLegacyDrafts`). Other projects' keys stay until that project's editor moves them; while the server cannot
+ * keep the drafts, or not all of them fit its caps, the keys stay too, so that nothing is lost.
  *
  * Two pages of one project merge by tab on the server: a save names every tab id the page has had (`known`), so the
  * server keeps the tabs another page added and drops only the tabs this page closed.
@@ -130,6 +131,17 @@ export function parseDraftsAnswer(body: unknown): { drafts: Drafts | null } | nu
   return { drafts: parseTabs(tabs, activeTab) };
 }
 
+/** A lone UTF-16 surrogate (a broken paste, a text cut inside a pair). */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * The text with each lone surrogate replaced by U+FFFD, as `String.prototype.toWellFormed` does: the server refuses
+ * a text that is not valid Unicode (it cannot be stored as UTF-8), and the length stays the same.
+ */
+export function wellFormed(text: string): string {
+  return text.replace(LONE_SURROGATE, '\uFFFD');
+}
+
 /**
  * The document `PUT /api/drafts` takes: the known fields of each tab and nothing else, within the server's caps. A
  * text over the cap of one text is left out (the tab still works), and while all texts together are over their cap,
@@ -137,14 +149,14 @@ export function parseDraftsAnswer(body: unknown): { drafts: Drafts | null } | nu
  */
 export function draftsDocument(drafts: Drafts, known?: ReadonlySet<string>) {
   const tabs = drafts.tabs.slice(0, MAX_TABS).map((tab) => ({
-    id: tab.id,
-    title: tab.title,
-    profile_id: tab.profileId,
-    sql: tab.sql.length <= MAX_DRAFT_CHARS ? tab.sql : '',
-    saved_sql: tab.savedSql.length <= MAX_DRAFT_CHARS ? tab.savedSql : '',
+    id: wellFormed(tab.id),
+    title: wellFormed(tab.title),
+    profile_id: wellFormed(tab.profileId),
+    sql: tab.sql.length <= MAX_DRAFT_CHARS ? wellFormed(tab.sql) : '',
+    saved_sql: tab.savedSql.length <= MAX_DRAFT_CHARS ? wellFormed(tab.savedSql) : '',
     ...(tab.scriptPath !== undefined && tab.scriptDigest !== undefined
       ? {
-          script_path: tab.scriptPath,
+          script_path: wellFormed(tab.scriptPath),
           script_digest: tab.scriptDigest,
           ...(tab.scriptCrlf === true ? { script_crlf: true } : {}),
         }
@@ -205,9 +217,15 @@ function legacyKeys(): string[] {
   }
 }
 
-/** Whether an earlier version left drafts (of any project) in this browser's storage. */
-export function hasLegacyDrafts(): boolean {
-  return legacyKeys().length > 0;
+/** The keys of this project's drafts of an earlier version: its own and the unscoped one. */
+function projectKeys(projectPath: string): string[] {
+  return projectPath === '' ? [DRAFTS_KEY] : [draftsKey(projectPath), DRAFTS_KEY];
+}
+
+/** Whether an earlier version left drafts of this project in this browser's storage. */
+export function hasLegacyDrafts(projectPath: string): boolean {
+  const keys = legacyKeys();
+  return projectKeys(projectPath).some((key) => keys.includes(key));
 }
 
 /**
@@ -227,17 +245,28 @@ export function readLegacyDrafts(projectPath: string): Drafts | null {
 }
 
 /**
- * Remove every draft key of earlier versions from this browser's storage: this project's, the unscoped one and other
- * projects' (their folder cannot be told from the key's hash, and browser storage is what F-5 is about).
+ * Remove this project's draft keys of earlier versions (its own and the unscoped one) from this browser's storage.
+ * Other projects' keys stay: their folder cannot be told from the key's hash, so only that project's editor can move
+ * them to the server (review finding 3).
  */
-export function clearLegacyDrafts(): void {
-  for (const key of legacyKeys()) {
+export function clearLegacyDrafts(projectPath: string): void {
+  for (const key of projectKeys(projectPath)) {
     try {
       window.localStorage.removeItem(key);
     } catch {
       // Storage unavailable: nothing to remove.
     }
   }
+}
+
+/**
+ * Whether the drafts of an earlier version are all kept in `merged`, the document the page saves: every one of their
+ * tabs, with no text left out by the caps (`draftsDocument`). Only then are their keys removed.
+ */
+export function legacyKept(merged: Drafts, legacy: Drafts): boolean {
+  const ids = new Set(merged.tabs.slice(0, MAX_TABS).map((tab) => tab.id));
+  const total = merged.tabs.reduce((sum, tab) => sum + tab.sql.length + tab.savedSql.length, 0);
+  return legacy.tabs.every((tab) => ids.has(tab.id)) && total <= MAX_TOTAL_CHARS;
 }
 
 /** `first`'s tabs, then `second`'s tabs that `first` does not have (by id), within the tab cap. */

@@ -407,3 +407,139 @@ def test_a_broken_state_database_makes_the_drafts_unavailable(state_dir: Path) -
     (state_dir / STATE_FILE).chmod(0o600)
     with pytest.raises(StateUnavailable):
         Drafts(StateStore(state_dir), "k").read()
+
+
+# Review of PR #77 (f5-drafts-review.md).
+
+
+def test_a_lone_surrogate_is_refused_not_a_server_error(env: Env) -> None:
+    """Finding 1: ``\\ud800`` alone decodes to a text SQLite cannot store; the answer is a refusal, never a 500."""
+    for field in ("sql", "saved_sql", "title", "id"):
+        tab = _tab("a")
+        body = json.dumps({"tabs": [tab], "active_tab": "a"}).replace(
+            f'"{field}": "{tab[field]}"', f'"{field}": "x\\ud800y"'
+        )
+        answer = env.studio.client.put(
+            "/api/drafts", content=body.encode(), headers={**env.headers, "Content-Type": "application/json"}
+        )
+        assert answer.status_code == 422, (field, answer.text)
+        assert answer.json()["code"] == "studio.invalid_request"
+    cases: list[dict[str, Any]] = [
+        {"tabs": [_tab("a")], "active_tab": "\udc00"},
+        {"tabs": [_tab("a")], "known": ["\ud800"]},
+    ]
+    for case in cases:
+        with pytest.raises(DraftsError):
+            env.drafts.save(case["tabs"], case.get("active_tab"), case.get("known"))
+    # A well-formed pair is text like any other.
+    assert env.put({"tabs": [_tab("a", "select '\U0001f600'")], "active_tab": "a"}).status_code == 200
+    assert env.get().json()["drafts"]["tabs"][0]["sql"] == "select '\U0001f600'"
+
+
+def test_a_closed_tab_leaves_no_text_in_any_state_file(env: Env, state_dir: Path) -> None:
+    """Finding 2: the checkpoint after a save that removed text empties the write-ahead log too."""
+    marker = f"closed_{uuid.uuid4().hex}"
+    env.put({"tabs": [_tab("a", f"select '{marker}'"), _tab("b", "select 2")], "active_tab": "a", "known": ["a", "b"]})
+    assert marker.encode() in _state_bytes(state_dir)
+    # The page closed tab a.
+    env.put({"tabs": [_tab("b", "select 2")], "active_tab": "b", "known": ["a", "b"]})
+    assert marker.encode() not in _state_bytes(state_dir)
+    wal = state_dir / (STATE_FILE + "-wal")
+    assert not wal.exists() or marker.encode() not in wal.read_bytes()
+
+
+def test_expired_drafts_deleted_on_read_or_save_leave_no_text(env: Env, state_dir: Path) -> None:
+    env.settings["value"] = Settings(history_retention_days=1)
+    mine, theirs = f"mine_{uuid.uuid4().hex}", f"theirs_{uuid.uuid4().hex}"
+    other = Drafts(env.drafts.store, "projkey2", lambda: env.settings["value"], clock=env.clock)
+    other.save([_tab("o", f"select '{theirs}'")], "o")
+    env.put({"tabs": [_tab("a", f"select '{mine}'")], "active_tab": "a"})
+    env.clock.now += 2 * 86_400
+    assert env.get().json() == {"drafts": None}
+    assert mine.encode() not in _state_bytes(state_dir)
+    # This project's save deletes the other project's expired drafts, with the checkpoint.
+    env.put({"tabs": [_tab("b", "select 1")], "active_tab": "b"})
+    assert theirs.encode() not in _state_bytes(state_dir)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b'{"tabs":[' + b"{}," * 200_000 + b"{}]}",
+        b'{"tabs":[' + b"[]," * 200_000 + b"[]]}",
+        b'{"tabs":[],"known":[' + b"0," * 200_000 + b"0]}",
+    ],
+)
+def test_a_body_of_many_tiny_values_is_refused_before_it_is_parsed(env: Env, raw: bytes) -> None:
+    """Finding 4: such a body is refused by a scan of its structure, without building millions of objects."""
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        answer = env.studio.client.put(
+            "/api/drafts", content=raw, headers={**env.headers, "Content-Type": "application/json"}
+        )
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert answer.status_code == 400
+    assert answer.json()["code"] == "access.bad_request"
+    # Parsing 200 000 objects would take tens of MB; the scan needs about a copy of the body.
+    assert peak < 8 * len(raw), peak
+
+
+def test_structure_inside_strings_does_not_count(env: Env) -> None:
+    """SQL text full of JSON (``'{"a": [1, 2]}'::jsonb``) is text: only the document's own structure is counted."""
+    sql = "select '" + '{"a": [1, 2], "b": {"c": 3}}, ' * 5_000 + "'::jsonb"
+    answer = env.put({"tabs": [_tab("a", sql), {**_tab("b"), "title": 'say "{[,:]}"'}], "active_tab": "a"})
+    assert answer.status_code == 200, answer.text
+    assert env.get().json()["drafts"]["tabs"][0]["sql"] == sql
+
+
+def test_a_failed_migration_keeps_the_data_and_the_copy_until_a_later_one_succeeds(
+    state_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Finding 6 and 7: one rolled-back transaction; the copy stays (0600) until the next start migrates."""
+    path = state_dir / STATE_FILE
+    connection = connect(path, profile=SQLiteProfile(secure_delete=True, busy_timeout=5.0))
+    migrate(connection, {1: state_module._migrate_v1}, target=1, backup=None)
+    connection.execute(
+        "INSERT INTO history (scope, profile_id, environment, engine, sql, sql_truncated, param_names, state,"
+        " row_count, elapsed_ms, code, finished_at) VALUES ('', 'user:x', 'dev', 'sqlite', 'select 7', 0, '[]',"
+        " 'done', 1, 1.0, NULL, 1.0)"
+    )
+    connection.close()
+
+    original = state_module._migrate_v2
+
+    def broken(connection: Any) -> None:
+        original(connection)  # the table is created, then the step fails: all of it is rolled back
+        raise RuntimeError("step failed")
+
+    monkeypatch.setattr(state_module, "_migrate_v2", broken)
+    with pytest.raises(StateUnavailable):
+        Drafts(StateStore(state_dir), "k").read()
+    copy = state_dir / f"{STATE_FILE}.v1.bak"
+    assert copy.exists()
+    if POSIX:
+        assert stat.S_IMODE(copy.stat().st_mode) == 0o600
+    check = connect(path, profile=SQLiteProfile(secure_delete=True, busy_timeout=5.0))
+    try:
+        assert check.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert check.execute("SELECT sql FROM history").fetchall() == [("select 7",)]
+        tables = {row[0] for row in check.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        assert "drafts" not in tables
+    finally:
+        check.close()
+    # The next start migrates and removes the copy.
+    monkeypatch.setattr(state_module, "_migrate_v2", original)
+    store = StateStore(state_dir)
+    try:
+        assert Drafts(store, "k").read() == {"drafts": None}
+        with store.connection() as migrated:
+            assert migrated.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+            assert migrated.execute("SELECT sql FROM history").fetchall() == [("select 7",)]
+    finally:
+        store.close()
+    assert not copy.exists()
+    assert [item.name for item in state_dir.iterdir() if item.name.endswith(".tmp")] == []

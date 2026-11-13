@@ -31,7 +31,13 @@ header and, for a change, the Origin check and JSON only.
   transaction. Every statement is a fixed text with bound values. Version 1 has the history, favorites and recent
   profiles; version 2 adds `drafts`. A file that holds data is copied with `tabrion.sqlite.backup` to
   `state.sqlite.v<n>.bak` (0600) before it is migrated; the steps only add tables, so the copy is removed once the
-  migration succeeded (it would otherwise keep history text that a later delete removes).
+  migration succeeded (it would otherwise keep history text that a later delete removes). A failed migration is
+  rolled back as a whole: the file stays at its version with all its data, the store is unavailable for that run,
+  and the copy, with the full history text, stays (0600) until a later start migrates and removes it. Removing the
+  copy unlinks it; its blocks are not overwritten.
+- **No downgrade.** A file at a newer version is refused (`SchemaTooNew`): an older Studio that finds version 2 runs
+  without history, favorites and drafts (`studio.state_unavailable`). Running two Studio versions side by side, or
+  going back to an older one, is not supported; move the file aside to start over.
 - **When it fails.** The store opens on first use. If it cannot be opened (a refused link, a corrupt file, a schema of
   a newer Studio, a full disk), the routes answer `studio.state_unavailable` (503) for the life of the process, the
   log has one `studio.state_unavailable` record, and queries run on without a history entry. To recover, stop Studio
@@ -96,17 +102,27 @@ folder. They now live in the state database, one document per project (the proje
 
 - **Fields.** A tab has exactly the fields above; any other field is `studio.invalid_request`, any other top-level
   key `access.bad_request`. So a page cannot store a parameter value or a result in a draft, even by mistake. The
-  text is what the user typed, with its `:name` placeholders, like a history entry.
+  text is what the user typed, with its `:name` placeholders, like a history entry. A text that is not valid Unicode
+  (a JSON escape of a lone UTF-16 surrogate, which SQLite cannot store as UTF-8) is `studio.invalid_request`; the
+  page replaces lone surrogates with U+FFFD before it sends, as `String.prototype.toWellFormed` does.
 - **Caps.** 32 tabs, 512 K characters per text (the statement cap), 2 M characters of text in all
   (`studio.drafts_too_large`, 413), and the body cap of the route (12 MB plus about 700 KB, enforced while the body
-  streams in). The page leaves out a text over the cap of one text, and the largest texts first while all are over
-  theirs; the tab still works.
+  streams in). Before the body is parsed, a scan with the strings blanked counts its structure (`{ [ , :`): more than
+  4,096, far beyond a valid document, is `access.bad_request`, so a body of millions of tiny values never becomes
+  millions of Python objects. The page leaves out a text over the cap of one text, and the largest texts first while
+  all are over theirs; the tab still works.
 - **Merge by tab.** `known` is every tab id the page has had. Stored tabs it does not name (another page of the same
   project added them) are kept after the page's own, within the caps; the tabs it closed go. Without `known`, the
   page's tabs replace the stored ones; no tabs at all delete the project's drafts. One write transaction.
-- **Settings.** `[history] retention_days` applies: drafts not saved for that many days are deleted at start, after a
-  settings save (with the history's purge) and when they are read, and every save deletes other projects' drafts that
-  old. `[history] enabled = false` does not stop drafts:
+- **Deleted text on disk.** `secure_delete` overwrites the freed pages of the file. When a save or a read removed
+  text (a closed tab, a tab the caps left out, an expired document, another project's expired drafts), and after a
+  purge, `PRAGMA wal_checkpoint(TRUNCATE)` empties the write-ahead log as well. A save that only changes a tab's text
+  does not checkpoint (every save rewrites the document); the earlier text stays in the 0600 log until the next
+  checkpoint or the end of Studio.
+- **Settings.** `[history] retention_days` applies to a project's drafts as a whole, counted from the last save of
+  its document. The page saves after it opened the drafts, so opening the editor starts the count again for every tab
+  of the project. Expired drafts are deleted at start, after a settings save (with the history's purge) and when they
+  are read, and every save deletes other projects' drafts that old. `[history] enabled = false` does not stop drafts:
   they are the tabs the user has open and sees, not a record of what ran; closing a tab deletes its text. "Delete
   history" leaves the drafts.
 - **PROD.** A tab on a PROD profile keeps its draft like any other tab, as the history keeps PROD statements: the text
@@ -115,10 +131,10 @@ folder. They now live in the state database, one document per project (the proje
   only and writes nothing to browser storage.
 - **Migration from browser storage.** On load, the page reads the drafts an earlier version left under
   `tabrion-studio.editor-drafts.<hash of the project folder>` and the unscoped `tabrion-studio.editor-drafts`, shows
-  them after the server's tabs, and sends them with its first save. Once the server accepted a save, every
-  `tabrion-studio.editor-drafts*` key is removed, other projects' too: their folder cannot be told from the hash,
-  and such a key can only be read again by a Studio on the same port. While the server cannot store them, the keys
-  stay, so nothing is lost. The page never writes a draft to `localStorage`, `sessionStorage` or IndexedDB.
+  them after the server's tabs, and sends them with its first save. Once the server accepted a save, these two keys
+  are removed. Other projects' keys stay: their folder cannot be told from the hash, so only that project's editor,
+  started on the same port, can move them. The keys stay as well while the server cannot store the drafts, and when
+  not all of them fit the caps (a tab beyond 32, text beyond 2 M characters), so nothing is lost. The page never writes a draft to `localStorage`, `sessionStorage` or IndexedDB.
 
 No log record holds a draft's text, title or script path.
 

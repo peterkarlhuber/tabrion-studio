@@ -190,7 +190,7 @@ test('a draft survives a reload and a restart on another port, and is in no brow
   await expectNoViolations(page, violations);
 });
 
-test('drafts an earlier version kept in localStorage move to the server once and leave the browser', async ({
+test("this project's drafts an earlier version kept in localStorage move to the server once and leave the browser", async ({
   page,
 }) => {
   const violations = await signIn(page);
@@ -212,7 +212,7 @@ test('drafts an earlier version kept in localStorage move to the server once and
           activeTab: 'legacy1',
         }),
       );
-      // Another project's draft on this port: removed as well (its folder cannot be told from the key).
+      // Another project's draft on this port: left for that project (its folder cannot be told from the key).
       localStorage.setItem(
         'tabrion-studio.editor-drafts.otherproject',
         '{"tabs":[],"activeTab":""}',
@@ -226,7 +226,9 @@ test('drafts an earlier version kept in localStorage move to the server once and
   await openEditor(page);
   await expect(page.getByTestId('editor-tab').filter({ hasText: 'Old draft' })).toHaveCount(1);
   await saved;
-  await expect.poll(() => browserStorage(page)).not.toContain('editor-drafts');
+  // This project's key goes; another project's key waits for that project's editor (review finding 3).
+  await expect.poll(() => browserStorage(page)).not.toContain(key);
+  expect(await browserStorage(page)).toContain('tabrion-studio.editor-drafts.otherproject');
   expect(await browserStorage(page)).not.toContain(LEGACY);
   expect(stateFiles().some((file) => readFileSync(file).includes(LEGACY))).toBe(true);
   // After a reload, the draft comes from the server.

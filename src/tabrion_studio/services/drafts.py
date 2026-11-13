@@ -9,6 +9,7 @@ authenticated API, one document per project (``scope`` is the project key), as b
 
 * **Never parameter values or results.** A tab has a fixed set of fields; a tab with any other field is refused
   (``studio.invalid_request``), so a page that tried to send parameter values would fail instead of storing them.
+  A text that is not valid Unicode (a lone surrogate, which SQLite cannot store as UTF-8) is refused the same way.
   The text is what the user typed, with its ``:name`` placeholders, like the history.
 * **Caps.** At most :data:`MAX_TABS` tabs, :data:`MAX_TEXT_CHARS` per text (the statement cap) and
   :data:`MAX_TOTAL_CHARS` of text in all (``studio.drafts_too_large``); the page leaves out the largest texts first
@@ -22,6 +23,9 @@ authenticated API, one document per project (``scope`` is the project key), as b
   read, and every save deletes other projects' drafts that old. "Delete history" leaves the drafts.
 * **PROD.** Like the history, which records PROD queries too, a tab on a PROD profile keeps its draft: the text the
   user typed, never a value or a row.
+
+* **Deleted text.** ``secure_delete`` overwrites freed pages; after a save or read that removed text (a closed tab, a
+  tab left out by the caps, an expired document) and after a purge, the write-ahead log is checkpointed (TRUNCATE).
 
 No log record holds a draft's text, a title or a script path.
 """
@@ -75,6 +79,11 @@ class DraftsError(Exception):
 def _text(value: object, limit: int) -> str:
     if not isinstance(value, str) or len(value) > limit:
         raise DraftsError("studio.invalid_request")
+    try:
+        # A JSON escape of a lone UTF-16 surrogate decodes to a text SQLite cannot store (review finding 1).
+        value.encode("utf-8")
+    except UnicodeEncodeError:
+        raise DraftsError("studio.invalid_request") from None
     return value
 
 
@@ -166,10 +175,14 @@ class Drafts:
             if row is not None and row[1] < cutoff:
                 # Older than the retention: deleted, never answered.
                 connection.execute("DELETE FROM drafts WHERE scope = ?", (self.project_key,))
-                return None
+                return ("", -1.0)
             return None if row is None else (str(row[0]), float(row[1]))
 
         row = self.store.write(load)
+        if row is not None and row[1] < 0:
+            # The deleted text must not stay in the write-ahead log (review finding 2).
+            self.store.checkpoint()
+            row = None
         if row is None:
             return {"drafts": None}
         tabs = _stored(row[0])
@@ -203,11 +216,13 @@ class Drafts:
         now = self.clock()
         cutoff = self._cutoff()
 
-        def write(connection: sqlite3.Connection) -> int:
+        def write(connection: sqlite3.Connection) -> tuple[int, bool]:
             row = connection.execute(
                 "SELECT doc, updated_at FROM drafts WHERE scope = ?", (self.project_key,)
             ).fetchone()
-            others = [] if known is None or row is None or row[1] < cutoff else _stored(str(row[0]))
+            expired = row is not None and row[1] < cutoff
+            stored = [] if row is None or expired else _stored(str(row[0]))
+            others = [] if known is None else stored
             merged = list(own)
             total = sum(_size(tab) for tab in merged)
             for tab in others:
@@ -226,7 +241,15 @@ class Drafts:
                     (self.project_key, doc, now),
                 )
             # Other projects' drafts older than the retention.
-            connection.execute("DELETE FROM drafts WHERE updated_at < ?", (cutoff,))
-            return len(merged)
+            purged = connection.execute("DELETE FROM drafts WHERE updated_at < ?", (cutoff,)).rowcount
+            # Text went away: a closed tab, a tab the caps left out, an expired document, another project's drafts.
+            kept = {tab["id"] for tab in merged}
+            removed = expired or purged > 0 or any(tab["id"] not in kept for tab in stored)
+            return len(merged), removed
 
-        return {"tabs": self.store.write(write)}
+        count, removed = self.store.write(write)
+        if removed:
+            # secure_delete overwrites the freed pages of the file; the checkpoint empties the write-ahead log, which
+            # would otherwise keep the old document until the next checkpoint (review finding 2).
+            self.store.checkpoint()
+        return {"tabs": count}

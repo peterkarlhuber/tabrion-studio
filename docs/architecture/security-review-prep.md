@@ -141,7 +141,7 @@ reproduction steps, stays outside the repository.
 | F-2 | Medium | SQLite: the authorizer allowed a native function that must be refused (SQ-05, T-13) | Fixed in the read-only hardening PR, with tests; re-review pending |
 | F-3 | Low | PostgreSQL side-effect functions outside the statement check's denylist | Fixed in the read-only hardening PR (refused); see the residual risks |
 | F-4 | Low | Request bodies were read before their size was checked, also before a session exists (SQ-06) | Fixed in the request-limits PR: caps enforced while the body streams in (`security/body.py`, [access protection](access-protection.md#request-body-limits)) |
-| F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | Fixed in the F-5 drafts PR: drafts in `state.sqlite` (0600) behind `/api/drafts`, none in browser storage, old keys migrated and removed (`test_drafts.py`, `drafts-backend.spec.ts`); re-review pending |
+| F-5 | Low | Editor drafts in the browser storage of a port-scoped origin (TD-033) | Fixed in the F-5 drafts PR #77: drafts in `state.sqlite` (0600) behind `/api/drafts`, none in browser storage, this project's old keys migrated and removed (`test_drafts.py`, `drafts-backend.spec.ts`); review `f5-drafts-review.md` accepted with conditions, findings 1 to 7 fixed |
 | F-6 | Low | Python runtime dependencies are ranges, not a hashed lock (TD-031) | **Owner decision:** hashed pins used in CI and documented, before G-R |
 | F-7 | Info | The code-trust digest does not cover project modules that revision files import (T-16) | **Owner decision:** hash those modules too, or say so in the trust dialog |
 | F-8 | Info | The access middleware exempted the whole control prefix from the session check | Fixed in the request-limits PR: the control token is checked in the middleware for every control path but the proof; dot segments in `/api/*` paths reach no route |
@@ -161,8 +161,9 @@ found the gaps listed above. These points need a person's judgment:
 3. TD-003 and TD-008: the file-permission model on Windows, which CI does not yet check.
 4. The PostgreSQL read-only model: Studio relies on the role's rights for functions with side effects beyond the
    ones it refuses (review F-3).
-5. TD-033 / review F-5 (fixed): the editor drafts moved from browser storage into the state database; whether the
-   removal of other projects' old draft keys on first load is acceptable.
+5. TD-033 / review F-5 (fixed): the editor drafts moved from browser storage into the state database; other
+   projects' old draft keys stay in the browser until that project's editor moves them (`f5-drafts-review.md`
+   finding 3, the safer option).
 6. The keyring backends Studio accepts and refuses, per operating system.
 7. The CI workflow-change gate (TD-004, TD-006) and the supply chain (TD-030, TD-031; review F-6).
 8. Code trust for migrations (T-16): the worker's isolation and what the digest binds (review F-7).

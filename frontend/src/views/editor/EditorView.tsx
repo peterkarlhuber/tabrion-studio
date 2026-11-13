@@ -98,6 +98,7 @@ import {
   clearLegacyDrafts,
   fetchDrafts,
   hasLegacyDrafts,
+  legacyKept,
   mergeDrafts,
   readLegacyDrafts,
   saveDrafts,
@@ -334,8 +335,11 @@ export function EditorView({
   const known = useRef(new Set<string>());
   /** Saves of the drafts, one after the other (a later one never lands before an earlier one). */
   const draftSaves = useRef<Promise<unknown>>(Promise.resolve());
-  /** An earlier version left drafts in browser storage: removed after the first save the server accepted. */
-  const legacyDrafts = useRef(false);
+  /**
+   * The folder of the project whose drafts an earlier version left in browser storage, when the page's first save
+   * keeps all of them: its keys are removed after the first save the server accepted.
+   */
+  const legacyDrafts = useRef<string | null>(null);
   const [runs, setRuns] = useState<Record<string, RunState>>({});
   const [params, setParams] = useState<Record<string, Record<string, ParamInput>>>({});
   const [paramProblem, setParamProblem] = useState<{ name: string; problem: ParamProblem } | null>(
@@ -392,10 +396,12 @@ export function EditorView({
         if (!active) return;
         const items = list?.profiles ?? [];
         // The server's drafts, and once those of an earlier version's browser storage (TD-033 migration): they are
-        // saved to the server with the first save and then removed from the browser.
-        legacyDrafts.current = hasLegacyDrafts();
-        const legacy = legacyDrafts.current ? readLegacyDrafts(project?.path ?? '') : null;
+        // saved to the server with the first save and then removed from the browser, if they all fit its caps.
+        const folder = project?.path ?? '';
+        const legacy = hasLegacyDrafts(folder) ? readLegacyDrafts(folder) : null;
         const drafts = mergeDrafts(stored.ok ? stored.value : null, legacy);
+        legacyDrafts.current =
+          legacy !== null && drafts !== null && legacyKept(drafts, legacy) ? folder : null;
         // The drafts, or a first tab (on the first profile, or none).
         let first = drafts?.tabs ?? [newTab(1, items[0]?.id ?? '', i18n.t.bind(i18n))];
         let activeTab = drafts?.activeTab ?? first[0]?.id ?? '';
@@ -433,9 +439,9 @@ export function EditorView({
       const ids = new Set(known.current);
       draftSaves.current = draftSaves.current.then(async () => {
         const saved = await saveDrafts(fetcher, { tabs, activeTab: activeId }, ids);
-        if (saved && legacyDrafts.current) {
-          legacyDrafts.current = false;
-          clearLegacyDrafts();
+        if (saved && legacyDrafts.current !== null) {
+          clearLegacyDrafts(legacyDrafts.current);
+          legacyDrafts.current = null;
         }
       });
     }, DRAFT_SAVE_MS);

@@ -44,8 +44,8 @@ Studio is a tool for one person on one computer. In short:
 - **Warnings are not protection.** Refusing `BEGIN`, `SET` and similar statements, and every warning before a
   statement, help you avoid mistakes; they are not the security boundary.
 - **Drafts are SQL text on disk.** The SQL editor keeps your tabs' text in Studio's private state database (0600, in
-  the state folder), never in the browser's storage. It is kept until you close the tab, or for the history's
-  retention days without a change. Do not type secrets into the SQL itself; give them as parameters.
+  the state folder), never in the browser's storage. It is kept until you close the tab, or until the project's
+  editor has not been opened or changed for the history's retention days. Do not type secrets into the SQL itself; give them as parameters.
 - **Not reviewed for publication yet.** The independent security review of the MVP (G-S1) and a human security review
   before a public release are still open; Studio is not released.
 

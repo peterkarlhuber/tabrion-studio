@@ -8,6 +8,7 @@ import {
   draftsKey,
   fetchDrafts,
   hasLegacyDrafts,
+  legacyKept,
   MAX_DRAFT_CHARS,
   MAX_TABS,
   MAX_TOTAL_CHARS,
@@ -16,6 +17,8 @@ import {
   parseDraftsAnswer,
   readLegacyDrafts,
   saveDrafts,
+  wellFormed,
+  type Drafts,
   type DraftTab,
 } from './drafts';
 
@@ -67,6 +70,15 @@ describe('drafts on the server (TD-033, review F-5)', () => {
     });
     expect(localStorage.length).toBe(0);
     expect(sessionStorage.length).toBe(0);
+  });
+
+  it('replace a lone surrogate, which the server refuses, and keep every other character', () => {
+    const text = `a\uD800b\uDC00c\uD83D\uDE00d`;
+    const doc = draftsDocument({ tabs: [{ ...tab('a', text), title: '\uDBFF' }], activeTab: 'a' });
+    expect(doc.tabs[0]?.sql).toBe('a\uFFFDb\uFFFDc\uD83D\uDE00d');
+    expect(doc.tabs[0]?.sql.length).toBe(text.length);
+    expect(doc.tabs[0]?.title).toBe('\uFFFD');
+    expect(wellFormed('plain')).toBe('plain');
   });
 
   it('report a server that cannot keep them', async () => {
@@ -140,18 +152,43 @@ describe('drafts of an earlier version in browser storage (migration)', () => {
       activeTab: tabs[0]?.id,
     });
 
-  it('are read for this project and from the unscoped key, and removed for every project', () => {
-    expect(hasLegacyDrafts()).toBe(false);
+  it('are read for this project and from the unscoped key; only those two keys are removed', () => {
+    expect(hasLegacyDrafts('/p')).toBe(false);
+    localStorage.setItem(draftsKey('/other'), legacy([tab('o', 'other')]));
+    // Another project's key is not this project's draft.
+    expect(hasLegacyDrafts('/p')).toBe(false);
     localStorage.setItem(draftsKey('/p'), legacy([tab('a', 'one')]));
     localStorage.setItem(DRAFTS_KEY, legacy([tab('a', 'dup'), tab('u', 'unscoped')]));
-    localStorage.setItem(draftsKey('/other'), legacy([tab('o', 'other')]));
     localStorage.setItem('tabrion-studio.theme', 'dark');
-    expect(hasLegacyDrafts()).toBe(true);
+    expect(hasLegacyDrafts('/p')).toBe(true);
     expect(readLegacyDrafts('/p')?.tabs.map((item) => item.sql)).toEqual(['one', 'unscoped']);
     expect(readLegacyDrafts('')?.tabs.map((item) => item.sql)).toEqual(['dup', 'unscoped']);
-    clearLegacyDrafts();
-    expect(hasLegacyDrafts()).toBe(false);
+    clearLegacyDrafts('/p');
+    expect(hasLegacyDrafts('/p')).toBe(false);
+    // Other projects' keys stay until their own editor moves them (review finding 3).
+    expect(Object.keys(localStorage).sort()).toEqual([draftsKey('/other'), 'tabrion-studio.theme']);
+    expect(hasLegacyDrafts('/other')).toBe(true);
+    clearLegacyDrafts('/other');
     expect(Object.keys(localStorage)).toEqual(['tabrion-studio.theme']);
+  });
+
+  it('are removed only when the saved document keeps all of them', () => {
+    const legacyDrafts = { tabs: [tab('l1', 'old'), tab('l2', 'older')], activeTab: 'l1' };
+    const kept = (server: Drafts, legacy: Drafts) => {
+      const merged = mergeDrafts(server, legacy);
+      return merged !== null && legacyKept(merged, legacy);
+    };
+    expect(kept({ tabs: [tab('s')], activeTab: 's' }, legacyDrafts)).toBe(true);
+    // Beyond the tab cap: some legacy tabs would be lost.
+    const full = {
+      tabs: Array.from({ length: MAX_TABS }, (_, i) => tab(`s${i}`)),
+      activeTab: 's0',
+    };
+    expect(kept(full, legacyDrafts)).toBe(false);
+    // Beyond the total text cap: some text would be left out.
+    const big = 'x'.repeat(MAX_DRAFT_CHARS);
+    const heavy = { tabs: Array.from({ length: 4 }, (_, i) => tab(`h${i}`, big)), activeTab: 'h0' };
+    expect(kept(heavy, legacyDrafts)).toBe(false);
   });
 
   it('keep their key per project (L-5) and cannot be read when malformed', () => {

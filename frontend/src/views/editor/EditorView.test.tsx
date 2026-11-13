@@ -15,7 +15,7 @@ import { PROFILES, SETTINGS } from '../../harness/profiles';
 import { editorActions } from '../../keyboard/editorActions';
 import type { SaveFile } from '../../lib/download';
 import { createDraftsServer } from '../../harness/drafts';
-import { DRAFTS_KEY, draftsKey } from './drafts';
+import { DRAFTS_KEY, draftsKey, MAX_DRAFT_CHARS } from './drafts';
 import { handToEditor } from './handoff';
 import { EditorView, queryProblemText, scriptFileName } from './EditorView';
 import type { SqlEditorHandle, SqlEditorProps } from './SqlEditor';
@@ -442,7 +442,7 @@ describe('EditorView', () => {
     expect(browserStorage()).not.toContain('select');
   });
 
-  it('moves the drafts of an earlier version from browser storage to the server once, then removes them', async () => {
+  it("moves this project's drafts of an earlier version from browser storage to the server, then removes them", async () => {
     localStorage.setItem(
       draftsKey('/work/parts'),
       JSON.stringify({
@@ -468,9 +468,29 @@ describe('EditorView', () => {
     expect(screen.getAllByTestId('editor-tab')).toHaveLength(2);
     await afterDraftSave();
     expect(drafts.current()?.tabs.map((tab) => tab.sql)).toEqual(['select 7', 'select 5']);
-    // Every draft key is gone (other projects' too); other settings stay.
-    expect(Object.keys(localStorage)).toEqual(['tabrion-studio.theme']);
-    expect(browserStorage()).not.toContain('select');
+    // This project's key is gone; another project's key waits for that project's editor (review finding 3), and
+    // other settings stay.
+    expect(Object.keys(localStorage).sort()).toEqual([
+      draftsKey('/work/other'),
+      'tabrion-studio.theme',
+    ]);
+    expect(browserStorage()).not.toContain('select 5');
+    expect(browserStorage()).not.toContain('select 7');
+  });
+
+  it('keeps the old browser drafts when the server cannot keep all of them (review finding 3)', async () => {
+    const big = 'x'.repeat(MAX_DRAFT_CHARS);
+    const legacy = JSON.stringify({
+      tabs: Array.from({ length: 4 }, (_, i) => ({ id: `old${i}`, title: `Old ${i}`, sql: big })),
+      activeTab: 'old0',
+    });
+    localStorage.setItem(draftsKey('/work/parts'), legacy);
+    const { drafts } = setup({ sql: 'select 7' }, { projectPath: '/work/parts' });
+    expect(await editor()).toHaveValue('select 7');
+    await afterDraftSave();
+    // Saved within the caps (a text left out), and the key stays, unchanged, so that nothing is lost.
+    expect(drafts.log.puts.length).toBeGreaterThan(0);
+    expect(localStorage.getItem(draftsKey('/work/parts'))).toBe(legacy);
   });
 
   it('keeps the old browser drafts while the server cannot store them, and writes none', async () => {
