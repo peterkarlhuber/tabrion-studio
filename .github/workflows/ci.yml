@@ -4,7 +4,8 @@ name: CI
 # ci-ok.yml aggregates them and posts the commit status "ci-ok" on the pull request head. Actions are pinned by full
 # commit SHA (tests/security/test_workflows.py). Jobs whose content arrives with later work packages are added by
 # them: "openapi in sync" (STU-008, TD-011). The "e2e" job (Chromium
-# and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke, Firefox and WebKit.
+# and axe, review U-3 of stu-005-051-review.md) is extended by QA-9 with the platforms smoke; Firefox and WebKit run
+# the same suites in the job "e2e (<browser>)" (STU-050, TD-047), advisory in the manifest until both are green.
 # Nothing here releases or publishes anything (G-R).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): every install of Studio takes the tabrion
 # commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py).
@@ -307,6 +308,121 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-test-results
+          path: frontend/test-results/
+          if-no-files-found: ignore
+
+  e2e-browsers:
+    name: e2e (${{ matrix.browser }})
+    # STU-050 (08 section 11, TD-047): the same suites in Firefox and WebKit, against the same built wheel. The browser
+    # is the one the locked @playwright/test installs. Advisory (continue-on-error, ci-manifest "advisory") until both
+    # have been green; then the entry leaves "advisory" and the job counts like "e2e". The gate below is the e2e job's,
+    # except that a test may skip with a "chromium only:" reason (the heap measurements through CDP).
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [firefox, webkit]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: python scripts/build_frontend.py
+      - run: pip install "build==1.6.1"
+      - run: python -m build --wheel --outdir dist
+      - name: Install the wheel into a fresh environment
+        run: |
+          python -m venv "$RUNNER_TEMP/studio"
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet dist/tabrion_studio-*.whl -c constraints/tabrion-integration.txt
+      - name: The tabrion commit the constraints pin
+        id: tabrion
+        run: |
+          sha=$(sed -n 's|^tabrion @ git+https://github.com/peterkarlhuber/tabrion@\([0-9a-f]\{40\}\)$|\1|p' constraints/tabrion-integration.txt)
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "no full-SHA tabrion pin in constraints/tabrion-integration.txt"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: peterkarlhuber/tabrion
+          ref: ${{ steps.tabrion.outputs.sha }}
+          path: tabrion
+          sparse-checkout: examples
+          persist-credentials: false
+      # The browser build of the locked @playwright/test (node_modules from `npm ci` above), with its system libraries.
+      - run: npx playwright install --with-deps "${{ matrix.browser }}"
+        working-directory: frontend
+      - run: npm run e2e -- --reporter=list,json
+        working-directory: frontend
+        env:
+          STUDIO_E2E_BROWSERS: ${{ matrix.browser }}
+          TABRION_STUDIO_E2E_PYTHON: ${{ runner.temp }}/studio/bin/python
+          TABRION_STUDIO_E2E_EXAMPLES: ${{ github.workspace }}/tabrion/examples
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/e2e.json
+      - name: Every suite ran and none was skipped (except "chromium only")
+        env:
+          E2E_REPORT: ${{ runner.temp }}/e2e.json
+          BROWSER: ${{ matrix.browser }}
+        run: |
+          python -I - <<'PY'
+          import collections, json, os, re
+          report = json.load(open(os.environ["E2E_REPORT"]))
+          counts = collections.Counter()
+          def walk(suite, file):
+              file = suite.get("file", file)
+              for spec in suite.get("specs", []):
+                  for test in spec["tests"]:
+                      status = test["status"]
+                      annotations = test.get("annotations", [])
+                      reasons = [a.get("description", "") for a in annotations if a.get("type") == "skip"]
+                      # Only a plain skip with a "chromium only:" reason; a fixme or fail annotation never counts.
+                      flagged = any(a.get("type") in ("fixme", "fail") for a in annotations)
+                      if (
+                          status == "skipped"
+                          and reasons
+                          and not flagged
+                          and all(r.startswith("chromium only:") for r in reasons)
+                      ):
+                          status = "chromium only"
+                      counts[(file, status)] += 1
+              for child in suite.get("suites", []):
+                  walk(child, file)
+          for suite in report["suites"]:
+              walk(suite, None)
+          print(dict(counts))
+          optional = {"screenshots.spec.ts": "takes screenshots only when STUDIO_SCREENSHOTS names a folder"}
+          root = "frontend/e2e"
+          specs = {
+              os.path.relpath(os.path.join(folder, name), root).replace(os.sep, "/")
+              for folder, _, names in os.walk(root)
+              for name in names
+              if re.search(r"\.(spec|test)\.[cm]?[jt]sx?$", name)
+          }
+          required = sorted(specs - set(optional))
+          assert len(required) >= 19 and set(optional) <= specs, (required, optional)
+          for file in required:
+              assert counts[(file, "expected")] > 0, f"{file}: no test passed"
+              bad = {s: n for (f, s), n in counts.items() if f == file and s not in ("expected", "chromium only")}
+              assert not bad, f"{file}: {bad}"
+          assert report["stats"]["unexpected"] == 0, report["stats"]
+          rows = [f"| {f} | {counts[(f, 'expected')]} | {counts[(f, 'chromium only')]} |" for f in required]
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"### e2e ({os.environ['BROWSER']})\n\n| Suite | Passed | Chromium only |\n|---|---|---|\n" + "\n".join(rows) + "\n")
+          PY
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-test-results-${{ matrix.browser }}
           path: frontend/test-results/
           if-no-files-found: ignore
 
