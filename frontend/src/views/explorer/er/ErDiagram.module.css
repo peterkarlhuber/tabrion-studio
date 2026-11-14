@@ -151,6 +151,7 @@
 
 .box {
   width: 100%;
+  cursor: pointer;
   height: 100%;
   overflow: hidden;
   border: 1px solid var(--tb-color-border-strong);

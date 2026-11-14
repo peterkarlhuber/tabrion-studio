@@ -96,10 +96,12 @@ import {
 import { takeHandoff } from './handoff';
 import {
   clearLegacyDrafts,
+  draftSavesSettled,
   fetchDrafts,
   hasLegacyDrafts,
   legacyKept,
   mergeDrafts,
+  queueDraftSave,
   readLegacyDrafts,
   saveDrafts,
   type DraftTab,
@@ -333,8 +335,11 @@ export function EditorView({
   const [draftsRead, setDraftsRead] = useState(false);
   /** Every tab id this page has had: a draft write keeps only the other pages' tabs (`drafts.ts`). */
   const known = useRef(new Set<string>());
-  /** Saves of the drafts, one after the other (a later one never lands before an earlier one). */
-  const draftSaves = useRef<Promise<unknown>>(Promise.resolve());
+  /**
+   * The draft save the delay still holds back, if any: it is sent at once when the page goes (QA-S1 S1-15), so a
+   * change made just before leaving for another view is not lost.
+   */
+  const pendingSave = useRef<(() => void) | null>(null);
   /**
    * The folder of the project whose drafts an earlier version left in browser storage, when the page's first save
    * keeps all of them: its keys are removed after the first save the server accepted.
@@ -391,7 +396,10 @@ export function EditorView({
   // Profiles, the drafts of this project and the row limit setting.
   useEffect(() => {
     let active = true;
-    void Promise.all([fetchProfiles(fetcher), fetchProject(fetcher), fetchDrafts(fetcher)]).then(
+    // The drafts are read after the saves of an editor this page showed before have landed (QA-S1 S1-15): back from
+    // the history or the explorer, the last change made there is in what is read.
+    const draftsAnswer = draftSavesSettled().then(() => fetchDrafts(fetcher));
+    void Promise.all([fetchProfiles(fetcher), fetchProject(fetcher), draftsAnswer]).then(
       ([list, project, stored]) => {
         if (!active) return;
         const items = list?.profiles ?? [];
@@ -435,18 +443,24 @@ export function EditorView({
   // Drafts, a moment after the last change, to the server (never to browser storage).
   useEffect(() => {
     if (tabs.length === 0 || !draftsRead) return undefined;
-    const timer = setTimeout(() => {
+    const save = () => {
+      pendingSave.current = null;
       const ids = new Set(known.current);
-      draftSaves.current = draftSaves.current.then(async () => {
+      queueDraftSave(async () => {
         const saved = await saveDrafts(fetcher, { tabs, activeTab: activeId }, ids);
         if (saved && legacyDrafts.current !== null) {
           clearLegacyDrafts(legacyDrafts.current);
           legacyDrafts.current = null;
         }
       });
-    }, DRAFT_SAVE_MS);
+    };
+    pendingSave.current = save;
+    const timer = setTimeout(save, DRAFT_SAVE_MS);
     return () => clearTimeout(timer);
   }, [tabs, activeId, draftsRead, fetcher]);
+  // QA-S1 S1-15: when the page goes (another view, such as the history), the save the delay holds back is sent now.
+  // Dropping it lost the last change, and the whole tab when nothing had been saved yet.
+  useEffect(() => () => pendingSave.current?.(), []);
 
   // Cancel what still runs when the page goes (the results are not kept).
   useEffect(

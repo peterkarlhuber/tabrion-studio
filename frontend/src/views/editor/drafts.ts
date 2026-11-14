@@ -183,6 +183,36 @@ export function draftsDocument(drafts: Drafts, known?: ReadonlySet<string>) {
   };
 }
 
+/**
+ * The draft saves of this page, one after the other, for every editor view the page mounts (QA-S1 S1-15): a later
+ * save never lands before an earlier one, and an editor that mounts again (back from the history, the explorer) reads
+ * the drafts only after the saves of the editor it replaces have landed (`draftSavesSettled`). A per-view queue let
+ * the new view's `GET /api/drafts` overtake the old view's last `PUT`, so it read drafts without that change.
+ */
+let draftSaves: Promise<unknown> = Promise.resolve();
+
+/** Queue a save after the saves queued before it; a failed save does not stop the later ones. */
+export function queueDraftSave(save: () => Promise<unknown>): void {
+  draftSaves = draftSaves.then(save).catch(() => undefined);
+}
+
+/** How long a new editor waits at most for the saves before it reads the drafts (a save the server never answers). */
+export const DRAFT_SAVES_WAIT_MS = 10_000;
+
+/**
+ * Resolves when every save queued so far has landed (or failed), or after `DRAFT_SAVES_WAIT_MS`: a save the server
+ * never answers must not keep the editor from opening.
+ */
+export function draftSavesSettled(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, DRAFT_SAVES_WAIT_MS);
+    void draftSaves.then(() => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 /** This project's drafts from the server; `null` when it keeps none. */
 export async function fetchDrafts(fetcher: typeof fetch): Promise<Result<Drafts | null>> {
   const result = await read(fetcher, '/api/drafts', parseDraftsAnswer);

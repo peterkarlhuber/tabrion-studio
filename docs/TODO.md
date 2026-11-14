@@ -92,6 +92,7 @@
 | TD-065 Security assessment A-01: a fresh random loopback address `127.a.b.c` per start, so no later Studio reuses an earlier origin (service workers, storage); the macOS fallback to `127.0.0.1` and the `--port` advice; what stays open (real Windows and macOS browsers) | P1 | In progress (A-01 PR): the fix, the residual-risk note in STU-ADR-0002 and the regression tests are done; open: the real-device checks (see the entry) |
 | TD-066 STU-055 vector data view: what it leaves for later (the sqlite-vec install status, `halfvec`/`sparsevec` on a pgvector 0.7+ server, an e2e test, other layouts) | P3 | Open (STU-055, PR #97): the pgvector tests run in CI (pgvector CI PR); the rest is open (see the entry) |
 | TD-067 Security assessment, Low and Info findings of Studio: A-02 (request time limit, log flood limit), B-3 (project profiles refuse clear-text passwords), C-01 (lasting secrets never evicted from the redaction), C-02 (exceptions inside container log arguments), C-04 (keyring allowlist), B-4 and C-08 (wording); what stays open | P2 | In progress (assessment Low/Info PR): the fixes, docs and tests are done; open: see the entry |
+| TD-069 QA-S1 findings S1-09 (a mouse click on an ER diagram box did nothing), S1-15 (an editor tab and its text could get lost on the way back from the history) and S1-32 (the raw `access.csrf_invalid` after a second start); the German Sie/du outliers | P1 | In progress (QA-S1 fix PR): the three fixes with tests are done; open: the Sie/du wording (see the entry) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -2173,3 +2174,38 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     are still formatted as they are; Studio's own code passes no such argument.
   - Not in this PR: C-05 and C-06 (repository settings for the owner, and CI tool hashes, a `.github/` change), C-03
     (tabrion's redaction residues, fixed in tabrion; Studio picks them up with a later pin) and C-07 (TD-030).
+
+### TD-069 · QA-S1 findings: ER diagram click, editor drafts on the way back, the ended session's text
+
+- **Priority:** P1 (S1-15 loses text) · **Status:** In progress (QA-S1 fix PR) · **Refs:** QA-S1 checklist v2 (S1-09,
+  S1-15, S1-32), TD-068 (the suite that found them), TD-033 (drafts on the server), STU-023 (ER diagram)
+- **S1-09, done:** a mouse click on a table's box in the ER diagram did nothing. xyflow gives a node that can be
+  neither selected nor dragged `pointer-events: none`, and the name button inside inherited it, so the click reached
+  the canvas; only Enter and the table list worked. The canvas now has `onNodeClick`: a click anywhere on a box shows
+  the table in the explorer, as Enter on its name does (the name button stops the click so it counts once). Tests:
+  `ErDiagram.test.tsx` (a click on a column row and on the name, once each) and `e2e/er-diagram.spec.ts` "mouse"
+  (a real click at the point on the screen); the keyboard and axe tests are unchanged.
+- **S1-15, done (root cause):** the editor saves its drafts 400 ms after the last change, and the effect's cleanup
+  cleared that timer. Leaving the editor (Ctrl+H to the history) within those 400 ms dropped the save, so "Open in
+  editor" mounted a new editor that read older drafts: the old tab came back with older text, or, when nothing had
+  been saved yet, not at all, and the new editor's first save made the loss permanent. Each editor also had its own
+  save queue, so the new editor's `GET /api/drafts` could overtake the old editor's last `PUT`. Now the save the
+  delay holds back is sent when the editor goes, the saves share one queue in the page (`drafts.ts`
+  `queueDraftSave`), and an editor reads the drafts only after the queued saves have landed (at most 10 s, so a save
+  the server never answers cannot keep the editor closed). Tests in `EditorView.test.tsx` with the save delay
+  driven by hand (fake `setTimeout`) and a draft save held by the test: both fail without the fix.
+- **S1-32, done:** a second start signs a new tab in and ends the first tab's session; "Run" there showed "The request
+  failed (access.csrf_invalid)". Every `access.*` code of the server catalog now has a text in en and de
+  (`messages.ts` `problemText`): `csrf_invalid` and `session_required` say that this tab's session ended and to go on
+  in the newest Studio tab or run `tabrion-studio` again, like the "Session ended" notice; the sign-in link codes
+  as on the sign-in page; a refusal Studio never sends its own page names its code. `messages.test.ts` reads the
+  codes from `problems.py`, so a new code without a text fails. The checklist's S1-32 itself still expects
+  "Connection lost" after a second start, which the product does not do (TD-068).
+- **Open:**
+  - A reload or a closed browser tab within the 400 ms still drops the last change (the page cannot finish a `PUT`
+    while it unloads without `keepalive`); not part of S1-15.
+  - German wording: `de.json` mostly uses "du", but about 16 strings use "Sie": `explorer.er.capped`,
+    `explorer.er.choose.empty`, `explorer.er.pngFailed`, `problems.diagram_too_large`, `editor.profileChanged`,
+    `viewer.filter.chooseColumn`, `viewer.filter.tooLong`, `viewer.full.unavailable`, seven of `viewer.problems.*`
+    and `vectors.noProfiles` (`connections.wizard.urlHint`, `urlState.takenPassword` and `urlPasswordRemoved` say
+    "Ihr Passwort", which can read as either). Not changed here: more than a handful of strings.

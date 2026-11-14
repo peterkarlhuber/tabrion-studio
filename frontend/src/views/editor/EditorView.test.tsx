@@ -161,7 +161,7 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
     return (await server.handle(url, init)) ?? new Response(null, { status: 404 });
   };
   const view = <EditorView fetcher={fetcher} saveExport={options.saveExport} />;
-  render(
+  const { unmount } = render(
     options.session === undefined ? (
       view
     ) : (
@@ -170,7 +170,7 @@ function setup(draft?: { sql: string; profile?: string }, options: Options = {})
       </ConnectionSessionContext.Provider>
     ),
   );
-  return { log: server.log as QueryLog, requests, drafts };
+  return { log: server.log as QueryLog, requests, drafts, fetcher, unmount };
 }
 
 /** Wait past the drafts' save delay. */
@@ -802,6 +802,95 @@ describe('EditorView', () => {
     await waitFor(() => expect(screen.getAllByTestId('editor-tab')).toHaveLength(2));
     expect(screen.getAllByTestId('editor-tab')[1]).toHaveAttribute('aria-current', 'true');
     expect(editorActions()).not.toBeNull();
+  });
+});
+
+describe('drafts when the page leaves the editor and comes back (QA-S1 S1-15)', () => {
+  // The save delay is driven by hand: a save is sent only when the test says so, never by how fast the test runs.
+  // Testing Library's waiting needs a real setTimeout, so these tests wait with `until` instead.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** Let the page take its answers (fetches, effects) until `check` holds; the save delay does not move. */
+  async function until(check: () => boolean) {
+    for (let turn = 0; turn < 200 && !check(); turn += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+      });
+    }
+    expect(check()).toBe(true);
+  }
+  const shown = (name: string) => () => screen.queryByRole('textbox', { name }) !== null;
+
+  /** "Open in editor" in the history: the page hands the statement over and shows the editor again. */
+  function openFromHistory(fetcher: typeof fetch) {
+    handToEditor({ profileId: 'project:parts-dev', title: 'From the history', sql: 'select 1' });
+    return render(<EditorView fetcher={fetcher} />);
+  }
+
+  /** The tabs after coming back: the old tab with its text, then the statement from the history. */
+  async function expectBothTabs() {
+    await until(shown('SQL of From the history'));
+    const tabs = screen.getAllByTestId('editor-tab');
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveTextContent('Query 1');
+    fireEvent.click(tabs[0] as HTMLElement);
+    expect(screen.getByRole('textbox', { name: 'SQL of Query 1' })).toHaveValue('select 42');
+  }
+
+  it('sends the change the save delay holds back when the editor goes, so the tab and its text come back', async () => {
+    // A fresh project: the server keeps no drafts yet.
+    const { drafts, fetcher, unmount } = setup();
+    await until(shown('SQL of Query 1'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'SQL of Query 1' }), {
+      target: { value: 'select 42' },
+    });
+    // The page leaves for the history before the delay ran out: nothing was saved yet.
+    expect(drafts.log.puts).toEqual([]);
+    unmount();
+    openFromHistory(fetcher);
+    await expectBothTabs();
+  });
+
+  it('reads the drafts only after the save of the editor it replaces has landed', async () => {
+    const { drafts, fetcher, unmount } = setup();
+    unmount();
+    // The server answers draft saves only when the test lets it (until `holding` ends).
+    const held: (() => void)[] = [];
+    let holding = true;
+    const slow: typeof fetch = (input, init) =>
+      holding && String(input) === '/api/drafts' && init?.method === 'PUT'
+        ? new Promise((resolve) => {
+            held.push(() => resolve(fetcher(input, init)));
+          })
+        : fetcher(input, init);
+    const left = render(<EditorView fetcher={slow} />);
+    await until(shown('SQL of Query 1'));
+    fireEvent.change(screen.getByRole('textbox', { name: 'SQL of Query 1' }), {
+      target: { value: 'select 42' },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(400);
+    });
+    // The save is on its way, and the page leaves before it lands.
+    expect(held).toHaveLength(1);
+    left.unmount();
+    const gets = drafts.log.gets;
+    openFromHistory(slow);
+    for (let turn = 0; turn < 20; turn += 1) {
+      await act(async () => {
+        await new Promise((resolve) => setImmediate(resolve));
+      });
+    }
+    // The new editor waits for that save: it has not read the drafts yet.
+    expect(drafts.log.gets).toBe(gets);
+    holding = false;
+    for (const release of held.splice(0)) release();
+    await expectBothTabs();
   });
 });
 

@@ -133,6 +133,48 @@ test('SVG and PNG are saved from the page, with the shown tables and nothing rem
   expect(await writes(page)).toHaveLength(1);
 });
 
+test('mouse (QA-S1 S1-09): a click on a box of the diagram opens its table in the explorer', async ({
+  page,
+}) => {
+  await openHarness(page, { scenario: 'explorer', path: '/explorer' });
+  for (const part of ['name', 'column'] as const) {
+    await openDiagram(page);
+    await expect(page.getByTestId('er-box')).toHaveCount(6);
+    // A box whose name lies inside the visible canvas (the fitted view can put a box under the status bar).
+    const canvas = await page.getByTestId('er-canvas').boundingBox();
+    expect(canvas).not.toBeNull();
+    let table = '';
+    for (const box of await page.getByTestId('er-canvas').getByTestId('er-box').all()) {
+      const rect = await box.getByRole('button').boundingBox();
+      if (
+        canvas !== null &&
+        rect !== null &&
+        rect.y >= canvas.y &&
+        rect.y + rect.height <= canvas.y + canvas.height / 2
+      ) {
+        table = (await box.getAttribute('data-table')) ?? '';
+        break;
+      }
+    }
+    expect(table).not.toBe('');
+    const box = page
+      .getByTestId('er-canvas')
+      .locator(`[data-testid="er-box"][data-table="${table}"]`);
+    // A real mouse click where a user clicks: the table's name, or a column row of the box. Playwright clicks the
+    // point on the screen and fails if another element (the canvas behind a box without pointer events) takes it.
+    await (
+      part === 'name'
+        ? box.getByRole('button', { name: `Show ${table} in the explorer`, exact: true })
+        : box.getByRole('listitem').first()
+    ).click();
+    await expect(page.getByTestId('explorer-view-objects')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('treeitem', { name: table, exact: true })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
+  }
+});
+
 test('keyboard: a table of the diagram opens it in the explorer; the choice changes the diagram', async ({
   page,
 }) => {

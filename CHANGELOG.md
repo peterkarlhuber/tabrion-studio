@@ -909,6 +909,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- QA-S1 (TD-069): a mouse click on a table's box in the ER diagram shows the table in the explorer, as Enter on its
+  name does (S1-09). The SQL editor no longer loses a tab or its latest text when the page leaves it within the save
+  delay, for example to open a history entry in the editor (S1-15): the pending draft save is sent when the editor
+  goes, and an editor reads the drafts only after the earlier saves have landed. A request refused because the tab's
+  session ended (a second start, `access.csrf_invalid` or `access.session_required`) says so in English and German
+  and how to go on, instead of the raw code; every other `access.*` code has a text too (S1-32).
 - Connections: two concurrent opens of one profile (the migrations page after a profile switch, or "Reconnect" and
   another view at once) could both connect; the second connection was closed again, but the database saw two
   logins. Opens of one profile now run one at a time behind a per-profile lock, so the second open waits and gets
