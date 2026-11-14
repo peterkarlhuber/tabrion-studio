@@ -40,6 +40,8 @@ for (const name of wanted) {
 
 export default defineConfig({
   testDir: './e2e',
+  // The QA-S1 checklist suite has its own config (e2e/qa-s1/playwright.config.ts) and needs the kit's demo project.
+  testIgnore: ['qa-s1/**'],
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   reporter: 'list',
