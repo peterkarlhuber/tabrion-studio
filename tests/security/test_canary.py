@@ -413,6 +413,41 @@ def test_a_database_detail_in_the_middle_of_a_line_is_redacted(logs: Logs, label
     assert "[redacted: database server text]" in str(records[0]["message"])
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"invalid input syntax for type integer LINE 1: SELECT '{CANARY}'::int",
+        f"insert failed DETAIL:\nKey (email)=({CANARY}@example.com) already exists.",
+        f"insert failed DETAIL:\N{NO-BREAK SPACE}Key (email)=({CANARY}@example.com) already exists.",
+    ],
+    ids=["line_label_mid_line", "label_before_line_break", "no_break_space"],
+)
+@pytest.mark.parametrize("as_argument", [False, True], ids=["in_message", "as_argument"])
+def test_the_redaction_residues_of_tabrion_0_2_0_are_removed(logs: Logs, text: str, as_argument: bool) -> None:
+    """Security assessment C-03 (TD-071): with tabrion 0.2.1 (TB-145, C-02 of tabrion), Studio's log path removes a
+    ``LINE n:`` statement echo in the middle of a line (the only label in the text), an inline label directly before
+    a line break, and a label followed by a no-break space. Each form kept its value with tabrion 0.2.0."""
+    logger = logging.getLogger("tabrion_studio.c03")
+    if as_argument:
+        logger.error("database said %s", text)
+    else:
+        logger.error(text)
+    _assert_no_canary(logs.everything())
+    prefix = "database said" if as_argument else text[:12]
+    records = [record for record in logs.records() if str(record.get("message", "")).startswith(prefix)]
+    assert records, logs.records()
+    assert "[redacted: database server text]" in str(records[0]["message"])
+
+
+def test_an_escaped_line_echo_in_a_repr_is_removed(logs: Logs) -> None:
+    """C-03 (TD-071, tabrion C-02): psycopg's ``LINE n:`` echo as the only label, escaped inside a ``repr`` (a cast
+    error text in a list argument), is removed; tabrion 0.2.0's pre-check had no ``LINE`` entry and kept it."""
+    logging.getLogger("tabrion_studio.c03").error(
+        "cast failed: %r", [f"invalid input syntax for type integer\nLINE 1: SELECT '{CANARY}'::int"]
+    )
+    _assert_no_canary(logs.everything())
+
+
 def test_lasting_secrets_stay_redacted_after_many_sign_ins(static_dir: Path, logs: Logs) -> None:
     """Security assessment C-01: the control token and a database password are never evicted from the redaction by
     the short-lived values of many sign-ins (each one registers a launch token, a session ID and a CSRF value)."""

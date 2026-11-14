@@ -25,7 +25,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -99,6 +99,7 @@
 | TD-068 QA-S1 checklist suite: Playwright tests of the manual checklist (S1-01..S1-38), opt-in and not in CI; what stays manual | P3 | Done (PR #103, `dbe37b7`, `docs/development/qa-s1-suite.md`; 38/38 on `ab01ebb` before the owner accepted QA-S1 on 2026-11-14); open: see the entry |
 | TD-069 QA-S1 findings S1-09 (a mouse click on an ER diagram box did nothing), S1-15 (an editor tab and its text could get lost on the way back from the history) and S1-32 (the raw `access.csrf_invalid` after a second start); the German Sie/du outliers | P1 | Partly done (PR #104, `11217d5`): the three fixes with tests; open: the Sie/du wording (see the entry) |
 | TD-070 QA-S1 S1-32 (owner decision of 2026-11-14 14:13Z, option A): after the user's own "Disconnect", "Run" in the SQL editor, "Show status" (migrations), "Run diagnosis" and "Inspect" (vector data) no longer open the connection again by themselves; they show the banner with "Reconnect" and go on only after "Reconnect" (D-02 again for PROD); the header shows a connection the editor opened | P1 | Done (PR #106, `ab01ebb`): the fix, unit and e2e tests (DEV, PROD, a loss, the three views); known limit: a reload forgets the disconnect (see the entry) |
+| TD-071 Security assessment C-03: tabrion's redaction residues (`LINE n:` echo, a label before a line break, a no-break space; tabrion TB-145 and C-02); Studio moves its pin to tabrion 0.2.1 | P1 | In review (C-03 pin PR): pin `af0458d`, canary tests, docs; no shim removed (see the entry) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -122,14 +123,15 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   specifier. The commit is pinned by its **full SHA** in a constraints file
   (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`; no branch, tag or short SHA). Both are
   enforced by `tests/security/test_dependencies.py` (`test_pyproject_follows_rc8`,
-  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_0_2_0`).
+  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_0_2_1`).
 - **Done:** `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, and
   `constraints/tabrion-integration.txt` pins tabrion v0.1.0, the merge commit of tabrion PR #56
   (`d5821faa8742dea012abda3b663549c038d76543`). Every install reads the constraints file (`-c`, or
   `PIP_CONSTRAINT` for the wheel smoke test in CI); a later tabrion version moves the pin in that one file. STU-015
   (PR #29) adds the `migrations` extra: `tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2`. The TD-013 PR moves
   to tabrion 0.2.0, the untagged merge commit of tabrion PR #65 (`52353daee6cd6e37a7efc45b74061a48beb2b280`), and
-  the range `tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3`.
+  the range `tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3`. The TD-071 PR moves the pin to tabrion 0.2.1, the
+  untagged merge commit of tabrion PR #71 (`af0458d54467571abfc1afdd44d76e1f4d727c06`); the range stays.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
@@ -2199,7 +2201,7 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   - C-02: objects other than built-in containers (a dataclass or a custom class whose `repr` holds an exception)
     are still formatted as they are; Studio's own code passes no such argument.
   - Not in this PR: C-05 and C-06 (repository settings for the owner, and CI tool hashes, a `.github/` change), C-03
-    (tabrion's redaction residues, fixed in tabrion; Studio picks them up with a later pin) and C-07 (TD-030).
+    (tabrion's redaction residues, fixed in tabrion 0.2.1; Studio takes that pin in TD-071) and C-07 (TD-030).
 
 ### TD-068 · QA-S1 checklist suite: what stays manual
 
@@ -2331,3 +2333,22 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   as every new page session does).
 - **Note:** the header shows "No connection" after "Disconnect", as before; the banner names the disconnected
   profile.
+
+### TD-071 · Security assessment C-03: tabrion 0.2.1 pin (tabrion's redaction residues)
+
+- **Priority:** P1 · **Status:** In review (C-03 pin PR) · **Refs:** the security assessment of 2026-11 (C-03; the
+  tabrion part of C-02), tabrion CHANGELOG `[0.2.1]` (C-02: tabrion #67; TB-145: tabrion #70), tabrion G-T2 for 0.2.1 (CI push
+  43590132481, release dry run 43590153478, nightly 43590155683), TD-013, TD-056, TD-067
+- **Done in the PR:** `constraints/tabrion-integration.txt` pins tabrion 0.2.1, the untagged merge commit of tabrion
+  PR #71 (`af0458d54467571abfc1afdd44d76e1f4d727c06`; no tag, no release: G-R is not granted), instead of 0.2.0
+  (`52353da`). `pyproject.toml` keeps `>=0.2,<0.3`. The tests that name the commit follow
+  (`test_the_constraints_file_pins_tabrion_0_2_1`, `test_release_bom.py`, `test_runtime_lock.py`), and the release BOM
+  tests give tabrion the license that 0.2.1 declares (`LicenseRef-Proprietary`, already a first-party exception of
+  `scripts/check_licenses.py`). New canary tests in `tests/security/test_canary.py`
+  (`test_the_redaction_residues_of_tabrion_0_2_0_are_removed`, `test_an_escaped_line_echo_in_a_repr_is_removed`)
+  send the residue forms through Studio's log setup; they fail with tabrion 0.2.0 and pass with 0.2.1.
+- **Checked, no change:** tabrion 0.2.1 has no API change (its `surface.json` is the same as 0.2.0's) and the same
+  runtime dependencies, so `constraints/runtime-lock.txt` is unchanged (`runtime_lock.py update` rewrites it byte for
+  byte; `check` and `check-installed` pass) and `scripts/check_tabrion_api.py` passes as it is. No `tabrion_compat`
+  shim goes away: none of them names 0.2.1, and the reasons of TD-013 ("Not replaced yet") still hold. The Studio
+  API is unchanged, so the frontend e2e suite was not run for this PR.
