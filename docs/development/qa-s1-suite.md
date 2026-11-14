@@ -5,6 +5,9 @@ QA-S1 is the manual usability session of Studio 1.0 with the owner (08 section 1
 judge of its checklist (v2, cases S1-01 to S1-38), so regressions show up **before** the manual pass. It does not
 replace that pass: QA-S1 acceptance stays manual, and the suite never writes into the tester's checklist (TD-068).
 
+**Status:** the owner accepted QA-S1 for Studio 1.0 on 2026-11-14 16:34Z, after run 3 of this suite passed 38/38 on
+the QA kit v2 built from master `ab01ebb` (TD-060).
+
 ## What it does
 
 - One test per checklist case, titled with its id (`S1-09 ...`); `cases.ts` says per case whether it is fully or
