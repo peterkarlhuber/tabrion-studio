@@ -111,6 +111,27 @@ const DB_KINDS = new Set([
 ]);
 
 /**
+ * The access protection's refusals (`access.*`, `security/access.py`, `security/body.py`) by the text they get
+ * (QA-S1 S1-32). A session that ended under an open tab (Studio started again, which signs the new tab in and ends the
+ * old tab's session, or restarted) is `access.csrf_invalid`: the text says so and how to go on, like the page's
+ * "Session ended" notice. `access.session_required` is also a tab that was never signed in, and its text says both.
+ * The checks of Host, Origin and fetch metadata refuse a request that did not come from Studio's own page; JSON only,
+ * the control channel and the CLI-only routes refuse requests that page never sends. Both texts name the code.
+ */
+const ACCESS: Record<string, string> = {
+  'access.session_required': 'session_missing',
+  'access.csrf_invalid': 'session_ended',
+  'access.launch_used': 'sign_in_used',
+  'access.launch_expired': 'sign_in_expired',
+  'access.launch_invalid': 'sign_in_invalid',
+  'access.body_too_large': 'request_too_large',
+  'access.bad_request': 'request_invalid',
+  'access.json_only': 'request_refused',
+  'access.control_denied': 'request_refused',
+  'access.browser_not_allowed': 'request_refused',
+};
+
+/**
  * SQLSTATE class 28 (invalid authorization): the server refused the sign-in. The text never says whether the user
  * exists (08 section 4.2).
  */
@@ -127,6 +148,12 @@ export function problemText(t: TFunction, problem: Problem): string {
       kind: /^[a-z_]{1,32}$/.test(kind) ? kind : 'unknown',
       interpolation: { escapeValue: false },
     });
+  }
+  if (problem.code.startsWith('access.')) {
+    const access = ACCESS[problem.code];
+    return access !== undefined
+      ? t(`problems.${access}`, { code: problem.code, interpolation: { escapeValue: false } })
+      : t('problems.access_refused', { code: problem.code, interpolation: { escapeValue: false } });
   }
   const name = problem.code.replace(/^studio\./, '');
   return PROBLEMS.has(name)

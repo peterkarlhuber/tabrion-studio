@@ -88,6 +88,26 @@ describe('ErDiagram', () => {
     expect(onShow).toHaveBeenCalledWith({ schema: 'public', name: 'device', kind: 'table' });
   });
 
+  it('shows a table in the explorer from a click on its box, once (QA-S1 S1-09)', async () => {
+    const { fetcher } = server();
+    const { onShow } = view(fetcher);
+    const canvas = await screen.findByTestId('er-canvas');
+    const box = await waitFor(() => {
+      const found = canvas.querySelector<HTMLElement>(
+        '[data-testid="er-box"][data-table="device"]',
+      );
+      expect(found).not.toBeNull();
+      return found as HTMLElement;
+    });
+    // A column row of the box, then the name (which Enter also uses): each click shows the table once.
+    fireEvent.click(within(box).getAllByRole('listitem')[0] as HTMLElement);
+    expect(onShow).toHaveBeenCalledTimes(1);
+    expect(onShow).toHaveBeenLastCalledWith({ schema: 'public', name: 'device', kind: 'table' });
+    fireEvent.click(within(box).getByRole('button', { name: 'Show device in the explorer' }));
+    expect(onShow).toHaveBeenCalledTimes(2);
+    expect(onShow).toHaveBeenLastCalledWith({ schema: 'public', name: 'device', kind: 'table' });
+  });
+
   it('reads another schema when it is picked', async () => {
     const { fetcher, asked } = server({ large: 12 });
     view(fetcher);

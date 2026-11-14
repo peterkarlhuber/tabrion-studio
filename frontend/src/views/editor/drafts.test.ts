@@ -1,8 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDraftsServer } from '../../harness/drafts';
 import {
   clearLegacyDrafts,
+  DRAFT_SAVE_TIMEOUT_MS,
+  DRAFT_SAVES_WAIT_MS,
+  draftSavesSettled,
   DRAFTS_KEY,
   draftsDocument,
   draftsKey,
@@ -15,6 +18,7 @@ import {
   mergeDrafts,
   parseDrafts,
   parseDraftsAnswer,
+  queueDraftSave,
   readLegacyDrafts,
   saveDrafts,
   wellFormed,
@@ -267,5 +271,110 @@ describe('drafts of project scripts (STU-020)', () => {
       sql: '',
       savedSql: '',
     });
+  });
+});
+
+describe('the page-wide queue of draft saves (QA-S1 S1-15, review M1)', () => {
+  // Every timer is driven by hand: nothing here depends on how fast the test runs.
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(async () => {
+    // Let what a test left in the page-wide queue run out, so the next test starts with an empty queue.
+    await vi.advanceTimersByTimeAsync(4 * DRAFT_SAVE_TIMEOUT_MS);
+    vi.useRealTimers();
+  });
+
+  /** A save the server never answers; it ends only when its signal aborts, as `fetch` does. */
+  function hanging(signals: AbortSignal[]) {
+    return (signal: AbortSignal) => {
+      signals.push(signal);
+      return new Promise<never>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason));
+      });
+    };
+  }
+
+  it('aborts a save the server never answers after its time limit and sends the next one', async () => {
+    const signals: AbortSignal[] = [];
+    const next = vi.fn(async () => undefined);
+    queueDraftSave(hanging(signals));
+    queueDraftSave(next);
+    await vi.advanceTimersByTimeAsync(DRAFT_SAVE_TIMEOUT_MS - 1);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(false);
+    expect(next).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes on after the time limit even when a save ignores the abort', async () => {
+    const next = vi.fn(async () => undefined);
+    queueDraftSave(() => new Promise<never>(() => undefined));
+    queueDraftSave(next);
+    await vi.advanceTimersByTimeAsync(DRAFT_SAVE_TIMEOUT_MS);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a save the time limit aborted as not kept, through the API client', async () => {
+    const server = createDraftsServer();
+    const signals: AbortSignal[] = [];
+    // The PUT never gets an answer; like `fetch`, it fails when its signal aborts.
+    const fetcher: typeof fetch = (input, init) =>
+      init?.method === 'PUT'
+        ? new Promise<Response>((_resolve, reject) => {
+            const signal = init.signal as AbortSignal;
+            signals.push(signal);
+            signal.addEventListener('abort', () => reject(signal.reason));
+          })
+        : fake(server)(input, init);
+    const results: boolean[] = [];
+    queueDraftSave(async (signal) => {
+      results.push(
+        await saveDrafts(fetcher, { tabs: [tab('a')], activeTab: 'a' }, undefined, signal),
+      );
+    });
+    await vi.advanceTimersByTimeAsync(DRAFT_SAVE_TIMEOUT_MS);
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
+    expect(results).toEqual([false]);
+  });
+
+  it('lets a new editor read the drafts after at most DRAFT_SAVES_WAIT_MS while saves are still on their way', async () => {
+    const signals: AbortSignal[] = [];
+    // Two saves the server never answers: the queue is busy for twice the time limit of one save.
+    queueDraftSave(hanging(signals));
+    queueDraftSave(hanging(signals));
+    let settled = false;
+    void draftSavesSettled().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(DRAFT_SAVES_WAIT_MS - 1);
+    expect(settled).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(settled).toBe(true);
+    // The second save is still on its way: the read did not wait for it.
+    expect(signals).toHaveLength(2);
+    expect(signals[1]?.aborted).toBe(false);
+  });
+
+  it('lets a new editor read the drafts as soon as the queued saves have landed', async () => {
+    let land: () => void = () => undefined;
+    queueDraftSave(
+      () =>
+        new Promise<void>((resolve) => {
+          land = resolve;
+        }),
+    );
+    let settled = false;
+    void draftSavesSettled().then(() => {
+      settled = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(false);
+    land();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(settled).toBe(true);
   });
 });
