@@ -39,6 +39,12 @@ state is logged once at start (area and on or off, nothing else), so a flag left
 that ``TABRION_STUDIO_CONFIG_DIR`` or ``TABRION_STUDIO_STATE_DIR`` chose supplies read profiles as before, but no write
 or admin profile, so a per-folder tool cannot point Studio at write profiles (and their ``dev`` labels) inside a
 project. That start is logged as a warning (``studio.write_profiles_ignored``).
+
+**So do the audit log and the secret confirmations (review N-1 of PR #116).** The audit log (``audit/``) and the
+confirmed pairs of server and secret reference (``write-secret-confirmations.json``) live in the folder of
+``write-areas.toml`` (:func:`write_state_folder`), never in Studio's state folder, which ``TABRION_STUDIO_STATE_DIR``
+can move. A state folder that the variable chose is not read or written for them; while an area is on, such a start
+is logged as a warning (``studio.write_state_ignored``, no path).
 """
 
 from __future__ import annotations
@@ -128,6 +134,27 @@ def write_profiles_allowed(areas: WriteAreas, config_dir: Path, flags_folder: Pa
         extra={"event": "studio.write_profiles_ignored"},
     )
     return False
+
+
+def write_state_folder(
+    areas: WriteAreas, flags_folder: Path | None, state_dir: Path, state_dir_from_env: bool
+) -> Path | None:
+    """The folder of the audit log and the secret confirmations: the flag file's folder (review N-1 of PR #116).
+
+    That folder is the command line's or the platform's (:func:`flag_dir`), never one an environment variable chose,
+    so ``TABRION_STUDIO_STATE_DIR`` cannot point the audit log or the confirmed pairs at a folder inside a project.
+    None without a flag file folder: nothing is recorded or confirmed, every write is refused (fail closed). While an
+    area is on and the variable moved the state folder elsewhere, the files there are not used; that is logged once
+    as a warning (no path: it may name a project folder)."""
+    if flags_folder is None:
+        return None
+    if areas.enabled and state_dir_from_env and not _same_folder(state_dir, flags_folder):
+        logger.warning(
+            "the audit log and the secret confirmations are kept in the folder of write-areas.toml; those of the "
+            "state folder an environment variable chose are not used",
+            extra={"event": "studio.write_state_ignored"},
+        )
+    return flags_folder
 
 
 def _areas(doc: dict[str, Any]) -> frozenset[Area]:

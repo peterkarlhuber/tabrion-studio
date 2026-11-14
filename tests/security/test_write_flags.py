@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import sys
+from typing import Any
 
 import pytest
 
@@ -336,6 +338,10 @@ def test_write_profiles_from_the_command_lines_folder_are_used(
     assert listing["write_profiles_allowed"] is True and listing["write_profiles_ignored"] is False
     assert status == 201
     assert not _logged(state_dir, "studio.write_profiles_ignored")
+    # N-1 of PR #116: the audit log is in the flag file's folder (here <--state-dir>/config), not the state folder.
+    assert b"profile.create" in (state_dir / "config" / "audit" / "audit.jsonl").read_bytes()
+    assert not (state_dir / "audit").exists()
+    assert not _logged(state_dir, "studio.write_state_ignored")
 
 
 def test_write_profiles_allowed_follows_the_flag_files_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -368,3 +374,120 @@ def test_write_profiles_allowed_follows_the_flag_files_folder(tmp_path: Path, mo
     link = tmp_path / "link"
     link.symlink_to(platform, target_is_directory=True)
     assert write_profiles_allowed(on, link, platform)
+
+
+# --- N-1 of PR #116: the audit log and the secret confirmations follow the rule of the flag file -------------------
+
+
+def test_the_audit_log_and_confirmations_live_in_the_flag_files_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The rule the server applies: always the flag file's folder (the command line's or the platform's), never the
+    state folder; a state folder that ``TABRION_STUDIO_STATE_DIR`` chose is logged while an area is on."""
+    from tabrion_studio.config.write_areas import write_state_folder
+
+    on = WriteAreas(frozenset({Area.DATA_EDITOR}))
+    flags = tmp_path / "flags"
+    moved = tmp_path / "project" / ".direnv-state"
+    records: list[str] = []
+
+    class Spy(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(str(getattr(record, "event", "")))
+
+    spy = Spy()
+    logging.getLogger("tabrion_studio.write_areas").addHandler(spy)
+    try:
+        assert write_state_folder(on, flags, moved, state_dir_from_env=True) == flags
+        assert records == ["studio.write_state_ignored"]
+        assert write_state_folder(on, flags, tmp_path / "cli-state", state_dir_from_env=False) == flags
+        assert write_state_folder(ALL_OFF, flags, moved, state_dir_from_env=True) == flags
+        assert write_state_folder(on, None, moved, state_dir_from_env=True) is None
+        assert records == ["studio.write_state_ignored"]  # only the first call: an area on and a moved folder
+    finally:
+        logging.getLogger("tabrion_studio.write_areas").removeHandler(spy)
+
+
+def _pg_profiles_file(folder: Path) -> None:
+    """A PostgreSQL read profile (localhost) and its write profile with an ``env:`` secret reference."""
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    folder.chmod(0o700)
+    file = folder / "profiles.toml"
+    file.write_text(
+        "version = 1\n\n"
+        '[[profile]]\nname = "pg"\nengine = "postgresql"\nhost = "localhost"\nport = 5432\ndatabase = "parts"\n'
+        'user = "app_reader"\nsslmode = "prefer"\nenvironment = "dev"\n\n'
+        '[[write_profile]]\nname = "pg-write"\nkind = "write"\nread_profile = "pg"\nuser = "app_writer"\n'
+        'password = "env:STUDIO_N1_SECRET"\n',
+        encoding="utf-8",
+    )
+    file.chmod(0o600)
+
+
+def _every_file(folder: Path) -> dict[str, bytes]:
+    return {str(p.relative_to(folder)): p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+@pytest.mark.process
+def test_a_state_folder_a_variable_chose_keeps_no_audit_log_or_confirmation(
+    tmp_path: Path, project: Path, monkeypatch: pytest.MonkeyPatch, clean_env: None
+) -> None:
+    """N-1 of PR #116: the flag is on (``--config-dir``), and ``TABRION_STUDIO_STATE_DIR`` points the state folder at
+    a folder in the project, as direnv could. A confirmation planted there for the exact pair is not read, and the
+    confirmation and the audit records Studio writes go to the flag file's folder; nothing in the moved folder's
+    ``audit/`` or ``write-secret-confirmations.json`` is read or changed. The start logs ``studio.write_state_ignored``.
+    """
+    from tabrion_studio.config.files import parse_toml
+    from tabrion_studio.config.schema import validate_profiles
+    from tabrion_studio.write.secret_confirm import CONFIRMATION_FILE, secret_pair
+
+    config = tmp_path / "config"
+    _flag_file(config, "version = 1\n[areas]\ndata_editor = true")
+    _pg_profiles_file(config)
+    parsed = validate_profiles(parse_toml((config / "profiles.toml").read_bytes()), owner="user")
+    pair = secret_pair(parsed.write_profiles[0], parsed.profiles[0])
+    assert pair is not None
+    moved = project / ".direnv-state"
+    moved.mkdir(mode=0o700)
+    planted = moved / CONFIRMATION_FILE
+    planted.write_text(json.dumps({"version": 1, "confirmed": {"pg-write": pair.digest}}), encoding="utf-8")
+    planted.chmod(0o600)
+    (moved / "audit").mkdir(mode=0o700)
+    (moved / "audit" / "audit.jsonl").write_bytes(b"planted, not a record\n")
+    (moved / "audit" / "audit.jsonl").chmod(0o600)
+    before = _every_file(moved)
+    monkeypatch.setenv("TABRION_STUDIO_STATE_DIR", str(moved))
+    with start_studio(project, moved, "--config-dir", str(config), state_option=False) as studio:
+        info, _ = studio.wait_ready()
+        session = sign_in(info)
+        headers = {**session.headers(), "Origin": f"http://{session.host}:{session.port}"}
+
+        def call(method: str, path: str, body: object = None) -> tuple[int, dict[str, Any]]:
+            status, _, raw = request(session.port, method, path, headers, body, host=session.host)
+            doc: dict[str, Any] = json.loads(raw) if raw else {}
+            return status, doc
+
+        status, listing = call("GET", "/api/write/profiles")
+        assert status == 200
+        (item,) = listing["write_profiles"]
+        assert item["secret"]["confirmed"] is False  # the planted confirmation is not read
+        status, audit = call("GET", "/api/write/audit")
+        assert status == 200 and audit["verification"]["ok"] is True, audit
+        status, preview = call("POST", "/api/write/secret-confirmations", {"write_profile_id": "write:pg-write"})
+        assert status == 200, preview
+        status, confirmed = call(
+            "POST",
+            "/api/write/secret-confirmations/confirm",
+            {"confirmation_hash": preview["confirmation_hash"], "typed": "localhost"},
+        )
+        assert status == 200 and confirmed["confirmed"] is True, confirmed
+        status, listing = call("GET", "/api/write/profiles")
+        assert listing["write_profiles"][0]["secret"]["confirmed"] is True
+    stored = json.loads((config / CONFIRMATION_FILE).read_bytes())
+    assert stored["confirmed"] == {"pg-write": pair.digest}
+    assert b"secret.confirm" in (config / "audit" / "audit.jsonl").read_bytes()
+    after = _every_file(moved)
+    for name in (CONFIRMATION_FILE, "audit/audit.jsonl"):
+        assert after[name] == before[name], name
+    assert not [name for name in after if name.startswith("audit/") and name != "audit/audit.jsonl"]
+    assert _logged(moved, "studio.write_state_ignored")

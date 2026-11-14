@@ -31,12 +31,18 @@ of PR #109), as ``[[write_profile]]`` tables coupled to one user read profile of
     read_profile = "measurements-dev"   # a user profile of this file, never a project profile; never a PROD one
     user = "measurements_writer"        # PostgreSQL: its own role (required, not the read profile's)
     password = "keyring:"               # its own secret reference
+    requirepeer = "postgres"            # optional: the server's OS user, only for a Unix socket folder as host
 
 A write profile has no target of its own: host, port, database or file, TLS mode and environment are the read
 profile's, so it can never name another target or another environment than the profile it is coupled to (TX-04).
 A project file (``validate_profiles(..., owner="project")``, the default) that has a ``[[write_profile]]`` table is
 invalid, and in either file a ``[[profile]]`` with a key that would make it a write profile or couple it
 (:data:`WRITE_KEYS`) is refused (``config.write_key_not_allowed``).
+
+``requirepeer`` (optional, PostgreSQL, review N-2 of PR #116) is the operating system user the server process must
+run as; libpq checks it on a Unix socket (``requirepeer``) before it authenticates, so a process that took over the
+socket folder gets no SCRAM exchange. It is accepted only when the coupled read profile's host is a socket folder
+(``config.requirepeer_socket_only``) and only as a plain user name (``config.os_user_name``).
 
 The validator never echoes a value it rejects: an issue names the key path (``profile[2].password``) and a code
 (``config.plain_password``), so a plain password written into a file by mistake never reaches the page or a log.
@@ -97,7 +103,9 @@ WRITE_KEYS = frozenset(
     }
 )
 WRITE_KINDS = ("write", "admin")
-WRITE_PROFILE_KEYS = ("name", "kind", "read_profile", "user", "password")
+WRITE_PROFILE_KEYS = ("name", "kind", "read_profile", "user", "password", "requirepeer")
+#: An operating system user name for ``requirepeer``: letters, digits, ``_``, ``.``, ``-`` (and a trailing ``$``).
+_OS_USER = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,62}\$?")
 
 Severity = Literal["error", "warning"]
 
@@ -180,12 +188,16 @@ class WriteProfile:
     read_profile: str  # the name of a user profile of the same file
     user: str | None = None
     password: SecretRef | None = None
+    #: PostgreSQL over a Unix socket only: the OS user the server must run as (libpq ``requirepeer``, N-2 of PR #116).
+    requirepeer: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         doc: dict[str, Any] = {"name": self.name, "kind": self.kind, "read_profile": self.read_profile}
         if self.user is not None:
             doc["user"] = self.user
         doc["password"] = None if self.password is None else self.password.to_dict()
+        if self.requirepeer is not None:
+            doc["requirepeer"] = self.requirepeer
         return doc
 
     def connection_profile(self, read: Profile) -> Profile:
@@ -469,9 +481,14 @@ def _write_profile(raw: Any, where: str, issues: list[Issue]) -> WriteProfile | 
             issues.append(Issue(f"{where}.password", "config.plain_password"))
         elif password.source == "file" and network_or_device(password.target):
             issues.append(Issue(f"{where}.password", "config.network_path"))
+    requirepeer = _text(raw, "requirepeer", where, issues, limit=64)
+    if requirepeer is not None and not _OS_USER.fullmatch(requirepeer):
+        issues.append(Issue(f"{where}.requirepeer", "config.os_user_name"))
     if len(issues) > start or name is None or kind is None or read_profile is None:
         return None
-    return WriteProfile(name=name, kind=kind, read_profile=read_profile, user=user, password=password)
+    return WriteProfile(
+        name=name, kind=kind, read_profile=read_profile, user=user, password=password, requirepeer=requirepeer
+    )
 
 
 def parse_write_profile(raw: Any) -> tuple[WriteProfile | None, list[Issue]]:
@@ -486,17 +503,23 @@ def coupling_issue(write: WriteProfile, read: Profile | None) -> str | None:
         return "config.coupling_unknown"  # only a user profile of the same file; never a project profile
     if read.environment == "prod":
         return "config.coupling_prod"  # E-X7: a PROD profile never has a write or admin profile
-    if read.engine == "sqlite" and (write.user is not None or write.password is not None):
+    if read.engine == "sqlite" and (
+        write.user is not None or write.password is not None or write.requirepeer is not None
+    ):
         return "config.not_for_engine"
     if read.engine == "postgresql":
         if write.user is None:
             return "config.coupling_role_required"
         if write.user == read.user:
             return "config.coupling_same_role"  # E-X8: its own database role
+        if write.requirepeer is not None and not (read.host or "").startswith("/"):
+            return "config.requirepeer_socket_only"  # libpq checks the peer only on a Unix socket (N-2 of PR #116)
     return None
 
 
 def _coupling_pointer(code: str) -> str:
+    if code == "config.requirepeer_socket_only":
+        return "requirepeer"
     return "user" if code in ("config.coupling_role_required", "config.coupling_same_role") else "read_profile"
 
 

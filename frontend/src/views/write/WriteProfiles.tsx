@@ -57,6 +57,7 @@ function WriteProfileForm({ fetcher, kinds }: { fetcher: typeof fetch; kinds: Wr
   const [kind, setKind] = useState<WriteKind>(kinds[0] ?? 'write');
   const [readProfile, setReadProfile] = useState('');
   const [user, setUser] = useState('');
+  const [requirepeer, setRequirepeer] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [saved, setSaved] = useState(false);
@@ -75,6 +76,8 @@ function WriteProfileForm({ fetcher, kinds }: { fetcher: typeof fetch; kinds: Wr
   }, [fetcher, saved]);
 
   const selected = reads.find((p) => p.name === readProfile);
+  // libpq checks the server's OS user only on a Unix socket (a host that is a folder): N-2 of PR #116.
+  const socket = selected?.engine === 'postgresql' && (selected.host ?? '').startsWith('/');
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (!confirmed) return;
@@ -86,6 +89,7 @@ function WriteProfileForm({ fetcher, kinds }: { fetcher: typeof fetch; kinds: Wr
         kind,
         read_profile: readProfile,
         ...(selected?.engine === 'postgresql' ? { user, password: 'keyring:' } : {}),
+        ...(socket && requirepeer !== '' ? { requirepeer } : {}),
       },
       digest,
       confirmed,
@@ -160,6 +164,20 @@ function WriteProfileForm({ fetcher, kinds }: { fetcher: typeof fetch; kinds: Wr
                 value={user}
                 onChange={(event) => setUser(event.target.value)}
                 required
+              />
+            )}
+          </Field>
+        ) : null}
+        {socket ? (
+          <Field label={t('write.requirepeer')} hint={t('write.requirepeerHint')}>
+            {(props) => (
+              <input
+                {...props}
+                className={connectionStyles.input}
+                value={requirepeer}
+                onChange={(event) => setRequirepeer(event.target.value)}
+                autoComplete="off"
+                spellCheck={false}
               />
             )}
           </Field>

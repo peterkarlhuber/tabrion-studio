@@ -748,6 +748,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- STU-XW hardening (CR-DBX; notes N-1, N-2 and N-4 of the PR #116 review, I-1 consistency with tabrion #77 D-2),
+  with every write area still off:
+  - the audit log (`audit/`) and the confirmed secret pairs (`write-secret-confirmations.json`) now live in the
+    folder of `write-areas.toml` (the folder `--config-dir` names, `<--state-dir>/config`, or the platform's
+    configuration folder), never in a state folder that `TABRION_STUDIO_STATE_DIR` chose, the same rule as for the
+    write profiles (L-1). If the variable moved the state folder, Studio neither reads nor writes these files there
+    and logs `studio.write_state_ignored` at start while an area is on;
+  - every PostgreSQL write and admin connection that sends a password now requires SCRAM
+    (`require_auth=scram-sha-256`) on every host, loopback and Unix socket included, not only on a foreign host;
+    without a password it stays `!password,!md5`. A write profile can name the server's operating system user
+    (optional key `requirepeer`, Unix socket only, `config.requirepeer_socket_only` otherwise; part of the confirmed
+    pair), which libpq checks before it authenticates; the form asks for it for a socket profile (en, de). Loopback
+    TCP without TLS stays a residual risk (threat model, residual risk 4) and a G-S2 item;
+  - the privilege check counts a role as predefined (`admin.broad:<role>`) only with a `pg_` name and an OID below
+    16384, in the findings as well as in the query, so a role a user created under a `pg_` name is not reported;
+  - the security guide says that every PostgreSQL write or admin profile needs the pair confirmation once, and that
+    any change of the pair (host, port, database, TLS mode, role, secret reference, `requirepeer`) needs a new one.
+
 - DC-TS-1 follow-up: `scripts/check_tabrion_source.py` is nodestro-studio's new copy (#198, SHA-256
   `f1edfc71b5da4986547abe0824833fb73bba532cb5e6a00e202c9ff317747456`): the poisoned `tabrion` is 0.2.99 (was 0.1.0,
   outside Studio's `>=0.2,<0.3`), so an install by range would pick it over the pinned 0.2.1.

@@ -129,6 +129,8 @@ const ISSUES = new Set([
   'unknown_key',
   'too_many',
   'encoding',
+  'requirepeer_socket_only',
+  'os_user_name',
 ]);
 
 /**
