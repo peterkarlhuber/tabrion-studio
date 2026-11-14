@@ -3,3 +3,6 @@ assets/branding/*.py text eol=lf
 # The shared Tabrion API check is pinned by its SHA-256 (tests/architecture/test_tabrion_api_export.py, QA-21):
 # keep LF on every platform so the hash is the same in each checkout.
 scripts/check_tabrion_api.py text eol=lf
+# The dependency-confusion check is the unchanged copy of nodestro-studio's script; its SHA-256 is pinned
+# (tests/supply_chain/test_check_tabrion_source.py, TABRION DC-TS-1): keep LF so the hash is the same everywhere.
+scripts/check_tabrion_source.py text eol=lf
