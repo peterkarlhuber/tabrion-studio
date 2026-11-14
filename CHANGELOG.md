@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-055: the **Vector data** view (`/vectors`, `GET /api/connections/{id}/vectors`), read-only for SQLite and
+  PostgreSQL: vector columns and their types, vector indexes with method and state, embedding dimensions, the
+  embedding model identities of Orkexa's metadata, bounded counts of stored embeddings, and the pgvector status
+  (Tabrion's `extension_status`); sqlite-vec's status is reported as not determinable. A column is shown as
+  ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index; everything else as "exact search (no ANN index)".
+  Hints for a missing extension, no ANN index, unreadable tables and incomplete metadata, in English and German.
+  Texts from the database are cut to 64 KiB in SQL and `vec0` definitions are parsed in linear time (PR #97 review
+  M-1, L-1); expression and partial indexes are marked.
+  Design note `docs/architecture/vector-inspection.md`, guide page `docs/guide/vector-data.md`, follow-ups TD-066.
 - Docs: change request CR-DBX (planning document 15; the owner accepted the planning on 2026-11-13, not the start of
   implementation). STU-ADR-0005 amends STU-ADR-0003: one server-side flag and one gate per area (Data Editor 1.1
   behind G-S2, Schema Designer 1.2 behind G-S3, Database Manager 1.3 behind G-S4), G-CX enables no write feature, a

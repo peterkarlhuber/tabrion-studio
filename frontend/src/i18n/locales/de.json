@@ -14,7 +14,8 @@
     "diagnostics": "Diagnose",
     "settings": "Einstellungen",
     "sql": "SQL-Editor",
-    "history": "Abfrageverlauf"
+    "history": "Abfrageverlauf",
+    "vectors": "Vektordaten"
   },
   "header": {
     "label": "Status",
@@ -1391,5 +1392,129 @@
     "deleted_one": "{{count}} Anweisung gelöscht.",
     "deleted_other": "{{count}} Anweisungen gelöscht.",
     "deletedOne": "Anweisung gelöscht."
+  },
+  "vectors": {
+    "title": "Vektordaten",
+    "lead": "Zeigt, was eine Datenbank für die Vektorsuche enthält: Vektorspalten und ihre Typen, Vektorindizes, Embedding-Dimensionen und -Modelle, wie viele Embeddings gespeichert sind und ob pgvector oder sqlite-vec installiert ist. Die Ansicht liest nur; nichts wird eingebettet, indiziert oder geändert.",
+    "cardTitle": "Vektordaten prüfen",
+    "profile": "Verbindungsprofil",
+    "noProfiles": "Es gibt noch kein Verbindungsprofil. Legen Sie eines unter Verbindungen an.",
+    "inspect": "Prüfen",
+    "busy": "Wird gelesen…",
+    "again": "Erneut prüfen",
+    "readOnly": "Nur lesend: Studio liest den Katalog und die Metadatentabellen und zählt höchstens 100.000 Zeilen je Tabelle innerhalb des Zeitlimits der Verbindung. Es lädt keine Erweiterung und baut keinen Index.",
+    "opening": "Verbindung wird geöffnet…",
+    "reading": "Vektordaten werden gelesen…",
+    "done_one": "Fertig: {{count}} Vektorspalte.",
+    "done_other": "Fertig: {{count}} Vektorspalten.",
+    "summary_one": "{{count}} Vektorspalte: {{ann}} mit ANN-Index, {{exact}} mit exakter Suche",
+    "summary_other": "{{count}} Vektorspalten: {{ann}} mit ANN-Index, {{exact}} mit exakter Suche",
+    "emptyTitle": "Keine Vektordaten gefunden",
+    "emptyPostgres": "In den Schemas, die diese Rolle sieht, gibt es keine Spalte eines pgvector-Typs (vector, halfvec, sparsevec) und keine Vektortabellen eines bekannten Layouts (Orkexa).",
+    "emptySqlite": "Diese Datei enthält keine vec0-Tabelle von sqlite-vec und keine Vektortabellen eines bekannten Layouts (Orkexa).",
+    "unknownValue": "unbekannt",
+    "severity": {
+      "warning": "Warnung:",
+      "info": "Hinweis:"
+    },
+    "extension": {
+      "title": "Erweiterung",
+      "installed": "ist installiert, Version {{version}}, im Schema {{schema}}.",
+      "available": "ist nicht installiert. Der Server bietet Version {{version}} an.",
+      "missing": "ist nicht installiert, und der Server bietet sie nicht an.",
+      "otherSchema": "Version {{version}} ist im Schema {{schema}} installiert, das nicht im Suchpfad dieser Verbindung liegt.",
+      "unknown": "Ihr Status konnte nicht gelesen werden.",
+      "update": "Version {{version}} ist als Update verfügbar.",
+      "notDeterminable": "Status: nicht feststellbar. sqlite-vec wird von der Anwendung in ihren eigenen Prozess geladen, es ist nicht Teil der Datenbankdatei, und Studio lädt keine Erweiterung. Die Tabellen unten zeigen, was die Datei enthält."
+    },
+    "search": {
+      "ann": "ANN-Index ({{method}})",
+      "exact": "Exakte Suche (kein ANN-Index)"
+    },
+    "columns": {
+      "title": "Vektorspalten",
+      "rule": "Eine Spalte gilt nur mit einem gültigen HNSW-, IVFFlat- oder DiskANN-Index als ANN-indiziert. Jede andere Spalte wird exakt, Zeile für Zeile, durchsucht: ein fehlender oder ungültiger Index, Float-Arrays, BLOBs und vec0-Tabellen von sqlite-vec. Die Operatorklasse bestimmt, welche Distanz ein Index bedient (etwa vector_cosine_ops nur die Kosinus-Distanz).",
+      "column": "Spalte",
+      "type": "Typ",
+      "dimensions": "Dimensionen",
+      "search": "Suche",
+      "embeddings": "Gespeicherte Embeddings",
+      "indexes": "Indizes",
+      "orkexa": "Orkexa-Layout",
+      "noDimensions": "nicht angegeben"
+    },
+    "indexes": {
+      "none": "Kein Index",
+      "line": "({{method}}, {{state}})",
+      "size": "{{size}} KiB",
+      "createdWith": "erstellt mit sqlite-vec {{version}}",
+      "expression": "auf einem Ausdruck: eine Abfrage muss denselben Ausdruck verwenden, um ihn zu nutzen",
+      "partial": "partiell: deckt nur einen Teil der Zeilen ab"
+    },
+    "indexState": {
+      "valid": "gültig",
+      "invalid": "ungültig, wird nicht genutzt",
+      "building": "wird noch gebaut",
+      "unknown": "Zustand unbekannt"
+    },
+    "count": {
+      "none": "nicht gezählt",
+      "moreThan_one": "mehr als {{value}}",
+      "moreThan_other": "mehr als {{value}}",
+      "estimate": "etwa {{value}} Zeilen (Schätzung)",
+      "timeout": "unbekannt (das Zählen dauerte zu lange)",
+      "unreadable": "unbekannt (nicht lesbar)",
+      "skipped": "nicht gezählt (Grenze dieser Prüfung)",
+      "unknown": "unbekannt"
+    },
+    "identities": {
+      "title": "Embedding-Modelle",
+      "none": "Die Metadaten der Datenbank nennen kein Embedding-Modell.",
+      "space": "Vektorraum",
+      "model": "Modell",
+      "dimensions": "Dimensionen",
+      "state": "Zustand",
+      "embeddings": "Gespeicherte Embeddings",
+      "tenant": "Mandant {{tenant}}",
+      "namespace": "Namensraum {{namespace}}",
+      "modelLine": "{{model}} von {{provider}}",
+      "digest": "Build {{digest}} des Modells",
+      "normalized": "Normalisierte Vektoren",
+      "notNormalized": "Vektoren nicht normalisiert",
+      "incomplete": "Die Identität ist unvollständig.",
+      "missing": "nicht erfasst"
+    },
+    "hints": {
+      "title": "Hinweise",
+      "other": "Der Server meldete einen Hinweis, den diese Seite nicht kennt ({{code}}).",
+      "sqlite_vec_undeterminable": "Ob sqlite-vec installiert ist, lässt sich an der Datenbankdatei nicht erkennen: Die Anwendung lädt es in ihren eigenen Prozess. Studio lädt keine Erweiterungen.",
+      "vec0_module": "Abfragen der vec0-Tabelle {{table}} brauchen sqlite-vec in der Anwendung. Studio liest nur ihre Definition und ihre Schattentabellen.",
+      "vec0_shadow_missing": "Die Schattentabelle der vec0-Tabelle {{table}} fehlt, daher können ihre Embeddings nicht gezählt werden.",
+      "legacy_table_missing": "index_meta verzeichnet Vektordimensionen, aber die vec0-Tabelle {{table}} fehlt (etwa nach dem Einspielen einer Sicherung). Die Anwendung baut sie beim nächsten Neuindizieren wieder auf.",
+      "legacy_dimension_mismatch": "index_meta verzeichnet {{meta}} Dimensionen, aber die vec0-Tabelle {{table}} deklariert {{declared}}.",
+      "no_vector_data": "Es wurden keine Vektordaten gefunden.",
+      "exact_search": "{{schema}}.{{table}}.{{column}} hat keinen ANN-Index: Suchen vergleichen jede Zeile.",
+      "index_invalid": "Der Index {{index}} auf {{schema}}.{{table}} ist ungültig, daher nutzt PostgreSQL ihn nicht (etwa nach einem fehlgeschlagenen CREATE INDEX CONCURRENTLY). Eine Administratorin kann ihn neu bauen.",
+      "dimensions_undeclared": "{{schema}}.{{table}}.{{column}} gibt keine Dimensionen an und kann daher keinen HNSW- oder IVFFlat-Index haben.",
+      "table_unreadable": "Diese Rolle darf {{schema}}.{{table}} nicht lesen, daher werden ihre Embeddings nicht gezählt.",
+      "metadata_unreadable": "Diese Rolle darf {{schema}}.{{table}} nicht lesen, daher werden die Embedding-Modelle nicht angezeigt.",
+      "indexes_unreadable": "Die Indizes von {{schema}}.{{table}} konnten nicht gelesen werden.",
+      "catalog_unreadable": "Der Katalog konnte mit dieser Rolle nicht gelesen werden.",
+      "count_estimated": "{{schema}}.{{table}} ist groß: Die angezeigte Zahl ist die Schätzung von PostgreSQL, keine Zählung.",
+      "count_timeout": "Das Zählen von {{schema}}.{{table}} dauerte länger als erlaubt und wurde abgebrochen.",
+      "counts_skipped_one": "{{count}} Zählung wurde ausgelassen: Eine Prüfung zählt nur begrenzt oft innerhalb des Zeitlimits der Verbindung.",
+      "counts_skipped_other": "{{count}} Zählungen wurden ausgelassen: Eine Prüfung zählt nur begrenzt oft innerhalb des Zeitlimits der Verbindung.",
+      "columns_capped_one": "Nur {{count}} Vektorspalte wird angezeigt.",
+      "columns_capped_other": "Nur die ersten {{count}} Vektorspalten werden angezeigt.",
+      "space_building": "Der Vektorraum {{space}} wird gerade neu aufgebaut (Zustand building).",
+      "identity_incomplete": "Die Embedding-Identität von {{space}} ist unvollständig: Anbieter, Modell oder Dimensionen fehlen oder sind nicht lesbar.",
+      "dimension_mismatch": "Die Identität von {{space}} nennt {{identity}} Dimensionen, die Tabelle verzeichnet {{stored}}.",
+      "pgvector_available": "pgvector ist in dieser Datenbank nicht installiert. Der Server bietet Version {{version}} an; eine Administratorin kann es mit CREATE EXTENSION vector installieren. Studio installiert es nie.",
+      "pgvector_missing": "pgvector ist nicht installiert, und der Server bietet es nicht an. Vektorspalten anderer Layouts werden trotzdem aufgeführt.",
+      "pgvector_update": "pgvector {{installed}} ist installiert; der Server bietet {{available}} an. Eine Administratorin kann es mit ALTER EXTENSION vector UPDATE aktualisieren.",
+      "pgvector_other_schema": "pgvector ist im Schema {{schema}} installiert, das nicht im Suchpfad dieser Verbindung liegt.",
+      "extension_unknown": "Der Status von pgvector konnte nicht gelesen werden.",
+      "definition_too_long": "Die Definition der virtuellen Tabelle {{table}} ist länger als 64 KiB, daher liest Studio sie nicht."
+    }
   }
 }

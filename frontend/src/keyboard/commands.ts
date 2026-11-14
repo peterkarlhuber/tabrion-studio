@@ -44,6 +44,7 @@ const PAGES: { path: Route; key: string }[] = [
   { path: '/history', key: 'nav.history' },
   { path: '/migrations', key: 'nav.migrations' },
   { path: '/diagnostics', key: 'nav.diagnostics' },
+  { path: '/vectors', key: 'nav.vectors' },
   { path: '/settings', key: 'nav.settings' },
 ];
 

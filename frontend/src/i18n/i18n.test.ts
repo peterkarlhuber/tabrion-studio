@@ -59,6 +59,9 @@ const SAME_IN_BOTH = new Set([
   'explorer.er.zoom',
   'explorer.er.list.reference',
   'explorer.er.list.referenced',
+  // STU-055: an index's method and state in parentheses, and a size in KiB (placeholders only).
+  'vectors.indexes.line',
+  'vectors.indexes.size',
   // STU-022: the DDL and policies tabs, technical terms German uses as they are.
   'explorer.tabs.ddl',
   'explorer.tabs.policies',

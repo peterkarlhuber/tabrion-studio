@@ -44,7 +44,7 @@ from sqlalchemy.pool import QueuePool
 import tabrion
 from tabrion.check import Finding
 from tabrion.errors import ConfigurationError, Kind, UnsafePath
-from tabrion.postgres import SessionSettings
+from tabrion.postgres import ExtensionStatus, SessionSettings
 
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, target_fingerprint
 from tabrion_studio.config.secrets import SecretError
@@ -435,6 +435,12 @@ class OpenConnection:
         :func:`.tabrion_compat.check`). ``cancel`` stops it from another thread."""
         with self._read() as transaction:
             return tabrion_compat.check(transaction, cancel=cancel if cancel is not None else Cancel())
+
+    def extension_status(self, name: str, *, cancel: Cancel | None = None) -> ExtensionStatus:
+        """PostgreSQL: tabrion's ``extension_status`` of one extension, in one ``Database.read()`` (STU-055; it only
+        reads the catalog, see :func:`.tabrion_compat.extension_status`)."""
+        with self._read() as transaction:
+            return tabrion_compat.extension_status(transaction, name, cancel=cancel if cancel is not None else Cancel())
 
     def fetch(
         self,
