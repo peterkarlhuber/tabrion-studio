@@ -16,5 +16,5 @@
     "noUnusedParameters": true,
     "verbatimModuleSyntax": true
   },
-  "include": ["e2e", "playwright.config.ts"]
+  "include": ["e2e", "qa-s1", "playwright.config.ts"]
 }

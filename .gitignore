@@ -24,6 +24,7 @@ frontend/dist/
 frontend/coverage/
 frontend/playwright-report/
 frontend/test-results/
+frontend/qa-s1-results/
 # The built frontend; the wheel build includes it (pyproject.toml, artifacts).
 src/tabrion_studio/static/
 

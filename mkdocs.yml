@@ -93,6 +93,7 @@ nav:
       - Repository conventions: development/conventions.md
       - Documentation checklist: development/docs-checklist.md
       - Release checklist 1.0: development/release-checklist.md
+      - QA-S1 checklist suite: development/qa-s1-suite.md
       - Tabrion API used: api-consumers.md
   - Architecture decisions:
       - adr/README.md
