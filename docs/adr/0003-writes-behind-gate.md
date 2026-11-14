@@ -1,6 +1,7 @@
 # STU-ADR-0003: Writes behind a server-side flag until G-S2
 
-**Status:** proposed; E-S1 decided (2026-11-07 23:26Z): the code may be written, enabling it needs G-S2. Studio 1.0
+**Status:** superseded by [STU-ADR-0006](0006-per-area-write-kill-switches.md) (CR-DBX work package STU-XW-5,
+2026-11-14), which carries its rules over with one flag and one gate per area. Before: proposed; E-S1 decided (2026-11-07 23:26Z): the code may be written, enabling it needs G-S2. Studio 1.0
 is complete without the Data Editor (STU-026 is a separate, gated package). **Amended by
 [STU-ADR-0005](0005-crdbx-write-and-admin-gates.md) (CR-DBX, 2026-11-13):** one flag and one gate per area (G-S2 Data
 Editor, G-S3 Schema Designer, G-S4 Database Manager), and a refused write answers 400/405, with 403 only for the write

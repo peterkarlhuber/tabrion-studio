@@ -27,11 +27,14 @@ migration states and Tabrion profiles.
 
 **Non-goals:** no hosted service, no shared server, no multi-user login, no replacement for administration tools
 such as DBeaver or pgAdmin, no engines besides SQLite and PostgreSQL. Studio 1.0 excludes writing data, schema
-changes, running migrations, running backups and role management. Later versions may add the Data Editor (1.1), the
-Schema Designer (1.2) and the Database Manager (1.3) only under change request CR-DBX, each locked until its own gate
-(G-S2, G-S3, G-S4; development starts under the owner's conditional approval G-CX once its start conditions are
-proven, and new write or admin code stays behind kill switches that are off by default;
-[STU-ADR-0005](docs/adr/0005-crdbx-write-and-admin-gates.md)); Studio never runs a project's migrations or `env.py`.
+changes, running migrations, running backups and role management, and they stay non-goals for 1.0. Later versions may
+add the Data Editor (1.1), the Schema Designer (1.2) and the Database Manager (1.3) only under change request CR-DBX.
+Their code exists only behind one server-side switch per area that is off by default, cannot be turned on from the
+page, a project file or a URL, and stays off until the area's own gate (G-S2, G-S3, G-S4); the development start
+G-CX turns nothing on, and no area ever writes to a PROD profile
+([STU-ADR-0005](docs/adr/0005-crdbx-write-and-admin-gates.md),
+[STU-ADR-0006](docs/adr/0006-per-area-write-kill-switches.md)). Replication stays a non-goal, and Studio does not
+become a complete administration tool; it never runs a project's migrations or `env.py`.
 
 ## Installation (from source, before the first release)
 

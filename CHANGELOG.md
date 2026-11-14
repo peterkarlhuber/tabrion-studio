@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Docs: STU-XW-5 (CR-DBX), the first work package after the development start. STU-ADR-0006 supersedes
+  STU-ADR-0003: one server-side flag and one gate per area (Data Editor G-S2, Schema Designer G-S3, Database Manager
+  G-S4), each off by default and set only locally by the owner (never from the page, a project file, a URL, a header
+  or a profile); G-CX is not an activation; a refused write answers 400 or 405 and only the write mode 403 (W-9),
+  without echoing values or secrets; no code path writes to PROD (E-X7); separate write and admin profiles, the admin
+  profile with minimal rights, a privilege check on connect and a finding on over-privilege, and Studio never sets
+  up admin rights for itself (E-X8, E-X6); every kill-switch pull request proves default off and a "flag off"
+  negative test per endpoint. New page `docs/architecture/write-threat-model.md` (TX-01..TX-15: flag tampering,
+  ineffective kill switches, PROD lock bypass, profile confusion, unlock flow, CSRF, `require_auth` on import, plan
+  swap, drift, structural read-only instead of a denylist, over-privileged admin profile, audit-log integrity, values
+  in refusals). The README and the security guide state that write features exist only behind default-off gates and
+  stay non-goals for 1.0; `docs/TODO.md` marks STU-XW-5 in review and STU-XW-1..4 next. No code change.
 - Docs: QA-S1 passed. The owner confirmed the manual QA-S1 acceptance of Studio 1.0 on 2026-11-14 16:34Z, on the QA
   kit v2 built from master `ab01ebb` with tabrion `52353da` (QA-S1 suite 38/38, PR #103; findings S1-09, S1-15 and
   S1-32 fixed in PR #104 and PR #106). Recorded in `docs/TODO.md` (TD-046 B-5, TD-060, STU-050, STU-054 done, TD-068
