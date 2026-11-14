@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-055: the **Vector data** view (`/vectors`, `GET /api/connections/{id}/vectors`), read-only for SQLite and
+  PostgreSQL: vector columns and their types, vector indexes with method and state, embedding dimensions, the
+  embedding model identities of Orkexa's metadata, bounded counts of stored embeddings, and the pgvector status
+  (Tabrion's `extension_status`); sqlite-vec's status is reported as not determinable. A column is shown as
+  ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index; everything else as "exact search (no ANN index)".
+  Hints for a missing extension, no ANN index, unreadable tables and incomplete metadata, in English and German.
+  Design note `docs/architecture/vector-inspection.md`, guide page `docs/guide/vector-data.md`, follow-ups TD-065.
 - TD-031 (owner decision G-S1 2): the nightly job `newest dependencies (Python 3.11 and 3.14)` installs Studio and the
   pinned Tabrion without the hashed runtime lock, so with the newest releases inside the `pyproject.toml` ranges,
   prints `pip freeze`, and runs `pip check` and the backend tests. It is not a pull request check; a failure opens the

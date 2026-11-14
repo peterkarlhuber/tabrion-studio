@@ -212,6 +212,7 @@ const PAGES: [string, string, () => ReactElement][] = [
   ],
   ['delete history (STU-020)', '/', () => <DeleteHistoryDialog onDelete={noop} onCancel={noop} />],
   ['diagnostics (STU-014)', '/diagnostics', () => <App fetcher={profiles} heartbeat={false} />],
+  ['vector data (STU-055)', '/vectors', () => <App fetcher={profiles} heartbeat={false} />],
   [
     'trust the migration code (STU-015)',
     '/',

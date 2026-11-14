@@ -59,6 +59,7 @@ nav:
       - Starting and stopping: guide/starting.md
       - Connections: guide/connections.md
       - Diagnostics: guide/diagnostics.md
+      - Vector data: guide/vector-data.md
       - Migration status: guide/migrations.md
       - Explorer: guide/explorer.md
       - SQL editor: guide/sql-editor.md
@@ -78,6 +79,7 @@ nav:
       - Database explorer: architecture/explorer.md
       - Data viewer: architecture/viewer.md
       - Diagnostics: architecture/diagnostics.md
+      - Vector data inspection: architecture/vector-inspection.md
       - Migration status: architecture/migrations.md
       - Export: architecture/exports.md
       - History, favorites and scripts: architecture/history-and-scripts.md

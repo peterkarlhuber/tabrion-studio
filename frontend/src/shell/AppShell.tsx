@@ -14,6 +14,7 @@ import {
   Settings,
   SquareTerminal,
   Stethoscope,
+  Waypoints,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type MouseEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -46,6 +47,7 @@ const NAV: { path: Route; key: string; icon: ReactNode }[] = [
   { path: '/history', key: 'nav.history', icon: <History /> },
   { path: '/migrations', key: 'nav.migrations', icon: <GitBranch /> },
   { path: '/diagnostics', key: 'nav.diagnostics', icon: <Stethoscope /> },
+  { path: '/vectors', key: 'nav.vectors', icon: <Waypoints /> },
 ];
 
 /** The window title: `[PROD] name – Tabrion Studio` with a connection, else the page title. */

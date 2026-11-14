@@ -31,6 +31,7 @@ describe('buildCommands', () => {
       'Go to Query history',
       'Go to Migrations',
       'Go to Diagnostics',
+      'Go to Vector data',
       'Go to Settings',
       'Theme: System',
       'Theme: Light',
@@ -57,7 +58,7 @@ describe('buildCommands', () => {
     await act(async () => {
       await i18n.changeLanguage('de');
     });
-    expect(labels(buildCommands(context())).slice(0, 9)).toEqual([
+    expect(labels(buildCommands(context())).slice(0, 10)).toEqual([
       'Gehe zu Start',
       'Gehe zu Verbindungen',
       'Gehe zu Explorer',
@@ -65,6 +66,7 @@ describe('buildCommands', () => {
       'Gehe zu Abfrageverlauf',
       'Gehe zu Migrationen',
       'Gehe zu Diagnose',
+      'Gehe zu Vektordaten',
       'Gehe zu Einstellungen',
       'Darstellung: System',
     ]);

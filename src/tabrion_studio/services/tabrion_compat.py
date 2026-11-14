@@ -26,6 +26,8 @@ What each part replaces:
   connection is used (TD-039).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
 * :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
+* :func:`extension_status` (STU-055): tabrion's public ``tabrion.postgres.extension_status`` on the driver connection
+  of a ``Database.read()``, like :func:`check`.
 * :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
   ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
 * :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1): Studio's own catalog reads on PostgreSQL (``stream(...,
@@ -55,6 +57,7 @@ from typing import Any
 import sqlalchemy
 import tabrion
 from tabrion import check as tabrion_check
+from tabrion import postgres as tabrion_postgres
 
 __all__ = [
     "CATALOG_SEARCH_PATH",
@@ -63,6 +66,7 @@ __all__ = [
     "Column",
     "ResultCursor",
     "check",
+    "extension_status",
     "inspector",
     "pin_setup_path",
     "reset_session",
@@ -381,6 +385,25 @@ def check(transaction: tabrion.Transaction, *, cancel: Cancel) -> list[tabrion_c
     cancel.attach(dbapi)
     try:
         return tabrion_check.check(dbapi)
+    finally:
+        if cancel.detach():
+            _discard(connection, dbapi)
+
+
+def extension_status(
+    transaction: tabrion.Transaction, name: str, *, cancel: Cancel
+) -> tabrion_postgres.ExtensionStatus:
+    """``tabrion.postgres.extension_status(connection, name)`` on the driver connection of ``transaction`` (STU-055).
+
+    It reads ``pg_extension``, ``pg_available_extensions`` and ``current_schemas`` in one statement. As for
+    :func:`check`, SQLAlchemy has sent no ``BEGIN`` yet, so tabrion opens and rolls back its own implicit
+    transaction on the read-only session; the session's ``statement_timeout`` bounds it and ``cancel`` stops it.
+    """
+    connection = transaction.connection
+    dbapi: Any = connection.connection.dbapi_connection
+    cancel.attach(dbapi)
+    try:
+        return tabrion_postgres.extension_status(dbapi, name)
     finally:
         if cancel.detach():
             _discard(connection, dbapi)
