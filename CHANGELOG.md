@@ -23,6 +23,12 @@ All notable changes to this project are documented here. The format follows
   Texts from the database are cut to 64 KiB in SQL and `vec0` definitions are parsed in linear time (PR #97 review
   M-1, L-1); expression and partial indexes are marked.
   Design note `docs/architecture/vector-inspection.md`, guide page `docs/guide/vector-data.md`, follow-ups TD-066.
+- Docs: CR-DBX conditional development start (owner, 2026-11-14 11:01Z, G-CX). STU-ADR-0005 gets an amendment,
+  the README, `docs/adr/README.md` and the CR-DBX section of `docs/TODO.md` follow: development of Studio 1.1 to 1.3
+  starts without a new approval once S-1 (Studio 1.0 complete, QA-S1 accepted), S-2 (security findings fixed,
+  reviews complete), S-3 (Tabrion migration incl. W6 and pin cascades) and S-4 (mandatory CI green) are proven;
+  H-2 and G-R are needed for public releases only; write and admin code stays behind default-off kill switches until
+  G-S2, G-S3 or G-S4. No code change.
 - Docs: change request CR-DBX (planning document 15; the owner accepted the planning on 2026-11-13, not the start of
   implementation). STU-ADR-0005 amends STU-ADR-0003: one server-side flag and one gate per area (Data Editor 1.1
   behind G-S2, Schema Designer 1.2 behind G-S3, Database Manager 1.3 behind G-S4), G-CX enables no write feature, a
