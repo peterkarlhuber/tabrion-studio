@@ -651,6 +651,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- C-03 / TD-071 (security assessment, tabrion's redaction residues): Studio pins tabrion 0.2.1, whose
+  `DbErrorRedactionFilter` also removes psycopg's `LINE n:` statement echo in the middle of a line or as the only
+  label (also escaped inside a `repr`, tabrion C-02), an inline `DETAIL:`/`HINT:`/`CONTEXT:`/`QUERY:` label directly
+  before a line break, and a label followed by a no-break space (tabrion TB-145). Each form kept the value with
+  tabrion 0.2.0. New canary tests through Studio's log setup
+  (`test_the_redaction_residues_of_tabrion_0_2_0_are_removed`, `test_an_escaped_line_echo_in_a_repr_is_removed`)
+  fail with tabrion 0.2.0 and pass with 0.2.1.
+
 - DC-TS-1 (dependency confusion; tabrion and tabrion-studio are not registered on PyPI, owner decision of
   2026-11-13): `scripts/runtime_lock.py check-installed` no longer skips tabrion. The installed tabrion's
   `direct_url.json` must name the Git URL and the full commit of `constraints/tabrion-integration.txt`; a tabrion
@@ -847,6 +855,14 @@ All notable changes to this project are documented here. The format follows
   the ci-ok run link before every merge (R-1).
 
 ### Changed
+
+- TD-071: Studio is built and tested against tabrion 0.2.1, the untagged merge commit of tabrion PR #71
+  (`af0458d54467571abfc1afdd44d76e1f4d727c06`; no tag, no release), pinned by full SHA in
+  `constraints/tabrion-integration.txt` (was 0.2.0, `52353da`). The range `>=0.2,<0.3` stays. tabrion 0.2.1 has no
+  API change and the same runtime dependencies, so `constraints/runtime-lock.txt` is unchanged
+  (`runtime_lock.py update` writes it byte for byte, `check-installed` passes); no `tabrion_compat` shim goes away.
+  tabrion 0.2.1 declares `LicenseRef-Proprietary` instead of MIT; `scripts/check_licenses.py` already lists it as a
+  first-party exception, and the release BOM tests use that license now.
 
 - TD-013 (part): Studio is built and tested against tabrion 0.2.0, the untagged merge commit of tabrion PR #65
   (`52353daee6cd6e37a7efc45b74061a48beb2b280`; no tag, no release), pinned by full SHA in

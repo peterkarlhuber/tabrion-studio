@@ -60,8 +60,11 @@ The log handlers run Studio's `RedactionFilter` first (an exception becomes its 
 message) and then tabrion's `DbErrorRedactionFilter`, which rewrites database errors in the arguments and removes
 `DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts from the message; since tabrion 0.2.0 also a `DETAIL:`,
 `HINT:`, `CONTEXT:` or `QUERY:` part in the middle of a one-line message (TD-056, pinned by
-`test_a_database_detail_in_the_middle_of_a_line_is_redacted`). The other order would leave exception
-messages in the traceback text (`tests/security/test_canary.py`).
+`test_a_database_detail_in_the_middle_of_a_line_is_redacted`); since tabrion 0.2.1 also psycopg's `LINE n:` statement
+echo in the middle of a line or as the only label (also escaped in a `repr`), an inline label directly before a line
+break, and a label followed by a no-break space (security assessment C-03, TD-071, pinned by
+`test_the_redaction_residues_of_tabrion_0_2_0_are_removed` and `test_an_escaped_line_echo_in_a_repr_is_removed`). The
+other order would leave exception messages in the traceback text (`tests/security/test_canary.py`).
 
 ## Logging
 

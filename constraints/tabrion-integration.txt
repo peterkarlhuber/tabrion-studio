@@ -1,8 +1,8 @@
-# The tabrion commit Studio is built and tested against: tabrion 0.2.0 (merge commit of tabrion PR #65;
+# The tabrion commit Studio is built and tested against: tabrion 0.2.1 (merge commit of tabrion PR #71;
 # untagged, no release: ADR 0009, amendment of 2026-11-08).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): a constraints file with a full commit SHA is
 # how Studio pins it. pyproject.toml carries the range >=0.2,<0.3 with no direct reference
 # (tests/security/test_dependencies.py, docs/TODO.md TS-001).
 # pip constraints take no extras; the extras come from pyproject.toml.
 # Install: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
-tabrion @ git+https://github.com/peterkarlhuber/tabrion@52353daee6cd6e37a7efc45b74061a48beb2b280
+tabrion @ git+https://github.com/peterkarlhuber/tabrion@af0458d54467571abfc1afdd44d76e1f4d727c06
