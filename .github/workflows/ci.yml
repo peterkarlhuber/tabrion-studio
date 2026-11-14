@@ -191,11 +191,13 @@ jobs:
     # owns its database but is no superuser, so only Studio's read-only settings stop the writes. Password
     # authentication (SCRAM), so the M-1 tests (no libpq password fallback) mean something. The tests that make roles
     # (marker "postgres_superuser", STU-014 CI-1) use the service's own superuser, set on the pytest step only.
+    # STU-055 (TD-066): the image is PostgreSQL 17 with pgvector available but not created, so the vector tests
+    # (marker "pgvector") run here as well; they create the extension in the test database and drop it again.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
       postgres:
-        image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+        image: pgvector/pgvector:0.8.7-pg17-trixie@sha256:89947206f52eac3a9df9b663df7e76987cbdc623be6576b3a524953d568700d7
         env:
           # A throwaway server of this job only; the values are not secrets.
           POSTGRES_PASSWORD: ci-admin-pw
@@ -234,10 +236,12 @@ jobs:
       # STU-022 (TD-035): the DDL test compares with the runner's own pg_dump; it must be there and not older than
       # the server (pg_dump refuses a newer server), so its version is logged and the live comparison is required.
       - run: pg_dump --version
-      - run: pytest -m "postgres or postgres_superuser" -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/postgres.xml"
+      - run: pytest -m "postgres or postgres_superuser or pgvector" -v -p no:cacheprovider -rs --junitxml="$RUNNER_TEMP/postgres.xml"
         env:
           # The throwaway server's own superuser, for the tests that make roles (marker postgres_superuser, CI-1).
           TABRION_STUDIO_TEST_POSTGRES_SUPERUSER: postgresql://postgres:ci-admin-pw@127.0.0.1:5432/studio_test
+          # The same superuser for the pgvector tests (marker pgvector, STU-055), which create and drop the extension.
+          TABRION_STUDIO_TEST_PGVECTOR: postgresql://postgres:ci-admin-pw@127.0.0.1:5432/studio_test
           # A missing or refusing pg_dump fails the DDL test instead of skipping its live comparison (L-2, #38).
           TABRION_STUDIO_TEST_LIVE_PG_DUMP: "1"
       - name: Every PostgreSQL test ran and none was skipped
