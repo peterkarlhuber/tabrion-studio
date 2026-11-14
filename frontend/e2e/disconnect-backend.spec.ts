@@ -156,6 +156,19 @@ function watchWrites(page: Page): string[] {
   return seen;
 }
 
+/**
+ * Two animation frames and a task: a request that an action starts a task later is on its way before its absence is
+ * asserted (review of #106, L-3; as in e2e/ux-acceptance-1-0.spec.ts and the QA-S1 suite). No fixed wait.
+ */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve, 0))),
+      ),
+  );
+}
+
 const SQL = 'select count(*) as n from orders';
 const header = (page: Page) => page.getByRole('banner').getByRole('group', { name: 'Status' });
 const banner = (page: Page) => page.getByTestId('connection-lost');
@@ -225,6 +238,7 @@ async function runAndExpectNotice(page: Page, name: string, writes: string[]): P
   // A second "Run" asks again, with the one banner.
   await page.getByTestId('editor-run').click();
   await expect(banner(page)).toHaveCount(1);
+  await settled(page);
   // Nothing reached the server: no open, no query (the requests, the open connections and the query history).
   expect(writes).toEqual([]);
   expect(await openOnServer(page, profileId)).toEqual([]);
@@ -288,6 +302,7 @@ test('PROD: Reconnect asks D-02 again; Cancel leaves it disconnected; Connect ru
   await expect(production(page)).toHaveCount(0);
   await expect(banner(page)).toBeVisible();
   await expect(header(page)).toContainText('No connection');
+  await settled(page);
   expect(writes).toEqual([]);
   expect(await openOnServer(page, 'user:shop-prod')).toEqual([]);
 
@@ -382,6 +397,7 @@ for (const view of VIEWS) {
     // A second press asks again, with the one banner.
     await page.getByRole('button', { name: view.button, exact: true }).click();
     await expect(banner(page)).toHaveCount(1);
+    await settled(page);
     // Nothing was opened and nothing was read on a connection.
     expect(seen).toEqual([]);
     expect(await openOnServer(page, `user:${name}`)).toEqual([]);
@@ -393,6 +409,7 @@ for (const view of VIEWS) {
       // PROD: D-02 again; Cancel keeps it disconnected and opens nothing.
       await production(page).getByRole('button', { name: 'Cancel' }).click();
       await expect(banner(page)).toBeVisible();
+      await settled(page);
       expect(seen).toEqual([]);
       expect(await openOnServer(page, `user:${name}`)).toEqual([]);
       await banner(page).getByRole('button', { name: 'Reconnect' }).click();

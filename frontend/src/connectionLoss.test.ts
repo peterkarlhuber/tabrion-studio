@@ -141,6 +141,31 @@ describe('ConnectionLoss', () => {
       expect(resume).not.toHaveBeenCalled();
     });
 
+    it('a run never goes on after a later, unrelated "Reconnect" (review of #106, L-2)', () => {
+      const { loss } = setup();
+      loss.disconnect(DEV);
+      const resume = vi.fn();
+      loss.askReconnect('user:shop', resume);
+      // The profile is connected some other way ("Connect" in the manager): the wait moves on with that open only.
+      loss.seen({ connectionId: 'd2', profileId: 'user:shop', environment: 'dev' }, true);
+      // Then that connection is lost, and "Reconnect" on the loss's banner opens d3: the old run does not go on.
+      loss.markLost('d2', 'db.connection');
+      loss.seen({ connectionId: 'd3', profileId: 'user:shop', environment: 'dev' }, true);
+      loss.reconnected('user:shop', 'd3');
+      expect(resume).not.toHaveBeenCalled();
+      // Nor when "Reconnect" names another connection than the open just seen.
+      loss.disconnect(DEV);
+      loss.askReconnect('user:shop', resume);
+      loss.seen({ connectionId: 'd4', profileId: 'user:shop', environment: 'dev' }, true);
+      loss.reconnected('user:shop', 'd5');
+      expect(resume).not.toHaveBeenCalled();
+      // Nor without the open: "Reconnect" reports only after `seen`.
+      loss.disconnect(DEV);
+      loss.askReconnect('user:shop', resume);
+      loss.reconnected('user:shop', 'd6');
+      expect(resume).not.toHaveBeenCalled();
+    });
+
     it('a request that fails on the disconnected connection names the disconnect, not a loss', () => {
       const { loss, effects } = setup();
       loss.seen(DEV, true);

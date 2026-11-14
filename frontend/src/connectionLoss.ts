@@ -45,6 +45,16 @@ export class ConnectionLoss {
   private disconnectedProfiles = new Map<string, DisconnectedConnection>();
   /** What waits for "Reconnect" on the banner, by profile id (`askReconnect`). */
   private waiting = new Map<string, (connectionId: string) => void>();
+  /**
+   * What waited and may go on with the connection just opened for its profile: `seen` moves it here from `waiting`,
+   * and only `reconnected` for that very connection runs it (the banner's "Reconnect" reports its own open right
+   * after `seen`). Anything else that happens to the profile first (a loss, a new disconnect, a new ask, another
+   * open) drops it, so a run never goes on after a later, unrelated "Reconnect" (review of #106, L-2).
+   */
+  private ready = new Map<
+    string,
+    { connectionId: string; resume: (connectionId: string) => void }
+  >();
   lost: LostConnection[] = [];
 
   /** Give the page's effects (again, when they change); returns the function that takes them back. */
@@ -65,6 +75,12 @@ export class ConnectionLoss {
     if (!opened) return;
     // A connection of the profile is open again (by "Reconnect", "Connect" or "Open"): the user's disconnect ends.
     this.disconnectedProfiles.delete(connection.profileId);
+    const resume = this.waiting.get(connection.profileId);
+    this.waiting.delete(connection.profileId);
+    this.ready.delete(connection.profileId);
+    if (resume !== undefined) {
+      this.ready.set(connection.profileId, { connectionId: connection.connectionId, resume });
+    }
     const ended = this.lost.filter((item) => item.profileId === connection.profileId);
     if (ended.length === 0) return;
     this.lost = this.lost.filter((item) => item.profileId !== connection.profileId);
@@ -85,6 +101,7 @@ export class ConnectionLoss {
     const entry = this.known.get(connectionId);
     const effects = this.effects;
     if (entry === undefined || this.replaced.has(connectionId) || effects === null) return;
+    this.ready.delete(entry.profileId);
     effects.forgetProd(entry.profileId);
     effects.disconnected(connectionId);
     if (this.lost.some((item) => item.connectionId === connectionId)) return;
@@ -120,6 +137,7 @@ export class ConnectionLoss {
     this.disconnectedProfiles.set(connection.profileId, connection);
     // A run that waited for an earlier "Reconnect" of the profile does not wait for this one.
     this.waiting.delete(connection.profileId);
+    this.ready.delete(connection.profileId);
     if (this.lost.some((item) => item.profileId === connection.profileId)) {
       this.lost = this.lost.map((item) =>
         item.profileId === connection.profileId ? { ...item, cause: 'disconnected' } : item,
@@ -142,20 +160,26 @@ export class ConnectionLoss {
     const effects = this.effects;
     if (entry === undefined || effects === null) return () => undefined;
     this.waiting.set(profileId, resume);
+    this.ready.delete(profileId);
     if (!this.lost.some((item) => item.profileId === profileId)) {
       this.lost = [...this.lost, { ...entry, cause: 'disconnected', code: null }];
       effects.changed(this.lost);
     }
     return () => {
       if (this.waiting.get(profileId) === resume) this.waiting.delete(profileId);
+      if (this.ready.get(profileId)?.resume === resume) this.ready.delete(profileId);
     };
   }
 
-  /** "Reconnect" on the banner opened `connectionId` for `profileId`: what waited for it runs, once. */
+  /**
+   * "Reconnect" on the banner opened `connectionId` for `profileId`: what waited for it runs, once. Only when that
+   * open is the one `seen` just reported for the profile; otherwise nothing runs.
+   */
   reconnected(profileId: string, connectionId: string): void {
-    const resume = this.waiting.get(profileId);
-    this.waiting.delete(profileId);
-    resume?.(connectionId);
+    const ready = this.ready.get(profileId);
+    if (ready?.connectionId !== connectionId) return;
+    this.ready.delete(profileId);
+    ready.resume(connectionId);
   }
 
   onReconnected(listener: (event: Reconnected) => void): () => void {

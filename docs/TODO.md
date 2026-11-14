@@ -2299,6 +2299,19 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     `views/reconnectGate.test.tsx` (the three views: nothing opened while disconnected, the press goes on after
     "Reconnect", leaving the view drops it, a profile not disconnected opens as before). The QA-S1 suite's S1-32 test
     and the checklist row follow the decision.
+- **Review of #106 (accepted with conditions), done:**
+  - M: a unit test for "Disconnect" while a multi-statement DEV run is in flight (`disconnect.test.tsx`): statement 2
+    finds the connection closed (`studio.connection_not_found`), the banner names the disconnect, and no
+    `POST /api/connections` follows. It fails when the editor's auto-reopen ignores `isDisconnected`.
+  - L-1: "Disconnect" records the disconnect before the close request, so a run started while the request is on its
+    way is held too (test: the close answer held by the fake server; it fails with the old order).
+  - L-2: a run that waited is kept only for the open `seen` just reported (`ready` in `connectionLoss.ts`); a loss, a
+    new disconnect, a new ask or another open drops it, so it never goes on after a later, unrelated "Reconnect"
+    (test in `connectionLoss.test.ts`).
+  - L-3: the e2e "nothing sent" checks wait for two animation frames and a task first (`settled`).
+  - Open from the review: the three VIEWS e2e tests must be green in Firefox and WebKit (CI) before the merge; the
+    owner may confirm that after "Disconnect", "Open" in the explorer and "Connect" in the manager do not ask D-02
+    again for PROD (the confirmation lasts for the page session, 08 section 6; only "Reconnect" asks again).
 - **Known limit (kept by decision):** the disconnect lives in the page session, so a reload forgets it. After a
   reload no connection is open in the page; the next run connects as a first run does (and asks D-02 again for PROD,
   as every new page session does).

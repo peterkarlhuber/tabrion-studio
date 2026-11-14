@@ -64,7 +64,12 @@ type Call = { method: string; url: string; body: string };
  * /api/connections`) and the query engine. `closeOnServer` closes the connections of a profile as the server would
  * (a loss: the page is not told).
  */
-function server(profile: string, sql = 'select 1') {
+function server(
+  profile: string,
+  sql = 'select 1',
+  /** Holds a request until the promise it returns settles (the answer is made after that). */
+  hold: (call: Call) => Promise<void> | null = () => null,
+) {
   const drafts = createDraftsServer({
     unavailable: false,
     seed: {
@@ -83,6 +88,7 @@ function server(profile: string, sql = 'select 1') {
     const method = init?.method ?? 'GET';
     const body = typeof init?.body === 'string' ? init.body : '';
     calls.push({ method, url, body });
+    await hold({ method, url, body });
     if (url === '/api/profiles') return new Response(JSON.stringify(PROFILES));
     if (url === '/api/settings') return new Response(JSON.stringify(SETTINGS));
     if (url === '/api/connections' && method === 'GET') {
@@ -272,5 +278,83 @@ describe('S1-32: Run after the user disconnected', () => {
     await waitFor(() => expect(starts(calls)).toHaveLength(3));
     await waitFor(() => expect(screen.getByTestId('result-status')).toHaveTextContent(/^3 rows/));
     expect(header()).toHaveTextContent('parts-dev, connected');
+  });
+});
+
+/** A promise the test settles by hand. */
+function gate() {
+  let release: () => void = () => undefined;
+  const promise = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  return { promise, release };
+}
+
+/** "Connections" → the profile → "Disconnect" (the answer to it may be held by the fake server). */
+async function disconnectIn(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await go('/connections');
+  const item = screen
+    .getAllByTestId('connection-item')
+    .find((element) => element.textContent?.includes(name));
+  await user.click(item as HTMLElement);
+  const detail = screen.getByTestId('connection-detail');
+  await user.click(await within(detail).findByRole('button', { name: 'Disconnect' }));
+}
+
+describe('S1-32: the edges of "Disconnect" (review of #106)', () => {
+  it('a run in flight: a statement that finds the connection closed by "Disconnect" opens nothing again', async () => {
+    const user = userEvent.setup();
+    // Statement 2's start waits until the test lets it go: "Disconnect" happens while it is on its way.
+    const second = gate();
+    let startsSeen = 0;
+    const { fetcher, calls } = server('project:parts-dev', 'select 1;\nselect 2', (call) =>
+      call.method === 'POST' && call.url === '/api/queries' && ++startsSeen === 2
+        ? second.promise
+        : null,
+    );
+    window.history.replaceState(null, '', '/sql');
+    render(<App fetcher={fetcher} heartbeat={false} connectionCheckMs={0} />);
+    await screen.findByRole('textbox', { name: 'SQL of Query 1' });
+    await user.click(await screen.findByTestId('editor-run-script'));
+    await waitFor(() => expect(starts(calls)).toHaveLength(2));
+    expect(opens(calls)).toHaveLength(1);
+
+    await disconnectIn(user, 'parts-dev');
+    await waitFor(() => expect(calls.some((call) => call.method === 'DELETE')).toBe(true));
+    // Statement 2 now reaches a server that no longer has the connection: `studio.connection_not_found`.
+    second.release();
+    const banner = await screen.findByTestId('connection-lost');
+    expect(banner).toHaveAttribute('data-cause', 'disconnected');
+    expect(banner).toHaveTextContent('Disconnected: parts-dev');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // A loss would open DEV again by itself; the user's disconnect does not.
+    expect(opens(calls)).toHaveLength(1);
+    expect(starts(calls)).toHaveLength(2);
+  });
+
+  it('"Run" while the close request is still on its way is held too', async () => {
+    const user = userEvent.setup();
+    const closing = gate();
+    const { fetcher, calls } = server('project:parts-dev', 'select 1', (call) =>
+      call.method === 'DELETE' ? closing.promise : null,
+    );
+    window.history.replaceState(null, '', '/sql');
+    render(<App fetcher={fetcher} heartbeat={false} connectionCheckMs={0} />);
+    await screen.findByRole('textbox', { name: 'SQL of Query 1' });
+    await user.click(await screen.findByTestId('editor-run'));
+    await waitFor(() => expect(screen.getByTestId('result-status')).toHaveTextContent(/^3 rows/));
+    const before = { opens: opens(calls).length, starts: starts(calls).length };
+
+    await disconnectIn(user, 'parts-dev');
+    await waitFor(() => expect(calls.some((call) => call.method === 'DELETE')).toBe(true));
+    // The server has not answered the close yet (the connection is still open there): "Run" must not use or reopen it.
+    await go('/sql');
+    await user.click(await screen.findByTestId('editor-run'));
+    const banner = await screen.findByTestId('connection-lost');
+    expect(banner).toHaveAttribute('data-cause', 'disconnected');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(opens(calls)).toHaveLength(before.opens);
+    expect(starts(calls)).toHaveLength(before.starts);
+    closing.release();
   });
 });

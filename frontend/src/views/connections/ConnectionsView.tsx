@@ -516,14 +516,15 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
   };
 
   const disconnect = async (item: ProfileItem, connection: OpenedConnection) => {
-    const result = await closeConnection(fetcher, connection.connectionId);
-    // The user's own disconnect (S1-32): nothing opens this profile again by itself, even if the close failed.
+    // The user's own disconnect (S1-32), recorded before the close request: a run that starts while it is on its way
+    // is held too, and nothing opens this profile again by itself, even if the close fails.
     recordDisconnect({
       connectionId: connection.connectionId,
       profileId: item.id,
       name: visible(item.name),
       environment: item.environment,
     });
+    const result = await closeConnection(fetcher, connection.connectionId);
     // Gone either way: a connection the server no longer knows is closed as well.
     setActive((current) => (current?.connectionId === connection.connectionId ? null : current));
     setStatus(
