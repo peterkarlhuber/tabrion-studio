@@ -36,7 +36,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | Blocked: planned, not started; needs Studio 1.0 (G-R), the repository migration and the development-start approval G-CX; each area then stays locked until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-planned-not-started)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | Blocked: planned, not started; development start approved conditionally (G-CX, 2026-11-14), starts once S-1..S-4 are proven; each area then stays locked until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-planned-not-started)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -443,6 +443,15 @@ them has started: see [CR-DBX](#cr-dbx-studio-11-to-13-planned-not-started).
 
 ## CR-DBX: Studio 1.1 to 1.3 (planned, not started)
 
+**Conditional development start (owner, 2026-11-14 11:01Z, G-CX):** development starts automatically, without a
+new approval, once all start conditions are proven: S-1 Studio 1.0 functionally complete and QA-S1 accepted by the
+owner; S-2 relevant security findings fixed and required technical reviews complete; S-3 Tabrion migration complete
+including W6 and the pin cascades; S-4 mandatory CI green without relevant integration or security blockers. The
+evidence (with SHA) is tracked in the planning file `cr-dbx-startbedingungen.md`; today all four are open. H-2 and G-R
+are required for public releases only, not for internal development. Before its gate (G-S2, G-S3, G-S4) new write or
+admin code is integrated only behind kill switches that are off by default and proven effective; no activation, no
+productive use, no tag or release without G-R. This supersedes "separate development-start approval" below.
+
 The owner accepted change request CR-DBX on 2026-11-13 (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at 23:35Z as recommended,
 with binding refinements of E-X4, E-X5, E-X6 and E-X9). This confirms the **planning, not the start of
 implementation**. Nothing here starts before Studio 1.0 (G-R), the repository migration and a separate
@@ -454,10 +463,10 @@ The work packages are defined in planning document 15 section 9.2 and the progra
 
 | Version | Area | Work packages | Gate | Status |
 |---|---|---|---|---|
-| 1.1 | Shared write foundation: threat model and the ADR successor of 0003 (STU-XW-5), write and admin profiles, unlocking, PROD lock, flags (STU-XW-1), audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation (STU-XW-4) | TABRION STU-XW-1..STU-XW-5 | G-S2 | Blocked (planned, not started; G-CX) |
-| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked (planned, not started; G-CX) |
-| 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked (planned, not started; G-CX, Studio 1.1, tabrion 0.3) |
-| 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked (planned, not started; G-CX, Studio 1.2) |
+| 1.1 | Shared write foundation: threat model and the ADR successor of 0003 (STU-XW-5), write and admin profiles, unlocking, PROD lock, flags (STU-XW-1), audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation (STU-XW-4) | TABRION STU-XW-1..STU-XW-5 | G-S2 | Blocked (planned, not started; G-CX start conditions S-1..S-4) |
+| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked (planned, not started; G-CX start conditions S-1..S-4) |
+| 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked (planned, not started; G-CX start conditions, Studio 1.1, tabrion 0.3) |
+| 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked (planned, not started; G-CX start conditions, Studio 1.2) |
 
 Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
