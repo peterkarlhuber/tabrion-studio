@@ -421,6 +421,8 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         launches=launches,
         request_shutdown=request_shutdown,
         write_areas=write_areas,
+        # STU-XW-2: the audit log of write and admin actions, created and read only while an area is on.
+        audit_dir=options.state_dir / "audit",
     )
 
     def on_ready() -> None:

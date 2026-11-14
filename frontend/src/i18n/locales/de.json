@@ -1038,7 +1038,8 @@
     "unlock_name_mismatch": "Tippen Sie zum Entsperren den Namen des Schreibprofils genau ein.",
     "write_locked": "Der Schreibmodus ist gesperrt. Entsperren Sie ihn erneut.",
     "write_target_changed": "Das Profil oder die Datenbankdatei hat sich geändert; die Entsperrung ist beendet.",
-    "write_unsupported": "Studio kann für diese Datenbank keine Schreibverbindung mit seinen Schutzmaßnahmen öffnen."
+    "write_unsupported": "Studio kann für diese Datenbank keine Schreibverbindung mit seinen Schutzmaßnahmen öffnen.",
+    "audit_unavailable": "Studio konnte den Audit-Eintrag dieser Aktion nicht schreiben und hat sie daher nicht ausgeführt. Siehe das Audit-Log bei den Schreibprofilen."
   },
   "keyboard": {
     "palette": {
@@ -1558,6 +1559,19 @@
     "roleHint": "Eine eigene Rolle mit nur den nötigen Rechten; nicht die Rolle des gekoppelten Profils.",
     "prodNote": "Studio verlässt sich auf die Umgebung, die Sie dem gekoppelten Profil geben: Ob eine Datenbank produktiv ist, kann Studio nicht erkennen. Schreibzugangsdaten für eine Produktionsdatenbank gehören nicht in Studio.",
     "prodConfirm": "Verstanden, und dies ist keine Produktionsdatenbank.",
-    "create": "Schreibprofil anlegen"
+    "create": "Schreibprofil anlegen",
+    "audit": {
+      "title": "Audit-Log",
+      "verified_one": "Geprüft: {{count}} Eintrag, die Kette ist unverändert.",
+      "verified_other": "Geprüft: {{count}} Einträge, die Kette ist unverändert.",
+      "broken": "Das Audit-Log hat die Prüfung nicht bestanden oder kann nicht geschrieben werden. Studio schreibt nichts, solange es das nicht protokollieren kann. Verschieben Sie den Ordner audit im Zustandsordner von Studio, bewahren Sie ihn zur Prüfung auf und starten Sie Studio neu.",
+      "unreadable": "Der Zustand des Audit-Logs konnte nicht gelesen werden.",
+      "pending_one": "{{count}} Eintrag konnte nach seiner Aktion nicht geschrieben werden. Die Aktion ist geschehen; Studio behält den Eintrag und schreibt ihn, sobald das Log wieder beschreibbar ist.",
+      "pending_other": "{{count}} Einträge konnten nach ihren Aktionen nicht geschrieben werden. Die Aktionen sind geschehen; Studio behält die Einträge und schreibt sie, sobald das Log wieder beschreibbar ist.",
+      "time": "Zeit (UTC)",
+      "event": "Aktion",
+      "profile": "Profil",
+      "result": "Ergebnis"
+    }
   }
 }

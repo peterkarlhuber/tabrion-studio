@@ -53,10 +53,15 @@ for _path, _methods in WRITE_ROUTES:
         )
 
 
-def test_the_route_table_covers_profiles_secrets_and_unlocks() -> None:
+def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 9
-    for expected in ("POST /api/write/profiles", "POST /api/write/unlocks", "DELETE /api/write/unlocks"):
+    assert len(methods) == 10
+    for expected in (
+        "POST /api/write/profiles",
+        "POST /api/write/unlocks",
+        "DELETE /api/write/unlocks",
+        "GET /api/write/audit",  # STU-XW-2: read only, and still 405 with every flag off
+    ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods
 
@@ -89,6 +94,8 @@ def _state(env: WriteEnv) -> dict[str, object]:
         "side_files": sorted(p.name for p in env.db.parent.glob("parts.db-*")),
         "keyring": dict(env.fake.values),
         "session_secrets": dict(env.config.secrets.session._values),
+        # STU-XW-2: the audit log is neither created nor read with every flag off.
+        "audit": sorted(p.name for p in env.audit_dir.iterdir()) if env.audit_dir.exists() else None,
     }
 
 
@@ -119,6 +126,7 @@ def test_flag_off_every_write_route_is_405_and_changes_nothing(
     text = response.text
     assert CANARY_SECRET not in text and CANARY_VALUE not in text and "parts-write" not in text
     assert _state(env) == before
+    assert not env.audit_dir.exists()
     assert env.unlocks is None
 
 
@@ -171,10 +179,12 @@ def test_with_every_flag_off_no_write_code_is_imported(tmp_path: Path) -> None:
         "import tests.support.write as w\n"
         f"env = WriteEnv(Path({str(tmp_path)!r}), Path({str(tmp_path / 'static')!r}))\n"
         "env.create_read()\n"
-        "calls = [('POST', '/api/write/unlocks'), ('POST', '/api/write/profiles'), ('GET', '/api/write/profiles')]\n"
+        "calls = [('POST', '/api/write/unlocks'), ('POST', '/api/write/profiles'), ('GET', '/api/write/profiles'),\n"
+        "         ('GET', '/api/write/audit')]\n"
         "for m, p in calls:\n"
         "    assert env.send(m, p, {'digest': None}).status_code == 405\n"
         "env.close()\n"
+        "assert not env.audit_dir.exists()\n"
         "print(sorted(m for m in sys.modules if m.startswith('tabrion_studio.write')))\n"
     )
     (tmp_path / "static").mkdir()
@@ -184,6 +194,7 @@ def test_with_every_flag_off_no_write_code_is_imported(tmp_path: Path) -> None:
         [sys.executable, "-c", script], capture_output=True, text=True, cwd=root, timeout=120, check=False
     )
     assert result.returncode == 0, result.stderr
+    # Neither the write package nor its audit log (tabrion_studio.write.audit, STU-XW-2) is loaded.
     assert result.stdout.strip().splitlines()[-1] == "[]"
 
 
@@ -207,6 +218,7 @@ def test_with_a_flag_on_the_write_code_is_loaded(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     loaded = json.loads(result.stdout.strip().splitlines()[-1].replace("'", '"'))
     assert "tabrion_studio.write.unlock" in loaded and "tabrion_studio.write.connection" in loaded
+    assert "tabrion_studio.write.audit" in loaded
 
 
 @pytest.mark.parametrize(

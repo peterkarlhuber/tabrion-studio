@@ -26,19 +26,29 @@ of a coupled read profile ends every unlock (TX-04).
 
 :meth:`Unlocks.require` is the hook every later write entry point calls first (STU-XW-3, STU-026, STU-XSD, STU-XDM):
 it re-checks all of the above and returns the write connection; it never hands one to a read path.
+:meth:`Unlocks.audited_transaction` is the hook that runs a write: it calls ``require``, writes the ``run.start``
+record of the audit log before the transaction begins (no record, no run) and the ``run.result`` record after it
+committed or rolled back (a pending marker if that record fails, review N-4).
+
+**Audit (STU-XW-2).** Every unlock is recorded before it takes effect (a log that cannot take the record refuses
+the unlock, ``studio.audit_unavailable``); a refused unlock of a stored profile and every lock (with its reason) are
+recorded after the fact (:mod:`tabrion_studio.write.audit`).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Iterator
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 import logging
+import secrets
 import threading
 import time
 from typing import Any
+
+import tabrion
 
 from tabrion_studio.api.config import Configuration
 from tabrion_studio.config.schema import Profile, WriteProfile, target_fingerprint
@@ -46,6 +56,7 @@ from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.logs import register_secret
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection, RegistryError, refuses_cleartext
+from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteConnection, WriteError, file_identity, open_write_connection
 
 logger = logging.getLogger("tabrion_studio.write")
@@ -107,6 +118,23 @@ class Unlock:
         }
 
 
+@dataclass
+class AuditedRun:
+    """One write run inside :meth:`Unlocks.audited_transaction`: its transaction and the row counts it reports.
+
+    ``audit_pending`` is True after the run when its ``run.result`` record could not be written and is kept as a
+    pending marker (review N-4): the caller's answer then carries a warning."""
+
+    run_id: str
+    transaction: tabrion.Transaction | None = None
+    rows: dict[str, int] = field(default_factory=dict)
+    audit_pending: bool = False
+
+    def count(self, kind: str, rows: int) -> None:
+        """Add ``rows`` to the count of ``kind`` (``updated``, ``inserted``, ``deleted``): counts only, never rows."""
+        self.rows[kind] = self.rows.get(kind, 0) + rows
+
+
 class Unlocks:
     """The unlocks of this process, by session and connection. Thread-safe; unlocking connects (off the loop)."""
 
@@ -116,11 +144,14 @@ class Unlocks:
         registry: ConnectionRegistry,
         areas: WriteAreas,
         clock: Callable[[], float] = time.monotonic,
+        audit: AuditLog | None = None,
     ) -> None:
         self.config = config
         self.registry = registry
         self.areas = areas
         self.clock = clock
+        #: No audit log: every unlock and run is refused (fail closed).
+        self.audit = audit if audit is not None else AuditLog(None)
         self._unlocks: dict[tuple[str, str], Unlock] = {}
         self._lock = threading.Lock()
         registry.on_close(self.connection_closed)
@@ -154,6 +185,23 @@ class Unlocks:
         write, read = self._stored(write_id[len(WRITE_ID_PREFIX) :])
         if not self.kind_open(write.kind):
             raise WriteError("studio.method_not_allowed")  # W-9: the area of this kind is off
+        try:
+            return self._unlock(session, connection_id, write, read, typed_name)
+        except Exception as exc:
+            code = exc.code if isinstance(exc, WriteError) else "failed"
+            if code != "studio.audit_unavailable":
+                # A refused unlock of a stored profile, recorded after the fact: the stored names only, never what
+                # the request typed or named (TX-13).
+                self.audit.record("unlock", profile=write.name, kind=write.kind, result=code)
+            raise
+
+    def _unlock(
+        self, session: str, connection_id: str, write: WriteProfile, read: Profile | None, typed_name: object
+    ) -> dict[str, Any]:
+        try:
+            self.audit.check()
+        except AuditError:
+            raise WriteError("studio.audit_unavailable") from None
         connection = self._read_connection(connection_id)
         if connection.profile_id != f"user:{write.read_profile}" or read is None:
             # K-1: only the user-local read profile it is coupled to; a project profile never.
@@ -166,6 +214,23 @@ class Unlocks:
         if not isinstance(typed_name, str) or typed_name != write.name:
             raise WriteError("studio.unlock_name_mismatch")
         opened = self._open(write, read, connection)
+        try:
+            # Before the unlock takes effect: no record, no unlock (fail closed).
+            self.audit.append(
+                "unlock",
+                profile=write.name,
+                kind=write.kind,
+                read_profile=read.name,
+                environment=read.environment,
+                engine=read.engine,
+                connection=connection.id,
+                findings=len(opened.findings),
+                result="ok",
+            )
+        except AuditError:
+            with contextlib.suppress(Exception):
+                opened.close()
+            raise WriteError("studio.audit_unavailable") from None
         now = self.clock()
         record = Unlock(
             session=session,
@@ -185,11 +250,12 @@ class Unlocks:
             self._unlocks[(session, connection.id)] = record
         if previous is not None:
             self._close(previous, "replaced")
-        logger.info("write mode unlocked", extra={"event": "studio.write_unlocked", "profile_id": write_id})
+        profile_id = write_profile_id(write)
+        logger.info("write mode unlocked", extra={"event": "studio.write_unlocked", "profile_id": profile_id})
         if opened.findings:
             logger.warning(
                 "the write or admin role has more rights than Studio needs",
-                extra={"event": "studio.write_role_over_privileged", "profile_id": write_id},
+                extra={"event": "studio.write_role_over_privileged", "profile_id": profile_id},
             )
         return record.to_dict(now)
 
@@ -250,6 +316,9 @@ class Unlocks:
         ``studio.method_not_allowed`` (the area is off or not one of the profile's kind), ``studio.write_locked``
         (no unlock, or it expired), ``studio.write_prod_locked``, ``studio.write_target_changed``.
         """
+        return self._require(session, connection_id, area).connection
+
+    def _require(self, session: str, connection_id: object, area: Area) -> Unlock:
         if not self.areas.on(area):
             raise WriteError("studio.method_not_allowed")
         key = (session, connection_id) if isinstance(connection_id, str) else None
@@ -265,7 +334,71 @@ class Unlocks:
             raise WriteError("studio.method_not_allowed")
         self._recheck(record)
         record.last_used = now
-        return record.connection
+        return record
+
+    @contextlib.contextmanager
+    def audited_transaction(
+        self,
+        session: str,
+        connection_id: object,
+        area: Area,
+        *,
+        action: str,
+        objects: Iterable[str] = (),
+        plan_hash: str | None = None,
+    ) -> Iterator[AuditedRun]:
+        """Run one write: the hook of STU-XW-3 (plan execution) and STU-026 (changesets).
+
+        1. :meth:`require` (flag, unlock, expiry, PROD, target, file identity);
+        2. the ``run.start`` record (area, action, profile, environment, the names of ``objects``, ``plan_hash``):
+           if it cannot be written, :class:`WriteError` ``studio.audit_unavailable`` and nothing runs (fail closed);
+        3. one transaction of the write connection (``run.transaction``); the caller reports row counts with
+           :meth:`AuditedRun.count`;
+        4. the ``run.result`` record (``committed``, the problem code of a :class:`WriteError`, or ``failed``) with
+           the counts. If it cannot be written, the run has happened: a pending marker is kept and
+           ``run.audit_pending`` is True, so the caller shows a warning (review N-4).
+
+        ``action`` is a token (``data_editor.changeset``), ``objects`` are object names and ``plan_hash`` is the
+        confirmed plan's hash (STU-XW-3 binds it): never a value, a parameter or a statement (TX-13)."""
+        record = self._require(session, connection_id, area)
+        run = AuditedRun(run_id=secrets.token_hex(8))
+        common: dict[str, object] = {
+            "run": run.run_id,
+            "area": area.value,
+            "action": action,
+            "profile": record.write_name,
+        }
+        try:
+            self.audit.append(
+                "run.start",
+                **common,
+                kind=record.kind,
+                environment=record.environment,
+                engine=record.connection.engine,
+                connection=record.connection_id,
+                objects=list(objects),
+                plan_hash=plan_hash,
+            )
+        except AuditError:
+            logger.warning("write refused: no audit record", extra={"event": "studio.audit_unavailable"})
+            raise WriteError("studio.audit_unavailable") from None
+        result = "failed"
+        try:
+            with record.connection.transaction() as transaction:
+                run.transaction = transaction
+                yield run
+            result = "committed"
+        except WriteError as exc:
+            result = exc.code
+            raise
+        finally:
+            run.transaction = None
+            run.audit_pending = not self.audit.record("run.result", **common, result=result, rows=dict(run.rows))
+            if run.audit_pending:
+                logger.warning(
+                    "the record of a write run is pending; the write has happened",
+                    extra={"event": "studio.audit_pending"},
+                )
 
     def _recheck(self, record: Unlock) -> None:
         try:
@@ -326,11 +459,14 @@ class Unlocks:
             del self._unlocks[(record.session, record.connection_id)]
         self._close(record, reason)
 
-    @staticmethod
-    def _close(record: Unlock, reason: str) -> None:
+    def _close(self, record: Unlock, reason: str) -> None:
         with contextlib.suppress(Exception):
             record.connection.close()
         logger.info("write mode locked (%s)", reason, extra={"event": "studio.write_locked"})
+        # After the fact: the lock has happened; a failed record is kept as pending (N-4).
+        self.audit.record(
+            "lock", profile=record.write_name, kind=record.kind, connection=record.connection_id, reason=reason
+        )
 
     def _end_where(self, match: Callable[[Unlock], bool], reason: str) -> int:
         with self._lock:
@@ -341,21 +477,21 @@ class Unlocks:
 
     def connection_closed(self, connection_id: str) -> None:
         """The registry closed a read connection (disconnect, reconnect, stale): its unlocks end."""
-        self._end_where(lambda record: record.connection_id == connection_id, "connection closed")
+        self._end_where(lambda record: record.connection_id == connection_id, "connection_closed")
 
     def write_profile_changed(self, write_name: str) -> None:
         """A write or admin profile was saved or removed through Studio: its unlocks end."""
-        self._end_where(lambda record: record.write_name == write_name, "write profile changed")
+        self._end_where(lambda record: record.write_name == write_name, "write_profile_changed")
 
     def profile_changed(self, name: str, old: Profile | None, new: Profile | None) -> None:
         """A user read profile was saved or removed through Studio (``Configuration.listeners``).
 
         Any change of a coupled read profile ends its unlocks; a change of a coupled read profile's environment ends
         every unlock (TX-04)."""
-        coupled = self._end_where(lambda record: record.read_name == name, "profile changed")
+        coupled = self._end_where(lambda record: record.read_name == name, "profile_changed")
         environment_changed = old is not None and (new is None or new.environment != old.environment)
         if environment_changed and (coupled or self._is_coupled(name)):
-            self.close_all("environment changed")
+            self.close_all("environment_changed")
 
     def _is_coupled(self, name: str) -> bool:
         try:
@@ -363,5 +499,5 @@ class Unlocks:
         except Exception:
             return True  # cannot tell: fail closed
 
-    def close_all(self, reason: str = "server stopped") -> None:
+    def close_all(self, reason: str = "server_stopped") -> None:
         self._end_where(lambda _record: True, reason)

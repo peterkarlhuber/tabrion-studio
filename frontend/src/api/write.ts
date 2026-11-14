@@ -66,3 +66,73 @@ export function createWriteProfile(
     confirm_no_prod_credentials: confirmed,
   });
 }
+
+/** One record of the audit log (STU-XW-2): names, counts, codes and hashes only, never a value. */
+export interface AuditRecord {
+  seq: number;
+  time: string;
+  event: string;
+  fields: Record<string, unknown>;
+}
+
+export interface AuditVerification {
+  ok: boolean;
+  records: number;
+  problem: string | null;
+  at: number | null;
+}
+
+/** `GET /api/write/audit`: whether records can be written, pending records (review N-4), verification, records. */
+export interface AuditState {
+  available: boolean;
+  problem: string | null;
+  pending: number;
+  verification: AuditVerification | null;
+  records: AuditRecord[];
+}
+
+function text(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function count(value: unknown): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+/** Parse defensively: anything not understood counts as not available and not verified. */
+export function parseAudit(body: unknown): AuditState | null {
+  if (typeof body !== 'object' || body === null) return null;
+  const doc = body as Record<string, unknown>;
+  const raw = (
+    typeof doc.verification === 'object' && doc.verification !== null ? doc.verification : null
+  ) as Record<string, unknown> | null;
+  const records = Array.isArray(doc.records) ? doc.records : [];
+  return {
+    available: doc.available === true,
+    problem: text(doc.problem),
+    pending: count(doc.pending),
+    verification:
+      raw === null
+        ? null
+        : {
+            ok: raw.ok === true,
+            records: count(raw.records),
+            problem: text(raw.problem),
+            at: typeof raw.at === 'number' ? raw.at : null,
+          },
+    records: records
+      .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+      .map((item) => ({
+        seq: count(item.seq),
+        time: text(item.time) ?? '',
+        event: text(item.event) ?? '',
+        fields: (typeof item.fields === 'object' && item.fields !== null
+          ? item.fields
+          : {}) as Record<string, unknown>,
+      })),
+  };
+}
+
+export async function fetchAudit(fetcher: typeof fetch, limit = 20): Promise<AuditState | null> {
+  return parseAudit(await getJson(fetcher, `/api/write/audit?limit=${limit}`));
+}

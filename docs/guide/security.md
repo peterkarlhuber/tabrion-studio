@@ -114,6 +114,32 @@ the server answers `405` and the write code is not even loaded.
   shown and logged.
 - **Refusals echo nothing.** A refused write answers `400` or `405` with a fixed text (`403` only for the write mode
   of a query), never with a value or a secret of the request.
+- **The audit log (STU-XW-2).** While an area is on, Studio records every write and admin action in a local,
+  append-only log in its state folder, `audit/` (the folder `0700`, every file `0600`, never opened through a link,
+  no file kept open between two records):
+    - what is recorded: unlocking (also a refused unlock of a stored profile) and locking with its reason (you locked
+      it, it expired, the connection closed, a profile changed, Studio stopped); creating, changing and removing a
+      write or admin profile, with the read profile it is coupled to and the names of the changed keys; storing and
+      removing its password; and every write run, once before it begins (`run.start`) and once after it committed
+      or rolled back (`run.result`, with the row counts);
+    - what a record holds: the time, profile names, kind, environment, engine, connection ID, area, action, the
+      names of the changed objects, row counts, the plan hash and a result code. **Never a value**: no cell value,
+      parameter, statement text, SQL literal, password or database message. A name that contains a password Studio
+      knows is replaced by `[redacted]`;
+    - **tamper evidence:** each record carries its sequence number, the SHA-256 hash of the record before it and its
+      own hash, and `head.json` keeps the last one. Studio verifies the whole chain when it starts and whenever the
+      log is listed, and finds a changed, removed, inserted, reordered or cut record and a removed anchor. Someone
+      who can write your state folder can still rebuild a whole new chain: that is a program running as you (see
+      below);
+    - **no record, no action:** if the record before a write run or an unlock cannot be written, Studio does not do
+      it (`405 studio.audit_unavailable`). If the record after a run fails, the write has already happened: Studio
+      keeps the record as pending (in memory and in `audit/pending.json`), shows a warning in the write profile
+      section and writes it, marked late, as soon as the log is writable again; until then no new write starts;
+    - a log that fails verification is never repaired or appended to, so no write runs. Move the `audit` folder out
+      of Studio's state folder, keep it for inspection, and start Studio again; it then begins a new chain;
+    - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a
+      segment. `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
+      log, and with every area off it answers `405` like every other write route.
 
 !!! note "Python 3.11"
     Python's `sqlite3` module can turn on SQLite's defensive mode only from Python 3.12. On Python 3.11 Studio

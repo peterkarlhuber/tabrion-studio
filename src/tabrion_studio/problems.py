@@ -526,6 +526,15 @@ CATALOG: dict[str, Entry] = {
         "Write connection not possible",
         "Studio cannot open a write connection with its safeguards for this database.",
     ),
+    # The audit log of write and admin actions (STU-XW-2, TX-12): no record before the action, no action.
+    "studio.audit_unavailable": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Audit log not writable",
+        "Studio could not write the audit record of this action, so the action was not done.",
+        "Check the audit log in the write profile section; if it failed verification, move the audit folder of "
+        "Studio's state folder aside, keep it for inspection, and start Studio again.",
+    ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
         400,

@@ -157,6 +157,8 @@ class Runtime:
     host: str = "127.0.0.1"
     #: The per-area write kill switches as read once at start (STU-ADR-0006, STU-XW-1): every area off by default.
     write_areas: WriteAreas = ALL_OFF
+    #: The audit log's folder (STU-XW-2): ``<state folder>/audit``, used only while an area is on; None refuses writes.
+    audit_dir: Path | None = None
 
 
 def _problem(code: str) -> Response:
@@ -334,7 +336,7 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     if runtime.drafts is not None:
         add_draft_routes(app, runtime.drafts)
     # The write foundation (STU-XW-1): refusing handlers unless an area's flag was on at start (TX-02).
-    unlocks = add_write_routes(app, runtime.write_areas, runtime.config, runtime.connections)
+    unlocks = add_write_routes(app, runtime.write_areas, runtime.config, runtime.connections, runtime.audit_dir)
     app.state.write_unlocks = unlocks
 
     index = static_dir / "index.html"
