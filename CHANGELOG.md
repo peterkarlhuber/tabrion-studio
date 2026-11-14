@@ -973,6 +973,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- TABRION QA-7: `scripts/check_tabrion_api.py --surface` no longer reports a `__x__` name such as
+  `tabrion.postgres.SessionSettings.__dataclass_fields__` (axentra) as missing from Tabrion's
+  `docs/api/surface.json`. Such names are public (the `__all__` check already skipped them) and have no entry of
+  their own; `--surface` now checks the name before the first `__x__` part (here the stable
+  `tabrion.postgres.SessionSettings`). The docstring names tabrion-studio's copy as the source and nodestro-api as
+  a new copy holder; the test has a case for dunder names and pins the new SHA-256 (`e48cc7f230c1…`), the same in
+  tabrion-studio, axentra, orkexa, nodestro-runtime and nodestro-api. Tooling only.
 - QA-S1 S1-32 (TD-070, owner decision of 2026-11-14 14:13Z, option A): after "Disconnect" in the connection manager,
   "Run" in the SQL editor no longer opens the connection again by itself. It opens nothing and sends no query; the
   banner "Disconnected: <name>" ("Verbindung getrennt: <name>") with "Reconnect" shows, and the editor says that
