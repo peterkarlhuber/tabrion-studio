@@ -23,6 +23,7 @@ import json
 import os
 from pathlib import Path
 import sqlite3
+import time
 from typing import Any
 import uuid
 
@@ -35,7 +36,14 @@ from tabrion_studio.services import vectors as vectors_module
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.readonly import check_statement
-from tabrion_studio.services.vectors import VectorInspection, parse_identity, split_top_level, vec0_columns
+from tabrion_studio.services.vectors import (
+    MAX_TEXT,
+    VectorInspection,
+    parse_identity,
+    split_top_level,
+    vec0_body,
+    vec0_columns,
+)
 from tests.security.test_read_only import Source
 from tests.support.access import ORIGIN, make_studio
 
@@ -275,6 +283,48 @@ def test_vec0_parsing() -> None:
     assert split_top_level("a float[3], b int, c text") == ["a float[3]", "b int", "c text"]
 
 
+def _hostile(repeats: int) -> str:
+    """PR #97 review M-1: a virtual-table text that repeats ``USING vec0(`` and ends in a comment, which made the
+    earlier pattern backtrack quadratically (2 s at 70 KB, 31 s at 280 KB)."""
+    return "CREATE VIRTUAL TABLE x USING vec0(" + "USING vec0(a) " * repeats + "b) /*z*/"
+
+
+def test_vec0_parsing_is_linear_on_a_hostile_text() -> None:
+    long_row, short_row = _hostile(20_000), _hostile(MAX_TEXT // 15)  # 280 KB, and just under the cap
+    assert len(long_row) > 280_000 and len(short_row) <= MAX_TEXT
+    started = time.monotonic()
+    assert vec0_columns(long_row) is None  # past the cap: never parsed
+    vec0_columns(short_row)
+    assert time.monotonic() - started < 0.5
+    assert vec0_body('CREATE VIRTUAL TABLE IF NOT EXISTS main."a(b" USING vec0(e float[2]) -- x') == "e float[2]"
+    assert vec0_body('CREATE VIRTUAL TABLE "USING vec0(" USING fts5(body)') is None
+    assert vec0_body("CREATE VIRTUAL TABLE t USING vec0") is None
+    assert vec0_body('CREATE VIRTUAL TABLE "open USING vec0(a float[1])') is None
+
+
+def test_a_hostile_file_is_classified_fast_and_long_values_are_cut(lite: Any, tmp_path: Path) -> None:
+    path = _make(tmp_path / "v.db", *ORKEXA_SQLITE)
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA writable_schema = ON")
+    with connection:
+        connection.execute(
+            "INSERT INTO sqlite_master (type, name, tbl_name, rootpage, sql) VALUES ('table', 'x', 'x', 0, ?)",
+            (_hostile(20_000),),
+        )
+    connection.execute("PRAGMA writable_schema = OFF")
+    with connection:
+        huge = json.dumps({**IDENTITY, "pad": "x" * (2 * MAX_TEXT)})
+        connection.execute("INSERT INTO index_spaces VALUES ('default', 'default:k1', ?, 4, 'active')", (huge,))
+    connection.close()
+    started = time.monotonic()
+    doc = lite(path)
+    assert time.monotonic() - started < 0.5
+    assert {"code": "definition_too_long", "severity": "warning", "params": {"table": "x"}} in doc["hints"]
+    (identity,) = doc["identities"]
+    assert identity["complete"] is False and identity["model"] is None  # cut on reading, never parsed
+    assert {"code": "identity_incomplete", "severity": "warning", "params": {"space": "default:k1"}} in doc["hints"]
+
+
 def test_identity_parsing() -> None:
     assert parse_identity(json.dumps(IDENTITY)) == {
         "provider": "ollama", "model": "nomic-embed-text", "digest": "sha256:ab", "dimensions": 4, "normalized": True,
@@ -498,6 +548,8 @@ def test_pgvector_ann_and_exact_columns_follow_the_catalog() -> None:
         assert d["search"] == "exact" and d["dimensions"] is None
         orkexa = columns[("orkexa_chunk_vectors", "embedding")]
         assert orkexa["search"] == "ann" and orkexa["indexes"][0]["name"] == "vectors_hnsw"
+        assert orkexa["indexes"][0]["expression"] is True and index["expression"] is False
+        assert index["partial"] is False
         hints = {(h["code"], h["params"].get("column") or h["params"].get("index")) for h in doc["hints"]}
         assert {("index_invalid", "items_b"), ("dimensions_undeclared", "d"), ("exact_search", "b")} <= hints
         assert ("exact_search", "a") not in hints

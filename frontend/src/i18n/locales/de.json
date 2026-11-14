@@ -1432,7 +1432,7 @@
     },
     "columns": {
       "title": "Vektorspalten",
-      "rule": "Eine Spalte gilt nur mit einem gültigen HNSW-, IVFFlat- oder DiskANN-Index als ANN-indiziert. Jede andere Spalte wird exakt, Zeile für Zeile, durchsucht: ein fehlender oder ungültiger Index, Float-Arrays, BLOBs und vec0-Tabellen von sqlite-vec.",
+      "rule": "Eine Spalte gilt nur mit einem gültigen HNSW-, IVFFlat- oder DiskANN-Index als ANN-indiziert. Jede andere Spalte wird exakt, Zeile für Zeile, durchsucht: ein fehlender oder ungültiger Index, Float-Arrays, BLOBs und vec0-Tabellen von sqlite-vec. Die Operatorklasse bestimmt, welche Distanz ein Index bedient (etwa vector_cosine_ops nur die Kosinus-Distanz).",
       "column": "Spalte",
       "type": "Typ",
       "dimensions": "Dimensionen",
@@ -1446,7 +1446,9 @@
       "none": "Kein Index",
       "line": "({{method}}, {{state}})",
       "size": "{{size}} KiB",
-      "createdWith": "erstellt mit sqlite-vec {{version}}"
+      "createdWith": "erstellt mit sqlite-vec {{version}}",
+      "expression": "auf einem Ausdruck: eine Abfrage muss denselben Ausdruck verwenden, um ihn zu nutzen",
+      "partial": "partiell: deckt nur einen Teil der Zeilen ab"
     },
     "indexState": {
       "valid": "gültig",
@@ -1510,7 +1512,8 @@
       "pgvector_missing": "pgvector ist nicht installiert, und der Server bietet es nicht an. Vektorspalten anderer Layouts werden trotzdem aufgeführt.",
       "pgvector_update": "pgvector {{installed}} ist installiert; der Server bietet {{available}} an. Eine Administratorin kann es mit ALTER EXTENSION vector UPDATE aktualisieren.",
       "pgvector_other_schema": "pgvector ist im Schema {{schema}} installiert, das nicht im Suchpfad dieser Verbindung liegt.",
-      "extension_unknown": "Der Status von pgvector konnte nicht gelesen werden."
+      "extension_unknown": "Der Status von pgvector konnte nicht gelesen werden.",
+      "definition_too_long": "Die Definition der virtuellen Tabelle {{table}} ist länger als 64 KiB, daher liest Studio sie nicht."
     }
   }
 }

@@ -1432,7 +1432,7 @@
     },
     "columns": {
       "title": "Vector columns",
-      "rule": "A column counts as ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index on it. Every other column is searched exactly, row by row: a missing or invalid index, float arrays, BLOBs and sqlite-vec vec0 tables.",
+      "rule": "A column counts as ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index on it. Every other column is searched exactly, row by row: a missing or invalid index, float arrays, BLOBs and sqlite-vec vec0 tables. The operator class decides which distance an index serves (for example vector_cosine_ops only cosine distance).",
       "column": "Column",
       "type": "Type",
       "dimensions": "Dimensions",
@@ -1446,7 +1446,9 @@
       "none": "No index",
       "line": "({{method}}, {{state}})",
       "size": "{{size}} KiB",
-      "createdWith": "created with sqlite-vec {{version}}"
+      "createdWith": "created with sqlite-vec {{version}}",
+      "expression": "on an expression: a query must use the same expression to use it",
+      "partial": "partial: covers only some rows"
     },
     "indexState": {
       "valid": "valid",
@@ -1510,7 +1512,8 @@
       "pgvector_missing": "pgvector is not installed and the server does not offer it. Vector columns of other layouts can still be listed.",
       "pgvector_update": "pgvector {{installed}} is installed; the server offers {{available}}. An administrator can update it with ALTER EXTENSION vector UPDATE.",
       "pgvector_other_schema": "pgvector is installed in schema {{schema}}, which is not on this connection's search path.",
-      "extension_unknown": "The status of pgvector could not be read."
+      "extension_unknown": "The status of pgvector could not be read.",
+      "definition_too_long": "The definition of the virtual table {{table}} is longer than 64 KiB, so Studio does not read it."
     }
   }
 }

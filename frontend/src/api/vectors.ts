@@ -33,6 +33,9 @@ export interface VectorIndex {
   options: string[];
   sizeBytes: number | null;
   createdWith: string | null;
+  /** An index on an expression of the column, or on part of the rows: a plain query may not use it. */
+  expression: boolean;
+  partial: boolean;
 }
 
 export interface VectorColumn {
@@ -148,6 +151,8 @@ function parseIndex(value: unknown): VectorIndex | null {
     options: strings(value.options),
     sizeBytes: int(value.size_bytes),
     createdWith: text(value.created_with),
+    expression: value.expression === true,
+    partial: value.partial === true,
   };
 }
 

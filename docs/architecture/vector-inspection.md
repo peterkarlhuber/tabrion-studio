@@ -64,6 +64,18 @@ authorizer denies `load_extension`, and Studio does not change that.
 text, which needs no module); `index_meta` (`dimensions`), `index_spaces` and `index_vectors` of Orkexa's SQLite
 index; a `vec0` table's shadow tables `<name>_rowids` (one row per vector) and `<name>_info` (`CREATE_VERSION`).
 
+## Values are capped, parsing is linear
+
+`fetch` has no byte cap, so every text that can be large in a hostile database is cut in SQL before it is read:
+`substr(sql, 1, 65537)` of `sqlite_master` and `left(identity::text, 65537)` / `substr(identity, 1, 65537)` of the
+identities. A value longer than 64 KiB is never parsed: a virtual table's text gives the hint
+`definition_too_long`, an identity counts as incomplete. A `vec0` text is recognized without a backtracking pattern
+(PR #97 review M-1): the head `CREATE VIRTUAL TABLE [IF NOT EXISTS]` and `USING <module> (` are matched at fixed
+places after a scan of the table name, and the column list runs from that `(` to the last `)`.
+
+The Orkexa spaces table is read with `ORDER BY 1, 2, 3 LIMIT 201` under the session's statement timeout, not under
+the count timer; spaces tables are small by design (review I-1).
+
 ## Counts are bounded
 
 No statement scans a table without a bound. A count is
@@ -81,7 +93,14 @@ access method (`hnsw`, `ivfflat`, or `diskann` of pgvectorscale) and is valid, r
 `indisready`, `indislive`). Everything else is **exact search (no ANN index)**: a `vector` column without such an
 index, one whose only ANN index is invalid (a failed `CREATE INDEX CONCURRENTLY`; listed with its state and a
 warning), a B-tree on a vector column, Orkexa's `real[]` vectors (ranked by an exact cosine distance) and Orkexa's
-SQLite `index_vectors` BLOBs (`vec_distance_cosine`). A sqlite-vec `vec0` table is listed as a vector index of the
+SQLite `index_vectors` BLOBs (`vec_distance_cosine`).
+
+Caveats the page states: an index on an expression of the column (`USING hnsw ((embedding::vector(384)) ...)`) or a
+partial index (`WHERE ...`) counts, but a query uses it only with the same expression or a matching condition, so
+the page marks such an index "on an expression" or "partial". The operator class decides the distance an index
+serves (`vector_cosine_ops` serves cosine distance, not L2); the page lists it next to the index. A schema, table or
+column named like a function the statement check refuses (after a `.`, since PR #92) cannot be counted: the count
+shows "unknown (not readable)" with a hint, on the safe side. A sqlite-vec `vec0` table is listed as a vector index of the
 method `vec0`, and as exact search: the released sqlite-vec versions answer a `vec0` KNN query by a full scan of its
 chunks, not by an approximate index.
 

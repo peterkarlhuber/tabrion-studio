@@ -58,6 +58,7 @@ const HNSW = {
   size_bytes: 16384,
   definition: 'CREATE INDEX …',
 };
+const EXPRESSION = { ...HNSW, name: 'vectors_hnsw', expression: true, partial: true };
 
 function column(extra: Record<string, unknown> = {}) {
   return {
@@ -103,7 +104,7 @@ const POSTGRES = {
       layout: 'orkexa',
       search: 'exact',
       rows: { value: 100_000, kind: 'more_than' },
-      indexes: [],
+      indexes: [EXPRESSION],
     }),
   ],
   identities: [
@@ -236,6 +237,10 @@ describe('vector data view', () => {
     expect(rows[2]?.textContent).toContain('u202E_chunk_vectors');
     expect(rows[2]?.textContent).not.toContain(BIDI);
     expect(rows[2]).toHaveTextContent('Orkexa layout');
+    expect(rows[2]).toHaveTextContent(
+      'on an expression: a query must use the same expression to use it',
+    );
+    expect(rows[2]).toHaveTextContent('partial: covers only some rows');
     expect(screen.getByTestId('vectors-summary')).toHaveTextContent(
       '3 vector columns: 1 with an ANN index, 2 with exact search',
     );

@@ -55,6 +55,7 @@ export const HINT_CODES = [
   'sqlite_vec_undeterminable',
   'vec0_module',
   'vec0_shadow_missing',
+  'definition_too_long',
   'legacy_table_missing',
   'legacy_dimension_mismatch',
   'no_vector_data',
@@ -214,6 +215,8 @@ function IndexList({ column }: { column: VectorColumn }) {
           {index.sizeBytes !== null
             ? ` · ${t('vectors.indexes.size', { size: number(i18n.language, Math.ceil(index.sizeBytes / 1024)) })}`
             : ''}
+          {index.expression ? ` · ${t('vectors.indexes.expression')}` : ''}
+          {index.partial ? ` · ${t('vectors.indexes.partial')}` : ''}
           {index.createdWith !== null
             ? ` · ${t('vectors.indexes.createdWith', { version: cut(index.createdWith, 40) })}`
             : ''}

@@ -99,7 +99,7 @@ _PG_INDEXES_SQL = (
     "WHERE d.classid = 'pg_catalog.pg_class'::pg_catalog.regclass AND d.objid = i.indexrelid "
     "AND d.refclassid = 'pg_catalog.pg_class'::pg_catalog.regclass AND d.refobjid = i.indrelid "
     "AND d.refobjsubid = a.attnum)), "
-    "ic.reloptions, pg_catalog.pg_relation_size(i.indexrelid) "
+    "ic.reloptions, pg_catalog.pg_relation_size(i.indexrelid), i.indexprs IS NOT NULL, i.indpred IS NOT NULL "
     "FROM pg_catalog.pg_index i "
     "JOIN pg_catalog.pg_class ic ON ic.oid = i.indexrelid "
     "JOIN pg_catalog.pg_am am ON am.oid = ic.relam "
@@ -124,8 +124,18 @@ _ORKEXA_PG_VECTORS = {
 }
 _ORKEXA_SQLITE_SPACES = ("namespace", "space", "identity", "dimensions", "state")
 _ORKEXA_SQLITE_VECTORS = ("space", "chunk_id", "embedding")
-_SQLITE_TABLES_SQL = "SELECT name, sql FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 10001"
-_VEC0 = re.compile(r"^\s*CREATE\s+VIRTUAL\s+TABLE\s+.*?\bUSING\s+vec0\s*\((?P<body>.*)\)\s*;?\s*$", re.I | re.S)
+#: The longest ``sqlite_master.sql`` or identity text read into memory (``fetch`` has no byte cap; PR #97 review L-1);
+#: the statements read one character more, so a longer value is known to be cut and is never parsed.
+MAX_TEXT = 65_536
+_SQLITE_TABLES_SQL = (
+    "SELECT name, substr(sql, 1, 65537) FROM sqlite_master WHERE type = 'table' ORDER BY name LIMIT 10001"
+)
+#: The head of a virtual table's text, and the ``USING <module> (`` after its name; both anchored, without nested
+#: repetition, so they take linear time on any text (PR #97 review M-1: the earlier single pattern backtracked
+#: quadratically on a hostile row that repeats ``USING vec0(``).
+_VIRTUAL_HEAD = re.compile(r"CREATE\s+VIRTUAL\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?", re.I)
+_USING = re.compile(r"USING\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", re.I)
+_CLOSERS = {'"': '"', "`": "`", "[": "]", "'": "'"}
 _VEC0_COLUMN = re.compile(
     r'^\s*(?P<name>"(?:[^"]|"")+"|`[^`]+`|\[[^\]]+\]|[A-Za-z_][A-Za-z0-9_]*)\s+'
     r"(?P<element>float|f32|int8|i8|bit)\s*\[\s*(?P<dimensions>\d+)\s*\](?P<options>.*)$",
@@ -185,13 +195,56 @@ def split_top_level(text: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
+def _name_end(text: str, start: int) -> int:
+    """The end of the (possibly schema-qualified) table name at ``start``: quoted parts or bare words joined by ``.``;
+    -1 when a quote does not close."""
+    index = start
+    while True:
+        if index < len(text) and text[index] in _CLOSERS:
+            close = text.find(_CLOSERS[text[index]], index + 1)
+            if close < 0:
+                return -1
+            index = close + 1
+        else:
+            while index < len(text) and (text[index].isalnum() or text[index] in "_$"):
+                index += 1
+        if index < len(text) and text[index] == ".":
+            index += 1
+            continue
+        return index
+
+
+def vec0_body(sql: str | None) -> str | None:
+    """The column list of a ``CREATE VIRTUAL TABLE <name> USING vec0(...)`` text, or None for another text or one
+    longer than :data:`MAX_TEXT`. Linear: the head and ``USING`` are matched at fixed places, and the body runs from
+    the first ``(`` after the module name to the last ``)``."""
+    if not sql or len(sql) > MAX_TEXT:
+        return None
+    text = sql.lstrip()
+    head = _VIRTUAL_HEAD.match(text)
+    if head is None:
+        return None
+    end = _name_end(text, head.end())
+    if end <= head.end():
+        return None
+    while end < len(text) and text[end].isspace():
+        end += 1
+    using = _USING.match(text, end)
+    if using is None or using.group(1).lower() != "vec0":
+        return None
+    close = text.rfind(")")
+    if close < using.end():
+        return None
+    return text[using.end() : close]
+
+
 def vec0_columns(sql: str | None) -> list[dict[str, Any]] | None:
     """The vector columns of a ``CREATE VIRTUAL TABLE ... USING vec0(...)`` text, or None for another table."""
-    found = _VEC0.match(sql or "")
-    if found is None:
+    body = vec0_body(sql)
+    if body is None:
         return None
     columns: list[dict[str, Any]] = []
-    for part in split_top_level(found.group("body")):
+    for part in split_top_level(body):
         column = _VEC0_COLUMN.match(part)
         if column is None:
             continue  # a partition key, metadata or auxiliary column, or a table option
@@ -213,6 +266,8 @@ def parse_identity(text: object) -> dict[str, Any] | None:
     object. Instructions and prefixes are left out: they are prompts, not identity facts the page needs."""
     if isinstance(text, (bytes, bytearray)):
         text = bytes(text).decode("utf-8", "replace")
+    if isinstance(text, str) and len(text) > MAX_TEXT:
+        return None  # cut on reading (L-1): never parsed
     if isinstance(text, dict):
         data: Any = text
     else:
@@ -428,7 +483,7 @@ class VectorInspection:
 
     @staticmethod
     def _pg_index(row: tuple[Any, ...]) -> dict[str, Any]:
-        name, method, valid, ready, live, definition, opclasses, columns, options, size = row
+        name, method, valid, ready, live, definition, opclasses, columns, options, size, expression, partial = row
         usable = bool(valid) and bool(ready) and bool(live)
         return {
             "name": name,
@@ -442,6 +497,8 @@ class VectorInspection:
             "options": list(options or []),
             "size_bytes": size if isinstance(size, int) else None,
             "definition": definition,
+            "expression": bool(expression),
+            "partial": bool(partial),
             "columns": list(columns or []),
         }
 
@@ -539,7 +596,9 @@ class VectorInspection:
             run.hint("metadata_unreadable", "warning", schema=schema, table=spaces_name)
         else:
             table = f"{_ident(schema)}.{_ident(spaces_name)}"  # a catalog-listed name, quoted
-            columns = "tenant_id, namespace, space, identity::pg_catalog.text, dimensions, state"
+            columns = (
+                "tenant_id, namespace, space, pg_catalog.left(identity::pg_catalog.text, 65537), dimensions, state"
+            )
             rows = run.read(f"SELECT {columns} FROM {table} ORDER BY 1, 2, 3 LIMIT 201")  # noqa: S608
             if rows is None:
                 run.hint("metadata_unreadable", "warning", schema=schema, table=spaces_name)
@@ -626,6 +685,9 @@ class VectorInspection:
         tables = {str(name): (str(sql) if sql is not None else None) for name, sql in rows}
         columns: list[dict[str, Any]] = []
         for name, sql in tables.items():
+            if sql is not None and len(sql) > MAX_TEXT and _VIRTUAL_HEAD.match(sql.lstrip()):
+                run.hint("definition_too_long", "warning", table=name)
+                continue
             found = vec0_columns(sql)
             if found is None:
                 continue
@@ -691,6 +753,8 @@ class VectorInspection:
                         "size_bytes": None,
                         "definition": None,
                         "created_with": created_with,
+                        "expression": False,
+                        "partial": False,
                     }
                 ],
             }
@@ -721,7 +785,7 @@ class VectorInspection:
             "indexes": [],
         }
         rows = run.read(
-            "SELECT namespace, space, identity, dimensions, state FROM index_spaces "
+            "SELECT namespace, space, substr(identity, 1, 65537), dimensions, state FROM index_spaces "
             "ORDER BY namespace, space LIMIT 201"  # MAX_IDENTITIES + 1
         )
         if rows is None:

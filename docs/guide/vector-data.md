@@ -38,6 +38,10 @@ compare every row. That includes a `vector` column without an index, one whose o
 after a failed `CREATE INDEX CONCURRENTLY`; the index is listed as "invalid, not used"), Orkexa's `real[]` and BLOB
 vectors, and sqlite-vec `vec0` tables, which sqlite-vec searches by a full scan.
 
+An index marked **on an expression** (for example on `embedding::vector(384)`) is used only by queries that use the
+same expression, and a **partial** index only for the rows its condition covers. The operator class shown next to an
+index decides which distance it serves: an index with `vector_cosine_ops` speeds up cosine-distance queries, not L2.
+
 **Stored embeddings.** Studio counts at most 100,000 rows per table and never longer than 10 seconds (or the
 connection's time limit, if shorter); past that the view says "more than 100,000". For a PostgreSQL table that the
 statistics put above 100,000 rows, Studio does not count at all and shows "about N rows (estimate)" from the
