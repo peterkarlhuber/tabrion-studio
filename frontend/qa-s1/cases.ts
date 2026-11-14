@@ -1,5 +1,5 @@
 /**
- * The cases of the QA-S1 checklist (QA-S1-Checkliste.md, Peter's manual usability pass of Studio 1.0) and how far a
+ * The cases of the QA-S1 checklist (QA-S1-Checkliste.md, the owner's manual usability pass of Studio 1.0) and how far a
  * browser test can judge each. The suite has one test per case, titled with its id; a case marked `partly` leaves
  * the part named in `manual` to the manual pass. The questions of "Gesamteindruck" (overall impression) have no test:
  * they ask for an opinion, and the results file lists them as not automated with the reason given here.

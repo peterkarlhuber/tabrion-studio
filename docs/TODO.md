@@ -2180,11 +2180,12 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 ### TD-068 · QA-S1 checklist suite: what stays manual
 
 - **Priority:** P3 · **Status:** Done (QA-S1 suite PR); the open items below stay · **Refs:** 08 section 11, TD-046
-  B-5, TD-060, `docs/development/qa-s1-suite.md`, `frontend/e2e/qa-s1/`
+  B-5, TD-060, `docs/development/qa-s1-suite.md`, `frontend/qa-s1/`
 - **Done:** one Playwright test per case of the QA-S1 checklist v2 (S1-01..S1-38) against a real Studio per test on
   a copy of the QA kit's demo project, in a German Chromium; a results file keyed by case id (`pass`, `fail`,
   `not_automated`) next to the HTML report. Opt-in through `TABRION_STUDIO_E2E_PYTHON` and `QA_S1_DEMO_BUILDER`;
-  the main Playwright config ignores `e2e/qa-s1/`.
+  the suite lives in `frontend/qa-s1/`, outside `frontend/e2e/`, so neither the main Playwright config nor the CI
+  check that every spec under `frontend/e2e/` passed sees it (review B1); it is still type-checked and linted.
 - **Open:**
   - The suite is not in CI: it needs the QA kit's `build_demo.py`, which lives outside this repository. Adding it to
     CI needs the kit (or its demo builder) in the repository and a `.github/` change.

@@ -34,7 +34,7 @@ function flatten(tree: Catalog, prefix = ''): Record<string, string> {
 const catalog = (language: 'en' | 'de') =>
   flatten(
     JSON.parse(
-      readFileSync(new URL(`../../src/i18n/locales/${language}.json`, import.meta.url), 'utf8'),
+      readFileSync(new URL(`../src/i18n/locales/${language}.json`, import.meta.url), 'utf8'),
     ) as Catalog,
   );
 const EN = catalog('en');

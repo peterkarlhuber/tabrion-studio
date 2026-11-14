@@ -1,7 +1,7 @@
 # QA-S1 checklist suite (Playwright)
 
 QA-S1 is the manual usability session of Studio 1.0 with the owner (08 section 11; TD-046 B-5, TD-060,
-[UX acceptance](../architecture/ux-acceptance.md)). The suite in `frontend/e2e/qa-s1/` automates what a browser can
+[UX acceptance](../architecture/ux-acceptance.md)). The suite in `frontend/qa-s1/` automates what a browser can
 judge of its checklist (v2, cases S1-01 to S1-38), so regressions show up **before** the manual pass. It does not
 replace that pass: QA-S1 acceptance stays manual, and the suite never writes into the tester's checklist (TD-068).
 
@@ -24,8 +24,10 @@ replace that pass: QA-S1 acceptance stays manual, and the suite never writes int
 | `PLAYWRIGHT_CHROMIUM_EXECUTABLE` | Optional: a preinstalled Chromium, as in [Building and testing](building.md) |
 | `QA_S1_OUTPUT` | Optional: the output folder (default `frontend/qa-s1-results`, ignored by Git) |
 
-Without the first two variables every test is skipped. The suite is **not** part of CI: the main Playwright config
-(`frontend/playwright.config.ts`) ignores `e2e/qa-s1/`, and the suite has its own config.
+Without the first two variables every test is skipped. The suite is **not** part of CI: it lives outside
+`frontend/e2e/`, the folder of the main Playwright config (`frontend/playwright.config.ts`) and of the CI check that
+every spec there passed, and it has its own config. It is still type-checked (`tsconfig.e2e.json`) and linted with
+the rest of the frontend.
 
 ## Running it
 
@@ -34,16 +36,16 @@ python scripts/build_frontend.py && pip install -e .     # once, in the Python n
 cd frontend
 TABRION_STUDIO_E2E_PYTHON=../.venv/bin/python \
 QA_S1_DEMO_BUILDER=/path/to/qa-kit/build_demo.py \
-  npx playwright test -c e2e/qa-s1/playwright.config.ts                 # all cases
+  npx playwright test -c qa-s1/playwright.config.ts                   # all cases
 TABRION_STUDIO_E2E_PYTHON=../.venv/bin/python \
 QA_S1_DEMO_BUILDER=/path/to/qa-kit/build_demo.py \
-  npx playwright test -c e2e/qa-s1/playwright.config.ts -g "S1-09|S1-15"  # some cases
+  npx playwright test -c qa-s1/playwright.config.ts -g "S1-09|S1-15"    # some cases
 ```
 
 ## Results
 
-- The console list and the HTML report (`qa-s1-results/html`, or `QA_S1_REPORT`).
-- `qa-s1-results/results.json` (or `QA_S1_RESULTS`): one entry per case id with `result` (`pass`, `fail`,
+- The console list and the HTML report (`frontend/qa-s1-results/html`, or `QA_S1_REPORT`).
+- `frontend/qa-s1-results/results.json` (or `QA_S1_RESULTS`): one entry per case id with `result` (`pass`, `fail`,
   `not_automated`), `automation`, a note, the run time and, for a failed case, `screenshots/<id>.png`.
 
 The first full run (master `77e549c`, 2026-11-14) passed 36 of 38 cases. It found S1-09 (a mouse click on a table in

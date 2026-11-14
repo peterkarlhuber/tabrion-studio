@@ -7,7 +7,7 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
-- TD-068: a Playwright suite for the QA-S1 checklist (`frontend/e2e/qa-s1/`, one test per case S1-01..S1-38, its
+- TD-068: a Playwright suite for the QA-S1 checklist (`frontend/qa-s1/`, one test per case S1-01..S1-38, its
   own config, a results file by case id); opt-in through `TABRION_STUDIO_E2E_PYTHON` and `QA_S1_DEMO_BUILDER`, not
   in CI. How to run it: `docs/development/qa-s1-suite.md`. QA-S1 acceptance stays manual.
 - TD-066 (STU-055): the CI job `backend integration (PostgreSQL 17)` also runs the `pgvector` tests of the vector
