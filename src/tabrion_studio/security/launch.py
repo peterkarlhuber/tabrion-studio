@@ -1,15 +1,15 @@
 """One-time launch tokens and redirect files (03 section 4.1, STU-003, threat T-03, review F-02).
 
-A launch URL ``http://127.0.0.1:<port>/launch#<token>`` carries a random 256-bit token in its fragment, so that it
-never reaches a server log or a ``Referer``. The page at ``/launch`` sends the token to ``POST /api/session`` and gets
-a session (:mod:`.sessions`). A token works once (a second use gives ``access.launch_used``) and only for
-:data:`LAUNCH_TTL_SECONDS` (``access.launch_expired``).
+A launch URL ``http://<address>:<port>/launch#<token>`` (``<address>`` the instance's ``127.a.b.c``, A-01) carries a
+random 256-bit token in its fragment, so that it never reaches a server log or a ``Referer``. The page at ``/launch``
+sends the token to ``POST /api/session`` and gets a session (:mod:`.sessions`). A token works once (a second use gives
+``access.launch_used``) and only for :data:`LAUNCH_TTL_SECONDS` (``access.launch_expired``).
 
 The browser is never started with that URL (review F-02): the argv of ``xdg-open``, ``open`` or the browser is
 readable by every local user. Instead a **redirect file** is written into the private state directory (0600 in a
 0700 directory)::
 
-    <meta http-equiv="refresh" content="0;url=http://127.0.0.1:<port>/launch#<token>">
+    <meta http-equiv="refresh" content="0;url=http://<address>:<port>/launch#<token>">
 
 and the browser is opened with its ``file://`` path, which holds no secret. The file is deleted as soon as its token
 is redeemed, when the token expires and when the server stops. ``--print-url`` prints a launch URL instead, as an
@@ -80,7 +80,7 @@ def _digest(token: str) -> bytes:
 class LaunchTokens:
     """The launch tokens of one server: issued, redeemed once, expired after ``ttl`` seconds.
 
-    ``origin`` is ``http://127.0.0.1:<port>``; redirect files go to ``redirect_dir`` with names that start with
+    ``origin`` is ``http://<address>:<port>``; redirect files go to ``redirect_dir`` with names that start with
     ``prefix`` (``studio-<key>``, next to the instance's lock and info files). Only SHA-256 digests of the tokens are
     kept.
     """

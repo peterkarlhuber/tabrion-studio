@@ -29,7 +29,7 @@ test.describe.configure({ mode: 'serial' });
 
 /** I-1 of stu-008-review.md: the real server never reaches the developer's keyring. */
 const NO_KEYRING_ENV = { ...process.env, PYTHON_KEYRING_BACKEND: 'keyring.backends.null.Keyring' };
-const LINK = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/;
+const LINK = /do not share\): (http:\/\/127(?:\.\d{1,3}){3}:\d+\/launch#\S+)/;
 
 let studio: ChildProcess | undefined;
 let root = '';

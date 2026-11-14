@@ -44,6 +44,44 @@ def test_info_round_trip(tmp_path: Path) -> None:
     assert instance.read_info(paths) == INFO
 
 
+def test_info_carries_the_loopback_address(tmp_path: Path) -> None:
+    # A-01: the info file names the instance's own random 127.a.b.c; the control client connects there.
+    info = replace(INFO, host="127.9.200.17")
+    assert info.url == "http://127.9.200.17:50123/"
+    assert json.loads(info.to_bytes())["host"] == "127.9.200.17"
+    assert InstanceInfo.from_bytes(info.to_bytes()) == info
+    # A file without an address was written by a server from before A-01, which listened on 127.0.0.1.
+    raw = json.loads(INFO.to_bytes())
+    del raw["host"]
+    old = InstanceInfo.from_bytes(json.dumps(raw).encode())
+    assert old is not None and old.host == "127.0.0.1"
+
+
+@pytest.mark.parametrize(
+    "host",
+    [
+        "10.0.0.1",
+        "0.0.0.0",
+        "128.0.0.1",
+        "::1",
+        "localhost",
+        "127.0.0.1.evil.example",
+        "127.1",
+        "127.000.0.1",
+        "127.0.0.256",
+        " 127.0.0.1",
+        "",
+        127,
+        None,
+        True,
+    ],
+)
+def test_info_with_a_host_outside_the_loopback_net_is_ignored(host: object) -> None:
+    # The control token only ever travels to an IPv4 loopback address written in plain dotted form.
+    raw = {**json.loads(INFO.to_bytes()), "host": host}
+    assert InstanceInfo.from_bytes(json.dumps(raw).encode()) is None
+
+
 @pytest.mark.parametrize(
     "data",
     [
@@ -108,6 +146,30 @@ def test_control_requests_never_use_a_proxy(monkeypatch: pytest.MonkeyPatch) -> 
         assert instance.health(fake.port) == {"status": "ok", "version": "0.1.0.dev0", "instance": "abc"}
         assert instance.control(info, "shutdown") == {"status": "stopping"}
         assert {r.headers.get("Host") for r in fake.seen} == {f"127.0.0.1:{fake.port}"}
+
+
+def test_control_client_talks_to_the_instance_address(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A-01: a Studio on a random 127.a.b.c is reached there, with exactly that Host, and never on 127.0.0.1.
+    import socket
+
+    from tests.support.fake_server import fake_studio
+
+    try:
+        with socket.create_server(("127.77.3.5", 0)):
+            pass
+    except OSError:
+        host = "127.0.0.1"  # macOS by default: only 127.0.0.1 is configured
+    else:
+        host = "127.77.3.5"
+    token = "t0ken"
+    with fake_studio("abc", lambda nonce: instance.control_proof(token, nonce), host=host) as fake:
+        info = instance.InstanceInfo(1, fake.port, "/p", "abc", token, "0", 1.0, host=host)
+        assert instance.health(fake.port, host=host) == {"status": "ok", "version": "0.1.0.dev0", "instance": "abc"}
+        instance.verify_server(info)
+        assert instance.control(info, "shutdown") == {"status": "stopping"}
+        assert {r.headers.get("Host") for r in fake.seen} == {f"{host}:{fake.port}"}
+        if host != "127.0.0.1":
+            assert instance.health(fake.port, timeout=0.5) is None  # nothing on 127.0.0.1:<port>
 
 
 def test_control_against_nothing_raises() -> None:

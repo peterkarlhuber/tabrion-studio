@@ -2,8 +2,8 @@
 
 The browser is never started with a URL that carries the launch token (review F-02): it gets the ``file://`` URI of a
 0600 redirect file in the state directory. The file disappears when the token is used, when it expires and when the
-server stops. ``--print-url`` is the only way to see a launch URL. Studio prints and opens only ``127.0.0.1`` URLs
-(F-08).
+server stops. ``--print-url`` is the only way to see a launch URL. Studio prints and opens only URLs with its own
+loopback address ``127.a.b.c`` (F-08, A-01).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from tests.support.studio import NO_KEYRING, studio_command
 pytestmark = pytest.mark.security
 
 POSIX = sys.platform != "win32"
-LAUNCH_URL = re.compile(r"http://127\.0\.0\.1:(\d+)/launch#([A-Za-z0-9_-]{43})")
+LAUNCH_URL = re.compile(r"http://127\.\d{1,3}\.\d{1,3}\.\d{1,3}:(\d+)/launch#([A-Za-z0-9_-]{43})")
 
 
 def _file_path(uri: str) -> Path:
@@ -122,10 +122,10 @@ def test_browser_is_opened_with_a_redirect_file(
         if POSIX:
             assert stat.S_IMODE(redirect.stat().st_mode) == 0o600
         # The page at /launch redeems the token; the redirect file goes away at once.
-        session = session_from(info.port, *redeem(info.port, token))
+        session = session_from(info.port, *redeem(info.port, token, host=info.host), host=info.host)
         assert not redirect.exists()
         assert heartbeat(session) == 204
-        assert redeem(info.port, token)[0] == 401  # once only
+        assert redeem(info.port, token, host=info.host)[0] == 401  # once only
 
 
 def test_second_start_opens_a_new_redirect_file(
@@ -140,7 +140,7 @@ def test_second_start_opens_a_new_redirect_file(
         printed = capsys.readouterr().out
         assert f"already running for {project.resolve()}: {info.url}" in printed
         assert "/launch#" not in printed
-        assert redeem(info.port, url.rsplit("#", 1)[1])[0] == 200
+        assert redeem(info.port, url.rsplit("#", 1)[1], host=info.host)[0] == 200
         assert not second.exists()
     # Stopping removes the redirect file of the first launch, whose token was never used.
     assert not _file_path(opened[0]).exists()
@@ -153,7 +153,7 @@ def test_print_url_is_the_explicit_opt_in(project: Path, state_dir: Path, monkey
         links = LAUNCH_URL.findall(out.getvalue())
         assert len(links) == 1 and int(links[0][0]) == info.port
         assert list(state_dir.glob("*-launch-*.html")) == []  # no browser, no redirect file
-        assert redeem(info.port, links[0][1])[0] == 200
+        assert redeem(info.port, links[0][1], host=info.host)[0] == 200
         reuse = io.StringIO()
         assert cli.main([str(project), "--no-browser", "--print-url", "--state-dir", str(state_dir)], reuse) == 0
         assert len(LAUNCH_URL.findall(reuse.getvalue())) == 1
@@ -165,7 +165,7 @@ def test_print_url_is_the_explicit_opt_in(project: Path, state_dir: Path, monkey
 def test_no_localhost_url_is_printed_or_opened(
     project: Path, state_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # F-08: only http://127.0.0.1:<port>/ URLs, also in the redirect files and with --print-url.
+    # F-08, A-01: only http://<own address>:<port>/ URLs, also in the redirect files and with --print-url.
     with serving(project, state_dir, monkeypatch, "--print-url") as (info, out, opened):
         assert cli.main([str(project), "--print-url", "--state-dir", str(state_dir)]) == cli.EXIT_OK
         texts = [out.getvalue(), capsys.readouterr().out, *(_file_path(u).read_text(encoding="utf-8") for u in opened)]
@@ -174,7 +174,7 @@ def test_no_localhost_url_is_printed_or_opened(
             assert not re.search(r"//localhost\b|localhost:\d", text), text
             assert "[::1]" not in text
             for url in re.findall(r"https?://[^\s\"'<>]+", text):
-                assert url.startswith(f"http://127.0.0.1:{info.port}/"), url
+                assert url.startswith(f"http://{info.host}:{info.port}/"), url
         assert len(opened) == 2
 
 
@@ -221,8 +221,8 @@ def test_browser_argv_contains_no_token(project: Path, state_dir: Path, tmp_path
             assert all(token not in arg for argv in calls for arg in argv)
             assert token not in log.read_text() and token not in second.stdout + second.stderr
         # The recorded file is the real way in: its token opens a session, once.
-        assert redeem(info.port, tokens[1])[0] == 200
-        assert redeem(info.port, tokens[1])[0] == 401
+        assert redeem(info.port, tokens[1], host=info.host)[0] == 200
+        assert redeem(info.port, tokens[1], host=info.host)[0] == 401
     finally:
         subprocess.run(studio_command("--stop", str(project), "--state-dir", str(state_dir)), check=False)
         process.wait(timeout=20)

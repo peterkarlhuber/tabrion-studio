@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import ipaddress
 import os
 from pathlib import Path
 import socket
@@ -50,7 +51,11 @@ def test_start_is_ready_within_two_seconds(project: Path, state_dir: Path) -> No
 def test_binds_loopback_only(project: Path, state_dir: Path) -> None:
     with start_studio(project, state_dir) as studio:
         info, _ = studio.wait_ready()
-        assert info.url == f"http://127.0.0.1:{info.port}/"
+        assert info.url == f"http://{info.host}:{info.port}/"
+        assert ipaddress.IPv4Address(info.host) in ipaddress.IPv4Network("127.0.0.0/8")
+        if sys.platform.startswith("linux") or sys.platform == "win32":
+            # A-01: a fresh random 127.a.b.c; macOS has only 127.0.0.1 by default (the documented fallback).
+            assert info.host != "127.0.0.1"
         # Nothing answers on the same port on a non-loopback address of this machine (if it has one).
         try:
             other = socket.gethostbyname(socket.gethostname())
@@ -200,11 +205,24 @@ def test_stale_info_file_after_a_crash_does_not_block_a_start(project: Path, sta
 
 
 def test_busy_port_is_reported(project: Path, state_dir: Path) -> None:
-    with socket.create_server(("127.0.0.1", 0)) as busy:
+    # Since A-01 the IPv4 address is a fresh random 127.a.b.c, so a program on 127.0.0.1:<port> no longer collides;
+    # a fixed port that another program holds on [::1] (Studio guards it there, F-08) still does. Without an IPv6
+    # loopback, a wildcard IPv4 listener on the port collides with every loopback address (Linux).
+    family, address = (socket.AF_INET6, "::1") if _ipv6_loopback_available() else (socket.AF_INET, "0.0.0.0")
+    with socket.socket(family, socket.SOCK_STREAM) as busy:
+        if family == socket.AF_INET6:
+            busy.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+        busy.bind((address, 0))
+        busy.listen()
         port = busy.getsockname()[1]
         result = run_cli(str(project), "--no-browser", "--state-dir", str(state_dir), "--port", str(port))
     assert result.returncode == 1
-    assert f"cannot listen on 127.0.0.1:{port}" in result.stderr
+    expected = (
+        f"port {port}: [::1] is used by another program"
+        if family == socket.AF_INET6
+        else (f"cannot listen on 127.0.0.0/8 port {port}")
+    )
+    assert f"tabrion-studio: {expected}" in result.stderr
     lock = InstanceLock(InstancePaths.for_project(state_dir, project).lock)
     assert lock.acquire()
     lock.release()

@@ -2,14 +2,16 @@
 
 Threats (03 section 7.3) and review findings, in the order of the checks:
 
-1. **Host allowlist (T-01, DNS rebinding; F-05, F-08).** Exactly one ``Host`` header, equal to ``127.0.0.1:<port>``,
-   on **every** route: the API, the control endpoints, the proof, the heartbeat, the health check and the static
-   files. ``localhost`` and ``[::1]`` are not accepted: Studio prints and opens only ``127.0.0.1`` URLs, the
-   ``[::1]`` guard (``server.bind_loopback``) may be missing on a host without IPv6, and a page that rebinds its own
-   name to ``127.0.0.1`` sends that name. Refused: ``access.host_not_allowed`` (403).
+1. **Host allowlist (T-01, DNS rebinding; F-05, F-08, A-01).** Exactly one ``Host`` header, equal to
+   ``<address>:<port>`` of this instance (its random ``127.a.b.c``, or ``127.0.0.1`` where only that exists), on
+   **every** route: the API, the control endpoints, the proof, the heartbeat, the health check and the static
+   files. ``localhost``, ``[::1]`` and every other loopback address are not accepted: Studio prints and opens only
+   URLs with its own address, the ``[::1]`` guard (``server.bind_loopback``) may be missing on a host without IPv6,
+   and a page that rebinds its own name to a loopback address sends that name. Refused: ``access.host_not_allowed``
+   (403).
 2. **Forwarded headers (T-01).** ``Forwarded``, ``X-Forwarded-*`` and ``X-Real-IP`` are refused
    (``access.forwarded_not_allowed``): Studio is never meant to sit behind a proxy.
-3. **Origin (T-02).** A request that carries an ``Origin`` other than ``http://127.0.0.1:<port>`` is refused
+3. **Origin (T-02).** A request that carries an ``Origin`` other than ``http://<address>:<port>`` is refused
    (``access.origin_not_allowed``); every unsafe method outside the control endpoints must carry exactly that
    ``Origin`` (``access.origin_required``), which browsers send with every ``POST``, ``PUT``, ``PATCH`` and ``DELETE``.
 4. **Browser headers on the control endpoints (F-05).** ``/api/control/*`` (including the proof) refuses any request
@@ -76,9 +78,9 @@ _REPLACED = frozenset(name.encode() for name, _ in SECURITY_HEADERS) | {b"pragma
 _CSRF = CSRF_HEADER.lower()
 
 
-def loopback_origin(port: int) -> str:
-    """The only origin and ``Host`` Studio answers: ``http://127.0.0.1:<port>``."""
-    return f"http://127.0.0.1:{port}"
+def loopback_origin(port: int, host: str = "127.0.0.1") -> str:
+    """The only origin and ``Host`` Studio answers: ``http://<host>:<port>``, ``host`` a ``127.a.b.c`` (A-01)."""
+    return f"http://{host}:{port}"
 
 
 def session_cookie(headers: list[tuple[str, str]], name: str) -> list[str]:
@@ -102,6 +104,7 @@ class AccessMiddleware:
         app: ASGIApp,
         *,
         port: int,
+        host: str = "127.0.0.1",
         sessions: Sessions,
         control_token: str,
         on_activity: Callable[[], None] = lambda: None,
@@ -110,7 +113,7 @@ class AccessMiddleware:
         # An empty token opens nothing: every control path but the proof is then refused.
         self.control_token = control_token.encode("utf-8")
         self.port = port
-        self.origin = loopback_origin(port)
+        self.origin = loopback_origin(port, host)
         self.host = self.origin.removeprefix("http://")
         self.sessions = sessions
         self.cookie = cookie_name(port)
