@@ -1,9 +1,11 @@
 # STU-ADR-0005: Write and admin features of CR-DBX locked per area until G-S2, G-S3 and G-S4
 
 **Status:** accepted as planning (owner decisions on change request CR-DBX of 2026-11-13 23:28Z, E-X1 and E-X2, and
-23:35Z, E-X3..E-X13 as recommended with binding refinements of E-X4, E-X5, E-X6 and E-X9). It accepts the plan,
-**not** the start of implementation. It amends [STU-ADR-0003](0003-writes-behind-gate.md), which stays in force for
-Studio 1.0. The threat model and the full successor record are work package STU-XW-5 after the development start.
+23:35Z, E-X3..E-X13 as recommended with binding refinements of E-X4, E-X5, E-X6 and E-X9). It accepted the plan,
+not the start of implementation; the owner's conditional development-start approval of 2026-11-14 11:01Z (G-CX,
+see [Amendment 2026-11-14](#amendment-2026-11-14-conditional-development-start)) now governs the start. It amends
+[STU-ADR-0003](0003-writes-behind-gate.md), which stays in force for Studio 1.0. The threat model and the full
+successor record are work package STU-XW-5 after the development start.
 
 ## Context
 
@@ -18,8 +20,8 @@ management as non-goals, which the Database Manager needs (contradiction W-7).
 
 - **Order and versions (E-X2, E-X10):** Studio 1.1 = shared write foundation and Data Editor (STU-026, STU-XW-1..5,
   STU-XDE-1..2); Studio 1.2 = Schema Designer (STU-CR-1..8, STU-XSD-1..3, milestone M10); Studio 1.3 = Database
-  Manager (STU-XDM-1..7, milestone M11). Work starts only after Studio 1.0 (G-R), the repository migration and a
-  separate development-start approval (G-CX).
+  Manager (STU-XDM-1..7, milestone M11). Work starts under the conditional development-start approval G-CX of
+  2026-11-14 (see the amendment below), not before its start conditions S-1..S-4 are proven.
 - **One server-side flag and one gate per area (E-X9):** Data Editor behind G-S2, Schema Designer behind G-S3,
   Database Manager behind G-S4. G-CX is **not** an approval to enable a write feature: every new write and admin
   feature stays technically locked (flag off, not switchable from the frontend, no executable path) until the gate of
@@ -58,10 +60,32 @@ management as non-goals, which the Database Manager needs (contradiction W-7).
 
 - STU-ADR-0003 keeps its rules for 1.0 and the Data Editor; its "same flag and gate model" for the Schema Designer
   and its "403/404" are replaced by this record.
-- Until G-CX nothing of this record is implemented; the 1.0 negative tests (STU-054, `ux-acceptance-1-0.spec.ts`)
-  stay as they are.
+- Until the G-CX start conditions S-1..S-4 are proven nothing of this record is implemented; the 1.0 negative
+  tests (STU-054, `ux-acceptance-1-0.spec.ts`) stay as they are.
 - Studio still never runs a migration of its own accord: the 1.0 migration view only reads, and the Schema Designer
   writes revisions, not upgrades.
+
+## Amendment 2026-11-14: conditional development start
+
+The owner granted a conditional (suspensive) development-start approval for CR-DBX on 2026-11-14 11:01Z (G-CX). It
+replaces the earlier wording that G-CX would be a separate approval still to come. Development of Studio 1.1 (shared
+write foundation and Data Editor), 1.2 (Schema Designer) and 1.3 (Database Manager) starts automatically, without a
+new approval, once **all** of these are proven:
+
+- **S-1:** Studio 1.0 is functionally complete and the owner has accepted QA-S1.
+- **S-2:** the relevant security findings are fixed and the required technical reviews are complete.
+- **S-3:** the Tabrion migration is complete, including wave W6 and all necessary pin cascades.
+- **S-4:** the mandatory CI is green, with no relevant integration or security blocker.
+
+The fulfillment is recorded with concrete evidence and the current commit SHA (planning evidence tracker
+`cr-dbx-startbedingungen.md`). The human security review H-2 and G-R stay mandatory for any public release but are
+not preconditions for internal development. After the start the work packages run autonomously along the approved
+plan and its dependencies (coordinated, implemented, tested, independently reviewed); independent parts may run in
+parallel. The gates are unchanged: G-S2 (Data Editor), G-S3 (Schema Designer), G-S4 (Database Manager). Before its
+gate, new write or admin functionality may be developed and integrated only behind kill switches that are off by
+default and proven effective by tests; this approves no activation and no productive use. G-CX still enables no
+write feature. No tag, no public release and no publication without G-R. The binding refinements of E-X3..E-X13
+stay in force.
 
 ## Tests
 
