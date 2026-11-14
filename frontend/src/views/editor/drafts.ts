@@ -191,9 +191,31 @@ export function draftsDocument(drafts: Drafts, known?: ReadonlySet<string>) {
  */
 let draftSaves: Promise<unknown> = Promise.resolve();
 
-/** Queue a save after the saves queued before it; a failed save does not stop the later ones. */
-export function queueDraftSave(save: () => Promise<unknown>): void {
-  draftSaves = draftSaves.then(save).catch(() => undefined);
+/**
+ * How long one draft save may take before it is aborted and the next save goes ahead (review M1 of QA-S1): a
+ * `PUT /api/drafts` the server never answers must not hold back every later save of the page until it reloads. An
+ * aborted save counts as a failed one (`saveDrafts` returns false).
+ */
+export const DRAFT_SAVE_TIMEOUT_MS = 10_000;
+
+/**
+ * Queue a save after the saves queued before it; a failed save does not stop the later ones. The save gets a signal
+ * that aborts after `DRAFT_SAVE_TIMEOUT_MS`, and the queue goes on at that time even if the save does not stop.
+ */
+export function queueDraftSave(save: (signal: AbortSignal) => Promise<unknown>): void {
+  draftSaves = draftSaves
+    .then(() => {
+      const controller = new AbortController();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const limit = new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          resolve();
+        }, DRAFT_SAVE_TIMEOUT_MS);
+      });
+      return Promise.race([save(controller.signal), limit]).finally(() => clearTimeout(timer));
+    })
+    .catch(() => undefined);
 }
 
 /** How long a new editor waits at most for the saves before it reads the drafts (a save the server never answers). */
@@ -221,14 +243,22 @@ export async function fetchDrafts(fetcher: typeof fetch): Promise<Result<Drafts 
 
 /**
  * Store the drafts on the server. With `known` (every tab id this page has had), the stored tabs this page never had
- * are kept after its own: another page of the same project added them.
+ * are kept after its own: another page of the same project added them. False when the server did not keep them, or
+ * `signal` aborted the request (`queueDraftSave`'s time limit).
  */
 export async function saveDrafts(
   fetcher: typeof fetch,
   drafts: Drafts,
   known?: ReadonlySet<string>,
+  signal?: AbortSignal,
 ): Promise<boolean> {
-  const result = await send<unknown>(fetcher, 'PUT', '/api/drafts', draftsDocument(drafts, known));
+  const result = await send<unknown>(
+    fetcher,
+    'PUT',
+    '/api/drafts',
+    draftsDocument(drafts, known),
+    signal,
+  );
   return result.ok;
 }
 

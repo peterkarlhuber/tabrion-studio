@@ -2194,16 +2194,26 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   `queueDraftSave`), and an editor reads the drafts only after the queued saves have landed (at most 10 s, so a save
   the server never answers cannot keep the editor closed). Tests in `EditorView.test.tsx` with the save delay
   driven by hand (fake `setTimeout`) and a draft save held by the test: both fail without the fix.
+- **Review M1 of the QA-S1 PRs, done:** the page-wide queue had no time limit per save, so one `PUT /api/drafts` the
+  server never answered held back every later draft save until the page reloaded. Each queued save now gets an
+  `AbortSignal` that aborts its request after 10 s (`DRAFT_SAVE_TIMEOUT_MS`), and the queue goes on at that time even
+  if the save ignores the signal; the aborted save counts as failed (`saveDrafts` returns false), as any other failed
+  draft save. Tests in `drafts.test.ts` with fake timers: a hanging save is aborted and the next one is sent, and an
+  editor reads the drafts after at most `DRAFT_SAVES_WAIT_MS` while saves are still on their way (review L1).
 - **S1-32, done:** a second start signs a new tab in and ends the first tab's session; "Run" there showed "The request
   failed (access.csrf_invalid)". Every `access.*` code of the server catalog now has a text in en and de
   (`messages.ts` `problemText`): `csrf_invalid` and `session_required` say that this tab's session ended and to go on
   in the newest Studio tab or run `tabrion-studio` again, like the "Session ended" notice; the sign-in link codes
   as on the sign-in page; a refusal Studio never sends its own page names its code. `messages.test.ts` reads the
-  codes from `problems.py`, so a new code without a text fails. The checklist's S1-32 itself still expects
+  codes from `problems.py`, so a new code without a text fails. After review L3/L4, `session_required` also says that
+  the tab may never have been signed in, and `json_only`, `control_denied` and `browser_not_allowed` say that
+  Studio's page does not send such a request instead of "did not come from its own page". The checklist's S1-32 itself still expects
   "Connection lost" after a second start, which the product does not do (TD-068).
 - **Open:**
   - A reload or a closed browser tab within the 400 ms still drops the last change (the page cannot finish a `PUT`
     while it unloads without `keepalive`); not part of S1-15.
+  - A failed or aborted draft save is not shown to the user, as before this PR: the page keeps its tabs and the next
+    change saves them again. A notice for it would be new UI.
   - German wording: `de.json` mostly uses "du", but about 16 strings use "Sie": `explorer.er.capped`,
     `explorer.er.choose.empty`, `explorer.er.pngFailed`, `problems.diagram_too_large`, `editor.profileChanged`,
     `viewer.filter.chooseColumn`, `viewer.filter.tooLong`, `viewer.full.unavailable`, seven of `viewer.problems.*`

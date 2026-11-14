@@ -180,6 +180,7 @@ export async function send<T>(
   method: 'POST' | 'PUT' | 'DELETE',
   path: string,
   body: unknown,
+  signal?: AbortSignal,
 ): Promise<Result<T>> {
   try {
     const response = await fetcher(path, {
@@ -188,6 +189,7 @@ export async function send<T>(
       credentials: 'same-origin',
       headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      ...(signal !== undefined ? { signal } : {}),
     });
     if (!response.ok) return { ok: false, problem: await readProblem(response) };
     const value = (response.status === 204 ? null : await response.json()) as T;

@@ -51,7 +51,11 @@ describe('problemText of access.* refusals (QA-S1 S1-32)', () => {
     expect(text).toContain('beendet');
     expect(text).toContain('tabrion-studio erneut');
     expect(text).not.toContain('access.');
-    expect(problemText(t, problem('access.session_required', 401))).toBe(text);
+    const missing = problemText(t, problem('access.session_required', 401));
+    // A tab that was never signed in has no session either: the text covers that case too (review L4).
+    expect(missing).toBe(de.problems.session_missing);
+    expect(missing).toContain('nicht angemeldet');
+    expect(missing).toContain('tabrion-studio erneut');
     await i18n.changeLanguage('en');
     expect(problemText(i18n.t.bind(i18n), problem('access.csrf_invalid'))).toBe(
       "This tab's session has ended: Studio was opened again in another tab, or restarted. Continue in the newest " +
@@ -65,5 +69,16 @@ describe('problemText of access.* refusals (QA-S1 S1-32)', () => {
       'Studio refused the request because it did not come from its own page (access.cross_site). Open Studio with ' +
         'the link that tabrion-studio opens or prints.',
     );
+    // JSON only, the control channel and the CLI-only routes: the page never sends such a request (review L3).
+    for (const code of [
+      'access.json_only',
+      'access.control_denied',
+      'access.browser_not_allowed',
+    ]) {
+      expect(problemText(i18n.t.bind(i18n), problem(code))).toBe(
+        `Studio refused this request (${code}). Studio's own page does not send requests like this; reload the ` +
+          'page, and if it happens again, open Studio with the link that tabrion-studio opens or prints.',
+      );
+    }
   });
 });

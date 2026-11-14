@@ -446,8 +446,8 @@ export function EditorView({
     const save = () => {
       pendingSave.current = null;
       const ids = new Set(known.current);
-      queueDraftSave(async () => {
-        const saved = await saveDrafts(fetcher, { tabs, activeTab: activeId }, ids);
+      queueDraftSave(async (signal) => {
+        const saved = await saveDrafts(fetcher, { tabs, activeTab: activeId }, ids, signal);
         if (saved && legacyDrafts.current !== null) {
           clearLegacyDrafts(legacyDrafts.current);
           legacyDrafts.current = null;
