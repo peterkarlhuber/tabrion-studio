@@ -45,6 +45,9 @@ def test_wheel_contains_the_frontend(dist: Path) -> None:
     assert "tabrion_studio/static/harness.html" not in names
     # The logos are not covered by LICENSE: the trademark notice travels with the license (TRADEMARKS.md).
     assert any(n.endswith(".dist-info/licenses/TRADEMARKS.md") for n in names)
+    # The frontend's npm components ship with their license texts, next to the product license.
+    assert "tabrion_studio/static/THIRD-PARTY-NOTICES.txt" in names
+    assert "tabrion_studio/static/LICENSE.txt" in names
     # No sources, tests, node_modules or source maps in the wheel.
     assert not any(n.startswith(("frontend/", "tests/", "scripts/")) for n in names)
     assert not any("node_modules" in n or n.endswith(".map") for n in names)
