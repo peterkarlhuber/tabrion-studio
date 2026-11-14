@@ -228,5 +228,11 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
         assert env.registry.get(connection_id).read_only is True
         rows = env.registry.get(connection_id).fetch("SELECT current_user::text")
         assert rows == [(url.username,)]
+        # STU-XW-2: both unlocks are in the audit log, with the findings counted; no password reaches it (TX-13).
+        audit = b"".join(p.read_bytes() for p in sorted(env.audit_dir.iterdir()) if p.is_file())
+        assert audit.count(b'"event":"unlock"') == 2 and b'"findings":' in audit
+        assert roles["password"].encode() not in audit and CANARY_SECRET.encode() not in audit
+        if url.password:
+            assert url.password.encode() not in audit
     finally:
         env.close()

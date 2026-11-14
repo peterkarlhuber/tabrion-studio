@@ -24,6 +24,16 @@ function setup(areas: Record<string, unknown>) {
     const url = String(input);
     urls.push(url);
     if (url === '/api/write/areas') return new Response(JSON.stringify({ areas }));
+    if (url.startsWith('/api/write/audit'))
+      return new Response(
+        JSON.stringify({
+          available: true,
+          problem: null,
+          pending: 0,
+          verification: { ok: true, records: 0, problem: null, at: null },
+          records: [],
+        }),
+      );
     if (url === '/api/profiles')
       return new Response(JSON.stringify({ ...PROFILES, profiles: [...PROFILES.profiles, LOCAL] }));
     if (url === '/api/write/profiles' && init?.method === 'POST') {

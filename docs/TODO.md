@@ -34,6 +34,11 @@
 > STU-XW-1 follow-up (2026-11-14, branch `claude/project-thread-rdo6g3-stuxw1b`): the findings L-1, L-3 and I-1 of
 > the review of PR #111 (`reviews/pr111-stuxw1-review.md`) are fixed; I-3 is recorded as an open G-S2 decision and
 > L-2 as a binding requirement of STU-XW-4 (see [CR-DBX](#cr-dbx-studio-11-to-13-in-development-locked)).
+>
+> STU-XW-2 (2026-11-14, branch `claude/project-thread-rdo6g3-stuxw2`): the audit log of write and admin actions
+> (`tabrion_studio.write.audit`, loaded only while an area is on): hash chain with a head anchor and verification,
+> owner-only files, no values, fail closed before a run or an unlock, pending marker after a run (N-4), read-only
+> `GET /api/write/audit`. Every area stays off. Open: see the CR-DBX section.
 
 ## Summary
 
@@ -54,7 +59,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1 in review, STU-XW-2..4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1 and STU-XW-2 in review, STU-XW-3..4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -494,7 +499,8 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | Threat model and the ADR successor of 0003 | TABRION STU-XW-5 | G-S2 | Done (PR #109; independent review accepted 2026-11-14, `reviews/pr109-stuxw5-review.md`): [STU-ADR-0006](adr/0006-per-area-write-kill-switches.md), [threat model](architecture/write-threat-model.md), non-goals in the README and the security guide |
 | 1.1 | Shared write foundation: write and admin profiles, unlocking, PROD lock, flags (STU-XW-1) | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1`): flags in `write-areas.toml` (default off, read once at start), write and admin profiles in the user's store only, server-side unlock per session, SQLite and PostgreSQL write connections (K-2), admin privilege check; kill-switch proof in `tests/security/test_write_*.py`; nothing activated |
 | 1.1 | STU-XW-1 follow-up: review findings of PR #111 | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1b`): L-1 write and admin profiles only from the command line's or the platform's configuration folder while an area is on (`studio.write_profiles_ignored`); L-3 the SQLite write connection never creates a missing file (`file:...?mode=rw`, tabrion `create=False`); I-1 the privilege check reports `admin.broad:<pg_* role>` and `admin.createrole_pre16` (tabrion ADR 0015 D-1, D-2). I-3 and L-2 recorded below |
-| 1.1 | Audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-2..STU-XW-4 | G-S2 | **Next** (after STU-XW-1); hooks: `Unlocks.require` and `WriteConnection.transaction`; each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package. STU-XW-4 carries the binding requirement L-2 of PR #111 (below) |
+| 1.1 | Audit log (STU-XW-2) | TABRION STU-XW-2 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw2`): append-only log in `<state>/audit/` (0700/0600, no links, no open handles), SHA-256 hash chain with `head.json` anchor and `verify_log` (edit, deletion, insertion, reordering, truncation), rotation that never overwrites or deletes, fields by allowlist only (names, counts, codes, plan hash; never a value or secret, canary-tested); unlock and `run.start` fail closed (`405 studio.audit_unavailable`), lock, profile, secret and `run.result` records keep a pending marker on failure (N-4) shown in the write profile section; `GET /api/write/audit` read only, 405 with every flag off; the module is not loaded with every flag off. Hook for STU-XW-3 and STU-026: `Unlocks.audited_transaction(session, connection_id, area, action=, objects=, plan_hash=)`. Open points below |
+| 1.1 | Plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-3..STU-XW-4 | G-S2 | **Next**; hooks: `Unlocks.require`, `Unlocks.audited_transaction` (STU-XW-3 passes the confirmed plan hash) and `WriteConnection.transaction`; each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package. STU-XW-4 carries the binding requirement L-2 of PR #111 (below) |
 | 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
@@ -528,6 +534,27 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   user profiles). With libpq older than 16 (no `require_auth`) Studio refuses the write unlock (fail closed) instead
   of only logging a warning. Proof: a test that the option reaches the driver for `write` and `admin`, and a test
   that an older libpq refuses the unlock. Not implemented in STU-XW-1.
+- **STU-XW-2, fixed in PR #114 (review `reviews/pr114-stuxw2-review.md`):** M-1, several Studio processes (one
+  per project) share `<state>/audit`: every write, head update, rotation, pending marker change and verification
+  now runs under a lock across processes (`audit/audit.lock`, `fcntl.flock` or `msvcrt.locking`), and the chain's end
+  is read again from disk under it; N-2, rotation moves the segment with a hard link (fails on an existing name)
+  under that lock; N-3, a name the log does not take is the catalog problem `studio.audit_record_invalid`, and a
+  record error never hides an unlock refusal.
+- **G-S2 items (STU-XW-2, notes of the PR #114 review):**
+  - **Anchor outside the folder (N-1):** without a key, removing the whole `audit` folder goes unnoticed (Studio
+    starts a new chain from GENESIS), and someone who can write the state folder can rebuild a consistent chain
+    (residual risk 3). Options: keep the last `(seq, hash)` also in the keyring or in a 0600 file outside
+    `<state>/audit` and report "log missing or reset" when a new chain starts while an anchor exists; a keyed HMAC
+    chain with the key in the keyring.
+  - **Retention (N-4):** old segments are kept without limit (about 4 MB each); decide on retention or archiving.
+  - **Verification cost (N-4):** every listing verifies the whole log; cache the verification up to the last
+    verified head and verify only what follows.
+  - **The page (N-5):** show the problem code of a failed verification and the remedy next to it.
+  - Whether a refused unlock of an area that is off should be recorded (today only refusals of a stored profile
+    with its area on are).
+- **STU-026 and STU-XW-3 (from STU-XW-2):** every write runs through `Unlocks.audited_transaction`, which writes
+  `run.start` before the transaction and `run.result` after it; `action` is a token, `objects` are object names only,
+  and the caller shows a warning when `run.audit_pending` is True (N-4). STU-XW-3 passes the confirmed plan hash.
 - **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion
   TB-148) is decided with STU-CR-6 and the profile import and export of STU-XDM-5.
 

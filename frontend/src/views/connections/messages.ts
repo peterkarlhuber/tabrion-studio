@@ -75,6 +75,22 @@ const PROBLEMS = new Set([
   'script_disk_full',
   'script_write_failed',
   'offline',
+  // The write foundation (STU-XW-1) and its audit log (STU-XW-2).
+  'write_profile_invalid',
+  'write_profile_unknown',
+  'write_profile_exists',
+  'write_warning_unconfirmed',
+  'write_profiles_ignored',
+  'profile_coupled',
+  'write_prod_locked',
+  'write_coupling_invalid',
+  'write_target_unknown',
+  'unlock_name_mismatch',
+  'write_locked',
+  'write_target_changed',
+  'write_unsupported',
+  'audit_unavailable',
+  'audit_record_invalid',
 ]);
 
 const ISSUES = new Set([

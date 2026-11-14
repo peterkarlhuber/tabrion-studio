@@ -1038,7 +1038,9 @@
     "unlock_name_mismatch": "Type the name of the write profile exactly to unlock.",
     "write_locked": "The write mode is locked. Unlock it again.",
     "write_target_changed": "The profile or the database file changed; the unlock has ended.",
-    "write_unsupported": "Studio cannot open a write connection with its safeguards for this database."
+    "write_unsupported": "Studio cannot open a write connection with its safeguards for this database.",
+    "audit_unavailable": "Studio could not write the audit record of this action, so it did not do it. See the audit log under write profiles.",
+    "audit_record_invalid": "The audit log does not take the names of this action, so Studio did not do it."
   },
   "keyboard": {
     "palette": {
@@ -1558,6 +1560,19 @@
     "roleHint": "Its own role with only the rights it needs; not the role of the coupled profile.",
     "prodNote": "Studio relies on the environment you give the coupled profile: it cannot tell whether a database is production. Write credentials for a production database do not belong in Studio.",
     "prodConfirm": "I understand, and this is not a production database.",
-    "create": "Create write profile"
+    "create": "Create write profile",
+    "audit": {
+      "title": "Audit log",
+      "verified_one": "Verified: {{count}} record, the chain is unchanged.",
+      "verified_other": "Verified: {{count}} records, the chain is unchanged.",
+      "broken": "The audit log failed verification or cannot be written. Studio does no write until it can record it. Move the audit folder of Studio's state folder aside, keep it for inspection, and start Studio again.",
+      "unreadable": "The state of the audit log could not be read.",
+      "pending_one": "{{count}} record could not be written after its action. The action has happened; Studio keeps the record and writes it as soon as the log is writable.",
+      "pending_other": "{{count}} records could not be written after their actions. The actions have happened; Studio keeps the records and writes them as soon as the log is writable.",
+      "time": "Time (UTC)",
+      "event": "Action",
+      "profile": "Profile",
+      "result": "Result"
+    }
   }
 }

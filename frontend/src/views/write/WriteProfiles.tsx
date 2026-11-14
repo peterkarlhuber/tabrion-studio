@@ -6,6 +6,8 @@
  * Creating a profile shows, at that moment, that Studio relies on the environment the user gives the profile and that
  * write credentials of a production database do not belong in Studio (review N-6 of PR #109); the profile is sent only
  * after the user confirmed that note, and the server refuses it without the confirmation.
+ *
+ * Below the form, the audit log's state (STU-XW-2): verified or not, and a warning while records are pending.
  */
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,6 +27,7 @@ import connectionStyles from '../connections/Connections.module.css';
 import { Field } from '../connections/Field';
 import { problemText } from '../connections/messages';
 import styles from '../Views.module.css';
+import { AuditStatus } from './AuditStatus';
 
 export function WriteProfilesSection({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [areas, setAreas] = useState<WriteAreas>(ALL_OFF);
@@ -182,6 +185,7 @@ function WriteProfileForm({ fetcher, kinds }: { fetcher: typeof fetch; kinds: Wr
           </Button>
         </div>
       </form>
+      <AuditStatus fetcher={fetcher} />
     </section>
   );
 }

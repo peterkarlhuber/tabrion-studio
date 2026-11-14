@@ -10,6 +10,9 @@
 * ``PUT``, ``DELETE /api/write/profiles/{id}/secret``: the write or admin profile's own secret (keyring or session).
 * ``GET``, ``POST``, ``DELETE /api/write/unlocks``: this session's unlocks; unlock with
   ``{"connection_id", "write_profile_id", "typed_name"}``, lock with ``{"connection_id"}``.
+* ``GET /api/write/audit[?limit=N]``: the audit log of write and admin actions (STU-XW-2), read only: the newest
+  records (no values: names, counts, codes and hashes), a fresh verification of its hash chain and the number of
+  pending records (review N-4). No route changes or removes a record.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -25,6 +28,7 @@ a name from the request, a secret or a database message.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Response
@@ -43,6 +47,7 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/profiles", ("GET", "POST", "PUT", "DELETE")),
     ("/api/write/profiles/{profile_id:path}/secret", ("PUT", "DELETE")),
     ("/api/write/unlocks", ("GET", "POST", "DELETE")),
+    ("/api/write/audit", ("GET",)),
 )
 
 
@@ -56,8 +61,12 @@ def add_write_routes(
     areas: WriteAreas = ALL_OFF,
     config: Configuration | None = None,
     registry: ConnectionRegistry | None = None,
+    audit_dir: Path | None = None,
 ) -> Unlocks | None:
-    """Register the write foundation's routes; the unlocks when an area is on (closed by the app on shutdown)."""
+    """Register the write foundation's routes; the unlocks when an area is on (closed by the app on shutdown).
+
+    ``audit_dir`` is the audit log's folder (``<state folder>/audit``); without one, every unlock and write is
+    refused (fail closed). It is neither created nor read while every area is off."""
     snapshot = areas.to_dict()
 
     @app.get("/api/write/areas")
@@ -72,4 +81,4 @@ def add_write_routes(
     # Imported only now: with every flag off, no write code is loaded.
     from tabrion_studio.write.routes import add_enabled_write_routes
 
-    return add_enabled_write_routes(app, areas, config, registry)
+    return add_enabled_write_routes(app, areas, config, registry, audit_dir)

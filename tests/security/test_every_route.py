@@ -84,6 +84,7 @@ FAMILIES = (
     "/api/write/areas",
     "/api/write/profiles",
     "/api/write/unlocks",
+    "/api/write/audit",
 )
 
 

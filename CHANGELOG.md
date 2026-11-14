@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XW-2 (CR-DBX): the audit log of write and admin actions, with every write area still off. While an area is on,
+  Studio appends a record to `<state folder>/audit/audit.jsonl` (folder 0700, files 0600, never through a link, no
+  handle kept open) for every unlock (also a refused one), lock (with its reason), write or admin profile create,
+  change (with the coupling) and delete, secret store and remove, and write run (`run.start` before the transaction,
+  `run.result` after it, with row counts and the plan hash). Records hold names, counts, codes and hashes only, by a
+  field allowlist: never a value, parameter, statement, secret or database message (canary tests). Each record is
+  chained by SHA-256 to the one before, and `head.json` anchors the last; the chain is verified at start and on every
+  listing, and finds changed, removed, inserted, reordered and cut records. A log that fails is not appended to.
+  No record before an unlock or a run, no unlock or run (`405 studio.audit_unavailable`); a record after a run that
+  fails is kept as a pending marker (`audit/pending.json`), warned about and written later (review N-4). Rotation at
+  4 MB renames to `audit-<first record>.jsonl` and never overwrites or deletes. New read-only route
+  `GET /api/write/audit` (405 with every flag off); the audit module is not loaded while every flag is off. The write
+  profile section shows the log's state in English and German. Several Studio processes on one state folder share
+  the log safely: every write, head update, rotation and verification runs under a lock across processes
+  (`audit/audit.lock`) and re-reads the chain's end first (review M-1 of PR #114); rotation never replaces a name
+  (hard link); a name the log does not take refuses the run with `studio.audit_record_invalid`.
 - STU-XW-1 (CR-DBX): the shared write foundation, with every write area off. One flag per area (`data_editor` G-S2,
   `schema_designer` G-S3, `database_manager` G-S4) in `write-areas.toml` in the configuration folder that the
   command line names (never an environment variable, a `.env` file, a project file, the settings API, a URL, a

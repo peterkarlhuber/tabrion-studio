@@ -4,6 +4,11 @@ See :mod:`tabrion_studio.api.write` for the routes. Every handler first checks t
 is on (``write``: Data Editor or Schema Designer; ``admin``: Database Manager); otherwise it answers 405 like the
 refusing handler. The environment, the target and the coupling are always read from the user's stored profiles,
 never from the request.
+
+Every change of a write or admin profile, its coupling or its secret is recorded in the audit log after it was saved
+(:mod:`tabrion_studio.write.audit`; a log that is known to be unusable refuses the change first, and a record that
+fails afterwards is kept as a pending marker and reported as ``audit_pending``, review N-4). ``GET /api/write/audit``
+lists the newest records and verifies the whole log, read only.
 """
 
 from __future__ import annotations
@@ -12,6 +17,7 @@ import asyncio
 from collections.abc import Callable
 import json
 import logging
+from pathlib import Path
 from typing import Any, TypeVar
 
 from fastapi import FastAPI, Request, Response
@@ -32,6 +38,7 @@ from tabrion_studio.config.write_areas import WriteAreas
 from tabrion_studio.config.writer import SaveError
 from tabrion_studio.problems import problem_response
 from tabrion_studio.services.connections import ConnectionRegistry
+from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, Unlocks, write_profile_id
 
@@ -87,10 +94,29 @@ def _coupling(write: WriteProfile, reads: list[Profile]) -> None:
         raise FormError("studio.write_profile_invalid", [(_POINTERS.get(code, "profile"), code)])
 
 
+#: The listing of ``GET /api/write/audit`` by default and at most.
+AUDIT_LISTING = 200
+AUDIT_LISTING_MAX = 1000
+
+
+def _limit(raw: str | None) -> int | None:
+    if raw is None:
+        return AUDIT_LISTING
+    if not raw.isascii() or not raw.isdigit() or len(raw) > 4:
+        return None
+    value = int(raw)
+    return value if 1 <= value <= AUDIT_LISTING_MAX else None
+
+
 def add_enabled_write_routes(
-    app: FastAPI, areas: WriteAreas, config: Configuration, registry: ConnectionRegistry
+    app: FastAPI,
+    areas: WriteAreas,
+    config: Configuration,
+    registry: ConnectionRegistry,
+    audit_dir: Path | None = None,
 ) -> Unlocks:
-    unlocks = Unlocks(config, registry, areas)
+    audit = AuditLog(audit_dir)
+    unlocks = Unlocks(config, registry, areas, audit=audit)
     registered: list[tuple[str, tuple[str, ...]]] = []
 
     def route(path: str, method: str) -> Callable[[_Endpoint], _Endpoint]:
@@ -104,6 +130,9 @@ def add_enabled_write_routes(
     def answer(exc: BaseException) -> Response:
         if isinstance(exc, FormError):
             return problem_response(exc.code, issues=exc.issues)
+        if isinstance(exc, AuditError):
+            logger.warning("write refused: no audit record", extra={"event": "studio.audit_unavailable"})
+            return problem_response("studio.audit_unavailable")
         if isinstance(exc, WriteError):
             logger.info("write refused", extra={"event": "studio.write_refused", "code": exc.code})
             return problem_response(exc.code)
@@ -186,6 +215,10 @@ def add_enabled_write_routes(
             return problem_response("access.bad_request")
         return await run(action, doc, doc.get("digest"), doc.get("overwrite") is True)
 
+    def environment_of(write: WriteProfile) -> str | None:
+        read = next((p for p in config.user.profiles().profiles if p.name == write.read_profile), None)
+        return None if read is None else read.environment
+
     def create(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         write = form_write_profile(doc.get("profile"))
         if not unlocks.kind_open(write.kind):
@@ -193,6 +226,7 @@ def add_enabled_write_routes(
         if doc.get("confirm_no_prod_credentials") is not True:
             # N-6: the page shows the note when the profile is created; the server does not create one without it.
             raise WriteError("studio.write_warning_unconfirmed")
+        audit.check()
 
         def change(reads: list[Profile], writes: list[WriteProfile]) -> list[WriteProfile]:
             if any(p.name == write.name for p in reads) or any(w.name == write.name for w in writes):
@@ -204,7 +238,17 @@ def add_enabled_write_routes(
 
         new_digest = config.user.save_write_profiles(change, expected, overwrite=overwrite)
         logger.info("write profile created", extra={"event": "studio.write_profile_created"})
-        return JSONResponse({"id": write_profile_id(write), "digest": new_digest}, status_code=201)
+        recorded = audit.record(
+            "profile.create",
+            profile=write.name,
+            kind=write.kind,
+            read_profile=write.read_profile,
+            environment=environment_of(write),
+            result="ok",
+        )
+        return JSONResponse(
+            {"id": write_profile_id(write), "digest": new_digest, "audit_pending": not recorded}, status_code=201
+        )
 
     def update(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         old, read = stored(doc.get("id"))
@@ -213,6 +257,7 @@ def add_enabled_write_routes(
             raise FormError("studio.write_profile_invalid", [("profile.name", "config.rename_unsupported")])
         if not unlocks.kind_open(write.kind):
             raise WriteError("studio.method_not_allowed")
+        audit.check()
 
         def change(reads: list[Profile], writes: list[WriteProfile]) -> list[WriteProfile]:
             if not any(w.name == old.name for w in writes):
@@ -229,10 +274,30 @@ def add_enabled_write_routes(
             if before.ref != write.password or before.key != config.write_target(write, new_read).key:
                 removed = forget(before)
         logger.info("write profile changed", extra={"event": "studio.write_profile_changed"})
-        return JSONResponse({"id": write_profile_id(write), "digest": new_digest, "secret_removed": removed})
+        before_doc, after_doc = old.to_dict(), write.to_dict()
+        # The keys that changed, never their values; "read_profile" among them is a change of the coupling.
+        changed = sorted(key for key in set(before_doc) | set(after_doc) if before_doc.get(key) != after_doc.get(key))
+        recorded = audit.record(
+            "profile.change",
+            profile=write.name,
+            kind=write.kind,
+            read_profile=write.read_profile,
+            environment=environment_of(write),
+            changed=changed,
+            result="ok",
+        )
+        return JSONResponse(
+            {
+                "id": write_profile_id(write),
+                "digest": new_digest,
+                "secret_removed": removed,
+                "audit_pending": not recorded,
+            }
+        )
 
     def remove(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         old, read = stored(doc.get("id"))
+        audit.check()
 
         def change(_reads: list[Profile], writes: list[WriteProfile]) -> list[WriteProfile]:
             if not any(w.name == old.name for w in writes):
@@ -243,7 +308,10 @@ def add_enabled_write_routes(
         unlocks.write_profile_changed(old.name)
         removed = True if read is None else forget(config.write_target(old, read))
         logger.info("write profile removed", extra={"event": "studio.write_profile_removed"})
-        return JSONResponse({"digest": new_digest, "secret_removed": removed})
+        recorded = audit.record(
+            "profile.delete", profile=old.name, kind=old.kind, read_profile=old.read_profile, result="ok"
+        )
+        return JSONResponse({"digest": new_digest, "secret_removed": removed, "audit_pending": not recorded})
 
     def forget(target: Any) -> bool:
         try:
@@ -276,8 +344,12 @@ def add_enabled_write_routes(
             write, read = stored(profile_id)
             if read is None:
                 raise WriteError("studio.write_coupling_invalid")
+            audit.check()
             config.secrets.store(config.write_target(write, read), doc.get("secret"), doc.get("store"))
             logger.info("write secret stored", extra={"event": "studio.secret_stored"})
+            # Where it went (a fixed word), never the secret. A pending record shows on the audit status.
+            where = doc.get("store") if doc.get("store") in ("keyring", "session") else None
+            audit.record("secret.store", profile=write.name, kind=write.kind, store=where, result="ok")
             return Response(status_code=204)
 
         return await run(store)
@@ -286,9 +358,11 @@ def add_enabled_write_routes(
     async def delete_write_secret(profile_id: str) -> Response:
         def drop() -> Response:
             write, read = stored(profile_id)
+            audit.check()
             if read is not None:
                 config.secrets.forget(config.write_target(write, read))
             logger.info("write secret removed", extra={"event": "studio.secret_removed"})
+            audit.record("secret.remove", profile=write.name, kind=write.kind, result="ok")
             return Response(status_code=204)
 
         return await run(drop)
@@ -332,6 +406,17 @@ def add_enabled_write_routes(
             return answer(exc)
         await asyncio.to_thread(unlocks.lock, session, doc.get("connection_id"))
         return Response(status_code=204)
+
+    # --- the audit log, read only (STU-XW-2) -----------------------------------------------------------------------
+
+    @route("/api/write/audit", "GET")
+    async def get_audit(request: Request) -> Response:
+        if set(request.query_params) - {"limit"}:
+            return problem_response("access.bad_request")
+        limit = _limit(request.query_params.get("limit"))
+        if limit is None:
+            return problem_response("access.bad_request")
+        return await run(lambda: JSONResponse(audit.listing(limit)))
 
     expected = sorted((path, method) for path, methods in WRITE_ROUTES for method in methods)
     if sorted((path, methods[0]) for path, methods in registered) != expected:  # pragma: no cover - a coding error

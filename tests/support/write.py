@@ -54,6 +54,8 @@ class WriteEnv:
         self.state = tmp_path / "state"
         self.state.mkdir(mode=0o700)
         self.config_dir = tmp_path / "config"
+        #: The audit log (STU-XW-2): created by the write package only while an area is on.
+        self.audit_dir = self.state / "audit"
         self.fake = FakeKeyring()
         secrets = Secrets(KeyringStore(lambda: self.fake), SessionSecrets(), {})
         project = ProjectConfig(self.project, self.state, "k1", self.config_dir)
@@ -69,6 +71,7 @@ class WriteEnv:
             history=None,
             drafts=Drafts(store, "k1", self.config.limits),
             write_areas=areas,
+            audit_dir=self.audit_dir,
         )
         self.store = store
         self.headers = {**self.studio.sign_in(), "Origin": ORIGIN}
