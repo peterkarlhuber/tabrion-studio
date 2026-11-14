@@ -68,7 +68,7 @@ after the MVP; marked ¹ in 08).
 
 | ID | Flow and its success criterion | Check | Result |
 |---|---|---|---|
-| UX-F1 | First start: launch link, D-01, profiles, first table **in under 60 s without documentation** | `e2e/ux-acceptance.spec.ts` ("First start", measured: about 4 s); without documentation: QA-S1 (manual) | met (automated part); QA-S1 open (B-5) |
+| UX-F1 | First start: launch link, D-01, profiles, first table **in under 60 s without documentation** | `e2e/ux-acceptance.spec.ts` ("First start", measured: about 4 s); without documentation: QA-S1 (manual) | met (automated part); QA-S1 passed 2026-11-14 (B-5) |
 | UX-F2 | Connect: profile, secret, implicit test, workspace; **an error shows the remedy** | `e2e/ux-acceptance.spec.ts` ("Connect"), `e2e/backend.spec.ts`, `e2e/connections.spec.ts` | met; the workspace overview after Connect is open (TD-034) |
 | UX-F3 | Run a query: ⌘↵, the parameter panel takes the focus for a `:name` without value; **parameters never in the history** | `e2e/editor.spec.ts` ("parameters: a missing value stops the run and gets the focus"), `src/views/editor/drafts.test.ts` (drafts keep title, profile and text, nothing else) | met (there is no history before 1.0) |
 | UX-F4 | Cancel: ⌘. or the button, "Canceled after x s", **effective in under 1 s** | `e2e/editor-backend.spec.ts` (STU-T-020), `e2e/editor.spec.ts` | met |
@@ -91,7 +91,7 @@ after the MVP; marked ¹ in 08).
 
 | Check | Who | State |
 |---|---|---|
-| QA-S1: a 30-minute usability session with the owner on the reference apps (08 section 11); also judges "without documentation" of UX-F1 | the owner | open (B-5) |
+| QA-S1: a 30-minute usability session with the owner on the reference apps (08 section 11); also judges "without documentation" of UX-F1 | the owner | passed: the owner accepted QA-S1 for 1.0 on 2026-11-14 16:34Z (B-5) |
 | Screen-reader sample with VoiceOver and NVDA | a person with both | open (TD-022) |
 | macOS: ⌘ and ⌥ symbols in tooltips, palette and help (08 section 10) | a person on macOS | open; the platform switch is unit-tested (`src/keyboard/shortcuts.test.ts`, `Keyboard.test.tsx`) |
 | PostgreSQL walk-through of every view on a PROD profile with `scram-sha-256` (connect failure, D-02, explorer with DDL, policies and data, editor with a parameter, an error and a cancel, migrations, diagnostics) | STU-050 | done 2026-11-13; found the empty status box of the migration view (fixed) and the items B-6, B-7 |
@@ -130,8 +130,9 @@ B item for 1.0; what stays open moved to TD-060 (see [Open for 1.0](#open-for-10
   **1.0 decision:** open (TD-060). The connection watch of TD-034 reads the latency but does not hand it to the header,
   and the status bar facts need a workspace-wide query state that the views do not share yet; both are more than a
   fix in this PR.
-- **B-5** QA-S1 usability session (needs the owner). **1.0:** open; 08 section 11 asks for a session per release
-  (STU-050 and STU-054), so one session with the owner on the 1.0 build covers both (TD-060).
+- **B-5** QA-S1 usability session (needs the owner). **1.0:** passed. 08 section 11 asks for a session per release
+  (STU-050 and STU-054), so one session with the owner on the 1.0 build covers both (TD-060). The owner confirmed
+  the manual QA-S1 acceptance of Studio 1.0 on 2026-11-14 16:34Z, on the QA kit v2 built from master `ab01ebb`.
 - **B-6** SQL editor: after a run stops at a missing parameter, the focus moves to the parameter field, but
   CodeMirror's completion list stays open over the editor. Done in the STU-020 page PR: the list closes when the
   field takes the focus (`EditorView.test.tsx`).
@@ -157,8 +158,11 @@ passed alone afterwards; Vitest 1 993 passed. PostgreSQL criteria
 (Levuvo formats, DDL against `pg_dump`) run in the `backend integration` job. Result: every 1.0 criterion that 1.0
 builds is met. The German diagnosis texts (UX-10-L4) come with PR #85 (TD-032), which resolves that dependency, and
 the owner decided the four open items on 2026-11-13 ([Owner decisions](#owner-decisions-on-2026-11-13-stu-054)).
-STU-054 is **not accepted yet**: acceptance waits on the manual QA-S1 session (UX-10-S4, TD-046 B-5) and the other
-remaining prerequisites under [Open for 1.0](#open-for-10).
+**QA-S1 passed (2026-11-14):** the owner confirmed the manual QA-S1 acceptance of Studio 1.0 on 2026-11-14 16:34Z
+(UX-10-S4, TD-046 B-5) and stated that the technical implementation and the automated checks are done. Basis: the
+QA kit v2 built from master `ab01ebb` with tabrion `52353da`; the QA-S1 suite (TD-068) passed 38/38 on that build;
+the nine overall-impression items it does not automate were the owner's to judge. With it STU-054 is done; the items
+under [Open for 1.0](#open-for-10) stay as follow-ups. Studio 1.0 is functionally complete, **not released**: H-2 and G-R stay open, nothing is tagged.
 
 `e2e/ux-acceptance-1-0.spec.ts` runs:
 
@@ -263,7 +267,7 @@ remaining prerequisites under [Open for 1.0](#open-for-10).
 | UX-10-S1 | D-07 "EXPLAIN-Kostenwarnung prod¹" and the setting "EXPLAIN-Warnung prod an/aus¹" | not built; 03 section 5.3 calls the warning optional for 1.0 | not in 1.0: the owner decided on 2026-11-13 that D-07 comes after 1.0 (decision (b)) |
 | UX-10-S2 | "Schreibmodus-Ablauf¹" (write mode expiry) | belongs to STU-026 (G-S2) | not in 1.0 |
 | UX-10-S3 | Every flow green on Chromium, Firefox and WebKit | CI jobs `e2e`, `e2e (firefox)`, `e2e (webkit)`; every spec under `frontend/e2e` is required and may not skip (the CI step "Every suite ran and none was skipped" finds new specs by itself, so `ux-acceptance-1-0.spec.ts` needs no change in `.github/`) | met in Chromium locally; Firefox and WebKit by the CI run of the STU-054 pull request |
-| UX-10-S4 | QA-S1 for 1.0 (08 section 11) | manual, the owner | open (TD-060, B-5) |
+| UX-10-S4 | QA-S1 for 1.0 (08 section 11) | manual, the owner | passed (owner decision of 2026-11-14 16:34Z; TD-060, B-5) |
 
 ### Owner decisions on 2026-11-13 (STU-054)
 
@@ -281,12 +285,13 @@ On 2026-11-13 the owner accepted all four recommendations of TD-060, each **opti
 
 ### Open for 1.0
 
-All in TD-060. STU-054 stays **not accepted** until these are done.
+All in TD-060. QA-S1 passed on 2026-11-14; the rest stays open as follow-ups and was not fixed by the acceptance.
 
-- **QA-S1 (manual):** the usability session with the owner on the 1.0 build (UX-10-S4, TD-046 B-5).
+- **QA-S1 (manual), passed:** the usability session with the owner on the 1.0 build (UX-10-S4, TD-046 B-5); the
+  owner accepted it on 2026-11-14 16:34Z.
 - **Dependency resolved:** TD-032 (German `STU-DX-*` and `STU-BK-*` details and remedies) comes with PR #85; with
   it only tabrion's `TAB-*` texts keep `lang="en"`, which the German tour leaves out.
 - **Source scan limits:** UX-10-L2 (module constants, state, other text props, `t(variable)`).
-- **Open from the MVP:** B-4, B-5 (QA-S1, now for 1.0), B-7; TD-043 (export from the data viewer), TD-052 (the ER
+- **Open from the MVP:** B-4, B-7 (B-5, QA-S1, passed); TD-043 (export from the data viewer), TD-052 (the ER
   route and line details), TD-036 (the report from the command line), TD-034 (status bar facts).
 - **Deviation noted:** the query history is its own view, not a tab beside the results (UX-10-H2).

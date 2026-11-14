@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Docs: QA-S1 passed. The owner confirmed the manual QA-S1 acceptance of Studio 1.0 on 2026-11-14 16:34Z, on the QA
+  kit v2 built from master `ab01ebb` with tabrion `52353da` (QA-S1 suite 38/38, PR #103; findings S1-09, S1-15 and
+  S1-32 fixed in PR #104 and PR #106). Recorded in `docs/TODO.md` (TD-046 B-5, TD-060, STU-050, STU-054 done, TD-068
+  to TD-070, the CR-DBX start condition S-1), `docs/architecture/ux-acceptance.md`,
+  `docs/development/qa-s1-suite.md` and the release checklist (A-2). The TD-060 follow-ups stay open. Not a release:
+  H-2 and G-R stay open, nothing is tagged or published. No code change.
 - TD-068: a Playwright suite for the QA-S1 checklist (`frontend/qa-s1/`, one test per case S1-01..S1-38, its
   own config, a results file by case id); opt-in through `TABRION_STUDIO_E2E_PYTHON` and `QA_S1_DEMO_BUILDER`, not
   in CI. How to run it: `docs/development/qa-s1-suite.md`. QA-S1 acceptance stays manual.
