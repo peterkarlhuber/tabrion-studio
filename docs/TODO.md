@@ -1999,3 +1999,8 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `127.a.b.c` address (no proxy, a secure context); on macOS the fallback note with `--port`. Accepted residual risk
   for the owner to confirm (STU-ADR-0002): the macOS fallback with a fixed `--port`, and an old Studio tab that is
   reloaded after the stop on an address another local user has taken over (no session).
+- **Review conditions** (independent review of the A-01 PR, accepted with conditions): C-2 before G-R, folded into
+  GR-2: with a logging HTTP proxy configured, check that Firefox and WebKit/Safari do not send `127.a.b.c` requests
+  through the proxy (Chromium bypasses the proxy for all of `127.0.0.0/8`; the others are unverified). C-3 before
+  G-R: a real-Mac check of the `127.0.0.1` fallback and the `--port` note; the macOS residual risk stays an
+  owner-known risk.
