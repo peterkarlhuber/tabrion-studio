@@ -541,6 +541,82 @@ CATALOG: dict[str, Entry] = {
         "Action not recordable",
         "The audit log does not take the names of this action (empty, too long or too many), so it was not done.",
     ),
+    # The plan, preview and confirmation framework (STU-XW-3, TX-08, TX-09). W-9: 400, never 403 or 404.
+    "studio.plan_executor_unknown": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Kind of change not available",
+        "Studio has no executor for this kind of change.",
+    ),
+    "studio.plan_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Change not valid",
+        "The requested change is missing parts, has parts that are not valid, or is too large.",
+    ),
+    "studio.plan_target_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Target not found",
+        "A target of the change is not a table of this database.",
+        "Refresh the table; it may have changed.",
+    ),
+    "studio.plan_target_partitioned": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Partitioned table",
+        "Studio does not change partitioned tables or their partitions yet.",
+    ),
+    "studio.plan_unknown": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No such plan",
+        "The plan expired or was replaced: there is no open plan with this hash for this session. A plan runs once "
+        "and is then gone, and a newer plan can replace an old one.",
+        "Preview the change again.",
+    ),
+    "studio.plan_binding": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Plan not valid here",
+        "The plan was made for another connection or an earlier unlock, so it was discarded.",
+        "Preview the change again.",
+    ),
+    "studio.plan_expired": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Plan expired",
+        "The plan was not run in time after its preview, so it was discarded.",
+        "Preview the change again.",
+    ),
+    "studio.plan_not_confirmed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Plan not confirmed",
+        "A plan runs only after its preview was confirmed; this one was discarded.",
+        "Preview the change again and confirm it.",
+    ),
+    "studio.plan_confirmation_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Confirmation does not match",
+        "To confirm, type exactly the text the preview asks for.",
+    ),
+    "studio.plan_changed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Plan changed",
+        "The plan no longer matches the hash of its preview, so it was not run.",
+        "Preview the change again.",
+    ),
+    "studio.plan_drift": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Database changed",
+        "The target changed since the preview (its schema, its triggers or rules, or the database file), so nothing "
+        "was run.",
+        "Preview the change again.",
+    ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
         400,

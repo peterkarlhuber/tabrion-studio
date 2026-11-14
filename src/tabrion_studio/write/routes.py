@@ -9,6 +9,9 @@ Every change of a write or admin profile, its coupling or its secret is recorded
 (:mod:`tabrion_studio.write.audit`; a log that is known to be unusable refuses the change first, and a record that
 fails afterwards is kept as a pending marker and reported as ``audit_pending``, review N-4). ``GET /api/write/audit``
 lists the newest records and verifies the whole log, read only.
+
+The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan.Plans` (``app.state.write_plans``):
+make and preview, confirm with the hash and the typed text, execute once.
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ from tabrion_studio.problems import problem_response
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError
+from tabrion_studio.write.plan import MAX_REQUEST_BYTES, Plans
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, Unlocks, write_profile_id
 
 logger = logging.getLogger("tabrion_studio.write")
@@ -93,6 +97,13 @@ def _coupling(write: WriteProfile, reads: list[Profile]) -> None:
     if code is not None:
         raise FormError("studio.write_profile_invalid", [(_POINTERS.get(code, "profile"), code)])
 
+
+#: The keys of the plan routes' bodies (STU-XW-3); any other key is refused.
+_PLAN_KEYS = frozenset({"connection_id", "executor", "request"})
+_CONFIRM_KEYS = frozenset({"connection_id", "plan_hash", "typed"})
+_EXECUTE_KEYS = frozenset({"connection_id", "plan_hash"})
+_DISCARD_KEYS = frozenset({"plan_hash"})
+_MAX_PLAN_BODY = MAX_REQUEST_BYTES + 4096
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -406,6 +417,54 @@ def add_enabled_write_routes(
             return answer(exc)
         await asyncio.to_thread(unlocks.lock, session, doc.get("connection_id"))
         return Response(status_code=204)
+
+    # --- plans: preview, confirmation and execution (STU-XW-3) ------------------------------------------------------
+
+    plans = Plans(unlocks)
+    app.state.write_plans = plans
+
+    async def plan_call(request: Request, keys: frozenset[str], limit: int, call: Callable[..., Any]) -> Response:
+        doc = _json(await request.body(), limit)
+        if doc is None or set(doc) - keys or request.query_params:
+            # A plan is the server's: a body that carries anything else (steps, a fingerprint, an area) is refused.
+            return problem_response("access.bad_request")
+        try:
+            session = session_of(request)
+        except WriteError as exc:
+            return answer(exc)
+        return await run(call, session, doc)
+
+    @route("/api/write/plans", "POST")
+    async def post_plan(request: Request) -> Response:
+        def create(session: str, doc: dict[str, Any]) -> Response:
+            preview = plans.create(session, doc.get("connection_id"), doc.get("executor"), doc.get("request"))
+            return JSONResponse(preview, status_code=201)
+
+        return await plan_call(request, _PLAN_KEYS, _MAX_PLAN_BODY, create)
+
+    @route("/api/write/plans", "DELETE")
+    async def delete_plan(request: Request) -> Response:
+        def discard(session: str, doc: dict[str, Any]) -> Response:
+            plans.discard(session, doc.get("plan_hash"))
+            return Response(status_code=204)
+
+        return await plan_call(request, _DISCARD_KEYS, _MAX_BODY, discard)
+
+    @route("/api/write/plans/confirm", "POST")
+    async def confirm_plan(request: Request) -> Response:
+        def confirm(session: str, doc: dict[str, Any]) -> Response:
+            return JSONResponse(
+                plans.confirm(session, doc.get("plan_hash"), doc.get("connection_id"), doc.get("typed"))
+            )
+
+        return await plan_call(request, _CONFIRM_KEYS, _MAX_BODY, confirm)
+
+    @route("/api/write/plans/execute", "POST")
+    async def execute_plan(request: Request) -> Response:
+        def execute(session: str, doc: dict[str, Any]) -> Response:
+            return JSONResponse(plans.execute(session, doc.get("plan_hash"), doc.get("connection_id")))
+
+        return await plan_call(request, _EXECUTE_KEYS, _MAX_BODY, execute)
 
     # --- the audit log, read only (STU-XW-2) -----------------------------------------------------------------------
 

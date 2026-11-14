@@ -102,6 +102,9 @@ class Unlock:
     connection: WriteConnection
     unlocked_at: float
     last_used: float
+    #: This unlock's own ID: a plan (STU-XW-3) is bound to it, so a plan made under an earlier unlock of the same
+    #: session and connection never runs under a later one (review N-2). Never sent to the page.
+    unlock_id: str = field(default_factory=lambda: secrets.token_hex(16))
 
     def to_dict(self, now: float) -> dict[str, Any]:
         """The write state the page shows (08 section 3): profile, kind, role, environment, expiry. No secret."""
@@ -129,6 +132,9 @@ class AuditedRun:
     transaction: tabrion.Transaction | None = None
     rows: dict[str, int] = field(default_factory=dict)
     audit_pending: bool = False
+    #: The unlock's write connection while the run lasts (STU-XW-3 reads the target's catalog on it for the drift
+    #: check inside the transaction); None outside the run.
+    connection: WriteConnection | None = None
 
     def count(self, kind: str, rows: int) -> None:
         """Add ``rows`` to the count of ``kind`` (``updated``, ``inserted``, ``deleted``): counts only, never rows."""
@@ -320,7 +326,12 @@ class Unlocks:
         """
         return self._require(session, connection_id, area).connection
 
-    def _require(self, session: str, connection_id: object, area: Area) -> Unlock:
+    def require_unlock(self, session: str, connection_id: object, area: Area) -> Unlock:
+        """Like :meth:`require`, but the unlock itself: STU-XW-3 binds a plan to its ``unlock_id`` and reads the
+        target's catalog on its write connection."""
+        return self._require(session, connection_id, area)
+
+    def _require(self, session: str, connection_id: object, area: Area, unlock_id: str | None = None) -> Unlock:
         if not self.areas.on(area):
             raise WriteError("studio.method_not_allowed")
         key = (session, connection_id) if isinstance(connection_id, str) else None
@@ -334,6 +345,9 @@ class Unlocks:
             raise WriteError("studio.write_locked")
         if area not in KIND_AREAS[record.kind]:
             raise WriteError("studio.method_not_allowed")
+        if unlock_id is not None and not secrets.compare_digest(record.unlock_id, unlock_id):
+            # STU-XW-3, review N-2: a plan of an earlier unlock (locked and unlocked again) never runs.
+            raise WriteError("studio.plan_binding")
         self._recheck(record)
         record.last_used = now
         return record
@@ -348,6 +362,7 @@ class Unlocks:
         action: str,
         objects: Iterable[str] = (),
         plan_hash: str | None = None,
+        unlock_id: str | None = None,
     ) -> Iterator[AuditedRun]:
         """Run one write: the hook of STU-XW-3 (plan execution) and STU-026 (changesets).
 
@@ -361,8 +376,10 @@ class Unlocks:
            ``run.audit_pending`` is True, so the caller shows a warning (review N-4).
 
         ``action`` is a token (``data_editor.changeset``), ``objects`` are object names and ``plan_hash`` is the
-        confirmed plan's hash (STU-XW-3 binds it): never a value, a parameter or a statement (TX-13)."""
-        record = self._require(session, connection_id, area)
+        confirmed plan's hash (STU-XW-3 binds it): never a value, a parameter or a statement (TX-13). ``unlock_id``
+        is the unlock a plan was made under (STU-XW-3): another unlock refuses the run (``studio.plan_binding``)
+        before anything is recorded or begins."""
+        record = self._require(session, connection_id, area, unlock_id)
         run = AuditedRun(run_id=secrets.token_hex(8))
         common: dict[str, object] = {
             "run": run.run_id,
@@ -393,6 +410,7 @@ class Unlocks:
         try:
             with record.connection.transaction() as transaction:
                 run.transaction = transaction
+                run.connection = record.connection
                 yield run
             result = "committed"
         except WriteError as exc:
@@ -400,6 +418,7 @@ class Unlocks:
             raise
         finally:
             run.transaction = None
+            run.connection = None
             run.audit_pending = not self.audit.record("run.result", **common, result=result, rows=dict(run.rows))
             if run.audit_pending:
                 logger.warning(

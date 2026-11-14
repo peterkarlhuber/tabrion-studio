@@ -13,6 +13,11 @@
 * ``GET /api/write/audit[?limit=N]``: the audit log of write and admin actions (STU-XW-2), read only: the newest
   records (no values: names, counts, codes and hashes), a fresh verification of its hash chain and the number of
   pending records (review N-4). No route changes or removes a record.
+* ``POST /api/write/plans``: make a plan and get its preview (STU-XW-3, :mod:`tabrion_studio.write.plan`), with
+  ``{"connection_id", "executor", "request"}``; ``DELETE /api/write/plans`` with ``{"plan_hash"}`` drops it.
+* ``POST /api/write/plans/confirm``: ``{"connection_id", "plan_hash", "typed"}``, the typed confirmation (D-09, D-10).
+* ``POST /api/write/plans/execute``: ``{"connection_id", "plan_hash"}``: runs the confirmed plan once, after the
+  binding, expiry and drift checks, through the audited transaction.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -48,6 +53,10 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/profiles/{profile_id:path}/secret", ("PUT", "DELETE")),
     ("/api/write/unlocks", ("GET", "POST", "DELETE")),
     ("/api/write/audit", ("GET",)),
+    # STU-XW-3: the plan, preview and confirmation framework (D-09..D-11).
+    ("/api/write/plans", ("POST", "DELETE")),
+    ("/api/write/plans/confirm", ("POST",)),
+    ("/api/write/plans/execute", ("POST",)),
 )
 
 

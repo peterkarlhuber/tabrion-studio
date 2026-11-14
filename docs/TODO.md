@@ -39,6 +39,13 @@
 > (`tabrion_studio.write.audit`, loaded only while an area is on): hash chain with a head anchor and verification,
 > owner-only files, no values, fail closed before a run or an unlock, pending marker after a run (N-4), read-only
 > `GET /api/write/audit`. Every area stays off. Open: see the CR-DBX section.
+>
+> STU-XW-3 (2026-11-14, branch `claude/project-thread-rdo6g3-stuxw3`): the plan, preview and confirmation framework
+> (`tabrion_studio.write.plan`, loaded only while an area is on): server-side plans with a SHA-256 plan hash bound to
+> session, connection and unlock, single use, 5-minute expiry; target fingerprint (SQLite: file identity and schema;
+> PostgreSQL: the target tables' catalog with triggers, rules and policies); preview with the triggers and rules on
+> the targets; typed confirmation; drift check inside the run's transaction; pluggable executors (none registered
+> until STU-026). Every area stays off. Open: see the CR-DBX section.
 
 ## Summary
 
@@ -59,7 +66,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1 and STU-XW-2 in review, STU-XW-3..4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1, STU-XW-2 and STU-XW-3 in review, STU-XW-4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -500,8 +507,9 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | Shared write foundation: write and admin profiles, unlocking, PROD lock, flags (STU-XW-1) | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1`): flags in `write-areas.toml` (default off, read once at start), write and admin profiles in the user's store only, server-side unlock per session, SQLite and PostgreSQL write connections (K-2), admin privilege check; kill-switch proof in `tests/security/test_write_*.py`; nothing activated |
 | 1.1 | STU-XW-1 follow-up: review findings of PR #111 | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1b`): L-1 write and admin profiles only from the command line's or the platform's configuration folder while an area is on (`studio.write_profiles_ignored`); L-3 the SQLite write connection never creates a missing file (`file:...?mode=rw`, tabrion `create=False`); I-1 the privilege check reports `admin.broad:<pg_* role>` and `admin.createrole_pre16` (tabrion ADR 0015 D-1, D-2). I-3 and L-2 recorded below |
 | 1.1 | Audit log (STU-XW-2) | TABRION STU-XW-2 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw2`): append-only log in `<state>/audit/` (0700/0600, no links, no open handles), SHA-256 hash chain with `head.json` anchor and `verify_log` (edit, deletion, insertion, reordering, truncation), rotation that never overwrites or deletes, fields by allowlist only (names, counts, codes, plan hash; never a value or secret, canary-tested); unlock and `run.start` fail closed (`405 studio.audit_unavailable`), lock, profile, secret and `run.result` records keep a pending marker on failure (N-4) shown in the write profile section; `GET /api/write/audit` read only, 405 with every flag off; the module is not loaded with every flag off. Hook for STU-XW-3 and STU-026: `Unlocks.audited_transaction(session, connection_id, area, action=, objects=, plan_hash=)`. Open points below |
-| 1.1 | Plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-3..STU-XW-4 | G-S2 | **Next**; hooks: `Unlocks.require`, `Unlocks.audited_transaction` (STU-XW-3 passes the confirmed plan hash) and `WriteConnection.transaction`; each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package. STU-XW-4 carries the binding requirement L-2 of PR #111 (below) |
-| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 |
+| 1.1 | Plan, preview and confirmation framework (STU-XW-3) | TABRION STU-XW-3 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw3`): `POST /api/write/plans` (plan and preview), `/confirm` (plan hash and typed text: the write profile's name, for a destructive plan the target's name), `/execute` (once), `DELETE` (drop); the plan hash covers session, connection, unlock, nonce, executor, targets, steps and fingerprint; refusals `studio.plan_*` (400) and the unlock's own (405); drift check inside the transaction (PostgreSQL also after `LOCK TABLE ... IN ROW EXCLUSIVE MODE`), SQLite file identity before each run; the preview names triggers and rules (TX-16); `run.start` carries the plan hash; 405 and no import with every flag off. Open points below |
+| 1.1 | I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-4 | G-S2 | **Next**; carries the binding requirement L-2 of PR #111 (below) |
+| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 (in Studio's pin); brings the first plan executor (`data_editor.changeset`, Tabrion's guided write transaction) and the `PlanReview`/`ChangesetReview` UI |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
 
@@ -555,6 +563,31 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **STU-026 and STU-XW-3 (from STU-XW-2):** every write runs through `Unlocks.audited_transaction`, which writes
   `run.start` before the transaction and `run.result` after it; `action` is a token, `objects` are object names only,
   and the caller shows a warning when `run.audit_pending` is True (N-4). STU-XW-3 passes the confirmed plan hash.
+- **STU-XW-3 open points (for STU-026 and G-S2):**
+  - **No executor is registered.** Tabrion's guided write transaction (TAB-XW-6, tabrion PR #78) is not in Studio's
+    pin; STU-026 registers the Data Editor's executor (`Plans.register`) after the pin moves, passes every shown
+    column as `old` (L-1 of tabrion PR #78) and reports rows with `AuditedRun.count`. Until then every plan request
+    answers `studio.plan_executor_unknown`.
+  - **No UI.** The page has the problem texts of the `studio.plan_*` codes (en, de) but no preview or confirmation
+    dialog yet (D-09, D-10); STU-026 builds `PlanReview` with texts for the risk notes `plan.destructive`,
+    `plan.triggers`, `plan.rules`, `plan.row_security` and its executor's own; the destructive action never has the
+    default focus.
+  - **D-11 (backup before a run)** belongs to the Schema Designer and the Database Manager (STU-CR-5, STU-XDM-2); the
+    framework has no backup step. They add it as a step of their executors or before `execute`.
+  - **Plan audit events:** a plan that is refused before its run (binding, expiry, confirmation) is not recorded;
+    `run.start`/`run.result` record every run and its drift refusal. Decide at G-S2 whether refusals before a run are
+    recorded too.
+  - **SQLite fingerprint scope:** the whole schema of the file (any schema change between preview and run is drift,
+    also of another table), deliberately conservative.
+  - **Partitioned tables (note N-1 of the PR #115 review):** a partitioned table and a partition are refused as
+    targets (`studio.plan_target_partitioned`), because the partitions' triggers, rules and policies fire on a write
+    through the parent and are not fingerprinted or previewed yet. STU-026 decides full support: fingerprint and show
+    every partition (`pg_inherits`, recursively), or keep the refusal.
+  - **Function drift (review M-1 of PR #115, fixed):** the PostgreSQL fingerprint includes the definitions of the
+    functions the target's triggers call and its defaults, constraints, policies, rules and index expressions depend
+    on. The small window after the second comparison and nested function calls stay residual (threat model).
+  - **Trigger details on SQLite:** the preview names SQLite triggers without timing and events (parsing the trigger
+    text is left out); PostgreSQL reports both.
 - **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion
   TB-148) is decided with STU-CR-6 and the profile import and export of STU-XDM-5.
 
