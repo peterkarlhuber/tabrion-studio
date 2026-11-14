@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+
 import { defineConfig, devices } from '@playwright/test';
 
 /**
@@ -10,10 +12,13 @@ import { defineConfig, devices } from '@playwright/test';
  *
  * Reports: the list on the console, the HTML report (QA_S1_REPORT, default qa-s1-results/html) and the results file
  * keyed by case id (QA_S1_RESULTS, default qa-s1-results/results.json; e2e/qa-s1/results-reporter.ts). QA_S1_OUTPUT
- * moves all three (default qa-s1-results).
+ * moves all three (default frontend/qa-s1-results, ignored by Git; a relative QA_S1_OUTPUT is taken from the current
+ * folder, so all three land in one place).
  */
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE || undefined;
-const out = process.env.QA_S1_OUTPUT ?? 'qa-s1-results';
+const out = resolve(
+  process.env.QA_S1_OUTPUT ?? resolve(import.meta.dirname, '..', '..', 'qa-s1-results'),
+);
 
 export default defineConfig({
   testDir: '.',

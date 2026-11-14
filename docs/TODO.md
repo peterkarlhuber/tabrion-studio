@@ -92,6 +92,7 @@
 | TD-065 Security assessment A-01: a fresh random loopback address `127.a.b.c` per start, so no later Studio reuses an earlier origin (service workers, storage); the macOS fallback to `127.0.0.1` and the `--port` advice; what stays open (real Windows and macOS browsers) | P1 | In progress (A-01 PR): the fix, the residual-risk note in STU-ADR-0002 and the regression tests are done; open: the real-device checks (see the entry) |
 | TD-066 STU-055 vector data view: what it leaves for later (the sqlite-vec install status, `halfvec`/`sparsevec` on a pgvector 0.7+ server, an e2e test, other layouts) | P3 | Open (STU-055, PR #97): the pgvector tests run in CI (pgvector CI PR); the rest is open (see the entry) |
 | TD-067 Security assessment, Low and Info findings of Studio: A-02 (request time limit, log flood limit), B-3 (project profiles refuse clear-text passwords), C-01 (lasting secrets never evicted from the redaction), C-02 (exceptions inside container log arguments), C-04 (keyring allowlist), B-4 and C-08 (wording); what stays open | P2 | In progress (assessment Low/Info PR): the fixes, docs and tests are done; open: see the entry |
+| TD-068 QA-S1 checklist suite: Playwright tests of the manual checklist (S1-01..S1-38), opt-in and not in CI; what stays manual | P3 | Done (QA-S1 suite PR, `docs/development/qa-s1-suite.md`); open: see the entry |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -1282,7 +1283,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **B-4, section 3:** the connection switcher can show a latency but showed none after Connect; the status bar's
   running queries (count, a list with cancel) and the last query's rows and time (role and database are TD-034).
 - **B-5, QA-S1:** the 30-minute usability session with the owner on the reference apps; it also judges "without
-  documentation" of the first-start flow (the automated part runs in about 4 s of the 60 s).
+  documentation" of the first-start flow (the automated part runs in about 4 s of the 60 s). The automated pre-run of its
+  checklist: [QA-S1 checklist suite](development/qa-s1-suite.md) (TD-068).
 - **B-6, 4.4:** when a run stops at a missing parameter, the focus moves to the parameter field but CodeMirror's
   completion list stays open over the editor. Done in the STU-020 page PR: the list closes when the field takes the focus.
 - **B-7, 4.3:** at 1280 × 800 the explorer's connection card fills the upper half of the page, so the tree and the
@@ -1597,7 +1599,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     (TD-032's decision, confirmed).
   - (d) 08 section 4.1: no project chooser on the start page (TD-046 B-1); the deviation is accepted.
 - **Dependency resolved:** TD-032 (the `STU-DX-*` and `STU-BK-*` details and remedies in en/de) is done by PR #85.
-- **Still open before STU-054 is accepted:** the manual QA-S1 session (TD-046 B-5) and the other items below.
+- **Still open before STU-054 is accepted:** the manual QA-S1 session (TD-046 B-5) and the other items below. The
+  [QA-S1 checklist suite](development/qa-s1-suite.md) (TD-068) runs the checklist's cases before that session.
 - **From TD-046:** B-4 (the header's latency after Connect; the status bar's running queries and the last query's rows
   and time, with TD-034), B-5 (QA-S1 with the owner, on the 1.0 build; 08 section 11 asks for one session per
   release), B-7 (the explorer's layout at 1280 × 800, with the workspace routes of TD-041 and TD-052).
@@ -2173,3 +2176,19 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     are still formatted as they are; Studio's own code passes no such argument.
   - Not in this PR: C-05 and C-06 (repository settings for the owner, and CI tool hashes, a `.github/` change), C-03
     (tabrion's redaction residues, fixed in tabrion; Studio picks them up with a later pin) and C-07 (TD-030).
+
+### TD-068 · QA-S1 checklist suite: what stays manual
+
+- **Priority:** P3 · **Status:** Done (QA-S1 suite PR); the open items below stay · **Refs:** 08 section 11, TD-046
+  B-5, TD-060, `docs/development/qa-s1-suite.md`, `frontend/e2e/qa-s1/`
+- **Done:** one Playwright test per case of the QA-S1 checklist v2 (S1-01..S1-38) against a real Studio per test on
+  a copy of the QA kit's demo project, in a German Chromium; a results file keyed by case id (`pass`, `fail`,
+  `not_automated`) next to the HTML report. Opt-in through `TABRION_STUDIO_E2E_PYTHON` and `QA_S1_DEMO_BUILDER`;
+  the main Playwright config ignores `e2e/qa-s1/`.
+- **Open:**
+  - The suite is not in CI: it needs the QA kit's `build_demo.py`, which lives outside this repository. Adding it to
+    CI needs the kit (or its demo builder) in the repository and a `.github/` change.
+  - QA-S1 acceptance stays manual (TD-046 B-5, TD-060): understandability, the first-start "without documentation"
+    judgment, the kit scripts started by double-click, operating-system behavior and the overall impression.
+  - The first run's findings (S1-09, S1-15, S1-32) are product bugs, fixed in TD-069. S1-32 also asks for a change
+    of the checklist: a second start replaces the first tab's session, so "Connection lost" never shows there.
