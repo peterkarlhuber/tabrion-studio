@@ -7,7 +7,7 @@ and is the threat model that [STU-ADR-0006](../adr/0006-per-area-write-kill-swit
 Designer (STU-CR-1, G-S3) and the Database Manager (STU-XDM-1, G-S4) get their own extensions; the rows marked
 "shared" here apply to them as well.
 
-**State:** proposed with STU-XW-5; nothing of it is implemented yet. Every measure is a requirement for the work
+**State:** accepted with STU-XW-5 (independent review 2026-11-14); nothing of it is implemented yet. Every measure is a requirement for the work
 package named in its row and is checked by the gate review of G-S2. Studio 1.0 has no write route, and every area
 stays behind its default-off flag until its gate (STU-ADR-0006).
 
