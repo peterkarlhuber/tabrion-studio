@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import tomllib
 from typing import Any
 
@@ -259,6 +260,27 @@ def test_network_and_device_paths_are_refused_by_the_schema(fields: dict[str, An
     """Review T-2: refused as text with config.network_path, so nothing ever resolves them."""
     key = next(iter(fields))
     assert (f"profile[0].{key}", "config.network_path") in _codes(_one(**fields))
+
+
+@pytest.mark.parametrize(
+    "path", ["data/100%.db", "%2F%2Fattacker.example/share/x.db", "a.db?mode=rw", "a.db#x", "file:/a.db?mode=rwc"]
+)
+def test_url_characters_in_a_sqlite_path_are_refused(path: str) -> None:
+    """TD-013: like tabrion 0.2's profilefile (``profilefile.value``, G-T2 B-1), a "?", "#" or "%" in a SQLite path
+    is an error, so a Studio SQLite path is also valid for tabrion's reader and no URL reading can turn it into
+    another path (the PostgreSQL ``database`` is not aligned, TD-013). Text only: the value is not repeated."""
+    result = validate_profiles(_one(path=path))
+    assert [(issue.pointer, issue.code, issue.severity) for issue in result.issues] == [
+        ("profile[0].path", "config.url_character", "error")
+    ]
+    assert result.profiles == []
+    assert path not in json.dumps([issue.to_dict() for issue in result.issues])
+
+
+def test_url_characters_elsewhere_are_not_refused() -> None:
+    """Only the SQLite path: a "#" or "%" in a name, and a plain path, stay valid."""
+    assert _codes(_one(name="#1 at 100%")) == set()
+    assert _codes(_one(path="data/parts-2026.db")) == set()
 
 
 def test_deeply_nested_toml_is_too_deep_not_a_crash() -> None:

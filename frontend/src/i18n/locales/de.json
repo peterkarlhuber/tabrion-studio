@@ -926,6 +926,7 @@
     "choice": "Keine gültige Auswahl.",
     "control_character": "Enthält ein Steuerzeichen oder ein Leerzeichen.",
     "network_path": "Netzwerkpfade und Geräte sind nicht erlaubt.",
+    "url_character": "Ein SQLite-Pfad darf kein ?, # oder % enthalten.",
     "not_for_engine": "Wird von diesem Datenbanktyp nicht verwendet.",
     "plain_password": "Nur ein Verweis wie keyring: oder env:NAME ist erlaubt.",
     "rename_unsupported": "Der Name kann nicht geändert werden.",

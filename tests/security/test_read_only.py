@@ -1506,3 +1506,14 @@ def test_i_r2_one_profile_read_per_connect(monkeypatch: pytest.MonkeyPatch) -> N
     assert len(source.entries) == 1
     assert [entry is source.entries[0] for entry in source.resolved] == [True]
     assert [url.host for url in urls] == ["db.example"]
+
+
+def test_the_catalog_pin_needs_the_inspector_of_a_transaction() -> None:
+    """TD-013: reflection runs on tabrion 0.2's ``Database.inspector()``; ``pin_catalog_path`` refuses an inspector
+    that is not bound to a connection (an engine's would run outside that read-only transaction)."""
+    engine = sqlalchemy.create_engine("sqlite://")
+    try:
+        with pytest.raises(TypeError, match=r"Database\.inspector\(\)"):
+            tabrion_compat.pin_catalog_path(sqlalchemy.inspect(engine))
+    finally:
+        engine.dispose()

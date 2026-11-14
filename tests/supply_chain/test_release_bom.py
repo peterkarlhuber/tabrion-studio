@@ -31,7 +31,7 @@ sys.path.remove(str(SCRIPTS))
 pytestmark = pytest.mark.security
 
 Record = dict[str, object]
-TABRION_COMMIT = "d5821faa8742dea012abda3b663549c038d76543"
+TABRION_COMMIT = "52353daee6cd6e37a7efc45b74061a48beb2b280"
 
 
 def lock_records(*, with_markers: bool = True) -> list[Record]:
@@ -51,7 +51,7 @@ def lock_records(*, with_markers: bool = True) -> list[Record]:
     records.append(
         {
             "name": "tabrion",
-            "version": "0.1.0",
+            "version": "0.2.0",
             "license_expression": "MIT",
             "vcs_url": "https://github.com/peterkarlhuber/tabrion",
             "vcs_commit": TABRION_COMMIT,
@@ -114,11 +114,11 @@ def test_the_sbom_lists_every_pin_and_every_shipped_frontend_package() -> None:
     assert any(purl.startswith("pkg:npm/%40xyflow/react@") for purl in by_purl)
 
     tabrion = next(c for c in by_purl.values() if c["name"] == "tabrion")
-    assert tabrion["version"] == "0.1.0"
+    assert tabrion["version"] == "0.2.0"
     assert prop(tabrion, "tabrion-studio:vcs") == [
-        "git+https://github.com/peterkarlhuber/tabrion@d5821faa8742dea012abda3b663549c038d76543"
+        "git+https://github.com/peterkarlhuber/tabrion@52353daee6cd6e37a7efc45b74061a48beb2b280"
     ]
-    assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.1.0?vcs_url=git%2Bhttps")
+    assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.2.0?vcs_url=git%2Bhttps")
 
     assert "Policy: **passed**" in report
     assert "## psycopg (LGPL-3.0)" in report and "<https://github.com/psycopg/psycopg>" in report
@@ -368,7 +368,7 @@ def _fastapi_version() -> str:
 def _tabrion(**changes: object) -> Record:
     record: Record = {
         "name": "tabrion",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "license_expression": "MIT",
         "vcs_url": "https://github.com/peterkarlhuber/tabrion",
         "vcs_commit": TABRION_COMMIT,

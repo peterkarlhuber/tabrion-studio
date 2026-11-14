@@ -10,9 +10,9 @@ A profile never contains a password, only where the password comes from.
 Your profiles are saved in `profiles.toml` in Studio's configuration folder, readable only by you (0600). Use
 **New connection** for the three-step assistant:
 
-1. **Database:** a SQLite file (the full path; Studio always opens SQLite read-only) or a PostgreSQL server (host,
-   port, database, user, TLS mode). The TLS mode "Automatic" means `verify-full` for any remote host and `prefer`
-   only for this computer. **Or paste a URL** takes a `postgresql://user:password@host:port/database?sslmode=...`
+1. **Database:** a SQLite file (the full path, without `?`, `#` or `%`; Studio always opens SQLite read-only) or a
+   PostgreSQL server (host, port, database, user, TLS mode). The TLS mode "Automatic" means `verify-full` for any
+   remote host and `prefer` only for this computer. **Or paste a URL** takes a `postgresql://user:password@host:port/database?sslmode=...`
    URL apart: its fields fill the form, its password moves to the password field of the next step, and the URL itself
    is cleared. A URL with anything a profile cannot hold (several hosts, a socket folder, other parameters) is
    refused as a whole.
@@ -149,7 +149,10 @@ project, the dialog **Trust the project profiles?** lists:
 
 Choose **Trust** to use the profiles, or **Don't load** (the default) to leave them unused until the page is loaded
 again. After any change of the file, even a comment, Studio asks again and shows what changed since you trusted it.
-A file with errors is not loaded at all; Studio says so and lists the issues.
+A file with errors is not loaded at all; Studio says so and lists the issues. One such error: a SQLite `path` with a
+`?`, `#` or `%` (`config.url_character`), which Tabrion's profile file format refuses too; rename the database file.
+The same holds for your own profiles: since this check, a profile in `profiles.toml` whose SQLite path has one of
+these characters is skipped, and the connections page lists it with that issue until you change the path.
 
 ## Passwords
 

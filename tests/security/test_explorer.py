@@ -32,6 +32,7 @@ from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services import explorer as explorer_module
 from tabrion_studio.services.connections import ConnectionRegistry, RegistryError
 from tabrion_studio.services.explorer import Explorer, ExplorerError
+from tabrion_studio.services.tabrion_compat import CATALOG_SEARCH_PATH
 from tests.security.test_read_only import Source
 from tests.support.access import ORIGIN, make_studio
 
@@ -551,3 +552,27 @@ def test_pg_m1_foreign_keys_into_search_path_schemas(pg: tuple[Explorer, str]) -
             if user_schema is not None:
                 connection.exec_driver_sql(f'DROP SCHEMA IF EXISTS "{user_schema}" CASCADE')
         admin.dispose()
+
+
+@pytest.mark.postgres
+@postgres
+def test_pg_reflection_runs_under_the_pinned_catalog_path(pg: tuple[Explorer, str]) -> None:
+    """TD-013 (review L-2 and I-3 of PR #91), without a superuser: inside ``OpenConnection.inspect`` (tabrion 0.2's
+    ``Database.inspector()``) the session's ``search_path`` is ``tabrion_compat.CATALOG_SEARCH_PATH`` and the
+    transaction is read-only; the pin is transaction-local, so the next statement has the session's own path."""
+    explorer, connection_id = pg
+    opened = explorer.registry.get(connection_id)
+
+    def settings(found: sqlalchemy.Inspector) -> tuple[Any, Any, Any]:
+        bind = found.bind
+        assert isinstance(bind, sqlalchemy.Connection)
+        path = bind.exec_driver_sql("SELECT pg_catalog.current_setting('search_path')").scalar()
+        read_only = bind.exec_driver_sql("SELECT pg_catalog.current_setting('transaction_read_only')").scalar()
+        return path, read_only, found.get_schema_names()
+
+    path, read_only, schemas = opened.inspect(settings)
+    assert path == CATALOG_SEARCH_PATH
+    assert read_only == "on"
+    assert "studio_explorer" in schemas
+    session_path = opened.fetch("SELECT pg_catalog.current_setting('search_path')", catalog=False)
+    assert session_path != [(CATALOG_SEARCH_PATH,)]

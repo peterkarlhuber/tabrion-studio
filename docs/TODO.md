@@ -21,7 +21,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -48,7 +48,7 @@
 | TD-010 STU-006 and STU-007 reviews: remaining Low and Info items (T-1 rest, I-1, I-3..I-5; STU-007 I-4, I-5; R-1, T-4 rest, T-5 and STU-007 L-1 done) | P2 | Open |
 | TD-011 STU-008 parts that wait for a later package or a `.github` change (file dialog, `openapi in sync` job, renaming, favorites; the connection test, Connect and URL paste are done in the STU-008 connect PR #42) | P2 | Open |
 | TD-012 STU-009 integration: the PostgreSQL CI job, the move to tabrion v0.1.0, the binding for STU-011 | P1 | Done (PR #15; the STU-011 binding stays a rule) |
-| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Open (STU-011 done in PR #18) |
+| TD-013 STU-011 query engine on tabrion 0.1: the move to tabrion 0.2 (`Transaction.stream`/`cancel`, `tabrion.Column`) and its follow-ups | P1 | Partly done (TD-013 PR: pin on tabrion 0.2.0 `52353da`, `Database.inspector()`, `config.url_character`; stream, cancel, `Column`, `check` and the session reset stay as shims, see the entry) |
 | TD-020 STU-052 parts that wait for the SQL editor and the explorer (editor shortcuts, keyboard-only E2E of every main flow; `keyboard.spec.ts` is a required e2e suite since the CI e2e-list PR) | P2 | Done (F6 over the panes and the keyboard-only E2E of every main flow in the STU-052 rest PR; format and history in the STU-020 page PR) |
 | TD-021 language, theme and density were lost at every start (browser storage per port); now saved in `settings.toml` | P2 | Open (#17 merged as `061db9d`; I-5, I-6 left) |
 | TD-022 STU-053 parts that wait for later packages or a person (screen-reader sample, ER diagram, STU-016 pages, Firefox/WebKit, the final MVP report) | P2 | Open |
@@ -80,7 +80,7 @@
 | TD-052 STU-023 ER diagram: what it leaves for later (the route `/c/:conn/schema` with the workspace, a diagram across schemas, column-to-column lines and cardinality marks, moving boxes, schemas of more than 1000 tables, the diagram in the reference-app E2E, Firefox and WebKit runs of the new specs only in CI) | P3 | Open (STU-023 PR) |
 | TD-050 Joint regression JR-N2: the real-server suite `e2e/backend.spec.ts` left a `studio-e2e-*` directory in the temp folder after every run (its `afterAll` only stopped the server) | P3 | Done (PR #68) |
 | TD-055 Test order: the canary `test_a_failing_lifespan_of_any_app_logs_no_traceback_text` failed after `tests/unit/test_server.py`, whose default `uvicorn.Config` left Uvicorn's own logging config (stderr handler, `propagate=False`) in the process; Studio's redaction now takes over Uvicorn's and asyncio's loggers, and every test restores their state; left: records of child loggers after a later `dictConfig` (not hit by `serve()`) | P2 | Done (PR #78) |
-| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Open; a G-R precondition (G-S1 decision 13: fix in tabrion, then the new tabrion pin in Studio) |
+| TD-056 tabrion's `DbErrorRedactionFilter` strips `DETAIL:` (with `HINT:`, `CONTEXT:`) only where it starts a line: a one-line message with `DETAIL:` in the middle and no database exception object keeps its values (owner: tabrion; PR #78 review F-9) | P2 | Done for Studio (TD-013 PR: tabrion 0.2.0 has the fix, tabrion TB-144; Studio pins it and `test_a_database_detail_in_the_middle_of_a_line_is_redacted` checks it); G-R precondition GR-5 met |
 | TD-057 Export slot race: a client that started the next export on a connection right after reading the previous one to its end could get `studio.export_busy` (the worker freed the slot only after its last log line) | P2 | Done (PR #80) |
 | TD-058 STU-053 audit walk in WebKit: "explorer Policies tab: every Tab stop ... is in view" failed once in CI (PR #80, run 43405250149) with the selected tree row out of view; WebKit scrolls a newly focused element into view from a zero-delay timer, and the walk measured in the same task. Test race, no product bug; the walk now measures one task later | P2 | Done (PR #81) |
 | TD-061 STU-028 release SBOM: the macOS and Windows license records and `scripts/release_bom.py --strict` as a CI step (a `.github/` change); the inherited SPDX parenthesis gap of `check_licenses.py` (review L-6); a license record of a package the lock does not pin is ignored by `release_bom.py` (re-check R-1) | P2 | Done in PR #90 (its workflow-change review pending): the nightly jobs `license records (<system>)` and `release SBOM (strict)`, in nightly.yml and not in a required job (reason in the entry); L-6 and R-1 fixed with tests. Open: the first nightly run's result, attaching the files to a release (G-5, after G-R) |
@@ -111,12 +111,14 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   specifier. The commit is pinned by its **full SHA** in a constraints file
   (`tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`; no branch, tag or short SHA). Both are
   enforced by `tests/security/test_dependencies.py` (`test_pyproject_follows_rc8`,
-  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_v0_1_0`).
+  `test_pin_files_pin_only_full_commits`, `test_the_constraints_file_pins_tabrion_0_2_0`).
 - **Done:** `pyproject.toml` declares `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, and
   `constraints/tabrion-integration.txt` pins tabrion v0.1.0, the merge commit of tabrion PR #56
   (`d5821faa8742dea012abda3b663549c038d76543`). Every install reads the constraints file (`-c`, or
   `PIP_CONSTRAINT` for the wheel smoke test in CI); a later tabrion version moves the pin in that one file. STU-015
-  (PR #29) adds the `migrations` extra: `tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2`.
+  (PR #29) adds the `migrations` extra: `tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2`. The TD-013 PR moves
+  to tabrion 0.2.0, the untagged merge commit of tabrion PR #65 (`52353daee6cd6e37a7efc45b74061a48beb2b280`), and
+  the range `tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3`.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
@@ -387,7 +389,7 @@ merge after OA-004.
 | TABRION STU-009 | Connection registry and read-only enforcement | P0 | STU-007, TAB-040 | Done (PR #15; tabrion v0.1.0 pinned by full SHA, RC-8): registry, read-only SQLite (mode=ro, query_only, authorizer) and PostgreSQL (read-only session, `read()`, one statement, no transaction control), routes, connection test backend, engines disposed on shutdown, project SQLite only through `ProjectConfig.database_file` (T-1); STU-T-010..013, -024 in `test_read_only.py`; the `backend integration (PostgreSQL 17)` CI job. Open: the page (TD-011) |
 | TABRION STU-051 | Status indicators and dialogs | P1 | STU-005 | Done (PR #5, review accepted): environment badge in header, tabs and title, D-01, D-02, D-06, D-08 with tested focus rules; their owners arrive with STU-006/008/011/012 |
 | TABRION STU-011 | Query engine (SSE, caps, cancel) | P0 | STU-009, TAB-042 | Done (PR #18), built on tabrion 0.1 behind `services/tabrion_compat.py` (TD-013): `POST /api/queries`, state, SSE events, row pages, cancel; row, byte and cell caps, server-side cursor, timeouts, 4 parallel queries; STU-T-018..020 in `test_queries.py` (SQLite always, PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`). The page's heartbeat stays as it is: the SSE stream is per query |
-| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through `tabrion_compat.inspector` until `Database.inspector()` (TD-013); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. The page (`/explorer`: tree, search, detail tabs) is merged (PRs #43, #46); follow-up PR #51 makes the "past the first 5000" test cheaper to render (cause: rendering 500 rows on connect under load, not the filter; no timeout raised) and resets the page through `switchProfile` when Open finds its profile deleted (Low of `stu-010-fu-review.md`; review `stu-010-fu2-review.md` accepted). It ships with the E2E test against both reference apps (`e2e/explorer-reference.spec.ts`, needs `TABRION_STUDIO_E2E_EXAMPLES`). Open: the T-10 TLS finding (STU-014), DDL and policies (release 1, STU-022; the page part in the STU-022 page PR #54), and the parts of TD-041 |
+| TABRION STU-010 | Explorer backend (catalog, table detail, extensions, SQLite facts) | P1 | STU-009, TAB-042 | Done (PR #19), reflection through tabrion's `Database.inspector()` since the TD-013 PR (before: `tabrion_compat.inspector`); 500 tables < 1 s on SQLite and PostgreSQL (`test_explorer.py`); review `stu-010-review.md` fix round done (M-1 foreign keys from `pg_constraint`, L-1..L-3, I-1..I-7), delta re-review ACCEPTED with N-1, N-2, I-9 and the SQLite < 3.37 fallback test done. The page (`/explorer`: tree, search, detail tabs) is merged (PRs #43, #46); follow-up PR #51 makes the "past the first 5000" test cheaper to render (cause: rendering 500 rows on connect under load, not the filter; no timeout raised) and resets the page through `switchProfile` when Open finds its profile deleted (Low of `stu-010-fu-review.md`; review `stu-010-fu2-review.md` accepted). It ships with the E2E test against both reference apps (`e2e/explorer-reference.spec.ts`, needs `TABRION_STUDIO_E2E_EXAMPLES`). Open: the T-10 TLS finding (STU-014), DDL and policies (release 1, STU-022; the page part in the STU-022 page PR #54), and the parts of TD-041 |
 | TABRION STU-013 | Data viewer backend (keyset pages, sort, filters, cell detail) | P1 | STU-010, STU-011 | Done (PR #24), on tabrion 0.1 like STU-011 (TD-013): `GET .../tables/{schema}/{name}/rows` and `.../cell`; every statement has a `LIMIT` (spy test), keyset paging by primary key, `rowid`/`ctid` without one, `OFFSET` for views with its hint, server-side page tokens; `test_viewer.py` on SQLite and PostgreSQL. Review `stu-013-review.md` fix round done (H-1, H-2, M-1..M-4, L-1, L-3..L-5, I-1..I-3; L-2 kept open, see "STU-013 viewer: review items kept open"); delta re-review of `4ad445a` fixed (N-1 typed row identity, H-2 residual `extra_float_digits=3` pin and progress guard, M-4 residual batch cap). The `ViewerTimeout` of `test_m4_a_small_first_row_does_not_size_the_next_batch` on Python 3.12 in CI is fixed in the test: tracemalloc plus coverage's line tracer on 3.12 made the statement check take about 2 s, past the `lite` profile's 800 ms, so the test now gives its statement a timeout it cannot reach (its assertions are unchanged; delta check `stu-013-delta-v010-review.md` accepted). Its condition C-1 is fixed the same way: `test_pg_r1_decoded_json_counts_toward_the_page_cap` timed out under the `pg` fixture's 1.5 s on 3.12 with coverage and now gets the same 300 s statement timeout, as do the two other tracemalloc tests, `test_bytes_are_capped_on_the_server` and `test_pg_bytes_are_capped_on_the_server`, which timed out the same way on a loaded machine. The page: the explorer's Data tab (STU-013 page PR #52; `docs/architecture/viewer.md`, "The page"), open items TD-042; editing stays STU-026 |
 | TABRION STU-014 | Diagnostics (MVP) | P1 | STU-009 | Done (PR #25), on tabrion 0.1 (`tabrion.check` on the driver connection, TD-013): `POST /api/connections/{id}/diagnostics`, tabrion's findings without those about Studio's own session, Studio's `STU-DX-001..010` (prod TLS, T-10 / STU-T-021, read-only role that can write in any way or through any role it can become, owner in any schema, default privileges, role settings with their precedence, SQLite rows written with foreign keys off or a broken foreign key, the time limit); `POST .../diagnostics/cancel`; the catalog against prepared databases in `test_diagnostics.py` (FK off, 0644, superuser, no timeout, the write paths of M-2). Review `stu-014-review.md` fix round done (M-1..M-3, L-1..L-6, I-1..I-3); delta review of `a11c8bb` fixed (N-1 the cancel stops SQLite's `quick_check` alone, CI-1 role-making tests under the `postgres_superuser` marker plus owner-level tests, T-1 tests for the 7 surviving mutants, L-5 narrowed); the CI workflow change for CI-1 is in this PR (accepted by the workflow-change review). The diagnostics view in the page: `/diagnostics` (PR #39): run on a click with D-02 for PROD, run again on the shown connection, cancel (before and during the run, on a profile switch and on leaving the page), findings by severity with icon and word, Studio's titles in en/de, every server text escaped and capped (U-1), a fail-closed parser, stale answers dropped, buttons kept focusable (aria-disabled); Vitest, Playwright and axe in light/dark × en/de; review `stu-014-ui-review.md` C-1..C-3 and L-1..L-3 done. Open: the report export is STU-025 (backend in PR #40; the page's download button and backup hints are TD-036), the rest of 08 section 4.9 (TD-032: route, progress, documentation link, "OK" rows; Studio's details and remedies are en/de since the diagnostics-texts PR) |
 | TABRION STU-015 | Migration status (Alembic, SQLite `user_version`) | P1 | STU-009 | Done (PR #29): `GET /api/connections/{id}/migrations`, the per-project code trust (`/api/project/code-trust`, off by default, bound to the digest of `alembic.ini` and the revision files) and the worker process for `tabrion.migrations.status` (only the connection's target, minimal environment, 30 s timeout); threat-model entry T-16 in `docs/architecture/migrations.md`. Review fix round (`stu-015-review.md`): H-1 the worker runs the hashed bytes and reads no bytecode of the project, M-1 the driver loads before the project's folders are on `sys.path`, M-2 bounded read and kill without waiting for the pipe (Windows: TD-024), M-3 tests for `-I`, the closed streams, the answer cap and `os._exit`, L-1 the T-16 wording, L-2 cap while reading, L-3 one worker at a time (`studio.migrations_busy`). The trust dialog and the status view in the page are in PR #32. F-7 of the STU-016 review (TD-054, PR #75): the digest also covers the project modules under the `prepend_sys_path` folders, versioned; review C-1 of the fix: the worker holds project modules reached through Studio's environment (editable installs) to the hashed bytes as well. Open: the T-16 row and the changed T-08 text in doc 03 section 7.3 (coordinating thread); tests against `examples/parts` of the tabrion repository once it has an Alembic project (the tests use their own fixture); the Levuvo formats are STU-024 (done) |
@@ -860,8 +862,34 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
 ### TD-013 · STU-011 query engine on tabrion 0.1: what changes with tabrion 0.2
 
-- **Priority:** P1 High · **Status:** Open (STU-011 done in PR #18) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to
-  §5.6, backlog TAB-033/TAB-042, `docs/architecture/queries.md`
+- **Priority:** P1 High · **Status:** Partly done (STU-011 done in PR #18; the pin move and the inspector in the
+  TD-013 PR) · **Refs:** 03 §5.3, §6, §9, doc 04 §5.3 to §5.6, backlog TAB-033/TAB-042, `docs/architecture/queries.md`
+- **Done in the TD-013 PR (tabrion 0.2.0):** `constraints/tabrion-integration.txt` pins tabrion 0.2.0, the untagged
+  merge commit of tabrion PR #65 (`52353daee6cd6e37a7efc45b74061a48beb2b280`; no tag, no release), and
+  `pyproject.toml` takes `>=0.2,<0.3`. tabrion 0.2.0 changes only its `dev` extra, so the runtime set and
+  `constraints/runtime-lock.txt` are unchanged (`runtime_lock.py check` and `check-installed` pass on it).
+  `scripts/check_tabrion_api.py` needs no change (the 37 names Studio uses are public and stable in 0.2.0's
+  `surface.json`; `docs/api-consumers.md` is unchanged). `tabrion_compat.inspector` is gone: `OpenConnection.inspect`
+  uses `Database.inspector()` and `tabrion_compat.pin_catalog_path` sets the fixed catalog search path on its
+  connection first (`test_explorer.py` unchanged; `test_pg_h1_planted_operators_are_never_called` fails without the
+  pin). tabrion 0.2's profile file reader refuses `?`, `#` and `%` in a SQLite `path` (`profilefile.value`, tabrion
+  0c3fd7a, G-T2 B-1); Studio's validator now does the same (`config.url_character`), so a project file with such a
+  path is invalid with that issue (`test_url_characters_in_a_sqlite_path_make_the_project_file_invalid`).
+- **Not replaced yet, and why (checked against 0.2.0):** `stream`/`ResultCursor` -> `Transaction.stream`: 0.2 wraps a
+  `str` in `text()`, which reads `:name` inside literals (I-2), so Studio would need to hand it an escaped
+  `TextClause` built from its lexer; on PostgreSQL it always opens a server-side cursor, which `EXPLAIN` and `SHOW`
+  cannot use (Studio picks a plain cursor for them); its batch size is fixed per stream, while Studio's 2 MB fetch
+  budget changes the size per fetch (M-3, R-M1). `Cancel` -> `Transaction.cancel`: 0.2 cancels the whole transaction
+  and keeps a PostgreSQL connection that got one out of the pool (H-1 holds), but Studio's `Cancelled` and
+  `_discard` paths and their tests (`test_l2_*`, `test_*h1_*`) move with `stream`. `Column` -> `tabrion.Column`:
+  0.2's type names come from `format_type` (`integer`), Studio's from psycopg (`int4`), a visible change of the result
+  columns; it moves with `stream`. `check` -> `tabrion.check(db)`: unchanged in 0.2 (`check(Database)` exists since
+  0.1); Studio keeps the driver-connection form for the cancel of `quick_check` (M-1 of `stu-014-review.md`).
+  `reset_session`: 0.2 has no session reset of its own, so Studio's check-in reset stays (`test_pg_m2_*`). The
+  extensions query and the SQLite facts: `tabrion.postgres.extension_status` and `tabrion.sqlite.diagnose` are the
+  same in 0.1 and 0.2, so they are not part of this move. Open: Studio's PostgreSQL `database` field does not refuse
+  the URL characters that tabrion's reader refuses there (`/?#%@`); Studio builds the URL with
+  `sqlalchemy.URL.create`, so the name is not read as a URL; decide whether to align it too.
 - **Built on tabrion 0.1:** STU-011 (and STU-010) depend on TAB-042, tabrion 0.2 with `Transaction.stream`,
   `Transaction.cancel`, `tabrion.Result`/`Column` and `Database.inspector()`. Until then
   `services/tabrion_compat.py` builds stream, cancel and column metadata from `Database.read()` and
@@ -1519,8 +1547,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
 ### TD-056 · tabrion's `DbErrorRedactionFilter` keeps `DETAIL` values in the middle of a line
 
-- **Priority:** P2 Medium · **Status:** Open · **Owner:** tabrion (`tabrion.errors.DbErrorRedactionFilter`) ·
-  **Refs:** PR #78 review F-9, TS-001, STU-009, `docs/architecture/errors-and-logging.md`
+- **Priority:** P2 Medium · **Status:** Done for Studio (TD-013 PR) · **Owner:** tabrion
+  (`tabrion.errors.DbErrorRedactionFilter`) · **Refs:** PR #78 review F-9, TS-001, STU-009, `docs/architecture/errors-and-logging.md`
 - **What:** the filter removes `DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts only where they start a line.
   A one-line message such as `... DETAIL: Key (email)=(...)` that carries no database exception object keeps the
   values; with a line break before `DETAIL:` they are removed. Pre-existing (the same on `e93c4f3`), not part of
@@ -1530,6 +1558,12 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   tabrion pin. Not fixed in Studio.
 - **Owner decision (G-S1, 2026-11-13, decision 13, option A):** fixed in tabrion, no second filter in Studio; the
   residual risk is accepted until then, and the fix with the pin update is a G-R precondition (GR-5).
+- **Done (TD-013 PR):** tabrion 0.2.0 (`52353da`, tabrion TB-144) removes a `DETAIL:`, `HINT:`, `CONTEXT:` or
+  `QUERY:` part in the middle of a line with one blank after the label, also in a record without a database
+  exception. Studio pins that commit, and `tests/security/test_canary.py::
+  test_a_database_detail_in_the_middle_of_a_line_is_redacted` sends such a one-line message (in the message and as
+  an argument, each label) through Studio's log setup and requires the canary to be absent from the file and the
+  console; it fails with tabrion 0.1.0. GR-5 is met; no second filter in Studio.
 
 ### TD-060 · STU-054 UX acceptance 1.0: what stays open
 

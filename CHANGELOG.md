@@ -629,6 +629,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- TD-013: a SQLite `path` with a `?`, `#` or `%` in a profile file (`.tabrion/studio.toml` or `profiles.toml`) is
+  the error `config.url_character`, as in tabrion 0.2's profile file reader (`profilefile.value`, tabrion G-T2 review
+  B-1: in a SQLAlchemy URL `%` is unquoted, so `%2F%2Fhost/share/x.db` would become a network path). Such a project
+  file is shown as invalid with that issue and cannot be trusted; the value is not repeated. Studio's own connection
+  never read the path as a URL; this aligns the SQLite `path` with Tabrion's reader (not the PostgreSQL `database`,
+  which Tabrion's reader checks more strictly; docs/TODO.md TD-013). A profile in your own `profiles.toml` with such a
+  path is skipped and shown with that issue.
+- TD-056 / GR-5: with tabrion 0.2.0, a database `DETAIL:`, `HINT:`, `CONTEXT:` or `QUERY:` part in the middle of a
+  one-line log message (one blank after the label, no database exception) is removed from Studio's logs; a canary
+  test through Studio's log setup pins it (it fails with tabrion 0.1.0).
+
 - TD-061 (review L-6, re-check R-1): `scripts/check_licenses.py` reads SPDX parentheses as groups (AND binds tighter
   than OR), so `(MIT OR GPL-3.0-only) AND LGPL-2.1-only` now fails; a malformed expression fails too, and a trove
   classifier name with parentheses (`ISC License (ISCL)`) stays one name. `scripts/release_bom.py` fails on a license
@@ -775,6 +786,15 @@ All notable changes to this project are documented here. The format follows
   the ci-ok run link before every merge (R-1).
 
 ### Changed
+
+- TD-013 (part): Studio is built and tested against tabrion 0.2.0, the untagged merge commit of tabrion PR #65
+  (`52353daee6cd6e37a7efc45b74061a48beb2b280`; no tag, no release), pinned by full SHA in
+  `constraints/tabrion-integration.txt`; `pyproject.toml` takes `tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3`.
+  The runtime dependency set is unchanged (tabrion 0.2.0 changes only its `dev` extra), so
+  `constraints/runtime-lock.txt` stays as it is. Reflection (explorer, definitions) uses tabrion's
+  `Database.inspector()` instead of the shim `tabrion_compat.inspector`; on PostgreSQL the fixed catalog search path
+  is still set first (`tabrion_compat.pin_catalog_path`). A SQLite `path` with `?`, `#` or `%` is now refused (see
+  Security). The other shims stay for now (docs/TODO.md TD-013).
 
 - TD-032: the English `detail` and `remedy` of Studio's findings and backup hints use plurals ("2 rows" instead of
   "2 row(s)"), and the check names in `STU-DX-008` are made from `params`; the page's note that texts are English now
