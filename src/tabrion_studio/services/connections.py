@@ -254,7 +254,10 @@ def driver_options(
     """
     options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
     if session is not None:
-        options["options"] = startup_options(session, read_only=not write, pin_catalog_path=write)
+        # A read connection calls it exactly as before; only a write connection asks for the write startup values.
+        options["options"] = (
+            startup_options(session, read_only=False, pin_catalog_path=True) if write else startup_options(session)
+        )
         options["application_name"] = APPLICATION_NAME
     if password is None:
         options["password"] = ""
@@ -414,8 +417,9 @@ class OpenConnection:
     timeout_s: float
     _db: tabrion.Database = field(repr=False)
     #: SQLite: ``(device, inode)`` of the database file right after it opened (Windows: volume serial, file ID).
-    #: A write unlock (STU-XW-1, TX-16) opens a write connection only to this same file.
-    database_identity: tuple[int, int] | None = None
+    #: Private, so that the handle's surface stays reading only (STU-T-012); the write unlock (STU-XW-1, TX-16)
+    #: reads it through :meth:`ConnectionRegistry.database_identity`.
+    _database_identity: tuple[int, int] | None = field(default=None, repr=False)
 
     read_only = True
 
@@ -685,7 +689,7 @@ class ConnectionRegistry:
             except OSError:
                 connection.close()
                 raise RegistryError("studio.database_missing") from None
-            connection.database_identity = (info.st_dev, info.st_ino)
+            connection._database_identity = (info.st_dev, info.st_ino)
         return connection
 
     @contextlib.contextmanager
@@ -770,6 +774,11 @@ class ConnectionRegistry:
             self.close(connection.id)
             raise RegistryError("studio.connection_stale")
         return connection
+
+    @staticmethod
+    def database_identity(connection: OpenConnection) -> tuple[int, int] | None:
+        """SQLite: ``(device, inode)`` of the file ``connection`` opened, recorded right after it opened (STU-XW-1)."""
+        return connection._database_identity
 
     def _still_valid(self, connection: OpenConnection) -> bool:
         try:

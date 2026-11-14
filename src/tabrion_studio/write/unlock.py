@@ -212,7 +212,7 @@ class Unlocks:
             if path != connection.database_file:
                 raise WriteError("studio.write_target_changed")
             identity = file_identity(path)
-            if identity != connection.database_identity:
+            if identity != self.registry.database_identity(connection):
                 # TX-16: the file at the path is no longer the one the read connection opened.
                 raise WriteError("studio.write_target_changed")
             rows = connection.fetch("PRAGMA journal_mode")
