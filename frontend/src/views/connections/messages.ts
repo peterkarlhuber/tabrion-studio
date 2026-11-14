@@ -95,6 +95,7 @@ const PROBLEMS = new Set([
   'plan_executor_unknown',
   'plan_invalid',
   'plan_target_invalid',
+  'plan_target_partitioned',
   'plan_unknown',
   'plan_binding',
   'plan_expired',

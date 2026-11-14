@@ -211,8 +211,9 @@ Fetch = Callable[[str, dict[str, Any] | None], list[tuple[Any, ...]]]
 _SQLITE_SCHEMA = "SELECT type, name, tbl_name, sql FROM main.sqlite_master ORDER BY type, name"
 
 _PG_CLASS = (
-    "SELECT c.oid::pg_catalog.int8, c.relkind::pg_catalog.text, c.relrowsecurity, c.relforcerowsecurity"
-    " FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
+    "SELECT c.oid::pg_catalog.int8, c.relkind::pg_catalog.text, c.relrowsecurity, c.relforcerowsecurity,"
+    " c.relispartition FROM pg_catalog.pg_class c"
+    " JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
     " WHERE n.nspname OPERATOR(pg_catalog.=) CAST(:schema AS pg_catalog.name)"
     " AND c.relname OPERATOR(pg_catalog.=) CAST(:table AS pg_catalog.name)"
 )
@@ -261,6 +262,39 @@ _PG_PARTS: tuple[tuple[str, str], ...] = (
         "SELECT p.polname::pg_catalog.text, p.polcmd::pg_catalog.text, p.polpermissive,"
         " pg_catalog.pg_get_expr(p.polqual, p.polrelid), pg_catalog.pg_get_expr(p.polwithcheck, p.polrelid)"
         " FROM pg_catalog.pg_policy p WHERE p.polrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid) ORDER BY 1",
+    ),
+    (
+        # Review M-1 of PR #115: the code the target runs, not only its name. Every function a trigger of the target
+        # calls (tgfoid) and every function a column default, a CHECK or other constraint, a policy, a rule or an
+        # index expression of the target depends on (pg_depend): its definition, settings, owner and security mode.
+        # Hashed only; never sent, logged or recorded.
+        "functions",
+        "SELECT p.oid::pg_catalog.int8, p.proname::pg_catalog.text, p.pronamespace::pg_catalog.int8,"
+        " p.prolang::pg_catalog.int8, p.prosrc, p.probin, p.proconfig::pg_catalog.text, p.prosecdef,"
+        " p.proowner::pg_catalog.int8, p.provolatile::pg_catalog.text, p.proisstrict, p.proleakproof,"
+        " p.prokind::pg_catalog.text, pg_catalog.pg_get_function_arguments(p.oid),"
+        " pg_catalog.pg_get_function_result(p.oid)"
+        " FROM pg_catalog.pg_proc p WHERE p.oid OPERATOR(pg_catalog.=) ANY (ARRAY("
+        " SELECT t.tgfoid FROM pg_catalog.pg_trigger t"
+        " WHERE t.tgrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid)"
+        " UNION SELECT d.refobjid FROM pg_catalog.pg_depend d"
+        " WHERE d.refclassid OPERATOR(pg_catalog.=) CAST('pg_catalog.pg_proc' AS pg_catalog.regclass) AND ("
+        " (d.classid OPERATOR(pg_catalog.=) CAST('pg_catalog.pg_attrdef' AS pg_catalog.regclass)"
+        " AND d.objid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT a.oid FROM pg_catalog.pg_attrdef a"
+        " WHERE a.adrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid))))"
+        " OR (d.classid OPERATOR(pg_catalog.=) CAST('pg_catalog.pg_constraint' AS pg_catalog.regclass)"
+        " AND d.objid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT c.oid FROM pg_catalog.pg_constraint c"
+        " WHERE c.conrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid))))"
+        " OR (d.classid OPERATOR(pg_catalog.=) CAST('pg_catalog.pg_policy' AS pg_catalog.regclass)"
+        " AND d.objid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT o.oid FROM pg_catalog.pg_policy o"
+        " WHERE o.polrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid))))"
+        " OR (d.classid OPERATOR(pg_catalog.=) CAST('pg_catalog.pg_rewrite' AS pg_catalog.regclass)"
+        " AND d.objid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT r.oid FROM pg_catalog.pg_rewrite r"
+        " WHERE r.ev_class OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid))))"
+        " OR (d.classid OPERATOR(pg_catalog.=) CAST('pg_catalog.pg_class' AS pg_catalog.regclass)"
+        " AND d.objid OPERATOR(pg_catalog.=) ANY (ARRAY(SELECT i.indexrelid FROM pg_catalog.pg_index i"
+        " WHERE i.indrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid))))"
+        " ))) ORDER BY 1",
     ),
 )
 #: ``pg_rewrite.ev_type``.
@@ -323,7 +357,11 @@ def _postgres_catalog(fetch: Fetch, targets: tuple[Target, ...]) -> tuple[str, t
         found = fetch(_PG_CLASS, {"schema": target.schema, "table": target.table})
         if len(found) != 1 or found[0][1] not in ("r", "p"):
             raise WriteError("studio.plan_target_invalid")  # missing, or not a table (a view, a foreign table)
-        oid, kind, row_security, forced = found[0]
+        oid, kind, row_security, forced, partition = found[0]
+        if kind == "p" or partition:
+            # Note N-1 of the PR #115 review: a write through a partitioned table fires the partitions' triggers,
+            # rules and policies, which are not fingerprinted yet. Refused until STU-026 covers partitions.
+            raise WriteError("studio.plan_target_partitioned")
         doc: dict[str, Any] = {"oid": int(oid), "kind": kind, "row_security": [bool(row_security), bool(forced)]}
         for part, sql in _PG_PARTS:
             doc[part] = [list(row) for row in fetch(sql, {"oid": int(oid)})]
@@ -758,7 +796,7 @@ class Plans:
             try:
                 fingerprint, _ = read_catalog(fetch, plan.engine, plan.content.targets, connection.database_file)
             except WriteError as exc:
-                if exc.code == "studio.plan_target_invalid":
+                if exc.code in ("studio.plan_target_invalid", "studio.plan_target_partitioned"):
                     raise WriteError("studio.plan_drift") from None  # the table is gone or no longer a table
                 raise
             if not _same(fingerprint, plan.fingerprint):

@@ -579,6 +579,13 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     recorded too.
   - **SQLite fingerprint scope:** the whole schema of the file (any schema change between preview and run is drift,
     also of another table), deliberately conservative.
+  - **Partitioned tables (note N-1 of the PR #115 review):** a partitioned table and a partition are refused as
+    targets (`studio.plan_target_partitioned`), because the partitions' triggers, rules and policies fire on a write
+    through the parent and are not fingerprinted or previewed yet. STU-026 decides full support: fingerprint and show
+    every partition (`pg_inherits`, recursively), or keep the refusal.
+  - **Function drift (review M-1 of PR #115, fixed):** the PostgreSQL fingerprint includes the definitions of the
+    functions the target's triggers call and its defaults, constraints, policies, rules and index expressions depend
+    on. The small window after the second comparison and nested function calls stay residual (threat model).
   - **Trigger details on SQLite:** the preview names SQLite triggers without timing and events (parsing the trigger
     text is left out); PostgreSQL reports both.
 - **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion

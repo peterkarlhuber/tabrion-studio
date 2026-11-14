@@ -251,7 +251,10 @@ def _plan_env(roles: dict[str, Any], tmp_path: Path, static_dir: Path) -> tuple[
     url = sqlalchemy.make_url(PG_URL)
     with admin.begin() as connection:
         for statement in (
-            f"CREATE TABLE {prefix}.parts (id integer PRIMARY KEY, material text)",
+            f"CREATE FUNCTION {prefix}.code_default() RETURNS text LANGUAGE sql AS $$ SELECT 'p' $$",
+            f"CREATE FUNCTION {prefix}.material_ok(text) RETURNS boolean LANGUAGE sql IMMUTABLE AS $$ SELECT true $$",
+            f"CREATE TABLE {prefix}.parts (id integer PRIMARY KEY,"
+            f" material text CHECK ({prefix}.material_ok(material)), code text DEFAULT {prefix}.code_default())",
             f"CREATE TABLE {prefix}.log (n integer)",
             f"INSERT INTO {prefix}.parts VALUES (1, 'Steel')",  # noqa: S608 (test names)
             f"CREATE FUNCTION {prefix}.touch() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog"
@@ -356,6 +359,14 @@ def test_a_postgres_plan_names_rules_and_triggers_and_runs_once(
         "CREATE OR REPLACE RULE parts_log AS ON UPDATE TO {p}.parts DO INSTEAD NOTHING",
         "ALTER TABLE {p}.parts ENABLE ROW LEVEL SECURITY",
         "DROP TABLE {p}.parts CASCADE",
+        # Review M-1 of PR #115: the code a trigger, a CHECK constraint or a default runs is part of the fingerprint.
+        "CREATE OR REPLACE FUNCTION {p}.touch() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog"
+        " AS $$ BEGIN NEW.material := 'Hacked'; RETURN NEW; END $$",
+        "CREATE OR REPLACE FUNCTION {p}.touch() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER"
+        " SET search_path = pg_catalog AS $$ BEGIN RETURN NEW; END $$",
+        "CREATE OR REPLACE FUNCTION {p}.material_ok(text) RETURNS boolean LANGUAGE sql IMMUTABLE"
+        " AS $$ SELECT $1 IS NOT NULL $$",
+        "CREATE OR REPLACE FUNCTION {p}.code_default() RETURNS text LANGUAGE sql AS $$ SELECT 'q' $$",
     ],
 )
 def test_drift_on_postgres_aborts_the_run(roles: dict[str, Any], tmp_path: Path, static_dir: Path, change: str) -> None:
@@ -373,6 +384,34 @@ def test_drift_on_postgres_aborts_the_run(roles: dict[str, Any], tmp_path: Path,
         assert (refused.status_code, refused.json()["code"]) == (400, "studio.plan_drift"), refused.text
         if not change.startswith("DROP"):
             assert _material(admin, prefix) == "Steel"
+    finally:
+        env.close()
+        admin.dispose()
+
+
+def test_a_partitioned_table_or_a_partition_is_refused(roles: dict[str, Any], tmp_path: Path, static_dir: Path) -> None:
+    """Note N-1 of the PR #115 review: the partitions' triggers, rules and policies are not fingerprinted yet, so a
+    partitioned table and a partition are refused as targets (until STU-026); nothing is planned."""
+    prefix = roles["prefix"]
+    env, connection_id, admin = _plan_env(roles, tmp_path, static_dir)
+    try:
+        with admin.begin() as connection:
+            for statement in (
+                f"CREATE TABLE {prefix}.parted (id integer, material text) PARTITION BY RANGE (id)",
+                f"CREATE TABLE {prefix}.parted_1 PARTITION OF {prefix}.parted FOR VALUES FROM (0) TO (100)",
+                f"GRANT SELECT, UPDATE ON {prefix}.parted, {prefix}.parted_1 TO {prefix}_w",
+            ):
+                connection.exec_driver_sql(statement)
+        for table in ("parted", "parted_1"):
+            request = {"schema": prefix, "table": table, "rows": [{"id": 1, "material": "Iron"}]}
+            response = env.send(
+                "POST",
+                "/api/write/plans",
+                {"connection_id": connection_id, "executor": "test.rows", "request": request},
+            )
+            assert (response.status_code, response.json()["code"]) == (400, "studio.plan_target_partitioned")
+            assert table not in response.text
+        assert env.studio.client.app.state.write_plans.open_count(env.session()) == 0  # type: ignore[attr-defined]
     finally:
         env.close()
         admin.dispose()

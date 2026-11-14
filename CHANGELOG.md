@@ -21,6 +21,11 @@ All notable changes to this project are documented here. The format follows
   identity. A swapped, edited, replayed, expired or foreign plan and drift are refused with `studio.plan_*` (400),
   never echoing a value. The routes answer 405 and the plan module is not loaded while every flag is off. No executor
   is registered yet (the Data Editor's comes with STU-026 and tabrion TAB-XW-6), and there is no UI yet.
+  Review of PR #115: the PostgreSQL fingerprint also covers the definitions (source, settings, owner, security
+  mode, signature) of the functions the targets' triggers call and their defaults, constraints, policies, rules and
+  index expressions depend on, so a `CREATE OR REPLACE FUNCTION` between preview and run is drift (M-1); partitioned
+  tables and partitions are refused as targets (`studio.plan_target_partitioned`, N-1); `studio.plan_unknown` says
+  the plan expired or was replaced (N-3).
 - STU-XW-2 (CR-DBX): the audit log of write and admin actions, with every write area still off. While an area is on,
   Studio appends a record to `<state folder>/audit/audit.jsonl` (folder 0700, files 0600, never through a link, no
   handle kept open) for every unlock (also a refused one), lock (with its reason), write or admin profile create,

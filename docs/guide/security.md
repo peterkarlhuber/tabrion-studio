@@ -156,7 +156,10 @@ the server answers `405` and the write code is not even loaded.
       nothing runs;
     - **drift check:** inside the run's transaction, just before the first step, Studio reads the targets' catalog
       again (on SQLite the whole schema of the file and the file's identity; on PostgreSQL the target tables' columns,
-      constraints, indexes, triggers, rules and policies, again after locking the tables). If anything changed since
+      constraints, indexes, triggers, rules and policies and the definitions of the functions they call, again after
+      locking the tables). A function replaced in the moment between that check and the steps is not seen; the
+      write role's rights stay the boundary. Partitioned tables and their partitions are not changed yet
+      (`studio.plan_target_partitioned`). If anything changed since
       the preview, or the SQLite file was swapped, nothing runs (`studio.plan_drift`, `studio.write_target_changed`)
       and you preview the change again;
     - the audit log's `run.start` record carries the plan hash. With every area off, the plan routes answer `405`

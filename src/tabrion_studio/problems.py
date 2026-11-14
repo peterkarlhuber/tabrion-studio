@@ -561,11 +561,18 @@ CATALOG: dict[str, Entry] = {
         "A target of the change is not a table of this database.",
         "Refresh the table; it may have changed.",
     ),
+    "studio.plan_target_partitioned": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Partitioned table",
+        "Studio does not change partitioned tables or their partitions yet.",
+    ),
     "studio.plan_unknown": Entry(
         400,
         ProblemKind.REQUEST,
         "No such plan",
-        "There is no open plan with this hash for this session. A plan runs once and is then gone.",
+        "The plan expired or was replaced: there is no open plan with this hash for this session. A plan runs once "
+        "and is then gone, and a newer plan can replace an old one.",
         "Preview the change again.",
     ),
     "studio.plan_binding": Entry(
