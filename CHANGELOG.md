@@ -13,7 +13,7 @@ All notable changes to this project are documented here. The format follows
   (Tabrion's `extension_status`); sqlite-vec's status is reported as not determinable. A column is shown as
   ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index; everything else as "exact search (no ANN index)".
   Hints for a missing extension, no ANN index, unreadable tables and incomplete metadata, in English and German.
-  Design note `docs/architecture/vector-inspection.md`, guide page `docs/guide/vector-data.md`, follow-ups TD-065.
+  Design note `docs/architecture/vector-inspection.md`, guide page `docs/guide/vector-data.md`, follow-ups TD-066.
 - TD-031 (owner decision G-S1 2): the nightly job `newest dependencies (Python 3.11 and 3.14)` installs Studio and the
   pinned Tabrion without the hashed runtime lock, so with the newest releases inside the `pyproject.toml` ranges,
   prints `pip freeze`, and runs `pip check` and the backend tests. It is not a pull request check; a failure opens the

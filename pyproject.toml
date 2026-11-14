@@ -106,7 +106,7 @@ markers = [
     "packaging: needs a built wheel (TABRION_STUDIO_DIST)",
     "postgres: needs a PostgreSQL server (TABRION_STUDIO_TEST_POSTGRES, a libpq URL of a database it may change)",
     "postgres_superuser: needs TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER (a superuser of the same server; makes and drops its own roles)",
-    "pgvector: needs TABRION_STUDIO_TEST_PGVECTOR (a superuser URL of a database whose server has pgvector; creates and drops the extension; not in the CI PostgreSQL job, docs/TODO.md TD-065)",
+    "pgvector: needs TABRION_STUDIO_TEST_PGVECTOR (a superuser URL of a database whose server has pgvector; creates and drops the extension; not in the CI PostgreSQL job, docs/TODO.md TD-066)",
 ]
 filterwarnings = ["error"]
 # A test that runs this long hangs: dump every thread's stack, so a CI job that times out says where (TD-024), and
