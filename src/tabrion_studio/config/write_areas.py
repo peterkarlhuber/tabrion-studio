@@ -32,6 +32,13 @@ A flag is **never** taken from the frontend, the settings file or route, a proje
 the session, a profile, a database or browser storage: nothing but :func:`load_write_areas` builds a
 :class:`WriteAreas` with an area on, and the server keeps the one it read at start for its whole life. Each area's
 state is logged once at start (area and on or off, nothing else), so a flag left on is visible.
+
+**Write and admin profiles follow the same rule (review L-1 of PR #111).** While any area is on, the
+``[[write_profile]]`` tables of ``profiles.toml`` are used only when the user's configuration folder is the folder of
+``write-areas.toml`` (:func:`write_profiles_allowed`): one the command line named, or the platform's folder. A folder
+that ``TABRION_STUDIO_CONFIG_DIR`` or ``TABRION_STUDIO_STATE_DIR`` chose supplies read profiles as before, but no write
+or admin profile, so a per-folder tool cannot point Studio at write profiles (and their ``dev`` labels) inside a
+project. That start is logged as a warning (``studio.write_profiles_ignored``).
 """
 
 from __future__ import annotations
@@ -96,6 +103,31 @@ def flag_dir(config_dir: Path | None, state_dir: Path | None, default: Path) -> 
     if state_dir is not None:
         return state_dir / "config"
     return default
+
+
+def _same_folder(first: Path, second: Path) -> bool:
+    try:
+        return first.expanduser().resolve() == second.expanduser().resolve()
+    except (OSError, RuntimeError):
+        return False  # cannot tell: not the same (fail closed)
+
+
+def write_profiles_allowed(areas: WriteAreas, config_dir: Path, flags_folder: Path | None) -> bool:
+    """Whether the write and admin profiles of ``config_dir/profiles.toml`` may be used (review L-1 of PR #111).
+
+    With every area off nothing uses them, and this is True. With an area on, only when ``config_dir`` is the flag
+    file's folder (:func:`flag_dir`: the command line's folder or the platform's), never a folder that only an
+    environment variable chose. False is logged once as a warning (no path: it may name a project folder)."""
+    if not areas.enabled:
+        return True
+    if flags_folder is not None and _same_folder(config_dir, flags_folder):
+        return True
+    logger.warning(
+        "write and admin profiles are not used: the configuration folder was chosen by an environment variable, "
+        "not by the command line or the platform",
+        extra={"event": "studio.write_profiles_ignored"},
+    )
+    return False
 
 
 def _areas(doc: dict[str, Any]) -> frozenset[Area]:

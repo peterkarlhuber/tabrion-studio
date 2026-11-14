@@ -359,7 +359,7 @@ class Unlocks:
 
     def _is_coupled(self, name: str) -> bool:
         try:
-            return any(write.read_profile == name for write in self.config.user.profiles().write_profiles)
+            return any(write.read_profile == name for write in self.config.user.profiles().stored_write_profiles)
         except Exception:
             return True  # cannot tell: fail closed
 

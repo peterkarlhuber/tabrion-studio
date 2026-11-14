@@ -88,16 +88,30 @@ the server answers `405` and the write code is not even loaded.
   production database do not belong in Studio; it creates the profile only after you confirmed that. Its password
   is kept in the keyring or for this session only, and never appears in a diagnosis report, an export or a support
   bundle.
+- **Write profiles come from the same folder as the switches.** While any area is on, Studio uses the write and
+  admin profiles of `profiles.toml` only when its configuration folder is the one `--config-dir` or `--state-dir`
+  named, or the platform's folder. If `TABRION_STUDIO_CONFIG_DIR` or `TABRION_STUDIO_STATE_DIR` chose the folder (a
+  per-folder tool such as direnv can set them when you enter a project), its read profiles work as before, but its
+  write and admin profiles are not listed or unlocked and none can be created there
+  (`studio.write_profiles_ignored`); the start log says so with the same event. They stay in the file, unchanged.
+  Start Studio with `--config-dir` for that folder to use them.
 - **Unlocking.** A write or admin profile is used only after you unlock it for one open connection by typing its
   name. The unlock is kept on the server, for your page session only, and ends after 15 idle minutes, when the
   connection closes, when the profile or its read profile changes, and when Studio stops. There is no code path for
   `PROD`.
 - **The write connection.** On SQLite it uses `trusted_schema = OFF`, Studio's own authorizer (no schema changes,
   no `ATTACH`, no functions or pragmas outside the read list) and SQLite's defensive mode, and it checks at unlock
-  and before each later use that the file is still the one the read connection opened (device and inode). On
-  PostgreSQL its `search_path` is fixed to `pg_catalog, pg_temp` whatever the role sets, and an admin profile's role
-  is checked on connect: `SUPERUSER`, `BYPASSRLS`, `CREATEROLE` or `REPLICATION`, held directly or through a role it
-  belongs to, is reported as a finding.
+  and before each later use that the file is still the one the read connection opened (device and inode). It never
+  creates a database file: a missing file is refused (`file:...?mode=rw`), and nothing is left behind. On
+  PostgreSQL its `search_path` is fixed to `pg_catalog, pg_temp` whatever the role sets, and the role of a write or
+  admin profile is checked on connect. Reported as findings, each held directly or through a role it belongs to:
+  `SUPERUSER`, `BYPASSRLS`, `CREATEROLE` or `REPLICATION`; `CREATEROLE` on PostgreSQL before 16 once more as
+  dangerous (`admin.createrole_pre16`: there it can grant membership in almost any role); and membership in a
+  predefined `pg_*` role (`admin.broad:<role>`), dangerous for `pg_execute_server_program`, `pg_read_server_files`
+  and `pg_write_server_files`, which equal superuser rights, and a warning for the others, such as
+  `pg_write_all_data` and `pg_read_all_data`. Use a role without any of these. Which finding blocks an unlock is
+  decided before the areas are approved (G-S2 for write profiles, G-S4 for admin profiles); until then they are
+  shown and logged.
 - **Refusals echo nothing.** A refused write answers `400` or `405` with a fixed text (`403` only for the write mode
   of a query), never with a value or a secret of the request.
 

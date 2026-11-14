@@ -21,6 +21,16 @@ All notable changes to this project are documented here. The format follows
   findings for SUPERUSER, BYPASSRLS, CREATEROLE and REPLICATION, direct or inherited. Write secrets never appear in
   a diagnosis report. Kill-switch proof tests in `tests/security/test_write_*.py`. New import-linter contract: the
   read paths never import `tabrion_studio.write`.
+- STU-XW-1 follow-up (review of PR #111): while a write area is on, write and admin profiles are used only from the
+  configuration folder that the command line names or the platform's folder, never from one that
+  `TABRION_STUDIO_CONFIG_DIR` or `TABRION_STUDIO_STATE_DIR` chose; such a folder's write profiles are kept in the
+  file but not listed, unlocked or created (`409 studio.write_profiles_ignored`), and the start logs
+  `studio.write_profiles_ignored` (L-1). The SQLite write connection never creates a missing database file: it is
+  refused before anything opens it, and each pool connection opens `file:<path>?mode=rw` and then tabrion's checked
+  path with `create=False` (L-3). The privilege check of write and admin connections also reports `admin.broad:<role>`
+  for membership in a predefined `pg_*` role, direct or inherited (`dangerous` for `pg_execute_server_program`,
+  `pg_read_server_files` and `pg_write_server_files`), and `admin.createrole_pre16` (`dangerous`) for CREATEROLE
+  before PostgreSQL 16, as tabrion ADR 0015 D-1 and D-2 (I-1).
 - Docs: STU-XW-5 (CR-DBX), the first work package after the development start. STU-ADR-0006 supersedes
   STU-ADR-0003: one server-side flag and one gate per area (Data Editor G-S2, Schema Designer G-S3, Database Manager
   G-S4), each off by default and set only locally by the owner (never from the page, a project file, a URL, a header
