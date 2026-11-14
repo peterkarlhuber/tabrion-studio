@@ -31,11 +31,12 @@ sys.path.remove(str(SCRIPTS))
 pytestmark = pytest.mark.security
 
 Record = dict[str, object]
-TABRION_COMMIT = "52353daee6cd6e37a7efc45b74061a48beb2b280"
+TABRION_COMMIT = "af0458d54467571abfc1afdd44d76e1f4d727c06"
 
 
 def lock_records(*, with_markers: bool = True) -> list[Record]:
-    """One license record per lock pin (MIT; psycopg LGPL-3.0 as declared upstream) and one for tabrion."""
+    """One license record per lock pin (MIT; psycopg LGPL-3.0 as declared upstream) and one for tabrion (first-party
+    LicenseRef-Proprietary, as tabrion 0.2.1 declares it)."""
     records: list[Record] = []
     for component in rb.read_lock(LOCK.read_text(encoding="utf-8")):
         if component.marker and not with_markers:
@@ -51,8 +52,8 @@ def lock_records(*, with_markers: bool = True) -> list[Record]:
     records.append(
         {
             "name": "tabrion",
-            "version": "0.2.0",
-            "license_expression": "MIT",
+            "version": "0.2.1",
+            "license_expression": "LicenseRef-Proprietary",
             "vcs_url": "https://github.com/peterkarlhuber/tabrion",
             "vcs_commit": TABRION_COMMIT,
         }
@@ -114,11 +115,11 @@ def test_the_sbom_lists_every_pin_and_every_shipped_frontend_package() -> None:
     assert any(purl.startswith("pkg:npm/%40xyflow/react@") for purl in by_purl)
 
     tabrion = next(c for c in by_purl.values() if c["name"] == "tabrion")
-    assert tabrion["version"] == "0.2.0"
+    assert tabrion["version"] == "0.2.1"
     assert prop(tabrion, "tabrion-studio:vcs") == [
-        "git+https://github.com/peterkarlhuber/tabrion@52353daee6cd6e37a7efc45b74061a48beb2b280"
+        "git+https://github.com/peterkarlhuber/tabrion@af0458d54467571abfc1afdd44d76e1f4d727c06"
     ]
-    assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.2.0?vcs_url=git%2Bhttps")
+    assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.2.1?vcs_url=git%2Bhttps")
 
     assert "Policy: **passed**" in report
     assert "## psycopg (LGPL-3.0)" in report and "<https://github.com/psycopg/psycopg>" in report
@@ -368,8 +369,8 @@ def _fastapi_version() -> str:
 def _tabrion(**changes: object) -> Record:
     record: Record = {
         "name": "tabrion",
-        "version": "0.2.0",
-        "license_expression": "MIT",
+        "version": "0.2.1",
+        "license_expression": "LicenseRef-Proprietary",
         "vcs_url": "https://github.com/peterkarlhuber/tabrion",
         "vcs_commit": TABRION_COMMIT,
     }
