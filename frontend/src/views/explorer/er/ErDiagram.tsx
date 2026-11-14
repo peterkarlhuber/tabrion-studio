@@ -36,7 +36,17 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { ChevronRight, Download, Maximize, RefreshCw, ZoomIn, ZoomOut } from 'lucide-react';
-import { memo, useEffect, useId, useMemo, useRef, useState, type FocusEvent } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+  type MouseEvent as ReactMouseEvent,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
 
@@ -132,7 +142,11 @@ const TableBox = memo(function TableBox({ data }: NodeProps<BoxNode>) {
       <button
         type="button"
         className={`${styles.boxName} nodrag nopan`}
-        onClick={() => onShow(box.id)}
+        onClick={(event) => {
+          // The canvas's click on the box (`onNodeClick`) would show the table a second time.
+          event.stopPropagation();
+          onShow(box.id);
+        }}
         onFocus={follow}
         aria-label={open}
       >
@@ -246,6 +260,13 @@ const Canvas = memo(function Canvas({
 }) {
   const { t } = useTranslation();
   const { setCenter, getZoom } = useReactFlow();
+  // QA-S1 S1-09: a mouse click anywhere on a box shows its table, as Enter on the box's name does. Without a click
+  // handler xyflow gives a node that can be neither selected nor dragged `pointer-events: none`, so a click on the box
+  // (its name button included) reached the canvas behind it and did nothing.
+  const showNode = useCallback(
+    (_event: ReactMouseEvent, node: BoxNode) => onShow(node.id),
+    [onShow],
+  );
   const nodes = useMemo<BoxNode[]>(() => {
     const texts: BoxTexts = {
       foreign: t('explorer.er.foreign'),
@@ -318,6 +339,7 @@ const Canvas = memo(function Canvas({
         nodesFocusable={false}
         edgesFocusable={false}
         elementsSelectable={false}
+        onNodeClick={showNode}
         disableKeyboardA11y
         fitView
         fitViewOptions={{ padding: 0.08, maxZoom: 1 }}

@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 
 /**
- * QA-S1 automation: the cases of owner's manual usability checklist (S1-01 to S1-38 of checklist v2), one test each, against a real
+ * QA-S1 automation: the cases of the owner's manual usability checklist (S1-01 to S1-38 of checklist v2), one test each, against a real
  * `tabrion-studio` per test on a copy of the QA kit's demo project, in a German browser. It catches regressions
  * before the manual pass; it does not replace it. See qa-s1/studio.ts for the environment it needs.
  *
