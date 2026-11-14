@@ -673,6 +673,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- DC-TS-1 follow-up: `scripts/check_tabrion_source.py` is nodestro-studio's new copy (#198, SHA-256
+  `f1edfc71b5da4986547abe0824833fb73bba532cb5e6a00e202c9ff317747456`): the poisoned `tabrion` is 0.2.99 (was 0.1.0,
+  outside Studio's `>=0.2,<0.3`), so an install by range would pick it over the pinned 0.2.1.
 - C-03 / TD-071 (security assessment, tabrion's redaction residues): Studio pins tabrion 0.2.1, whose
   `DbErrorRedactionFilter` also removes psycopg's `LINE n:` statement echo in the middle of a line or as the only
   label (also escaped inside a `repr`, tabrion C-02), an inline `DETAIL:`/`HINT:`/`CONTEXT:`/`QUERY:` label directly

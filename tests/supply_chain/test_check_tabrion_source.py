@@ -19,8 +19,9 @@ import yaml  # type: ignore[import-untyped]
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "check_tabrion_source.py"
 PIN = ROOT / "constraints" / "tabrion-integration.txt"
-#: SHA-256 of ``scripts/check_tabrion_source.py`` (nodestro-studio, branch of DC-NS-2 at ``bf51022``).
-SCRIPT_SHA256 = "8496bd63327dbee897966bd9d99296d479e2c1c0c55baa9018ee8dba50ab177f"
+#: SHA-256 of ``scripts/check_tabrion_source.py`` (nodestro-studio #198 at ``c036a29``, poisoned 0.2.99; the merge
+#: commit once #198 is merged).
+SCRIPT_SHA256 = "f1edfc71b5da4986547abe0824833fb73bba532cb5e6a00e202c9ff317747456"
 
 
 def _load() -> ModuleType:
