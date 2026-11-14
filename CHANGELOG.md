@@ -14,10 +14,14 @@ All notable changes to this project are documented here. The format follows
   without echoing values or secrets; no code path writes to PROD (E-X7); separate write and admin profiles, the admin
   profile with minimal rights, a privilege check on connect and a finding on over-privilege, and Studio never sets
   up admin rights for itself (E-X8, E-X6); every kill-switch pull request proves default off and a "flag off"
-  negative test per endpoint. New page `docs/architecture/write-threat-model.md` (TX-01..TX-15: flag tampering,
+  negative test per endpoint. New page `docs/architecture/write-threat-model.md` (TX-01..TX-16: flag tampering,
   ineffective kill switches, PROD lock bypass, profile confusion, unlock flow, CSRF, `require_auth` on import, plan
   swap, drift, structural read-only instead of a denylist, over-privileged admin profile, audit-log integrity, values
-  in refusals). The README and the security guide state that write features exist only behind default-off gates and
+  in refusals, hostile database objects on the write path). After the security review of PR #109 (accepted with
+  conditions): write and admin profiles and their couplings only in the user's own profile store, never from a
+  project file (K-1); a fixed catalog-first `search_path` with qualified names on PostgreSQL, `trusted_schema = OFF`,
+  the authorizer and defensive mode on the SQLite write connection, and a file identity check at unlock and before
+  each run (K-2); the six review notes as requirements for STU-XW-1..4 and STU-026. The README and the security guide state that write features exist only behind default-off gates and
   stay non-goals for 1.0; `docs/TODO.md` marks STU-XW-5 in review and STU-XW-1..4 next. No code change.
 - Docs: QA-S1 passed. The owner confirmed the manual QA-S1 acceptance of Studio 1.0 on 2026-11-14 16:34Z, on the QA
   kit v2 built from master `ab01ebb` with tabrion `52353da` (QA-S1 suite 38/38, PR #103; findings S1-09, S1-15 and

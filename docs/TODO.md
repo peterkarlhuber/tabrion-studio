@@ -478,7 +478,7 @@ The work packages are defined in planning document 15 section 9.2 and the progra
 [STU-ADR-0005](adr/0005-crdbx-write-and-admin-gates.md); the shared lock model (one default-off flag per area, set
 only locally by the owner, W-9 error semantics, PROD lock, separate write and admin profiles, the proof every
 kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-kill-switches.md), the threat model
-[Write and admin threat model](architecture/write-threat-model.md) (TX-01..TX-15).
+[Write and admin threat model](architecture/write-threat-model.md) (TX-01..TX-16).
 
 | Version | Area | Work packages | Gate | Status |
 |---|---|---|---|---|
