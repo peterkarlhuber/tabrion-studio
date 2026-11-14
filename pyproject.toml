@@ -8,7 +8,7 @@ dynamic = ["version"]
 description = "Local developer tool for SQLite and PostgreSQL databases built on Tabrion"
 readme = "README.md"
 requires-python = ">=3.11"
-license = "MIT"
+license = "LicenseRef-Proprietary"
 license-files = ["LICENSE", "TRADEMARKS.md"]
 authors = [{ name = "Peter Karlhuber" }]
 keywords = ["database", "sqlite", "postgresql", "developer-tools", "tabrion"]

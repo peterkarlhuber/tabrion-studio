@@ -112,7 +112,7 @@ and the release notes (E-4) name this:
 
 | # | Step | How it is verified | State |
 |---|---|---|---|
-| F-1 | License: `LICENSE` (MIT) and `TRADEMARKS.md` in the wheel and the sdist | `tests/packaging/test_artifacts.py` (job `build and install`) | Checked per commit in CI |
+| F-1 | License: `LICENSE` (proprietary, Levuvo) and `TRADEMARKS.md` in the wheel and the sdist | `tests/packaging/test_artifacts.py` (job `build and install`) | Checked per commit in CI |
 | F-2 | Third-party license report with the psycopg LGPL-3.0 notice and the frontend licenses | `third-party-licenses.md` from `scripts/release_bom.py` | **Met** for `master` on Linux (C-6 completes it) |
 | F-3 | Trademark check of the name "Tabrion Studio" before the first public release (07 §5 G-R) | the owner's check, recorded here | **Owner** |
 

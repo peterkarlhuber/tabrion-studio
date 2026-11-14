@@ -10,8 +10,8 @@ Two logo masters as supplied by Peter Karlhuber on 2026-11-08, each kept byte fo
   for provenance; it is the same file as `tabrion/assets/branding/tabrion-logo-master-2026-11-08.png`.
 
 **License:** the logos and every image in this folder, in `docs/assets/branding/` and in `frontend/public/branding/`
-(and so in the built frontend inside the wheel) are © Peter Karlhuber and are **not** covered by the repository's MIT
-license; see [TRADEMARKS.md](../../TRADEMARKS.md). The scripts are MIT.
+(and so in the built frontend inside the wheel) are © Peter Karlhuber and are **not** covered by the repository's
+LICENSE; see [TRADEMARKS.md](../../TRADEMARKS.md). The scripts are covered by LICENSE.
 
 ## Metadata removed, pixels unchanged
 

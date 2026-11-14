@@ -85,5 +85,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Security reports: [SECURITY.md](SECURITY
 
 ## License
 
-The code and documentation are MIT, see [LICENSE](LICENSE). The names "Tabrion" and "Tabrion Studio" and the logos are
-not covered by the MIT license; see [TRADEMARKS.md](TRADEMARKS.md).
+Proprietary: Copyright (c) 2026 Levuvo. All rights reserved. See [LICENSE](LICENSE). The names "Tabrion" and "Tabrion Studio"
+and the logos are covered separately; see [TRADEMARKS.md](TRADEMARKS.md).

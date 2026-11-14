@@ -102,6 +102,16 @@ def test_psycopg_lgpl_is_an_explicit_exception_only() -> None:
     assert [f.allowed for f in cl.check_python(entries)] == [True, True, False, False]
 
 
+def test_first_party_proprietary_license_is_an_exception_by_name_only() -> None:
+    entries: list[dict[str, object]] = [
+        {"name": "tabrion-studio", "version": "1.0", "license_expression": "LicenseRef-Proprietary"},
+        {"name": "tabrion", "version": "0.2", "license_expression": "LicenseRef-Proprietary"},
+        {"name": "tabrion", "version": "0.1", "license_expression": "MIT"},
+        {"name": "other", "version": "1", "license_expression": "LicenseRef-Proprietary"},
+    ]
+    assert [f.allowed for f in cl.check_python(entries)] == [True, True, True, False]
+
+
 def test_npm_dev_and_shipped() -> None:
     lock = {
         "lockfileVersion": 3,
