@@ -34,10 +34,18 @@ function ownConnecting(current: ActiveConnection | null, item: ProfileItem): boo
 }
 
 export function useConnect(fetcher: typeof fetch): {
-  /** Run `proceed` for `item`, after D-02 where needed; `cancelled` runs when D-02 is cancelled. */
-  guard: (item: ProfileItem, proceed: () => void, cancelled?: () => void) => void;
+  /**
+   * Run `proceed` for `item`, after D-02 where needed; `cancelled` runs when D-02 is cancelled. `askAgain` asks D-02
+   * for a PROD profile even if it was confirmed in this session ("Reconnect" after the user's disconnect, S1-32).
+   */
+  guard: (
+    item: ProfileItem,
+    proceed: () => void,
+    cancelled?: () => void,
+    askAgain?: boolean,
+  ) => void;
   /** Connect to `item` (D-02 first where needed); `done` gets the answer, `cancelled` runs when D-02 is cancelled. */
-  connect: (item: ProfileItem, done: Done, cancelled?: () => void) => void;
+  connect: (item: ProfileItem, done: Done, cancelled?: () => void, askAgain?: boolean) => void;
   /** D-02 while it asks; render it next to the view. */
   dialog: ReactNode;
 } {
@@ -102,14 +110,19 @@ export function useConnect(fetcher: typeof fetch): {
     done(result, item);
   };
 
-  const guard = (item: ProfileItem, proceed: () => void, cancelled?: () => void) => {
-    if (item.environment === 'prod' && !session.prodConfirmed(item)) {
+  const guard = (
+    item: ProfileItem,
+    proceed: () => void,
+    cancelled?: () => void,
+    askAgain = false,
+  ) => {
+    if (item.environment === 'prod' && (askAgain || !session.prodConfirmed(item))) {
       setAsking({ item, proceed, cancelled });
     } else proceed();
   };
 
-  const connect = (item: ProfileItem, done: Done, cancelled?: () => void) =>
-    guard(item, () => void run(item, done), cancelled);
+  const connect = (item: ProfileItem, done: Done, cancelled?: () => void, askAgain = false) =>
+    guard(item, () => void run(item, done), cancelled, askAgain);
 
   const dialog =
     asking === null ? null : (

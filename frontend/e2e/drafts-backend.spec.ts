@@ -119,11 +119,16 @@ async function savedAppearance(page: Page): Promise<{ language?: string; theme?:
 }
 
 /** Wait for the next `PUT /api/drafts` that the server accepted. */
-function draftSaved(page: Page) {
+/**
+ * The first successful draft save whose body holds `text`. Other saves (the editor's first one when it opens, a flush of
+ * an earlier change) can answer first, so matching any PUT made the state-file check below race the save it meant.
+ */
+function draftSaved(page: Page, text: string) {
   return page.waitForResponse(
     (response) =>
       response.url().endsWith('/api/drafts') &&
       response.request().method() === 'PUT' &&
+      (response.request().postData() ?? '').includes(text) &&
       response.status() === 200,
   );
 }
@@ -156,7 +161,7 @@ test('a draft survives a reload and a restart on another port, and is in no brow
 }) => {
   const violations = await signIn(page);
   await openEditor(page);
-  const saved = draftSaved(page);
+  const saved = draftSaved(page, CANARY);
   await page.locator('.cm-content').click();
   await page.keyboard.insertText(`select '${CANARY}' as c`);
   await saved;
@@ -237,7 +242,7 @@ test("this project's drafts an earlier version kept in localStorage move to the 
     { key: draftsKey(project), legacy: LEGACY },
   );
   expect(key).toMatch(/^tabrion-studio\.editor-drafts\./);
-  const saved = draftSaved(page);
+  const saved = draftSaved(page, LEGACY);
   await openEditor(page);
   await expect(page.getByTestId('editor-tab').filter({ hasText: 'Old draft' })).toHaveCount(1);
   await saved;

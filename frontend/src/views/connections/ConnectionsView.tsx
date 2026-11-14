@@ -8,7 +8,9 @@
  *
  * "Test connection" connects, reads the facts of 03 section 2 A and closes again (`POST /api/connection-tests`); the
  * result stays next to the profile. "Connect" opens the read-only connection (D-02 first for PROD, `useConnect`) and
- * makes it the header's connection; "Disconnect" closes it. When either needs a password that is not stored yet, the
+ * makes it the header's connection; "Disconnect" closes it, and the page keeps the profile disconnected until it is
+ * connected again: a run in the SQL editor asks with "Reconnect" first (QA-S1 S1-32, `ConnectionSession.disconnect`).
+ * When either needs a password that is not stored yet, the
  * password dialog opens and the action runs again after it was saved. A failure shows the page's own text with what
  * to check, never the server's message.
  */
@@ -344,7 +346,12 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
   const [favorites, setFavorites] = useState<string[] | null>(null);
   /** The current `runConnect`, for the start page's "Connect" once the profiles are read. */
   const connectNow = useRef<(item: ProfileItem) => void>(() => undefined);
-  const { setActive, forgetProd, headerVersion } = useConnectionSession();
+  const {
+    setActive,
+    forgetProd,
+    headerVersion,
+    disconnect: recordDisconnect,
+  } = useConnectionSession();
   const { guard, connect, dialog: prodDialog } = useConnect(fetcher);
   /** Where the focus goes when the button that had it goes away (Disconnect; L-1 of the connect review). */
   const connectButton = useRef<HTMLButtonElement>(null);
@@ -509,6 +516,14 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
   };
 
   const disconnect = async (item: ProfileItem, connection: OpenedConnection) => {
+    // The user's own disconnect (S1-32), recorded before the close request: a run that starts while it is on its way
+    // is held too, and nothing opens this profile again by itself, even if the close fails.
+    recordDisconnect({
+      connectionId: connection.connectionId,
+      profileId: item.id,
+      name: visible(item.name),
+      environment: item.environment,
+    });
     const result = await closeConnection(fetcher, connection.connectionId);
     // Gone either way: a connection the server no longer knows is closed as well.
     setActive((current) => (current?.connectionId === connection.connectionId ? null : current));

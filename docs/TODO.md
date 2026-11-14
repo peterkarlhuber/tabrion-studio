@@ -94,6 +94,7 @@
 | TD-067 Security assessment, Low and Info findings of Studio: A-02 (request time limit, log flood limit), B-3 (project profiles refuse clear-text passwords), C-01 (lasting secrets never evicted from the redaction), C-02 (exceptions inside container log arguments), C-04 (keyring allowlist), B-4 and C-08 (wording); what stays open | P2 | In progress (assessment Low/Info PR): the fixes, docs and tests are done; open: see the entry |
 | TD-068 QA-S1 checklist suite: Playwright tests of the manual checklist (S1-01..S1-38), opt-in and not in CI; what stays manual | P3 | Done (QA-S1 suite PR, `docs/development/qa-s1-suite.md`); open: see the entry |
 | TD-069 QA-S1 findings S1-09 (a mouse click on an ER diagram box did nothing), S1-15 (an editor tab and its text could get lost on the way back from the history) and S1-32 (the raw `access.csrf_invalid` after a second start); the German Sie/du outliers | P1 | In progress (QA-S1 fix PR): the three fixes with tests are done; open: the Sie/du wording (see the entry) |
+| TD-070 QA-S1 S1-32 (owner decision of 2026-11-14 14:13Z, option A): after the user's own "Disconnect", "Run" in the SQL editor, "Show status" (migrations), "Run diagnosis" and "Inspect" (vector data) no longer open the connection again by themselves; they show the banner with "Reconnect" and go on only after "Reconnect" (D-02 again for PROD); the header shows a connection the editor opened | P1 | In review (S1-32 PR): the fix, unit and e2e tests (DEV, PROD, a loss, the three views) are done; known limit: a reload forgets the disconnect (see the entry) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -2237,7 +2238,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   codes from `problems.py`, so a new code without a text fails. After review L3/L4, `session_required` also says that
   the tab may never have been signed in, and `json_only`, `control_denied` and `browser_not_allowed` say that
   Studio's page does not send such a request instead of "did not come from its own page". The checklist's S1-32 itself still expects
-  "Connection lost" after a second start, which the product does not do (TD-068).
+  "Connection lost" after a second start, which the product does not do (TD-068). Checklist v2 now disconnects in the
+  same tab; what Studio does then follows the owner decision of 2026-11-14 14:13Z (TD-070).
 - **Open:**
   - A reload or a closed browser tab within the 400 ms still drops the last change (the page cannot finish a `PUT`
     while it unloads without `keepalive`); not part of S1-15.
@@ -2248,3 +2250,70 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     `viewer.filter.chooseColumn`, `viewer.filter.tooLong`, `viewer.full.unavailable`, seven of `viewer.problems.*`
     and `vectors.noProfiles` (`connections.wizard.urlHint`, `urlState.takenPassword` and `urlPasswordRemoved` say
     "Ihr Passwort", which can read as either). Not changed here: more than a handful of strings.
+
+### TD-070 · QA-S1 S1-32: "Run" after the user's own "Disconnect" asks before it connects
+
+- **Priority:** P1 (an explicit user choice was overridden) · **Status:** In review (S1-32 PR) · **Refs:** QA-S1
+  checklist v2 S1-32, owner decision of 2026-11-14 14:13Z (option A), TD-034 (the banner "Connection lost"), TD-068
+  (the suite that found it), TD-069 (the earlier S1-32 finding)
+- **Finding:** after "Disconnect" in the connection manager of the same tab, "Run" in the SQL editor on "Shop (DEV)"
+  silently opened a new connection and ran the query, with no banner. The editor opens a DEV profile again by itself
+  (after a loss, as designed in TD-034) and stopped with "Reconnect" only for PROD. The header kept saying "No
+  connection", because a connection the editor opened never became the header's connection.
+- **Decision (owner, 2026-11-14 14:13Z, option A):** ask instead of reconnecting. An explicit "Disconnect" is
+  respected: the next "Run" opens nothing and runs nothing; a clear notice with "Reconnect" shows, and only after
+  that confirmation the connection opens again and the requested query runs. For PROD the existing confirmations
+  still apply, in their order. The connection state is the same in the header, the editor and the other views.
+- **Done:**
+  - One source of truth: the page's connection session (`ConnectionLoss` in `connectionLoss.ts`, exposed through
+    `ConnectionSession` in `workspace.ts`) now tells a loss from the user's disconnect (`GoneCause`: `lost` or
+    `disconnected`). "Disconnect" records the profile as disconnected (`disconnect`) until a connection of it is opened
+    again ("Reconnect", "Connect" in the manager, "Open" in the explorer).
+  - The SQL editor checks `isDisconnected` before it opens or sends anything. A disconnected profile shows the banner
+    (`askReconnect`; title "Disconnected: <name>" in English, "Verbindung getrennt: <name>" in German, with
+    "Reconnect"/"Neu verbinden") and the editor's notice "Nothing was run". "Reconnect" on the banner opens the
+    connection through the shared gate and then (`reconnected`) runs the waiting query on it, through the editor's
+    D-02 guard as every run. A newer run, a closed tab or leaving the editor drops the waiting run; a connection
+    opened elsewhere ("Connect" in the manager) ends the disconnect but runs nothing.
+  - PROD: "Reconnect" after the user's disconnect asks D-02 again even if it was confirmed in this page session
+    (`useConnect` `askAgain`), as after a loss; "Cancel" keeps the banner and opens nothing. "Connect" in the
+    connection manager still asks D-02 once per session (08 section 6). There is no statement confirmation in 1.0
+    (D-03..D-05 belong to the Data Editor), so the order is: "Run", the banner, "Reconnect", D-02, the open, the run.
+  - A connection the editor opens becomes the header's connection (with the L-4 rule of `beginConnect`), so the
+    header shows "connected" after "Reconnect" and after a first run, like the explorer and the migration view.
+  - The same rule holds for every other view whose button opens a connection (coordinator follow-up of the owner's
+    principle): migrations "Show status", diagnostics "Run diagnosis" and vector data "Inspect" ask through
+    `useReconnectGate` (`workspace.ts`) before their D-02 guard: the banner shows, nothing is opened or read, and the
+    press goes on once "Reconnect" opened the connection (the view's own open then gets the connection the server
+    keeps open). A newer press or leaving the view drops the waiting press. "Open" in the explorer and "Connect" in
+    the connection manager are explicit connects and do not ask; "Run again" in diagnostics and "Read again" in
+    migrations use the connection already shown and open none.
+  - A loss is unchanged: a DEV connection the server closed is opened again by the editor by itself, PROD stops with
+    the banner (TD-034); the editor no longer does so for a profile the user disconnected.
+  - Tests: `connectionLoss.test.ts` (the state logic), `disconnect.test.tsx` (the whole page: the manager's
+    "Disconnect", the editor, the banner and the header, DEV and PROD, a loss) and `e2e/disconnect-backend.spec.ts`
+    (a real `tabrion-studio`: no `POST /api/connections` and no `POST /api/queries` after "Run", nothing open on the
+    server and no new history entry; "Reconnect" opens once and runs once; PROD's D-02 with "Cancel" and "Connect";
+    the header, the banner, the editor and the manager agree; a loss as before; migrations DEV, vector data PROD with
+    D-02 Cancel and Connect, and diagnostics DEV, each with no request on connections before "Reconnect"), and
+    `views/reconnectGate.test.tsx` (the three views: nothing opened while disconnected, the press goes on after
+    "Reconnect", leaving the view drops it, a profile not disconnected opens as before). The QA-S1 suite's S1-32 test
+    and the checklist row follow the decision.
+- **Review of #106 (accepted with conditions), done:**
+  - M: a unit test for "Disconnect" while a multi-statement DEV run is in flight (`disconnect.test.tsx`): statement 2
+    finds the connection closed (`studio.connection_not_found`), the banner names the disconnect, and no
+    `POST /api/connections` follows. It fails when the editor's auto-reopen ignores `isDisconnected`.
+  - L-1: "Disconnect" records the disconnect before the close request, so a run started while the request is on its
+    way is held too (test: the close answer held by the fake server; it fails with the old order).
+  - L-2: a run that waited is kept only for the open `seen` just reported (`ready` in `connectionLoss.ts`); a loss, a
+    new disconnect, a new ask or another open drops it, so it never goes on after a later, unrelated "Reconnect"
+    (test in `connectionLoss.test.ts`).
+  - L-3: the e2e "nothing sent" checks wait for two animation frames and a task first (`settled`).
+  - Open from the review: the three VIEWS e2e tests must be green in Firefox and WebKit (CI) before the merge; the
+    owner may confirm that after "Disconnect", "Open" in the explorer and "Connect" in the manager do not ask D-02
+    again for PROD (the confirmation lasts for the page session, 08 section 6; only "Reconnect" asks again).
+- **Known limit (kept by decision):** the disconnect lives in the page session, so a reload forgets it. After a
+  reload no connection is open in the page; the next run connects as a first run does (and asks D-02 again for PROD,
+  as every new page session does).
+- **Note:** the header shows "No connection" after "Disconnect", as before; the banner names the disconnected
+  profile.

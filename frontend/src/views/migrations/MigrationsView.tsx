@@ -35,7 +35,7 @@ import { ProdConnectDialog, TrustCodeDialog } from '../../components/dialogs/Stu
 import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
 import { capped, visible } from '../../lib/visible';
-import { useConnectionSession, useReconnected } from '../../workspace';
+import { useConnectionSession, useReconnectGate, useReconnected } from '../../workspace';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { prodTimeoutSeconds } from '../connections/useConnect';
@@ -402,6 +402,8 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
   /** Counts status requests; a result is shown only if no newer request or profile switch came since (review L-9). */
   const request = useRef(0);
   const connections = useConnectionSession();
+  // S1-32: a profile the user disconnected asks with "Reconnect" before "Show status" opens it.
+  const hold = useReconnectGate();
 
   const loadTrust = useCallback(async () => {
     const next = await fetchCodeTrust(fetcher);
@@ -571,11 +573,14 @@ export function MigrationsView({ fetcher = fetch }: { fetcher?: typeof fetch }) 
             <Button
               variant="primary"
               disabled={profile === null || busy}
-              onClick={() =>
-                profile?.environment === 'prod' && !connections.prodConfirmed(profile)
-                  ? setDialog('prod')
-                  : void show()
-              }
+              onClick={() => {
+                if (profile === null) return;
+                const press = () =>
+                  profile.environment === 'prod' && !connections.prodConfirmed(profile)
+                    ? setDialog('prod')
+                    : void show();
+                if (!hold(profile.id, press)) press();
+              }}
             >
               {busy ? t('migrations.status.reading') : t('migrations.status.show')}
             </Button>

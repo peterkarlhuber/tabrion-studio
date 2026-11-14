@@ -7,6 +7,10 @@
  * confirmation was forgotten. The server does not return a connection whose database no longer answers; it opens a
  * new one. When the new connection arrives, the session ends the loss and tells the views (`onReconnected`), and the
  * focus goes to the main area. Studio only reads, so nothing was lost with the connection.
+ *
+ * The same banner is the notice for a connection the user disconnected (QA-S1 S1-32, owner decision of 2026-11-14
+ * 14:13Z): a run that needs it shows the banner instead of connecting, and only "Reconnect" here opens the connection
+ * again (D-02 first for PROD) and lets the run go on (`ConnectionSession.reconnected`).
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +32,8 @@ const PROFILE_GONE: Problem = {
   logId: null,
 };
 
-function reasonKey(code: string): string {
+function reasonKey({ cause, code }: LostConnection): string {
+  if (cause === 'disconnected') return 'connectionLost.disconnected';
   if (code === 'studio.connection_stale') return 'connectionLost.stale';
   if (code === 'studio.connection_not_found') return 'connectionLost.closed';
   return 'connectionLost.database';
@@ -60,10 +65,15 @@ export function ConnectionLost({ fetcher }: { fetcher: typeof fetch }) {
       (result) => {
         if (!result.ok) return fail(result.problem);
         setBusy(null);
+        // A run that waited for this "Reconnect" (S1-32) goes on now.
+        session.reconnected(item.profileId, result.value.connectionId);
         // The banner (and its focused button) goes: the focus moves to the view.
         window.setTimeout(() => focusRegion('main'), 0);
       },
       () => setBusy(null),
+      // After the user's own disconnect, a PROD profile asks D-02 again, as after a loss (whose confirmation was
+      // forgotten): a new PROD connection never opens without it from here.
+      item.cause === 'disconnected',
     );
   };
 
@@ -78,9 +88,17 @@ export function ConnectionLost({ fetcher }: { fetcher: typeof fetch }) {
             role="alert"
             className={styles.banner}
             data-testid="connection-lost"
+            data-cause={item.cause}
           >
             <div className={styles.row}>
-              <p className={styles.title}>{t('connectionLost.title', { name: item.name })}</p>
+              <p className={styles.title}>
+                {t(
+                  item.cause === 'disconnected'
+                    ? 'connectionLost.titleDisconnected'
+                    : 'connectionLost.title',
+                  { name: item.name },
+                )}
+              </p>
               {item.environment !== null ? (
                 <EnvBadge environment={item.environment} size="sm" />
               ) : null}
@@ -95,7 +113,7 @@ export function ConnectionLost({ fetcher }: { fetcher: typeof fetch }) {
               </Button>
             </div>
             <p className={styles.text}>
-              {t(reasonKey(item.code))} {t('connectionLost.nothingLost')}
+              {t(reasonKey(item))} {t('connectionLost.nothingLost')}
             </p>
             {problem !== undefined ? (
               <p className={styles.text} data-testid="connection-reconnect-problem">

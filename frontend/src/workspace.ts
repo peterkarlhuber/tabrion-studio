@@ -8,6 +8,7 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -78,9 +79,17 @@ export function prodKey(target: ProdTarget): string {
 }
 
 /**
- * An open connection whose database no longer answers, or that the server closed (TD-034, 08 section 5 "error
- * recovery"): the page shows the banner "Connection lost" with "Reconnect" until a connection of the same profile is
- * opened again.
+ * Why a connection is gone (QA-S1 S1-32, owner decision of 2026-11-14 14:13Z): `lost` when its database stopped
+ * answering or the server closed it (TD-034), `disconnected` when the user chose "Disconnect" in this page. After a
+ * loss the SQL editor opens a DEV profile again by itself; after the user's own disconnect nothing opens a connection
+ * of that profile until the user chooses "Reconnect" (or connects it again in the connection manager or the explorer).
+ */
+export type GoneCause = 'lost' | 'disconnected';
+
+/**
+ * An open connection whose database no longer answers, that the server closed (TD-034, 08 section 5 "error
+ * recovery"), or that the user disconnected and a run asked for again (S1-32): the page shows the banner "Connection
+ * lost" with "Reconnect" until a connection of the same profile is opened again.
  */
 export interface LostConnection {
   connectionId: string;
@@ -88,8 +97,21 @@ export interface LostConnection {
   /** The profile's name as the page shows it (escaped). */
   name: string;
   environment: Environment | null;
-  /** `db.connection`, `studio.connection_not_found` or `studio.connection_stale`. */
-  code: string;
+  cause: GoneCause;
+  /**
+   * `db.connection`, `studio.connection_not_found` or `studio.connection_stale`; null for the user's own disconnect
+   * when no request on the connection has failed.
+   */
+  code: string | null;
+}
+
+/** The connection the user disconnected in this page (S1-32): what the page showed for it. */
+export interface DisconnectedConnection {
+  connectionId: string;
+  profileId: string;
+  /** The profile's name as the page shows it (escaped). */
+  name: string;
+  environment: Environment | null;
 }
 
 /** A lost connection was replaced: views that used `from` go on with `to` (the same id if the database came back). */
@@ -133,6 +155,21 @@ export interface ConnectionSession {
   markLost: (connectionId: string, code: string) => void;
   /** Listen for replaced connections; returns the function that stops listening. */
   onReconnected: (listener: (event: Reconnected) => void) => () => void;
+  /**
+   * The user chose "Disconnect" for `connection` (S1-32). Until a connection of its profile is opened again, nothing
+   * may open one by itself: `isDisconnected` says so. "Reconnect" on the banner asks D-02 again for a PROD profile.
+   */
+  disconnect: (connection: DisconnectedConnection) => void;
+  /** Whether the user disconnected `profileId` in this page and no connection of it was opened since. */
+  isDisconnected: (profileId: string) => boolean;
+  /**
+   * A run needs `profileId`, which the user disconnected: show the banner with "Reconnect" for it. `resume` runs with
+   * the new connection once "Reconnect" on the banner opened it (after D-02 for PROD), never otherwise; a later call
+   * for the same profile replaces it. Returns the function that drops `resume` (a view that goes calls it).
+   */
+  askReconnect: (profileId: string, resume: (connectionId: string) => void) => () => void;
+  /** "Reconnect" on the banner opened `connectionId` for `profileId`: run what waited for it (`askReconnect`). */
+  reconnected: (profileId: string, connectionId: string) => void;
 }
 
 export const NO_CONNECTION_SESSION: ConnectionSession = {
@@ -147,6 +184,10 @@ export const NO_CONNECTION_SESSION: ConnectionSession = {
   lost: [],
   markLost: () => undefined,
   onReconnected: () => () => undefined,
+  disconnect: () => undefined,
+  isDisconnected: () => false,
+  askReconnect: () => () => undefined,
+  reconnected: () => undefined,
 };
 
 export const ConnectionSessionContext = createContext<ConnectionSession>(NO_CONNECTION_SESSION);
@@ -166,6 +207,39 @@ export function useReconnected(listener: (event: Reconnected) => void): void {
     current.current = listener;
   });
   useEffect(() => onReconnected((event) => current.current(event)), [onReconnected]);
+}
+
+/**
+ * The rule of QA-S1 S1-32 (owner decision of 2026-11-14 14:13Z) for a view whose button opens a connection ("Show
+ * status", "Run diagnosis", "Inspect"): `hold(profileId, proceed)` returns true when the user disconnected
+ * `profileId` in this page. Then nothing is opened: the banner asks with "Reconnect", and `proceed` runs once
+ * "Reconnect" there opened the connection again (D-02 first for PROD). A newer press drops the earlier wait, and so
+ * does leaving the view. "Open" in the explorer and "Connect" in the connection manager connect explicitly and do not
+ * ask.
+ */
+export function useReconnectGate(): (profileId: string, proceed: () => void) => boolean {
+  const { isDisconnected, askReconnect } = useConnectionSession();
+  const drop = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      drop.current?.();
+      drop.current = null;
+    },
+    [],
+  );
+  return useCallback(
+    (profileId, proceed) => {
+      drop.current?.();
+      drop.current = null;
+      if (!isDisconnected(profileId)) return false;
+      drop.current = askReconnect(profileId, () => {
+        drop.current = null;
+        proceed();
+      });
+      return true;
+    },
+    [askReconnect, isDisconnected],
+  );
 }
 
 export const ENV_LABEL: Record<Environment, string> = { dev: 'DEV', test: 'TEST', prod: 'PROD' };

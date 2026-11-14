@@ -37,7 +37,7 @@ import { Button } from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
 import clsx from '../../lib/clsx';
 import { capped, visible } from '../../lib/visible';
-import { useReconnected } from '../../workspace';
+import { useReconnectGate, useReconnected } from '../../workspace';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
@@ -456,6 +456,8 @@ export function VectorsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const { t } = useTranslation();
   const selectId = useId();
   const gate = useConnect(fetcher);
+  // S1-32: a profile the user disconnected asks with "Reconnect" before "Inspect" opens it.
+  const hold = useReconnectGate();
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
   const [shown, setShownState] = useState<Shown | null>(null);
@@ -599,7 +601,8 @@ export function VectorsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
               aria-disabled={!canInspect}
               onClick={() => {
                 if (!canInspect || profile === null) return;
-                gate.guard(profile, () => void inspect());
+                const press = () => gate.guard(profile, () => void inspect());
+                if (!hold(profile.id, press)) press();
               }}
             >
               {phase === 'idle' ? t('vectors.inspect') : t('vectors.busy')}

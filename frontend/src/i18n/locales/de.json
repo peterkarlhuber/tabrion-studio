@@ -1199,6 +1199,7 @@
     },
     "canceledBeforeStart": "Abgebrochen, bevor die Abfrage begann.",
     "profileChanged": "Das Profil {{name}} hat sich geändert, seit diese Seite es gelesen hat (jetzt {{environment}}). Darauf wurde nichts ausgeführt; führen Sie erneut aus, um es so zu verwenden, wie es jetzt ist.",
+    "reconnectFirst": "Du hast {{name}} getrennt. Nichts wurde ausgeführt. Wähle oben „Neu verbinden“; dann läuft die Abfrage.",
     "profileGone": "Das Profil {{name}} gibt es nicht mehr. Nichts wurde ausgeführt.",
     "environmentUnknown": "Der Server hat nicht gesagt, in welcher Umgebung die Verbindung zu {{name}} ist; sie wurde wieder geschlossen. Nichts wurde ausgeführt.",
     "exportSubject": "Ergebnis {{number}} von {{tab}}",
@@ -1357,6 +1358,8 @@
   },
   "connectionLost": {
     "title": "Verbindung getrennt: {{name}}",
+    "titleDisconnected": "Verbindung getrennt: {{name}}",
+    "disconnected": "Du hast diese Verbindung getrennt. Studio verbindet erst wieder, wenn du „Neu verbinden“ wählst.",
     "database": "Die Datenbank antwortet nicht. Studio liest auf dieser Verbindung nichts mehr, bis du neu verbindest.",
     "stale": "Das Profil wurde geändert, gelöscht oder ist nicht mehr vertrauenswürdig, deshalb hat Studio die Verbindung geschlossen.",
     "closed": "Studio hat diese Verbindung nicht mehr; sie wurde geschlossen.",
