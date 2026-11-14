@@ -7,6 +7,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XW-3 (CR-DBX): the plan, preview and confirmation framework (D-09, D-10), with every write area still off.
+  A change runs only as a server-side plan: `POST /api/write/plans` builds it through a pluggable executor, reads
+  the targets' fingerprint on the unlock's write connection (SQLite: file identity and the file's schema; PostgreSQL:
+  each target table's columns, constraints, referencing foreign keys, indexes, triggers, rules and policies) and
+  answers the preview: the SHA-256 plan hash, the targets with the triggers and rules on them (TX-16: the row limits
+  cover only the statement itself), a step summary without values, risk notes and the text to type.
+  `POST /api/write/plans/confirm` takes the hash and the typed text (the write profile's name; for a destructive plan
+  the target's name); `POST /api/write/plans/execute` runs the confirmed plan once through the audited transaction
+  with the plan hash in `run.start`, after re-checking the binding to session, connection and unlock (review N-2),
+  the 5-minute expiry and the plan's integrity, and, inside the transaction just before the first step, the
+  fingerprint (drift; on PostgreSQL again after `LOCK TABLE ... IN ROW EXCLUSIVE MODE`) and the SQLite file
+  identity. A swapped, edited, replayed, expired or foreign plan and drift are refused with `studio.plan_*` (400),
+  never echoing a value. The routes answer 405 and the plan module is not loaded while every flag is off. No executor
+  is registered yet (the Data Editor's comes with STU-026 and tabrion TAB-XW-6), and there is no UI yet.
 - STU-XW-2 (CR-DBX): the audit log of write and admin actions, with every write area still off. While an area is on,
   Studio appends a record to `<state folder>/audit/audit.jsonl` (folder 0700, files 0600, never through a link, no
   handle kept open) for every unlock (also a refused one), lock (with its reason), write or admin profile create,

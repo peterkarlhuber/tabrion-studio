@@ -55,12 +55,15 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 10
+    assert len(methods) == 14
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
         "DELETE /api/write/unlocks",
         "GET /api/write/audit",  # STU-XW-2: read only, and still 405 with every flag off
+        "POST /api/write/plans/execute",  # STU-XW-3: the plan framework
+        "POST /api/write/plans/confirm",
+        "DELETE /api/write/plans",
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

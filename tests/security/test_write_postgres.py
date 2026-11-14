@@ -19,6 +19,7 @@ import sqlalchemy
 from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write.connection import WRITE_SEARCH_PATH, open_write_connection
+from tests.support.plans import RowExecutor
 from tests.support.write import CANARY_SECRET, EVERY_AREA, WriteEnv
 
 pytestmark = [pytest.mark.security, pytest.mark.postgres_superuser]
@@ -236,3 +237,142 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
             assert url.password.encode() not in audit
     finally:
         env.close()
+
+
+# --- STU-XW-3: plans on PostgreSQL (TX-08, TX-09, TX-16) --------------------------------------------------------------
+
+
+def _plan_env(roles: dict[str, Any], tmp_path: Path, static_dir: Path) -> tuple[WriteEnv, str, sqlalchemy.Engine]:
+    """A table ``<p>.parts`` with a BEFORE UPDATE trigger and an ON UPDATE DO ALSO rule, the read profile ``pg``, the
+    write profile ``pg-write`` (role ``<p>_w``) unlocked on an open connection, and the test executor registered."""
+    assert PG_URL is not None and PG_SUPERUSER_URL is not None
+    prefix = roles["prefix"]
+    admin = sqlalchemy.create_engine(sqlalchemy.make_url(PG_SUPERUSER_URL).set(drivername="postgresql+psycopg"))
+    url = sqlalchemy.make_url(PG_URL)
+    with admin.begin() as connection:
+        for statement in (
+            f"CREATE TABLE {prefix}.parts (id integer PRIMARY KEY, material text)",
+            f"CREATE TABLE {prefix}.log (n integer)",
+            f"INSERT INTO {prefix}.parts VALUES (1, 'Steel')",  # noqa: S608 (test names)
+            f"CREATE FUNCTION {prefix}.touch() RETURNS trigger LANGUAGE plpgsql SET search_path = pg_catalog"
+            " AS $$ BEGIN RETURN NEW; END $$",
+            f"CREATE TRIGGER parts_touch BEFORE UPDATE ON {prefix}.parts FOR EACH ROW"
+            f" EXECUTE FUNCTION {prefix}.touch()",
+            f"CREATE RULE parts_log AS ON UPDATE TO {prefix}.parts DO ALSO INSERT INTO {prefix}.log VALUES (1)",  # noqa: S608
+            f"GRANT SELECT, UPDATE ON {prefix}.parts TO {prefix}_w",
+            f"GRANT SELECT ON {prefix}.parts TO {url.username}",
+            f"GRANT USAGE ON SCHEMA {prefix} TO {url.username}",
+        ):
+            connection.exec_driver_sql(statement)
+    env = WriteEnv(tmp_path, static_dir, EVERY_AREA)
+    read = {
+        "name": "pg",
+        "engine": "postgresql",
+        "host": url.host,
+        "port": url.port,
+        "database": url.database,
+        "user": url.username,
+        "environment": "dev",
+        "sslmode": "prefer",
+    }
+    if url.password:
+        read["password"] = "keyring:"
+    assert env.send("POST", "/api/profiles", {"profile": read, "digest": env.user_digest()}).status_code == 201
+    if url.password:
+        stored = env.send("PUT", "/api/profiles/user:pg/secret", {"secret": url.password, "store": "session"})
+        assert stored.status_code == 204
+    created = env.create_write(name="pg-write", read="pg", user=f"{prefix}_w", password="keyring:")
+    assert created.status_code == 201, created.text
+    secret = env.send(
+        "PUT", "/api/write/profiles/write:pg-write/secret", {"secret": roles["password"], "store": "session"}
+    )
+    assert secret.status_code == 204
+    connection_id = env.open("user:pg")
+    assert env.unlock(connection_id, "write:pg-write", "pg-write").status_code == 200
+    env.studio.client.app.state.write_plans.register(RowExecutor())  # type: ignore[attr-defined]
+    return env, connection_id, admin
+
+
+def _pg_plan(env: WriteEnv, connection_id: str, prefix: str, material: str) -> dict[str, Any]:
+    request = {"schema": prefix, "table": "parts", "rows": [{"id": 1, "material": material}]}
+    response = env.send(
+        "POST", "/api/write/plans", {"connection_id": connection_id, "executor": "test.rows", "request": request}
+    )
+    assert response.status_code == 201, response.text
+    preview: dict[str, Any] = response.json()
+    confirmed = env.send(
+        "POST",
+        "/api/write/plans/confirm",
+        {"connection_id": connection_id, "plan_hash": preview["plan_hash"], "typed": "pg-write"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    return preview
+
+
+def _material(admin: sqlalchemy.Engine, prefix: str) -> Any:
+    with admin.connect() as connection:
+        return connection.exec_driver_sql(f"SELECT material FROM {prefix}.parts WHERE id = 1").scalar()  # noqa: S608
+
+
+def test_a_postgres_plan_names_rules_and_triggers_and_runs_once(
+    roles: dict[str, Any], tmp_path: Path, static_dir: Path
+) -> None:
+    """TX-16, review I-1 of tabrion PR #78: the preview names the trigger and the rule on the target (their changes
+    are not in the row count) and the risk notes say so; the confirmed plan runs once under the write role."""
+    prefix = roles["prefix"]
+    env, connection_id, admin = _plan_env(roles, tmp_path, static_dir)
+    try:
+        preview = _pg_plan(env, connection_id, prefix, "Iron")
+        target = preview["targets"][0]
+        assert (target["schema"], target["table"]) == (prefix, "parts")
+        assert target["triggers"] == [
+            {"name": "parts_touch", "timing": "before", "events": ["update"], "enabled": True}
+        ]
+        assert target["rules"] == [{"name": "parts_log", "event": "update", "instead": False}]
+        assert {"plan.triggers", "plan.rules"} <= set(preview["risks"])
+        done = env.send(
+            "POST", "/api/write/plans/execute", {"connection_id": connection_id, "plan_hash": preview["plan_hash"]}
+        )
+        assert done.status_code == 200, done.text
+        assert done.json()["rows"] == {"updated": 1}
+        assert _material(admin, prefix) == "Iron"
+        with admin.connect() as connection:  # the rule ran too, outside the count
+            assert connection.exec_driver_sql(f"SELECT count(*) FROM {prefix}.log").scalar() == 1  # noqa: S608
+        replay = env.send(
+            "POST", "/api/write/plans/execute", {"connection_id": connection_id, "plan_hash": preview["plan_hash"]}
+        )
+        assert (replay.status_code, replay.json()["code"]) == (400, "studio.plan_unknown")
+    finally:
+        env.close()
+        admin.dispose()
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "ALTER TABLE {p}.parts ADD COLUMN weight real",
+        "CREATE TRIGGER parts_later AFTER UPDATE ON {p}.parts FOR EACH ROW EXECUTE FUNCTION {p}.touch()",
+        "ALTER TABLE {p}.parts DISABLE TRIGGER parts_touch",
+        "CREATE OR REPLACE RULE parts_log AS ON UPDATE TO {p}.parts DO INSTEAD NOTHING",
+        "ALTER TABLE {p}.parts ENABLE ROW LEVEL SECURITY",
+        "DROP TABLE {p}.parts CASCADE",
+    ],
+)
+def test_drift_on_postgres_aborts_the_run(roles: dict[str, Any], tmp_path: Path, static_dir: Path, change: str) -> None:
+    """TX-09: a schema, trigger, rule or row-security change between preview and run stops the run inside the
+    transaction; nothing changes."""
+    prefix = roles["prefix"]
+    env, connection_id, admin = _plan_env(roles, tmp_path, static_dir)
+    try:
+        preview = _pg_plan(env, connection_id, prefix, "Iron")
+        with admin.begin() as connection:
+            connection.exec_driver_sql(change.format(p=prefix))
+        refused = env.send(
+            "POST", "/api/write/plans/execute", {"connection_id": connection_id, "plan_hash": preview["plan_hash"]}
+        )
+        assert (refused.status_code, refused.json()["code"]) == (400, "studio.plan_drift"), refused.text
+        if not change.startswith("DROP"):
+            assert _material(admin, prefix) == "Steel"
+    finally:
+        env.close()
+        admin.dispose()

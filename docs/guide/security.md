@@ -142,6 +142,25 @@ the server answers `405` and the write code is not even loaded.
     - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a
       segment. `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
       log, and with every area off it answers `405` like every other write route.
+- **Plans, preview and confirmation (STU-XW-3).** While an area is on, a change runs only as a plan that Studio
+  keeps on the server and that you saw and confirmed:
+    - **preview:** Studio builds the plan, reads the target tables' catalog and answers with the plan hash, the
+      targets, the triggers and rules on them, what each step does (without its values), risk notes and the text you
+      type to confirm. **Triggers and rules run with the write role**, and Studio's row checks cover only the
+      statement itself, not what a trigger or rule changes elsewhere: the preview names them for that reason;
+    - **confirmation:** you send the plan hash and type the write profile's name, or for a destructive plan the name
+      of its target table;
+    - **one run, bound to you:** the plan hash covers your session, the connection, your unlock, the steps and the
+      targets' fingerprint. It runs once; a second attempt, another browser tab, another connection, a plan made
+      before you locked and unlocked again, and a plan older than 5 minutes are refused (`400 studio.plan_*`), and
+      nothing runs;
+    - **drift check:** inside the run's transaction, just before the first step, Studio reads the targets' catalog
+      again (on SQLite the whole schema of the file and the file's identity; on PostgreSQL the target tables' columns,
+      constraints, indexes, triggers, rules and policies, again after locking the tables). If anything changed since
+      the preview, or the SQLite file was swapped, nothing runs (`studio.plan_drift`, `studio.write_target_changed`)
+      and you preview the change again;
+    - the audit log's `run.start` record carries the plan hash. With every area off, the plan routes answer `405`
+      like every other write route.
 
 !!! note "Python 3.11"
     Python's `sqlite3` module can turn on SQLite's defensive mode only from Python 3.12. On Python 3.11 Studio

@@ -1040,7 +1040,17 @@
     "write_target_changed": "Das Profil oder die Datenbankdatei hat sich geändert; die Entsperrung ist beendet.",
     "write_unsupported": "Studio kann für diese Datenbank keine Schreibverbindung mit seinen Schutzmaßnahmen öffnen.",
     "audit_unavailable": "Studio konnte den Audit-Eintrag dieser Aktion nicht schreiben und hat sie daher nicht ausgeführt. Siehe das Audit-Log bei den Schreibprofilen.",
-    "audit_record_invalid": "Das Audit-Log nimmt die Namen dieser Aktion nicht an; Studio hat sie daher nicht ausgeführt."
+    "audit_record_invalid": "Das Audit-Log nimmt die Namen dieser Aktion nicht an; Studio hat sie daher nicht ausgeführt.",
+    "plan_executor_unknown": "Für diese Art von Änderung hat Studio keine Ausführung.",
+    "plan_invalid": "Der Änderung fehlen Teile, Teile sind ungültig, oder sie ist zu groß.",
+    "plan_target_invalid": "Ein Ziel der Änderung ist keine Tabelle dieser Datenbank. Laden Sie die Tabelle neu.",
+    "plan_unknown": "Es gibt keinen offenen Plan mit diesem Hash. Ein Plan läuft einmal und ist dann weg; zeigen Sie die Vorschau erneut an.",
+    "plan_binding": "Der Plan wurde für eine andere Verbindung oder eine frühere Entsperrung erstellt; zeigen Sie die Vorschau erneut an.",
+    "plan_expired": "Der Plan ist abgelaufen; zeigen Sie die Vorschau erneut an.",
+    "plan_not_confirmed": "Der Plan war nicht bestätigt und wurde verworfen; zeigen Sie die Vorschau erneut an und bestätigen Sie sie.",
+    "plan_confirmation_mismatch": "Geben Sie genau den Text ein, den die Vorschau verlangt.",
+    "plan_changed": "Der Plan passt nicht mehr zu seiner Vorschau und wurde nicht ausgeführt; zeigen Sie die Vorschau erneut an.",
+    "plan_drift": "Das Ziel hat sich seit der Vorschau geändert (Schema, Trigger, Regeln oder die Datenbankdatei); nichts wurde ausgeführt. Zeigen Sie die Vorschau erneut an."
   },
   "keyboard": {
     "palette": {

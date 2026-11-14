@@ -91,6 +91,17 @@ const PROBLEMS = new Set([
   'write_unsupported',
   'audit_unavailable',
   'audit_record_invalid',
+  // The plan framework (STU-XW-3).
+  'plan_executor_unknown',
+  'plan_invalid',
+  'plan_target_invalid',
+  'plan_unknown',
+  'plan_binding',
+  'plan_expired',
+  'plan_not_confirmed',
+  'plan_confirmation_mismatch',
+  'plan_changed',
+  'plan_drift',
 ]);
 
 const ISSUES = new Set([

@@ -85,6 +85,7 @@ FAMILIES = (
     "/api/write/profiles",
     "/api/write/unlocks",
     "/api/write/audit",
+    "/api/write/plans",
 )
 
 
@@ -200,6 +201,13 @@ CHANGING_ROUTES: dict[str, str] = {
     "DELETE /api/write/profiles/{profile_id:path}/secret": "a write profile's password in the keyring (behind flags)",
     "POST /api/write/unlocks": "unlocks a session's write mode: opens a write connection, writes nothing (flags)",
     "DELETE /api/write/unlocks": "locks the write mode again: closes the write connection (behind the area flags)",
+    # STU-XW-3: the plan, preview and confirmation framework, behind the same flags (405 and no import while off;
+    # tests/security/test_write_plans.py). Only execute writes, and only a confirmed plan of this session, connection
+    # and unlock, once, after the drift check, through the audited transaction.
+    "POST /api/write/plans": "makes a plan and its preview: reads the targets' catalog, writes nothing (flags)",
+    "DELETE /api/write/plans": "drops an open plan of this session from memory (behind the area flags)",
+    "POST /api/write/plans/confirm": "confirms a plan with its hash and the typed text; writes nothing (flags)",
+    "POST /api/write/plans/execute": "runs a confirmed plan once through the audited write transaction (flags)",
 }
 
 
