@@ -1051,7 +1051,15 @@
     "plan_not_confirmed": "Der Plan war nicht bestätigt und wurde verworfen; zeigen Sie die Vorschau erneut an und bestätigen Sie sie.",
     "plan_confirmation_mismatch": "Geben Sie genau den Text ein, den die Vorschau verlangt.",
     "plan_changed": "Der Plan passt nicht mehr zu seiner Vorschau und wurde nicht ausgeführt; zeigen Sie die Vorschau erneut an.",
-    "plan_drift": "Das Ziel hat sich seit der Vorschau geändert (Schema, Trigger, Regeln oder die Datenbankdatei); nichts wurde ausgeführt. Zeigen Sie die Vorschau erneut an."
+    "plan_drift": "Das Ziel hat sich seit der Vorschau geändert (Schema, Trigger, Regeln oder die Datenbankdatei); nichts wurde ausgeführt. Zeigen Sie die Vorschau erneut an.",
+    "secret_unconfirmed": "Studio sendet das Secret dieses Profils nur an einen Server, den Sie zusammen mit der Secret-Referenz bestätigt haben. Prüfen und bestätigen Sie beides unter Schreibprofile.",
+    "secret_confirmation_unknown": "Die Prüfung ist abgelaufen oder gehört zu einer anderen Sitzung. Prüfen Sie Server und Secret-Referenz erneut.",
+    "secret_confirmation_stale": "Server oder Secret-Referenz haben sich seit der Prüfung geändert; nichts wurde bestätigt. Prüfen Sie beides erneut.",
+    "secret_confirmation_mismatch": "Geben Sie den Host des Servers genau wie angezeigt ein.",
+    "secret_confirmation_not_needed": "Ein SQLite-Schreibprofil hat kein Secret.",
+    "secret_confirmation_unavailable": "Studio konnte die Bestätigung nicht in seinem Statusordner ablegen; nichts wurde bestätigt.",
+    "write_tls_required": "Studio sendet ein Schreib- oder Admin-Secret an einen Server, der nicht auf diesem Computer läuft, nur mit dem TLS-Modus verify-full oder verify-ca. Ändern Sie den TLS-Modus des gekoppelten Profils.",
+    "require_auth_unavailable": "Schreib- und Admin-Verbindungen brauchen libpq 16 oder neuer (es kann Klartext- und MD5-Passwörter ablehnen). Installieren Sie psycopg[binary] oder eine neuere libpq."
   },
   "keyboard": {
     "palette": {
@@ -1584,6 +1592,28 @@
       "event": "Aktion",
       "profile": "Profil",
       "result": "Ergebnis"
+    },
+    "pair": {
+      "title": "Server und Secret-Referenzen",
+      "lead": "Studio sendet das Secret eines Schreib- oder Admin-Profils nur an den Server, den Sie hier bestätigt haben, zusammen mit der Herkunft des Secrets. Jede Änderung des Servers oder der Referenz braucht eine neue Bestätigung.",
+      "confirmed": "bestätigt",
+      "unconfirmed": "nicht bestätigt",
+      "review": "Prüfen",
+      "dialogTitle": "Server und Secret-Referenz von {{name}} bestätigen",
+      "server": "Datenbankserver",
+      "tls": "TLS-Modus",
+      "role": "Datenbankrolle",
+      "reference": "Secret-Referenz",
+      "sources": {
+        "keyring": "Schlüsselbund",
+        "env": "Umgebungsvariable",
+        "file": "Datei",
+        "none": "Keine (für diese Sitzung eingegeben oder kein Passwort)"
+      },
+      "foreign": "Dieser Server läuft nicht auf diesem Computer. Studio verbindet sich nur mit geprüftem Zertifikat und SCRAM-Anmeldung.",
+      "typeHost": "Geben Sie zur Bestätigung den Host ein: {{host}}",
+      "confirm": "Bestätigen",
+      "cancel": "Abbrechen"
     }
   }
 }

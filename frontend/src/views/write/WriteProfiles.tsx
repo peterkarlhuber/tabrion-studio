@@ -7,7 +7,8 @@
  * write credentials of a production database do not belong in Studio (review N-6 of PR #109); the profile is sent only
  * after the user confirmed that note, and the server refuses it without the confirmation.
  *
- * Below the form, the audit log's state (STU-XW-2): verified or not, and a warning while records are pending.
+ * Below the form, the I-109 j confirmation of each PostgreSQL write or admin secret (STU-XW-4, D-15) and the audit
+ * log's state (STU-XW-2): verified or not, and a warning while records are pending.
  */
 import { useEffect, useId, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +29,7 @@ import { Field } from '../connections/Field';
 import { problemText } from '../connections/messages';
 import styles from '../Views.module.css';
 import { AuditStatus } from './AuditStatus';
+import { SecretConfirmations } from './SecretConfirmations';
 
 export function WriteProfilesSection({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [areas, setAreas] = useState<WriteAreas>(ALL_OFF);
@@ -185,6 +187,7 @@ function WriteProfileForm({ fetcher, kinds }: { fetcher: typeof fetch; kinds: Wr
           </Button>
         </div>
       </form>
+      <SecretConfirmations fetcher={fetcher} refresh={saved} />
       <AuditStatus fetcher={fetcher} />
     </section>
   );

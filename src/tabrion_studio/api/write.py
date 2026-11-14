@@ -18,6 +18,12 @@
 * ``POST /api/write/plans/confirm``: ``{"connection_id", "plan_hash", "typed"}``, the typed confirmation (D-09, D-10).
 * ``POST /api/write/plans/execute``: ``{"connection_id", "plan_hash"}``: runs the confirmed plan once, after the
   binding, expiry and drift checks, through the audited transaction.
+* ``POST /api/write/secret-confirmations``: ``{"write_profile_id"}``: the preview of the I-109 j confirmation (D-15,
+  STU-XW-4, :mod:`tabrion_studio.write.secret_confirm`): the pair of server and secret reference of a PostgreSQL
+  write or admin profile and its confirmation hash. ``POST /api/write/secret-confirmations/confirm`` with
+  ``{"confirmation_hash", "typed"}`` (the host, typed) confirms it; ``DELETE /api/write/secret-confirmations`` with
+  ``{"write_profile_id"}`` revokes it. Without a confirmed pair no secret of the profile is resolved and no unlock
+  happens.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -57,6 +63,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/plans", ("POST", "DELETE")),
     ("/api/write/plans/confirm", ("POST",)),
     ("/api/write/plans/execute", ("POST",)),
+    # STU-XW-4: the I-109 j confirmation of a write or admin secret's pair of server and reference (D-15).
+    ("/api/write/secret-confirmations", ("POST", "DELETE")),
+    ("/api/write/secret-confirmations/confirm", ("POST",)),
 )
 
 

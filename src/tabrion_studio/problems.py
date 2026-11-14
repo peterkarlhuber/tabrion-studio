@@ -617,6 +617,64 @@ CATALOG: dict[str, Entry] = {
         "was run.",
         "Preview the change again.",
     ),
+    # The I-109 j confirmation and require_auth (STU-XW-4, D-15, TX-07). W-9: 400 or 405, never 403 or 404.
+    "studio.secret_unconfirmed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Secret reference not confirmed",
+        "Studio sends the secret of this write or admin profile only to a server you confirmed together with the "
+        "secret's reference. The pair is not confirmed, or it changed since you confirmed it.",
+        "Review and confirm the server and the secret reference of the write profile.",
+    ),
+    "studio.secret_confirmation_unknown": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No such confirmation",
+        "The confirmation expired or belongs to another session.",
+        "Review the server and the secret reference again.",
+    ),
+    "studio.secret_confirmation_stale": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Profile changed",
+        "The server or the secret reference changed since the review, so nothing was confirmed.",
+        "Review the server and the secret reference again.",
+    ),
+    "studio.secret_confirmation_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Confirmation does not match",
+        "To confirm, type the server's host exactly as shown.",
+    ),
+    "studio.secret_confirmation_not_needed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Nothing to confirm",
+        "A SQLite write profile has no secret.",
+    ),
+    "studio.secret_confirmation_unavailable": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Confirmation not storable",
+        "Studio could not keep the confirmation in its state folder, so nothing was confirmed.",
+        "Check that Studio's state folder is writable.",
+    ),
+    "studio.write_tls_required": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Verified TLS required",
+        "Studio sends a write or admin secret to a server that is not on this computer only over TLS with a "
+        "verified certificate (sslmode verify-ca or verify-full).",
+        "Set the TLS mode of the coupled profile to verify-full or verify-ca.",
+    ),
+    "studio.require_auth_unavailable": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "libpq too old for write connections",
+        "Write and admin connections need libpq 16 or newer, which can refuse a server that asks for the password "
+        "in clear text or as an MD5 hash. The libpq Studio loaded is older, so no write connection is opened.",
+        "Install psycopg with its binary package (psycopg[binary]) or a libpq 16 or newer.",
+    ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
         400,

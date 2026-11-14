@@ -30,6 +30,13 @@ it re-checks all of the above and returns the write connection; it never hands o
 record of the audit log before the transaction begins (no record, no run) and the ``run.result`` record after it
 committed or rolled back (a pending marker if that record fails, review N-4).
 
+**Secret confirmation and authentication (STU-XW-4, I-109 j, D-15, TX-07).** A PostgreSQL unlock first checks
+that libpq has ``require_auth`` (16 or newer; ``studio.require_auth_unavailable`` otherwise), that a foreign host has
+``verify-ca`` or ``verify-full`` (``studio.write_tls_required``) and that the user confirmed the pair of server and
+secret reference (``studio.secret_unconfirmed``), all before any secret is resolved
+(:mod:`tabrion_studio.write.secret_confirm`). The unlock keeps the confirmed pair's digest; every use re-checks it,
+so a revoked or changed confirmation ends the unlock and refuses a plan's confirmation and run (STU-XW-3).
+
 **Audit (STU-XW-2).** Every unlock is recorded before it takes effect (a log that cannot take the record refuses
 the unlock, ``studio.audit_unavailable``); a refused unlock of a stored profile and every lock (with its reason) are
 recorded after the fact (:mod:`tabrion_studio.write.audit`).
@@ -57,7 +64,14 @@ from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.logs import register_secret
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection, RegistryError, refuses_cleartext
 from tabrion_studio.write.audit import AuditError, AuditLog
-from tabrion_studio.write.connection import WriteConnection, WriteError, file_identity, open_write_connection
+from tabrion_studio.write.connection import (
+    WriteConnection,
+    WriteError,
+    file_identity,
+    open_write_connection,
+    require_auth_supported,
+)
+from tabrion_studio.write.secret_confirm import SecretConfirmations, check_transport, secret_pair
 
 logger = logging.getLogger("tabrion_studio.write")
 
@@ -102,6 +116,8 @@ class Unlock:
     connection: WriteConnection
     unlocked_at: float
     last_used: float
+    #: The digest of the confirmed pair of server and secret reference (STU-XW-4); None for SQLite.
+    pair_digest: str | None = None
     #: This unlock's own ID: a plan (STU-XW-3) is bound to it, so a plan made under an earlier unlock of the same
     #: session and connection never runs under a later one (review N-2). Never sent to the page.
     unlock_id: str = field(default_factory=lambda: secrets.token_hex(16))
@@ -151,6 +167,7 @@ class Unlocks:
         areas: WriteAreas,
         clock: Callable[[], float] = time.monotonic,
         audit: AuditLog | None = None,
+        confirmations: SecretConfirmations | None = None,
     ) -> None:
         self.config = config
         self.registry = registry
@@ -158,6 +175,8 @@ class Unlocks:
         self.clock = clock
         #: No audit log: every unlock and run is refused (fail closed).
         self.audit = audit if audit is not None else AuditLog(None)
+        #: No record of confirmations: no PostgreSQL unlock (fail closed, I-109 j).
+        self.confirmations = confirmations if confirmations is not None else SecretConfirmations(None)
         self._unlocks: dict[tuple[str, str], Unlock] = {}
         self._lock = threading.Lock()
         registry.on_close(self.connection_closed)
@@ -221,7 +240,7 @@ class Unlocks:
             raise WriteError("studio.write_target_changed")
         if not isinstance(typed_name, str) or typed_name != write.name:
             raise WriteError("studio.unlock_name_mismatch")
-        opened = self._open(write, read, connection)
+        opened, pair_digest = self._open(write, read, connection)
         try:
             # Before the unlock takes effect: no record, no unlock (fail closed).
             self.audit.append(
@@ -252,6 +271,7 @@ class Unlocks:
             connection=opened,
             unlocked_at=now,
             last_used=now,
+            pair_digest=pair_digest,
         )
         with self._lock:
             previous = self._unlocks.pop((session, connection.id), None)
@@ -277,8 +297,11 @@ class Unlocks:
                 else "studio.write_target_changed"
             ) from None
 
-    def _open(self, write: WriteProfile, read: Profile, connection: OpenConnection) -> WriteConnection:
+    def _open(
+        self, write: WriteProfile, read: Profile, connection: OpenConnection
+    ) -> tuple[WriteConnection, str | None]:
         profile = write.connection_profile(read)
+        pair_digest: str | None = None
         limits = self.config.limits()
         if read.engine == "sqlite":
             entry = self.config.entry(connection.profile_id)
@@ -300,6 +323,14 @@ class Unlocks:
                 identity=identity,
             )
         else:
+            # STU-XW-4, before any secret is read: libpq with require_auth, TLS for a foreign host, the confirmed pair.
+            require_auth_supported()
+            pair = secret_pair(write, read)
+            if pair is None:  # pragma: no cover - a PostgreSQL profile always has a pair
+                raise WriteError("studio.write_coupling_invalid")
+            check_transport(pair)
+            self.confirmations.require(pair)
+            pair_digest = pair.digest
             password: str | None = None
             try:
                 password = self.config.secrets.resolve(self.config.write_target(write, read))
@@ -313,7 +344,7 @@ class Unlocks:
             opened = open_write_connection(
                 write.kind, profile, limits, password=password, refuse_cleartext=refuses_cleartext(entry)
             )
-        return opened
+        return opened, pair_digest
 
     # --- the hook of every write -----------------------------------------------------------------------------------
 
@@ -438,6 +469,7 @@ class Unlocks:
                 or _read_fingerprint(read) != record.read_fingerprint
             ):
                 raise WriteError("studio.write_target_changed")
+            self._recheck_pair(record, write, read)
             self._read_connection(record.connection_id)
             record.connection.verify()
         except WriteError:
@@ -446,6 +478,16 @@ class Unlocks:
         except Exception:
             self._end(record, "changed")
             raise WriteError("studio.write_target_changed") from None
+
+    def _recheck_pair(self, record: Unlock, write: WriteProfile, read: Profile) -> None:
+        """The pair the unlock was confirmed for is still the stored one and still confirmed (STU-XW-4)."""
+        pair = secret_pair(write, read)
+        if pair is None and record.pair_digest is None:
+            return
+        if pair is None or record.pair_digest is None or pair.digest != record.pair_digest:
+            raise WriteError("studio.write_target_changed")
+        check_transport(pair)
+        self.confirmations.require(pair)
 
     # --- the state, for the page ---------------------------------------------------------------------------------
 

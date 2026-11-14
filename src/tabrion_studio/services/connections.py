@@ -218,7 +218,12 @@ def pool_busy(exc: BaseException) -> bool:
 
 
 #: libpq's ``require_auth`` exists from libpq 16 on (psycopg's binary package bundles a newer one).
-_REQUIRE_AUTH_LIBPQ = 160000
+REQUIRE_AUTH_LIBPQ = 160000
+
+
+def libpq_version() -> int:
+    """The loaded libpq's version as ``psycopg.pq.version()`` reports it (160000 for 16.0)."""
+    return _libpq_version()
 
 
 def _libpq_version() -> int:
@@ -250,7 +255,8 @@ def driver_options(
       profile is the user's own choice of server and keeps every method. With a libpq older than 16, which does not
       know the option, it is left out and a warning is logged.
     * ``write`` (a write or admin connection, STU-XW-1): the startup options of :func:`startup_options` with
-      ``read_only=False`` and the pinned catalog-first ``search_path``.
+      ``read_only=False`` and the pinned catalog-first ``search_path``. Its ``require_auth`` is set by the write
+      package (``tabrion_studio.write.connection``: always ``!password,!md5``, fail closed below libpq 16).
     """
     options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
     if session is not None:
@@ -262,7 +268,7 @@ def driver_options(
     if password is None:
         options["password"] = ""
     if refuse_cleartext:
-        if _libpq_version() >= _REQUIRE_AUTH_LIBPQ:
+        if _libpq_version() >= REQUIRE_AUTH_LIBPQ:
             options["require_auth"] = "!password"
         else:
             logger.warning(

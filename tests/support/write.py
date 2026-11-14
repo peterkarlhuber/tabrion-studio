@@ -126,6 +126,18 @@ class WriteEnv:
             {"connection_id": connection_id, "write_profile_id": write_id, "typed_name": typed},
         )
 
+    def confirm_pair(self, write_id: str = "write:parts-write") -> Any:
+        """Preview and confirm the I-109 j pair of server and secret reference of a PostgreSQL write profile (D-15,
+        STU-XW-4), as the dialog does: the typed text is the host the preview names."""
+        preview = self.send("POST", "/api/write/secret-confirmations", {"write_profile_id": write_id})
+        assert preview.status_code == 200, preview.text
+        doc = preview.json()
+        return self.send(
+            "POST",
+            "/api/write/secret-confirmations/confirm",
+            {"confirmation_hash": doc["confirmation_hash"], "typed": doc["confirm_text"]},
+        )
+
     @property
     def unlocks(self) -> Any:
         return self.studio.client.app.state.write_unlocks  # type: ignore[attr-defined]

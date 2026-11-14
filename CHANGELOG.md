@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XW-4 (CR-DBX): `require_auth` for write and admin connections and the I-109 j confirmation of a write secret
+  (D-15), with every write area still off. Every PostgreSQL write and admin connection, and the privilege check on
+  it, sets libpq `require_auth=!password,!md5` whatever the profile's owner, so libpq refuses a server that asks for
+  a clear-text or MD5 password; a foreign host (not loopback) that gets a password needs `scram-sha-256`. With libpq
+  older than 16 (`psycopg.pq.version()`) no write or admin connection is opened and the unlock is refused before any
+  secret is read (`405 studio.require_auth_unavailable`), closing L-2 of the PR #111 review. Studio reads the
+  password of a PostgreSQL write or admin profile only after the user confirmed the pair of server (host, port,
+  database, TLS mode, role) and secret reference: `POST /api/write/secret-confirmations` previews it from the user's
+  file with a session-bound hash, `POST /api/write/secret-confirmations/confirm` takes the hash and the typed host,
+  `DELETE /api/write/secret-confirmations` revokes it. The confirmed pair's SHA-256 is kept in
+  `<state>/write-secret-confirmations.json` (0600); an unconfirmed or changed pair refuses the unlock
+  (`400 studio.secret_unconfirmed`), and every use of an unlock, the plan confirmation and run included, checks it
+  again. A foreign host needs `sslmode` `verify-ca` or `verify-full` (`400 studio.write_tls_required`). Confirming
+  and revoking are audited (`secret.confirm`, `secret.unconfirm`: the pair's hash and the kind of reference, never
+  the host or the reference). The write profile section has the confirmation dialog in English and German. The new
+  routes answer 405 and the new module is not loaded while every flag is off.
 - STU-XW-3 (CR-DBX): the plan, preview and confirmation framework (D-09, D-10), with every write area still off.
   A change runs only as a server-side plan: `POST /api/write/plans` builds it through a pluggable executor, reads
   the targets' fingerprint on the unlock's write connection (SQLite: file identity and the file's schema; PostgreSQL:

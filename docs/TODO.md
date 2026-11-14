@@ -46,6 +46,12 @@
 > PostgreSQL: the target tables' catalog with triggers, rules and policies); preview with the triggers and rules on
 > the targets; typed confirmation; drift check inside the run's transaction; pluggable executors (none registered
 > until STU-026). Every area stays off. Open: see the CR-DBX section.
+>
+> STU-XW-4 (2026-11-14, branch `claude/project-thread-rdo6g3-stuxw4`): libpq `require_auth=!password,!md5` on every
+> PostgreSQL write and admin connection, fail closed below libpq 16 (closes L-2 of the PR #111 review), and the I-109 j
+> confirmation of each write secret's pair of server and reference (D-15, `tabrion_studio.write.secret_confirm`,
+> loaded only while an area is on), checked at unlock and on every later use. Every area stays off. Open: see the
+> CR-DBX section.
 
 ## Summary
 
@@ -66,7 +72,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1, STU-XW-2 and STU-XW-3 in review, STU-XW-4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1, STU-XW-2 and STU-XW-3 in review, STU-XW-4 done (in review, L-2 of PR #111 closed); each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -508,7 +514,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | STU-XW-1 follow-up: review findings of PR #111 | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1b`): L-1 write and admin profiles only from the command line's or the platform's configuration folder while an area is on (`studio.write_profiles_ignored`); L-3 the SQLite write connection never creates a missing file (`file:...?mode=rw`, tabrion `create=False`); I-1 the privilege check reports `admin.broad:<pg_* role>` and `admin.createrole_pre16` (tabrion ADR 0015 D-1, D-2). I-3 and L-2 recorded below |
 | 1.1 | Audit log (STU-XW-2) | TABRION STU-XW-2 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw2`): append-only log in `<state>/audit/` (0700/0600, no links, no open handles), SHA-256 hash chain with `head.json` anchor and `verify_log` (edit, deletion, insertion, reordering, truncation), rotation that never overwrites or deletes, fields by allowlist only (names, counts, codes, plan hash; never a value or secret, canary-tested); unlock and `run.start` fail closed (`405 studio.audit_unavailable`), lock, profile, secret and `run.result` records keep a pending marker on failure (N-4) shown in the write profile section; `GET /api/write/audit` read only, 405 with every flag off; the module is not loaded with every flag off. Hook for STU-XW-3 and STU-026: `Unlocks.audited_transaction(session, connection_id, area, action=, objects=, plan_hash=)`. Open points below |
 | 1.1 | Plan, preview and confirmation framework (STU-XW-3) | TABRION STU-XW-3 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw3`): `POST /api/write/plans` (plan and preview), `/confirm` (plan hash and typed text: the write profile's name, for a destructive plan the target's name), `/execute` (once), `DELETE` (drop); the plan hash covers session, connection, unlock, nonce, executor, targets, steps and fingerprint; refusals `studio.plan_*` (400) and the unlock's own (405); drift check inside the transaction (PostgreSQL also after `LOCK TABLE ... IN ROW EXCLUSIVE MODE`), SQLite file identity before each run; the preview names triggers and rules (TX-16); `run.start` carries the plan hash; 405 and no import with every flag off. Open points below |
-| 1.1 | I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-4 | G-S2 | **Next**; carries the binding requirement L-2 of PR #111 (below) |
+| 1.1 | I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-4 | G-S2 | Done, in review (branch `claude/project-thread-rdo6g3-stuxw4`): L-2 of PR #111 closed: every PostgreSQL write and admin connection (the privilege check included) sets libpq `require_auth=!password,!md5` (`scram-sha-256` for a foreign host that gets a password); libpq older than 16 refuses the connection and the unlock before any secret is read (`405 studio.require_auth_unavailable`). I-109 j confirmation (D-15): `POST /api/write/secret-confirmations` (preview of the pair of server and secret reference, read from the user's file, with a session-bound hash), `/confirm` (hash and the typed host), `DELETE` (revoke); the confirmed pair's SHA-256 in `<state>/write-secret-confirmations.json` (0600); an unconfirmed or changed pair refuses the unlock before any secret is resolved (`studio.secret_unconfirmed`), every use of an unlock (the plan confirmation and run of STU-XW-3 included) re-checks it; a foreign host needs `verify-ca` or `verify-full` (`studio.write_tls_required`); audit events `secret.confirm` and `secret.unconfirm`; the D-15 dialog in the write profile section (en, de); 405 and no import with every flag off. Open points below |
 | 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 (in Studio's pin); brings the first plan executor (`data_editor.changeset`, Tabrion's guided write transaction) and the `PlanReview`/`ChangesetReview` UI |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
@@ -536,12 +542,29 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   explicitly for `kind = "write"` which findings refuse the unlock (and with which W-9 code), and whether `dangerous`
   findings (`createrole_pre16`, the server-file roles) always block. For `kind = "admin"` STU-XDM-1 decides it at
   G-S4. Not decided in the follow-up of PR #111.
-- **STU-XW-4, binding requirement (L-2 of the review of PR #111): `require_auth` for every write and admin
+- **Closed in STU-XW-4: binding requirement L-2 of the review of PR #111, `require_auth` for every write and admin
   connection.** Every PostgreSQL write and admin connection sets `require_auth = "!password,!md5"`, always, whatever
-  the profile or its owner (today `refuses_cleartext` holds only for project profiles, B-3, and write profiles are
-  user profiles). With libpq older than 16 (no `require_auth`) Studio refuses the write unlock (fail closed) instead
-  of only logging a warning. Proof: a test that the option reaches the driver for `write` and `admin`, and a test
-  that an older libpq refuses the unlock. Not implemented in STU-XW-1.
+  the profile or its owner (`tabrion_studio.write.connection`; the read path's `refuses_cleartext` rule for project
+  profiles, B-3, is unchanged). For a foreign host that gets a password the value is `scram-sha-256` (I-109 j). With
+  libpq older than 16 (`psycopg.pq.version()`) Studio refuses the write connection and the unlock before any secret
+  is read (`405 studio.require_auth_unavailable`). Proof: `tests/security/test_write_secret_confirm.py` (the option
+  reaches the driver for `write` and `admin`; libpq 15 simulated refuses the connection and the unlock) and
+  `tests/security/test_write_require_auth_pg.py` (a real server whose `pg_hba.conf` asks `md5` or `password` is
+  refused; needs `TABRION_STUDIO_TEST_POSTGRES_MD5` and `..._PASSWORD`, skipped in CI, whose server uses SCRAM; run
+  locally against a throwaway PostgreSQL 16 for the PR).
+- **STU-XW-4 open points (for the review and G-S2):**
+  - **Foreign host and `require_auth=scram-sha-256`:** a write role on a foreign host that authenticates with a
+    password must use SCRAM; a foreign host with a client certificate or GSSAPI and no password keeps
+    `!password,!md5`. A foreign host always needs `verify-ca` or `verify-full`, also for profiles the user wrote
+    by hand (the rule is not limited to imported profiles, since Studio cannot tell them apart yet).
+  - **Every PostgreSQL write profile needs the confirmation**, also one the user created in Studio's form; the
+    profile import of STU-XDM-5 and STU-CR-6 has to call the same confirmation for each imported pair.
+  - **Several Studio processes:** the confirmation file is written atomically, but two processes that confirm at
+    the same moment can lose one confirmation (fail closed: the user confirms again). A lock across processes as for
+    the audit log is possible if needed.
+  - **Revert of a change:** a confirmation is bound to the pair's digest; changing the server and changing it back
+    to the confirmed pair matches again (a write profile's own edit or removal forgets its confirmation; a read
+    profile's edit only makes it stale).
 - **STU-XW-2, fixed in PR #114 (review `reviews/pr114-stuxw2-review.md`):** M-1, several Studio processes (one
   per project) share `<state>/audit`: every write, head update, rotation, pending marker change and verification
   now runs under a lock across processes (`audit/audit.lock`, `fcntl.flock` or `msvcrt.locking`), and the chain's end

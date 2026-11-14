@@ -164,6 +164,30 @@ the server answers `405` and the write code is not even loaded.
       and you preview the change again;
     - the audit log's `run.start` record carries the plan hash. With every area off, the plan routes answer `405`
       like every other write route.
+- **Where a write secret goes (STU-XW-4).** A profile file names both the server and where the password comes from,
+  and it may not be yours (a copied file, a hand edit, later an imported profile). So Studio reads the password of a
+  PostgreSQL write or admin profile only after you confirmed the **pair** (tabrion contract I-109 j, dialog D-15):
+    - in the write profile section, "Review" shows the server (host, port, database, TLS mode), the write role and
+      the secret reference (keyring, `env:NAME`, `file:PATH` or none). You confirm by typing the host. Studio reads
+      the pair from your `profiles.toml` on the server, never from the page, and keeps the confirmed pair's SHA-256
+      in its state folder (`write-secret-confirmations.json`, `0600`);
+    - an unlock of an unconfirmed pair is refused before any password is read, also from an environment variable or
+      a file (`400 studio.secret_unconfirmed`). A change of the server, the TLS mode, the role or the reference
+      needs a new confirmation; removing a write profile forgets it. Every later use of an unlock, the plan
+      confirmation and run included, checks the confirmation again, so revoking it ends the unlock;
+    - a server that is not on this computer (anything but a socket folder, `localhost` or a loopback address) gets a
+      write or admin password only with the TLS mode `verify-ca` or `verify-full` (`400 studio.write_tls_required`)
+      and only through SCRAM (`require_auth=scram-sha-256`);
+    - confirming and revoking are recorded in the audit log, with the pair's hash and the kind of reference, never the
+      host, the variable name, the path or the password. SQLite write profiles have no password and need no
+      confirmation.
+- **No clear-text or MD5 passwords for writes (STU-XW-4).** Every PostgreSQL write and admin connection, and the
+  privilege check that runs on it, tells libpq `require_auth=!password,!md5`: libpq refuses a server that asks for
+  the password in clear text (the `password` method, and LDAP, PAM, RADIUS and BSD authentication) or as an MD5
+  hash, so the write role needs SCRAM, a certificate or GSSAPI. This needs libpq 16 or newer; with an older libpq
+  Studio opens no write or admin connection and refuses the unlock (`405 studio.require_auth_unavailable`).
+  `psycopg[binary]` brings a recent libpq. Read connections are unchanged: project profiles refuse a clear-text
+  password (`require_auth=!password`), your own read profiles keep every method.
 
 !!! note "Python 3.11"
     Python's `sqlite3` module can turn on SQLite's defensive mode only from Python 3.12. On Python 3.11 Studio
