@@ -22,6 +22,22 @@ Profile files (the project's ``.tabrion/studio.toml`` and the user's ``profiles.
     read_only_role = true
     statement_timeout_ms = 15000
 
+Write and admin profiles (STU-XW-1, STU-ADR-0006, E-X8) exist **only in the user's** ``profiles.toml`` (review K-1
+of PR #109), as ``[[write_profile]]`` tables coupled to one user read profile of the same file::
+
+    [[write_profile]]
+    name = "measurements-write"
+    kind = "write"               # write | admin
+    read_profile = "measurements-dev"   # a user profile of this file, never a project profile; never a PROD one
+    user = "measurements_writer"        # PostgreSQL: its own role (required, not the read profile's)
+    password = "keyring:"               # its own secret reference
+
+A write profile has no target of its own: host, port, database or file, TLS mode and environment are the read
+profile's, so it can never name another target or another environment than the profile it is coupled to (TX-04).
+A project file (``validate_profiles(..., owner="project")``, the default) that has a ``[[write_profile]]`` table is
+invalid, and in either file a ``[[profile]]`` with a key that would make it a write profile or couple it
+(:data:`WRITE_KEYS`) is refused (``config.write_key_not_allowed``).
+
 The validator never echoes a value it rejects: an issue names the key path (``profile[2].password``) and a code
 (``config.plain_password``), so a plain password written into a file by mistake never reaches the page or a log.
 Unknown keys are reported and ignored. The format is Studio-local until Tabrion's profile format v1 (TAB-CR-1,
@@ -38,6 +54,8 @@ import re
 from typing import Any, Literal
 
 from tabrion_studio.config.locations import network_or_device
+
+Owner = Literal["user", "project"]
 
 SCHEMA_VERSION = 1
 ENGINES = ("sqlite", "postgresql")
@@ -60,6 +78,26 @@ _COMMON = {"name", "engine", "environment", "password", "statement_timeout_ms", 
 _SQLITE = _COMMON | {"path"}
 _POSTGRES = _COMMON | {"host", "port", "database", "user", "sslmode"}
 _KNOWN = _SQLITE | _POSTGRES
+#: Keys that would make a read profile a write or admin profile or couple it to one: refused in every ``[[profile]]``
+#: of either file (K-1). Write and admin profiles are ``[[write_profile]]`` tables of the user's file only.
+WRITE_KEYS = frozenset(
+    {
+        "mode",
+        "kind",
+        "couples_to",
+        "coupled_to",
+        "coupling",
+        "read_profile",
+        "write_profile",
+        "admin_profile",
+        "write_user",
+        "write_password",
+        "admin_user",
+        "admin_password",
+    }
+)
+WRITE_KINDS = ("write", "admin")
+WRITE_PROFILE_KEYS = ("name", "kind", "read_profile", "user", "password")
 
 Severity = Literal["error", "warning"]
 
@@ -132,11 +170,49 @@ def target_fingerprint(doc: dict[str, Any]) -> str:
     return hashlib.sha256(text.encode("ascii")).hexdigest()[:16]
 
 
+@dataclass(frozen=True)
+class WriteProfile:
+    """A write or admin profile of the user's own file (E-X8, K-1): its own role and secret, coupled to one user read
+    profile whose target and environment it uses."""
+
+    name: str
+    kind: str  # "write" or "admin"
+    read_profile: str  # the name of a user profile of the same file
+    user: str | None = None
+    password: SecretRef | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        doc: dict[str, Any] = {"name": self.name, "kind": self.kind, "read_profile": self.read_profile}
+        if self.user is not None:
+            doc["user"] = self.user
+        doc["password"] = None if self.password is None else self.password.to_dict()
+        return doc
+
+    def connection_profile(self, read: Profile) -> Profile:
+        """The profile a write connection uses: the read profile's target and environment, this role and secret."""
+        return Profile(
+            name=read.name,
+            engine=read.engine,
+            environment=read.environment,
+            path=read.path,
+            host=read.host,
+            port=read.port,
+            database=read.database,
+            user=self.user if read.engine == "postgresql" else None,
+            password=self.password if read.engine == "postgresql" else None,
+            sslmode=read.sslmode,
+            read_only_role=None,
+            statement_timeout_ms=read.statement_timeout_ms,
+        )
+
+
 @dataclass
 class ProfileFile:
     """The result of validating a profile file: the valid profiles, every issue and the unknown keys."""
 
     profiles: list[Profile] = field(default_factory=list)
+    #: Only for the user's own file (K-1); always empty for a project file.
+    write_profiles: list[WriteProfile] = field(default_factory=list)
     issues: list[Issue] = field(default_factory=list)
     unknown_keys: list[str] = field(default_factory=list)
 
@@ -251,7 +327,10 @@ def _profile(raw: Any, where: str, issues: list[Issue], unknown: list[str]) -> P
     if "environment" not in raw:
         issues.append(Issue(f"{where}.environment", "config.required"))
     for key in raw:
-        if key not in _KNOWN:
+        if key in WRITE_KEYS:
+            # K-1: a read profile never becomes a write profile or a coupling, in a project file or the user's.
+            issues.append(Issue(f"{where}.{key}", "config.write_key_not_allowed"))
+        elif key not in _KNOWN:
             unknown.append(f"{where}.{_key(str(key))}")
         elif (engine == "sqlite" and key not in _SQLITE) or (engine == "postgresql" and key not in _POSTGRES):
             issues.append(Issue(f"{where}.{key}", "config.not_for_engine"))
@@ -315,8 +394,12 @@ def _profile(raw: Any, where: str, issues: list[Issue], unknown: list[str]) -> P
     )
 
 
-def validate_profiles(doc: dict[str, Any]) -> ProfileFile:
-    """Validate a parsed profile file of schema version 1."""
+def validate_profiles(doc: dict[str, Any], *, owner: Owner = "project") -> ProfileFile:
+    """Validate a parsed profile file of schema version 1.
+
+    ``owner`` is ``"user"`` only for the user's own ``profiles.toml``: only there may ``[[write_profile]]`` tables
+    appear (K-1). The default is the stricter ``"project"``.
+    """
     result = ProfileFile()
     issues, unknown = result.issues, result.unknown_keys
     version = doc.get("version")
@@ -327,7 +410,11 @@ def validate_profiles(doc: dict[str, Any]) -> ProfileFile:
         issues.append(Issue("version", "config.unsupported_version"))
         return result
     for key in doc:
-        if key not in ("version", "profile"):
+        if key == "write_profile":
+            if owner != "user":
+                # K-1: a project file never defines a write or admin profile; the whole file is refused.
+                issues.append(Issue("write_profile", "config.write_profile_in_project"))
+        elif key not in ("version", "profile"):
             unknown.append(_key(str(key)))
     raw_profiles = doc.get("profile", [])
     if not isinstance(raw_profiles, list):
@@ -346,9 +433,97 @@ def validate_profiles(doc: dict[str, Any]) -> ProfileFile:
             continue
         seen.add(profile.name)
         result.profiles.append(profile)
+    if owner == "user" and "write_profile" in doc:
+        _write_profiles(doc["write_profile"], result, seen)
     for pointer in unknown:
         issues.append(Issue(pointer, "config.unknown_key", "warning"))
     return result
+
+
+def _write_profile(raw: Any, where: str, issues: list[Issue]) -> WriteProfile | None:
+    if not isinstance(raw, dict):
+        issues.append(Issue(where, "config.type"))
+        return None
+    start = len(issues)
+    for key in raw:
+        if key not in WRITE_PROFILE_KEYS:
+            # Stricter than a read profile: a write profile has no target of its own and no other key (TX-04).
+            issues.append(Issue(f"{where}.{_key(str(key))}", "config.unknown_key"))
+    name = _text(raw, "name", where, issues, limit=MAX_NAME)
+    if "name" not in raw:
+        issues.append(Issue(f"{where}.name", "config.required"))
+    elif name is not None and _CONTROL.search(name):
+        issues.append(Issue(f"{where}.name", "config.control_character"))
+    kind = _choice(raw, "kind", where, WRITE_KINDS, issues)
+    if "kind" not in raw:
+        issues.append(Issue(f"{where}.kind", "config.required"))
+    read_profile = _text(raw, "read_profile", where, issues, limit=MAX_NAME)
+    if "read_profile" not in raw:
+        issues.append(Issue(f"{where}.read_profile", "config.required"))
+    user = _text(raw, "user", where, issues, limit=255)
+    password: SecretRef | None = None
+    if "password" in raw:
+        value = raw["password"]
+        password = parse_secret_ref(value) if isinstance(value, str) else None
+        if password is None:
+            issues.append(Issue(f"{where}.password", "config.plain_password"))
+        elif password.source == "file" and network_or_device(password.target):
+            issues.append(Issue(f"{where}.password", "config.network_path"))
+    if len(issues) > start or name is None or kind is None or read_profile is None:
+        return None
+    return WriteProfile(name=name, kind=kind, read_profile=read_profile, user=user, password=password)
+
+
+def parse_write_profile(raw: Any) -> tuple[WriteProfile | None, list[Issue]]:
+    """One write or admin profile as a form sends it; its issues point at ``write_profile[0].<key>``."""
+    issues: list[Issue] = []
+    return _write_profile(raw, "write_profile[0]", issues), issues
+
+
+def coupling_issue(write: WriteProfile, read: Profile | None) -> str | None:
+    """Why ``write`` cannot be coupled to ``read`` (a ``config.*`` code), or None (K-1, E-X7, E-X8, TX-04)."""
+    if read is None:
+        return "config.coupling_unknown"  # only a user profile of the same file; never a project profile
+    if read.environment == "prod":
+        return "config.coupling_prod"  # E-X7: a PROD profile never has a write or admin profile
+    if read.engine == "sqlite" and (write.user is not None or write.password is not None):
+        return "config.not_for_engine"
+    if read.engine == "postgresql":
+        if write.user is None:
+            return "config.coupling_role_required"
+        if write.user == read.user:
+            return "config.coupling_same_role"  # E-X8: its own database role
+    return None
+
+
+def _coupling_pointer(code: str) -> str:
+    return "user" if code in ("config.coupling_role_required", "config.coupling_same_role") else "read_profile"
+
+
+def _write_profiles(raw_list: Any, result: ProfileFile, read_names: set[str]) -> None:
+    issues = result.issues
+    if not isinstance(raw_list, list):
+        issues.append(Issue("write_profile", "config.type"))
+        return
+    if len(raw_list) + len(result.profiles) > MAX_PROFILES:
+        issues.append(Issue("write_profile", "config.too_many"))
+        return
+    reads = {profile.name: profile for profile in result.profiles}
+    seen: set[str] = set()
+    for index, raw in enumerate(raw_list):
+        where = f"write_profile[{index}]"
+        write = _write_profile(raw, where, issues)
+        if write is None:
+            continue
+        if write.name in seen or write.name in read_names:
+            issues.append(Issue(f"{where}.name", "config.duplicate"))
+            continue
+        problem = coupling_issue(write, reads.get(write.read_profile))
+        if problem is not None:
+            issues.append(Issue(f"{where}.{_coupling_pointer(problem)}", problem))
+            continue
+        seen.add(write.name)
+        result.write_profiles.append(write)
 
 
 # --- settings.toml ---------------------------------------------------------------------------------------------

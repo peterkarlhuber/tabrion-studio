@@ -29,6 +29,7 @@ from collections.abc import Callable, Iterator, Mapping
 import contextlib
 from dataclasses import dataclass, field
 import logging
+import os
 from pathlib import Path
 import re
 import secrets
@@ -178,17 +179,27 @@ _NOT_AT_STARTUP = ("search_path", "transaction_timeout_ms")
 _STARTUP_VALUE = re.compile(r"[A-Za-z0-9_/+-]{1,64}")
 
 
-def startup_options(session: SessionSettings) -> str:
+#: The one ``search_path`` a write or admin connection may pin at startup (STU-XW-1, K-2): the catalog first, as
+#: ``tabrion_compat.CATALOG_SEARCH_PATH``, written without the space libpq would need escaped.
+WRITE_STARTUP_SEARCH_PATH = "pg_catalog,pg_temp"
+
+
+def startup_options(session: SessionSettings, *, read_only: bool = True, pin_catalog_path: bool = False) -> str:
     """libpq ``options`` for ``session``, ``default_transaction_read_only=on`` and ``extra_float_digits=3``: the values
     ``RESET ALL`` gives back.
 
     Only plain values (numbers, names like ``UTC``): anything else would need libpq's escaping, so it is refused.
+    ``read_only=False`` and ``pin_catalog_path=True`` are for a write or admin connection only (STU-XW-1): the session
+    is not read-only and its ``search_path`` is the fixed catalog-first one (K-2), given at startup so that it wins
+    over a role or database setting and ``RESET ALL`` gives it back. Every read connection keeps the defaults.
     """
     if any(getattr(session, name) is not None for name in _NOT_AT_STARTUP):
         raise RegistryError("studio.connection_config")
     # extra_float_digits=3: float text is exact (shortest round-trip), whatever the role or database sets, so the
     # viewer's keyset (keys kept as their text, H-2 of stu-013-review.md) compares the same value it showed.
-    pairs = [("default_transaction_read_only", "on"), ("extra_float_digits", "3")]
+    pairs = [("default_transaction_read_only", "on" if read_only else "off"), ("extra_float_digits", "3")]
+    if pin_catalog_path:
+        pairs.append(("search_path", WRITE_STARTUP_SEARCH_PATH))
     for name, setting in _STARTUP_SETTINGS.items():
         value = getattr(session, name)
         if value is None:
@@ -217,7 +228,11 @@ def _libpq_version() -> int:
 
 
 def driver_options(
-    password: str | None, session: SessionSettings | None = None, *, refuse_cleartext: bool = False
+    password: str | None,
+    session: SessionSettings | None = None,
+    *,
+    refuse_cleartext: bool = False,
+    write: bool = False,
 ) -> dict[str, Any]:
     """psycopg connection options of every Studio PostgreSQL connection; constants, not connection targets.
 
@@ -234,10 +249,12 @@ def driver_options(
       stay possible. A project's file names the host, so it must not get a password in clear text that way. A user
       profile is the user's own choice of server and keeps every method. With a libpq older than 16, which does not
       know the option, it is left out and a warning is logged.
+    * ``write`` (a write or admin connection, STU-XW-1): the startup options of :func:`startup_options` with
+      ``read_only=False`` and the pinned catalog-first ``search_path``.
     """
     options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
     if session is not None:
-        options["options"] = startup_options(session)
+        options["options"] = startup_options(session, read_only=not write, pin_catalog_path=write)
         options["application_name"] = APPLICATION_NAME
     if password is None:
         options["password"] = ""
@@ -396,6 +413,9 @@ class OpenConnection:
     opened_at: float
     timeout_s: float
     _db: tabrion.Database = field(repr=False)
+    #: SQLite: ``(device, inode)`` of the database file right after it opened (Windows: volume serial, file ID).
+    #: A write unlock (STU-XW-1, TX-16) opens a write connection only to this same file.
+    database_identity: tuple[int, int] | None = None
 
     read_only = True
 
@@ -659,6 +679,13 @@ class ConnectionRegistry:
         if not health.ok:
             connection.close()
             raise _health_error(health)
+        if database_file is not None:
+            try:
+                info = os.stat(database_file)
+            except OSError:
+                connection.close()
+                raise RegistryError("studio.database_missing") from None
+            connection.database_identity = (info.st_dev, info.st_ino)
         return connection
 
     @contextlib.contextmanager

@@ -27,7 +27,16 @@ import sys
 from typing import Any
 
 from tabrion_studio.config.files import MAX_FILE_BYTES, ConfigFileError, parse_toml
-from tabrion_studio.config.schema import SCHEMA_VERSION, Profile, Settings, validate_profiles, validate_settings
+from tabrion_studio.config.schema import (
+    SCHEMA_VERSION,
+    WRITE_PROFILE_KEYS,
+    Profile,
+    SecretRef,
+    Settings,
+    WriteProfile,
+    validate_profiles,
+    validate_settings,
+)
 from tabrion_studio.paths import write_private_file
 
 HEADER = "# Written by Tabrion Studio. Comments are not kept when Studio saves this file.\n"
@@ -94,12 +103,15 @@ def _key(key: str) -> str:
     return key if _BARE_KEY.fullmatch(key) else toml_string(key)
 
 
-def _profile_items(profile: Profile) -> Iterable[tuple[str, Any]]:
-    for key in PROFILE_KEYS:
+def _reference(ref: SecretRef) -> str:
+    return "keyring:" if ref.source == "keyring" else f"{ref.source}:{ref.target}"
+
+
+def _profile_items(profile: Profile | WriteProfile, keys: tuple[str, ...]) -> Iterable[tuple[str, Any]]:
+    for key in keys:
         if key == "password":
             if profile.password is not None:
-                ref = profile.password
-                yield key, "keyring:" if ref.source == "keyring" else f"{ref.source}:{ref.target}"
+                yield key, _reference(profile.password)
             continue
         value = getattr(profile, key)
         # A derived sslmode (verify-full for a remote host) is written as well: the file then says what is used.
@@ -107,11 +119,15 @@ def _profile_items(profile: Profile) -> Iterable[tuple[str, Any]]:
             yield key, value
 
 
-def dump_profiles(profiles: list[Profile]) -> bytes:
+def dump_profiles(profiles: list[Profile], write_profiles: list[WriteProfile] | None = None) -> bytes:
+    """The user's ``profiles.toml``: the read profiles, then the write and admin profiles (K-1: only this file)."""
     lines = [HEADER, f"version = {SCHEMA_VERSION}\n"]
     for profile in profiles:
         lines.append("\n[[profile]]\n")
-        lines += [f"{_key(key)} = {_value(value)}\n" for key, value in _profile_items(profile)]
+        lines += [f"{_key(key)} = {_value(value)}\n" for key, value in _profile_items(profile, PROFILE_KEYS)]
+    for write in write_profiles or []:
+        lines.append("\n[[write_profile]]\n")
+        lines += [f"{_key(key)} = {_value(value)}\n" for key, value in _profile_items(write, WRITE_PROFILE_KEYS)]
     return "".join(lines).encode("utf-8")
 
 
@@ -141,16 +157,17 @@ def dump_settings(settings: Settings) -> bytes:
     return "".join(lines).encode("utf-8")
 
 
-def checked_profiles(profiles: list[Profile]) -> bytes:
+def checked_profiles(profiles: list[Profile], write_profiles: list[WriteProfile] | None = None) -> bytes:
     """``dump_profiles``, parsed back: the file must give exactly these profiles and no issue (else ValueError)."""
-    data = dump_profiles(profiles)
+    writes = list(write_profiles or [])
+    data = dump_profiles(profiles, writes)
     if len(data) > MAX_FILE_BYTES:
         raise SaveError("studio.config_too_large")  # Studio would not read it back
     try:
-        parsed = validate_profiles(parse_toml(data))
+        parsed = validate_profiles(parse_toml(data), owner="user")
     except ConfigFileError as exc:
         raise ValueError("the written profiles do not parse") from exc
-    if parsed.issues or parsed.profiles != profiles:
+    if parsed.issues or parsed.profiles != profiles or parsed.write_profiles != writes:
         raise ValueError("the written profiles do not read back")
     return data
 

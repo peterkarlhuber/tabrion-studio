@@ -52,6 +52,8 @@ from tabrion_studio.api.queries import add_query_routes
 from tabrion_studio.api.scripts import MAX_BODY as MAX_SCRIPT_BODY
 from tabrion_studio.api.scripts import add_script_routes
 from tabrion_studio.api.viewer import add_viewer_routes
+from tabrion_studio.api.write import add_write_routes
+from tabrion_studio.config.write_areas import ALL_OFF, WriteAreas
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
 from tabrion_studio.logs import register_secret
@@ -153,6 +155,8 @@ class Runtime:
     drafts: Drafts | None = None
     #: The loopback address the server listens on: a random ``127.a.b.c`` per instance, or ``127.0.0.1`` (A-01).
     host: str = "127.0.0.1"
+    #: The per-area write kill switches as read once at start (STU-ADR-0006, STU-XW-1): every area off by default.
+    write_areas: WriteAreas = ALL_OFF
 
 
 def _problem(code: str) -> Response:
@@ -205,6 +209,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
                     task.cancel()
                     with contextlib.suppress(asyncio.CancelledError):
                         await task
+                if unlocks is not None:
+                    # A restart ends every unlock (TX-05): the write connections close first.
+                    await asyncio.to_thread(unlocks.close_all)
                 if runtime.queries is not None:
                     # Running queries are canceled first (STU-011).
                     await asyncio.to_thread(runtime.queries.close_all)
@@ -326,6 +333,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_script_routes(app, runtime.scripts)
     if runtime.drafts is not None:
         add_draft_routes(app, runtime.drafts)
+    # The write foundation (STU-XW-1): refusing handlers unless an area's flag was on at start (TX-02).
+    unlocks = add_write_routes(app, runtime.write_areas, runtime.config, runtime.connections)
+    app.state.write_unlocks = unlocks
 
     index = static_dir / "index.html"
     if index.is_file():

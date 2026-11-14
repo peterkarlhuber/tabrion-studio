@@ -52,7 +52,15 @@ import sqlite3
 
 from tabrion.sql import split_statements
 
-__all__ = ["StatementRefused", "check_statement", "first_word", "sqlite_authorizer"]
+__all__ = [
+    "ACTING_PRAGMAS",
+    "READING_PRAGMAS",
+    "SQLITE_FUNCTIONS",
+    "StatementRefused",
+    "check_statement",
+    "first_word",
+    "sqlite_authorizer",
+]
 
 _ALLOWED_ACTIONS = frozenset(
     {
@@ -124,6 +132,13 @@ _SQLITE_FUNCTIONS = frozenset(
         "geopoly_json", "geopoly_overlap", "geopoly_regular", "geopoly_svg", "geopoly_within", "geopoly_xform",
     }
 )  # fmt: skip
+
+
+#: The same allowlists, for the write connection's authorizer (STU-XW-1, ``tabrion_studio.write.connection``): it
+#: allows the same functions and reading pragmas, and adds row changes only.
+SQLITE_FUNCTIONS = _SQLITE_FUNCTIONS
+READING_PRAGMAS = _READING_PRAGMAS
+ACTING_PRAGMAS = _ACTING_PRAGMAS
 
 
 def sqlite_authorizer(action: int, arg1: str | None, arg2: str | None, _db: str | None, _trigger: str | None) -> int:

@@ -1025,7 +1025,19 @@
     "script_too_large": "The script is larger than Studio opens or saves (1 MB).",
     "script_exists": "A script with this path exists already.",
     "script_stale": "The script changed on disk since it was read.",
-    "script_folder_missing": "The folder does not exist. Studio creates no folders."
+    "script_folder_missing": "The folder does not exist. Studio creates no folders.",
+    "write_profile_invalid": "The write profile is not valid. It must be coupled to one of your own profiles that is not PROD and use its own role.",
+    "write_profile_unknown": "There is no such write or admin profile.",
+    "write_profile_exists": "A profile or write profile with this name exists already.",
+    "write_warning_unconfirmed": "Confirm the note on production credentials first.",
+    "profile_coupled": "A write or admin profile is coupled to this profile. Remove it first.",
+    "write_prod_locked": "Studio never writes to a PROD database.",
+    "write_coupling_invalid": "This write profile is not coupled to the profile of this connection.",
+    "write_target_unknown": "There is no open connection with this ID.",
+    "unlock_name_mismatch": "Type the name of the write profile exactly to unlock.",
+    "write_locked": "The write mode is locked. Unlock it again.",
+    "write_target_changed": "The profile or the database file changed; the unlock has ended.",
+    "write_unsupported": "Studio cannot open a write connection with its safeguards for this database."
   },
   "keyboard": {
     "palette": {
@@ -1528,5 +1540,23 @@
       "extension_unknown": "The status of pgvector could not be read.",
       "definition_too_long": "The definition of the virtual table {{table}} is longer than 64 KiB, so Studio does not read it."
     }
+  },
+  "write": {
+    "title": "Write and admin profiles",
+    "lead": "A write or admin profile has its own database role and secret and is coupled to one of your own profiles that is not PROD. Studio keeps it only in your profiles.toml.",
+    "name": "Name of the write profile",
+    "kind": "Kind",
+    "kinds": {
+      "write": "Write profile",
+      "admin": "Admin profile"
+    },
+    "readProfile": "Coupled to",
+    "readProfileHint": "One of your own profiles; project profiles and PROD profiles cannot be coupled.",
+    "choose": "Choose a profile",
+    "role": "Database role",
+    "roleHint": "Its own role with only the rights it needs; not the role of the coupled profile.",
+    "prodNote": "Studio relies on the environment you give the coupled profile: it cannot tell whether a database is production. Write credentials for a production database do not belong in Studio.",
+    "prodConfirm": "I understand, and this is not a production database.",
+    "create": "Create write profile"
   }
 }

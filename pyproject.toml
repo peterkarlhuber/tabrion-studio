@@ -230,6 +230,29 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
+id = "read-paths-never-write"
+name = "The read paths, the services and the configuration never import the write foundation (STU-XW-1, TX-03, TX-10)"
+type = "forbidden"
+source_modules = [
+    "tabrion_studio.services",
+    "tabrion_studio.config",
+    "tabrion_studio.security",
+    "tabrion_studio.api.config",
+    "tabrion_studio.api.connections",
+    "tabrion_studio.api.queries",
+    "tabrion_studio.api.explorer",
+    "tabrion_studio.api.viewer",
+    "tabrion_studio.api.exports",
+    "tabrion_studio.api.diagnostics",
+    "tabrion_studio.api.migrations",
+    "tabrion_studio.api.history",
+    "tabrion_studio.api.scripts",
+    "tabrion_studio.api.drafts",
+    "tabrion_studio.diagnose_cli",
+]
+forbidden_modules = ["tabrion_studio.write"]
+
+[[tool.importlinter.contracts]]
 id = "engines-only-in-services"
 name = "Only the services open database engines: SQLAlchemy and psycopg stay out of the API, the app and the config"
 type = "forbidden"

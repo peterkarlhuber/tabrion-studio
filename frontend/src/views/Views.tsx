@@ -34,6 +34,7 @@ import { navigate } from '../router';
 import { useTheme, type Density, type ThemePreference } from '../theme';
 import { DeleteHistoryDialog } from './history/HistoryDialogs';
 import styles from './Views.module.css';
+import { WriteProfilesSection } from './write/WriteProfiles';
 
 /** Inline code in translations (`<code>tabrion-studio</code>`); rendered as elements, never as HTML. */
 export const TRANS_COMPONENTS = { code: <code /> };
@@ -555,6 +556,7 @@ export function SettingsView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         />
       </section>
       <ServerSettingsForm fetcher={fetcher} revision={revision} />
+      <WriteProfilesSection fetcher={fetcher} />
     </div>
   );
 }

@@ -41,8 +41,17 @@ from fastapi.responses import JSONResponse
 
 from tabrion_studio.config.locations import lexical_target, safe_realpath
 from tabrion_studio.config.project import ProjectConfig, ProjectState, TrustError
-from tabrion_studio.config.schema import SCHEMA_VERSION, Issue, Profile, Settings, validate_profiles, validate_settings
-from tabrion_studio.config.secrets import SecretError, Secrets, SecretTarget, keyring_key
+from tabrion_studio.config.schema import (
+    SCHEMA_VERSION,
+    Issue,
+    Profile,
+    Settings,
+    WriteProfile,
+    coupling_issue,
+    validate_profiles,
+    validate_settings,
+)
+from tabrion_studio.config.secrets import SecretError, Secrets, SecretTarget, keyring_key, write_keyring_key
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.config.writer import PROFILE_KEYS, SaveError
 from tabrion_studio.problems import problem_response
@@ -75,11 +84,35 @@ class ProfileEntry:
     secret: SecretTarget
 
 
+#: Told of every change of a user profile Studio saves: ``(name, old, new)``, ``new`` None when it was removed.
+ProfileListener = Callable[[str, Profile | None, Profile | None], None]
+
+
 @dataclass
 class Configuration:
     project: ProjectConfig
     user: UserConfig
     secrets: Secrets = field(default_factory=Secrets)
+    #: The write unlocks (STU-XW-1) listen here: an edit of a coupled profile ends its unlocks (TX-04).
+    listeners: list[ProfileListener] = field(default_factory=list)
+
+    def profile_changed(self, name: str, old: Profile | None, new: Profile | None) -> None:
+        for listener in list(self.listeners):
+            try:
+                listener(name, old, new)
+            except Exception:  # a listener never fails a save that already happened
+                logger.exception("profile listener failed", extra={"event": "studio.profile_listener_failed"})
+
+    def write_target(self, write: WriteProfile, read: Profile) -> SecretTarget:
+        """Where a write or admin profile's secret comes from: its own reference, keyed by its name, kind and the
+        target it connects to (the read profile's target with its own role), never the read profile's entry."""
+        return SecretTarget(
+            write.password,
+            "user",
+            write_keyring_key(write, write.connection_profile(read)),
+            self.user.config_dir,
+            None,
+        )
 
     def load_project(self) -> ProjectState:
         """The project's state; an unexpected error makes it invalid instead of failing the route (review T-3)."""
@@ -244,6 +277,26 @@ def _user_name(config: Configuration, profile_id: object) -> str:
     raise SaveError("studio.profile_not_found")
 
 
+#: Where a coupling problem of an edited read profile points in the form.
+_COUPLING_POINTERS = {
+    "config.coupling_prod": "profile.environment",
+    "config.not_for_engine": "profile.engine",
+    "config.coupling_role_required": "profile.user",
+    "config.coupling_same_role": "profile.user",
+}
+
+
+def _check_couplings(config: Configuration, profile: Profile) -> None:
+    """An edit of a read profile that a write or admin profile is coupled to must keep the coupling valid: above all,
+    a coupled profile never becomes PROD (E-X7, K-1). Raises :class:`FormError`."""
+    for write in config.user.profiles().write_profiles:
+        if write.read_profile != profile.name:
+            continue
+        code = coupling_issue(write, profile)
+        if code is not None:
+            raise FormError("studio.profile_invalid", [(_COUPLING_POINTERS.get(code, "profile"), code)])
+
+
 def add_config_routes(
     app: FastAPI, config: Configuration, *, settings_saved: Callable[[], object] | None = None
 ) -> None:
@@ -352,6 +405,7 @@ def add_config_routes(
         profile = form_profile(doc.get("profile"))
         if profile.name != name:
             raise FormError("studio.profile_invalid", [("profile.name", "config.rename_unsupported")])
+        _check_couplings(config, profile)
         old: list[Profile] = []
 
         def change(profiles: list[Profile]) -> list[Profile]:
@@ -361,6 +415,7 @@ def add_config_routes(
             return [profile if p.name == name else p for p in profiles]
 
         new_digest = config.user.save_profiles(change, expected, overwrite=overwrite)
+        config.profile_changed(name, old[0], profile)
         before = _user_target(config, old[0])
         if before.ref != profile.password or before.key != _user_target(config, profile).key:
             # The stored secret belonged to the old reference or target (C-1): it never serves the new one.
@@ -372,6 +427,8 @@ def add_config_routes(
 
     def remove(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         name = _user_name(config, doc.get("id"))
+        if any(write.read_profile == name for write in config.user.profiles().write_profiles):
+            raise SaveError("studio.profile_coupled")  # remove the write or admin profile first
         old: list[Profile] = []
 
         def change(profiles: list[Profile]) -> list[Profile]:
@@ -381,6 +438,7 @@ def add_config_routes(
             return [p for p in profiles if p.name != name]
 
         new_digest = config.user.save_profiles(change, expected, overwrite=overwrite)
+        config.profile_changed(name, old[0], None)
         removed = forget_after_save(_user_target(config, old[0]))
         logger.info("profile removed", extra={"event": "studio.profile_removed"})
         return JSONResponse({"digest": new_digest, "secret_removed": removed})
