@@ -136,3 +136,82 @@ export function parseAudit(body: unknown): AuditState | null {
 export async function fetchAudit(fetcher: typeof fetch, limit = 20): Promise<AuditState | null> {
   return parseAudit(await getJson(fetcher, `/api/write/audit?limit=${limit}`));
 }
+
+/** A write or admin profile as `GET /api/write/profiles` lists it: never a secret, only where it comes from. */
+export interface WriteProfileItem {
+  id: string;
+  name: string;
+  kind: WriteKind;
+  engine: string;
+  /** STU-XW-4 (I-109 j): null for SQLite (no secret); false until the pair of server and reference is confirmed. */
+  confirmed: boolean | null;
+  foreign: boolean | null;
+}
+
+function flag(value: unknown): boolean | null {
+  return typeof value === 'boolean' ? value : null;
+}
+
+export function parseWriteProfiles(body: unknown): WriteProfileItem[] {
+  if (typeof body !== 'object' || body === null) return [];
+  const list = (body as Record<string, unknown>).write_profiles;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .filter((item) => typeof item.id === 'string' && typeof item.name === 'string')
+    .map((item) => {
+      const secret = (
+        typeof item.secret === 'object' && item.secret !== null ? item.secret : {}
+      ) as Record<string, unknown>;
+      return {
+        id: item.id as string,
+        name: item.name as string,
+        kind: item.kind === 'admin' ? 'admin' : 'write',
+        engine: text(item.engine) ?? '',
+        confirmed: flag(secret.confirmed),
+        foreign: flag(secret.foreign),
+      };
+    });
+}
+
+export async function fetchWriteProfiles(fetcher: typeof fetch): Promise<WriteProfileItem[]> {
+  return parseWriteProfiles(await getJson(fetcher, '/api/write/profiles'));
+}
+
+/** The pair a write or admin secret belongs to (D-15): the server it goes to and the reference it comes from. */
+export interface SecretPairPreview {
+  confirmation_hash: string;
+  confirm_text: string;
+  confirmed: boolean;
+  pair: {
+    host: string;
+    port: number;
+    database: string | null;
+    sslmode: string | null;
+    role: string | null;
+    reference: { source: string; target: string };
+    foreign: boolean;
+  };
+}
+
+/** `POST /api/write/secret-confirmations`: the server reads the pair from the user's file, never from the page. */
+export function previewSecretPair(
+  fetcher: typeof fetch,
+  writeProfileId: string,
+): Promise<Result<SecretPairPreview>> {
+  return send(fetcher, 'POST', '/api/write/secret-confirmations', {
+    write_profile_id: writeProfileId,
+  });
+}
+
+/** Confirm the previewed pair with the host, typed by the user. */
+export function confirmSecretPair(
+  fetcher: typeof fetch,
+  confirmationHash: string,
+  typed: string,
+): Promise<Result<{ confirmed: boolean }>> {
+  return send(fetcher, 'POST', '/api/write/secret-confirmations/confirm', {
+    confirmation_hash: confirmationHash,
+    typed,
+  });
+}

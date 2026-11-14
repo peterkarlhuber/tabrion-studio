@@ -86,6 +86,7 @@ FAMILIES = (
     "/api/write/unlocks",
     "/api/write/audit",
     "/api/write/plans",
+    "/api/write/secret-confirmations",
 )
 
 
@@ -208,6 +209,11 @@ CHANGING_ROUTES: dict[str, str] = {
     "DELETE /api/write/plans": "drops an open plan of this session from memory (behind the area flags)",
     "POST /api/write/plans/confirm": "confirms a plan with its hash and the typed text; writes nothing (flags)",
     "POST /api/write/plans/execute": "runs a confirmed plan once through the audited write transaction (flags)",
+    # STU-XW-4: the I-109 j confirmation of a write secret's pair of server and reference (D-15), behind the same
+    # flags (405 and no import while off; tests/security/test_write_secret_confirm.py). Reads no secret.
+    "POST /api/write/secret-confirmations": "previews a write secret's server and reference; writes nothing (flags)",
+    "POST /api/write/secret-confirmations/confirm": "confirms the pair: Studio's state file, audit log (flags)",
+    "DELETE /api/write/secret-confirmations": "revokes a pair's confirmation and ends its unlocks (flags)",
 }
 
 

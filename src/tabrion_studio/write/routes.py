@@ -12,6 +12,12 @@ lists the newest records and verifies the whole log, read only.
 
 The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan.Plans` (``app.state.write_plans``):
 make and preview, confirm with the hash and the typed text, execute once.
+
+The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
+:class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``<state>/write-secret-confirmations.json``, next to
+the audit folder; ``app.state.write_secret_confirmations``): preview the pair, confirm it with its hash and the typed
+host, revoke it. A confirmation and a revocation are recorded in the audit log (the pair's digest, the kind of
+reference and whether the host is foreign; never the host or the reference itself).
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.plan import MAX_REQUEST_BYTES, Plans
+from tabrion_studio.write.secret_confirm import CONFIRMATION_FILE, SecretConfirmations, secret_pair
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, Unlocks, write_profile_id
 
 logger = logging.getLogger("tabrion_studio.write")
@@ -103,6 +110,9 @@ _PLAN_KEYS = frozenset({"connection_id", "executor", "request"})
 _CONFIRM_KEYS = frozenset({"connection_id", "plan_hash", "typed"})
 _EXECUTE_KEYS = frozenset({"connection_id", "plan_hash"})
 _DISCARD_KEYS = frozenset({"plan_hash"})
+#: The keys of the secret confirmation routes' bodies (STU-XW-4).
+_PAIR_KEYS = frozenset({"write_profile_id"})
+_PAIR_CONFIRM_KEYS = frozenset({"confirmation_hash", "typed"})
 _MAX_PLAN_BODY = MAX_REQUEST_BYTES + 4096
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
@@ -127,7 +137,10 @@ def add_enabled_write_routes(
     audit_dir: Path | None = None,
 ) -> Unlocks:
     audit = AuditLog(audit_dir)
-    unlocks = Unlocks(config, registry, areas, audit=audit)
+    # The audit folder is <state>/audit; the confirmed pairs live next to it. No state folder: nothing confirmed.
+    confirmations = SecretConfirmations(None if audit_dir is None else audit_dir.parent / CONFIRMATION_FILE)
+    app.state.write_secret_confirmations = confirmations
+    unlocks = Unlocks(config, registry, areas, audit=audit, confirmations=confirmations)
     registered: list[tuple[str, tuple[str, ...]]] = []
 
     def route(path: str, method: str) -> Callable[[_Endpoint], _Endpoint]:
@@ -191,6 +204,7 @@ def add_enabled_write_routes(
                 if read is None or not unlocks.kind_open(write.kind):
                     continue
                 target = config.write_target(write, read)
+                pair = secret_pair(write, read)
                 items.append(
                     {
                         "id": write_profile_id(write),
@@ -202,6 +216,9 @@ def add_enabled_write_routes(
                         "secret": {
                             "source": None if write.password is None else write.password.source,
                             "has_secret": config.secrets.has_secret(target),
+                            # STU-XW-4 (I-109 j): None for SQLite (no secret); the pair itself is in the preview.
+                            "confirmed": None if pair is None else confirmations.is_confirmed(pair),
+                            "foreign": None if pair is None else pair.foreign,
                         },
                     }
                 )
@@ -278,6 +295,11 @@ def add_enabled_write_routes(
 
         new_digest = config.user.save_write_profiles(change, expected, overwrite=overwrite)
         unlocks.write_profile_changed(write.name)
+        new_pair_read = next((p for p in config.user.profiles().profiles if p.name == write.read_profile), None)
+        old_pair = None if read is None else secret_pair(old, read)
+        new_pair = None if new_pair_read is None else secret_pair(write, new_pair_read)
+        if old_pair is None or new_pair is None or old_pair.digest != new_pair.digest:
+            unconfirm(write.name, write.kind, "profile_changed")
         removed = True
         if read is not None:
             before = config.write_target(old, read)
@@ -317,12 +339,24 @@ def add_enabled_write_routes(
 
         new_digest = config.user.save_write_profiles(change, expected, overwrite=overwrite)
         unlocks.write_profile_changed(old.name)
+        unconfirm(old.name, old.kind, "profile_removed")
         removed = True if read is None else forget(config.write_target(old, read))
         logger.info("write profile removed", extra={"event": "studio.write_profile_removed"})
         recorded = audit.record(
             "profile.delete", profile=old.name, kind=old.kind, read_profile=old.read_profile, result="ok"
         )
         return JSONResponse({"digest": new_digest, "secret_removed": removed, "audit_pending": not recorded})
+
+    def unconfirm(name: str, kind: str, reason: str) -> None:
+        """Forget a pair's confirmation after the profile changed or went (a failure only leaves a stale digest,
+        which no longer matches the changed pair)."""
+        try:
+            forgotten = confirmations.forget(name)
+        except WriteError:
+            logger.warning("secret confirmation not removed", extra={"event": "studio.secret_confirmation_unavailable"})
+            return
+        if forgotten:
+            audit.record("secret.unconfirm", profile=name, kind=kind, reason=reason, result="ok")
 
     def forget(target: Any) -> bool:
         try:
@@ -465,6 +499,67 @@ def add_enabled_write_routes(
             return JSONResponse(plans.execute(session, doc.get("plan_hash"), doc.get("connection_id")))
 
         return await plan_call(request, _EXECUTE_KEYS, _MAX_BODY, execute)
+
+    # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
+
+    def pair_of(write: WriteProfile, read: Profile | None) -> Any:
+        if read is None:
+            raise WriteError("studio.write_coupling_invalid")
+        pair = secret_pair(write, read)
+        if pair is None:
+            raise WriteError("studio.secret_confirmation_not_needed")  # SQLite: no secret
+        return pair
+
+    @route("/api/write/secret-confirmations", "POST")
+    async def post_secret_confirmation(request: Request) -> Response:
+        def preview(session: str, doc: dict[str, Any]) -> Response:
+            write, read = stored(doc.get("write_profile_id"))
+            answer = confirmations.preview(session, pair_of(write, read))
+            return JSONResponse({"write_profile_id": write_profile_id(write), "kind": write.kind, **answer})
+
+        return await plan_call(request, _PAIR_KEYS, _MAX_BODY, preview)
+
+    @route("/api/write/secret-confirmations/confirm", "POST")
+    async def confirm_secret_confirmation(request: Request) -> Response:
+        def confirm(session: str, doc: dict[str, Any]) -> Response:
+            name = confirmations.pending(session, doc.get("confirmation_hash"))
+            # The pair as the user's file has it now, never from the request.
+            write, read = stored(f"{WRITE_ID_PREFIX}{name}")
+            pair = pair_of(write, read)
+            try:
+                audit.check()
+            except AuditError:
+                raise WriteError("studio.audit_unavailable") from None
+            digest = confirmations.confirm(session, doc.get("confirmation_hash"), doc.get("typed"), pair)
+            recorded = audit.record(
+                "secret.confirm",
+                profile=write.name,
+                kind=write.kind,
+                source=pair.ref_source,
+                foreign=pair.foreign,
+                pair_hash=digest,
+                result="ok",
+            )
+            return JSONResponse(
+                {"write_profile_id": write_profile_id(write), "confirmed": True, "audit_pending": not recorded}
+            )
+
+        return await plan_call(request, _PAIR_CONFIRM_KEYS, _MAX_BODY, confirm)
+
+    @route("/api/write/secret-confirmations", "DELETE")
+    async def delete_secret_confirmation(request: Request) -> Response:
+        def revoke(_session: str, doc: dict[str, Any]) -> Response:
+            write, _read = stored(doc.get("write_profile_id"))
+            try:
+                audit.check()
+            except AuditError:
+                raise WriteError("studio.audit_unavailable") from None
+            if confirmations.forget(write.name):
+                unlocks.write_profile_changed(write.name)
+                audit.record("secret.unconfirm", profile=write.name, kind=write.kind, reason="revoked", result="ok")
+            return Response(status_code=204)
+
+        return await plan_call(request, _PAIR_KEYS, _MAX_BODY, revoke)
 
     # --- the audit log, read only (STU-XW-2) -----------------------------------------------------------------------
 

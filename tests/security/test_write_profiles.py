@@ -291,7 +291,7 @@ def test_a_write_profiles_secret_is_its_own_and_never_listed(env: WriteEnv) -> N
     listing = env.send("GET", "/api/write/profiles")
     assert listing.status_code == 200 and CANARY_SECRET not in listing.text
     item = listing.json()["write_profiles"][0]
-    assert item["secret"] == {"source": "keyring", "has_secret": None}
+    assert item["secret"] == {"source": "keyring", "has_secret": None, "confirmed": False, "foreign": False}
     assert item["password"] == {"source": "keyring", "target": ""} and item["environment"] == "dev"
     profiles = env.send("GET", "/api/profiles")
     assert CANARY_SECRET not in profiles.text and "pg-write" not in profiles.text

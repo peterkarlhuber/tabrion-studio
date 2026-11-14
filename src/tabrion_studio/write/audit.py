@@ -104,6 +104,8 @@ EVENTS = frozenset(
         "profile.delete",
         "secret.store",
         "secret.remove",
+        "secret.confirm",
+        "secret.unconfirm",
         "run.start",
         "run.result",
         "audit.pending_dropped",
@@ -212,6 +214,9 @@ FIELDS: dict[str, Callable[[object], object]] = {
     "late": _flag,  # written from a pending marker (N-4)
     "occurred": _time,  # when a late record happened
     "dropped": _count,  # pending records that did not fit (MAX_PENDING)
+    "source": _token,  # STU-XW-4: the kind of a confirmed secret reference (keyring, env, file, none), never its target
+    "foreign": _flag,  # STU-XW-4: whether the confirmed pair's host is foreign (not loopback)
+    "pair_hash": _plan_hash,  # STU-XW-4: the digest of the confirmed pair of server and reference
 }
 
 

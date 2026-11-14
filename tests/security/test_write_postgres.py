@@ -215,6 +215,11 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
             assert stored.status_code == 204
         env.config.secrets.session.set("unused", CANARY_SECRET)
         connection_id = env.open("user:pg")
+        # STU-XW-4 (I-109 j): no unlock before the pair of server and secret reference is confirmed.
+        refused = env.unlock(connection_id, "write:pg-write", "pg-write")
+        assert (refused.status_code, refused.json()["code"]) == (400, "studio.secret_unconfirmed")
+        for name in ("pg-write", "pg-admin"):
+            assert env.confirm_pair(f"write:{name}").status_code == 200
         unlocked = env.unlock(connection_id, "write:pg-write", "pg-write")
         assert unlocked.status_code == 200, unlocked.text
         assert unlocked.json()["role"] == f"{prefix}_w" and unlocked.json()["findings"] == []
@@ -231,7 +236,7 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
         assert rows == [(url.username,)]
         # STU-XW-2: both unlocks are in the audit log, with the findings counted; no password reaches it (TX-13).
         audit = b"".join(p.read_bytes() for p in sorted(env.audit_dir.iterdir()) if p.is_file())
-        assert audit.count(b'"event":"unlock"') == 2 and b'"findings":' in audit
+        assert audit.count(b'"event":"unlock"') == 3 and b'"findings":' in audit
         assert roles["password"].encode() not in audit and CANARY_SECRET.encode() not in audit
         if url.password:
             assert url.password.encode() not in audit
@@ -291,6 +296,7 @@ def _plan_env(roles: dict[str, Any], tmp_path: Path, static_dir: Path) -> tuple[
     )
     assert secret.status_code == 204
     connection_id = env.open("user:pg")
+    assert env.confirm_pair("write:pg-write").status_code == 200
     assert env.unlock(connection_id, "write:pg-write", "pg-write").status_code == 200
     env.studio.client.app.state.write_plans.register(RowExecutor())  # type: ignore[attr-defined]
     return env, connection_id, admin

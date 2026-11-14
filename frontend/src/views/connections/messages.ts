@@ -103,6 +103,15 @@ const PROBLEMS = new Set([
   'plan_confirmation_mismatch',
   'plan_changed',
   'plan_drift',
+  // The I-109 j confirmation and require_auth (STU-XW-4).
+  'secret_unconfirmed',
+  'secret_confirmation_unknown',
+  'secret_confirmation_stale',
+  'secret_confirmation_mismatch',
+  'secret_confirmation_not_needed',
+  'secret_confirmation_unavailable',
+  'write_tls_required',
+  'require_auth_unavailable',
 ]);
 
 const ISSUES = new Set([

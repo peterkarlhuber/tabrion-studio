@@ -6,8 +6,8 @@ is used.
 
 | Name | Used in |
 |---|---|
-| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/plan.py`, `src/tabrion_studio/write/unlock.py`, `tests/security/test_connections_api.py`, `tests/security/test_read_only.py`, `tests/support/plans.py` |
-| `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_read_only.py` |
+| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/plan.py`, `src/tabrion_studio/write/unlock.py`, `tests/security/test_connections_api.py`, `tests/security/test_read_only.py`, `tests/security/test_write_require_auth_pg.py`, `tests/security/test_write_secret_confirm.py`, `tests/support/plans.py` |
+| `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_read_only.py`, `tests/security/test_write_secret_confirm.py` |
 | `tabrion.Database.from_engine` | `src/tabrion_studio/write/connection.py` |
 | `tabrion.Database.from_url` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.Health` | `src/tabrion_studio/services/connections.py`, `tests/security/test_connections_api.py` |
@@ -16,7 +16,7 @@ is used.
 | `tabrion.TLSMode.INSECURE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.REQUIRE` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.TLSMode.VERIFY_FULL` | `src/tabrion_studio/services/connections.py` |
-| `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/vectors.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
+| `tabrion.TabrionError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/vectors.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py`, `tests/security/test_write_require_auth_pg.py` |
 | `tabrion.Transaction` | `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/plan.py`, `src/tabrion_studio/write/unlock.py`, `tests/support/plans.py` |
 | `tabrion.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.Finding` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/diagnostics.py`, `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnose_cli.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |

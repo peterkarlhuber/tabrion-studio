@@ -1051,7 +1051,15 @@
     "plan_not_confirmed": "The plan was not confirmed and was discarded; preview the change again and confirm it.",
     "plan_confirmation_mismatch": "Type exactly the text the preview asks for.",
     "plan_changed": "The plan no longer matches its preview and was not run; preview the change again.",
-    "plan_drift": "The target changed since the preview (schema, triggers, rules or the database file); nothing was run. Preview the change again."
+    "plan_drift": "The target changed since the preview (schema, triggers, rules or the database file); nothing was run. Preview the change again.",
+    "secret_unconfirmed": "Studio sends this profile's secret only to a server you confirmed together with the secret's reference. Review and confirm them under write profiles.",
+    "secret_confirmation_unknown": "The review expired or belongs to another session. Review the server and the secret reference again.",
+    "secret_confirmation_stale": "The server or the secret reference changed since the review; nothing was confirmed. Review them again.",
+    "secret_confirmation_mismatch": "Type the server's host exactly as shown.",
+    "secret_confirmation_not_needed": "A SQLite write profile has no secret.",
+    "secret_confirmation_unavailable": "Studio could not keep the confirmation in its state folder; nothing was confirmed.",
+    "write_tls_required": "Studio sends a write or admin secret to a server that is not on this computer only with TLS mode verify-full or verify-ca. Change the TLS mode of the coupled profile.",
+    "require_auth_unavailable": "Write and admin connections need libpq 16 or newer (it can refuse clear-text and MD5 passwords). Install psycopg[binary] or a newer libpq."
   },
   "keyboard": {
     "palette": {
@@ -1584,6 +1592,28 @@
       "event": "Action",
       "profile": "Profile",
       "result": "Result"
+    },
+    "pair": {
+      "title": "Servers and secret references",
+      "lead": "Studio sends the secret of a write or admin profile only to the server you confirmed here, together with where the secret comes from. Any change of the server or the reference needs a new confirmation.",
+      "confirmed": "confirmed",
+      "unconfirmed": "not confirmed",
+      "review": "Review",
+      "dialogTitle": "Confirm server and secret reference of {{name}}",
+      "server": "Database server",
+      "tls": "TLS mode",
+      "role": "Database role",
+      "reference": "Secret reference",
+      "sources": {
+        "keyring": "Keyring",
+        "env": "Environment variable",
+        "file": "File",
+        "none": "None (entered for this session, or no password)"
+      },
+      "foreign": "This server is not on this computer. Studio connects to it only with a verified certificate and SCRAM authentication.",
+      "typeHost": "Type the host to confirm: {{host}}",
+      "confirm": "Confirm",
+      "cancel": "Cancel"
     }
   }
 }

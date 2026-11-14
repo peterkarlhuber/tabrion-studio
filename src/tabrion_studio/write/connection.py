@@ -36,6 +36,15 @@ The file's identity (device and inode; on Windows the volume serial number and f
 taken at unlock and compared again after the connection opened and before each use (:meth:`WriteConnection.verify`),
 so a file swapped behind the unlock stops it (TX-16; STU-XW-3 calls it again before each run).
 
+**Authentication (STU-XW-4, review L-2 of PR #111, I-109 j, TX-07).** Every PostgreSQL write and admin connection,
+and with it the privilege check that runs on it, sets libpq's ``require_auth``, whatever the profile or its owner:
+``!password,!md5`` (:data:`REQUIRE_AUTH`), so libpq never answers a server that asks for the password in clear text
+(``password``, and LDAP, PAM, RADIUS and BSD authentication, which use the same exchange) or as an MD5 hash; for a
+foreign host (not loopback) that gets a password it is ``scram-sha-256`` (:data:`REQUIRE_AUTH_FOREIGN`). The option
+exists from libpq 16 on; with an older libpq (``psycopg.pq.version()``) Studio refuses the write connection and the
+unlock before any secret is read (``studio.require_auth_unavailable``, fail closed), where a read connection of a
+project profile only logs a warning.
+
 **Admin privileges (TX-11, E-X6).** On every connect Studio reads the role's attributes, every role reachable from
 it through membership (``SET ROLE``, inheritance or the ADMIN option: every row of ``pg_auth_members``), the databases
 they own and the server version, and reports (:func:`privilege_findings`), each held directly or through a reachable
@@ -60,6 +69,7 @@ from collections.abc import Iterator
 import contextlib
 from dataclasses import dataclass, field
 import functools
+import logging
 import os
 from pathlib import Path
 import re
@@ -76,20 +86,24 @@ from tabrion.postgres import SessionSettings
 from tabrion.sqlite import JournalMode, SQLiteProfile
 from tabrion.sqlite import connect as tabrion_sqlite_connect
 
-from tabrion_studio.config.schema import Profile, Settings
+from tabrion_studio.config.schema import Profile, Settings, is_loopback
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.connections import (
     _TLS,
     APPLICATION_NAME,
     LOCK_TIMEOUT_MS,
+    REQUIRE_AUTH_LIBPQ,
     WRITE_STARTUP_SEARCH_PATH,
     RegistryError,
     connection_url,
     driver_options,
+    libpq_version,
 )
 from tabrion_studio.services.readonly import ACTING_PRAGMAS, READING_PRAGMAS, SQLITE_FUNCTIONS
 
 __all__ = [
+    "REQUIRE_AUTH",
+    "REQUIRE_AUTH_FOREIGN",
     "WRITE_SEARCH_PATH",
     "WriteConnection",
     "WriteError",
@@ -97,6 +111,8 @@ __all__ = [
     "file_identity",
     "open_write_connection",
     "privilege_findings",
+    "require_auth",
+    "require_auth_supported",
     "write_authorizer",
 ]
 
@@ -104,6 +120,10 @@ __all__ = [
 #: option's text: the catalog first, then the session's temporary schema; the same path as
 #: ``tabrion_compat.CATALOG_SEARCH_PATH``).
 WRITE_SEARCH_PATH = WRITE_STARTUP_SEARCH_PATH
+#: libpq ``require_auth`` of every write and admin connection (review L-2 of PR #111): no clear-text, no MD5 password.
+REQUIRE_AUTH = "!password,!md5"
+#: libpq ``require_auth`` of a write or admin connection that sends a password to a foreign host (I-109 j).
+REQUIRE_AUTH_FOREIGN = "scram-sha-256"
 #: The journal modes a write connection accepts; it never changes the file's own.
 ACCEPTED_JOURNAL_MODES = frozenset({"wal", "delete", "truncate"})
 #: Schema tables a statement may never write, also not with ``writable_schema`` (defensive mode refuses that too).
@@ -126,6 +146,7 @@ SERVER_FILE_ROLES = frozenset({"pg_execute_server_program", "pg_read_server_file
 FIRST_NORMAL_OBJECT_ID = 16384
 #: The first PostgreSQL version (``server_version_num``) where CREATEROLE no longer reaches almost every role (D-1).
 PG16 = 160000
+logger = logging.getLogger("tabrion_studio.write")
 _PREDEFINED_NAME = re.compile(r"pg_[a-z0-9_]{1,59}")
 
 
@@ -167,6 +188,25 @@ def write_authorizer(action: int, arg1: str | None, arg2: str | None, _db: str |
         return sqlite3.SQLITE_OK if name == "query_only" else sqlite3.SQLITE_DENY
     # ATTACH, DETACH, every CREATE, DROP and ALTER, ANALYZE, REINDEX, virtual tables: denied.
     return sqlite3.SQLITE_DENY
+
+
+def require_auth_supported() -> None:
+    """Refuse (``studio.require_auth_unavailable``) when the loaded libpq is older than 16 and has no
+    ``require_auth``: a write or admin connection is never opened without it (fail closed)."""
+    if libpq_version() < REQUIRE_AUTH_LIBPQ:
+        logger.warning(
+            "libpq %d cannot refuse clear-text or MD5 password requests; write connections need libpq 16 or newer",
+            libpq_version(),
+            extra={"event": "studio.require_auth_unavailable"},
+        )
+        raise WriteError("studio.require_auth_unavailable")
+
+
+def require_auth(host: str | None, password: str | None) -> str:
+    """The ``require_auth`` value of a write or admin connection to ``host`` (see the module text)."""
+    if password is not None and host is not None and not is_loopback(host):
+        return REQUIRE_AUTH_FOREIGN
+    return REQUIRE_AUTH
 
 
 def _install_write_guards(dbapi_connection: Any, _record: Any) -> None:
@@ -416,11 +456,13 @@ def _sqlite_database(
 def _postgres_database(
     profile: Profile, password: str | None, settings: tabrion.Profile, *, refuse_cleartext: bool
 ) -> tabrion.Database:
+    # Before the URL with the password is built: no write connection without require_auth (L-2 of PR #111).
+    require_auth_supported()
     url = connection_url(profile, password)
-    options = {
-        "connect_args": driver_options(password, settings.postgres, refuse_cleartext=refuse_cleartext, write=True),
-        "use_native_hstore": False,
-    }
+    connect_args = driver_options(password, settings.postgres, refuse_cleartext=refuse_cleartext, write=True)
+    # Always, whatever the profile's owner (refuse_cleartext is only the read path's project-profile rule).
+    connect_args["require_auth"] = require_auth(profile.host, password)
+    options = {"connect_args": connect_args, "use_native_hstore": False}
     db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
     event.listen(db.engine, "checkin", tabrion_compat.reset_session)
     event.listen(db.engine, "connect", tabrion_compat.pin_setup_path, insert=True)

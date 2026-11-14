@@ -218,7 +218,12 @@ def pool_busy(exc: BaseException) -> bool:
 
 
 #: libpq's ``require_auth`` exists from libpq 16 on (psycopg's binary package bundles a newer one).
-_REQUIRE_AUTH_LIBPQ = 160000
+REQUIRE_AUTH_LIBPQ = 160000
+
+
+def libpq_version() -> int:
+    """The loaded libpq's version as ``psycopg.pq.version()`` reports it (160000 for 16.0)."""
+    return _libpq_version()
 
 
 def _libpq_version() -> int:
@@ -262,7 +267,7 @@ def driver_options(
     if password is None:
         options["password"] = ""
     if refuse_cleartext:
-        if _libpq_version() >= _REQUIRE_AUTH_LIBPQ:
+        if _libpq_version() >= REQUIRE_AUTH_LIBPQ:
             options["require_auth"] = "!password"
         else:
             logger.warning(

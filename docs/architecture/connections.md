@@ -165,6 +165,11 @@ path); saving or deleting the profile and trusting the project file again forget
      User profiles keep every method (the user chose the server; LDAP, PAM and RADIUS need clear text). The option
      is a constant per profile source, not a target field. libpq older than 16 does not know it: then it is left
      out and `studio.require_auth_unavailable` is logged (`psycopg[binary]` bundles a newer libpq).
+   - **Write and admin connections** (STU-XW-4, review L-2 of PR #111; `tabrion_studio.write.connection`) always
+     get `require_auth=!password,!md5`, whatever the profile's owner, and `scram-sha-256` when they send a password
+     to a foreign host (I-109 j). There the rule is fail closed: with libpq older than 16 no write or admin
+     connection is opened and the unlock is refused (`studio.require_auth_unavailable`). Their secret is resolved
+     only after the user confirmed the pair of server and reference (`tabrion_studio.write.secret_confirm`, D-15).
 4. **The URL** is built by `connection_url` from the fields in `TARGET_FIELDS` and the password, and from nothing
    else. A stored password is bound to the fingerprint of exactly these fields (C-1 of `stu-007-review.md`; L-1 of
    `stu-008-review.md`, binding for STU-009).
