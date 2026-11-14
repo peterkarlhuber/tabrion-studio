@@ -45,13 +45,13 @@ def stage(system: str) -> Path:
     (kit / "wheels").mkdir(parents=True)
     src = HERE / "src" / flavor
     for key, label in SCRIPTS.items():
-        text = (src / f"{key}{'.cmd' if flavor == 'windows' else '.sh'}").read_text()
+        text = (src / f"{key}{'.cmd' if flavor == 'windows' else '.sh'}").read_text(encoding="utf-8")
         if flavor == "windows":
             text = text.replace("\r\n", "\n").replace("\n", "\r\n")
         (root / f"{label}{ext}").write_bytes(text.encode())
-    common = (src / ("common.cmd" if flavor == "windows" else "common.sh")).read_text()
+    common = (src / ("common.cmd" if flavor == "windows" else "common.sh")).read_text(encoding="utf-8")
     if flavor == "windows":
-        common = common.replace("\n", "\r\n")
+        common = common.replace("\r\n", "\n").replace("\n", "\r\n")
     (kit / ("common.cmd" if flavor == "windows" else "common.sh")).write_bytes(common.encode())
     for platform in platforms:
         target = kit / "bin" / platform
@@ -72,7 +72,7 @@ def stage(system: str) -> Path:
     ]
     for path in sorted(p for p in kit.rglob("*") if p.is_file()):
         lines.append(f"  {sha256(path)}  {path.relative_to(root).as_posix()}")
-    (kit / "KIT-INFO.txt").write_text("\n".join(lines) + "\n")
+    (kit / "KIT-INFO.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return root
 
 

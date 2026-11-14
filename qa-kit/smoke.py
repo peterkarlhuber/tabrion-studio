@@ -1,4 +1,5 @@
-"""Smoke test of an unpacked QA kit: install, start (browser launch captured), sign in, stop, uninstall.
+"""Smoke test of an unpacked QA kit: install, start (browser launch captured), sign in, trust the demo project,
+open "Shop (DEV)" and check the vector data view (STU-055), stop, uninstall.
 
 Usage: python smoke.py <kit zip> [<parent folder>]
 The zip is unpacked below the user's home folder into a folder with a space, umlauts and an apostrophe.
@@ -17,6 +18,10 @@ import time
 import urllib.request
 from pathlib import Path
 
+import html
+import json
+import urllib.error
+import urllib.parse
 import zipfile
 
 WINDOWS = os.name == "nt"
@@ -34,6 +39,8 @@ os.environ["QA_KIT_NO_TERMINAL"] = "1"
 EXT = ".cmd" if WINDOWS else (".command" if sys.platform == "darwin" else ".sh")
 CAPTURE = KIT.parent / "launch.txt"
 CAPTURE_PY = KIT.parent / "capture.py"
+# Studio is on a loopback address: never send these requests through an HTTP(S)_PROXY of the environment.
+LOCAL = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def run(label: str, answer: str = "\n", timeout: int = 900) -> str:
@@ -44,6 +51,55 @@ def run(label: str, answer: str = "\n", timeout: int = 900) -> str:
     if proc.returncode != 0:
         raise SystemExit(f"{label} failed")
     return proc.stdout
+
+
+def api(base: str, method: str, path: str, session: dict[str, str], body: object = None) -> tuple[int, object]:
+    """One request to Studio as the signed-in page sends it."""
+    origin = base.rstrip("/")
+    headers = {"Origin": origin, "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "cors", **session}
+    data = None if body is None else json.dumps(body).encode()
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = urllib.request.Request(origin + path, data=data, method=method, headers=headers)
+    try:
+        with LOCAL.open(request, timeout=60) as response:
+            raw, status, cookie = response.read(), response.status, response.headers.get("Set-Cookie")
+    except urllib.error.HTTPError as exc:
+        raw, status, cookie = exc.read(), exc.code, None
+    if cookie:
+        session["Cookie"] = cookie.split(";", 1)[0]
+    return status, (json.loads(raw) if raw else None)
+
+
+def check_vectors(base: str, launch_url: str) -> None:
+    """Sign in with the captured launch token, trust the demo project, open "Shop (DEV)" and read the vector view
+    (STU-055): the demo's Orkexa-layout table must show up as checklist S1-35/S1-36 expect."""
+    session: dict[str, str] = {}
+    status, body = api(base, "POST", "/api/session", session, {"token": launch_url.split("#", 1)[1]})
+    assert status == 200 and "Cookie" in session, (status, body)
+    session["X-Tabrion-CSRF"] = body["csrf"]  # type: ignore[index]
+    status, project = api(base, "GET", "/api/project", session)
+    assert status == 200, (status, project)
+    status, body = api(base, "POST", "/api/project/trust", session, {"digest": project["digest"]})  # type: ignore[index]
+    assert status == 204, (status, body)
+    status, profiles = api(base, "GET", "/api/profiles", session)
+    dev = next(p for p in profiles["profiles"] if p["name"] == "Shop (DEV)")  # type: ignore[index]
+    status, opened = api(base, "POST", "/api/connections", session,
+                         {"profile_id": dev["id"], "confirmed_environment": "dev"})
+    assert status == 201, (status, opened)
+    cid = urllib.parse.quote(opened["connection_id"], safe="")  # type: ignore[index]
+    status, report = api(base, "GET", f"/api/connections/{cid}/vectors", session)
+    assert status == 200, (status, report)
+    columns = [(c["table"], c["column"], c["type"], c["layout"], c["dimensions"], c["search"], c["rows"])
+               for c in report["columns"]]  # type: ignore[index]
+    identities = [(i["space"], i["model"], i["provider"], i["dimensions"], i["state"], i["complete"])
+                  for i in report["identities"]]  # type: ignore[index]
+    hints = sorted(h["code"] for h in report["hints"])  # type: ignore[index]
+    print("vectors:", report["extension"]["state"], columns, identities, hints)  # type: ignore[index]
+    assert report["extension"]["state"] == "not_determinable"  # type: ignore[index]
+    assert columns == [("index_vectors", "embedding", "BLOB", "orkexa", 8, "exact", {"value": 120, "kind": "exact"})]
+    assert identities == [("produkte", "shop-embed-mini", "beispiel", 8, "active", True)]
+    assert hints == ["exact_search", "sqlite_vec_undeterminable"], hints
 
 
 def main() -> None:
@@ -66,7 +122,7 @@ def main() -> None:
     reader.start()
     base = ""
     for _ in range(180):
-        found = re.search(r"running at (http://127\.0\.0\.1:\d+/)", "".join(lines))
+        found = re.search(r"running at (http://127\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+/)", "".join(lines))  # A-01
         if found:
             base = found.group(1)
             break
@@ -75,7 +131,7 @@ def main() -> None:
     if not base:
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(server.pid)] if WINDOWS else ["kill", str(server.pid)])
         raise SystemExit("Studio did not start")
-    with urllib.request.urlopen(base, timeout=10) as response:
+    with LOCAL.open(base, timeout=10) as response:
         assert response.status == 200, response.status
     print("server answers on", base)
     for _ in range(60):  # the browser launch: captured where BROWSER is honored, else a real browser opened it
@@ -83,7 +139,11 @@ def main() -> None:
             launch = CAPTURE.read_text().strip()
             print("launch page:", re.sub(r"[0-9a-f]{16,}", "…", launch))
             page = Path(urllib.request.url2pathname(launch.removeprefix("file://").removeprefix("/" if WINDOWS else "")))
-            assert re.search(r"http://127\.0\.0\.1:\d+/", page.read_text(encoding="utf-8")), "no sign-in link"
+            text = page.read_text(encoding="utf-8")
+            assert base in text, "no sign-in link to the printed address"
+            found = re.search(r'url=(http://[^"]+/launch#[^"]+)"', text)
+            assert found, "no launch URL in the launch page"
+            check_vectors(base, html.unescape(found.group(1)))
             break
         time.sleep(0.5)
     else:

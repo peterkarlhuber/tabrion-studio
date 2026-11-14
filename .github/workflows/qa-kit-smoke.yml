@@ -1,5 +1,7 @@
-# Throwaway smoke test of the local QA-S1 test kit on Windows and macOS. Lives only on the branch
+# Throwaway smoke test of the local QA-S1 test kit on Windows, macOS and Linux. Lives only on the branch
 # claude/project-thread-rdo6g3-qakit, which is never merged and is deleted after the run.
+# The kit is built once on Linux by qa-kit/make_kit.py from the Studio commit in qa-kit/STUDIO_SHA (and the tabrion
+# commit that Studio pins), exactly as for the tester; each OS then unpacks and smoke-tests its zip.
 name: QA kit smoke
 
 on:
@@ -14,8 +16,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  build:
+    name: Build the kit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      - name: Clone tabrion (public, read-only)
+        shell: bash
+        run: git clone --filter=blob:none https://github.com/peterkarlhuber/tabrion.git "$RUNNER_TEMP/tabrion"
+      - name: Build the three kits (make_kit.py)
+        shell: bash
+        run: |
+          git apply qa-kit/docs-v2.patch  # the v2 docs, as a patch on the v1 docs of this branch
+          python qa-kit/make_kit.py "$(tr -d '[:space:]' < qa-kit/STUDIO_SHA)" --studio-repo . \
+            --tabrion-repo "$RUNNER_TEMP/tabrion"
+      - name: Compare with the zips handed to the tester (informational)
+        shell: bash
+        run: |
+          cd qa-kit/out
+          if sha256sum -c ../PRUEFSUMMEN.expected; then echo "CI build is byte-identical to the tester's kit"; \
+          else echo "::warning::CI-built zips differ from the tester's zips (see above)"; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: qa-kit-zips
+          path: qa-kit/out/*.zip
+          retention-days: 1
+
   smoke:
     name: QA kit smoke (${{ matrix.os }})
+    needs: build
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
@@ -26,6 +65,8 @@ jobs:
             system: windows
           - os: macos-latest
             system: macos
+          - os: ubuntu-latest
+            system: linux
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,16 +74,10 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
-      - name: Fetch uv 0.11.32 from PyPI (SHA-256 checked)
-        shell: bash
-        env:
-          SYSTEM: ${{ matrix.system }}
-        run: python qa-kit/fetch_uv.py "$SYSTEM" qa-kit/uvdl
-      - name: Build the kit
-        shell: bash
-        env:
-          SYSTEM: ${{ matrix.system }}
-        run: python qa-kit/build_kit.py qa-kit/runtime-lock.txt "CI smoke build" "$SYSTEM"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: qa-kit-zips
+          path: qa-kit/out
       - name: Unpack below the home folder and smoke-test (managed Python download included)
         shell: bash
         env:

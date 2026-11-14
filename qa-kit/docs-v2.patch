@@ -1,0 +1,123 @@
+diff -ru a/qa-kit/docs/Anleitung.md b/qa-kit/docs/Anleitung.md
+--- a/qa-kit/docs/Anleitung.md	2026-11-14 10:54:18.172030330 +0000
++++ b/qa-kit/docs/Anleitung.md	2026-11-14 10:54:18.173709744 +0000
+@@ -1,7 +1,7 @@
+ # Tabrion Studio – Testversion installieren und starten
+ 
+ Tabrion Studio ist ein Programm zum **Ansehen** von Datenbanken. Es läuft nur auf deinem Computer und zeigt sich in
+-deinem Browser. Es ändert keine Daten. Diese Testversion ist **kein Release**. Sie ist nur für den Usability-Test
++deinem Browser. Es schickt der Datenbank nur lesende Anweisungen und ändert keine Daten. Diese Testversion ist **kein Release**. Sie ist nur für den Usability-Test
+ gedacht und bringt ein Beispielprojekt mit Shop-Daten mit.
+ 
+ Alles, was Studio braucht, landet **im Ordner „TabrionStudio-QA“ selbst**. Einzige Ausnahme unter Windows: Studios
+@@ -90,7 +90,9 @@
+ Doppelklick auf **„2 - Studio starten“**.
+ 
+ - Ein Fenster öffnet sich. **Lass es offen**, solange du mit Studio arbeitest. Wenn du es schließt, endet Studio.
+-- Dein Browser öffnet Studio von selbst.
++- Dein Browser öffnet Studio von selbst. Die Adresse beginnt mit `http://127.` und ist bei **jedem Start eine andere**
++  (zum Beispiel `http://127.83.41.29:53817/`; unter macOS meist `http://127.0.0.1:` mit wechselnder Zahl). Das ist
++  gewollt: Ein Lesezeichen oder eine kopierte Adresse funktioniert deshalb beim nächsten Start nicht mehr.
+ - Beim **ersten Start** fragt Studio **„Projektprofilen vertrauen?“**. Das Beispielprojekt bringt zwei Verbindungen
+   mit, „Shop (DEV)“ und „Shop (PROD)“. Für den Test bitte **„Vertrauen“** wählen.
+ 
+@@ -99,6 +101,8 @@
+ - Doppelklick auf **„3 - Studio beenden“**, oder
+ - das Fenster von „2 - Studio starten“ schließen.
+ 
++Danach bitte die Studio-Tabs im Browser schließen. Ein alter Tab funktioniert nach einem neuen Start nicht mehr.
++
+ Wenn kein Studio-Tab mehr offen ist, beendet sich Studio nach einer Weile auch von selbst (normalerweise nach
+ 30 Minuten).
+ 
+@@ -115,9 +119,9 @@
+ | Was passiert | Was du tun kannst |
+ |---|---|
+ | Der Browser öffnet sich nicht, oder du hast den Studio-Tab geschlossen. | **„2 - Studio starten“** noch einmal doppelklicken. Läuft Studio schon, öffnet sich einfach ein neuer, angemeldeter Tab. |
+-| Ein Tab zeigt **„Nicht angemeldet“**. | Das passiert bei einem Tab, den du selbst geöffnet hast (Lesezeichen, kopierte Adresse). Studio meldet nur den Tab an, den es selbst öffnet. **„2 - Studio starten“** noch einmal doppelklicken. |
++| Ein Tab zeigt **„Nicht angemeldet“** oder eine Fehlerseite des Browsers („nicht erreichbar“). | Das passiert bei einem Tab, den du selbst geöffnet hast (Lesezeichen, kopierte Adresse), und bei einem alten Tab von einem früheren Start. Studio meldet nur den Tab an, den es selbst öffnet. Den alten Tab schließen und **„2 - Studio starten“** noch einmal doppelklicken. |
+ | Ein Tab zeigt „Deine Sitzung wurde beendet“ oder „Der lokale Server antwortet nicht“. | Studio ist beendet. Mit **„2 - Studio starten“** neu starten. |
+-| Die Firewall fragt nach einem Netzwerkzugriff oder einem Port. | Studio ist nur auf diesem Computer erreichbar (Adresse `127.0.0.1`), nie aus dem Netzwerk. Du kannst die Freigabe ablehnen. Funktioniert Studio danach nicht, melde es bitte. |
++| Die Firewall fragt nach einem Netzwerkzugriff oder einem Port. | Studio ist nur auf diesem Computer erreichbar (eine Adresse, die mit `127.` beginnt, zum Beispiel `127.83.41.29` oder `127.0.0.1`), nie aus dem Netzwerk. Du kannst die Freigabe ablehnen. Funktioniert Studio danach nicht, melde es bitte. |
+ | Linux: Der Browser zeigt „Datei nicht gefunden“ statt Studio. | Das kann bei einem Browser als Snap- oder Flatpak-Paket passieren. Bitte melden, mit Screenshot. |
+ | Windows: Studio startet nicht und meldet „cannot use the state directory“. | Bitte melden, mit dem Inhalt des Fensters. |
+ | Etwas anderes stimmt nicht. | Bitte mit der Vorlage „Problem melden“ in der Checkliste notieren. |
+diff -ru a/qa-kit/docs/QA-S1-Checkliste.md b/qa-kit/docs/QA-S1-Checkliste.md
+--- a/qa-kit/docs/QA-S1-Checkliste.md	2026-11-14 10:54:18.172083092 +0000
++++ b/qa-kit/docs/QA-S1-Checkliste.md	2026-11-14 10:54:18.173739942 +0000
+@@ -1,6 +1,6 @@
+ # QA-S1: Usability-Durchgang Tabrion Studio 1.0
+ 
+-**Tester:** Peter · **Datum:** ____________ · **Dauer:** ca. 30 Minuten
++**Tester:** Peter · **Datum:** ____________ · **Dauer:** ca. 35 Minuten
+ **System:** ☐ Windows ☐ macOS ☐ Linux · **Browser:** ____________
+ 
+ > **Bitte vorab lesen**
+@@ -13,7 +13,9 @@
+ >   geschrieben wird. Diese Wortwahl ist so abgenommen.
+ > - Studio zeigt sich noch als Version **0.1.0.dev0**, und die Meldungen im schwarzen Startfenster sind englisch.
+ >   Das ist bei dieser Testversion so und kein Befund.
+-> - Die Installation (siehe `Anleitung.md`) bitte **vor** der Sitzung erledigen. Sie zählt nicht zu den 30 Minuten.
++> - Die Adresse im Browser beginnt mit `http://127.` und ist bei **jedem Start neu** (zum Beispiel
++>   `http://127.83.41.29:53817/`; unter macOS meist `http://127.0.0.1:…`). Das ist gewollt und kein Befund.
++> - Die Installation (siehe `Anleitung.md`) bitte **vor** der Sitzung erledigen. Sie zählt nicht zu den 35 Minuten.
+ > - Es gibt kein Richtig oder Falsch für dich. Wenn etwas unklar ist, ist das ein Befund. Bitte kurz notieren und
+ >   weitermachen.
+ 
+@@ -21,7 +23,7 @@
+ Für ein größeres Problem gibt es unten die Vorlage „Problem melden“. Punkte mit **(optional)** darfst du
+ überspringen, wenn die Zeit knapp wird.
+ 
+-## Zeitplan (30 Minuten)
++## Zeitplan (35 Minuten)
+ 
+ | Minute | Abschnitt | Checks |
+ |---|---|---|
+@@ -31,9 +33,9 @@
+ | 17–20 | D Datenansicht und Export | S1-17 bis S1-20 |
+ | 20–23 | E PROD-Warnungen | S1-21 bis S1-24 |
+ | 23–25 | F Migrationsstand | S1-25 bis S1-27 |
+-| 25–27 | G Diagnose und Bericht | S1-28 bis S1-29 |
+-| 27–29 | H Einstellungen, I Verbindung getrennt | S1-30 bis S1-32 |
+-| 29–30 | J Beenden | S1-33 bis S1-34 |
++| 25–30 | G Diagnose, Bericht und Vektordaten | S1-28 bis S1-29, S1-35 bis S1-37 |
++| 30–33 | H Einstellungen, I Verbindung getrennt | S1-30 bis S1-32 |
++| 33–35 | J Beenden | S1-33 bis S1-34, S1-38 |
+ | danach | Gesamteindruck, Problemmeldungen | ca. 5 Minuten |
+ 
+ ---
+@@ -95,12 +97,15 @@
+ | S1-26 | Unter **„Migrationscode“** auf **„Dateien prüfen“**. Dialog lesen, dann **„Vertrauen und ausführen“**. | Dialog **„Migrationscode des Projekts ausführen?“** listet die Alembic-Konfiguration und die Revisionsdateien; der Fokus steht auf „Nicht vertrauen“. Danach zeigt der Stand **„1 Revision ist noch nicht angewendet.“** mit der Revision unter **„Noch nicht angewendet“**. | ☐ OK ☐ Problem | |
+ | S1-27 | Auf **„Befehl kopieren“** klicken und in einen Texteditor einfügen. **Den Befehl nicht ausführen.** | Studio meldet „Der Befehl ist in der Zwischenablage.“ Eingefügt steht `alembic upgrade head`. Es gibt keinen Knopf, mit dem Studio selbst migriert. | ☐ OK ☐ Problem | |
+ 
+-## G Diagnose und Bericht
++## G Diagnose, Bericht und Vektordaten
+ 
+ | ID | Schritt | Erwartet | Ergebnis | Notiz |
+ |---|---|---|---|---|
+ | S1-28 | **„Diagnose“** öffnen, Verbindungsprofil „Shop (DEV)“, **„Diagnose starten“**. | Die Befunde erscheinen nach Schwere sortiert, jeweils mit Symbol **und** Wort („Fehler“, „Warnung“, „Hinweis“), mit Erklärung und Abhilfe. Darunter der Abschnitt **„Sicherungen“**. Texte mit Code `TAB-…` dürfen englisch sein (so entschieden). | ☐ OK ☐ Problem | |
+ | S1-29 | **„Bericht als Markdown herunterladen“** klicken und die Datei in einem Texteditor öffnen. | Der Browser speichert eine Datei wie `tabrion-studio-diagnosis-….md`. Der Bericht ist absichtlich **englisch** und enthält keine Dateipfade, keinen Dateinamen der Datenbank und keine Passwörter. | ☐ OK ☐ Problem | |
++| S1-35 | Links **„Vektordaten“** öffnen. Unter **„Verbindungsprofil“** „Shop (DEV) (DEV)“ wählen und **„Prüfen“** klicken. | Studio meldet „Fertig: 1 Vektorspalte.“ Neben „Shop (DEV)“ steht „1 Vektorspalte: 0 mit ANN-Index, 1 mit exakter Suche“. Unter **„Erweiterung“** steht bei sqlite-vec „Status: nicht feststellbar. …“. Das ist bei einer SQLite-Datei richtig und kein Fehler. | ☐ OK ☐ Problem | |
++| S1-36 | Die Tabellen **„Vektorspalten“** und **„Embedding-Modelle“** ansehen. | „Vektorspalten“ hat eine Zeile `main.index_vectors.embedding` mit dem Etikett **„Orkexa-Layout“**: Typ `BLOB`, Dimensionen 8, Suche **„Exakte Suche (kein ANN-Index)“**, gespeicherte Embeddings 120, Indizes „Kein Index“. „Embedding-Modelle“ hat eine Zeile: Vektorraum `produkte` („Namensraum shop“), Modell „shop-embed-mini von beispiel“ mit „Build 2025-10-01 des Modells“ und „Normalisierte Vektoren“, Dimensionen 8, Zustand `active`, 120 Embeddings. Sind die Begriffe für dich verständlich? (Fachwörter wie „Embedding“ und „ANN-Index“ sind so gewollt.) | ☐ OK ☐ Problem | |
++| S1-37 | Unter **„Hinweise“** lesen. Dann **„Erneut prüfen“** klicken. Auf der Seite nach einem Knopf suchen, der einen Index baut oder Daten ändert. | Ein **„Hinweis:“** sagt, dass sich an der Datenbankdatei nicht erkennen lässt, ob sqlite-vec installiert ist. „Erneut prüfen“ liest die Daten noch einmal und zeigt dasselbe Ergebnis. Es gibt keinen Knopf zum Indizieren oder Ändern; die Seite sagt „Nur lesend: …“. | ☐ OK ☐ Problem | |
+ 
+ ## H Einstellungen
+ 
+@@ -123,6 +128,7 @@
+ |---|---|---|---|---|
+ | S1-33 | **„3 - Studio beenden“** doppelklicken. Danach in den noch offenen Browser-Tab schauen. | Studio wird beendet. Der Browser-Tab sagt dann, dass die Sitzung beendet ist oder der lokale Server nicht antwortet (zum Beispiel „Deine Sitzung wurde beendet. …“). | ☐ OK ☐ Problem | |
+ | S1-34 | **(optional)** **„2 - Studio starten“** noch einmal, dann **„SQL-Editor“** öffnen. Danach wieder mit **„3 - Studio beenden“** schließen. | Studio startet wieder; die Editor-Tabs von vorhin sind wieder da (ohne Parameterwerte), die Spracheinstellung ist geblieben. | ☐ OK ☐ Problem | |
++| S1-38 | **(optional)** Einen alten Studio-Tab (zum Beispiel aus S1-34) offen lassen. **„2 - Studio starten“** noch einmal doppelklicken und die Adresse des neuen Tabs (Adresszeile) mit der des alten Tabs vergleichen. Dann den **alten** Tab neu laden (F5, Mac: ⌘R). Zum Schluss mit **„3 - Studio beenden“** schließen und alle Studio-Tabs schließen. | Die Adresse des neuen Tabs ist eine andere (unter macOS kann sie mit `127.0.0.1` gleich beginnen; dann ist die Zahl nach dem Doppelpunkt anders). Der alte Tab zeigt nach dem Neuladen keine Studio-Daten, sondern eine Fehlerseite des Browsers („nicht erreichbar“ o. Ä.) oder **„Nicht angemeldet“**. Der neue Tab funktioniert normal. | ☐ OK ☐ Problem ☐ übersprungen | |
+ 
+ ---
+ 
+@@ -152,7 +158,8 @@
+ - **Niedrig:** Schönheitsfehler, Tippfehler, falsche Übersetzung.
+ 
+ Screenshot: Windows Win+Umschalt+S, macOS ⌘⇧4, Linux meist die Taste „Druck“.
+-Die Log-Datei liegt in `TabrionStudio-QA/_kit/studio-daten/logs` (sie enthält keine Passwörter).
++Die Log-Datei liegt unter macOS und Linux in `TabrionStudio-QA/_kit/studio-daten/logs`, unter Windows in
++`%LOCALAPPDATA%\TabrionStudio-QA\studio-daten\logs` (sie enthält keine Passwörter).
+ 
+ ---
+ 
