@@ -27,6 +27,7 @@ from tabrion_studio.config.project import ProjectConfig, TrustError
 from tabrion_studio.config.secrets import KeyringStore, Secrets, SessionSecrets
 from tabrion_studio.config.user import UserConfig
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
+from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tests.support.access import ORIGIN, make_studio
 from tests.support.fake_keyring import FakeKeyring
@@ -461,6 +462,117 @@ def test_td034_a_raced_open_is_returned_only_with_d02(env: Env, monkeypatch: pyt
     assert refused.json()["code"] == "studio.prod_confirmation_required"
     assert [c.environment for c in registry.list()] == ["prod"]
     assert mine[0].id not in [c.id for c in registry.list()]
+
+
+class _WatchedLock:
+    """A profile lock of the registry (TD-027) that says when a thread starts to wait for it."""
+
+    def __init__(self, waits: list[threading.Event]) -> None:
+        self._lock = threading.RLock()
+        self._waits = waits
+
+    def __enter__(self) -> None:
+        for wait in self._waits:  # the first open's acquire sets the first event, the second open's the second
+            if not wait.is_set():
+                wait.set()
+                break
+        self._lock.acquire()
+
+    def __exit__(self, *exc: object) -> None:
+        self._lock.release()
+
+
+def test_td027_two_concurrent_opens_of_one_profile_connect_once(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """F-2 of stu-32-page-delta-review.md: two opens of one profile at once (the migrations page after a profile
+    switch) both looked for an open connection, found none and both connected. The second one now waits for the
+    first and gets its connection: one connect, one connection. Synchronized by events, no sleeps: the first open is
+    held inside its connect until the second has started to wait for the profile's lock."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    registry = env.registry
+    connect = registry._connect
+    waits = [threading.Event(), threading.Event()]
+    connecting, release = threading.Event(), threading.Event()
+    calls: list[str] = []
+
+    def slow(profile_id: str, confirmed: str | None) -> OpenConnection:
+        calls.append(profile_id)
+        connecting.set()
+        assert release.wait(timeout=30), "never released"
+        return connect(profile_id, confirmed)
+
+    monkeypatch.setattr(connections_module, "_profile_lock", lambda: _WatchedLock(waits))
+    monkeypatch.setattr(registry, "_connect", slow)
+    opened: dict[str, str] = {}
+
+    def opener(name: str) -> None:
+        opened[name] = registry.open("user:parts", None).id
+
+    first = threading.Thread(target=opener, args=("first",))
+    second = threading.Thread(target=opener, args=("second",))
+    try:
+        first.start()
+        assert connecting.wait(timeout=30), "the first open never connected"
+        second.start()
+        assert waits[1].wait(timeout=30), "the second open never waited for the profile's lock"
+    finally:
+        release.set()
+        first.join(timeout=30)
+        second.join(timeout=30)
+    assert not first.is_alive() and not second.is_alive()
+    assert calls == ["user:parts"]
+    assert opened["first"] == opened["second"]
+    assert [c.id for c in registry.list()] == [opened["first"]]
+    assert registry._gates == {}
+
+
+def test_td027_an_open_of_another_profile_does_not_wait(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The lock is per profile: while one profile's open hangs in its connect, another profile opens at once."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    env.create({"name": "other", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    registry = env.registry
+    connect = registry._connect
+    connecting, release = threading.Event(), threading.Event()
+
+    def slow(profile_id: str, confirmed: str | None) -> OpenConnection:
+        if profile_id == "user:parts":
+            connecting.set()
+            assert release.wait(timeout=30), "never released"
+        return connect(profile_id, confirmed)
+
+    monkeypatch.setattr(registry, "_connect", slow)
+    hanging = threading.Thread(target=registry.open, args=("user:parts", None))
+    try:
+        hanging.start()
+        assert connecting.wait(timeout=30)
+        other = registry.open("user:other", None)  # would block until release if the lock were global
+        assert [c.id for c in registry.list()] == [other.id]
+    finally:
+        release.set()
+        hanging.join(timeout=30)
+    assert not hanging.is_alive()
+    assert sorted(c.profile_id for c in registry.list()) == ["user:other", "user:parts"]
+    assert registry._gates == {}
+
+
+def test_td027_a_failed_connect_lets_the_waiting_open_try_its_own(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A first open whose connect fails releases the lock; the open that waited connects itself."""
+    env.create({"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "dev"})
+    registry = env.registry
+    connect = registry._connect
+    attempts: list[int] = []
+
+    def flaky(profile_id: str, confirmed: str | None) -> OpenConnection:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise RuntimeError("the first connect fails")
+        return connect(profile_id, confirmed)
+
+    monkeypatch.setattr(registry, "_connect", flaky)
+    with pytest.raises(RuntimeError):
+        registry.open("user:parts", None)
+    assert registry._gates == {}
+    assert registry.open("user:parts", None).profile_id == "user:parts"
+    assert len(attempts) == 2
 
 
 def test_td034_a_lost_prod_connection_is_replaced_only_with_d02(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:

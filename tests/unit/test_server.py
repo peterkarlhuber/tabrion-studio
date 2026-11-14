@@ -265,8 +265,15 @@ async def _serve(app: object) -> tuple[uvicorn.Server, asyncio.Task[None], int]:
 
 
 async def _closed_within(reader: asyncio.StreamReader, seconds: float) -> bytes:
-    """What the server sent before it closed the connection; fails if it is still open after ``seconds``."""
-    return await asyncio.wait_for(reader.read(), seconds)
+    """What the server sent before it closed the connection; fails if it is still open after ``seconds``.
+
+    A close while the client's last bytes are still unread on the server side arrives as a reset on some systems
+    (macOS); that is a close as well and reads as nothing sent.
+    """
+    try:
+        return await asyncio.wait_for(reader.read(), seconds)
+    except ConnectionResetError:
+        return b""
 
 
 def test_a_connection_that_sends_no_request_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:

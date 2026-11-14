@@ -171,3 +171,60 @@ def test_a_database_problem_takes_only_kind_and_sqlstate_from_the_error() -> Non
     assert db_problem(RuntimeError(canary)).to_dict()["code"] == "db.unknown"
     with pytest.raises(ValueError):
         db_problem(error, log_id="not-hex")
+
+
+def _denied_function_error() -> BaseException:
+    """SQLite's own error for a function its authorizer denied: SQLITE_ERROR, "not authorized to use function: …"."""
+    import sqlite3
+
+    connection = sqlite3.connect(":memory:")
+
+    def deny_functions(action: int, *_: object) -> int:
+        return sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_FUNCTION else sqlite3.SQLITE_OK
+
+    connection.set_authorizer(deny_functions)
+    try:
+        connection.execute("SELECT abs(1)")
+    except sqlite3.Error as exc:
+        return exc
+    finally:
+        connection.close()
+    raise AssertionError("the authorizer did not deny the function")
+
+
+def test_td053_a_function_the_authorizer_denied_is_db_permission() -> None:
+    """TD-053: tabrion 0.2 classifies SQLite's denial of a function (plain SQLITE_ERROR) as unknown; Studio's problem
+    is db.permission, as for a denied table or pragma (SQLITE_AUTH). Raw, wrapped by SQLAlchemy, or by tabrion."""
+    import sqlalchemy.exc
+    from tabrion.errors import TabrionError
+
+    error = _denied_function_error()
+    assert str(error).startswith("not authorized to use function: ")
+    assert classify(error).kind is Kind.UNKNOWN and classify(error).sqlite_code == "SQLITE_ERROR"
+    wrapped = sqlalchemy.exc.OperationalError("SELECT abs(1)", None, error)
+    carried = TabrionError("db.unknown", classification=classify(error), original=error)
+    carried_wrapped = TabrionError("db.unknown", classification=classify(wrapped), original=wrapped)
+    for raised in (error, wrapped, carried, carried_wrapped):
+        doc = db_problem(raised).to_dict()
+        assert doc["code"] == "db.permission" and doc["status"] == 403, raised
+        assert "abs" not in json.dumps(doc)
+
+
+def test_td053_only_sqlites_denial_text_at_the_start_is_a_permission_problem() -> None:
+    """The text decides only when it starts the message of a sqlite3 SQLITE_ERROR; anything else stays as tabrion
+    classified it, and a bare classification (no error to read) stays db.unknown."""
+    import sqlite3
+
+    error = _denied_function_error()
+    assert db_problem(classify(error)).code == "db.unknown"
+    quoted = sqlite3.OperationalError('near "x": syntax error, not authorized to use function: abs')
+    quoted.sqlite_errorname = "SQLITE_ERROR"
+    assert db_problem(quoted).code == "db.syntax"
+    inside = sqlite3.OperationalError("unexpected: not authorized to use function: abs")
+    inside.sqlite_errorname = "SQLITE_ERROR"
+    assert db_problem(inside).code == "db.unknown"
+    other_driver = RuntimeError("not authorized to use function: abs")
+    assert db_problem(other_driver).code == "db.unknown"
+    other_code = sqlite3.DatabaseError("not authorized to use function: abs")
+    other_code.sqlite_errorname = "SQLITE_MISUSE"
+    assert db_problem(other_code).code == "db.unknown"
