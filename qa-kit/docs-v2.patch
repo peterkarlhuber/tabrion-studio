@@ -1,6 +1,6 @@
 diff -ru a/qa-kit/docs/Anleitung.md b/qa-kit/docs/Anleitung.md
---- a/qa-kit/docs/Anleitung.md	2026-11-14 10:54:18.172030330 +0000
-+++ b/qa-kit/docs/Anleitung.md	2026-11-14 10:54:18.173709744 +0000
+--- a/qa-kit/docs/Anleitung.md
++++ b/qa-kit/docs/Anleitung.md
 @@ -1,7 +1,7 @@
  # Tabrion Studio – Testversion installieren und starten
  
@@ -30,21 +30,24 @@ diff -ru a/qa-kit/docs/Anleitung.md b/qa-kit/docs/Anleitung.md
  Wenn kein Studio-Tab mehr offen ist, beendet sich Studio nach einer Weile auch von selbst (normalerweise nach
  30 Minuten).
  
-@@ -115,9 +119,9 @@
+@@ -114,10 +118,10 @@
+ 
  | Was passiert | Was du tun kannst |
  |---|---|
- | Der Browser öffnet sich nicht, oder du hast den Studio-Tab geschlossen. | **„2 - Studio starten“** noch einmal doppelklicken. Läuft Studio schon, öffnet sich einfach ein neuer, angemeldeter Tab. |
+-| Der Browser öffnet sich nicht, oder du hast den Studio-Tab geschlossen. | **„2 - Studio starten“** noch einmal doppelklicken. Läuft Studio schon, öffnet sich einfach ein neuer, angemeldeter Tab. |
 -| Ein Tab zeigt **„Nicht angemeldet“**. | Das passiert bei einem Tab, den du selbst geöffnet hast (Lesezeichen, kopierte Adresse). Studio meldet nur den Tab an, den es selbst öffnet. **„2 - Studio starten“** noch einmal doppelklicken. |
-+| Ein Tab zeigt **„Nicht angemeldet“** oder eine Fehlerseite des Browsers („nicht erreichbar“). | Das passiert bei einem Tab, den du selbst geöffnet hast (Lesezeichen, kopierte Adresse), und bei einem alten Tab von einem früheren Start. Studio meldet nur den Tab an, den es selbst öffnet. Den alten Tab schließen und **„2 - Studio starten“** noch einmal doppelklicken. |
- | Ein Tab zeigt „Deine Sitzung wurde beendet“ oder „Der lokale Server antwortet nicht“. | Studio ist beendet. Mit **„2 - Studio starten“** neu starten. |
+-| Ein Tab zeigt „Deine Sitzung wurde beendet“ oder „Der lokale Server antwortet nicht“. | Studio ist beendet. Mit **„2 - Studio starten“** neu starten. |
 -| Die Firewall fragt nach einem Netzwerkzugriff oder einem Port. | Studio ist nur auf diesem Computer erreichbar (Adresse `127.0.0.1`), nie aus dem Netzwerk. Du kannst die Freigabe ablehnen. Funktioniert Studio danach nicht, melde es bitte. |
++| Der Browser öffnet sich nicht, oder du hast den Studio-Tab geschlossen. | **„2 - Studio starten“** noch einmal doppelklicken. Läuft Studio schon, öffnet sich ein neuer, angemeldeter Tab. Ältere Studio-Tabs sind danach abgemeldet; bitte schließen. |
++| Ein Tab zeigt **„Nicht angemeldet“** oder eine Fehlerseite des Browsers („nicht erreichbar“). | Das passiert bei einem Tab, den du selbst geöffnet hast (Lesezeichen, kopierte Adresse), und bei einem alten Tab von einem früheren Start. Studio meldet nur den Tab an, den es selbst öffnet. Den alten Tab schließen und **„2 - Studio starten“** noch einmal doppelklicken. |
++| Ein Tab zeigt „Deine Sitzung wurde beendet“ oder „Der lokale Server antwortet nicht“ (nach dem Beenden kann das bis zu einer Minute dauern). | Studio ist beendet, oder Studio wurde in einem anderen Tab neu angemeldet. Mit **„2 - Studio starten“** neu starten. |
 +| Die Firewall fragt nach einem Netzwerkzugriff oder einem Port. | Studio ist nur auf diesem Computer erreichbar (eine Adresse, die mit `127.` beginnt, zum Beispiel `127.83.41.29` oder `127.0.0.1`), nie aus dem Netzwerk. Du kannst die Freigabe ablehnen. Funktioniert Studio danach nicht, melde es bitte. |
  | Linux: Der Browser zeigt „Datei nicht gefunden“ statt Studio. | Das kann bei einem Browser als Snap- oder Flatpak-Paket passieren. Bitte melden, mit Screenshot. |
  | Windows: Studio startet nicht und meldet „cannot use the state directory“. | Bitte melden, mit dem Inhalt des Fensters. |
  | Etwas anderes stimmt nicht. | Bitte mit der Vorlage „Problem melden“ in der Checkliste notieren. |
 diff -ru a/qa-kit/docs/QA-S1-Checkliste.md b/qa-kit/docs/QA-S1-Checkliste.md
---- a/qa-kit/docs/QA-S1-Checkliste.md	2026-11-14 10:54:18.172083092 +0000
-+++ b/qa-kit/docs/QA-S1-Checkliste.md	2026-11-14 10:54:18.173739942 +0000
+--- a/qa-kit/docs/QA-S1-Checkliste.md
++++ b/qa-kit/docs/QA-S1-Checkliste.md
 @@ -1,6 +1,6 @@
  # QA-S1: Usability-Durchgang Tabrion Studio 1.0
  
@@ -86,6 +89,24 @@ diff -ru a/qa-kit/docs/QA-S1-Checkliste.md b/qa-kit/docs/QA-S1-Checkliste.md
  | danach | Gesamteindruck, Problemmeldungen | ca. 5 Minuten |
  
  ---
+@@ -44,7 +46,7 @@
+ |---|---|---|---|---|
+ | S1-01 | Im Ordner „TabrionStudio-QA“ **„2 - Studio starten“** doppelklicken. | Ein Fenster öffnet sich und bleibt offen. Der Browser öffnet Studio von selbst. | ☐ OK ☐ Problem | |
+ | S1-02 | Beim ersten Start erscheint ein Dialog. Lies ihn durch. | Titel **„Projektprofilen vertrauen?“**. Er listet die zwei Verbindungen „Shop (DEV)“ und „Shop (PROD)“ und ihre Dateien. Knöpfe **„Vertrauen“** und **„Nicht laden“**. Verstehst du, worum es geht? | ☐ OK ☐ Problem | |
+-| S1-03 | Auf **„Vertrauen“** klicken. **Stoppuhr starten.** Ohne Hilfe und ohne Anleitung versuchen, die Tabelle `customers` von „Shop (DEV)“ anzusehen. | Du findest den Weg selbst (zum Beispiel über **„Verbindungen“** → „Shop (DEV)“ → **„Verbinden“**, dann **„Explorer“**). Ziel: **unter 60 Sekunden** bis zur ersten Tabelle. Zeit: ______ s | ☐ OK ☐ Problem | |
++| S1-03 | Auf **„Vertrauen“** klicken. **Stoppuhr starten.** Ohne Hilfe und ohne Anleitung versuchen, die Tabelle `customers` von „Shop (DEV)“ anzusehen. | Du findest den Weg selbst (zum Beispiel über **„Verbindungen“** → „Shop (DEV)“ → **„Verbinden“**, dann **„Explorer“** → **„Öffnen“**). Ziel: **unter 60 Sekunden** bis zur ersten Tabelle. Zeit: ______ s | ☐ OK ☐ Problem | |
+ | S1-04 | Nach dem Verbinden auf die Kopfzeile oben schauen. | Sie zeigt die Verbindung „Shop (DEV)“, das Kennzeichen **DEV** und **„Schreibgeschützt“**. Ein Klick auf „Schreibgeschützt“ öffnet nichts. | ☐ OK ☐ Problem | |
+ 
+ ## B Explorer und ER-Diagramm
+@@ -73,7 +75,7 @@
+ 
+ | ID | Schritt | Erwartet | Ergebnis | Notiz |
+ |---|---|---|---|---|
+-| S1-17 | Im **Explorer** `orders` wählen und **„Daten anzeigen“** (oder Reiter **„Daten“**). Mit **„Weiter“** und **„Zurück“** blättern, **„Zeilen je Seite“** ändern. | Die erste Seite erscheint, zum Beispiel „Zeilen 1–100; weitere Zeilen folgen.“ Blättern und Seitengröße funktionieren. Es gibt keine Gesamtzahl, das ist so gewollt. | ☐ OK ☐ Problem | |
++| S1-17 | Im **Explorer** `orders` wählen und **„Daten anzeigen“** (oder Reiter **„Daten“**). Mit **„Weiter“** und **„Zurück“** blättern, **„Zeilen je Seite“** ändern. | Die erste Seite erscheint mit „Zeilen 1–51; weitere Zeilen folgen.“, obwohl unter „Zeilen je Seite“ 100 steht. Ein Hinweis auf der Seite erklärt das („Seiten hier enthalten höchstens … Zeilen, …“); das ist so gewollt. Blättern und Seitengröße funktionieren. Es gibt keine Gesamtzahl, auch das ist so gewollt. | ☐ OK ☐ Problem | |
+ | S1-18 | **„Sortieren nach“** `order_date`, **„Absteigend“**. Dann **„Filter hinzufügen“**: `status` = `shipped`, **„Anwenden“**. | Die Zeilen sind neu sortiert und zeigen nur noch den gewählten Status. Die Ansicht beginnt wieder auf Seite 1. | ☐ OK ☐ Problem | |
+ | S1-19 | Eine Zelle doppelklicken und versuchen, etwas zu ändern. | Nichts lässt sich bearbeiten. Es gibt keinen Knopf zum Ändern, Einfügen oder Löschen. Das ist für 1.0 so gewollt (kein Data Editor). | ☐ OK ☐ Problem | |
+ | S1-20 | Zurück zum **SQL-Editor** und zum Ergebnis aus S1-11. **„Exportieren…“** klicken, **„CSV (für Tabellenkalkulationen)“** wählen, Zeilen: die geholten Zeilen, dann **„Exportieren“**. Die Datei z. B. in Excel oder LibreOffice öffnen. | Der Browser lädt eine CSV-Datei herunter, Studio meldet „Export gespeichert: …“. Die Datei enthält dieselben Spalten und Zeilen. Hinweis: In 1.0 gibt es den Export im SQL-Editor; in der Datenansicht ist (noch) keiner vorgesehen. | ☐ OK ☐ Problem | |
 @@ -95,12 +97,15 @@
  | S1-26 | Unter **„Migrationscode“** auf **„Dateien prüfen“**. Dialog lesen, dann **„Vertrauen und ausführen“**. | Dialog **„Migrationscode des Projekts ausführen?“** listet die Alembic-Konfiguration und die Revisionsdateien; der Fokus steht auf „Nicht vertrauen“. Danach zeigt der Stand **„1 Revision ist noch nicht angewendet.“** mit der Revision unter **„Noch nicht angewendet“**. | ☐ OK ☐ Problem | |
  | S1-27 | Auf **„Befehl kopieren“** klicken und in einen Texteditor einfügen. **Den Befehl nicht ausführen.** | Studio meldet „Der Befehl ist in der Zwischenablage.“ Eingefügt steht `alembic upgrade head`. Es gibt keinen Knopf, mit dem Studio selbst migriert. | ☐ OK ☐ Problem | |
@@ -103,9 +124,19 @@ diff -ru a/qa-kit/docs/QA-S1-Checkliste.md b/qa-kit/docs/QA-S1-Checkliste.md
  
  ## H Einstellungen
  
-@@ -123,6 +128,7 @@
+@@ -115,14 +120,15 @@
+ 
+ | ID | Schritt | Erwartet | Ergebnis | Notiz |
  |---|---|---|---|---|
- | S1-33 | **„3 - Studio beenden“** doppelklicken. Danach in den noch offenen Browser-Tab schauen. | Studio wird beendet. Der Browser-Tab sagt dann, dass die Sitzung beendet ist oder der lokale Server nicht antwortet (zum Beispiel „Deine Sitzung wurde beendet. …“). | ☐ OK ☐ Problem | |
+-| S1-32 | **(optional)** Mit „Shop (DEV)“ verbunden im **SQL-Editor** bleiben (Tab 1). **„2 - Studio starten“** noch einmal doppelklicken: Es öffnet sich ein zweiter Studio-Tab. Dort unter **„Verbindungen“** „Shop (DEV)“ **„Trennen“**. Zurück in Tab 1 erneut **„Ausführen“**. | Studio zeigt einen Hinweis wie **„Verbindung getrennt: Shop (DEV)“** mit **„Neu verbinden“** (oder fordert auf andere Weise auf, neu zu verbinden). „Neu verbinden“ stellt die Verbindung wieder her, und es ging nichts verloren. | ☐ OK ☐ Problem ☐ übersprungen | |
++| S1-32 | **(optional)** Im **SQL-Editor** eine Abfrage auf „Shop (DEV)“ offen lassen. Im selben Browser-Tab zu **„Verbindungen“** wechseln und bei „Shop (DEV)“ **„Trennen“** klicken. Zurück zum **SQL-Editor** und erneut **„Ausführen“**. | Studio führt nichts auf der getrennten Verbindung aus. Es zeigt einen Hinweis wie **„Verbindung getrennt: Shop (DEV)“** mit **„Neu verbinden“** oder fordert auf andere Weise auf, neu zu verbinden. Danach läuft die Abfrage wieder, und der Text im Editor ist noch da. | ☐ OK ☐ Problem ☐ übersprungen | |
+ 
+ ## J Beenden
+ 
+ | ID | Schritt | Erwartet | Ergebnis | Notiz |
+ |---|---|---|---|---|
+-| S1-33 | **„3 - Studio beenden“** doppelklicken. Danach in den noch offenen Browser-Tab schauen. | Studio wird beendet. Der Browser-Tab sagt dann, dass die Sitzung beendet ist oder der lokale Server nicht antwortet (zum Beispiel „Deine Sitzung wurde beendet. …“). | ☐ OK ☐ Problem | |
++| S1-33 | **„3 - Studio beenden“** doppelklicken. Danach in den noch offenen Browser-Tab schauen und **etwa eine Minute warten**. | Studio wird beendet. Spätestens nach etwa einer Minute sagt der Browser-Tab, dass die Sitzung beendet ist oder der lokale Server nicht antwortet (zum Beispiel „Deine Sitzung wurde beendet. …“). | ☐ OK ☐ Problem | |
  | S1-34 | **(optional)** **„2 - Studio starten“** noch einmal, dann **„SQL-Editor“** öffnen. Danach wieder mit **„3 - Studio beenden“** schließen. | Studio startet wieder; die Editor-Tabs von vorhin sind wieder da (ohne Parameterwerte), die Spracheinstellung ist geblieben. | ☐ OK ☐ Problem | |
 +| S1-38 | **(optional)** Einen alten Studio-Tab (zum Beispiel aus S1-34) offen lassen. **„2 - Studio starten“** noch einmal doppelklicken und die Adresse des neuen Tabs (Adresszeile) mit der des alten Tabs vergleichen. Dann den **alten** Tab neu laden (F5, Mac: ⌘R). Zum Schluss mit **„3 - Studio beenden“** schließen und alle Studio-Tabs schließen. | Die Adresse des neuen Tabs ist eine andere (unter macOS kann sie mit `127.0.0.1` gleich beginnen; dann ist die Zahl nach dem Doppelpunkt anders). Der alte Tab zeigt nach dem Neuladen keine Studio-Daten, sondern eine Fehlerseite des Browsers („nicht erreichbar“ o. Ä.) oder **„Nicht angemeldet“**. Der neue Tab funktioniert normal. | ☐ OK ☐ Problem ☐ übersprungen | |
  
