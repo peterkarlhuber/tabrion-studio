@@ -470,6 +470,15 @@ CATALOG: dict[str, Entry] = {
         "Studio relies on the environment you give the profile; write credentials of a production database do "
         "not belong in Studio.",
     ),
+    "studio.write_profiles_ignored": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Write profiles not used here",
+        "Studio uses write and admin profiles only from the configuration folder named on the command line "
+        "(--config-dir, --state-dir) or the platform's folder, never from one an environment variable chose.",
+        "Start Studio with --config-dir for this folder, or unset TABRION_STUDIO_CONFIG_DIR and "
+        "TABRION_STUDIO_STATE_DIR.",
+    ),
     "studio.profile_coupled": Entry(
         409,
         ProblemKind.CONFIG,

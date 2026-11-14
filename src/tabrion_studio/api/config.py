@@ -288,8 +288,9 @@ _COUPLING_POINTERS = {
 
 def _check_couplings(config: Configuration, profile: Profile) -> None:
     """An edit of a read profile that a write or admin profile is coupled to must keep the coupling valid: above all,
-    a coupled profile never becomes PROD (E-X7, K-1). Raises :class:`FormError`."""
-    for write in config.user.profiles().write_profiles:
+    a coupled profile never becomes PROD (E-X7, K-1), also for a write profile not used here (L-1 of PR #111).
+    Raises :class:`FormError`."""
+    for write in config.user.profiles().stored_write_profiles:
         if write.read_profile != profile.name:
             continue
         code = coupling_issue(write, profile)
@@ -427,7 +428,7 @@ def add_config_routes(
 
     def remove(doc: dict[str, Any], expected: object, overwrite: bool) -> Response:
         name = _user_name(config, doc.get("id"))
-        if any(write.read_profile == name for write in config.user.profiles().write_profiles):
+        if any(write.read_profile == name for write in config.user.profiles().stored_write_profiles):
             raise SaveError("studio.profile_coupled")  # remove the write or admin profile first
         old: list[Profile] = []
 

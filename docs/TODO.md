@@ -30,6 +30,10 @@
 > per-area flags of STU-ADR-0006, every area off by default (flag source `write-areas.toml`, profiles, unlock,
 > write connections, privilege check, kill-switch proof). Open: the i18n folder has two UI languages (en, de), not
 > six; ADR 0006 does not yet name the flag names and source in its own text.
+>
+> STU-XW-1 follow-up (2026-11-14, branch `claude/project-thread-rdo6g3-stuxw1b`): the findings L-1, L-3 and I-1 of
+> the review of PR #111 (`reviews/pr111-stuxw1-review.md`) are fixed; I-3 is recorded as an open G-S2 decision and
+> L-2 as a binding requirement of STU-XW-4 (see [CR-DBX](#cr-dbx-studio-11-to-13-in-development-locked)).
 
 ## Summary
 
@@ -489,7 +493,8 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 |---|---|---|---|---|
 | 1.1 | Threat model and the ADR successor of 0003 | TABRION STU-XW-5 | G-S2 | Done (PR #109; independent review accepted 2026-11-14, `reviews/pr109-stuxw5-review.md`): [STU-ADR-0006](adr/0006-per-area-write-kill-switches.md), [threat model](architecture/write-threat-model.md), non-goals in the README and the security guide |
 | 1.1 | Shared write foundation: write and admin profiles, unlocking, PROD lock, flags (STU-XW-1) | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1`): flags in `write-areas.toml` (default off, read once at start), write and admin profiles in the user's store only, server-side unlock per session, SQLite and PostgreSQL write connections (K-2), admin privilege check; kill-switch proof in `tests/security/test_write_*.py`; nothing activated |
-| 1.1 | Audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-2..STU-XW-4 | G-S2 | **Next** (after STU-XW-1); hooks: `Unlocks.require` and `WriteConnection.transaction`; each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package |
+| 1.1 | STU-XW-1 follow-up: review findings of PR #111 | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1b`): L-1 write and admin profiles only from the command line's or the platform's configuration folder while an area is on (`studio.write_profiles_ignored`); L-3 the SQLite write connection never creates a missing file (`file:...?mode=rw`, tabrion `create=False`); I-1 the privilege check reports `admin.broad:<pg_* role>` and `admin.createrole_pre16` (tabrion ADR 0015 D-1, D-2). I-3 and L-2 recorded below |
+| 1.1 | Audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-2..STU-XW-4 | G-S2 | **Next** (after STU-XW-1); hooks: `Unlocks.require` and `WriteConnection.transaction`; each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package. STU-XW-4 carries the binding requirement L-2 of PR #111 (below) |
 | 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
@@ -510,6 +515,19 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **Open (STU-XW-5):** planning document 03 section 8 still says "all 403" for PROD writes in the Data Editor row;
   STU-ADR-0006 follows W-9 (400/405, 403 only for the write mode); the planning text needs the correction
   (coordinating thread).
+- **Open G-S2 decision (I-3 of the review of PR #111): which privilege findings block a write unlock.** Today every
+  finding of the privilege check (`admin.superuser`, `admin.bypassrls`, `admin.createrole`,
+  `admin.createrole_pre16`, `admin.replication`, `admin.broad:<pg_* role>`) is only shown in the write state and
+  logged (`studio.write_role_over_privileged`); a SUPERUSER write role can be unlocked. Before G-S2 the owner decides
+  explicitly for `kind = "write"` which findings refuse the unlock (and with which W-9 code), and whether `dangerous`
+  findings (`createrole_pre16`, the server-file roles) always block. For `kind = "admin"` STU-XDM-1 decides it at
+  G-S4. Not decided in the follow-up of PR #111.
+- **STU-XW-4, binding requirement (L-2 of the review of PR #111): `require_auth` for every write and admin
+  connection.** Every PostgreSQL write and admin connection sets `require_auth = "!password,!md5"`, always, whatever
+  the profile or its owner (today `refuses_cleartext` holds only for project profiles, B-3, and write profiles are
+  user profiles). With libpq older than 16 (no `require_auth`) Studio refuses the write unlock (fail closed) instead
+  of only logging a warning. Proof: a test that the option reaches the driver for `write` and `admin`, and a test
+  that an older libpq refuses the unlock. Not implemented in STU-XW-1.
 - **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion
   TB-148) is decided with STU-CR-6 and the profile import and export of STU-XDM-5.
 

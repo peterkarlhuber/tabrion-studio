@@ -13,8 +13,12 @@ gives back, so no function or operator in a user schema takes part in resolving 
 in a write statement is still schema-qualified by the work packages that build statements (STU-XW-3, STU-026).
 Triggers and rules on a target table run with the write role: that is the residual risk "the role is the boundary".
 
-**SQLite.** The read profile's file, opened through tabrion (no link, owner and mode checks; the descriptor SQLite
-holds is the checked file) and never created. Each connection of the pool then gets, in this order:
+**SQLite.** The read profile's file, and it is **never created** (review L-3 of PR #111). Each connection of the pool
+is opened by :func:`_open_existing`: first with the URI ``file:<path>?mode=rw`` (SQLite fails on a missing file and
+creates nothing), then through ``tabrion.sqlite.connect(..., create=False)``, the connection Studio uses (no link,
+owner and mode checks; the descriptor SQLite holds is the checked file; a missing name is refused, never created).
+tabrion's engine from a URL would create a missing file, and it takes no URI, so Studio builds the engine itself
+(``tabrion.Database.from_engine``). Each connection of the pool then gets, in this order:
 
 * ``PRAGMA trusted_schema = OFF``: a view or trigger of the file cannot call a function that is not innocuous;
 * ``SQLITE_DBCONFIG_DEFENSIVE`` (``sqlite3.Connection.setconfig``, Python 3.12 and newer): no statement can corrupt
@@ -33,10 +37,21 @@ taken at unlock and compared again after the connection opened and before each u
 so a file swapped behind the unlock stops it (TX-16; STU-XW-3 calls it again before each run).
 
 **Admin privileges (TX-11, E-X6).** On every connect Studio reads the role's attributes, every role reachable from
-it through membership (``SET ROLE`` or inheritance) and the databases they own, and reports a finding for
-``SUPERUSER``, ``BYPASSRLS``, ``CREATEROLE`` and ``REPLICATION``, held directly or through a reachable role
-(:func:`privilege_findings`). What a finding blocks is fixed by STU-XDM-1 (G-S4); Studio never grants or widens its
-own rights.
+it through membership (``SET ROLE``, inheritance or the ADMIN option: every row of ``pg_auth_members``), the databases
+they own and the server version, and reports (:func:`privilege_findings`), each held directly or through a reachable
+role:
+
+* ``admin.superuser``, ``admin.bypassrls``, ``admin.createrole``, ``admin.replication``: the attributes (``warning``);
+* ``admin.createrole_pre16`` (``dangerous``): ``CREATEROLE`` on PostgreSQL before 16, where it can grant membership
+  in almost any role that is not a superuser (tabrion ADR 0015 D-1, review I-1 of PR #111);
+* ``admin.broad:<role>``: membership in a predefined role (a ``pg_*`` role with an oid below
+  ``FirstNormalObjectId``), as tabrion's ``role_privileges`` reports ``broad:<role>`` (ADR 0015 D-2).
+  ``pg_execute_server_program``, ``pg_read_server_files`` and ``pg_write_server_files`` are superuser-equivalent
+  (``dangerous``); every other one, ``pg_read_all_data`` and ``pg_write_all_data`` among them, is a ``warning``.
+
+The only role names a finding carries are those of predefined roles (fixed names of PostgreSQL); a role of the
+database's own is never named. What a finding blocks is open: for ``kind="write"`` it is decided at G-S2 (review I-3
+of PR #111, docs/TODO.md), for ``admin`` by STU-XDM-1 (G-S4). Studio never grants or widens its own rights.
 """
 
 from __future__ import annotations
@@ -44,18 +59,22 @@ from __future__ import annotations
 from collections.abc import Iterator
 import contextlib
 from dataclasses import dataclass, field
+import functools
 import os
 from pathlib import Path
+import re
 import sqlite3
 import stat
 from typing import Any
 
 import sqlalchemy
 from sqlalchemy import event
+from sqlalchemy.pool import QueuePool
 import tabrion
 from tabrion.errors import ConfigurationError, UnsafePath
 from tabrion.postgres import SessionSettings
 from tabrion.sqlite import JournalMode, SQLiteProfile
+from tabrion.sqlite import connect as tabrion_sqlite_connect
 
 from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.services import tabrion_compat
@@ -101,6 +120,13 @@ _READING = frozenset(
 )
 #: Attributes that make a role over-privileged for Studio (E-X6): a finding when held directly or by a reachable role.
 DANGEROUS_ATTRIBUTES = ("superuser", "bypassrls", "createrole", "replication")
+#: Predefined roles that are superuser-equivalent (read or write any server file, run a server program): ``dangerous``.
+SERVER_FILE_ROLES = frozenset({"pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"})
+#: PostgreSQL ``FirstNormalObjectId``: every predefined role has a smaller oid.
+FIRST_NORMAL_OBJECT_ID = 16384
+#: The first PostgreSQL version (``server_version_num``) where CREATEROLE no longer reaches almost every role (D-1).
+PG16 = 160000
+_PREDEFINED_NAME = re.compile(r"pg_[a-z0-9_]{1,59}")
 
 
 class WriteError(Exception):
@@ -178,22 +204,40 @@ _PRIVILEGES = (
     ")"
     " SELECT r.rolname OPERATOR(pg_catalog.=) pg_catalog.current_user() AS own,"
     " r.rolsuper, r.rolbypassrls, r.rolcreaterole, r.rolreplication, r.rolcreatedb,"
-    " (SELECT pg_catalog.count(*) FROM pg_catalog.pg_database d WHERE d.datdba OPERATOR(pg_catalog.=) r.oid)"
+    " (SELECT pg_catalog.count(*) FROM pg_catalog.pg_database d WHERE d.datdba OPERATOR(pg_catalog.=) r.oid),"
+    # The name only of a predefined role (an oid below FirstNormalObjectId, a pg_ name); never a database's own role.
+    " CASE WHEN r.oid OPERATOR(pg_catalog.<) 16384::pg_catalog.oid"
+    " AND pg_catalog.starts_with(r.rolname::pg_catalog.text, 'pg_') THEN r.rolname::pg_catalog.text END,"
+    # Whether the session's role is a member of it itself (direct) or only through another role (inherited).
+    " EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles s"
+    " ON s.oid OPERATOR(pg_catalog.=) m.member"
+    " WHERE m.roleid OPERATOR(pg_catalog.=) r.oid AND s.rolname OPERATOR(pg_catalog.=) pg_catalog.current_user())"
     " FROM reach JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) reach.oid"
 )
+_SERVER_VERSION = "SELECT pg_catalog.current_setting('server_version_num')"
 
 
-def privilege_findings(rows: list[tuple[Any, ...]]) -> tuple[dict[str, Any], list[dict[str, str]]]:
+def _predefined(name: object) -> str | None:
+    """``name`` if it is the name of a predefined role as PostgreSQL spells them, else None (never a free name)."""
+    return name if isinstance(name, str) and _PREDEFINED_NAME.fullmatch(name) else None
+
+
+def privilege_findings(
+    rows: list[tuple[Any, ...]], server_version: int | None = None
+) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """The facts and findings of the privilege check (TX-11) from the rows of :data:`_PRIVILEGES`.
 
-    One row per role reachable from the session's role (itself included, ``own``). A finding names the attribute and
-    whether the role holds it ``direct`` or through a reachable role (``inherited``); never a role name.
+    One row per role reachable from the session's role (itself included, ``own``). A finding names the attribute or
+    the predefined role and whether the role holds it ``direct`` or through a reachable role (``inherited``); never
+    the name of a role that is not predefined. ``server_version`` is ``server_version_num`` (None: not known, then
+    CREATEROLE counts as before 16: fail closed).
     """
     reachable = 0
     owned = 0
     createdb = False
     held: dict[str, str] = {}
-    for own, superuser, bypassrls, createrole, replication, can_createdb, databases in rows:
+    broad: dict[str, str] = {}
+    for own, superuser, bypassrls, createrole, replication, can_createdb, databases, predefined, member in rows:
         reachable += 0 if own else 1
         owned += int(databases or 0)
         createdb = createdb or bool(can_createdb)
@@ -203,13 +247,38 @@ def privilege_findings(rows: list[tuple[Any, ...]]) -> tuple[dict[str, Any], lis
                     held[name] = "direct"
                 else:
                     held.setdefault(name, "inherited")
-    facts = {"reachable_roles": reachable, "owned_databases": owned, "createdb": createdb}
+        role = None if own else _predefined(predefined)
+        if role is not None:
+            if member:
+                broad[role] = "direct"
+            else:
+                broad.setdefault(role, "inherited")
+    facts = {
+        "reachable_roles": reachable,
+        "owned_databases": owned,
+        "createdb": createdb,
+        "server_version": server_version,
+    }
     findings = [
         {"code": f"admin.{name}", "via": held[name], "severity": "warning"}
         for name in DANGEROUS_ATTRIBUTES
         if name in held
     ]
+    if "createrole" in held and (server_version is None or server_version < PG16):
+        # tabrion ADR 0015 D-1: before PostgreSQL 16, CREATEROLE can grant membership in almost any role.
+        findings.append({"code": "admin.createrole_pre16", "via": held["createrole"], "severity": "dangerous"})
+    for role in sorted(broad):
+        # tabrion ADR 0015 D-2: membership in a predefined role is reported as broad:<role>.
+        severity = "dangerous" if role in SERVER_FILE_ROLES else "warning"
+        findings.append({"code": f"admin.broad:{role}", "via": broad[role], "severity": severity})
     return facts, findings
+
+
+def _server_version(rows: list[tuple[Any, ...]]) -> int | None:
+    try:
+        return int(rows[0][0])
+    except (IndexError, TypeError, ValueError):
+        return None
 
 
 @dataclass
@@ -226,6 +295,8 @@ class WriteConnection:
     _db: tabrion.Database = field(repr=False)
     facts: dict[str, Any] = field(default_factory=dict)
     findings: list[dict[str, str]] = field(default_factory=list)
+    #: The engine Studio built itself (SQLite, ``Database.from_engine``): disposed on :meth:`close`.
+    _owned_engine: sqlalchemy.Engine | None = field(default=None, repr=False)
 
     read_only = False
 
@@ -252,10 +323,13 @@ class WriteConnection:
         """Read the role's privileges (TX-11) into :attr:`facts` and :attr:`findings`; nothing on SQLite."""
         if self.engine != "postgresql":
             return
-        self.facts, self.findings = privilege_findings(self.fetch(_PRIVILEGES))
+        version = _server_version(self.fetch(_SERVER_VERSION))
+        self.facts, self.findings = privilege_findings(self.fetch(_PRIVILEGES), version)
 
     def close(self) -> None:
         self._db.close()
+        if self._owned_engine is not None:
+            self._owned_engine.dispose()
 
 
 def _settings(profile: Profile, limits: Settings) -> tuple[tabrion.Profile, int]:
@@ -278,24 +352,65 @@ def _settings(profile: Profile, limits: Settings) -> tuple[tabrion.Profile, int]
     )
 
 
-def _sqlite_database(database_file: Path, journal_mode: str | None, settings: tabrion.Profile) -> tabrion.Database:
+def _open_existing(path: str, profile: SQLiteProfile) -> sqlite3.Connection:
+    """The pool's creator (SQLite): open the existing file ``path``, never create it (review L-3 of PR #111).
+
+    The URI ``file:<path>?mode=rw`` fails on a missing file without creating one (and on a file that cannot be
+    written); no statement runs on it, so it changes nothing. The connection Studio uses is then tabrion's checked one
+    with ``create=False``, which refuses a missing name too. A missing file is ``studio.write_target_changed``."""
+    try:
+        probe = sqlite3.connect(Path(path).absolute().as_uri() + "?mode=rw", uri=True, isolation_level=None)
+    except sqlite3.Error:
+        if not os.path.lexists(path):
+            raise WriteError("studio.write_target_changed") from None
+        raise WriteError("studio.write_unsupported") from None
+    try:
+        return tabrion_sqlite_connect(path, profile=profile, create=False, check_same_thread=False)
+    except FileNotFoundError:
+        raise WriteError("studio.write_target_changed") from None
+    finally:
+        probe.close()
+
+
+def _sqlite_database(
+    database_file: Path, journal_mode: str | None, settings: tabrion.Profile
+) -> tuple[tabrion.Database, sqlalchemy.Engine]:
     if not defensive_available():
         raise WriteError("studio.write_unsupported")  # fail closed on Python 3.11 (see the module text)
     mode = (journal_mode or "").lower()
     if mode not in ACCEPTED_JOURNAL_MODES:
         raise WriteError("studio.write_unsupported")
+    sqlite_profile = SQLiteProfile(journal_mode=JournalMode(mode))
     profile = tabrion.Profile(
-        sqlite=SQLiteProfile(journal_mode=JournalMode(mode)),
+        sqlite=sqlite_profile,
         pool_size=1,
         max_overflow=0,
         pool_timeout=settings.pool_timeout,
         max_rows=settings.max_rows,
         read_only=False,
     )
-    url = sqlalchemy.URL.create("sqlite", database=str(database_file))
-    db = tabrion.Database.from_url(url, profile=profile)
-    event.listen(db.engine, "connect", _install_write_guards)
-    return db
+    # The engine is Studio's own (tabrion's from_url would create a missing file): the creator opens the existing
+    # file only, tabrion's profile is applied by tabrion.sqlite.connect, and the pool is the one from_url would make.
+    engine = sqlalchemy.create_engine(
+        sqlalchemy.URL.create("sqlite+pysqlite", database=str(database_file)),
+        creator=functools.partial(_open_existing, str(database_file), sqlite_profile),
+        poolclass=QueuePool,
+        pool_size=profile.pool_size,
+        max_overflow=profile.max_overflow,
+        pool_timeout=profile.pool_timeout,
+        pool_pre_ping=profile.pool_pre_ping,
+        pool_recycle=profile.pool_recycle,
+        hide_parameters=True,
+    )
+    event.listen(engine, "connect", _install_write_guards)
+    try:
+        # install_listeners=False: the profile is already applied by the creator, and a checkout listener would
+        # run after the write authorizer, which refuses its pragmas. tabrion's begin listener is installed either way.
+        db = tabrion.Database.from_engine(engine, profile=profile, install_listeners=False)
+    except BaseException:
+        engine.dispose()
+        raise
+    return db, engine
 
 
 def _postgres_database(
@@ -333,21 +448,17 @@ def open_write_connection(
     if profile.environment == "prod":
         raise WriteError("studio.write_prod_locked")  # E-X7: no code path writes to PROD
     settings, timeout = _settings(profile, limits)
-    try:
+    owned: sqlalchemy.Engine | None = None
+    with _registry_errors():
         if profile.engine == "sqlite":
             if database_file is None or identity is None:
                 raise WriteError("studio.write_target_changed")
-            db = _sqlite_database(database_file, journal_mode, settings)
+            # Before anything opens it: a missing or swapped file is refused here, and nothing is created (L-3).
+            if file_identity(database_file) != identity:
+                raise WriteError("studio.write_target_changed")
+            db, owned = _sqlite_database(database_file, journal_mode, settings)
         else:
             db = _postgres_database(profile, password, settings, refuse_cleartext=refuse_cleartext)
-    except FileNotFoundError:
-        raise RegistryError("studio.database_missing") from None
-    except UnsafePath:
-        raise RegistryError("studio.database_unsafe") from None
-    except ConfigurationError as exc:
-        raise RegistryError(
-            "studio.connection_tls" if exc.code == "config.tls" else "studio.connection_config"
-        ) from None
     connection = WriteConnection(
         kind=kind,
         engine=profile.engine,
@@ -357,16 +468,33 @@ def open_write_connection(
         identity=identity,
         timeout_s=timeout / 1000,
         _db=db,
+        _owned_engine=owned,
     )
     try:
-        connection.verify()
-        _check_session(connection)
-        connection.verify()
-        connection.check_privileges()
+        with _registry_errors():
+            connection.verify()
+            _check_session(connection)
+            connection.verify()
+            connection.check_privileges()
     except BaseException:
         connection.close()
         raise
     return connection
+
+
+@contextlib.contextmanager
+def _registry_errors() -> Iterator[None]:
+    """tabrion's errors of opening a database as Studio's problems (the SQLite pool opens on first use)."""
+    try:
+        yield
+    except FileNotFoundError:
+        raise RegistryError("studio.database_missing") from None
+    except UnsafePath:
+        raise RegistryError("studio.database_unsafe") from None
+    except ConfigurationError as exc:
+        raise RegistryError(
+            "studio.connection_tls" if exc.code == "config.tls" else "studio.connection_config"
+        ) from None
 
 
 def _check_session(connection: WriteConnection) -> None:

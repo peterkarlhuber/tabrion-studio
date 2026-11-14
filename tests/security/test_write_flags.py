@@ -247,3 +247,124 @@ def test_the_command_has_no_flag_option() -> None:
     options = {option for action in build_parser()._actions for option in action.option_strings}
     assert not {option for option in options if "write" in option or "area" in option or "editor" in option}
     assert studio_command("--help")
+
+
+# --- L-1 of PR #111: write and admin profiles follow the rule of the flag file ------------------------------------
+
+
+def _profiles_file(folder: Path, database: Path) -> None:
+    folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+    folder.chmod(0o700)
+    file = folder / "profiles.toml"
+    file.write_text(
+        "version = 1\n\n"
+        f'[[profile]]\nname = "parts"\nengine = "sqlite"\npath = {json.dumps(str(database))}\nenvironment = "dev"\n\n'
+        '[[write_profile]]\nname = "parts-write"\nkind = "write"\nread_profile = "parts"\n',
+        encoding="utf-8",
+    )
+    file.chmod(0o600)
+
+
+def _write_profiles(info: object) -> tuple[dict[str, object], list[str], int, str]:
+    """The write profile listing, the read profile ids, and the answer to creating a write profile."""
+    session = sign_in(info)  # type: ignore[arg-type]
+    headers = session.headers()
+    status, _, body = request(session.port, "GET", "/api/write/profiles", headers, host=session.host)
+    assert status == 200, body
+    listing: dict[str, object] = json.loads(body)
+    status, _, body = request(session.port, "GET", "/api/profiles", headers, host=session.host)
+    reads = [item["id"] for item in json.loads(body)["profiles"]]
+    created = request(
+        session.port,
+        "POST",
+        "/api/write/profiles",
+        {**headers, "Origin": f"http://{session.host}:{session.port}"},
+        {
+            "profile": {"name": "second-write", "kind": "write", "read_profile": "parts"},
+            "digest": listing["user_file"]["digest"],  # type: ignore[index]
+            "confirm_no_prod_credentials": True,
+            "overwrite": True,  # the file was written by hand
+        },
+        host=session.host,
+    )
+    code = json.loads(created[2]).get("code", "") if created[2] else ""
+    return listing, reads, created[0], code
+
+
+def _logged(state_dir: Path, event: str) -> bool:
+    return any(event in log.read_text(encoding="utf-8") for log in (state_dir / "logs").glob("*.log*"))
+
+
+@pytest.mark.process
+def test_write_profiles_from_a_folder_a_variable_chose_are_not_used(
+    tmp_path: Path, project: Path, state_dir: Path, monkeypatch: pytest.MonkeyPatch, clean_env: None
+) -> None:
+    """L-1: the flag is on (the command line's folder), but ``TABRION_STUDIO_CONFIG_DIR`` points the profiles at a
+    folder in the project, as direnv could: its read profiles are used, its write profiles are not, none can be
+    created there, and the start logs ``studio.write_profiles_ignored``."""
+    database = tmp_path / "parts.db"
+    database.write_bytes(b"")
+    _flag_file(state_dir / "config", "version = 1\n[areas]\ndata_editor = true")
+    moved = project / ".direnv-config"
+    _profiles_file(moved, database)
+    monkeypatch.setenv("TABRION_STUDIO_CONFIG_DIR", str(moved))
+    with start_studio(project, state_dir) as studio:
+        info, _ = studio.wait_ready()
+        assert _areas(info)["data_editor"] is True
+        listing, reads, status, code = _write_profiles(info)
+    assert listing["write_profiles"] == []
+    assert listing["write_profiles_allowed"] is False and listing["write_profiles_ignored"] is True
+    assert "user:parts" in reads
+    assert (status, code) == (409, "studio.write_profiles_ignored")
+    assert "second-write" not in (moved / "profiles.toml").read_text(encoding="utf-8")
+    assert _logged(state_dir, "studio.write_profiles_ignored")
+
+
+@pytest.mark.process
+def test_write_profiles_from_the_command_lines_folder_are_used(
+    tmp_path: Path, project: Path, state_dir: Path, clean_env: None
+) -> None:
+    """The control: the same file in the folder the command line names (here ``<--state-dir>/config``) is used."""
+    database = tmp_path / "parts.db"
+    database.write_bytes(b"")
+    _flag_file(state_dir / "config", "version = 1\n[areas]\ndata_editor = true")
+    _profiles_file(state_dir / "config", database)
+    with start_studio(project, state_dir) as studio:
+        info, _ = studio.wait_ready()
+        listing, _, status, _ = _write_profiles(info)
+    assert [item["name"] for item in listing["write_profiles"]] == ["parts-write"]  # type: ignore[attr-defined]
+    assert listing["write_profiles_allowed"] is True and listing["write_profiles_ignored"] is False
+    assert status == 201
+    assert not _logged(state_dir, "studio.write_profiles_ignored")
+
+
+def test_write_profiles_allowed_follows_the_flag_files_folder(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The rule the server applies, as the command line computes both folders (``cli.py``): only the flag file's
+    folder supplies write profiles while an area is on; a folder that ``TABRION_STUDIO_CONFIG_DIR`` or
+    ``TABRION_STUDIO_STATE_DIR`` chose does not. With every area off nothing uses them."""
+    from tabrion_studio.config.write_areas import write_profiles_allowed
+    from tabrion_studio.paths import default_config_dir
+
+    on = WriteAreas(frozenset({Area.DATA_EDITOR}))
+    platform = tmp_path / "platform"
+    for name in ("TABRION_STUDIO_CONFIG_DIR", "TABRION_STUDIO_STATE_DIR"):
+        monkeypatch.delenv(name, raising=False)
+    cli = tmp_path / "cli"
+    assert write_profiles_allowed(on, cli, flag_dir(cli, None, platform))
+    state = tmp_path / "state"
+    assert write_profiles_allowed(on, state / "config", flag_dir(None, state, platform))
+    monkeypatch.setenv("TABRION_STUDIO_CONFIG_DIR", str(tmp_path / "env-config"))
+    assert not write_profiles_allowed(on, default_config_dir(), flag_dir(None, None, platform))
+    assert not write_profiles_allowed(on, default_config_dir(state), flag_dir(None, state, platform))
+    monkeypatch.delenv("TABRION_STUDIO_CONFIG_DIR")
+    env_state = tmp_path / "env-state"
+    monkeypatch.setenv("TABRION_STUDIO_STATE_DIR", str(env_state))
+    # cli.py: a state folder from the variable gives <state>/config; the flag file stays in the platform folder.
+    assert not write_profiles_allowed(on, default_config_dir(env_state), flag_dir(None, None, platform))
+    assert not write_profiles_allowed(on, tmp_path / "anything", None)
+    assert write_profiles_allowed(ALL_OFF, tmp_path / "anything", None)
+    # The same folder through a link is the same folder.
+    platform.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(platform, target_is_directory=True)
+    assert write_profiles_allowed(on, link, platform)

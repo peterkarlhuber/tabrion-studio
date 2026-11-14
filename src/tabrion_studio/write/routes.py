@@ -169,6 +169,11 @@ def add_enabled_write_routes(
                 {
                     "write_profiles": items,
                     "kinds": {kind: unlocks.kind_open(kind) for kind in ("write", "admin")},
+                    # L-1 of PR #111: the configuration folder came from an environment variable, so the file's write
+                    # and admin profiles are not used (and none can be created) until Studio starts with that folder
+                    # on the command line or uses the platform's folder.
+                    "write_profiles_allowed": config.user.write_profiles_allowed,
+                    "write_profiles_ignored": user.write_profiles_ignored,
                     "user_file": {"digest": user.digest, "hand_written": not user.canonical},
                 }
             )

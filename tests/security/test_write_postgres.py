@@ -30,7 +30,9 @@ PG_SUPERUSER_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES_SUPERUSER")
 @pytest.fixture
 def roles() -> Iterator[dict[str, Any]]:
     """``<p>_w`` (plain, with a hostile role search_path), ``<p>_su`` (SUPERUSER), ``<p>_member`` (member of a
-    CREATEROLE role) and a schema ``<p>`` with a shadowing ``lower(text)`` and ``=`` for text."""
+    CREATEROLE role), ``<p>_files`` (member of ``pg_read_server_files`` and ``pg_execute_server_program``),
+    ``<p>_chain`` (member of ``<p>_bulk``, a member of ``pg_write_all_data``) and a schema ``<p>`` with a shadowing
+    ``lower(text)`` and ``=`` for text."""
     if PG_URL is None or PG_SUPERUSER_URL is None:
         pytest.skip("TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed")
     prefix = f"stuxw1_{secrets.token_hex(4)}"
@@ -42,7 +44,11 @@ def roles() -> Iterator[dict[str, Any]]:
         f"CREATE ROLE {prefix}_su LOGIN SUPERUSER PASSWORD '{password}'",
         f"CREATE ROLE {prefix}_cr NOLOGIN CREATEROLE",
         f"CREATE ROLE {prefix}_member LOGIN PASSWORD '{password}' IN ROLE {prefix}_cr",
-        f'GRANT CONNECT ON DATABASE "{database}" TO {prefix}_w, {prefix}_member',
+        f"CREATE ROLE {prefix}_files LOGIN PASSWORD '{password}'",
+        f"GRANT pg_read_server_files, pg_execute_server_program TO {prefix}_files",
+        f"CREATE ROLE {prefix}_bulk NOLOGIN IN ROLE pg_write_all_data",
+        f"CREATE ROLE {prefix}_chain LOGIN PASSWORD '{password}' IN ROLE {prefix}_bulk",
+        f'GRANT CONNECT ON DATABASE "{database}" TO {prefix}_w, {prefix}_member, {prefix}_files, {prefix}_chain',
         f"CREATE SCHEMA {prefix}",
         f"GRANT USAGE ON SCHEMA {prefix} TO {prefix}_w",
         f"CREATE FUNCTION {prefix}.lower(text) RETURNS text LANGUAGE sql AS $$ SELECT 'shadowed' $$",
@@ -60,7 +66,15 @@ def roles() -> Iterator[dict[str, Any]]:
     finally:
         with admin.begin() as connection:
             connection.exec_driver_sql(f"DROP SCHEMA IF EXISTS {prefix} CASCADE")
-            for role in (f"{prefix}_w", f"{prefix}_su", f"{prefix}_member", f"{prefix}_cr"):
+            for role in (
+                f"{prefix}_w",
+                f"{prefix}_su",
+                f"{prefix}_member",
+                f"{prefix}_cr",
+                f"{prefix}_files",
+                f"{prefix}_chain",
+                f"{prefix}_bulk",
+            ):
                 connection.exec_driver_sql(f"DROP OWNED BY {role}")
                 connection.exec_driver_sql(f"DROP ROLE IF EXISTS {role}")
         admin.dispose()
@@ -117,6 +131,53 @@ def test_the_privilege_check_reports_over_privilege(
         assert prefix not in repr(admin.findings)
         if suffix == "_member":
             assert admin.facts["reachable_roles"] >= 1
+    finally:
+        admin.close()
+
+
+@pytest.mark.parametrize(
+    ("suffix", "expected"),
+    [
+        (
+            "_files",
+            {
+                "admin.broad:pg_read_server_files": ("direct", "dangerous"),
+                "admin.broad:pg_execute_server_program": ("direct", "dangerous"),
+            },
+        ),
+        ("_chain", {"admin.broad:pg_write_all_data": ("inherited", "warning")}),
+    ],
+)
+def test_membership_in_a_predefined_role_is_a_finding(
+    roles: dict[str, Any], suffix: str, expected: dict[str, tuple[str, str]]
+) -> None:
+    """Review I-1 of PR #111 (tabrion ADR 0015 D-2): a predefined role reached directly or through another role is
+    ``admin.broad:<role>``; the server-file roles are ``dangerous``. The test's own roles are never named."""
+    prefix = roles["prefix"]
+    for kind in ("write", "admin"):
+        connection = open_write_connection(kind, _profile(f"{prefix}{suffix}"), Settings(), password=roles["password"])
+        try:
+            found = {f["code"]: (f["via"], f["severity"]) for f in connection.findings}
+            assert found == expected, found
+            assert prefix not in repr(connection.findings)
+        finally:
+            connection.close()
+
+
+def test_createrole_before_16_is_dangerous_and_reported_by_the_server_version(roles: dict[str, Any]) -> None:
+    """Review I-1 of PR #111 (tabrion ADR 0015 D-1): ``admin.createrole_pre16`` exactly when the server is older
+    than PostgreSQL 16; ``admin.createrole`` on every version."""
+    prefix = roles["prefix"]
+    admin = open_write_connection("admin", _profile(f"{prefix}_member"), Settings(), password=roles["password"])
+    try:
+        version = int(admin.fetch("SELECT pg_catalog.current_setting('server_version_num')")[0][0])
+        assert admin.facts["server_version"] == version
+        found = {f["code"]: (f["via"], f["severity"]) for f in admin.findings}
+        assert found["admin.createrole"] == ("inherited", "warning")
+        if version < 160000:
+            assert found["admin.createrole_pre16"] == ("inherited", "dangerous")
+        else:
+            assert "admin.createrole_pre16" not in found
     finally:
         admin.close()
 

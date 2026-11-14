@@ -53,7 +53,7 @@ from tabrion_studio.app import Runtime, create_app
 from tabrion_studio.config.code_trust import CodeTrust
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.user import UserConfig
-from tabrion_studio.config.write_areas import ALL_OFF, load_write_areas, log_write_areas
+from tabrion_studio.config.write_areas import ALL_OFF, load_write_areas, log_write_areas, write_profiles_allowed
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import (
     LOOPBACK,
@@ -383,7 +383,11 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     log_write_areas(write_areas)
     configuration = Configuration(
         project=ProjectConfig(options.project, options.state_dir, project_key(options.project), config_dir),
-        user=UserConfig(config_dir),
+        # L-1 of PR #111: with an area on, write profiles only from the flag file's folder (never one a variable chose).
+        user=UserConfig(
+            config_dir,
+            write_profiles_allowed=write_profiles_allowed(write_areas, config_dir, options.write_areas_dir),
+        ),
     )
     registry = ConnectionRegistry(configuration)
     explorer = Explorer(registry)

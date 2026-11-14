@@ -358,3 +358,57 @@ def test_write_profiles_are_not_in_the_diagnosis_report_or_the_profile_listing(e
     for report_format in ("markdown", "json"):
         body = reports.build(connection_id, report_format).body.decode("utf-8")
         assert CANARY_SECRET not in body and "parts-write" not in body and "write_profile" not in body
+
+
+# --- L-1 of PR #111: write profiles only from the command line's or the platform's folder ------------------------
+
+
+def test_write_profiles_of_a_folder_a_variable_chose_are_not_used(env: WriteEnv) -> None:
+    """With ``write_profiles_allowed=False`` (the server's choice when an area is on and an environment variable chose
+    the folder; ``test_write_flags.py`` proves that wiring with a real process) the file's write profiles are not
+    listed, not unlockable and none can be created; the read profiles work as before."""
+    env.create_read()
+    assert env.create_write().status_code == 201
+    env.config.user.write_profiles_allowed = False
+    listing = env.send("GET", "/api/write/profiles").json()
+    assert listing["write_profiles"] == []
+    assert listing["write_profiles_allowed"] is False and listing["write_profiles_ignored"] is True
+    created = env.create_write(name="other-write")
+    assert (created.status_code, created.json()["code"]) == (409, "studio.write_profiles_ignored")
+    connection_id = env.open()
+    refused = env.unlock(connection_id)
+    assert (refused.status_code, refused.json()["code"]) == (400, "studio.write_profile_unknown")
+    for method in ("PUT", "DELETE"):
+        response = env.send(
+            method,
+            "/api/write/profiles",
+            {
+                "id": "write:parts-write",
+                "profile": {"name": "parts-write", "kind": "write", "read_profile": "parts"},
+                "digest": env.user_digest(),
+            },
+        )
+        assert (response.status_code, response.json()["code"]) == (400, "studio.write_profile_unknown")
+    assert env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
+    assert [p.name for p in env.config.user.profiles().profiles] == ["parts"]
+
+
+def test_ignored_write_profiles_stay_in_the_file_and_keep_their_couplings(env: WriteEnv) -> None:
+    """Not used is not dropped: saving a read profile keeps them, and a coupled read profile still never becomes
+    PROD and is not removed (the file stays valid for a start from the command line's folder)."""
+    env.create_read()
+    assert env.create_write().status_code == 201
+    env.config.user.write_profiles_allowed = False
+    env.create_read(name="other")
+    to_test = {"name": "parts", "engine": "sqlite", "path": str(env.db), "environment": "test"}
+    saved = env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": to_test, "digest": env.user_digest()})
+    assert saved.status_code == 200
+    assert [w.name for w in env.config.user.profiles().stored_write_profiles] == ["parts-write"]
+    to_prod = {**to_test, "environment": "prod"}
+    response = env.send("PUT", "/api/profiles", {"id": "user:parts", "profile": to_prod, "digest": env.user_digest()})
+    assert response.status_code == 422 and response.json()["issues"][0]["code"] == "config.coupling_prod"
+    removed = env.send("DELETE", "/api/profiles", {"id": "user:parts", "digest": env.user_digest()})
+    assert (removed.status_code, removed.json()["code"]) == (409, "studio.profile_coupled")
+    env.config.user.write_profiles_allowed = True
+    assert [w.name for w in env.config.user.profiles().write_profiles] == ["parts-write"]
+    assert env.config.user.profiles().issues == []

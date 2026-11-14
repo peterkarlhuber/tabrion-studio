@@ -1030,6 +1030,7 @@
     "write_profile_unknown": "Dieses Schreib- oder Admin-Profil gibt es nicht.",
     "write_profile_exists": "Ein Profil oder Schreibprofil mit diesem Namen gibt es bereits.",
     "write_warning_unconfirmed": "Bestätigen Sie zuerst den Hinweis zu Produktionszugangsdaten.",
+    "write_profiles_ignored": "Schreib- und Admin-Profile werden nur aus dem Konfigurationsordner verwendet, den die Kommandozeile nennt, oder aus dem Ordner der Plattform, nicht aus einem, den eine Umgebungsvariable gewählt hat. Starten Sie Studio mit --config-dir für diesen Ordner.",
     "profile_coupled": "An dieses Profil ist ein Schreib- oder Admin-Profil gekoppelt. Entfernen Sie es zuerst.",
     "write_prod_locked": "Studio schreibt nie in eine PROD-Datenbank.",
     "write_coupling_invalid": "Dieses Schreibprofil ist nicht an das Profil dieser Verbindung gekoppelt.",

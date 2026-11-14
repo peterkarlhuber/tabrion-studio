@@ -8,6 +8,7 @@ is used.
 |---|---|
 | `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_connections_api.py`, `tests/security/test_read_only.py` |
 | `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_read_only.py` |
+| `tabrion.Database.from_engine` | `src/tabrion_studio/write/connection.py` |
 | `tabrion.Database.from_url` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.Health` | `src/tabrion_studio/services/connections.py`, `tests/security/test_connections_api.py` |
 | `tabrion.Profile` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
@@ -46,6 +47,6 @@ is used.
 | `tabrion.sqlite.JournalMode` | `src/tabrion_studio/write/connection.py` |
 | `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.backup` | `src/tabrion_studio/services/state.py` |
-| `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `tests/security/test_drafts.py` |
+| `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.write_transaction` | `src/tabrion_studio/services/state.py` |

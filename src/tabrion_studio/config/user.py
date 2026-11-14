@@ -9,6 +9,14 @@ Studio writes both files itself (STU-008, :mod:`tabrion_studio.config.writer`): 
 :meth:`UserConfig.save_settings` check the folder (0700, no link), refuse a file that changed since the page read it
 (``studio.config_stale``) or that has issues (``studio.config_invalid``), ask before they replace a file written by
 hand (``studio.config_hand_written``, its comments are not kept) and write atomically with mode 0600.
+
+**Write and admin profiles (STU-XW-1, review L-1 of PR #111).** ``[[write_profile]]`` tables are used only when the
+configuration folder is one the command line named (``--config-dir``, ``<--state-dir>/config``) or the platform's
+folder: the rule of the flag file (``write-areas.toml``, N-1 of PR #109). When a write area is on and the folder came
+from ``TABRION_STUDIO_CONFIG_DIR`` or ``TABRION_STUDIO_STATE_DIR`` (which a per-folder tool such as direnv can set),
+the server builds :class:`UserConfig` with ``write_profiles_allowed=False``: :meth:`UserConfig.profiles` then has no
+write profiles (they are kept in the file, :attr:`UserProfiles.stored_write_profiles`, so a save never drops them)
+and :meth:`UserConfig.save_write_profiles` refuses (``studio.write_profiles_ignored``).
 """
 
 from __future__ import annotations
@@ -42,13 +50,21 @@ class UserProfiles:
     digest: str | None = None
     #: Whether the file is exactly what Studio would write (False: written by hand, comments would be lost).
     canonical: bool = True
-    #: The write and admin profiles (STU-XW-1): only here, never in a project file (K-1).
+    #: The write and admin profiles (STU-XW-1): only here, never in a project file (K-1). Empty when the folder may
+    #: not supply them (``write_profiles_allowed=False``, review L-1 of PR #111).
     write_profiles: list[WriteProfile] = field(default_factory=list)
+    #: Every write and admin profile of the file, also those not used: for keeping the file whole when it is saved
+    #: and for keeping their couplings valid. Never for unlocking or listing.
+    stored_write_profiles: list[WriteProfile] = field(default_factory=list)
+    #: Whether the file has write or admin profiles that are not used because of where the folder came from.
+    write_profiles_ignored: bool = False
 
 
 class UserConfig:
-    def __init__(self, config_dir: Path) -> None:
+    def __init__(self, config_dir: Path, *, write_profiles_allowed: bool = True) -> None:
         self.config_dir = config_dir
+        #: False: the folder came from an environment variable while a write area is on (L-1 of PR #111).
+        self.write_profiles_allowed = write_profiles_allowed
 
     def settings(self) -> tuple[Settings, list[Issue]]:
         settings, issues, _, _ = self.settings_file()
@@ -78,12 +94,15 @@ class UserConfig:
             pointer = PROFILES_FILE if exc.line is None else f"{PROFILES_FILE} line {exc.line}"
             return UserProfiles(issues=[Issue(pointer, exc.code)], digest=digest(data), canonical=False)
         # Valid profiles are used even if others in the file are not; the issues say which ones were skipped.
+        allowed = self.write_profiles_allowed
         return UserProfiles(
             parsed.profiles,
             parsed.issues,
             digest(data),
             canonical=dump_profiles(parsed.profiles, parsed.write_profiles) == data,
-            write_profiles=parsed.write_profiles,
+            write_profiles=list(parsed.write_profiles) if allowed else [],
+            stored_write_profiles=list(parsed.write_profiles),
+            write_profiles_ignored=not allowed and bool(parsed.write_profiles),
         )
 
     def _folder(self) -> None:
@@ -108,8 +127,8 @@ class UserConfig:
         self._folder()
         current = self.profiles()
         self._check(current.digest, current.issues, current.canonical, expected, overwrite)
-        # The write and admin profiles stay as they are (their own save below).
-        data = checked_profiles(change(list(current.profiles)), current.write_profiles)
+        # The write and admin profiles stay as they are (their own save below), also those not used here (L-1).
+        data = checked_profiles(change(list(current.profiles)), current.stored_write_profiles)
         self._recheck(PROFILES_FILE, current.digest, private=True)
         self._write(PROFILES_FILE, data)
         return digest(data) or ""
@@ -124,7 +143,10 @@ class UserConfig:
         """Apply ``change`` to the user's write and admin profiles (STU-XW-1) and write the file; the new digest.
 
         ``change`` gets the read profiles too, to check a coupling; the read profiles stay as they are. Raises
-        :class:`SaveError`, and ValueError for a list that would not read back (a coupling that is not valid)."""
+        :class:`SaveError`, and ValueError for a list that would not read back (a coupling that is not valid).
+        Refused (``studio.write_profiles_ignored``) when this folder may not supply write profiles (L-1)."""
+        if not self.write_profiles_allowed:
+            raise SaveError("studio.write_profiles_ignored")
         self._folder()
         current = self.profiles()
         self._check(current.digest, current.issues, current.canonical, expected, overwrite)

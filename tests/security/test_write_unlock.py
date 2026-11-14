@@ -453,6 +453,50 @@ def test_a_link_in_place_of_the_file_is_refused(env: WriteEnv) -> None:
         write.verify()
 
 
+def _side_files(path: Path) -> list[Path]:
+    return [path, *(path.with_name(path.name + suffix) for suffix in ("-wal", "-shm", "-journal"))]
+
+
+@needs_defensive
+def test_a_missing_file_is_never_created_by_a_write_connection(tmp_path: Path) -> None:
+    """L-3 of PR #111: opening a write connection on a missing file fails closed and leaves no file behind."""
+    profile = Profile("parts", "sqlite", "dev", path=str(tmp_path / "missing.db"))
+    missing = tmp_path / "missing.db"
+    with pytest.raises(WriteError) as caught:
+        open_write_connection("write", profile, Settings(), database_file=missing, journal_mode="wal", identity=(1, 1))
+    assert caught.value.code == "studio.write_target_changed"
+    assert not any(os.path.lexists(path) for path in _side_files(missing))
+
+
+@needs_defensive
+def test_a_file_removed_behind_an_open_write_connection_is_not_created_again(env: WriteEnv) -> None:
+    """L-3 of PR #111: a new pool connection (here after the pool was emptied) opens ``file:...?mode=rw`` and then
+    tabrion's ``create=False`` path: the removed file stays removed, and the use fails closed."""
+    write = _write_connection(env)
+    write._db.engine.dispose()  # the next use opens a new connection through the creator
+    for path in _side_files(env.db):
+        if path.exists():
+            path.unlink()
+    with pytest.raises(WriteError) as caught:
+        write.fetch("SELECT count(*) FROM parts")
+    assert caught.value.code == "studio.write_target_changed"
+    assert not any(os.path.lexists(path) for path in _side_files(env.db))
+
+
+@needs_defensive
+def test_the_creator_never_creates_a_missing_file(tmp_path: Path) -> None:
+    """The pool's creator itself (the URI ``mode=rw`` open), also when the earlier identity check passed."""
+    from tabrion.sqlite import SQLiteProfile
+
+    from tabrion_studio.write.connection import _open_existing
+
+    missing = tmp_path / "gone.db"
+    with pytest.raises(WriteError) as caught:
+        _open_existing(str(missing), SQLiteProfile())
+    assert caught.value.code == "studio.write_target_changed"
+    assert not any(os.path.lexists(path) for path in _side_files(missing))
+
+
 @needs_defensive
 def test_refusals_echo_nothing_of_the_request(env: WriteEnv) -> None:
     """TX-14 canary: ids, typed names and values from the request never come back."""

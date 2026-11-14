@@ -1030,6 +1030,7 @@
     "write_profile_unknown": "There is no such write or admin profile.",
     "write_profile_exists": "A profile or write profile with this name exists already.",
     "write_warning_unconfirmed": "Confirm the note on production credentials first.",
+    "write_profiles_ignored": "Write and admin profiles are used only from the configuration folder named on the command line or the platform's folder, not from one an environment variable chose. Start Studio with --config-dir for this folder.",
     "profile_coupled": "A write or admin profile is coupled to this profile. Remove it first.",
     "write_prod_locked": "Studio never writes to a PROD database.",
     "write_coupling_invalid": "This write profile is not coupled to the profile of this connection.",
