@@ -322,7 +322,13 @@ test('a write is refused, and the page offers no write control (STU-026 locked)'
   await expect(page.getByTestId('result-status')).toHaveText(
     "Studio runs only reading statements: SELECT, WITH, VALUES, TABLE, EXPLAIN of a query, SHOW and SQLite's PRAGMA.",
   );
-  await expect(page.getByTestId('access-mode')).toHaveText(/Read-only/);
+  // The editor's chip, and the header's: the connection the run opened is the header's connection too (S1-32).
+  await expect(page.getByRole('group', { name: 'Query' }).getByTestId('access-mode')).toHaveText(
+    /Read-only/,
+  );
+  await expect(page.getByRole('group', { name: 'Status' }).getByTestId('access-mode')).toHaveText(
+    /Read-only/,
+  );
   await expect(page.getByRole('button', { name: /unlock|write mode|commit/i })).toHaveCount(0);
   // The read-only refusal of the database gets the wording of 08 section 4.4.
   await page.locator('.cm-content').click();

@@ -10,7 +10,10 @@
  * - **Run:** ⌘↵/Ctrl+Enter runs the selection or the statement under the cursor; ⇧⌘↵/Shift+Ctrl+Enter runs every
  *   statement of the tab in turn and stops at the first error or a cancel. The statements are split here
  *   (`sqlScan.ts`); the server checks each one again. A PROD profile asks D-02 before its first connection in this
- *   page.
+ *   page. A connection the run opens becomes the header's connection. A profile the user disconnected in this page
+ *   (QA-S1 S1-32, owner decision of 2026-11-14 14:13Z) is not opened again by a run: the run shows the banner with
+ *   "Reconnect", sends nothing, and goes on only after "Reconnect" there (D-02 first for PROD). A connection the
+ *   server closed is opened again by itself for DEV and TEST, as before (TD-034).
  * - **Parameters:** the `:name` placeholders of the text get a typed value in the parameter panel; a missing value
  *   stops the run and gets the focus.
  * - **Results:** one result tab per statement that returned columns, and "Messages" with every statement (number,
@@ -376,7 +379,24 @@ export function EditorView({
   const { guard: prodGuard, dialog: prodDialog } = useConnect(fetcher);
   /** The open connection of each profile used in this page (profile id to connection id). */
   const connections = useRef(new Map<string, string>());
-  const { markLost } = useConnectionSession();
+  const {
+    markLost,
+    beginConnect,
+    isLatestConnect,
+    setActive: setHeader,
+    isDisconnected,
+    askReconnect,
+  } = useConnectionSession();
+  /**
+   * S1-32: the run that waits for "Reconnect" on the banner (its tab, and the function that stops the wait); dropped
+   * when a newer run asks, its tab closes or the page goes.
+   */
+  const waiting = useRef<{ tabId: string; drop: () => void } | null>(null);
+  const stopWaiting = useCallback(() => {
+    waiting.current?.drop();
+    waiting.current = null;
+  }, []);
+  useEffect(() => stopWaiting, [stopWaiting]);
   // TD-034: "Reconnect" in the banner replaced a connection: the next run, "Load more" and the export use the new one.
   useReconnected(({ from, to }) => {
     for (const [profileId, id] of connections.current) {
@@ -648,6 +668,7 @@ export function EditorView({
         return null;
       }
       // The environment that passed D-02 (D-02 on the server, TD-038).
+      const request = beginConnect();
       const opened = await openConnection(fetcher, fresh.id, item.environment);
       if (!opened.ok) {
         setConnectProblem(opened.problem);
@@ -677,9 +698,19 @@ export function EditorView({
         return null;
       }
       connections.current.set(item.id, opened.value.connectionId);
+      // The connection the run opened is the header's connection (S1-32), unless a newer connect started (L-4).
+      if (isLatestConnect(request)) {
+        setHeader({
+          name: visible(fresh.name),
+          environment: item.environment,
+          status: 'connected',
+          connectionId: opened.value.connectionId,
+          profileId: item.id,
+        });
+      }
       return opened.value.connectionId;
     },
-    [fetcher, forgetProfile, t],
+    [beginConnect, fetcher, forgetProfile, isLatestConnect, setHeader, t],
   );
 
   /** Run `statements` of `tabId` in turn on `connectionId`; stops at the first error or a cancel. */
@@ -800,9 +831,11 @@ export function EditorView({
         // The server closed the connection (its profile changed, Studio restarted it): open it once more, through the
         // same checks as a first connection (`connect` reads the profile again; a changed one stops the run). Not for
         // PROD: a new PROD connection needs D-02 again (TD-034), so the run stops and the banner offers "Reconnect".
+        // Nor after the user's own "Disconnect" (S1-32): only "Reconnect" on the banner opens it again.
         if (
           !started.ok &&
           item.environment !== 'prod' &&
+          !isDisconnected(item.id) &&
           (started.problem.code === 'studio.connection_not_found' ||
             started.problem.code === 'studio.connection_stale')
         ) {
@@ -888,7 +921,7 @@ export function EditorView({
         return { ...current, running: false, view, announce };
       });
     },
-    [connect, fetcher, locale, markLost, patchResult, patchRun, t],
+    [connect, fetcher, isDisconnected, locale, markLost, patchResult, patchRun, t],
   );
 
   /** Drop a tab's results (their row caches too). */
@@ -932,11 +965,40 @@ export function EditorView({
       }
       setParamProblem(null);
       setNotice('');
+      stopWaiting();
+      const tabId = tab.id;
       const go = () =>
-        void execute(tab.id, profile, statements, values, options.maxRows, options.replaceKey);
+        void execute(tabId, profile, statements, values, options.maxRows, options.replaceKey);
+      // S1-32: the user disconnected this profile. Nothing is opened or sent: the banner asks with "Reconnect", and
+      // the run goes on with the connection that "Reconnect" opened (D-02 there first for PROD, then the guard here
+      // as for every run).
+      if (isDisconnected(profile.id)) {
+        setNotice(t('editor.reconnectFirst', { name: visible(profile.name) }));
+        const drop = askReconnect(profile.id, (connectionId) => {
+          waiting.current = null;
+          connections.current.set(profile.id, connectionId);
+          if (controllers.current.has(tabId)) return;
+          setNotice('');
+          prodGuard(profile, go);
+        });
+        waiting.current = { tabId, drop };
+        return;
+      }
       prodGuard(profile, go);
     },
-    [execute, prefix, prodGuard, profile, running, t, tab, tabParams],
+    [
+      askReconnect,
+      execute,
+      isDisconnected,
+      prefix,
+      prodGuard,
+      profile,
+      running,
+      stopWaiting,
+      t,
+      tab,
+      tabParams,
+    ],
   );
 
   const runCurrent = useCallback(() => {
@@ -981,6 +1043,7 @@ export function EditorView({
 
   const removeTab = useCallback(
     (id: string) => {
+      if (waiting.current?.tabId === id) stopWaiting();
       const controller = controllers.current.get(id);
       if (controller !== undefined) {
         controller.stopped = true;
@@ -1007,7 +1070,7 @@ export function EditorView({
         return rest;
       });
     },
-    [activeId, fetcher, runs, t],
+    [activeId, fetcher, runs, stopWaiting, t],
   );
 
   const closeTab = useCallback(

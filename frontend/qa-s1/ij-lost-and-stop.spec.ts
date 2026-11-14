@@ -1,6 +1,7 @@
 /**
- * QA-S1 sections I and J: "Verbindung getrennt" after "Trennen" in the same tab, and stopping and starting Studio
- * again with the kit's commands (the tab says the session ended; drafts and the language are kept).
+ * QA-S1 sections I and J: after "Trennen" in the same tab, "Ausführen" shows "Verbindung getrennt" with "Neu verbinden"
+ * and runs nothing until "Neu verbinden" (owner decision of 2026-11-14 14:13Z); stopping and starting Studio again with
+ * the kit's commands (the tab says the session ended; drafts and the language are kept).
  */
 import type { Page } from '@playwright/test';
 
@@ -10,6 +11,7 @@ import {
   goTo,
   openEditor,
   replaceText,
+  settled,
   signIn,
   skipWithoutStudio,
   startSession,
@@ -28,16 +30,19 @@ async function api(page: Page, path: string): Promise<string> {
   }, path);
 }
 
-test('S1-32 after "Trennen" in the same tab, "Ausführen" in the SQL editor shows "Verbindung getrennt" with "Neu verbinden"', async ({
+test('S1-32 after "Trennen" in the same tab, "Ausführen" runs nothing and shows "Verbindung getrennt" with "Neu verbinden"; only "Neu verbinden" connects and runs the query', async ({
   page,
   studio,
 }) => {
+  // Owner decision of 2026-11-14 14:13Z (option A): an explicit "Trennen" is respected; "Ausführen" asks first.
   await startSession(page, studio);
   await openEditor(page, DEV);
   const sql = 'select count(*) as n from orders';
   await replaceText(page, sql);
   await page.getByRole('button', { name: 'Ausführen', exact: true }).click();
   await expect(page.getByTestId('result-status')).toHaveText(/^1 Zeile/);
+  const header = page.getByRole('banner').getByRole('group', { name: 'Status' });
+  await expect(header).toContainText(`${DEV}, verbunden`);
 
   // In the same browser tab: "Verbindungen" → "Shop (DEV)" → "Trennen" (checklist v2: a second start would replace
   // the session, so the checklist no longer uses a second tab).
@@ -50,19 +55,35 @@ test('S1-32 after "Trennen" in the same tab, "Ausführen" in the SQL editor show
   await expect(
     page.getByTestId('connection-detail').getByRole('button', { name: 'Verbinden', exact: true }),
   ).toBeVisible();
+  await expect(header).toContainText('Keine Verbindung');
 
-  // Back to the SQL editor, with the query still open, and "Ausführen" again.
+  // Back to the SQL editor, with the query still open, and "Ausführen" again: nothing is opened or run.
+  const writes: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'POST' && (path === '/api/connections' || path === '/api/queries')) {
+      writes.push(path);
+    }
+  });
   await goTo(page, 'SQL-Editor');
   await expect(page.locator('.cm-content')).toHaveText(sql);
   await page.getByRole('button', { name: 'Ausführen', exact: true }).click();
   const banner = page.getByTestId('connection-lost');
   await expect(banner).toContainText('Verbindung getrennt: Shop (DEV)');
+  await expect(banner.getByRole('button', { name: 'Neu verbinden', exact: true })).toBeVisible();
+  await expect(page.getByTestId('editor-notice')).toContainText('Nichts wurde ausgeführt.');
+  await settled(page);
+  expect(writes).toEqual([]);
+  await expect(header).toContainText('Keine Verbindung');
+
+  // "Neu verbinden": the connection opens again and the query runs, without another "Ausführen".
   await banner.getByRole('button', { name: 'Neu verbinden', exact: true }).click();
   await expect(banner).toHaveCount(0);
-  // Nothing was lost: the tab's text is there and runs again.
-  await expect(page.locator('.cm-content')).toHaveText(sql);
-  await page.getByRole('button', { name: 'Ausführen', exact: true }).click();
   await expect(page.getByTestId('result-status')).toHaveText(/^1 Zeile/);
+  expect(writes).toEqual(['/api/connections', '/api/queries']);
+  await expect(header).toContainText(`${DEV}, verbunden`);
+  // Nothing was lost: the tab's text is still there.
+  await expect(page.locator('.cm-content')).toHaveText(sql);
 });
 
 test('S1-33 after "3 - Studio beenden" (tabrion-studio --stop), the open tab says the session ended or the server does not answer', async ({

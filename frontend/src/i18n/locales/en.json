@@ -1199,6 +1199,7 @@
     },
     "canceledBeforeStart": "Canceled before the query started.",
     "profileChanged": "The profile {{name}} changed since this page read it (now {{environment}}). Nothing was run on it; run again to use it as it is now.",
+    "reconnectFirst": "You disconnected {{name}}. Nothing was run. Choose “Reconnect” above; then the query runs.",
     "profileGone": "The profile {{name}} no longer exists. Nothing was run.",
     "environmentUnknown": "The server did not say which environment the connection to {{name}} is in, so it was closed again. Nothing was run.",
     "exportSubject": "result {{number}} of {{tab}}",
@@ -1357,6 +1358,8 @@
   },
   "connectionLost": {
     "title": "Connection lost: {{name}}",
+    "titleDisconnected": "Disconnected: {{name}}",
+    "disconnected": "You disconnected this connection. Studio connects again only when you choose “Reconnect”.",
     "database": "The database does not answer. Studio reads nothing more on this connection until you reconnect.",
     "stale": "The profile was changed, removed or is no longer trusted, so Studio closed the connection.",
     "closed": "Studio no longer has this connection; it was closed.",
