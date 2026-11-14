@@ -905,6 +905,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Connections: two concurrent opens of one profile (the migrations page after a profile switch, or "Reconnect" and
+  another view at once) could both connect; the second connection was closed again, but the database saw two
+  logins. Opens of one profile now run one at a time behind a per-profile lock, so the second open waits and gets
+  the first one's connection; opens of other profiles do not wait. The check after the connect stays as defense in
+  depth (TD-027, F-2 of the #32 page delta review).
+- SQLite: a function call that Studio's authorizer denies was answered as `db.unknown` ("Database error"), because
+  SQLite reports it as a plain `SQLITE_ERROR` and tabrion 0.2 does not classify its text. Studio's error layer now
+  answers it as `db.permission` (403), like a denied table or pragma; only an error of the sqlite3 driver with that
+  code whose message starts with SQLite's fixed text matches. The statement is refused as before (TD-053).
 - Export: starting the next export on a connection right after the previous one was downloaded to its end could
   be refused with `studio.export_busy`, because the finished export freed its slot only after its last log line.
   The slot is now freed as soon as the export's transaction has ended, before the end or the error reaches the

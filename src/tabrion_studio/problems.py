@@ -30,6 +30,7 @@ import enum
 import json
 import re
 import secrets
+import sqlite3
 from typing import Any
 
 from starlette.responses import Response
@@ -742,6 +743,8 @@ def db_problem(error: BaseException | Classification, *, log_id: str | None = No
     else:
         classification = classify(error)
     kind = classification.kind.value if classification is not None else "unknown"
+    if kind == "unknown" and _sqlite_function_denied(error, classification):
+        kind = Kind.PERMISSION.value
     if kind not in DB_CATALOG:
         kind = "unknown"
     entry = DB_CATALOG[kind]
@@ -751,6 +754,34 @@ def db_problem(error: BaseException | Classification, *, log_id: str | None = No
     if log_id is not None and _LOG_ID.fullmatch(log_id) is None:
         raise ValueError("malformed log ID")
     return Problem(f"db.{kind}", kind, entry.status, entry.title, entry.detail, entry.hint, log_id, sqlstate)
+
+
+#: The start of SQLite's message for a function call that an authorizer denied (``resolve.c``). SQLite reports it with
+#: the plain code ``SQLITE_ERROR``, not ``SQLITE_AUTH`` as for a denied table or pragma, so tabrion 0.2's ``classify``
+#: gives ``Kind.UNKNOWN`` (TD-053; the classification belongs in tabrion, see the TODO entry).
+_SQLITE_FUNCTION_DENIED = "not authorized to use function: "
+
+
+def _sqlite_function_denied(error: BaseException | Classification, classification: Classification | None) -> bool:
+    """Whether ``error`` is SQLite's refusal of a function by the authorizer of a Studio connection (TD-053).
+
+    Only an error that tabrion classified as an unknown ``SQLITE_ERROR`` of the sqlite3 driver, and whose driver error
+    (``TabrionError.original``, then SQLAlchemy's ``orig`` and ``__cause__``) is a ``sqlite3.Error`` whose message
+    *starts* with SQLite's fixed text. A message that only contains it (``no such function: "not authorized to use
+    function: x"``) does not match. The message decides the problem code only; it never reaches the answer.
+    """
+    if isinstance(error, Classification) or classification is None:
+        return False
+    if classification.driver != "sqlite3" or classification.sqlite_code != "SQLITE_ERROR":
+        return False
+    current: object = error.original if isinstance(error, TabrionError) else error
+    for _ in range(5):
+        if isinstance(current, sqlite3.Error):
+            return str(current).startswith(_SQLITE_FUNCTION_DENIED)
+        if not isinstance(current, BaseException):
+            return False
+        current = getattr(current, "orig", None) or current.__cause__
+    return False
 
 
 def db_kind_problem(kind: Kind) -> Problem:

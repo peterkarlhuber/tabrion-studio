@@ -537,6 +537,20 @@ class OpenConnection:
         self._db.close()
 
 
+#: The lock that one profile's opens take in turn (TD-027). Reentrant: an ``open`` that the same thread starts while
+#: it holds the lock (a listener, a test that stands in for the other request) does not deadlock, it is served by
+#: the check under ``_lock`` after the connect, as before.
+_profile_lock: Callable[[], contextlib.AbstractContextManager[Any]] = threading.RLock
+
+
+@dataclass
+class _OpenGate:
+    """The per-profile lock of :meth:`ConnectionRegistry.open` and how many opens hold it or wait for it."""
+
+    lock: contextlib.AbstractContextManager[Any]
+    users: int = 0
+
+
 @dataclass
 class ConnectionRegistry:
     """Open connections by id. Thread-safe; opening and closing block (call them off the event loop)."""
@@ -547,6 +561,7 @@ class ConnectionRegistry:
     _open: dict[str, OpenConnection] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _closed_listeners: list[Callable[[str], None]] = field(default_factory=list)
+    _gates: dict[str, _OpenGate] = field(default_factory=dict)
 
     def on_close(self, listener: Callable[[str], None]) -> None:
         """Call ``listener(connection_id)`` after a connection closed (the explorer drops its cache entry)."""
@@ -646,12 +661,39 @@ class ConnectionRegistry:
             raise _health_error(health)
         return connection
 
+    @contextlib.contextmanager
+    def _one_open_at_a_time(self, profile_id: str) -> Iterator[None]:
+        """Hold the lock of ``profile_id``'s opens (TD-027, a single flight per profile).
+
+        Two concurrent opens of one profile used to look for its connection, both find none and both connect; the
+        second one now waits here until the first has registered its connection (or failed), then finds and returns
+        that one. Opens of other profiles do not wait. The gate is dropped when no open holds or waits for it.
+        """
+        with self._lock:
+            gate = self._gates.get(profile_id)
+            if gate is None:
+                gate = self._gates[profile_id] = _OpenGate(_profile_lock())
+            gate.users += 1
+        try:
+            with gate.lock:
+                yield
+        finally:
+            with self._lock:
+                gate.users -= 1
+                if gate.users == 0:
+                    del self._gates[profile_id]
+
     def open(self, profile_id: str, confirmed_environment: str | None = None) -> OpenConnection:
         """Open (or return the open) connection of ``profile_id``.
 
         ``confirmed_environment`` is the environment the caller confirmed for (D-02); a PROD profile needs ``"prod"``,
-        also to get back a connection that is already open (:func:`require_prod_confirmation`).
+        also to get back a connection that is already open (:func:`require_prod_confirmation`). Opens of one profile
+        run one at a time (TD-027): a second one waits for the first and returns its connection.
         """
+        with self._one_open_at_a_time(profile_id):
+            return self._open_now(profile_id, confirmed_environment)
+
+    def _open_now(self, profile_id: str, confirmed_environment: str | None) -> OpenConnection:
         with self._lock:
             for connection in self._open.values():
                 if connection.profile_id == profile_id:
@@ -671,8 +713,9 @@ class ConnectionRegistry:
             self.close(existing.id)
         connection = self._connect(profile_id, confirmed_environment)
         with self._lock:
-            # Another request (a "Reconnect" and another view's open at once) may have registered a connection of
-            # the profile meanwhile: that one is returned and this one closed, so none is left orphaned.
+            # Defense in depth since TD-027 (the per-profile lock keeps concurrent opens apart): should a connection
+            # of the profile have been registered meanwhile, that one is returned and this one closed, so none is left
+            # orphaned.
             raced = next((c for c in self._open.values() if c.profile_id == profile_id), None)
             if raced is None and len(self._open) >= self.max_open:
                 connection.close()

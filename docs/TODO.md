@@ -56,7 +56,7 @@
 | TD-024 STU-015 migration worker on Windows: children of trusted project code (job object and pipe closing done; `backend test (windows-latest)` green on `23fd8a6`, run 43201304911) | P2 | Done (PR #29) |
 | TD-025 STU-015/STU-024 page: the Levuvo view shows state, version, open steps and the reason a table is unreadable, not the SQL preview or the files folder; formats the page does not know are only counted | P3 | Open (STU-015 page PR #32; C-1 of `stu-015-ui-review.md` done, delta items L-6..L-9 and I-6 done) |
 | TD-026 STU-021 export: infinite and out-of-range dates, Unicode file names, the problem code of data-modifying CTEs (F-7, F-9, F-10) | P3 | Open (STU-021 done in PR #33) |
-| TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Open (2026-11-12) |
+| TD-027 STU-009 registry: two concurrent opens of one profile can both connect (found in the #32 page delta review, F-2) | P3 | Done (TD-027 branch: a per-profile lock in `ConnectionRegistry.open`) |
 | TD-028 `backend test (windows-latest)`: `tests/security/test_explorer.py` took 2 to 12.5 minutes (a fixture committed 505 times; one transaction now) | P2 | Done (PR #36) |
 | TD-035 STU-022 DDL: what pg_dump writes and Studio's DDL does not (owner, privileges, tablespace, access method, functions, types and domains, foreign-table column options, security labels; PostgreSQL 18 forms) | P3 | Open (STU-022 PR #38) |
 | TD-039 STU-022 review: the queries made when a PostgreSQL connection is opened (SQLAlchemy dialect first-connect setup, the driver's type lookups) ran under the session's `search_path` | P1 | Done (PR #45) |
@@ -87,7 +87,7 @@
 | TD-062 JR-N1: an e2e test of the PROD case of "Reconnect" after a failed reconnect (the behavior is accepted, G-S1 decision 4) | P3 | Done (PR #89: `e2e/connection-lost-prod-retry.spec.ts`) |
 | TD-064 DC-TS-1 dependency confusion (owner decision of 2026-11-13 22:37Z: no PyPI placeholder for `tabrion` or `tabrion-studio`; every install hardened): `check-installed` verifies tabrion's source, a pip floor before the `-c` installs, the bare install in `docs/development/building.md`; and a negative CI job `install (poisoned index)` with the shared `scripts/check_tabrion_source.py` of nodestro-studio (checksummed copy): zero index requests for `tabrion` and the pinned commit installed | P2 | Partly done (DC-TS-1 PR: the source check with tests, the pip floor with a workflow test, the docs, and the job `install (poisoned index)` with the copy of nodestro-studio's script at `bf51022`, SHA-256 pinned; listed in `.github/ci-manifest.json`, reported by ci-ok). `direct_url.json` checks only detect an accidental index install; the zero-request assertion is the proof. Open: the workflow-change review; refresh the copy and its SHA-256 if nodestro-studio's script changes before its PR merges |
 | TD-060 STU-054 UX acceptance 1.0: what stays open (the owner decisions on the "403" wording, D-07, tabrion's English finding texts and the start page are done, 2026-11-13; TD-032's dependency resolved by PR #85; open: TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR #84; owner decisions 2026-11-13) |
-| TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
+| TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Done (TD-027 branch: mapped in `problems.db_problem`); tabrion follow-up open (see the entry) |
 | TD-063 Security assessment B-1 and B-2: the statement check's function denylist in every PostgreSQL call form, the pg_surgery and pg_visibility functions, dblink connections closed at check-in; what stays open (newer servers' functions, a diagnostics hint) | P1 | In progress (PR #92): B-1 and B-2 done; open: the PostgreSQL 17/18 candidates and the diagnostics hint (see the entry) |
 | TD-065 Security assessment A-01: a fresh random loopback address `127.a.b.c` per start, so no later Studio reuses an earlier origin (service workers, storage); the macOS fallback to `127.0.0.1` and the `--port` advice; what stays open (real Windows and macOS browsers) | P1 | In progress (A-01 PR): the fix, the residual-risk note in STU-ADR-0002 and the regression tests are done; open: the real-device checks (see the entry) |
 | TD-066 STU-055 vector data view: what it leaves for later (pgvector tests outside the CI PostgreSQL job, the sqlite-vec install status, `halfvec`/`sparsevec` on a pgvector 0.7+ server, an e2e test, other layouts) | P3 | Open (STU-055 PR) |
@@ -833,8 +833,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
 ### TD-027 · STU-009 registry: two concurrent opens of one profile can both connect
 
-- **Priority:** P3 Low · **Status:** Open (recorded 2026-11-12, F-2 of `stu-32-page-delta-review.md`) · **Refs:**
-  STU-009, `src/tabrion_studio/services/connections.py` (`ConnectionRegistry.open`), STU-015 page (#32)
+- **Priority:** P3 Low · **Status:** Done (TD-027 branch; recorded 2026-11-12, F-2 of `stu-32-page-delta-review.md`)
+  · **Refs:** STU-009, `src/tabrion_studio/services/connections.py` (`ConnectionRegistry.open`), STU-015 page (#32)
 - **What:** `open` looks for a profile's open connection under the lock, connects outside it, and inserts the new
   connection under the lock again. Two concurrent `POST /api/connections` for the same profile can therefore both
   connect and both insert, leaving two open connections for one profile, one of them unused. The migrations page
@@ -844,6 +844,14 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **Next step:** after `_connect`, look again under the lock for a connection of the same profile; if one exists,
   close the new one and return the existing one. Test with two threads opening one profile against a slow connect.
   Not fixed in #32, which is a frontend PR.
+- **Done:** the check after `_connect` came with TD-034 (L-6 of `td-034-review.md`), so no connection was left
+  orphaned, but both requests still connected. `open` now takes a per-profile lock (`_one_open_at_a_time`, a
+  reentrant lock per profile id, kept in `_gates` only while an open holds or waits for it) around the whole look,
+  connect and register, including the replacement of a lost connection: the second open waits and returns the
+  first one's connection after its D-02 check, and opens of other profiles do not wait. The check after the connect
+  stays as defense in depth. Tests in `tests/security/test_connections_api.py` (`test_td027_*`), synchronized by
+  events and an instrumented lock, no sleeps: one connect for two concurrent opens, another profile not blocked,
+  the lock released after a failed connect.
 
 ### TD-028 · Windows CI: the explorer tests' fixture committed 505 times
 
@@ -1627,12 +1635,22 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
 ### TD-053 · SQLite: a denied function surfaces as `db.unknown`, not `db.permission`
 
-- **Priority:** P3 Low · **Status:** Open · **Refs:** re-review of the STU-016 security review at `2a8a229` (an info
-  note, not a security issue), TD-048, F-2
+- **Priority:** P3 Low · **Status:** Done in Studio (TD-027 branch); tabrion follow-up open · **Refs:** re-review of
+  the STU-016 security review at `2a8a229` (an info note, not a security issue), TD-048, F-2
 - **What:** when the SQLite authorizer denies a function (since F-2 every function outside SQLite's built-in reading
   functions), SQLite reports "not authorized", which Studio maps to the problem `db.unknown`. The statement is
   refused as it should be, but the message is vaguer than the one for a denied table or pragma.
 - **Next step:** map SQLite's "not authorized" error to `db.permission`, with a test for a denied function.
+- **Done:** a denied table or pragma comes back as `SQLITE_AUTH`, which tabrion 0.2 classifies as `Kind.PERMISSION`;
+  a denied function comes back as plain `SQLITE_ERROR` with the text "not authorized to use function: …", which
+  tabrion 0.2 classifies as `Kind.UNKNOWN`. `problems.db_problem` now answers `db.permission` for an unknown
+  `SQLITE_ERROR` of the sqlite3 driver whose driver error (`TabrionError.original`, SQLAlchemy's `orig`) has a
+  message that starts with that text; the text decides only the problem code and never reaches the answer. The
+  authorizer and the refusal are unchanged. Tests: `tests/unit/test_problems.py` (`test_td053_*`, raw, wrapped and
+  look-alike errors) and the F-2 test in `tests/security/test_read_only.py` (every denied function is
+  `db.permission` through a real connection).
+- **Follow-up (tabrion):** the classification belongs in tabrion's `_classify_sqlite` (the text under
+  `SQLITE_ERROR` as `Kind.PERMISSION`); once a tabrion release does it, Studio's mapping can go.
 
 ### TD-052 · STU-023 ER diagram: what it leaves for later
 
