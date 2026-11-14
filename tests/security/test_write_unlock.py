@@ -16,6 +16,7 @@ import logging
 import os
 from pathlib import Path
 import sqlite3
+import sys
 from typing import Any
 
 import pytest
@@ -24,6 +25,7 @@ from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tabrion_studio.write.connection import (
+    WriteConnection,
     WriteError,
     defensive_available,
     open_write_connection,
@@ -71,6 +73,37 @@ def _read_only(path: Path, sql: str) -> Any:
         return connection.execute(sql).fetchone()[0]
     finally:
         connection.close()
+
+
+def _handles(path: Path) -> int:
+    """Linux: how many descriptors of this process have ``path`` open (the condition under which Windows refuses to
+    rename or replace a file)."""
+    target = os.path.realpath(path)
+    count = 0
+    for fd in os.listdir("/proc/self/fd"):
+        try:
+            count += os.readlink(f"/proc/self/fd/{fd}") == target
+        except OSError:
+            continue
+    return count
+
+
+def _release(env: WriteEnv, connection_id: str, *writes: WriteConnection) -> None:
+    """Close Studio's handles on the database file, as between a preview and a run when the pools are idle (the
+    next use reopens them): the window in which an attacker can swap the file. While a handle is open, Windows
+    refuses to move the file at all (asserted there); on Linux the open handles are counted instead, so the
+    Windows condition is checked on every run."""
+    read = env.registry.get(connection_id)
+    if sys.platform == "win32":
+        with pytest.raises(PermissionError):
+            os.replace(env.db, env.tmp_path / "refused.db")
+    elif sys.platform == "linux":
+        assert _handles(env.db) >= 1
+    read._db.engine.dispose()
+    for write in writes:
+        write._db.engine.dispose()
+    if sys.platform == "linux":
+        assert _handles(env.db) == 0
 
 
 def _unlocked(env: WriteEnv) -> str:
@@ -412,6 +445,7 @@ def test_a_file_swapped_after_the_read_connection_opened_is_not_unlocked(env: Wr
     connection_id = env.open()
     replacement = env.tmp_path / "replacement.db"
     make_database(replacement)
+    _release(env, connection_id)
     os.replace(replacement, env.db)
     response = env.unlock(connection_id)
     assert response.status_code in (400, 405) and response.json()["code"] in (
@@ -425,8 +459,10 @@ def test_a_file_swapped_after_the_read_connection_opened_is_not_unlocked(env: Wr
 def test_a_file_swapped_after_the_unlock_stops_the_write_connection(env: WriteEnv) -> None:
     connection_id = _unlocked(env)
     write = env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR)
+    write.verify()  # the check runs, and passes, while the file is the one unlocked
     replacement = env.tmp_path / "replacement.db"
     make_database(replacement)
+    _release(env, connection_id, write)
     os.replace(replacement, env.db)
     with pytest.raises(WriteError) as caught:
         write.verify()
@@ -444,6 +480,7 @@ def test_a_link_in_place_of_the_file_is_refused(env: WriteEnv) -> None:
     other = env.tmp_path / "other.db"
     make_database(other)
     moved = env.tmp_path / "moved.db"
+    _release(env, connection_id, write)
     os.replace(env.db, moved)
     try:
         env.db.symlink_to(other)
