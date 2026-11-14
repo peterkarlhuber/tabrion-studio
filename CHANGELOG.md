@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Docs: change request CR-DBX (planning document 15; the owner accepted the planning on 2026-11-13, not the start of
+  implementation). STU-ADR-0005 amends STU-ADR-0003: one server-side flag and one gate per area (Data Editor 1.1
+  behind G-S2, Schema Designer 1.2 behind G-S3, Database Manager 1.3 behind G-S4), G-CX enables no write feature, a
+  refused write answers 400/405 and only the write mode 403, PROD stays write-locked, separate write and admin
+  profiles, revisions instead of migrations (never `env.py`), `pg_dump`/`pg_restore` only as verified system tools
+  and not a complete cluster backup, PostgreSQL role management without SUPERUSER, BYPASSRLS, CREATEROLE or
+  REPLICATION. `docs/TODO.md` gets a CR-DBX section (all blocked on the development-start approval) and no longer
+  says that the Schema Designer is not planned; the README non-goals and `docs/architecture/migrations.md` say what
+  1.0 excludes and that Studio never runs migrations. No code change.
 - TD-031 (owner decision G-S1 2): the nightly job `newest dependencies (Python 3.11 and 3.14)` installs Studio and the
   pinned Tabrion without the hashed runtime lock, so with the newest releases inside the `pyproject.toml` ranges,
   prints `pip freeze`, and runs `pip check` and the backend tests. It is not a pull request check; a failure opens the
