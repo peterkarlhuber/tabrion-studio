@@ -2,11 +2,16 @@
 for the password in clear text or as an MD5 hash (libpq ``require_auth=!password,!md5``).
 
 The CI server authenticates every role with SCRAM, so these tests need their own server configuration and are skipped
-without it (they were run for STU-XW-4 against a throwaway PostgreSQL 16 with these ``pg_hba.conf`` lines): ``TABRION_STUDIO_TEST_POSTGRES_MD5`` and ``TABRION_STUDIO_TEST_POSTGRES_PASSWORD`` are libpq URLs (role,
-password, a loopback host, a database) for which the server's ``pg_hba.conf`` uses ``md5`` (with a password stored
-as MD5) and ``password``. Each test first shows that the same URL connects without ``require_auth``, so the refusal
-is Studio's option and not a wrong password. The option itself and the libpq-16 refusal are covered without a server
-in ``test_write_secret_confirm.py``.
+without it. ``TABRION_STUDIO_TEST_POSTGRES_MD5`` and ``TABRION_STUDIO_TEST_POSTGRES_PASSWORD`` are libpq URLs (role,
+password, a loopback host, a database) for which the server asks ``md5`` (a password stored as MD5) and ``password``.
+For STU-XW-4 they ran against a throwaway PostgreSQL 16 with these ``pg_hba.conf`` lines before the SCRAM default::
+
+    host all xw4_md5 127.0.0.1/32 md5
+    host all xw4_pw  127.0.0.1/32 password
+
+Each test first shows that the same URL connects without ``require_auth``, so the refusal is Studio's option and not
+a wrong password. The option itself and the libpq-16 refusal are covered without a server in
+``test_write_secret_confirm.py``.
 """
 
 from __future__ import annotations
