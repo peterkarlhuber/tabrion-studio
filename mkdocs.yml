@@ -100,4 +100,5 @@ nav:
       - "0002 Local security model": adr/0002-local-security-model.md
       - "0003 Writes behind a gate": adr/0003-writes-behind-gate.md
       - "0004 Frontend reuse": adr/0004-frontend-reuse.md
+      - "0005 CR-DBX write and admin gates": adr/0005-crdbx-write-and-admin-gates.md
   - Open work: TODO.md

@@ -53,8 +53,11 @@ A neighboring Chromium build runs the suites unchanged (82 passed with 1243); CI
 `@playwright/test` is updated, update `playwright-core` to the same version (`package.json`); the CI job then installs
 the new build by itself.
 
-For `npm run dev`, start the backend on the proxied port: `tabrion-studio --port 8765 --no-browser --print-url`,
-then open the printed one-time link with the port changed to 5173. The backend answers only its own Host and Origin
+For `npm run dev`, start the backend on a fixed port: `tabrion-studio --port 8765 --no-browser --print-url`. Its
+address is a fresh random `127.a.b.c` for every start (finding A-01), so point the proxy at the printed one:
+`TABRION_STUDIO_BACKEND=http://127.a.b.c:8765 npm run dev` (the default `http://127.0.0.1:8765` fits only where
+Studio falls back to `127.0.0.1`, as on macOS). Then open the printed one-time link with `127.a.b.c:8765` changed to
+`127.0.0.1:5173`. The backend answers only its own Host and Origin
 (STU-003); the Vite proxy presents both as the backend's.
 
 ## Wheel

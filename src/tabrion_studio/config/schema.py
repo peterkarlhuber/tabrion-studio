@@ -49,6 +49,12 @@ MAX_TEXT = 1024
 
 _ENV_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+#: Refused in a SQLite ``path`` (``config.url_character``), as tabrion 0.2's ``tabrion.profilefile`` does
+#: (``profilefile.value``, G-T2 B-1): in a SQLAlchemy URL "?" and "#" start the query and the fragment and "%" is
+#: unquoted, so ``%2F%2Fhost/share/x.db`` would become a network path there (TD-013). This aligns only the SQLite
+#: ``path``: tabrion's reader also refuses ``/?#%@`` in a PostgreSQL ``database``, which Studio still accepts (it
+#: builds that URL with ``URL.create``, so the name is never read as a URL; TODO TD-013).
+_URL_CHARACTERS = frozenset("?#%")
 
 _COMMON = {"name", "engine", "environment", "password", "statement_timeout_ms", "read_only_role"}
 _SQLITE = _COMMON | {"path"}
@@ -274,6 +280,8 @@ def _profile(raw: Any, where: str, issues: list[Issue], unknown: list[str]) -> P
             issues.append(Issue(f"{where}.path", "config.control_character"))
         elif path is not None and network_or_device(path):
             issues.append(Issue(f"{where}.path", "config.network_path"))
+        elif path is not None and not _URL_CHARACTERS.isdisjoint(path):
+            issues.append(Issue(f"{where}.path", "config.url_character"))
     elif engine == "postgresql":
         host = _text(raw, "host", where, issues, limit=255)
         if "host" not in raw:

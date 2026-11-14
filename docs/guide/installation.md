@@ -62,7 +62,7 @@ source, with their build backends fetched from PyPI without hashes (build time o
 without hashes.
 
 Tabrion is not on PyPI either. `constraints/tabrion-integration.txt` pins the Tabrion commit this Studio commit is
-built and tested against (Tabrion v0.1.0) by its full SHA (pip cannot hash a Git checkout, so Tabrion is not in the
+built and tested against (Tabrion 0.2.0, an untagged commit) by its full SHA (pip cannot hash a Git checkout, so Tabrion is not in the
 lock), so always install with that file. A plain `pip install .` fails, because pip cannot find Tabrion.
 
 The install needs pip 26.1 or later. Older pip versions (24.0 to 26.0, for example the pip 24.0 of a fresh

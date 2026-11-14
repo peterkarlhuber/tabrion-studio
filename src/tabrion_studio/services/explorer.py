@@ -2,7 +2,7 @@
 
 Everything here reads, on the connection's read-only path (``OpenConnection.inspect`` and ``OpenConnection.fetch``,
 each one ``Database.read()``), and always through ``ConnectionRegistry.get``. Reflection uses SQLAlchemy's
-``Inspector`` (tabrion 0.2: ``Database.inspector()``, :mod:`.tabrion_compat`); the few queries of Studio's own are
+``Inspector`` from tabrion 0.2's ``Database.inspector()`` (TD-013); the few queries of Studio's own are
 fixed texts with bound parameters (names from the request are values, never part of the text).
 
 * **Catalog:** schemas and their objects (tables, views, materialized views, sequences, foreign tables), flat and

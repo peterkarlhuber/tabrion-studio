@@ -58,8 +58,9 @@ answer; `tabrion.errors.safe_message` is for the log only.
 
 The log handlers run Studio's `RedactionFilter` first (an exception becomes its types and frames, without any
 message) and then tabrion's `DbErrorRedactionFilter`, which rewrites database errors in the arguments and removes
-`DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts from the message where they start a line (a `DETAIL:` in the
-middle of a one-line message keeps its values; TD-056). The other order would leave exception
+`DETAIL:`, `HINT:`, `CONTEXT:` and `[parameters:` parts from the message; since tabrion 0.2.0 also a `DETAIL:`,
+`HINT:`, `CONTEXT:` or `QUERY:` part in the middle of a one-line message (TD-056, pinned by
+`test_a_database_detail_in_the_middle_of_a_line_is_redacted`). The other order would leave exception
 messages in the traceback text (`tests/security/test_canary.py`).
 
 ## Logging

@@ -17,17 +17,18 @@ writes the diagnosis report and exits ([Diagnostics](diagnostics.md#the-report-f
    `msvcrt.locking` on Windows). The OS releases the lock when the process ends, also after a crash, so a stale lock
    never blocks the next start.
 3. **Lock taken:** this process becomes the server. It first removes any info file left by a crashed instance, since
-   that file may name a port that another program now uses. It then listens on `127.0.0.1` (a free port chosen by
-   the OS, or `--port N`) and binds, without listening, `[::1]` on the same port (see *Loopback addresses*). It runs
+   that file may name a port that another program now uses. It then listens on a fresh random loopback address
+   `127.a.b.c` (`127.0.0.1` where only that exists; finding A-01) on a free port chosen by the OS, or `--port N`, and
+   binds, without listening, `[::1]` on the same port (see *Loopback addresses*). It runs
    Uvicorn with one worker, and once it accepts connections writes `<state_dir>/studio-<key>.json` (mode 0600,
-   written atomically) with PID, port, instance ID and a random control token. Then it prints the URL
-   `http://127.0.0.1:<port>/` (without a token) and opens the system browser through a private redirect file that
+   written atomically) with PID, address, port, instance ID and a random control token. Then it prints the URL
+   `http://<address>:<port>/` (without a token) and opens the system browser through a private redirect file that
    carries a one-time launch token (unless `--no-browser`; see [Access protection](access-protection.md)).
    `--print-url` prints a one-time sign-in link instead.
 4. **Lock held by another process:** a server for this folder runs already. The command reads the info file, checks
-   that `GET /api/health` on that port answers with the same instance ID, and makes the server prove that it knows
+   that `GET /api/health` on that address and port answers with the same instance ID, and makes the server prove that it knows
    the control token (see *Control endpoint*). Only then does it ask for a launch over `POST /api/control/launch`.
-   It accepts the launch URL only if it is `http://127.0.0.1:<port>/launch#<token>` of that instance, and opens the
+   It accepts the launch URL only if it is `http://<address>:<port>/launch#<token>` of that instance, and opens the
    redirect file only if it is this instance's private file in the state directory. It never starts a second server.
 
 The state directory is `platformdirs.user_state_dir("tabrion-studio")` (override: `--state-dir` or
@@ -63,22 +64,30 @@ both sides as well:
 
 - the info file is removed as soon as the lock is taken;
 - the server removes it at the start of its shutdown, before Uvicorn closes the socket, and again on every way out;
-- the client accepts a launch URL only if it is `http://127.0.0.1:<port>/launch#<token>` of that instance, and opens
+- the client accepts a launch URL only if it is `http://<address>:<port>/launch#<token>` of that instance, and opens
   only this instance's private redirect file with exactly that URL in it;
 - the proof and the request with the token use **one** keep-alive connection (review R-4). An established TCP
   connection cannot be taken over, so even if the server stops between the two requests and another program binds
   the port, the token is not sent: the client never reconnects in between.
 
-## Loopback addresses (review F-08)
+## Loopback addresses (review F-08, finding A-01)
+
+**IPv4: a fresh address per start.** The listener binds a random `127.a.b.c` of `127.0.0.0/8` (not `127.0.0.1`),
+chosen anew for every server, so no instance reuses the origin of an earlier one, also with `--port N`: storage or a
+service worker that another program left in the browser for an earlier origin never applies to a later Studio
+([Access protection](access-protection.md), "Origin per start"). With `--port N`, an address on which the port is
+taken is replaced by another random one (up to 8 tries). Linux and Windows route all of `127.0.0.0/8` to loopback;
+where binding the address fails with `EADDRNOTAVAIL` (macOS configures only `127.0.0.1` by default), Studio listens
+on `127.0.0.1`, and with `--port N` prints a note that the address is then the same every time.
 
 Browsers resolve `localhost` to `::1` first. Studio therefore binds `[::1]:<port>` too (`IPV6_V6ONLY`, not
 listening): no other program can then listen there while Studio runs, and a connection to it is refused, so a
-browser that tries `localhost` falls back to `127.0.0.1`. With a free port, Studio picks another one if `[::1]` has
+browser that tries `localhost` falls back to IPv4 (where Studio refuses that Host anyway). With a free port, Studio picks another one if `[::1]` has
 that port in use; with `--port N`, it refuses to start. On a host without IPv6 loopback, nothing can listen on
 `[::1]` anyway, and the IPv4 listener is used alone. On Windows both sockets use `SO_EXCLUSIVEADDRUSE`. Studio itself
-prints and opens only `http://127.0.0.1:<port>/` URLs, never `localhost` ones, and the Host allowlist of STU-003
-answers `127.0.0.1:<port>` only: `localhost:<port>` and `[::1]:<port>` are refused, whether or not the `[::1]` guard
-could be bound.
+prints and opens only `http://<address>:<port>/` URLs with its own address, never `localhost` ones, and the Host
+allowlist of STU-003 answers that `<address>:<port>` only: `localhost:<port>`, `[::1]:<port>` and other loopback
+addresses are refused, whether or not the `[::1]` guard could be bound.
 
 ## Stopping
 

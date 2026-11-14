@@ -27,11 +27,13 @@ What each part replaces:
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
 * :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
 * :func:`extension_status` (STU-055): tabrion's public ``tabrion.postgres.extension_status`` on the driver connection
-  of a ``Database.read()``, like :func:`check`.
-* :func:`inspector` -> ``Database.inspector()`` (STU-010): a SQLAlchemy ``Inspector`` on the connection of a
-  ``Database.read()`` transaction, so reflection runs read-only like every other Studio statement.
+  of a ``Database.read()``, like :func:`check`. tabrion 0.2 offers it only on a psycopg connection (no
+  ``Database``/``Transaction`` method), so this wrapper stays.
+* :func:`pin_catalog_path`: reflection uses tabrion 0.2's ``Database.inspector()`` (STU-010, TD-013), which yields
+  a SQLAlchemy ``Inspector`` on the connection of its own ``Database.read()``; on PostgreSQL this pins
+  :data:`CATALOG_SEARCH_PATH` on that connection before the first catalog query.
 * :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1): Studio's own catalog reads on PostgreSQL (``stream(...,
-  catalog=True)`` and :func:`inspector`) first set a fixed ``search_path`` for their transaction only
+  catalog=True)`` and :func:`pin_catalog_path`) first set a fixed ``search_path`` for their transaction only
   (``set_config(..., true)``), as pg_dump does, so no object in a user's schema takes part in resolving their
   functions and operators. This is Studio's fixed text, never a user statement (the statement check still refuses
   ``set_config`` in user SQL), and it is not a write. User SQL and the viewer's and exports' statements keep the
@@ -67,7 +69,7 @@ __all__ = [
     "ResultCursor",
     "check",
     "extension_status",
-    "inspector",
+    "pin_catalog_path",
     "pin_setup_path",
     "reset_session",
     "restore_setup_path",
@@ -444,14 +446,13 @@ def _pin_catalog_path(dbapi: Any) -> None:
         cursor.execute(_PIN_SQL, (CATALOG_SEARCH_PATH,))
 
 
-@contextlib.contextmanager
-def inspector(transaction: tabrion.Transaction) -> Iterator[sqlalchemy.Inspector]:
-    """A SQLAlchemy inspector on ``transaction`` (one ``Database.read()``; tabrion 0.2: ``Database.inspector``).
-
-    On PostgreSQL the reflection's catalog queries run under :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1).
-    """
-    connection = transaction.connection
+def pin_catalog_path(found: sqlalchemy.Inspector) -> None:
+    """Before reflection with ``found`` (from ``Database.inspector()``, inside its ``Database.read()``): on
+    PostgreSQL the reflection's catalog queries run under :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1), for the
+    rest of that read-only transaction. Nothing on SQLite."""
+    connection = found.bind
+    if not isinstance(connection, sqlalchemy.Connection):
+        raise TypeError("the inspector must be bound to the connection of a Database.inspector() transaction")
     dbapi: Any = connection.connection.dbapi_connection
     if not isinstance(dbapi, sqlite3.Connection):
         _pin_catalog_path(dbapi)
-    yield sqlalchemy.inspect(connection)

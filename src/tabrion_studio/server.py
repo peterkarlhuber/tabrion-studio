@@ -1,14 +1,21 @@
 """Serving one project folder (03 section 4.1, STU-002).
 
-:func:`serve` takes the per-project lock, binds ``127.0.0.1`` (the port given or a free one chosen by the OS; there
-is no option for another address, STU-T-025), runs Uvicorn with one worker in this process and publishes the
+:func:`serve` takes the per-project lock, binds a loopback address (the port given or a free one chosen by the OS;
+there is no option for another address, STU-T-025), runs Uvicorn with one worker in this process and publishes the
 instance info file once the server accepts connections. It returns when the server stops: Ctrl+C (SIGINT), SIGTERM,
 SIGHUP (the terminal closed) on POSIX, CTRL_BREAK and CTRL_CLOSE on Windows, ``tabrion-studio --stop`` or the idle
 timeout. The info file is removed as soon as the shutdown starts and again on every way out (review F-04).
 
 It also binds, without listening, ``[::1]`` on the same port (review F-08): no other program can then serve
 ``http://localhost:<port>/`` over IPv6 while Studio runs. Studio itself never prints or opens a ``localhost`` URL,
-and the Host allowlist (:mod:`tabrion_studio.security.access`) answers ``127.0.0.1:<port>`` only.
+and the Host allowlist (:mod:`tabrion_studio.security.access`) answers ``<address>:<port>`` of this instance only.
+
+**A fresh origin for every start (finding A-01).** The IPv4 address is a random one of ``127.0.0.0/8``
+(``127.a.b.c``), chosen anew for every server, so the origin ``http://127.a.b.c:<port>`` of one instance is not
+predictable before it starts and is not reused by later instances. Whatever another program left in the browser for
+an earlier origin (storage, a service worker) therefore never applies to a later Studio, also with a fixed
+``--port``. Where only ``127.0.0.1`` is configured (macOS by default), binding a random address fails with
+``EADDRNOTAVAIL`` and Studio uses ``127.0.0.1``; the residual risk of that case is in STU-ADR-0002.
 
 The browser is opened with the ``file://`` path of a 0600 redirect file that holds the one-time launch URL, never
 with the URL itself, so no process list shows the token (review F-02, :mod:`tabrion_studio.security.launch`).
@@ -98,6 +105,19 @@ else:
 
 LOOPBACK_V6 = "::1"
 _PORT_ATTEMPTS = 20
+#: How many random ``127.a.b.c`` addresses are tried when one is taken with a fixed port (A-01).
+_ADDRESS_ATTEMPTS = 8
+#: "Cannot assign requested address": the address is not configured on this host (macOS: only 127.0.0.1).
+_NOT_CONFIGURED_ERRNOS = frozenset({errno.EADDRNOTAVAIL, 10049})  # 10049 = WSAEADDRNOTAVAIL
+
+
+def random_loopback() -> str:
+    """A random IPv4 loopback address ``127.a.b.c`` other than ``127.0.0.1``, with ``c`` in 1..254 (A-01)."""
+    while True:
+        a, b, c = secrets.randbelow(256), secrets.randbelow(256), 1 + secrets.randbelow(254)
+        address = f"127.{a}.{b}.{c}"
+        if address != LOOPBACK:
+            return address
 
 
 class _StudioServer(uvicorn.Server):
@@ -147,6 +167,10 @@ class LoopbackSockets:
     v6_guard: socket.socket | None
 
     @property
+    def host(self) -> str:
+        return str(self.listener.getsockname()[0])
+
+    @property
     def port(self) -> int:
         return int(self.listener.getsockname()[1])
 
@@ -166,13 +190,13 @@ def _exclusive_socket(family: socket.AddressFamily) -> socket.socket:
     return sock
 
 
-def _bind_v4(port: int) -> socket.socket:
+def _bind_v4(host: str, port: int) -> socket.socket:
     sock = _exclusive_socket(socket.AF_INET)
     try:
         if sys.platform != "win32":
             # POSIX only: lets a restart reuse a port in TIME_WAIT; never lets two listeners share it.
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((LOOPBACK, port))
+        sock.bind((host, port))
         sock.listen(128)
     except BaseException:
         sock.close()
@@ -204,15 +228,43 @@ def _guard_v6(port: int) -> socket.socket | None:
     return sock
 
 
-def bind_loopback(port: int) -> LoopbackSockets:
-    """Listen on ``127.0.0.1:port`` and hold ``[::1]:port`` (``port`` 0 = a free port that is free on both)."""
+def _not_configured(exc: OSError) -> bool:
+    return exc.errno in _NOT_CONFIGURED_ERRNOS or getattr(exc, "winerror", None) == 10049
+
+
+def _listen_v4(port: int, choose: Callable[[], str]) -> socket.socket:
+    """Listen on a random loopback address (A-01), or on ``127.0.0.1`` where only that one is configured."""
+    for attempt in range(1, _ADDRESS_ATTEMPTS + 1):
+        try:
+            return _bind_v4(choose(), port)
+        except OSError as exc:
+            if _not_configured(exc):
+                break  # macOS and others: only 127.0.0.1 exists; fall back to it below
+            if port and attempt < _ADDRESS_ATTEMPTS:
+                continue  # the fixed port is taken on this random address only: try another address
+            raise PortUnavailableError(
+                f"cannot listen on 127.0.0.0/8 port {port or 'any'}: {exc.strerror or exc}"
+            ) from exc
+    try:
+        listener = _bind_v4(LOOPBACK, port)
+    except OSError as exc:
+        raise PortUnavailableError(f"cannot listen on {LOOPBACK}:{port}: {exc.strerror or exc}") from exc
+    logging.getLogger("tabrion_studio.server").info(
+        "only %s is available as a loopback address", LOOPBACK, extra={"event": "studio.loopback_fallback"}
+    )
+    return listener
+
+
+def bind_loopback(port: int, choose: Callable[[], str] = random_loopback) -> LoopbackSockets:
+    """Listen on ``127.a.b.c:port`` and hold ``[::1]:port`` (``port`` 0 = a free port that is free on both).
+
+    ``127.a.b.c`` is a fresh random loopback address (``choose``), or ``127.0.0.1`` where no other one is configured
+    (finding A-01).
+    """
     attempts = 1 if port else _PORT_ATTEMPTS
     last: OSError | None = None
     for _ in range(attempts):
-        try:
-            listener = _bind_v4(port)
-        except OSError as exc:
-            raise PortUnavailableError(f"cannot listen on {LOOPBACK}:{port}: {exc.strerror or exc}") from exc
+        listener = _listen_v4(port, choose)
         chosen = int(listener.getsockname()[1])
         try:
             guard = _guard_v6(chosen)
@@ -245,9 +297,11 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     # One log file per project instance (the lock makes this process its only writer), named like the info file.
     logs = configure_logging(options.log_dir, paths.info.stem)
     port = sockets.port
+    host = sockets.host
     info = InstanceInfo(
         pid=os.getpid(),
         port=port,
+        host=host,
         project=str(options.project),
         instance_id=secrets.token_hex(8),
         control_token=secrets.token_urlsafe(32),
@@ -257,7 +311,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     server: _StudioServer | None = None
     # An absolute folder: the CLI of a second start accepts only absolute redirect file paths.
     redirect_dir = Path(os.path.abspath(paths.info.parent))
-    launches = LaunchTokens(loopback_origin(port), redirect_dir=redirect_dir, prefix=paths.info.stem)
+    launches = LaunchTokens(loopback_origin(port, host), redirect_dir=redirect_dir, prefix=paths.info.stem)
 
     def request_shutdown(reason: str) -> None:
         if server is not None:
@@ -297,6 +351,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         control_token=info.control_token,
         idle=IdleMonitor(options.idle_timeout_seconds),
         port=port,
+        host=host,
         launches=launches,
         request_shutdown=request_shutdown,
     )
@@ -311,6 +366,13 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         logging.getLogger("tabrion_studio.server").info(
             "Tabrion Studio %s ready on port %d", __version__, port, extra={"event": "studio.ready"}
         )
+        if host == LOOPBACK and options.port:
+            # A-01: a fixed port on the one fixed address gives a predictable origin (STU-ADR-0002, residual risk).
+            print(
+                f"Note: only {LOOPBACK} is available here, so --port {port} gives the same address every time; "
+                "on a computer shared with other users, leave --port out.",
+                file=out,
+            )
         if options.print_url:
             # Explicit opt-in (--print-url): the one-time link is now in the terminal and its scrollback.
             link = launches.issue(redirect=False).url

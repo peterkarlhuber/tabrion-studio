@@ -30,7 +30,7 @@ test.skip(!python, 'set TABRION_STUDIO_E2E_PYTHON to run against a real tabrion-
 test.describe.configure({ mode: 'serial' });
 
 const NO_KEYRING_ENV = { ...process.env, PYTHON_KEYRING_BACKEND: 'keyring.backends.null.Keyring' };
-const LINK = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/;
+const LINK = /do not share\): (http:\/\/127(?:\.\d{1,3}){3}:\d+\/launch#\S+)/;
 /** A parameter value that must never be stored (08 section 5: "Parameter nie in Historie"). */
 const CANARY = `canary-${Date.now().toString(36)}-value`;
 
