@@ -921,7 +921,8 @@ All notable changes to this project are documented here. The format follows
 - QA-S1 S1-32 (TD-070, owner decision of 2026-11-14 14:13Z, option A): after "Disconnect" in the connection manager,
   "Run" in the SQL editor no longer opens the connection again by itself. It opens nothing and sends no query; the
   banner "Disconnected: <name>" ("Verbindung getrennt: <name>") with "Reconnect" shows, and the editor says that
-  nothing was run. Only "Reconnect" opens the connection again and then runs the requested query; on a PROD profile
+  nothing was run. The same holds for "Show status" (migrations), "Run diagnosis" and "Inspect" (vector data). Only
+  "Reconnect" opens the connection again and then runs the requested query or goes on with the view; on a PROD profile
   "Reconnect" asks D-02 again first, and "Cancel" leaves it disconnected. A connection the editor opens now becomes
   the header's connection, so the header no longer says "No connection" while the editor reads on it. The page's
   connection session tells the user's disconnect from a lost connection; after a loss the editor still opens a DEV

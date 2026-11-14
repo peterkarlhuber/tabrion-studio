@@ -323,3 +323,88 @@ test('a loss is not a disconnect: a DEV connection the server closed is opened a
   expect(await openOnServer(page, 'user:shop-dev')).toHaveLength(1);
   await expectNoViolations(page, violations);
 });
+
+/** Every request on connections from now on (opens and requests on an open connection), as "METHOD path". */
+function watchConnections(page: Page): string[] {
+  const seen: string[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith('/api/connections') && request.method() !== 'GET') {
+      seen.push(`${request.method()} ${path}`);
+    } else if (path.startsWith('/api/connections/')) {
+      seen.push(
+        `${request.method()} ${path.replace(/^\/api\/connections\/[^/]+/, '/api/connections/{id}')}`,
+      );
+    }
+  });
+  return seen;
+}
+
+/** "Connect" and then "Disconnect" in the connection manager (D-02 for PROD on Connect). */
+async function connectThenDisconnect(page: Page, name: string, prod: boolean): Promise<void> {
+  // An earlier test may have left a connection of the profile open on the server (another page session).
+  for (const id of await openOnServer(page, `user:${name}`)) {
+    expect((await api(page, 'DELETE', '/api/connections', { connection_id: id })).status).toBe(204);
+  }
+  const detail = await managerState(page, name);
+  await detail.getByRole('button', { name: 'Connect', exact: true }).click();
+  if (prod) await production(page).getByRole('button', { name: 'Connect' }).click();
+  await expect(detail.getByTestId('connection-state')).toHaveText('open (read-only)');
+  await expect(header(page)).toContainText(`${name}, connected`);
+  await detail.getByRole('button', { name: 'Disconnect', exact: true }).click();
+  await expect(detail.getByTestId('connection-state')).toHaveText('not open');
+  await expect(header(page)).toContainText('No connection');
+  expect(await openOnServer(page, `user:${name}`)).toEqual([]);
+}
+
+const VIEWS = [
+  { link: 'Migrations', button: 'Show status', result: 'migrations-result', prod: false },
+  { link: 'Vector data', button: 'Inspect', result: 'vectors-report', prod: true },
+  { link: 'Diagnostics', button: 'Run diagnosis', result: 'diagnostics-diagnosis', prod: false },
+] as const;
+
+for (const view of VIEWS) {
+  const name = view.prod ? 'shop-prod' : 'shop-dev';
+  test(`${view.link} "${view.button}" after Disconnect opens nothing; Reconnect opens it and goes on (${view.prod ? 'PROD' : 'DEV'})`, async ({
+    page,
+  }) => {
+    const violations = await signIn(page);
+    await connectThenDisconnect(page, name, view.prod);
+    const seen = watchConnections(page);
+
+    await page.getByRole('link', { name: view.link, exact: true }).click();
+    await page.getByRole('main').getByRole('combobox').first().selectOption(`user:${name}`);
+    await page.getByRole('button', { name: view.button, exact: true }).click();
+    await expect(banner(page)).toHaveAttribute('data-cause', 'disconnected');
+    await expect(banner(page)).toContainText(`Disconnected: ${name}`);
+    await expect(production(page)).toHaveCount(0);
+    await expect(header(page)).toContainText('No connection');
+    // A second press asks again, with the one banner.
+    await page.getByRole('button', { name: view.button, exact: true }).click();
+    await expect(banner(page)).toHaveCount(1);
+    // Nothing was opened and nothing was read on a connection.
+    expect(seen).toEqual([]);
+    expect(await openOnServer(page, `user:${name}`)).toEqual([]);
+    // The view shows no result (its result area is empty or not there).
+    await expect(page.getByTestId(view.result).filter({ hasText: /\S/ })).toHaveCount(0);
+
+    await banner(page).getByRole('button', { name: 'Reconnect' }).click();
+    if (view.prod) {
+      // PROD: D-02 again; Cancel keeps it disconnected and opens nothing.
+      await production(page).getByRole('button', { name: 'Cancel' }).click();
+      await expect(banner(page)).toBeVisible();
+      expect(seen).toEqual([]);
+      expect(await openOnServer(page, `user:${name}`)).toEqual([]);
+      await banner(page).getByRole('button', { name: 'Reconnect' }).click();
+      await production(page).getByRole('button', { name: 'Connect' }).click();
+    }
+    await expect(banner(page)).toHaveCount(0);
+    await expect(page.getByTestId(view.result).filter({ hasText: /\S/ })).toBeVisible();
+    // The banner's open came first; then the view went on (its result shows).
+    expect(seen[0]).toBe('POST /api/connections');
+    expect(await openOnServer(page, `user:${name}`)).toHaveLength(1);
+    await expect(header(page)).toContainText(`${name}, connected`);
+    await expect(production(page)).toHaveCount(0);
+    await expectNoViolations(page, violations);
+  });
+}

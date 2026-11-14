@@ -43,10 +43,11 @@ profile, the diagnostics report what the role can still write or create (`STU-DX
 connection marks the whole window. The first PROD connection of a profile in a browser session asks first
 ("Production database"; the default is Cancel), and so does the first connection test of a PROD profile, because
 the test connects too. A reload asks again, and so does a profile you edited or created again, or a project file you
-trusted again. **Disconnect** closes the connection, and Studio keeps it closed: a **Run** in the SQL editor on
-that profile opens nothing and runs nothing, and shows the banner "Disconnected" with **Reconnect** instead.
-**Reconnect** opens the connection again (a PROD profile asks "Production database" again first) and then runs the
-query you asked for. **Connect** here, or **Open** in the explorer, connects the profile again too.
+trusted again. **Disconnect** closes the connection, and Studio keeps it closed: **Run** in the SQL editor, **Show status** in
+the migrations, **Run diagnosis** and **Inspect** in the vector data view open nothing on that profile and show the
+banner "Disconnected" with **Reconnect** instead. **Reconnect** opens the connection again (a PROD profile asks
+"Production database" again first) and then does what you asked for. **Connect** here, or **Open** in the explorer,
+connects the profile again too. A reload of the page forgets the disconnect; no connection is open after it.
 
 When the database stops answering, or the connection was closed (another tab's **Disconnect**, a profile you
 changed), a banner "Connection lost" with **Reconnect** shows above the page you are on. Nothing was lost: Studio

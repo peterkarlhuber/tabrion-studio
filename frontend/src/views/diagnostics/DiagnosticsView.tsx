@@ -51,7 +51,7 @@ import { capped, visible } from '../../lib/visible';
 import connectionStyles from '../connections/Connections.module.css';
 import { problemText } from '../connections/messages';
 import { useConnect } from '../connections/useConnect';
-import { useReconnected } from '../../workspace';
+import { useReconnectGate, useReconnected } from '../../workspace';
 import { studioText } from './studioText';
 import viewStyles from '../Views.module.css';
 import styles from './Diagnostics.module.css';
@@ -320,6 +320,8 @@ export function DiagnosticsView({
   const selectId = useId();
   const noteId = useId();
   const gate = useConnect(fetcher);
+  // S1-32: a profile the user disconnected asks with "Reconnect" before "Run diagnosis" opens it.
+  const hold = useReconnectGate();
   const [profiles, setProfiles] = useState<ProfileItem[] | null>(null);
   const [selected, setSelected] = useState('');
   const [shown, setShownState] = useState<Shown | null>(null);
@@ -586,7 +588,8 @@ export function DiagnosticsView({
               aria-disabled={!canRun}
               onClick={() => {
                 if (!canRun || profile === null) return;
-                gate.guard(profile, () => void run());
+                const press = () => gate.guard(profile, () => void run());
+                if (!hold(profile.id, press)) press();
               }}
             >
               {runLabel}

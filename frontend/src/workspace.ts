@@ -8,6 +8,7 @@
  */
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -206,6 +207,39 @@ export function useReconnected(listener: (event: Reconnected) => void): void {
     current.current = listener;
   });
   useEffect(() => onReconnected((event) => current.current(event)), [onReconnected]);
+}
+
+/**
+ * The rule of QA-S1 S1-32 (owner decision of 2026-11-14 14:13Z) for a view whose button opens a connection ("Show
+ * status", "Run diagnosis", "Inspect"): `hold(profileId, proceed)` returns true when the user disconnected
+ * `profileId` in this page. Then nothing is opened: the banner asks with "Reconnect", and `proceed` runs once
+ * "Reconnect" there opened the connection again (D-02 first for PROD). A newer press drops the earlier wait, and so
+ * does leaving the view. "Open" in the explorer and "Connect" in the connection manager connect explicitly and do not
+ * ask.
+ */
+export function useReconnectGate(): (profileId: string, proceed: () => void) => boolean {
+  const { isDisconnected, askReconnect } = useConnectionSession();
+  const drop = useRef<(() => void) | null>(null);
+  useEffect(
+    () => () => {
+      drop.current?.();
+      drop.current = null;
+    },
+    [],
+  );
+  return useCallback(
+    (profileId, proceed) => {
+      drop.current?.();
+      drop.current = null;
+      if (!isDisconnected(profileId)) return false;
+      drop.current = askReconnect(profileId, () => {
+        drop.current = null;
+        proceed();
+      });
+      return true;
+    },
+    [askReconnect, isDisconnected],
+  );
 }
 
 export const ENV_LABEL: Record<Environment, string> = { dev: 'DEV', test: 'TEST', prod: 'PROD' };
