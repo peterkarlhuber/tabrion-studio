@@ -2,7 +2,7 @@ site_name: Tabrion Studio
 site_description: Local developer tool for SQLite and PostgreSQL databases, built on Tabrion.
 repo_url: https://github.com/peterkarlhuber/tabrion-studio
 repo_name: peterkarlhuber/tabrion-studio
-copyright: Copyright &copy; 2026 Peter Karlhuber – code MIT License; names and logos are not MIT (TRADEMARKS.md)
+copyright: Copyright &copy; 2026 Levuvo. All rights reserved. Names and logos: TRADEMARKS.md
 strict: true
 
 theme:

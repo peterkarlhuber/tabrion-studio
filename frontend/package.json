@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0-dev.0",
   "description": "Tabrion Studio frontend (built into the tabrion-studio wheel).",
-  "license": "MIT",
+  "license": "SEE LICENSE IN ../LICENSE",
   "type": "module",
   "engines": {
     "node": ">=22.22.0"

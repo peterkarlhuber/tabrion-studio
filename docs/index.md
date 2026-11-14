@@ -22,5 +22,5 @@ and opens in the browser.
 - [Building and testing](development/building.md) and [CI and supply chain](development/ci.md).
 - [Architecture decisions](adr/README.md) and [open work](TODO.md).
 
-The names "Tabrion" and "Tabrion Studio" and the logos are © Peter Karlhuber and not covered by the MIT license
+The names "Tabrion" and "Tabrion Studio" and the logos are © Peter Karlhuber and not covered by the license in `LICENSE`
 (`TRADEMARKS.md` in the repository).
