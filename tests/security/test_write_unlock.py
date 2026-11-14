@@ -509,8 +509,12 @@ def test_a_missing_file_is_never_created_by_a_write_connection(tmp_path: Path) -
 def test_a_file_removed_behind_an_open_write_connection_is_not_created_again(env: WriteEnv) -> None:
     """L-3 of PR #111: a new pool connection (here after the pool was emptied) opens ``file:...?mode=rw`` and then
     tabrion's ``create=False`` path: the removed file stays removed, and the use fails closed."""
-    write = _write_connection(env)
-    write._db.engine.dispose()  # the next use opens a new connection through the creator
+    connection_id = _unlocked(env)
+    write = env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR)
+    write.verify()
+    # Every handle on the file closed (Windows refuses to remove an open file); the next use opens a new connection
+    # through the creator.
+    _release(env, connection_id, write)
     for path in _side_files(env.db):
         if path.exists():
             path.unlink()
