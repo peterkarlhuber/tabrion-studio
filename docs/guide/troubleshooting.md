@@ -22,7 +22,8 @@
 | an address with `localhost`, `[::1]` or another `127.…` address is refused | Studio answers only the loopback address it printed, which is new for every start | use the address Studio printed, or run `tabrion-studio` again |
 | "Kept in this browser only: your settings.toml has issues …" | Studio does not change a file with issues, or one written by hand, from the general settings | fix `settings.toml`, or rewrite it from the Settings view |
 | "Your profiles.toml has issues, so Studio does not change it." | the file has an error or an unknown key | fix the listed issues in the file |
-| the keyring choice says "not available on this computer" | no usable keyring (on Linux: no Secret Service or KWallet running) | use "Only this session", a variable or a file, or start a keyring service |
+| the keyring choice says "not available on this computer" | no usable keyring (on Linux: no Secret Service or KWallet running), or only a keyring backend of another Python package, which Studio does not use unless you name it | use "Only this session", a variable or a file, or start a keyring service; to accept another package's backend, set `TABRION_STUDIO_KEYRING_BACKEND` to its `module.Class` ([Passwords](connections.md#passwords)) |
+| a project profile says "Studio could not connect" although your own profile with the same settings connects | the server asks for the password in clear text (`password`, LDAP, PAM or RADIUS authentication), which project profiles refuse | use SCRAM on the server, or define the profile in your own `profiles.toml` |
 | "Connection lost" with **Reconnect** | the database stopped answering (a restart, the network), or the connection was closed in another tab or after a profile change | check that the database is up, then press **Reconnect**; a PROD profile asks "Production database" again |
 | "Project profiles not loaded" | `.tabrion/studio.toml` has errors | fix the listed issues in the project file |
 

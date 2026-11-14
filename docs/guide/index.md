@@ -7,8 +7,9 @@ This guide is for people who use Tabrion Studio. It describes what the current d
     the explorer with DDL, policies and the ER diagram, the data viewer, the SQL editor (reading statements only)
     with export, project scripts, drafts kept by Studio, formatting and completion, the query history and favorite
     connections, the migration status (Alembic, SQLite, Nodestro, Axentra and Orkexa), the diagnostics with the
-    backup hints and the report, the vector data view, the settings, the keyboard and the command palette. Studio never writes to a
-    database. Nothing is released; you install Studio from a commit of the repository.
+    backup hints and the report, the vector data view, the settings, the keyboard and the command palette. Studio opens
+    every connection read-only and sends only reading statements; the hard boundary is a database role without write
+    privileges ([Security](security.md)). Nothing is released; you install Studio from a commit of the repository.
 
 - [Installation](installation.md): from a Git commit or a wheel built from it, with Python 3.11 or later.
 - [Starting and stopping](starting.md): the `tabrion-studio` command, the sign-in link, one Studio per project

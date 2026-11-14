@@ -91,6 +91,7 @@
 | TD-063 Security assessment B-1 and B-2: the statement check's function denylist in every PostgreSQL call form, the pg_surgery and pg_visibility functions, dblink connections closed at check-in; what stays open (newer servers' functions, a diagnostics hint) | P1 | In progress (PR #92): B-1 and B-2 done; open: the PostgreSQL 17/18 candidates and the diagnostics hint (see the entry) |
 | TD-065 Security assessment A-01: a fresh random loopback address `127.a.b.c` per start, so no later Studio reuses an earlier origin (service workers, storage); the macOS fallback to `127.0.0.1` and the `--port` advice; what stays open (real Windows and macOS browsers) | P1 | In progress (A-01 PR): the fix, the residual-risk note in STU-ADR-0002 and the regression tests are done; open: the real-device checks (see the entry) |
 | TD-066 STU-055 vector data view: what it leaves for later (pgvector tests outside the CI PostgreSQL job, the sqlite-vec install status, `halfvec`/`sparsevec` on a pgvector 0.7+ server, an e2e test, other layouts) | P3 | Open (STU-055 PR) |
+| TD-067 Security assessment, Low and Info findings of Studio: A-02 (request time limit, log flood limit), B-3 (project profiles refuse clear-text passwords), C-01 (lasting secrets never evicted from the redaction), C-02 (exceptions inside container log arguments), C-04 (keyring allowlist), B-4 and C-08 (wording); what stays open | P2 | In progress (assessment Low/Info PR): the fixes, docs and tests are done; open: see the entry |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -2107,3 +2108,47 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **Tabrion 0.2 (TD-013):** tabrion 0.2.0 offers `extension_status` only on a psycopg connection (no `Database` or
   `Transaction` method), so `tabrion_compat.extension_status` keeps running it on the driver connection of a
   `Database.read()`, like `check`; it goes when tabrion offers it on a `Database` or `Transaction`.
+
+### TD-067 · Security assessment: the Low and Info findings of Studio
+
+- **Priority:** P2 · **Status:** In progress (assessment Low/Info PR) · **Refs:** the security assessment of 2026-11
+  (A-02, B-3, C-01, C-04 Low; C-02 Low, Studio part; B-4, C-08 Info; the report and its reproductions stay with the
+  planning documents), `docs/architecture/access-protection.md` ("Slow and idle connections"),
+  `docs/architecture/errors-and-logging.md`, `docs/architecture/secrets.md`, `docs/architecture/connections.md`
+- **Done in the PR:**
+  - A-02: `server.RequestTimeoutProtocol` closes a connection that does not deliver a complete request within 10 s
+    of the server waiting for one; `logs.FloodFilter` limits records of the owned loggers (Uvicorn, asyncio) to 20
+    per logger and first line per minute. Changed from the recommendation: no `limit_concurrency`, because Uvicorn
+    then answers the owner's requests with 503 while that many idle connections are open, which makes blocking
+    easier, not harder.
+  - B-3: project profiles (and their migration worker) connect with libpq `require_auth=!password`. Changed from the
+    recommendation: `!password` instead of `scram-sha-256` (SCRAM alone would break trust, certificate and GSSAPI
+    logins, and a malicious server can only guess offline with SCRAM or MD5 alike), and only for project profiles,
+    not for every non-loopback host (a user's own LDAP, PAM or RADIUS server needs clear text). The optional `env:`
+    prefix rule for project profiles is not adopted: the trust dialog names every variable, and a prefix would break
+    existing project files.
+  - C-01: `register_secret(..., lasting=True)` for the control token and every password (never evicted, up to 4,096
+    values); launch tokens, session IDs and CSRF values stay in the bounded LRU store. Changed: session and CSRF values
+    are not removed when a session is dropped (the session store keeps only digests, so removing them would mean
+    keeping the plain values longer); with the lasting values out of the LRU store, evicting old short-lived values
+    is harmless.
+  - C-02 (Studio part): `logs._safe_args` replaces exceptions inside lists, tuples, sets and dicts (4 levels, 1,000
+    items; beyond that the container is not formatted). The tabrion part is tabrion PR #67.
+  - C-04: an allowlist of the `keyring` package's OS backends (by the class's exact module), an explicit opt-in
+    `TABRION_STUDIO_KEYRING_BACKEND=<module.Class>`, `fail`, `null` and `keyrings.alt` refused always, the selected
+    backend logged. Not adopted: showing the backend in the UI (the log names it; a UI field needs an API change).
+  - B-4: README, the guide's start page and the header hint (English and German) reworded. C-08: the uninstall
+    section names history, drafts and favorites.
+- **Open:**
+  - A-02: a local program that keeps opening connections faster than they time out still slows Studio down
+    (accepted availability risk on a shared computer, in the user guide). Requests that complete (also refused ones)
+    are still logged one line each by the request log, so valid requests in bulk can still rotate the log; a limit
+    there would also drop the owner's records.
+  - B-3: with a libpq older than 16 (only when psycopg runs on a system libpq) the refusal is left out with a warning.
+    Whether to fail closed there instead is an owner decision.
+  - B-4: the header's "privileged" warning covers superuser and BYPASSRLS roles only, not a role that owns tables;
+    a diagnostics hint for owner roles would join TD-063's diagnostics hint.
+  - C-02: objects other than built-in containers (a dataclass or a custom class whose `repr` holds an exception)
+    are still formatted as they are; Studio's own code passes no such argument.
+  - Not in this PR: C-05 and C-06 (repository settings for the owner, and CI tool hashes, a `.github/` change), C-03
+    (tabrion's redaction residues, fixed in tabrion; Studio picks them up with a later pin) and C-07 (TD-030).

@@ -206,7 +206,19 @@ def pool_busy(exc: BaseException) -> bool:
     return isinstance(exc, tabrion.TabrionError) and isinstance(exc.original, sqlalchemy.exc.TimeoutError)
 
 
-def driver_options(password: str | None, session: SessionSettings | None = None) -> dict[str, Any]:
+#: libpq's ``require_auth`` exists from libpq 16 on (psycopg's binary package bundles a newer one).
+_REQUIRE_AUTH_LIBPQ = 160000
+
+
+def _libpq_version() -> int:
+    import psycopg
+
+    return int(psycopg.pq.version())
+
+
+def driver_options(
+    password: str | None, session: SessionSettings | None = None, *, refuse_cleartext: bool = False
+) -> dict[str, Any]:
     """psycopg connection options of every Studio PostgreSQL connection; constants, not connection targets.
 
     * ``prepare_threshold=0``: every statement goes through the extended query protocol (a prepared statement), so the
@@ -216,6 +228,12 @@ def driver_options(password: str | None, session: SessionSettings | None = None)
       keeps libpq from reading ``PGPASSWORD``, ``PGPASSFILE``, ``~/.pgpass`` or a service file's password (M-1).
     * ``options`` and ``application_name``: Studio's session settings as startup values (:func:`startup_options`),
       which the check-in reset (``tabrion_compat.reset_session``) restores.
+    * ``refuse_cleartext`` (a project profile; security assessment B-3): ``require_auth=!password``, so libpq never
+      answers a server that asks for the password in clear text (the ``password`` method, and LDAP, PAM, RADIUS and
+      BSD authentication, which use the same exchange); SCRAM, MD5, certificates, GSSAPI/SSPI and no authentication
+      stay possible. A project's file names the host, so it must not get a password in clear text that way. A user
+      profile is the user's own choice of server and keeps every method. With a libpq older than 16, which does not
+      know the option, it is left out and a warning is logged.
     """
     options: dict[str, Any] = {"prepare_threshold": 0, "passfile": _NO_PASSFILE}
     if session is not None:
@@ -223,6 +241,15 @@ def driver_options(password: str | None, session: SessionSettings | None = None)
         options["application_name"] = APPLICATION_NAME
     if password is None:
         options["password"] = ""
+    if refuse_cleartext:
+        if _libpq_version() >= _REQUIRE_AUTH_LIBPQ:
+            options["require_auth"] = "!password"
+        else:
+            logger.warning(
+                "libpq %d cannot refuse clear-text password requests (libpq 16 or newer can)",
+                _libpq_version(),
+                extra={"event": "studio.require_auth_unavailable"},
+            )
     return options
 
 
@@ -246,6 +273,11 @@ def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
     )
 
 
+def refuses_cleartext(entry: ProfileEntryLike) -> bool:
+    """Whether a connection of ``entry`` refuses a clear-text password request: every project profile (B-3)."""
+    return entry.source != "user"
+
+
 def _install_authorizer(dbapi_connection: Any, _record: Any) -> None:
     """Pool ``connect`` listener (SQLite): ``trusted_schema`` off, then Studio's authorizer.
 
@@ -259,17 +291,26 @@ def _install_authorizer(dbapi_connection: Any, _record: Any) -> None:
 
 
 def read_only_database(
-    profile: Profile, limits: Settings, password: str | None, database_file: Path | None
+    profile: Profile,
+    limits: Settings,
+    password: str | None,
+    database_file: Path | None,
+    *,
+    refuse_cleartext: bool = False,
 ) -> tabrion.Database:
     """A read-only ``tabrion.Database`` for ``profile`` with Studio's guards: the connection registry's, and the
-    migration worker's (STU-015). Not connected yet. Raises :class:`RegistryError`."""
+    migration worker's (STU-015). Not connected yet. ``refuse_cleartext``: see :func:`driver_options` (a project
+    profile). Raises :class:`RegistryError`."""
     url = connection_url(profile, password, database_file)
     settings = studio_profile(profile, limits)
     options: dict[str, Any] = {}
     if profile.engine != "sqlite":
         # use_native_hstore=False: no type lookup of the driver's when a connection is opened (TD-039); hstore values
         # are the server's text, as for every type the driver does not know.
-        options = {"connect_args": driver_options(password, settings.postgres), "use_native_hstore": False}
+        options = {
+            "connect_args": driver_options(password, settings.postgres, refuse_cleartext=refuse_cleartext),
+            "use_native_hstore": False,
+        }
     try:
         db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
     except FileNotFoundError:
@@ -537,7 +578,7 @@ class ConnectionRegistry:
                 if profile.password is not None or exc.code != "studio.secret_missing":
                     raise
             if password is not None:
-                register_secret(password)
+                register_secret(password, lasting=True)
         return database_file, password
 
     def worker_target(self, connection_id: object) -> dict[str, Any]:
@@ -566,6 +607,7 @@ class ConnectionRegistry:
             "limits": {"statement_timeout_ms": limits.statement_timeout_ms, "max_rows": limits.max_rows},
             "database_file": None if database_file is None else str(database_file),
             "password": password,
+            "refuse_cleartext": refuses_cleartext(entry),
         }
 
     def _connect(self, profile_id: str, confirmed_environment: str | None) -> OpenConnection:
@@ -575,7 +617,7 @@ class ConnectionRegistry:
         require_prod_confirmation(profile.environment, confirmed_environment)
         limits = self.source.limits()
         database_file, password = self._credentials(profile_id, entry)
-        db = read_only_database(profile, limits, password, database_file)
+        db = read_only_database(profile, limits, password, database_file, refuse_cleartext=refuses_cleartext(entry))
         # Last of the check-in listeners: a session that a statement returns after close() leaves with the pool.
         event.listen(db.engine, "checkin", _close_after_dispose(db))
         timeout = profile.statement_timeout_ms or (

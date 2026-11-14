@@ -207,8 +207,14 @@ Studio's own files stay where they are. Remove them by hand if you want them gon
 | | Linux | macOS | Windows |
 |---|---|---|---|
 | Settings and your profiles | `~/.config/tabrion-studio` | `~/Library/Application Support/tabrion-studio` | `%LOCALAPPDATA%\tabrion-studio` |
-| State (running instances, trust records) | `~/.local/state/tabrion-studio` | `~/Library/Application Support/tabrion-studio` | `%LOCALAPPDATA%\tabrion-studio` |
+| State (running instances, trust records, and in `state.sqlite` your query history, SQL editor drafts and favorites) | `~/.local/state/tabrion-studio` | `~/Library/Application Support/tabrion-studio` | `%LOCALAPPDATA%\tabrion-studio` |
 | Logs | `~/.local/state/tabrion-studio/log` | `~/Library/Logs/tabrion-studio` | `%LOCALAPPDATA%\tabrion-studio\Logs` |
+
+The query history and the drafts are SQL text as you wrote it, which can include values such as customer IDs or
+e-mail addresses in literals (both are kept for the history's retention days, 30 by default; see
+[Query history](history.md) and [SQL editor](sql-editor.md)). They are readable by your user only, but they stay on
+disk after the uninstall: remove the state folder, or `state.sqlite` with its `-wal` and `-shm` files, if they should
+go too.
 
 Passwords saved in the keyring are entries of the service `tabrion-studio`; remove them in your keyring's own tool,
 or with "Remove saved password" in Studio before you uninstall. A project's `.tabrion/studio.toml` belongs to the

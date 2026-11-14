@@ -315,7 +315,9 @@ def _status(request: dict[str, Any]) -> dict[str, Any]:
     limits = Settings(**target["limits"])
     database_file = None if target["database_file"] is None else Path(target["database_file"])
     try:
-        db = read_only_database(profile, limits, target["password"], database_file)
+        db = read_only_database(
+            profile, limits, target["password"], database_file, refuse_cleartext=bool(target["refuse_cleartext"])
+        )
     except RegistryError as exc:
         return {"error": exc.code}
     try:

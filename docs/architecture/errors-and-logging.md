@@ -85,6 +85,12 @@ record reaches Uvicorn's re-added handler unredacted, and with `propagate=False`
 reach Studio's log file. `serve()` runs no `dictConfig` and Uvicorn logs only at the owned names, so the
 `tabrion-studio` command does not hit either case (TD-055). `LogSetup.close()` restores the earlier state.
 
+The first filter on the owned loggers is `FloodFilter` (security assessment A-02): at most 20 records with the same
+logger and first line per 60 seconds; the first record after a window with drops ends with `[N similar records
+dropped]`. These loggers report what any local program can cause without a session (invalid requests, and
+`socket.accept()` failing with a traceback many times a second when the process is out of file descriptors), which
+otherwise rotated the whole 25 MB log away in about a second. Studio's own loggers are not limited.
+
 - **Log directory:** `--log-dir`, else `$TABRION_STUDIO_LOG_DIR`, else `<state dir>/logs` when the state directory
   was given with `--state-dir` or `$TABRION_STUDIO_STATE_DIR`, else the per-user log directory
   (`platformdirs.user_log_dir("tabrion-studio")`). The directory gets the checks of the state directory (0700,
@@ -110,7 +116,14 @@ reach Studio's log file. `serve()` runs no `dictConfig` and Uvicorn logs only at
   `user_token=`, `auth_secret:`) and as JSON and Python-repr keys, and so are `Bearer` credentials, the credentials
   of an `Authorization:` header (`Basic` and any other scheme) and Studio session cookies (review L-2). Every pattern
   has bounded repetitions, so a long hostile message is scrubbed in linear time.
-- An exception passed as a `%s`/`%r` argument is formatted as its type only (`ValueError: [message redacted]`).
+- An exception passed as a `%s`/`%r` argument is formatted as its type only (`ValueError: [message redacted]`),
+  also inside a list, tuple, set or dict argument (security assessment C-02: the filter formats the message before
+  tabrion's `DbErrorRedactionFilter` runs, so that filter never sees an exception object in a container). Containers
+  are looked into up to 4 levels deep and 1,000 items in all; one beyond that is shown as `[list not shown]` (its
+  type), and a container without an exception formats as before.
+- Registered secrets: the control token and every password are kept for good; launch tokens, session IDs and CSRF
+  values share a store of 512 entries, where the oldest go first (C-01), so no number of sign-ins pushes a lasting
+  secret out of the redaction.
 - **Exception text in the message itself (review L-1 of `stu-004-review.md`).** asyncio's default exception handler
   writes `repr(task)` or `repr(future)` (which contains `exception=ValueError('...')`) and the repr of callbacks with
   their arguments into the message. A record of the `asyncio` logger therefore keeps only a known fixed first line

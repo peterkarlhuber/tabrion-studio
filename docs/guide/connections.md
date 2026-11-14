@@ -147,6 +147,13 @@ project, the dialog **Trust the project profiles?** lists:
 - every host, every file reference (database and password files, marked when they are outside the project folder),
   every environment variable read as a password, and every unknown key.
 
+A project profile never sends its password in clear text: when the server asks for it that way (the PostgreSQL
+`password` method, and LDAP, PAM, RADIUS and BSD authentication, which use the same exchange), the connection fails
+with "Studio could not connect". SCRAM (`scram-sha-256`, PostgreSQL's default), `md5`, certificates and Kerberos work. If your
+server needs one of those clear-text methods, define the profile in your own `profiles.toml` instead: your own
+profiles keep every method. This needs libpq 16 or newer, which the `psycopg[binary]` package Studio installs brings;
+with an older libpq Studio logs `studio.require_auth_unavailable` and cannot refuse.
+
 Choose **Trust** to use the profiles, or **Don't load** (the default) to leave them unused until the page is loaded
 again. After any change of the file, even a comment, Studio asks again and shows what changed since you trusted it.
 A file with errors is not loaded at all; Studio says so and lists the issues. One such error: a SQLite `path` with a
@@ -162,6 +169,13 @@ these characters is skipped, and the connections page lists it with that issue u
 | Environment variable | the variable of the `tabrion-studio` process | start Studio from a shell that has it; an empty variable counts as missing |
 | File | a file you own with mode 0600 or 0400, at most 4 KB, no link | a project profile's file must lie in the project folder or the configuration folder; `~` is not expanded |
 | This session | Studio's memory | gone when Studio stops |
+
+Studio uses only the keyring package's own system keyrings: macOS Keychain, Windows Credential Manager, Secret
+Service (GNOME Keyring, KeePassXC and others) and KWallet. A keyring backend that another Python package brings is not
+used, since Studio cannot tell whether it keeps passwords in a plain file. To use one anyway, name its class in the
+variable `TABRION_STUDIO_KEYRING_BACKEND` (for example `some_package.backend.Keyring`); the backends of
+`keyrings.alt`, which keep passwords in a file, are never used. The log names the keyring Studio uses
+(`studio.keyring_backend`).
 
 Without a usable keyring (for example on Linux without a Secret Service), the keyring choice is shown as not
 available; a session password, a variable or a file still work. Studio never writes a password to a file.

@@ -675,6 +675,25 @@ All notable changes to this project are documented here. The format follows
   address. The page removes any service worker found on its origin. For `npm run dev`, set `TABRION_STUDIO_BACKEND`
   to the printed address.
 
+- Low and Info findings of the security assessment (TD-067):
+  - A-02: a connection that does not send a complete request within 10 seconds of the server waiting for one is
+    closed (`server.RequestTimeoutProtocol`; arriving data does not extend the time, a long query is not cut).
+    Records of Uvicorn's and asyncio's loggers are limited to 20 per first line and minute (`logs.FloodFilter`), so
+    such records can no longer rotate the log away. Uvicorn's `limit_concurrency` is deliberately not set.
+  - B-3: connections of project profiles, and the migration worker's, refuse a server's request for the password in
+    clear text (libpq `require_auth=!password`). User profiles are unchanged; with a libpq older than 16 Studio logs
+    `studio.require_auth_unavailable`.
+  - C-01: the control token and every password stay registered for log redaction for good; only launch tokens,
+    session IDs and CSRF values share the bounded store.
+  - C-02: an exception inside a list, tuple, set or dict log argument is formatted by its type only, like one passed
+    directly; containers too deep or too large to check are not formatted.
+  - C-04: only the `keyring` package's own OS backends count as a keyring; another package's backend only when named
+    in the new variable `TABRION_STUDIO_KEYRING_BACKEND`. The selected backend is logged (`studio.keyring_backend`).
+  - B-4: the README, the user guide's start page and the header's read-only hint no longer say that Studio never
+    writes, but that it sends only reading statements and that only a role without write privileges is a hard
+    boundary.
+  - C-08: the uninstall section names the query history, the SQL editor drafts and the favorites in `state.sqlite`.
+
 - B-1 and B-2 of the security assessment (TD-063): the read-only statement check now recognizes every call form of
   refused functions, and also refuses pg_surgery's `heap_force_kill` and `heap_force_freeze` and pg_visibility's
   `pg_truncate_visibility_map`. The PostgreSQL check-in reset closes the session's dblink connections. A column named

@@ -5,6 +5,7 @@ import errno
 import io
 import ipaddress
 from pathlib import Path
+import re
 import signal
 import socket
 import sys
@@ -230,3 +231,106 @@ def test_say_last_raises_every_other_error(error: BaseException) -> None:
 def test_say_last_raises_einval_off_windows() -> None:
     with pytest.raises(OSError):
         server.say_last("line", _Out(OSError(errno.EINVAL, "Invalid argument")))
+
+
+# --- A-02: a time limit for each request ------------------------------------------------------------------------
+
+
+async def _slow_app(scope: dict[str, object], receive: object, send: object) -> None:
+    """Answers ``/slow`` after twice the request timeout and everything else at once."""
+    if scope["type"] != "http":
+        return
+    if scope["path"] == "/slow":
+        await asyncio.sleep(2 * server.REQUEST_READ_TIMEOUT_S)
+    await send({"type": "http.response.start", "status": 200, "headers": [(b"content-length", b"2")]})  # type: ignore[operator]
+    await send({"type": "http.response.body", "body": b"ok"})  # type: ignore[operator]
+
+
+async def _serve(app: object) -> tuple[uvicorn.Server, asyncio.Task[None], int]:
+    config = uvicorn.Config(
+        app,  # type: ignore[arg-type]
+        host="127.0.0.1",
+        port=0,
+        log_config=None,
+        lifespan="off",
+        http=server.RequestTimeoutProtocol,
+        ws="none",
+    )
+    instance = uvicorn.Server(config)
+    task = asyncio.create_task(instance.serve())
+    while not instance.started:
+        await asyncio.sleep(0.01)
+    port = instance.servers[0].sockets[0].getsockname()[1]
+    return instance, task, int(port)
+
+
+async def _closed_within(reader: asyncio.StreamReader, seconds: float) -> bytes:
+    """What the server sent before it closed the connection; fails if it is still open after ``seconds``."""
+    return await asyncio.wait_for(reader.read(), seconds)
+
+
+def test_a_connection_that_sends_no_request_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "REQUEST_READ_TIMEOUT_S", 0.3)
+
+    async def scenario() -> None:
+        instance, task, port = await _serve(_slow_app)
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            assert await _closed_within(reader, 3) == b""
+            writer.close()
+        finally:
+            instance.should_exit = True
+            await task
+
+    asyncio.run(scenario())
+
+
+def test_a_request_that_trickles_in_is_closed_although_bytes_arrive(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "REQUEST_READ_TIMEOUT_S", 0.5)
+
+    async def scenario() -> None:
+        instance, task, port = await _serve(_slow_app)
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            closed = asyncio.create_task(_closed_within(reader, 5))
+            for byte in b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Pad: " + b"a" * 200:
+                if closed.done():
+                    break
+                writer.write(bytes([byte]))
+                await asyncio.sleep(0.05)  # far below the timeout between two bytes
+            assert await closed == b""
+            writer.close()
+        finally:
+            instance.should_exit = True
+            await task
+
+    asyncio.run(scenario())
+
+
+def test_requests_and_a_long_answer_are_not_cut(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server, "REQUEST_READ_TIMEOUT_S", 0.3)
+
+    async def scenario() -> None:
+        instance, task, port = await _serve(_slow_app)
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            # The answer takes twice the timeout: the timer stops once the request is complete.
+            for path in ("/slow", "/", "/slow"):
+                writer.write(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n".encode())
+                await writer.drain()
+                head = await asyncio.wait_for(reader.readuntil(b"\r\n\r\n"), 5)
+                assert head.startswith(b"HTTP/1.1 200")
+                assert await reader.readexactly(2) == b"ok"
+            writer.close()
+        finally:
+            instance.should_exit = True
+            await task
+
+    asyncio.run(scenario())
+
+
+def test_studio_runs_uvicorn_with_the_request_time_limit() -> None:
+    source = Path(server.__file__).read_text(encoding="utf-8")
+    assert "http=RequestTimeoutProtocol" in source
+    # No limit_concurrency: with it, idle connections would make Uvicorn answer the owner with 503.
+    assert re.search(r"limit_concurrency\s*=", source) is None

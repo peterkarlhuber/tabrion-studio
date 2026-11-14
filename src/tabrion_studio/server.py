@@ -25,6 +25,7 @@ the server stops and, left behind by a crash, when the next server for the folde
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterator
 import contextlib
 from dataclasses import dataclass, field
@@ -41,7 +42,10 @@ import time
 from types import FrameType
 from typing import TextIO
 
+# h11 is Uvicorn's own HTTP/1.1 parser (a required dependency of uvicorn, which Studio runs with http="h11").
+import h11
 import uvicorn
+from uvicorn.protocols.http.h11_impl import H11Protocol
 
 from tabrion_studio._version import __version__
 from tabrion_studio.api.config import Configuration
@@ -157,6 +161,57 @@ class _StudioServer(uvicorn.Server):
         if not self.should_exit:
             self.stop_reason = signal.Signals(sig).name
         self.handle_exit(sig, frame)
+
+
+#: How long a connection may take to send one whole request (head and body), counted from when the server waits for
+#: one: after the connection opened, or after the previous response (A-02).
+REQUEST_READ_TIMEOUT_S = 10.0
+
+
+class RequestTimeoutProtocol(H11Protocol):
+    """Uvicorn's h11 protocol that closes a connection which does not send a complete request in time (A-02).
+
+    Uvicorn itself waits without limit for the first request on a new connection, and its keep-alive timer stops at
+    the first byte of the next one, so a connection that sends nothing, or a request a byte at a time, stays open for
+    good; any local program could hold all of the server's connections that way. Here, whenever the server waits for
+    a request (the peer's h11 state is ``IDLE`` or ``SEND_BODY``), :data:`REQUEST_READ_TIMEOUT_S` runs from that
+    moment, and data that arrives does not restart it. The timer stops once the request is complete, so a long query
+    is never cut. Uvicorn's shorter keep-alive timeout for an idle connection after a response stays as it is.
+    """
+
+    _request_timer: asyncio.TimerHandle | None = None
+
+    def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
+        super().connection_made(transport)
+        self._watch_request()
+
+    def data_received(self, data: bytes) -> None:
+        super().data_received(data)
+        self._watch_request()
+
+    def on_response_complete(self) -> None:
+        super().on_response_complete()
+        self._watch_request()
+
+    def connection_lost(self, exc: Exception | None) -> None:
+        self._stop_request_timer()
+        super().connection_lost(exc)
+
+    def _watch_request(self) -> None:
+        if self.transport.is_closing() or self.conn.their_state not in (h11.IDLE, h11.SEND_BODY):
+            self._stop_request_timer()
+        elif self._request_timer is None:
+            self._request_timer = self.loop.call_later(REQUEST_READ_TIMEOUT_S, self._request_timed_out)
+
+    def _stop_request_timer(self) -> None:
+        if self._request_timer is not None:
+            self._request_timer.cancel()
+            self._request_timer = None
+
+    def _request_timed_out(self) -> None:
+        self._request_timer = None
+        if not self.transport.is_closing():
+            self.transport.close()
 
 
 @dataclass
@@ -404,7 +459,9 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         proxy_headers=False,
         server_header=False,
         lifespan="on",
-        http="h11",
+        # h11 with a time limit for each request (A-02). No limit_concurrency: Uvicorn would answer the owner's own
+        # requests with 503 while that many idle connections are open, which makes blocking Studio easier.
+        http=RequestTimeoutProtocol,
         ws="none",
         loop="asyncio",
         workers=1,

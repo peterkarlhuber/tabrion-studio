@@ -227,7 +227,7 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         lifespan=lifespan,
         exception_handlers={StarletteHTTPException: _http_error, RequestValidationError: _validation_error},
     )
-    register_secret(runtime.control_token)  # never in a log record (STU-004)
+    register_secret(runtime.control_token, lasting=True)  # never in a log record (STU-004, C-01)
     # Inside the access middleware: a request it refuses is never read (STU-016 review F-4).
     app.add_middleware(BodyLimitMiddleware, default=DEFAULT_BODY_LIMIT, routes=BODY_LIMITS)
     app.add_middleware(

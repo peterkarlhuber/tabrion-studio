@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import replace
+import logging
 import os
 from pathlib import Path
 import signal
@@ -19,6 +20,7 @@ from tabrion_studio.config import secrets as studio_secrets
 from tabrion_studio.config.locations import safe_realpath
 from tabrion_studio.config.schema import Profile, SecretRef
 from tabrion_studio.config.secrets import (
+    KEYRING_BACKEND_ENV,
     MAX_SECRET_BYTES,
     SERVICE,
     KeyringStore,
@@ -26,6 +28,7 @@ from tabrion_studio.config.secrets import (
     Secrets,
     SecretTarget,
     SessionSecrets,
+    backend_name,
     keyring_key,
     read_secret_file,
     select_backend,
@@ -288,13 +291,73 @@ def test_backends_that_are_not_a_keyring_are_refused(monkeypatch: pytest.MonkeyP
     assert select_backend() is None
 
 
+class _OsKeyring(FakeKeyring):
+    """Looks like one of the keyring package's own OS backends."""
+
+
+_OsKeyring.__module__ = "keyring.backends.SecretService"
+
+
+class _VendorKeyring(FakeKeyring):
+    """A backend of another package (it might write a plain file; Studio cannot tell)."""
+
+    priority = 50
+
+
+_VendorKeyring.__module__ = "vendor_keyring.backend"
+
+
 def test_the_chainer_is_never_used_directly(monkeypatch: pytest.MonkeyPatch) -> None:
-    good, plain = FakeKeyring(), _PlainTextKeyring()
+    good, plain = _OsKeyring(), _PlainTextKeyring()
     plain.priority = 50  # even a higher priority does not make a file backend usable
     chain = chainer.ChainerBackend()  # type: ignore[no-untyped-call]
     monkeypatch.setattr(chainer.ChainerBackend, "backends", property(lambda _self: [plain, good]))
     monkeypatch.setattr(keyring, "get_keyring", lambda: chain)
     assert select_backend() is good
+
+
+def test_a_backend_of_another_package_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Security assessment C-04: only the keyring package's OS backends count, whatever the other's priority."""
+    os_keyring, vendor = _OsKeyring(), _VendorKeyring()
+    chain = chainer.ChainerBackend()  # type: ignore[no-untyped-call]
+    monkeypatch.setattr(chainer.ChainerBackend, "backends", property(lambda _self: [vendor, os_keyring]))
+    monkeypatch.setattr(keyring, "get_keyring", lambda: chain)
+    assert select_backend({}) is os_keyring
+    monkeypatch.setattr(keyring, "get_keyring", lambda: vendor)
+    assert select_backend({}) is None
+
+
+def test_a_subclass_of_an_os_backend_in_another_package_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    class Imitation(_OsKeyring):
+        pass
+
+    Imitation.__module__ = "vendor_keyring.secretservice"
+    monkeypatch.setattr(keyring, "get_keyring", Imitation)
+    assert select_backend({}) is None
+
+
+def test_the_user_can_accept_one_named_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    vendor = _VendorKeyring()
+    monkeypatch.setattr(keyring, "get_keyring", lambda: vendor)
+    assert select_backend({KEYRING_BACKEND_ENV: "vendor_keyring.backend._VendorKeyring"}) is vendor
+    assert select_backend({KEYRING_BACKEND_ENV: "vendor_keyring.backend.Other"}) is None
+    assert select_backend({KEYRING_BACKEND_ENV: "vendor_keyring"}) is None  # the exact class, not a prefix
+    monkeypatch.setenv(KEYRING_BACKEND_ENV, backend_name(vendor))
+    assert select_backend() is vendor
+
+
+@pytest.mark.parametrize("backend", _NOT_A_KEYRING, ids=["fail", "null", "alt"])
+def test_a_refused_backend_stays_refused_when_named(monkeypatch: pytest.MonkeyPatch, backend: object) -> None:
+    monkeypatch.setattr(keyring, "get_keyring", lambda: backend)
+    assert select_backend({KEYRING_BACKEND_ENV: backend_name(backend)}) is None
+
+
+def test_the_selected_backend_is_logged(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.INFO, logger="tabrion_studio.secrets")
+    store = KeyringStore(lambda: _OsKeyring())
+    assert store.available
+    records = [r for r in caplog.records if getattr(r, "event", None) == "studio.keyring_backend"]
+    assert [r.getMessage() for r in records] == [f"keyring backend: {backend_name(_OsKeyring())}"]
 
 
 def test_keyring_store(monkeypatch: pytest.MonkeyPatch) -> None:
