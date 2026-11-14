@@ -86,6 +86,12 @@ def default_config_dir(state_dir: Path | None = None) -> Path:
     return Path(platformdirs.user_config_dir(APP_NAME, appauthor=False))
 
 
+def platform_config_dir() -> Path:
+    """The platform's per-user configuration folder, never moved by an environment variable (the write-area flags,
+    STU-XW-1, review N-1 of PR #109)."""
+    return Path(platformdirs.user_config_dir(APP_NAME, appauthor=False))
+
+
 def ensure_private_dir(path: Path) -> Path:
     """Create ``path`` (and parents) with mode 0700 and check that only this user can use it.
 

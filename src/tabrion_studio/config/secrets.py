@@ -43,7 +43,7 @@ from tabrion_studio.config.locations import (
     network_or_device,
     safe_realpath,
 )
-from tabrion_studio.config.schema import Profile, SecretRef, target_fingerprint
+from tabrion_studio.config.schema import Profile, SecretRef, WriteProfile, target_fingerprint
 from tabrion_studio.logs import register_secret
 
 SERVICE = "tabrion-studio"
@@ -221,6 +221,15 @@ def keyring_key(owner: Owner, profile: Profile, project_key: str) -> str:
     if owner == "user":
         return f"user:{profile.name}:{target}"
     return f"project:{project_key}:{profile.name}:{target}"
+
+
+def write_keyring_key(write: WriteProfile, target: Profile) -> str:
+    """The keyring and session key of a write or admin profile (STU-XW-1): ``write:<kind>:<name>:<target>``.
+
+    ``target`` is the profile the write connection uses (the read profile's target with the write role), so a secret
+    stored for one role and target never serves another, and it never shares an entry with a read profile.
+    """
+    return f"write:{write.kind}:{write.name}:{target_fingerprint(target.to_dict())}"
 
 
 def backend_name(backend: Any) -> str:

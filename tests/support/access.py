@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from tabrion_studio.api.config import Configuration
 from tabrion_studio.app import Runtime, create_app
+from tabrion_studio.config.write_areas import ALL_OFF, WriteAreas
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.security.access import loopback_origin
 from tabrion_studio.security.launch import LaunchTokens
@@ -91,6 +92,7 @@ def make_studio(
     favorites: Favorites | None = None,
     scripts: Scripts | None = None,
     drafts: Drafts | None = None,
+    write_areas: WriteAreas = ALL_OFF,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -114,6 +116,7 @@ def make_studio(
         scripts=scripts,
         drafts=drafts,
         state=history.store if history is not None else None if drafts is None else drafts.store,
+        write_areas=write_areas,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

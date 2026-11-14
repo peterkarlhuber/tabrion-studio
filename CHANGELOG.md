@@ -7,6 +7,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XW-1 (CR-DBX): the shared write foundation, with every write area off. One flag per area (`data_editor` G-S2,
+  `schema_designer` G-S3, `database_manager` G-S4) in `write-areas.toml` in the configuration folder that the
+  command line names (never an environment variable, a `.env` file, a project file, the settings API, a URL, a
+  header or the page), read once at start with the checks of Studio's private files and logged per area. With every
+  flag off each write route answers `405 studio.method_not_allowed` and the write code is not imported. Write and
+  admin profiles (`[[write_profile]]`) only in the user's `profiles.toml`, refused in a project file, coupled to the
+  user's own non-PROD read profiles; a coupled profile cannot become PROD and an environment change ends every
+  unlock; creating one shows and requires the "no production write credentials" confirmation. Server-side unlock
+  per page session with the typed name, 15 idle minutes, no PROD code path. SQLite write connection with
+  `trusted_schema = OFF`, an authorizer, defensive mode (Python 3.12+; refused on 3.11) and a device and inode check;
+  PostgreSQL write connection with the fixed `search_path` `pg_catalog, pg_temp`; admin privilege check with
+  findings for SUPERUSER, BYPASSRLS, CREATEROLE and REPLICATION, direct or inherited. Write secrets never appear in
+  a diagnosis report. Kill-switch proof tests in `tests/security/test_write_*.py`. New import-linter contract: the
+  read paths never import `tabrion_studio.write`.
 - Docs: STU-XW-5 (CR-DBX), the first work package after the development start. STU-ADR-0006 supersedes
   STU-ADR-0003: one server-side flag and one gate per area (Data Editor G-S2, Schema Designer G-S3, Database Manager
   G-S4), each off by default and set only locally by the owner (never from the page, a project file, a URL, a header

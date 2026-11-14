@@ -448,6 +448,75 @@ CATALOG: dict[str, Entry] = {
     "studio.query_too_large": Entry(
         413, ProblemKind.REQUEST, "Query too large", "The statement or its parameters are too large."
     ),
+    # The shared write foundation (STU-XW-1, STU-ADR-0006). W-9: a refused write is 400 or 405, never 403 or 404.
+    "studio.write_profile_invalid": Entry(
+        400,
+        ProblemKind.CONFIG,
+        "Write profile not valid",
+        "Some fields of the write or admin profile are missing or not valid.",
+        "A write or admin profile is coupled to one of your own profiles that is not PROD, with its own role.",
+    ),
+    "studio.write_profile_unknown": Entry(
+        400, ProblemKind.CONFIG, "No such write profile", "There is no write or admin profile with this ID."
+    ),
+    "studio.write_profile_exists": Entry(
+        400, ProblemKind.CONFIG, "Name in use", "A profile or write profile with this name exists already."
+    ),
+    "studio.write_warning_unconfirmed": Entry(
+        400,
+        ProblemKind.CONFIG,
+        "Note not confirmed",
+        "A write or admin profile is created only after the note on production credentials was confirmed.",
+        "Studio relies on the environment you give the profile; write credentials of a production database do "
+        "not belong in Studio.",
+    ),
+    "studio.profile_coupled": Entry(
+        409,
+        ProblemKind.CONFIG,
+        "Profile has a write profile",
+        "A write or admin profile is coupled to this profile.",
+        "Remove the write or admin profile first.",
+    ),
+    "studio.write_prod_locked": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Production is write-locked",
+        "Studio never writes to a database whose profile is PROD.",
+    ),
+    "studio.write_coupling_invalid": Entry(
+        400,
+        ProblemKind.CONFIG,
+        "Not the coupled profile",
+        "This write or admin profile is not coupled to the profile of this connection.",
+    ),
+    "studio.write_target_unknown": Entry(
+        400, ProblemKind.REQUEST, "Connection not open", "There is no open connection with this ID."
+    ),
+    "studio.unlock_name_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Name does not match",
+        "To unlock, type the name of the write or admin profile exactly.",
+    ),
+    "studio.write_locked": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Write mode locked",
+        "The write mode of this connection is not unlocked, or the unlock has ended.",
+        "Unlock it again with the name of the write profile.",
+    ),
+    "studio.write_target_changed": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Target changed",
+        "The profile, its environment or the database file changed since the unlock; the unlock has ended.",
+    ),
+    "studio.write_unsupported": Entry(
+        400,
+        ProblemKind.DATABASE,
+        "Write connection not possible",
+        "Studio cannot open a write connection with its safeguards for this database.",
+    ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
         400,

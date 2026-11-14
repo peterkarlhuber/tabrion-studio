@@ -25,6 +25,11 @@
 > development start. [STU-ADR-0006](adr/0006-per-area-write-kill-switches.md) supersedes STU-ADR-0003 and the
 > [Write and admin threat model](architecture/write-threat-model.md) covers STU-XW-1..4 and STU-026; the non-goals
 > in the README and the security guide follow. Docs only.
+>
+> STU-XW-1 (2026-11-14, branch `claude/project-thread-rdo6g3-stuxw1`): the shared write foundation behind the
+> per-area flags of STU-ADR-0006, every area off by default (flag source `write-areas.toml`, profiles, unlock,
+> write connections, privilege check, kill-switch proof). Open: the i18n folder has two UI languages (en, de), not
+> six; ADR 0006 does not yet name the flag names and source in its own text.
 
 ## Summary
 
@@ -45,7 +50,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1..4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); STU-XW-5 done (review accepted 2026-11-14, PR #109), STU-XW-1 in review, STU-XW-2..4 next; each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -483,7 +488,8 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | Version | Area | Work packages | Gate | Status |
 |---|---|---|---|---|
 | 1.1 | Threat model and the ADR successor of 0003 | TABRION STU-XW-5 | G-S2 | Done (PR #109; independent review accepted 2026-11-14, `reviews/pr109-stuxw5-review.md`): [STU-ADR-0006](adr/0006-per-area-write-kill-switches.md), [threat model](architecture/write-threat-model.md), non-goals in the README and the security guide |
-| 1.1 | Shared write foundation: write and admin profiles, unlocking, PROD lock, flags (STU-XW-1), audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-1..STU-XW-4 | G-S2 | **Next** (after STU-XW-5; STU-XW-1 first, then XW-2..4); each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package |
+| 1.1 | Shared write foundation: write and admin profiles, unlocking, PROD lock, flags (STU-XW-1) | TABRION STU-XW-1 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw1`): flags in `write-areas.toml` (default off, read once at start), write and admin profiles in the user's store only, server-side unlock per session, SQLite and PostgreSQL write connections (K-2), admin privilege check; kill-switch proof in `tests/security/test_write_*.py`; nothing activated |
+| 1.1 | Audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-2..STU-XW-4 | G-S2 | **Next** (after STU-XW-1); hooks: `Unlocks.require` and `WriteConnection.transaction`; each PR brings the kill-switch proof of STU-ADR-0006 and the TX rows of its work package |
 | 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |

@@ -28,6 +28,7 @@ import webbrowser
 
 from tabrion_studio._version import __version__
 from tabrion_studio.browser import sandbox_hint, sandboxed_default_browser
+from tabrion_studio.config.write_areas import flag_dir
 from tabrion_studio.idle import DEFAULT_IDLE_MINUTES
 from tabrion_studio.instance import (
     ControlError,
@@ -45,6 +46,7 @@ from tabrion_studio.paths import (
     default_config_dir,
     default_log_dir,
     default_state_dir,
+    platform_config_dir,
     remove_file,
 )
 
@@ -183,6 +185,9 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         print_url=args.print_url,
         log_dir=log_dir,
         config_dir=config_dir.expanduser().resolve(),
+        # STU-XW-1: the write-area flags come from the folder the command line names, never one an environment
+        # variable names (review N-1 of PR #109).
+        write_areas_dir=flag_dir(args.config_dir, args.state_dir, platform_config_dir()).expanduser().resolve(),
         started=_STARTED,
     )
     try:

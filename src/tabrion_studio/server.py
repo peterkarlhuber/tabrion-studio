@@ -53,6 +53,7 @@ from tabrion_studio.app import Runtime, create_app
 from tabrion_studio.config.code_trust import CodeTrust
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.user import UserConfig
+from tabrion_studio.config.write_areas import ALL_OFF, load_write_areas, log_write_areas
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import (
     LOOPBACK,
@@ -97,6 +98,9 @@ class ServeOptions:
     log_dir: Path | None = None
     #: The user's configuration folder (settings.toml, profiles.toml); None uses the default (STU-006).
     config_dir: Path | None = None
+    #: The folder of ``write-areas.toml``, the one source of the write-area flags (STU-XW-1), named by the command
+    #: line only; None: no source, every area stays off.
+    write_areas_dir: Path | None = None
     started: float = field(default_factory=time.perf_counter)
 
 
@@ -374,6 +378,9 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
             server.should_exit = True
 
     config_dir = options.config_dir if options.config_dir is not None else default_config_dir()
+    # Read once, now; a change needs a restart (STU-ADR-0006). Each area's state is logged (point 6).
+    write_areas = ALL_OFF if options.write_areas_dir is None else load_write_areas(options.write_areas_dir)
+    log_write_areas(write_areas)
     configuration = Configuration(
         project=ProjectConfig(options.project, options.state_dir, project_key(options.project), config_dir),
         user=UserConfig(config_dir),
@@ -409,6 +416,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         host=host,
         launches=launches,
         request_shutdown=request_shutdown,
+        write_areas=write_areas,
     )
 
     def on_ready() -> None:

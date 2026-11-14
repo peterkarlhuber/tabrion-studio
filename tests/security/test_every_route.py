@@ -81,6 +81,9 @@ FAMILIES = (
     "/api/favorites",
     "/api/scripts",
     "/api/drafts",
+    "/api/write/areas",
+    "/api/write/profiles",
+    "/api/write/unlocks",
 )
 
 
@@ -185,6 +188,17 @@ CHANGING_ROUTES: dict[str, str] = {
     "PUT /api/favorites": "Studio's state database",
     "PUT /api/scripts/file": "a .sql file in the project folder (Studio's own scripts)",
     "PUT /api/drafts": "Studio's state database",
+    # STU-XW-1 (STU-ADR-0006, proof item 6): the shared write foundation. With every write area off (the default,
+    # and this app) each of these is a refusing handler (405 studio.method_not_allowed) that imports no write code;
+    # tests/security/test_write_kill_switch.py proves it per route. With the Data Editor, Schema Designer or Database
+    # Manager flag on (after its gate only):
+    "POST /api/write/profiles": "a write or admin profile in the user's profiles.toml (behind the area flags)",
+    "PUT /api/write/profiles": "a write or admin profile in the user's profiles.toml (behind the area flags)",
+    "DELETE /api/write/profiles": "a write or admin profile in the user's profiles.toml (behind the area flags)",
+    "PUT /api/write/profiles/{profile_id:path}/secret": "a write profile's password in the keyring (behind the flags)",
+    "DELETE /api/write/profiles/{profile_id:path}/secret": "a write profile's password in the keyring (behind flags)",
+    "POST /api/write/unlocks": "unlocks a session's write mode: opens a write connection, writes nothing (flags)",
+    "DELETE /api/write/unlocks": "locks the write mode again: closes the write connection (behind the area flags)",
 }
 
 

@@ -46,6 +46,7 @@ single-user tool on loopback (STU-ADR-0002).
 from __future__ import annotations
 
 from collections.abc import Callable
+import hashlib
 import hmac
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -175,8 +176,11 @@ class AccessMiddleware:
             if not known:
                 return "access.session_required"
             csrf = [value for key, value in headers if key == _CSRF]
-            if len(csrf) != 1 or not any(self.sessions.check(value, csrf[0]) for value in known):
+            matched = [value for value in known if len(csrf) == 1 and self.sessions.check(value, csrf[0])]
+            if not matched:
                 return "access.csrf_invalid"
+            # The write unlocks (STU-XW-1) are bound to the session: routes get its digest, never the cookie value.
+            scope.setdefault("state", {})["studio_session"] = hashlib.sha256(matched[0].encode("utf-8")).hexdigest()
             self.on_activity()
         return None
 

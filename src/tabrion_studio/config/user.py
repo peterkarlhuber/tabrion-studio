@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_file
-from tabrion_studio.config.schema import Issue, Profile, Settings, validate_profiles, validate_settings
+from tabrion_studio.config.schema import Issue, Profile, Settings, WriteProfile, validate_profiles, validate_settings
 from tabrion_studio.config.writer import (
     SaveError,
     checked_profiles,
@@ -42,6 +42,8 @@ class UserProfiles:
     digest: str | None = None
     #: Whether the file is exactly what Studio would write (False: written by hand, comments would be lost).
     canonical: bool = True
+    #: The write and admin profiles (STU-XW-1): only here, never in a project file (K-1).
+    write_profiles: list[WriteProfile] = field(default_factory=list)
 
 
 class UserConfig:
@@ -71,13 +73,17 @@ class UserConfig:
             data = read_plain_file(self.config_dir / PROFILES_FILE, private=True)
             if data is None:
                 return UserProfiles()
-            parsed = validate_profiles(parse_toml(data))
+            parsed = validate_profiles(parse_toml(data), owner="user")
         except ConfigFileError as exc:
             pointer = PROFILES_FILE if exc.line is None else f"{PROFILES_FILE} line {exc.line}"
             return UserProfiles(issues=[Issue(pointer, exc.code)], digest=digest(data), canonical=False)
         # Valid profiles are used even if others in the file are not; the issues say which ones were skipped.
         return UserProfiles(
-            parsed.profiles, parsed.issues, digest(data), canonical=dump_profiles(parsed.profiles) == data
+            parsed.profiles,
+            parsed.issues,
+            digest(data),
+            canonical=dump_profiles(parsed.profiles, parsed.write_profiles) == data,
+            write_profiles=parsed.write_profiles,
         )
 
     def _folder(self) -> None:
@@ -102,7 +108,28 @@ class UserConfig:
         self._folder()
         current = self.profiles()
         self._check(current.digest, current.issues, current.canonical, expected, overwrite)
-        data = checked_profiles(change(list(current.profiles)))
+        # The write and admin profiles stay as they are (their own save below).
+        data = checked_profiles(change(list(current.profiles)), current.write_profiles)
+        self._recheck(PROFILES_FILE, current.digest, private=True)
+        self._write(PROFILES_FILE, data)
+        return digest(data) or ""
+
+    def save_write_profiles(
+        self,
+        change: Callable[[list[Profile], list[WriteProfile]], list[WriteProfile]],
+        expected: object,
+        *,
+        overwrite: bool = False,
+    ) -> str:
+        """Apply ``change`` to the user's write and admin profiles (STU-XW-1) and write the file; the new digest.
+
+        ``change`` gets the read profiles too, to check a coupling; the read profiles stay as they are. Raises
+        :class:`SaveError`, and ValueError for a list that would not read back (a coupling that is not valid)."""
+        self._folder()
+        current = self.profiles()
+        self._check(current.digest, current.issues, current.canonical, expected, overwrite)
+        reads = list(current.profiles)
+        data = checked_profiles(reads, change(reads, list(current.write_profiles)))
         self._recheck(PROFILES_FILE, current.digest, private=True)
         self._write(PROFILES_FILE, data)
         return digest(data) or ""

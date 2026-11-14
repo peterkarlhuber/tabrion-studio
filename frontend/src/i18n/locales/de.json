@@ -1025,7 +1025,19 @@
     "script_too_large": "Das Skript ist größer, als Studio öffnet oder speichert (1 MB).",
     "script_exists": "Ein Skript mit diesem Pfad gibt es schon.",
     "script_stale": "Das Skript hat sich auf der Festplatte geändert, seit es gelesen wurde.",
-    "script_folder_missing": "Den Ordner gibt es nicht. Studio legt keine Ordner an."
+    "script_folder_missing": "Den Ordner gibt es nicht. Studio legt keine Ordner an.",
+    "write_profile_invalid": "Das Schreibprofil ist nicht gültig. Es muss an eines Ihrer eigenen Profile gekoppelt sein, das nicht PROD ist, und eine eigene Rolle verwenden.",
+    "write_profile_unknown": "Dieses Schreib- oder Admin-Profil gibt es nicht.",
+    "write_profile_exists": "Ein Profil oder Schreibprofil mit diesem Namen gibt es bereits.",
+    "write_warning_unconfirmed": "Bestätigen Sie zuerst den Hinweis zu Produktionszugangsdaten.",
+    "profile_coupled": "An dieses Profil ist ein Schreib- oder Admin-Profil gekoppelt. Entfernen Sie es zuerst.",
+    "write_prod_locked": "Studio schreibt nie in eine PROD-Datenbank.",
+    "write_coupling_invalid": "Dieses Schreibprofil ist nicht an das Profil dieser Verbindung gekoppelt.",
+    "write_target_unknown": "Es gibt keine offene Verbindung mit dieser ID.",
+    "unlock_name_mismatch": "Tippen Sie zum Entsperren den Namen des Schreibprofils genau ein.",
+    "write_locked": "Der Schreibmodus ist gesperrt. Entsperren Sie ihn erneut.",
+    "write_target_changed": "Das Profil oder die Datenbankdatei hat sich geändert; die Entsperrung ist beendet.",
+    "write_unsupported": "Studio kann für diese Datenbank keine Schreibverbindung mit seinen Schutzmaßnahmen öffnen."
   },
   "keyboard": {
     "palette": {
@@ -1528,5 +1540,23 @@
       "extension_unknown": "Der Status von pgvector konnte nicht gelesen werden.",
       "definition_too_long": "Die Definition der virtuellen Tabelle {{table}} ist länger als 64 KiB, daher liest Studio sie nicht."
     }
+  },
+  "write": {
+    "title": "Schreib- und Admin-Profile",
+    "lead": "Ein Schreib- oder Admin-Profil hat eine eigene Datenbankrolle und ein eigenes Secret und ist an eines Ihrer eigenen Profile gekoppelt, das nicht PROD ist. Studio speichert es nur in Ihrer profiles.toml.",
+    "name": "Name des Schreibprofils",
+    "kind": "Art",
+    "kinds": {
+      "write": "Schreibprofil",
+      "admin": "Admin-Profil"
+    },
+    "readProfile": "Gekoppelt an",
+    "readProfileHint": "Eines Ihrer eigenen Profile; Projektprofile und PROD-Profile können nicht gekoppelt werden.",
+    "choose": "Profil wählen",
+    "role": "Datenbankrolle",
+    "roleHint": "Eine eigene Rolle mit nur den nötigen Rechten; nicht die Rolle des gekoppelten Profils.",
+    "prodNote": "Studio verlässt sich auf die Umgebung, die Sie dem gekoppelten Profil geben: Ob eine Datenbank produktiv ist, kann Studio nicht erkennen. Schreibzugangsdaten für eine Produktionsdatenbank gehören nicht in Studio.",
+    "prodConfirm": "Verstanden, und dies ist keine Produktionsdatenbank.",
+    "create": "Schreibprofil anlegen"
   }
 }

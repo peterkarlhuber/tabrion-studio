@@ -301,7 +301,7 @@ def test_a_file_that_would_not_read_back_is_a_4xx(env: Env, monkeypatch: pytest.
     """L-2: the read-back check refuses to write; the answer is a fixed 422, not a 500 with a traceback."""
     from tabrion_studio.config import user as user_module
 
-    def broken(profiles: object) -> bytes:
+    def broken(*_profiles: object) -> bytes:
         raise ValueError("the written profiles do not read back")
 
     monkeypatch.setattr(user_module, "checked_profiles", broken)
