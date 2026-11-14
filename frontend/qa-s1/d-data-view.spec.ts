@@ -26,8 +26,8 @@ async function showOrders(page: Page): Promise<number> {
   await openInExplorer(page, DEV);
   await page.getByRole('treeitem', { name: 'orders', exact: true }).click();
   await page.getByRole('button', { name: 'Daten anzeigen', exact: true }).click();
-  // The checklist's example is "Zeilen 1–100"; a page of orders holds fewer rows when its widest possible values
-  // would not fit the browser's memory limit, and then the page says so (viewer-limited).
+  // A page of orders holds fewer rows than "Zeilen je Seite" when its widest possible values would not fit the
+  // browser's memory limit, and then the page says so (viewer-limited). S1-17 checks the checklist's numbers.
   const status = page.getByTestId('viewer-status');
   await expect(status).toHaveText(/^Zeilen 1–\d+; weitere Zeilen folgen\.$/);
   const rows = Number(/–(\d+);/.exec((await status.textContent()) ?? '')?.[1]);
@@ -54,6 +54,12 @@ test('S1-17 "Daten anzeigen" pages with "Weiter" and "Zurück", "Zeilen je Seite
   await startSession(page, studio);
   const page1 = await showOrders(page);
   const status = page.getByTestId('viewer-status');
+  // Checklist v2: "Zeilen 1–51; weitere Zeilen folgen." although "Zeilen je Seite" says 100, with the page's note.
+  await expect(
+    page.getByLabel('Zeilen je Seite', { exact: true }).locator('option:checked'),
+  ).toHaveText('100');
+  await expect(status).toHaveText('Zeilen 1–51; weitere Zeilen folgen.');
+  await expect(page.getByTestId('viewer-limited')).toBeVisible();
   await page.getByRole('button', { name: 'Weiter', exact: true }).click();
   await expect(status).toHaveText(`Zeilen ${page1 + 1}–${2 * page1}; weitere Zeilen folgen.`);
   await page.getByRole('button', { name: 'Zurück', exact: true }).click();

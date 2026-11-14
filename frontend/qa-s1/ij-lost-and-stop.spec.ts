@@ -1,5 +1,5 @@
 /**
- * QA-S1 sections I and J: "Verbindung getrennt" after another tab disconnects, and stopping and starting Studio
+ * QA-S1 sections I and J: "Verbindung getrennt" after "Trennen" in the same tab, and stopping and starting Studio
  * again with the kit's commands (the tab says the session ended; drafts and the language are kept).
  */
 import type { Page } from '@playwright/test';
@@ -28,37 +28,39 @@ async function api(page: Page, path: string): Promise<string> {
   }, path);
 }
 
-test('S1-32 after "Trennen" in a second tab, "Ausführen" in the first shows "Verbindung getrennt" with "Neu verbinden"', async ({
+test('S1-32 after "Trennen" in the same tab, "Ausführen" in the SQL editor shows "Verbindung getrennt" with "Neu verbinden"', async ({
   page,
   studio,
 }) => {
   await startSession(page, studio);
   await openEditor(page, DEV);
-  await replaceText(page, 'select count(*) as n from orders');
+  const sql = 'select count(*) as n from orders';
+  await replaceText(page, sql);
   await page.getByRole('button', { name: 'Ausführen', exact: true }).click();
   await expect(page.getByTestId('result-status')).toHaveText(/^1 Zeile/);
 
-  // "2 - Studio starten" again: a second tab with a link from the running Studio.
-  const second = await page.context().newPage();
-  await signIn(second, studio.link());
-  await goTo(second, 'Verbindungen');
-  await second.getByTestId('connection-item').filter({ hasText: DEV }).click();
-  await second
+  // In the same browser tab: "Verbindungen" → "Shop (DEV)" → "Trennen" (checklist v2: a second start would replace
+  // the session, so the checklist no longer uses a second tab).
+  await goTo(page, 'Verbindungen');
+  await page.getByTestId('connection-item').filter({ hasText: DEV }).click();
+  await page
     .getByTestId('connection-detail')
     .getByRole('button', { name: 'Trennen', exact: true })
     .click();
   await expect(
-    second.getByTestId('connection-detail').getByRole('button', { name: 'Verbinden', exact: true }),
+    page.getByTestId('connection-detail').getByRole('button', { name: 'Verbinden', exact: true }),
   ).toBeVisible();
 
-  await page.bringToFront();
+  // Back to the SQL editor, with the query still open, and "Ausführen" again.
+  await goTo(page, 'SQL-Editor');
+  await expect(page.locator('.cm-content')).toHaveText(sql);
   await page.getByRole('button', { name: 'Ausführen', exact: true }).click();
   const banner = page.getByTestId('connection-lost');
   await expect(banner).toContainText('Verbindung getrennt: Shop (DEV)');
   await banner.getByRole('button', { name: 'Neu verbinden', exact: true }).click();
   await expect(banner).toHaveCount(0);
   // Nothing was lost: the tab's text is there and runs again.
-  await expect(page.locator('.cm-content')).toHaveText('select count(*) as n from orders');
+  await expect(page.locator('.cm-content')).toHaveText(sql);
   await page.getByRole('button', { name: 'Ausführen', exact: true }).click();
   await expect(page.getByTestId('result-status')).toHaveText(/^1 Zeile/);
 });

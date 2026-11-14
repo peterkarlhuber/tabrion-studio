@@ -41,7 +41,7 @@ test('S1-03 after "Vertrauen", the customers table of "Shop (DEV)" is reached in
   await signIn(page, studio.link());
   await trustProfiles(page);
   const started = Date.now();
-  // The way the checklist names: "Verbindungen" → "Shop (DEV)" → "Verbinden", then "Explorer".
+  // The way the checklist names: "Verbindungen" → "Shop (DEV)" → "Verbinden", then "Explorer" → "Öffnen".
   await goTo(page, 'Verbindungen');
   await page.getByTestId('connection-item').filter({ hasText: 'Shop (DEV)' }).click();
   await page
@@ -51,7 +51,7 @@ test('S1-03 after "Vertrauen", the customers table of "Shop (DEV)" is reached in
   await expect(page.getByTestId('connection-switcher')).toContainText('Shop (DEV)');
   await goTo(page, 'Explorer');
   const customers = page.getByRole('treeitem', { name: 'customers', exact: true });
-  // The explorer preselects the connected profile but still needs "Öffnen" (a step the checklist's example omits).
+  // The explorer preselects the connected profile and still needs "Öffnen" (checklist v2 names that step).
   await expect(
     page.getByLabel('Verbindungsprofil', { exact: true }).locator('option:checked'),
   ).toHaveText(/^Shop \(DEV\)/);

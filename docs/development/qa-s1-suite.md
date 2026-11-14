@@ -52,3 +52,8 @@ The first full run (master `77e549c`, 2026-11-14) passed 36 of 38 cases. It foun
 the ER diagram did nothing), S1-15 (opening a history entry right after a run could drop the editor tab, now and
 then) and, in S1-32, a raw `access.csrf_invalid` message in a tab whose session a second start replaced; the fixes are
 tracked in TD-069.
+
+The run on master `11217d5` (with #104, the TD-069 fixes; 2026-11-14) passed 37 of 38 cases, with S1-32 rewritten
+for checklist v2 ("Trennen" in the same tab). S1-09 and S1-15 pass (S1-15 25 of 25 with `--repeat-each 25`). S1-32
+fails: after "Trennen", "Ausführen" on "Shop (DEV)" opens a new connection without a hint (the editor reconnects a DEV
+profile by design), so the checklist's "Verbindung getrennt" with "Neu verbinden" never shows.
