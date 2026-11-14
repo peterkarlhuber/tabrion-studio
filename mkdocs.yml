@@ -87,6 +87,7 @@ nav:
       - Accessibility audit: architecture/accessibility.md
       - UX acceptance: architecture/ux-acceptance.md
       - Security review preparation: architecture/security-review-prep.md
+      - Write and admin threat model: architecture/write-threat-model.md
   - Development:
       - Building and testing: development/building.md
       - CI and supply chain: development/ci.md
@@ -102,4 +103,5 @@ nav:
       - "0003 Writes behind a gate": adr/0003-writes-behind-gate.md
       - "0004 Frontend reuse": adr/0004-frontend-reuse.md
       - "0005 CR-DBX write and admin gates": adr/0005-crdbx-write-and-admin-gates.md
+      - "0006 Per-area write kill switches": adr/0006-per-area-write-kill-switches.md
   - Open work: TODO.md

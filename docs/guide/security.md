@@ -16,8 +16,12 @@ Studio is a tool for one person on one computer. In short:
   [below](#what-studio-does-not-protect-against)). Each start, and each stop, ends every session.
 - **Read-only towards databases.** Studio 0.1 has no write path: no view and no part of its server is made to
   change data, SQLite files are opened read-only, and statements run in read-only transactions (for the limits of
-  that, see [below](#what-studio-does-not-protect-against)). Writing is a later, separate work package (STU-026) that needs its own
-  approval first (G-S2), and it is never meant for a `PROD` profile.
+  that, see [below](#what-studio-does-not-protect-against)). Writing data, schema changes, running backups and role
+  management are not goals of Studio 1.0. Later versions may add them only under change request CR-DBX (the Data
+  Editor in 1.1, the Schema Designer in 1.2, the Database Manager in 1.3), each behind a server-side switch that is
+  off by default, cannot be turned on from the page, and stays off until the area's own approval (G-S2, G-S3, G-S4).
+  None of them can ever write to a `PROD` profile
+  ([STU-ADR-0006](../adr/0006-per-area-write-kill-switches.md)).
 - **Production databases are marked and confirmed.** A profile's environment (`DEV`, `TEST`, `PROD`) is always shown
   as text: in the header, on every tab and in the window title (`[PROD] name – Tabrion Studio`); a PROD connection
   also gets a red frame at the top of the window. Before Studio first connects to a PROD profile in a page session

@@ -5,7 +5,9 @@
 not the start of implementation; the owner's conditional development-start approval of 2026-11-14 11:01Z (G-CX,
 see [Amendment 2026-11-14](#amendment-2026-11-14-conditional-development-start)) now governs the start. It amends
 [STU-ADR-0003](0003-writes-behind-gate.md), which stays in force for Studio 1.0. The threat model and the full
-successor record are work package STU-XW-5 after the development start.
+successor record are work package STU-XW-5 after the development start: see
+[STU-ADR-0006](0006-per-area-write-kill-switches.md) and the
+[Write and admin threat model](../architecture/write-threat-model.md).
 
 ## Context
 
