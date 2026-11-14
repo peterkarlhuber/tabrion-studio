@@ -534,13 +534,24 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   user profiles). With libpq older than 16 (no `require_auth`) Studio refuses the write unlock (fail closed) instead
   of only logging a warning. Proof: a test that the option reaches the driver for `write` and `admin`, and a test
   that an older libpq refuses the unlock. Not implemented in STU-XW-1.
-- **Open (STU-XW-2): the audit log's tamper evidence is an unkeyed hash chain.** It shows edits, deletions,
-  reordering and truncation, but someone who can write the user's state folder can rebuild a consistent chain, or
-  remove the folder and its anchor together (a new, empty log). That is malware running as the user (residual risk
-  3). A keyed chain (key in the OS keyring) or an anchor outside the state folder would raise the bar; decide before
-  G-S2 whether it is wanted. Also open for G-S2: whether a refused unlock of an area that is off should be recorded
-  (today only refusals of a stored profile with its area on are), and a size limit or archive for old segments
-  (today they are kept, about 4 MB each).
+- **STU-XW-2, fixed in PR #114 (review `reviews/pr114-stuxw2-review.md`):** M-1, several Studio processes (one
+  per project) share `<state>/audit`: every write, head update, rotation, pending marker change and verification
+  now runs under a lock across processes (`audit/audit.lock`, `fcntl.flock` or `msvcrt.locking`), and the chain's end
+  is read again from disk under it; N-2, rotation moves the segment with a hard link (fails on an existing name)
+  under that lock; N-3, a name the log does not take is the catalog problem `studio.audit_record_invalid`, and a
+  record error never hides an unlock refusal.
+- **G-S2 items (STU-XW-2, notes of the PR #114 review):**
+  - **Anchor outside the folder (N-1):** without a key, removing the whole `audit` folder goes unnoticed (Studio
+    starts a new chain from GENESIS), and someone who can write the state folder can rebuild a consistent chain
+    (residual risk 3). Options: keep the last `(seq, hash)` also in the keyring or in a 0600 file outside
+    `<state>/audit` and report "log missing or reset" when a new chain starts while an anchor exists; a keyed HMAC
+    chain with the key in the keyring.
+  - **Retention (N-4):** old segments are kept without limit (about 4 MB each); decide on retention or archiving.
+  - **Verification cost (N-4):** every listing verifies the whole log; cache the verification up to the last
+    verified head and verify only what follows.
+  - **The page (N-5):** show the problem code of a failed verification and the remedy next to it.
+  - Whether a refused unlock of an area that is off should be recorded (today only refusals of a stored profile
+    with its area on are).
 - **STU-026 and STU-XW-3 (from STU-XW-2):** every write runs through `Unlocks.audited_transaction`, which writes
   `run.start` before the transaction and `run.result` after it; `action` is a token, `objects` are object names only,
   and the caller shows a warning when `run.audit_pending` is True (N-4). STU-XW-3 passes the confirmed plan hash.

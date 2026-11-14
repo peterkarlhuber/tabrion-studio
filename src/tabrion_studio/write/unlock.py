@@ -192,7 +192,9 @@ class Unlocks:
             if code != "studio.audit_unavailable":
                 # A refused unlock of a stored profile, recorded after the fact: the stored names only, never what
                 # the request typed or named (TX-13).
-                self.audit.record("unlock", profile=write.name, kind=write.kind, result=code)
+                # A coding error in the record must not hide the refusal (note N-3 of the PR #114 review).
+                with contextlib.suppress(ValueError):
+                    self.audit.record("unlock", profile=write.name, kind=write.kind, result=code)
             raise
 
     def _unlock(
@@ -382,6 +384,11 @@ class Unlocks:
         except AuditError:
             logger.warning("write refused: no audit record", extra={"event": "studio.audit_unavailable"})
             raise WriteError("studio.audit_unavailable") from None
+        except ValueError:
+            # An action or object name the log does not take (empty, too many, not a token): a catalog problem,
+            # nothing runs (note N-3 of the PR #114 review). STU-XW-3 and STU-026 validate and cap names before.
+            logger.warning("write refused: audit record not valid", extra={"event": "studio.audit_record_invalid"})
+            raise WriteError("studio.audit_record_invalid") from None
         result = "failed"
         try:
             with record.connection.transaction() as transaction:

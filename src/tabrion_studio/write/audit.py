@@ -47,7 +47,7 @@ start record is refused while they cannot be written, so writes stop until the l
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 import contextlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -60,6 +60,7 @@ import re
 import stat
 import sys
 import threading
+import time
 from typing import Any
 
 from tabrion_studio.logs import REDACTED, printable, scrub
@@ -82,6 +83,7 @@ VERSION = 1
 CURRENT = "audit.jsonl"
 HEAD = "head.json"
 PENDING = "pending.json"
+LOCK = "audit.lock"
 SEGMENT = re.compile(r"audit-(\d{12})\.jsonl")
 #: The current segment is rotated before it grows beyond this.
 MAX_SEGMENT_BYTES = 4 * 1024 * 1024
@@ -421,13 +423,104 @@ def _append_bytes(path: Path, data: bytes) -> None:
         os.close(fd)
 
 
+#: How long a writer waits for another Studio process's lock on the audit folder before it gives up (fail closed).
+LOCK_TIMEOUT_S = 30.0
+_LOCK_PAUSE_S = 0.01
+
+
+@contextlib.contextmanager
+def _folder_lock(folder: Path) -> Iterator[None]:
+    """Hold the audit folder's lock across processes (review M-1 of PR #114).
+
+    Several Studio processes (one per project) share ``<state>/audit``. Every write, head update, rotation, pending
+    marker change and verification happens under this lock: ``audit.lock`` (0600, never through a link), locked with
+    ``fcntl.flock`` on POSIX and ``msvcrt.locking`` on Windows. The handle is closed when the lock is released, so
+    nothing stays open between records. Raises :class:`UnsafePathError` or OSError (also after
+    :data:`LOCK_TIMEOUT_S`)."""
+    path = folder / LOCK
+    if not _NOFOLLOW and path.is_symlink():
+        raise UnsafePathError("refusing to follow a link")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | _NOFOLLOW | _BINARY, 0o600)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            raise UnsafePathError("the audit lock is not a regular file")
+        if _POSIX and (info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077):
+            raise UnsafePathError("the audit lock is not private")
+        deadline = time.monotonic() + LOCK_TIMEOUT_S
+        while True:
+            try:
+                _lock_fd(fd)
+                break
+            except (BlockingIOError, PermissionError, OSError):
+                if time.monotonic() >= deadline:
+                    raise
+                time.sleep(_LOCK_PAUSE_S)
+        try:
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                _unlock_fd(fd)
+    finally:
+        os.close(fd)
+
+
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock_fd(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+    def _unlock_fd(fd: int) -> None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _lock_fd(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def _unlock_fd(fd: int) -> None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+
+
+def _read_pending(folder: Path) -> tuple[list[dict[str, Any]], int]:
+    """The pending marker's records and dropped count; ``([], 0)`` without one. Raises ValueError if damaged."""
+    try:
+        data = read_private_file(folder / PENDING)
+    except (UnsafePathError, OSError):
+        raise ValueError("pending marker not readable") from None
+    if data is None:
+        return [], 0
+    try:
+        doc = json.loads(data)
+        items = doc.get("pending") if isinstance(doc, dict) else None
+        if not isinstance(items, list) or len(items) > MAX_PENDING:
+            raise ValueError("not a pending marker")
+        pending = []
+        for item in items:
+            if not isinstance(item, dict) or item.get("event") not in EVENTS:
+                raise ValueError("not a pending record")
+            pending.append(
+                {"event": item["event"], "time": _time(item.get("time")), "fields": clean_fields(item["fields"])}
+            )
+        return pending, _count(doc.get("dropped", 0))
+    except (TypeError, AttributeError, RecursionError, KeyError):
+        raise ValueError("not a pending marker") from None
+
+
 class AuditLog:
-    """The audit log of this Studio process; thread-safe. ``folder`` None: no log, every record is refused."""
+    """The audit log of this Studio process; thread-safe, and safe with other Studio processes on the same folder
+    (every change under :func:`_folder_lock`, with the chain's end read again from disk first). ``folder`` None: no
+    log, every record is refused."""
 
     def __init__(self, folder: Path | None, clock: Callable[[], str] = _now) -> None:
         self.folder = folder
         self.clock = clock
         self._lock = threading.Lock()
+        #: Pending records that not even the pending marker file could take (in memory only, N-4).
         self._pending: list[dict[str, Any]] = []
         self._dropped = 0
         self._problem: str | None = "audit.unavailable"
@@ -446,58 +539,85 @@ class AuditLog:
             return
         try:
             ensure_private_dir(self.folder)
+            with _folder_lock(self.folder):
+                self._adopt(_scan(self.folder))
+                if self._problem is not None:
+                    return
+                try:
+                    pending, dropped = _read_pending(self.folder)
+                except ValueError:
+                    self._broken("audit.pending_unreadable")
+                    return
+                if pending or dropped:
+                    logger.warning("audit records are pending", extra={"event": "studio.audit_pending"})
+                    with contextlib.suppress(AuditError):
+                        self._flush_pending()
         except (UnsafePathError, OSError):
+            self._problem = "audit.unavailable"
             logger.warning(
                 "audit log folder not usable; writes stay refused", extra={"event": "studio.audit_unavailable"}
             )
-            return
-        self._adopt(_scan(self.folder))
-        self._load_pending()
-        if self._problem is None and self._pending:
-            with contextlib.suppress(AuditError):
-                self._flush_pending()
+
+    def _broken(self, problem: str) -> None:
+        self._problem = problem
+        logger.warning(
+            "audit log failed verification; writes stay refused",
+            extra={"event": "studio.audit_broken", "code": problem},
+        )
 
     def _adopt(self, scan: _Scan) -> None:
         if not scan.verification.ok:
-            self._problem = scan.verification.problem or "audit.unreadable"
-            logger.warning(
-                "audit log failed verification; writes stay refused",
-                extra={"event": "studio.audit_broken", "code": self._problem},
-            )
+            self._broken(scan.verification.problem or "audit.unreadable")
             return
         self._problem = None
         self._seq, self._hash = scan.last_seq, scan.last_hash
         self._current_first, self._size = scan.current_first, scan.current_size
 
-    def _load_pending(self) -> None:
+    def _sync(self) -> None:
+        """Read the end of the chain again from disk (folder lock held): another Studio process may have written.
+
+        The last record of the current segment (its own hash checked) or, when that segment is empty after a
+        rotation, ``head.json``. The head may lag by one record; anything else, a partial line, or an end before the
+        one this process saw last is a change of the log: it stops further records (fail closed)."""
         if self.folder is None:
-            return
+            raise AuditError()
         try:
-            data = read_private_file(self.folder / PENDING)
-            if data is None:
-                return
-            doc = json.loads(data)
-            items = doc.get("pending") if isinstance(doc, dict) else None
-            if not isinstance(items, list) or len(items) > MAX_PENDING:
-                raise ValueError("not a pending marker")
-            pending = []
-            for item in items:
-                if not isinstance(item, dict) or item.get("event") not in EVENTS:
-                    raise ValueError("not a pending record")
-                pending.append(
-                    {"event": item["event"], "time": _time(item.get("time")), "fields": clean_fields(item["fields"])}
+            head = _head(self.folder)
+            data = read_private_file(self.folder / CURRENT) or b""
+        except (_Broken, UnsafePathError, OSError):
+            self._broken("audit.unsafe_file")
+            raise AuditError() from None
+        lines = data.split(b"\n")
+        if lines.pop():
+            self._broken("audit.unreadable")
+            raise AuditError()
+        if lines:
+            try:
+                first = json.loads(lines[0])
+                last = json.loads(lines[-1])
+                body = {key: value for key, value in last.items() if key != "hash"}
+                valid = (
+                    isinstance(first, dict)
+                    and type(first.get("seq")) is int
+                    and type(last.get("seq")) is int
+                    and _digest(body) == last.get("hash")
                 )
-            dropped = _count(doc.get("dropped", 0))
-        except (UnsafePathError, OSError, ValueError, TypeError, AttributeError, RecursionError):
-            self._problem = "audit.pending_unreadable"
-            logger.warning(
-                "audit pending marker not readable; writes stay refused",
-                extra={"event": "studio.audit_broken", "code": self._problem},
-            )
-            return
-        self._pending = pending + self._pending
-        self._dropped += dropped
-        logger.warning("audit records are pending from an earlier run", extra={"event": "studio.audit_pending"})
+            except (ValueError, RecursionError, AttributeError):
+                valid = False
+            if not valid:
+                self._broken("audit.record_changed")
+                raise AuditError()
+            seq, digest, current_first = last["seq"], last["hash"], first["seq"]
+            if head is None or head[0] not in (seq, seq - 1):
+                self._broken("audit.head_mismatch")
+                raise AuditError()
+        else:
+            seq, digest = head if head is not None else (0, GENESIS)
+            current_first = None
+        if seq < self._seq or (seq == self._seq and digest != self._hash):
+            self._broken("audit.truncated")
+            raise AuditError()
+        self._seq, self._hash, self._current_first, self._size = seq, digest, current_first, len(data)
 
     @property
     def available(self) -> bool:
@@ -514,7 +634,12 @@ class AuditLog:
 
     @property
     def pending_count(self) -> int:
-        return len(self._pending) + self._dropped
+        stored = 0
+        if self.folder is not None:
+            with contextlib.suppress(ValueError):
+                items, dropped = _read_pending(self.folder)
+                stored = len(items) + dropped
+        return len(self._pending) + self._dropped + stored
 
     # --- records ---------------------------------------------------------------------------------------------------
 
@@ -522,70 +647,106 @@ class AuditLog:
         """Write one record now, or raise :class:`AuditError` (fail closed: the caller does not do the action).
 
         Pending records are written first. Returns the record's sequence number. A ValueError (an unknown event or
-        field, a field of the wrong shape) is a coding error and raised as it is."""
+        field, a field of the wrong shape) is a coding error and raised as it is; nothing is written then."""
         if event not in EVENTS:
             raise ValueError("unknown audit event")
         clean = clean_fields(fields)
         with self._lock:
-            self.check()
-            self._flush_pending()
-            return self._write(event, clean)
+            return self._locked_write(event, clean)
 
     def record(self, event: str, **fields: object) -> bool:
         """Write a record of an action that has happened; on failure keep a pending marker (N-4). False if pending."""
         if event not in EVENTS:
             raise ValueError("unknown audit event")
         clean = clean_fields(fields)
-        time = self.clock()
+        when = self.clock()
         with self._lock:
             try:
-                self.check()
-                self._flush_pending()
-                self._write(event, clean)
+                self._locked_write(event, clean)
             except AuditError:
-                self._keep_pending({"event": event, "time": time, "fields": clean})
+                self._keep_pending({"event": event, "time": when, "fields": clean})
                 return False
         return True
 
+    def _locked_write(self, event: str, clean: dict[str, object]) -> int:
+        self.check()
+        if self.folder is None:
+            raise AuditError()
+        try:
+            with _folder_lock(self.folder):
+                self._sync()
+                self._flush_pending()
+                return self._write(event, clean)
+        except (UnsafePathError, OSError):
+            logger.warning("audit folder lock not taken", extra={"event": "studio.audit_write_failed"})
+            raise AuditError() from None
+
     def _keep_pending(self, item: dict[str, Any]) -> None:
+        """Add ``item`` to the pending marker (thread lock held, folder lock not)."""
+        logger.warning("audit record could not be written; kept as pending", extra={"event": "studio.audit_pending"})
+        if self.folder is not None:
+            try:
+                with _folder_lock(self.folder):
+                    items, dropped = _read_pending(self.folder)
+                    items.append(item)
+                    if len(items) > MAX_PENDING:
+                        items.pop(0)
+                        dropped += 1
+                    self._save_pending(items, dropped)
+                    return
+            except (ValueError, UnsafePathError, OSError):
+                pass
+        logger.warning(
+            "audit pending marker could not be saved; it is kept in memory only",
+            extra={"event": "studio.audit_pending"},
+        )
         self._pending.append(item)
         if len(self._pending) > MAX_PENDING:
             self._pending.pop(0)
             self._dropped += 1
-        logger.warning("audit record could not be written; kept as pending", extra={"event": "studio.audit_pending"})
-        self._save_pending()
 
-    def _save_pending(self) -> None:
+    def _save_pending(self, items: list[dict[str, Any]], dropped: int) -> None:
+        """Write the pending marker (folder lock held); raises OSError."""
         if self.folder is None:
-            return
-        try:
-            if self._pending or self._dropped:
-                doc = {"v": VERSION, "pending": self._pending, "dropped": self._dropped}
-                write_private_file(self.folder / PENDING, _canonical(doc))
-            else:
-                remove_file(self.folder / PENDING)
-        except OSError:
-            logger.warning(
-                "audit pending marker could not be saved; it is kept in memory only",
-                extra={"event": "studio.audit_pending"},
-            )
+            raise OSError("no folder")
+        if items or dropped:
+            doc = {"v": VERSION, "pending": items, "dropped": dropped}
+            write_private_file(self.folder / PENDING, _canonical(doc))
+        else:
+            remove_file(self.folder / PENDING)
 
     def _flush_pending(self) -> None:
-        if not self._pending and not self._dropped:
+        """Write the pending records first, marked late (both locks held). Raises :class:`AuditError`."""
+        if self.folder is None:
+            raise AuditError()
+        try:
+            stored, stored_dropped = _read_pending(self.folder)
+        except ValueError:
+            self._broken("audit.pending_unreadable")
+            raise AuditError() from None
+        if not stored and not stored_dropped and not self._pending and not self._dropped:
             return
         try:
+            while stored:
+                item = stored[0]
+                self._write(item["event"], {**item["fields"], "late": True, "occurred": item["time"]})
+                stored.pop(0)
             while self._pending:
                 item = self._pending[0]
                 self._write(item["event"], {**item["fields"], "late": True, "occurred": item["time"]})
                 self._pending.pop(0)
-            if self._dropped:
-                self._write("audit.pending_dropped", {"dropped": self._dropped, "late": True})
-                self._dropped = 0
+            dropped = stored_dropped + self._dropped
+            if dropped:
+                self._write("audit.pending_dropped", {"dropped": dropped, "late": True})
+                stored_dropped, self._dropped = 0, 0
         finally:
-            self._save_pending()
+            try:
+                self._save_pending(stored, stored_dropped)
+            except OSError:
+                logger.warning("audit pending marker not updated", extra={"event": "studio.audit_pending"})
 
     def _write(self, event: str, fields: dict[str, object]) -> int:
-        """Append one record and move the head (lock held). Raises :class:`AuditError`."""
+        """Append one record and move the head (both locks held, :meth:`_sync` done). Raises :class:`AuditError`."""
         self.check()
         if self.folder is None:
             raise AuditError()
@@ -609,7 +770,7 @@ class AuditLog:
             )
             raise AuditError() from None
         if self._current_first is None:
-            self._current_first = body["seq"]  # type: ignore[assignment]
+            self._current_first = self._seq + 1
         self._seq, self._hash, self._size = self._seq + 1, digest, self._size + len(line)
         try:
             write_private_file(self.folder / HEAD, _canonical({"v": VERSION, "seq": self._seq, "hash": self._hash}))
@@ -621,25 +782,41 @@ class AuditLog:
         return self._seq
 
     def _rotate(self) -> None:
-        """Rename the current segment after its first record; never over an existing name (A-02, TX-12)."""
+        """Move the current segment to the name of its first record, never over an existing name (A-02, TX-12;
+        note N-2 of the PR #114 review): a hard link fails on an existing name, then the old name is removed. Where
+        the file system has no hard links, the name is checked and renamed, under the folder lock."""
         if self.folder is None or self._current_first is None:
             raise UnsafePathError("nothing to rotate")
+        current = self.folder / CURRENT
         target = self.folder / f"audit-{self._current_first:012d}.jsonl"
-        if target.exists() or target.is_symlink():
+        try:
+            os.link(current, target)
+        except FileExistsError:
             self._problem = "audit.unexpected_file"
-            raise UnsafePathError("a segment with this name exists")
-        os.rename(self.folder / CURRENT, target)
+            raise UnsafePathError("a segment with this name exists") from None
+        except OSError:
+            if target.exists() or target.is_symlink():
+                self._problem = "audit.unexpected_file"
+                raise UnsafePathError("a segment with this name exists") from None
+            os.rename(current, target)
+        else:
+            os.unlink(current)
         self._current_first, self._size = None, 0
 
     # --- reading ---------------------------------------------------------------------------------------------------
 
     def listing(self, limit: int = 200) -> dict[str, Any]:
-        """The newest ``limit`` records and a fresh verification of the whole log; a failure stops further records."""
+        """The newest ``limit`` records and a fresh verification of the whole log (under the folder lock, so no other
+        process is halfway through a record); a failure stops further records."""
         limit = max(1, min(limit, MAX_LISTING))
         with self._lock:
             if self.folder is None:
                 return {**self.status(), "verification": None, "records": []}
-            scan = _scan(self.folder, keep=limit)
+            try:
+                with _folder_lock(self.folder):
+                    scan = _scan(self.folder, keep=limit)
+            except (UnsafePathError, OSError):
+                return {**self.status(), "verification": None, "records": []}
             if not scan.verification.ok and self._problem is None:
                 self._adopt(scan)
             return {

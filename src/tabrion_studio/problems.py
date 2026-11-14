@@ -535,6 +535,12 @@ CATALOG: dict[str, Entry] = {
         "Check the audit log in the write profile section; if it failed verification, move the audit folder of "
         "Studio's state folder aside, keep it for inspection, and start Studio again.",
     ),
+    "studio.audit_record_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Action not recordable",
+        "The audit log does not take the names of this action (empty, too long or too many), so it was not done.",
+    ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
         400,

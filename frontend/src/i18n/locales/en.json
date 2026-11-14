@@ -1039,7 +1039,8 @@
     "write_locked": "The write mode is locked. Unlock it again.",
     "write_target_changed": "The profile or the database file changed; the unlock has ended.",
     "write_unsupported": "Studio cannot open a write connection with its safeguards for this database.",
-    "audit_unavailable": "Studio could not write the audit record of this action, so it did not do it. See the audit log under write profiles."
+    "audit_unavailable": "Studio could not write the audit record of this action, so it did not do it. See the audit log under write profiles.",
+    "audit_record_invalid": "The audit log does not take the names of this action, so Studio did not do it."
   },
   "keyboard": {
     "palette": {

@@ -90,6 +90,7 @@ const PROBLEMS = new Set([
   'write_target_changed',
   'write_unsupported',
   'audit_unavailable',
+  'audit_record_invalid',
 ]);
 
 const ISSUES = new Set([

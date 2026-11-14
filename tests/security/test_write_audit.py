@@ -788,3 +788,125 @@ def test_the_listing_is_open_with_the_database_manager_flag_alone(tmp_path: Path
         assert response.json()["verification"]["ok"] is True
     finally:
         env.close()
+
+
+# --- several Studio processes on one folder (review M-1 of PR #114) ------------------------------------------------
+
+
+def _assert_contiguous(folder: Path, count: int) -> None:
+    result = verify_log(folder)
+    assert result.to_dict() == {"ok": True, "records": count, "problem": None, "at": None}
+    assert [record["seq"] for record in _records(folder)] == list(range(1, count + 1))
+
+
+def test_two_logs_on_one_folder_writing_alternately_keep_one_chain(tmp_path: Path) -> None:
+    """Two Studio instances (one per project) share ``<state>/audit``: each reads the chain's end under the lock."""
+    folder = tmp_path / "audit"
+    first, second = AuditLog(folder), AuditLog(folder)
+    seqs = []
+    for index in range(6):
+        log = first if index % 2 == 0 else second
+        seqs.append(log.append("lock", profile=f"p{index}", kind="write", reason="locked"))
+        assert log.record("lock", profile=f"q{index}", kind="write", reason="expired") is True
+    assert seqs == [1, 3, 5, 7, 9, 11]
+    assert first.available and second.available
+    _assert_contiguous(folder, 12)
+    assert first.listing()["verification"]["ok"] is True and second.listing()["verification"]["ok"] is True
+
+
+def test_two_logs_rotating_alternately_keep_one_chain(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(audit_module, "MAX_SEGMENT_BYTES", 600)
+    folder = tmp_path / "audit"
+    first, second = AuditLog(folder), AuditLog(folder)
+    for index in range(20):
+        (first if index % 3 else second).append("lock", profile=f"p{index}", kind="write", reason="locked")
+    assert len(list(folder.glob("audit-*.jsonl"))) >= 2
+    _assert_contiguous(folder, 20)
+
+
+def test_two_logs_writing_in_parallel_threads_keep_one_chain(tmp_path: Path) -> None:
+    import threading
+
+    folder = tmp_path / "audit"
+    logs = [AuditLog(folder), AuditLog(folder)]
+    errors: list[BaseException] = []
+
+    def write(log: AuditLog, name: str) -> None:
+        try:
+            for index in range(40):
+                log.append("lock", profile=f"{name}{index}", kind="write", reason="locked")
+        except BaseException as exc:  # pragma: no cover - reported below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=write, args=(log, f"t{n}")) for n, log in enumerate(logs)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=120)
+    assert errors == []
+    _assert_contiguous(folder, 80)
+
+
+def _write_from_process(folder: str, name: str, count: int) -> None:
+    """In a separate process (spawn, so it runs the same on Windows): its own AuditLog on the shared folder."""
+    log = AuditLog(Path(folder))
+    for index in range(count):
+        log.append("lock", profile=f"{name}{index}", kind="write", reason="locked")
+
+
+def test_two_processes_writing_in_parallel_keep_one_chain(tmp_path: Path) -> None:
+    import multiprocessing
+
+    folder = tmp_path / "audit"
+    AuditLog(folder)  # creates the folder 0700 first
+    context = multiprocessing.get_context("spawn")
+    workers = [context.Process(target=_write_from_process, args=(str(folder), f"w{n}", 40)) for n in range(2)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=180)
+    assert [worker.exitcode for worker in workers] == [0, 0]
+    _assert_contiguous(folder, 80)
+    names = {record["fields"]["profile"] for record in _records(folder)}
+    assert names == {f"w{n}{i}" for n in range(2) for i in range(40)}
+
+
+def test_a_log_that_was_cut_behind_another_process_stops(tmp_path: Path) -> None:
+    """The end read under the lock is never before the end this process saw: a cut log stops it (fail closed)."""
+    folder = tmp_path / "audit"
+    first = _log_with(folder, 4)
+    lines = _lines(folder)
+    _put(folder, lines[:-1])
+    records = [json.loads(line) for line in lines[:-1]]
+    (folder / HEAD).write_bytes(json.dumps({"v": 1, "seq": 3, "hash": records[-1]["hash"]}).encode())
+    with pytest.raises(AuditError):
+        first.append("lock", profile="p", kind="write", reason="locked")
+    assert not first.available
+    assert len(_lines(folder)) == 3
+
+
+@pytest.mark.skipif(not POSIX, reason="POSIX modes")
+def test_the_lock_file_is_private(tmp_path: Path) -> None:
+    folder = tmp_path / "audit"
+    _log_with(folder, 1)
+    assert stat.S_IMODE(os.stat(folder / audit_module.LOCK).st_mode) == 0o600
+    (folder / audit_module.LOCK).chmod(0o644)
+    log = AuditLog(folder)
+    assert not log.available
+
+
+@needs_defensive
+@pytest.mark.parametrize("objects", [[""], [f"o{n}" for n in range(65)]])
+def test_names_the_log_does_not_take_are_a_catalog_problem_and_nothing_runs(env: WriteEnv, objects: list[str]) -> None:
+    connection_id = _unlocked(env)
+    before = digest(env.db)
+    with (
+        pytest.raises(WriteError) as caught,
+        env.unlocks.audited_transaction(
+            env.session(), connection_id, Area.DATA_EDITOR, action="data_editor.changeset", objects=objects
+        ),
+    ):
+        pytest.fail("the run must not begin")
+    assert caught.value.code == "studio.audit_record_invalid"
+    assert digest(env.db) == before
+    assert _events(env)[-1] == "unlock"

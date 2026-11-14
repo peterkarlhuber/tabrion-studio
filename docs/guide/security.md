@@ -137,6 +137,8 @@ the server answers `405` and the write code is not even loaded.
       section and writes it, marked late, as soon as the log is writable again; until then no new write starts;
     - a log that fails verification is never repaired or appended to, so no write runs. Move the `audit` folder out
       of Studio's state folder, keep it for inspection, and start Studio again; it then begins a new chain;
+    - several Studio windows for different projects share one log: each record is written under a lock across
+      processes (`audit/audit.lock`), after reading the end of the chain again, so their records form one chain;
     - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a
       segment. `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
       log, and with every area off it answers `405` like every other write route.

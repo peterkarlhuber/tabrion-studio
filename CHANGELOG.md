@@ -19,7 +19,10 @@ All notable changes to this project are documented here. The format follows
   fails is kept as a pending marker (`audit/pending.json`), warned about and written later (review N-4). Rotation at
   4 MB renames to `audit-<first record>.jsonl` and never overwrites or deletes. New read-only route
   `GET /api/write/audit` (405 with every flag off); the audit module is not loaded while every flag is off. The write
-  profile section shows the log's state in English and German.
+  profile section shows the log's state in English and German. Several Studio processes on one state folder share
+  the log safely: every write, head update, rotation and verification runs under a lock across processes
+  (`audit/audit.lock`) and re-reads the chain's end first (review M-1 of PR #114); rotation never replaces a name
+  (hard link); a name the log does not take refuses the run with `studio.audit_record_invalid`.
 - STU-XW-1 (CR-DBX): the shared write foundation, with every write area off. One flag per area (`data_editor` G-S2,
   `schema_designer` G-S3, `database_manager` G-S4) in `write-areas.toml` in the configuration folder that the
   command line names (never an environment variable, a `.env` file, a project file, the settings API, a URL, a

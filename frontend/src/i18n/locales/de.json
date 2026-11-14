@@ -1039,7 +1039,8 @@
     "write_locked": "Der Schreibmodus ist gesperrt. Entsperren Sie ihn erneut.",
     "write_target_changed": "Das Profil oder die Datenbankdatei hat sich geändert; die Entsperrung ist beendet.",
     "write_unsupported": "Studio kann für diese Datenbank keine Schreibverbindung mit seinen Schutzmaßnahmen öffnen.",
-    "audit_unavailable": "Studio konnte den Audit-Eintrag dieser Aktion nicht schreiben und hat sie daher nicht ausgeführt. Siehe das Audit-Log bei den Schreibprofilen."
+    "audit_unavailable": "Studio konnte den Audit-Eintrag dieser Aktion nicht schreiben und hat sie daher nicht ausgeführt. Siehe das Audit-Log bei den Schreibprofilen.",
+    "audit_record_invalid": "Das Audit-Log nimmt die Namen dieser Aktion nicht an; Studio hat sie daher nicht ausgeführt."
   },
   "keyboard": {
     "palette": {
