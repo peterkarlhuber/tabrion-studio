@@ -918,6 +918,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- QA-S1 S1-32 (TD-070, owner decision of 2026-11-14 14:13Z, option A): after "Disconnect" in the connection manager,
+  "Run" in the SQL editor no longer opens the connection again by itself. It opens nothing and sends no query; the
+  banner "Disconnected: <name>" ("Verbindung getrennt: <name>") with "Reconnect" shows, and the editor says that
+  nothing was run. Only "Reconnect" opens the connection again and then runs the requested query; on a PROD profile
+  "Reconnect" asks D-02 again first, and "Cancel" leaves it disconnected. A connection the editor opens now becomes
+  the header's connection, so the header no longer says "No connection" while the editor reads on it. The page's
+  connection session tells the user's disconnect from a lost connection; after a loss the editor still opens a DEV
+  connection again by itself, as before.
 - QA-S1 (TD-069): a mouse click on a table's box in the ER diagram shows the table in the explorer, as Enter on its
   name does (S1-09). The SQL editor no longer loses a tab or its latest text when the page leaves it within the save
   delay, for example to open a history entry in the editor (S1-15): the pending draft save is sent when the editor

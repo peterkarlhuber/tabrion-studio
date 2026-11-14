@@ -180,6 +180,10 @@ export function App({
       headerVersion: () => headerChanges.current,
       markLost: (connectionId, code) => loss.markLost(connectionId, code),
       onReconnected: (listener) => loss.onReconnected(listener),
+      disconnect: (connection) => loss.disconnect(connection),
+      isDisconnected: (profileId) => loss.isDisconnected(profileId),
+      askReconnect: (profileId, resume) => loss.askReconnect(profileId, resume),
+      reconnected: (profileId, connectionId) => loss.reconnected(profileId, connectionId),
     }),
     [confirmed, loss],
   );
