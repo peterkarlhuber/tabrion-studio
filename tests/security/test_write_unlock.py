@@ -306,7 +306,7 @@ def test_read_paths_keep_the_read_connection_while_unlocked(env: WriteEnv) -> No
 def test_the_write_mode_of_a_query_is_403_and_never_reaches_the_history(env: WriteEnv) -> None:
     """W-9 (403 only for the write mode) and N-3: a refused write-mode statement is not recorded."""
     connection_id = _unlocked(env)
-    sql = f"UPDATE parts SET material = '{CANARY_VALUE}'"
+    sql = "UPDATE parts SET material = '" + CANARY_VALUE + "'"  # noqa: S608 - a fixed test statement
     answer = env.send("POST", "/api/queries", {"connection_id": connection_id, "sql": sql, "mode": "write"})
     assert (answer.status_code, answer.json()["code"]) == (403, "studio.query_write_unsupported")
     assert CANARY_VALUE not in answer.text
@@ -328,7 +328,7 @@ def test_the_write_connection_has_trusted_schema_off_and_defensive_mode_on(env: 
     write = _write_connection(env)
     raw = write._db.engine.raw_connection()
     try:
-        driver: sqlite3.Connection = raw.driver_connection  # type: ignore[assignment]
+        driver: sqlite3.Connection = raw.driver_connection
         assert driver.execute("PRAGMA trusted_schema").fetchone()[0] == 0
         assert driver.getconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE) is True  # type: ignore[attr-defined]
     finally:
@@ -356,9 +356,9 @@ def test_the_write_connection_has_trusted_schema_off_and_defensive_mode_on(env: 
 def test_the_write_authorizer_refuses_what_leaves_the_limits(env: WriteEnv, statement: str) -> None:
     write = _write_connection(env)
     before = digest(env.db)
-    with pytest.raises(Exception) as caught:  # noqa: PT011 - the driver's or tabrion's error, never a success
-        with write.transaction() as transaction:
-            transaction.execute(statement)
+    # The driver's or tabrion's error, never a success.
+    with pytest.raises(Exception) as caught, write.transaction() as transaction:
+        transaction.execute(statement)
     assert caught.value is not None
     assert digest(env.db) == before
     assert not (env.tmp_path / "copy.db").exists()
@@ -379,9 +379,8 @@ def test_a_hostile_trigger_runs_only_within_the_limits(tmp_path: Path, static_di
         env.create_read()
         assert env.create_write().status_code == 201
         write = env.unlocks.require(env.session(), _unlocked(env), Area.DATA_EDITOR)
-        with pytest.raises(Exception):  # noqa: B017, PT011
-            with write.transaction() as transaction:
-                transaction.execute("INSERT INTO parts VALUES (2, 'Gold')")
+        with pytest.raises(Exception), write.transaction() as transaction:  # noqa: B017
+            transaction.execute("INSERT INTO parts VALUES (2, 'Gold')")
         assert _read_only(env.db, "SELECT count(*) FROM parts") == 1
         # A plain row change is allowed (the role, here the file, is the boundary).
         with write.transaction() as transaction:
@@ -434,9 +433,8 @@ def test_a_file_swapped_after_the_unlock_stops_the_write_connection(env: WriteEn
     assert caught.value.code == "studio.write_target_changed"
     with pytest.raises(WriteError):
         env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR)
-    with pytest.raises(WriteError):
-        with write.transaction():
-            pass
+    with pytest.raises(WriteError), write.transaction():
+        pass
 
 
 @needs_defensive

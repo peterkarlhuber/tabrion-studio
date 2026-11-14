@@ -21,7 +21,9 @@ Studio is a tool for one person on one computer. In short:
   Editor in 1.1, the Schema Designer in 1.2, the Database Manager in 1.3), each behind a server-side switch that is
   off by default, cannot be turned on from the page, and stays off until the area's own approval (G-S2, G-S3, G-S4).
   None of them can ever write to a `PROD` profile
-  ([STU-ADR-0006](../adr/0006-per-area-write-kill-switches.md)).
+  ([STU-ADR-0006](../adr/0006-per-area-write-kill-switches.md)). The shared foundation of these areas (STU-XW-1) is
+  in the code, but every area is off unless you turn it on yourself: see
+  [Write areas are off unless you turn them on](#write-areas-are-off-unless-you-turn-them-on).
 - **Production databases are marked and confirmed.** A profile's environment (`DEV`, `TEST`, `PROD`) is always shown
   as text: in the header, on every tab and in the window title (`[PROD] name – Tabrion Studio`); a PROD connection
   also gets a red frame at the top of the window. Before Studio first connects to a PROD profile in a page session
@@ -49,6 +51,60 @@ Studio is a tool for one person on one computer. In short:
     from being changed through Studio. Studio's diagnostics warn about a role that can write when the profile is
     marked **read-only role**. How to create such a role:
     [A read-only role for PostgreSQL](connections.md#a-read-only-role-for-postgresql).
+
+## Write areas are off unless you turn them on
+
+Studio 1.0 has no write feature. The write foundation of CR-DBX (STU-XW-1) only prepares the later areas, and each
+of them stays off until you, the owner of the Studio process, turn it on. With every area off, every write route of
+the server answers `405` and the write code is not even loaded.
+
+- **One source, read once at start.** The areas are read from `write-areas.toml` in Studio's configuration folder,
+  the folder that `--config-dir` (or `--state-dir`, then its `config` subfolder) names, otherwise the platform's
+  configuration folder. Nothing else turns an area on: not an environment variable (also not
+  `TABRION_STUDIO_CONFIG_DIR`, which moves Studio's other files but never this one), not a `.env` file (Studio reads
+  none), not a project file, the settings page or `PUT /api/settings` (a flag key is an unknown key there), a URL,
+  a header, a cookie, a profile or the database. A change needs a restart. The start log names each area as on or
+  off (`studio.write_area_state`).
+- **The file format.** Only a literal `true` turns an area on; anything else, a missing file, a malformed file or
+  another version means off:
+
+    ```toml
+    version = 1
+
+    [areas]
+    data_editor = false      # G-S2, Studio 1.1
+    schema_designer = false  # G-S3, Studio 1.2
+    database_manager = false # G-S4, Studio 1.3
+    ```
+
+    The file gets the checks of Studio's own files: it must be a regular file (not a link), readable and writable by
+    you only (`0600`), in a folder that only you may write. Otherwise every area is off.
+- **Write and admin profiles.** A write profile (Data Editor, Schema Designer) or an admin profile (Database Manager)
+  lives only in your own `profiles.toml` (`[[write_profile]]`), never in a project file: Studio refuses a project
+  file that defines one. It is coupled to one of your own read profiles, uses its target and environment, and on
+  PostgreSQL its own role, different from the read role. A `PROD` read profile cannot be coupled, a coupled profile
+  cannot be changed to `PROD`, and changing the environment of a coupled profile ends every unlock. When you create
+  one, Studio shows that it relies on the environment you gave the profile and that write credentials of a
+  production database do not belong in Studio; it creates the profile only after you confirmed that. Its password
+  is kept in the keyring or for this session only, and never appears in a diagnosis report, an export or a support
+  bundle.
+- **Unlocking.** A write or admin profile is used only after you unlock it for one open connection by typing its
+  name. The unlock is kept on the server, for your page session only, and ends after 15 idle minutes, when the
+  connection closes, when the profile or its read profile changes, and when Studio stops. There is no code path for
+  `PROD`.
+- **The write connection.** On SQLite it uses `trusted_schema = OFF`, Studio's own authorizer (no schema changes,
+  no `ATTACH`, no functions or pragmas outside the read list) and SQLite's defensive mode, and it checks at unlock
+  and before each later use that the file is still the one the read connection opened (device and inode). On
+  PostgreSQL its `search_path` is fixed to `pg_catalog, pg_temp` whatever the role sets, and an admin profile's role
+  is checked on connect: `SUPERUSER`, `BYPASSRLS`, `CREATEROLE` or `REPLICATION`, held directly or through a role it
+  belongs to, is reported as a finding.
+- **Refusals echo nothing.** A refused write answers `400` or `405` with a fixed text (`403` only for the write mode
+  of a query), never with a value or a secret of the request.
+
+!!! note "Python 3.11"
+    Python's `sqlite3` module can turn on SQLite's defensive mode only from Python 3.12. On Python 3.11 Studio
+    refuses to unlock a SQLite write profile (`studio.write_unsupported`) instead of opening a write connection
+    without it.
 
 ## What Studio does not protect against
 
