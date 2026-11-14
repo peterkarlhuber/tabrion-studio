@@ -43,7 +43,7 @@ def test_wheel_contains_the_frontend(dist: Path) -> None:
     for asset in ("favicon.ico", "tabrion-studio-logo.png", "tabrion-studio-mark-on-dark-128.png"):
         assert f"tabrion_studio/static/branding/{asset}" in names
     assert "tabrion_studio/static/harness.html" not in names
-    # The logos are not MIT: the trademark notice travels with the license (TRADEMARKS.md).
+    # The logos are not covered by LICENSE: the trademark notice travels with the license (TRADEMARKS.md).
     assert any(n.endswith(".dist-info/licenses/TRADEMARKS.md") for n in names)
     # No sources, tests, node_modules or source maps in the wheel.
     assert not any(n.startswith(("frontend/", "tests/", "scripts/")) for n in names)

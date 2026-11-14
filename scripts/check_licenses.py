@@ -13,7 +13,8 @@ Policy:
   3-clause), Apache-2.0, PSF-2.0 / Python-2.0, Unlicense, CC0-1.0.
 * Exceptions by name: psycopg and psycopg-binary (LGPL-3.0-only), loaded dynamically from site-packages and
   replaceable by the user, so the LGPL is met by shipping the license text and a source reference (14 section 4.2
-  item 6; G-R lists the psycopg LGPL notice).
+  item 6; G-R lists the psycopg LGPL notice). First-party packages tabrion-studio and tabrion carry Levuvo's
+  proprietary license (LicenseRef-Proprietary).
 * Dev-only npm packages may also use MPL-2.0 (axe-core, LightningCSS), BlueOak-1.0.0 and CC-BY-4.0 (the
   caniuse-lite data used by the build); none of them is bundled into the shipped frontend.
 * Anything else, including GPL/AGPL/LGPL outside the exceptions, SSPL, a commercial license or a missing license,
@@ -53,6 +54,9 @@ ALLOWED_DEV_ONLY = frozenset({"MPL-2.0", "BlueOak-1.0.0", "CC-BY-4.0"})
 PYTHON_EXCEPTIONS = {
     "psycopg": ("LGPL-3.0-only", "dynamically loaded, replaceable; license text and source reference (14 §4.2)"),
     "psycopg-binary": ("LGPL-3.0-only", "binary build of psycopg; same terms (14 §4.2)"),
+    # First-party packages: Levuvo's own proprietary license (LICENSE), not a third-party license.
+    "tabrion-studio": ("LicenseRef-Proprietary", "first-party (Levuvo), proprietary license in LICENSE"),
+    "tabrion": ("LicenseRef-Proprietary", "first-party (Levuvo), proprietary license in LICENSE"),
 }
 
 # Trove classifiers and free-text License fields that older packages use instead of an SPDX expression.

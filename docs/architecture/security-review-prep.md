@@ -62,8 +62,8 @@ the [Release checklist](../development/release-checklist.md#g-r-preconditions-fr
 
 | SQ | Requirement | Where it is enforced | Tests |
 |---|---|---|---|
-| SQ-01 | Listen on loopback only | `server.py` binds `127.0.0.1` (and holds `[::1]`); the CLI has no host option | STU-T-025: `tests/unit/test_cli.py::test_bad_arguments`, `tests/security/test_launch.py` |
-| SQ-02 | Host and Origin allowlist (DNS rebinding) | `security/access.py`: `127.0.0.1:<port>` only, the own Origin and same-origin fetch metadata on every API request | STU-T-001..003: `tests/security/test_access.py`; every API route: `tests/security/test_every_route.py` |
+| SQ-01 | Listen on loopback only | `server.py` binds a fresh random `127.a.b.c` per start, `127.0.0.1` where only that exists (finding A-01), and holds `[::1]`; the CLI has no host option | STU-T-025: `tests/unit/test_cli.py::test_bad_arguments`, `tests/security/test_launch.py`; A-01: `tests/unit/test_server.py`, `frontend/e2e/origin-backend.spec.ts` |
+| SQ-02 | Host and Origin allowlist (DNS rebinding) | `security/access.py`: the instance's own `<address>:<port>` only, the own Origin and same-origin fetch metadata on every API request | STU-T-001..003: `tests/security/test_access.py`; every API route: `tests/security/test_every_route.py` |
 | SQ-03 | Launch token, then an HttpOnly SameSite=Strict cookie and a CSRF header | `security/launch.py`, `security/sessions.py` | STU-T-004..006: `test_access.py`, `test_launch.py`; every API route: `test_every_route.py` |
 | SQ-04 | Secrets only in the backend | `config/secrets.py` (keyring without plain-text fallback, `env:`, `file:`), `tabrion.safe_url()`, log redaction in `logs.py` | STU-T-008/-009: `test_canary.py`, `test_secrets_api.py`, `test_log_process.py`, `test_diagnosis_report.py`; through the routes of the editor, viewer, export and diagnosis: `test_canary_flows.py` |
 | SQ-05 | Read-only enforced by the database | `services/connections.py`, `services/readonly.py` (SQLite `mode=ro`, `query_only`, `trusted_schema` off, authorizer with a function allowlist; PostgreSQL read-only session and transactions), text check as a second layer. Review F-1, F-2: fixed (PR #65/#66), independent re-review accepted at `2a8a229` (the text check refuses any `INTO`, the pool reset drops temporary tables, the authorizer allows only SQLite's built-in reading functions) | STU-T-010..013, -024 and the F-1/F-2 tests: `tests/security/test_read_only.py` (PostgreSQL part in the `backend integration (PostgreSQL 17)` CI job), `test_queries.py` and `test_exports.py` (editor and export route) |
@@ -128,7 +128,8 @@ under `/api/` is `/api/openapi.json` (checked in `test_access.py`); the test fai
   the page asks once per page session and target.
 - **Read-only:** in the database (SQLite `mode=ro`, `query_only`, authorizer; PostgreSQL read-only session), with
   Studio's text check as a second layer (`docs/architecture/connections.md`).
-- **Local-only binding:** `127.0.0.1` only, `localhost` and `[::1]` refused by the Host allowlist, no host option.
+- **Local-only binding:** a fresh random `127.a.b.c` per start (`127.0.0.1` where only that exists, finding A-01),
+  other loopback addresses, `localhost` and `[::1]` refused by the Host allowlist, no host option.
 - **Packaging:** the wheel carries the built frontend only; the e2e harness never ships
   (`tests/packaging/test_artifacts.py`). Build and install are checked on three operating systems in CI.
 - **Dependency audit at `e9df576`:** `pip-audit` clean; `npm audit --omit=dev` 0 findings; the full npm audit has 11

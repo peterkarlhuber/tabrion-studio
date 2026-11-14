@@ -49,7 +49,7 @@ function studioArgs(): string[] {
   ];
 }
 
-const LINK = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/;
+const LINK = /do not share\): (http:\/\/127(?:\.\d{1,3}){3}:\d+\/launch#\S+)/;
 
 test.beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'studio-e2e-ux-'));

@@ -26,6 +26,12 @@ names with ``/``:
 * ``GET /api/connections/{id}/row-estimates[?schema=]`` (PostgreSQL): ``pg_class.reltuples`` of every table and
   materialized view.
 
+STU-055 (:mod:`tabrion_studio.services.vectors`, ``docs/architecture/vector-inspection.md``):
+
+* ``GET /api/connections/{id}/vectors``: ``{connection_id, engine, extension, columns, identities, hints, limits}``,
+  the vector columns, their indexes (ANN or exact search), dimensions, embedding identities, bounded counts and the
+  pgvector / sqlite-vec status, read-only on both engines.
+
 The connection is checked through ``ConnectionRegistry.get`` on every request; errors are the problems of the
 connection routes (``studio.connection_*``, ``db.<kind>``). Reflection runs in a worker thread.
 """
@@ -44,6 +50,7 @@ from tabrion_studio.api.connections import connection_problem
 from tabrion_studio.problems import db_kind_response, problem_response
 from tabrion_studio.services.definitions import CountTimeout, Definitions
 from tabrion_studio.services.explorer import Explorer, ExplorerError
+from tabrion_studio.services.vectors import VectorInspection
 
 #: Longer names do not exist in PostgreSQL (63 bytes) and would only make the catalog lookup slower.
 MAX_NAME = 256
@@ -123,3 +130,9 @@ def add_explorer_routes(app: FastAPI, explorer: Explorer) -> None:
     @app.get("/api/connections/{connection_id}/row-estimates")
     async def get_row_estimates(connection_id: str, schema: str | None = Query(None, max_length=MAX_NAME)) -> Response:
         return await answer(definitions.row_estimates, connection_id, schema)
+
+    vectors = VectorInspection(explorer.registry)
+
+    @app.get("/api/connections/{connection_id}/vectors")
+    async def get_vectors(connection_id: str) -> Response:
+        return await answer(vectors.inspect, connection_id)

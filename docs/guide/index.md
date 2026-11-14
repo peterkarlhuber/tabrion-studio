@@ -7,7 +7,7 @@ This guide is for people who use Tabrion Studio. It describes what the current d
     the explorer with DDL, policies and the ER diagram, the data viewer, the SQL editor (reading statements only)
     with export, project scripts, drafts kept by Studio, formatting and completion, the query history and favorite
     connections, the migration status (Alembic, SQLite, Nodestro, Axentra and Orkexa), the diagnostics with the
-    backup hints and the report, the settings, the keyboard and the command palette. Studio never writes to a
+    backup hints and the report, the vector data view, the settings, the keyboard and the command palette. Studio never writes to a
     database. Nothing is released; you install Studio from a commit of the repository.
 
 - [Installation](installation.md): from a Git commit or a wheel built from it, with Python 3.11 or later.
@@ -15,6 +15,8 @@ This guide is for people who use Tabrion Studio. It describes what the current d
   folder, the logs.
 - [Connections](connections.md): your profiles, the project's profiles and the trust dialog, passwords.
 - [Diagnostics](diagnostics.md): the findings of a diagnosis, the backup hints and the report without secrets.
+- [Vector data](vector-data.md): vector columns, ANN indexes or exact search, embedding dimensions and models,
+  stored embeddings, and the pgvector or sqlite-vec status, read-only.
 - [Migration status](migrations.md): which migrations a database has and which are pending, and trusting the
   project's Alembic files.
 - [Explorer](explorer.md): the objects of a database, their details, DDL and row-level security policies, row

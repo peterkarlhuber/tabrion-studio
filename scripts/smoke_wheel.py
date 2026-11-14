@@ -35,7 +35,7 @@ WINDOWS = sys.platform == "win32"
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _TABRION_PIN = Path(__file__).resolve().parents[1] / "constraints" / "tabrion-integration.txt"
 _LOCK = Path(__file__).resolve().parents[1] / "constraints" / "runtime-lock.txt"
-_LINK = re.compile(r"do not share\): (http://127\.0\.0\.1:\d+/launch#[A-Za-z0-9_-]+)")
+_LINK = re.compile(r"do not share\): (http://127\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+/launch#[A-Za-z0-9_-]+)")
 
 
 def _bin(venv: Path, name: str) -> Path:
@@ -246,7 +246,11 @@ def _wait_ready(state: Path, process: subprocess.Popen[bytes], log: Path) -> str
         if infos:
             try:
                 info = json.loads(infos[0].read_text(encoding="utf-8"))
-                url = f"http://127.0.0.1:{int(info['port'])}/"
+                # A-01: the instance's own random 127.a.b.c (older info files have no "host": 127.0.0.1).
+                host = str(info.get("host", "127.0.0.1"))
+                if re.fullmatch(r"127\.\d{1,3}\.\d{1,3}\.\d{1,3}", host) is None:
+                    raise ValueError(host)
+                url = f"http://{host}:{int(info['port'])}/"
                 if _get(f"{url}api/health")[0] == 200:
                     return url
             except (OSError, ValueError, KeyError):

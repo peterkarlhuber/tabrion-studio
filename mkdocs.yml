@@ -2,7 +2,7 @@ site_name: Tabrion Studio
 site_description: Local developer tool for SQLite and PostgreSQL databases, built on Tabrion.
 repo_url: https://github.com/peterkarlhuber/tabrion-studio
 repo_name: peterkarlhuber/tabrion-studio
-copyright: Copyright &copy; 2026 Peter Karlhuber – code MIT License; names and logos are not MIT (TRADEMARKS.md)
+copyright: "Copyright &copy; 2026 Levuvo. All rights reserved. Names and logos: see TRADEMARKS.md"
 strict: true
 
 theme:
@@ -59,6 +59,7 @@ nav:
       - Starting and stopping: guide/starting.md
       - Connections: guide/connections.md
       - Diagnostics: guide/diagnostics.md
+      - Vector data: guide/vector-data.md
       - Migration status: guide/migrations.md
       - Explorer: guide/explorer.md
       - SQL editor: guide/sql-editor.md
@@ -78,6 +79,7 @@ nav:
       - Database explorer: architecture/explorer.md
       - Data viewer: architecture/viewer.md
       - Diagnostics: architecture/diagnostics.md
+      - Vector data inspection: architecture/vector-inspection.md
       - Migration status: architecture/migrations.md
       - Export: architecture/exports.md
       - History, favorites and scripts: architecture/history-and-scripts.md
@@ -98,4 +100,5 @@ nav:
       - "0002 Local security model": adr/0002-local-security-model.md
       - "0003 Writes behind a gate": adr/0003-writes-behind-gate.md
       - "0004 Frontend reuse": adr/0004-frontend-reuse.md
+      - "0005 CR-DBX write and admin gates": adr/0005-crdbx-write-and-admin-gates.md
   - Open work: TODO.md

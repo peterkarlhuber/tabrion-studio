@@ -27,6 +27,7 @@ import { ExplorerView } from './views/explorer/ExplorerView';
 import { HistoryView } from './views/history/HistoryView';
 import { DiagnosticsView } from './views/diagnostics/DiagnosticsView';
 import { MigrationsView } from './views/migrations/MigrationsView';
+import { VectorsView } from './views/vectors/VectorsView';
 import { NotFoundView, SettingsView, StartView } from './views/Views';
 import {
   ConnectionSessionContext,
@@ -86,6 +87,8 @@ function View({ path, fetcher }: { path: string; fetcher: typeof fetch }) {
       return <MigrationsView fetcher={fetcher} />;
     case '/diagnostics':
       return <DiagnosticsView fetcher={fetcher} />;
+    case '/vectors':
+      return <VectorsView fetcher={fetcher} />;
     case '/settings':
       return <SettingsView fetcher={fetcher} />;
     default:
@@ -100,6 +103,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/history': 'history.title',
   '/migrations': 'migrations.title',
   '/diagnostics': 'diagnostics.title',
+  '/vectors': 'vectors.title',
   '/settings': 'settings.title',
 };
 

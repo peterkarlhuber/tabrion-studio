@@ -26,6 +26,9 @@ What each part replaces:
   connection is used (TD-039).
 * :class:`Column` -> ``tabrion.Column`` (name and type name).
 * :func:`check` -> ``tabrion.check(db)`` (STU-014): the 0.1 collectors on the driver connection.
+* :func:`extension_status` (STU-055): tabrion's public ``tabrion.postgres.extension_status`` on the driver connection
+  of a ``Database.read()``, like :func:`check`. tabrion 0.2 offers it only on a psycopg connection (no
+  ``Database``/``Transaction`` method), so this wrapper stays.
 * :func:`pin_catalog_path`: reflection uses tabrion 0.2's ``Database.inspector()`` (STU-010, TD-013), which yields
   a SQLAlchemy ``Inspector`` on the connection of its own ``Database.read()``; on PostgreSQL this pins
   :data:`CATALOG_SEARCH_PATH` on that connection before the first catalog query.
@@ -56,6 +59,7 @@ from typing import Any
 import sqlalchemy
 import tabrion
 from tabrion import check as tabrion_check
+from tabrion import postgres as tabrion_postgres
 
 __all__ = [
     "CATALOG_SEARCH_PATH",
@@ -64,6 +68,7 @@ __all__ = [
     "Column",
     "ResultCursor",
     "check",
+    "extension_status",
     "pin_catalog_path",
     "pin_setup_path",
     "reset_session",
@@ -191,6 +196,40 @@ _RESET_STATEMENTS = (
     "DISCARD TEMP",
     "RESET ALL",
 )
+#: The schema of the dblink extension, quoted, if the database has it (B-1 of the security assessment).
+_DBLINK_SCHEMA = (
+    "SELECT pg_catalog.quote_ident(n.nspname) FROM pg_catalog.pg_extension e"
+    " JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace WHERE e.extname = 'dblink'"
+)
+#: dblink's error for "no unnamed connection" (``connection_does_not_exist``).
+_NO_CONNECTION = "08003"
+
+
+def _close_dblink_connections(cursor: Any) -> None:
+    """Closes every dblink connection of the session, named and unnamed (B-1 of the security assessment).
+
+    dblink keeps its connections in the server process, outside any transaction, so one would outlive the statement
+    that opened it and serve the next user of the pooled connection; the statement check refuses every ``dblink*``
+    call, so this is defense in depth. Nothing happens on a database without dblink. dblink's functions are called
+    qualified with the extension's schema. A failure other than "no unnamed connection" (for example a role that may
+    not run them) raises, so :func:`reset_session` drops the connection, which closes its dblink connections too.
+    """
+    cursor.execute(_DBLINK_SCHEMA)
+    row = cursor.fetchone()
+    if row is None:
+        return
+    schema = row[0]
+    cursor.execute(
+        f"SELECT {schema}.dblink_disconnect(name) FROM pg_catalog.unnest({schema}.dblink_get_connections()) AS name"  # noqa: S608 - quote_ident
+    )
+    cursor.execute("SAVEPOINT studio_dblink_reset")
+    try:
+        cursor.execute(f"SELECT {schema}.dblink_disconnect()")
+    except Exception as exc:
+        if getattr(exc, "sqlstate", None) != _NO_CONNECTION:
+            raise
+        cursor.execute("ROLLBACK TO SAVEPOINT studio_dblink_reset")
+    cursor.execute("RELEASE SAVEPOINT studio_dblink_reset")
 
 
 def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
@@ -205,6 +244,7 @@ def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
     ``DISCARD ALL`` would cover them, but it cannot run in a transaction block; ``DISCARD TEMP`` can, also in a
     read-only one. The engine is Studio's own (tabrion's rule of no ``RESET ALL``/``DISCARD`` is
     for a host's shared pool).
+    Last, the session's dblink connections are closed (:func:`_close_dblink_connections`).
     A connection that cannot be reset leaves the pool. tabrion 0.2: a session reset of tabrion's own (TD-013).
     """
     if dbapi_connection is None or isinstance(dbapi_connection, sqlite3.Connection):
@@ -214,6 +254,7 @@ def reset_session(dbapi_connection: Any, connection_record: Any) -> None:
         with dbapi_connection.cursor() as cursor:
             for statement in _RESET_STATEMENTS:
                 cursor.execute(statement)
+            _close_dblink_connections(cursor)
         dbapi_connection.commit()
     except Exception as exc:
         connection_record.invalidate(exc)
@@ -346,6 +387,25 @@ def check(transaction: tabrion.Transaction, *, cancel: Cancel) -> list[tabrion_c
     cancel.attach(dbapi)
     try:
         return tabrion_check.check(dbapi)
+    finally:
+        if cancel.detach():
+            _discard(connection, dbapi)
+
+
+def extension_status(
+    transaction: tabrion.Transaction, name: str, *, cancel: Cancel
+) -> tabrion_postgres.ExtensionStatus:
+    """``tabrion.postgres.extension_status(connection, name)`` on the driver connection of ``transaction`` (STU-055).
+
+    It reads ``pg_extension``, ``pg_available_extensions`` and ``current_schemas`` in one statement. As for
+    :func:`check`, SQLAlchemy has sent no ``BEGIN`` yet, so tabrion opens and rolls back its own implicit
+    transaction on the read-only session; the session's ``statement_timeout`` bounds it and ``cancel`` stops it.
+    """
+    connection = transaction.connection
+    dbapi: Any = connection.connection.dbapi_connection
+    cancel.attach(dbapi)
+    try:
+        return tabrion_postgres.extension_status(dbapi, name)
     finally:
         if cancel.detach():
             _discard(connection, dbapi)

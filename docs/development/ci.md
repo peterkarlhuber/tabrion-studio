@@ -73,6 +73,7 @@ dependencies; `scripts/check_licenses.py` judges them and the npm lockfile:
   BSD-3-Clause, Apache-2.0, PSF-2.0, Python-2.0, Unlicense, CC0-1.0;
 - named exception: psycopg and psycopg-binary (LGPL-3.0-only, dynamically loaded and replaceable; license notice
   required for G-R);
+- first-party packages `tabrion-studio` and `tabrion`: Levuvo's proprietary license (`LicenseRef-Proprietary`);
 - dev-only npm tools may also use MPL-2.0, BlueOak-1.0.0 and CC-BY-4.0;
 - anything else, or no license at all, fails the job.
 

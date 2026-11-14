@@ -6,8 +6,8 @@
 </div>
 
 Tabrion Studio is a local developer tool for SQLite files and PostgreSQL databases, built on
-[Tabrion](https://github.com/peterkarlhuber/tabrion). It runs on the developer's machine, binds to `127.0.0.1` only
-and opens in the browser.
+[Tabrion](https://github.com/peterkarlhuber/tabrion). It runs on the developer's machine, binds to a loopback address
+(`127.x.y.z`) only and opens in the browser.
 
 !!! warning "Pre-alpha"
     Studio does not connect to databases yet. It has the command-line process model, the access protection, Problem
@@ -22,5 +22,5 @@ and opens in the browser.
 - [Building and testing](development/building.md) and [CI and supply chain](development/ci.md).
 - [Architecture decisions](adr/README.md) and [open work](TODO.md).
 
-The names "Tabrion" and "Tabrion Studio" and the logos are © Peter Karlhuber and not covered by the MIT license
+The names "Tabrion" and "Tabrion Studio" and the logos are © Peter Karlhuber and not covered by the license in `LICENSE`
 (`TRADEMARKS.md` in the repository).

@@ -1,7 +1,8 @@
 """The ``tabrion-studio`` command (03 section 4.1, STU-ADR-0001).
 
 ``tabrion-studio [PROJECT] [--port N] [--no-browser] [--print-url] [--idle-timeout MINUTES]`` serves PROJECT
-(default: the current folder) on 127.0.0.1 and opens the system browser. If a Studio already runs for that folder,
+(default: the current folder) on a random loopback address ``127.a.b.c`` (``127.0.0.1`` where only that exists,
+finding A-01) and opens the system browser. If a Studio already runs for that folder,
 the command asks it for a new launch, opens that and exits; it never starts a second server. ``--stop`` ends the
 running instance.
 
@@ -78,7 +79,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("project", nargs="?", default=".", help="project folder (default: the current folder)")
     parser.add_argument(
-        "--port", type=_port, default=0, help="port on 127.0.0.1 (default: a free port chosen by the system)"
+        "--port",
+        type=_port,
+        default=0,
+        help="port (default: a free port chosen by the system); the address is a fresh random 127.a.b.c, "
+        "or 127.0.0.1 where only that exists (macOS): there, avoid a fixed port on a shared computer",
     )
     parser.add_argument("--no-browser", action="store_true", help="do not open the system browser")
     parser.add_argument(

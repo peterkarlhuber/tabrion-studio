@@ -182,7 +182,7 @@ def test_readme_docs_and_frontend_use_the_assets() -> None:
     assert f'srcset="{raw}tabrion-studio-logo-on-dark.png"' in readme
     assert f'src="{raw}tabrion-studio-logo.png"' in readme
     assert "[TRADEMARKS.md](TRADEMARKS.md)" in readme
-    assert "not licensed under the MIT license" in (ROOT / "TRADEMARKS.md").read_text(encoding="utf-8")
+    assert "not licensed under the license in LICENSE" in (ROOT / "TRADEMARKS.md").read_text(encoding="utf-8")
     mkdocs = (ROOT / "mkdocs.yml").read_text(encoding="utf-8")
     assert "logo: assets/branding/tabrion-studio-mark-on-dark-128.png" in mkdocs
     assert "favicon: assets/branding/favicon-32.png" in mkdocs

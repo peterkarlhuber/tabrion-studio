@@ -13,7 +13,8 @@ React/TypeScript/Vite studios (Nodestro Studio, Axentra Studio) and a Tauri desk
   platformdirs, keyring) and frontend `frontend/` (React 19, TypeScript, Vite).
 - Dependency: `tabrion[postgres,sqlalchemy,migrations]`, public API only.
 - Start through the own CLI `tabrion-studio [PROJECT] [--port] [--no-browser]`; the Tabrion core gets no
-  `tabrion studio` subcommand. One Uvicorn process on `127.0.0.1:<free port>`; REST/JSON, SSE for long queries.
+  `tabrion studio` subcommand. One Uvicorn process on a loopback address and a free port (since finding A-01 a fresh
+  random `127.a.b.c` per start, `127.0.0.1` where only that exists); REST/JSON, SSE for long queries.
 - The frontend is built into the wheel (Hatch build hook). Installation with pipx or `uv tool`, before G-R from a
   git URL.
   *Note (STU-028, 2026-11-13):* a Git URL alone cannot work, because the built frontend is not in Git. Before G-R,

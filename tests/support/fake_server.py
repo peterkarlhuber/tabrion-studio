@@ -45,7 +45,11 @@ class FakeStudio:
 
 @contextlib.contextmanager
 def fake_studio(
-    instance_id: str, prove: Callable[[str], str | None], launch_url: str = "", keep_alive: bool = True
+    instance_id: str,
+    prove: Callable[[str], str | None],
+    launch_url: str = "",
+    keep_alive: bool = True,
+    host: str = "127.0.0.1",
 ) -> Iterator[FakeStudio]:
     fake = FakeStudio(instance_id, prove, launch_url, keep_alive=keep_alive)
 
@@ -97,7 +101,7 @@ def fake_studio(
             else:
                 self._answer(404, {"detail": "Not Found"})
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = ThreadingHTTPServer((host, 0), Handler)
     fake.port = int(server.server_address[1])
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()

@@ -14,7 +14,8 @@
     "diagnostics": "Diagnostics",
     "settings": "Settings",
     "sql": "SQL editor",
-    "history": "Query history"
+    "history": "Query history",
+    "vectors": "Vector data"
   },
   "header": {
     "label": "Status",
@@ -1391,5 +1392,129 @@
     "deleted_one": "{{count}} statement deleted.",
     "deleted_other": "{{count}} statements deleted.",
     "deletedOne": "Statement deleted."
+  },
+  "vectors": {
+    "title": "Vector data",
+    "lead": "Shows what a database holds for vector search: vector columns and their types, vector indexes, embedding dimensions and models, how many embeddings are stored, and whether pgvector or sqlite-vec is installed. It only reads; nothing is embedded, indexed or changed.",
+    "cardTitle": "Inspect vector data",
+    "profile": "Connection profile",
+    "noProfiles": "There is no connection profile yet. Add one under Connections.",
+    "inspect": "Inspect",
+    "busy": "Reading…",
+    "again": "Inspect again",
+    "readOnly": "Read-only: Studio reads the catalog and the metadata tables, and counts at most 100,000 rows per table under the connection's time limit. It loads no extension and builds no index.",
+    "opening": "Opening the connection…",
+    "reading": "Reading the vector data…",
+    "done_one": "Done: {{count}} vector column.",
+    "done_other": "Done: {{count}} vector columns.",
+    "summary_one": "{{count}} vector column: {{ann}} with an ANN index, {{exact}} with exact search",
+    "summary_other": "{{count}} vector columns: {{ann}} with an ANN index, {{exact}} with exact search",
+    "emptyTitle": "No vector data found",
+    "emptyPostgres": "No column of a pgvector type (vector, halfvec, sparsevec) and no vector tables of a known layout (Orkexa) were found in the schemas this role can see.",
+    "emptySqlite": "No sqlite-vec vec0 table and no vector tables of a known layout (Orkexa) were found in this file.",
+    "unknownValue": "unknown",
+    "severity": {
+      "warning": "Warning:",
+      "info": "Note:"
+    },
+    "extension": {
+      "title": "Extension",
+      "installed": "is installed, version {{version}}, in schema {{schema}}.",
+      "available": "is not installed. The server offers version {{version}}.",
+      "missing": "is not installed and the server does not offer it.",
+      "otherSchema": "version {{version}} is installed in schema {{schema}}, which is not on this connection's search path.",
+      "unknown": "Its status could not be read.",
+      "update": "Version {{version}} is available as an update.",
+      "notDeterminable": "status: not determinable. sqlite-vec is loaded by the application into its own process, it is not part of the database file, and Studio loads no extension. The tables below show what the file holds."
+    },
+    "search": {
+      "ann": "ANN index ({{method}})",
+      "exact": "Exact search (no ANN index)"
+    },
+    "columns": {
+      "title": "Vector columns",
+      "rule": "A column counts as ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index on it. Every other column is searched exactly, row by row: a missing or invalid index, float arrays, BLOBs and sqlite-vec vec0 tables. The operator class decides which distance an index serves (for example vector_cosine_ops only cosine distance).",
+      "column": "Column",
+      "type": "Type",
+      "dimensions": "Dimensions",
+      "search": "Search",
+      "embeddings": "Stored embeddings",
+      "indexes": "Indexes",
+      "orkexa": "Orkexa layout",
+      "noDimensions": "not declared"
+    },
+    "indexes": {
+      "none": "No index",
+      "line": "({{method}}, {{state}})",
+      "size": "{{size}} KiB",
+      "createdWith": "created with sqlite-vec {{version}}",
+      "expression": "on an expression: a query must use the same expression to use it",
+      "partial": "partial: covers only some rows"
+    },
+    "indexState": {
+      "valid": "valid",
+      "invalid": "invalid, not used",
+      "building": "still being built",
+      "unknown": "state unknown"
+    },
+    "count": {
+      "none": "not counted",
+      "moreThan_one": "more than {{value}}",
+      "moreThan_other": "more than {{value}}",
+      "estimate": "about {{value}} rows (estimate)",
+      "timeout": "unknown (the count took too long)",
+      "unreadable": "unknown (not readable)",
+      "skipped": "not counted (limit of this inspection)",
+      "unknown": "unknown"
+    },
+    "identities": {
+      "title": "Embedding models",
+      "none": "The database's metadata names no embedding model.",
+      "space": "Vector space",
+      "model": "Model",
+      "dimensions": "Dimensions",
+      "state": "State",
+      "embeddings": "Stored embeddings",
+      "tenant": "Tenant {{tenant}}",
+      "namespace": "Namespace {{namespace}}",
+      "modelLine": "{{model}} from {{provider}}",
+      "digest": "Build {{digest}}",
+      "normalized": "Normalized vectors",
+      "notNormalized": "Vectors not normalized",
+      "incomplete": "The identity is incomplete.",
+      "missing": "not recorded"
+    },
+    "hints": {
+      "title": "Hints",
+      "other": "The server reported a hint this page does not know ({{code}}).",
+      "sqlite_vec_undeterminable": "Whether sqlite-vec is installed cannot be told from the database file: the application loads it into its own process. Studio does not load extensions.",
+      "vec0_module": "Querying the vec0 table {{table}} needs sqlite-vec loaded in the application. Studio reads only its definition and shadow tables.",
+      "vec0_shadow_missing": "The shadow table of the vec0 table {{table}} is missing, so its embeddings cannot be counted.",
+      "legacy_table_missing": "index_meta records vector dimensions, but the vec0 table {{table}} is missing (for example a restored backup). The application rebuilds it on its next reindex.",
+      "legacy_dimension_mismatch": "index_meta records {{meta}} dimensions, but the vec0 table {{table}} declares {{declared}}.",
+      "no_vector_data": "No vector data was found.",
+      "exact_search": "{{schema}}.{{table}}.{{column}} has no ANN index: searches compare every row.",
+      "index_invalid": "The index {{index}} on {{schema}}.{{table}} is not valid, so PostgreSQL does not use it (for example after a failed CREATE INDEX CONCURRENTLY). An administrator can rebuild it.",
+      "dimensions_undeclared": "{{schema}}.{{table}}.{{column}} declares no dimensions, so it cannot have an HNSW or IVFFlat index.",
+      "table_unreadable": "This role may not read {{schema}}.{{table}}, so its embeddings are not counted.",
+      "metadata_unreadable": "This role may not read {{schema}}.{{table}}, so the embedding models are not shown.",
+      "indexes_unreadable": "The indexes of {{schema}}.{{table}} could not be read.",
+      "catalog_unreadable": "The catalog could not be read with this role.",
+      "count_estimated": "{{schema}}.{{table}} is large: the number shown is PostgreSQL's estimate, not a count.",
+      "count_timeout": "Counting {{schema}}.{{table}} took longer than allowed and was stopped.",
+      "counts_skipped_one": "{{count}} count was skipped: an inspection makes a limited number of counts within the connection's time limit.",
+      "counts_skipped_other": "{{count}} counts were skipped: an inspection makes a limited number of counts within the connection's time limit.",
+      "columns_capped_one": "Only the first {{count}} vector column is shown.",
+      "columns_capped_other": "Only the first {{count}} vector columns are shown.",
+      "space_building": "The vector space {{space}} is being rebuilt (state building).",
+      "identity_incomplete": "The embedding identity of {{space}} is incomplete: provider, model or dimensions are missing or not readable.",
+      "dimension_mismatch": "The identity of {{space}} names {{identity}} dimensions, the table records {{stored}}.",
+      "pgvector_available": "pgvector is not installed in this database. The server offers version {{version}}; an administrator can install it with CREATE EXTENSION vector. Studio never installs it.",
+      "pgvector_missing": "pgvector is not installed and the server does not offer it. Vector columns of other layouts can still be listed.",
+      "pgvector_update": "pgvector {{installed}} is installed; the server offers {{available}}. An administrator can update it with ALTER EXTENSION vector UPDATE.",
+      "pgvector_other_schema": "pgvector is installed in schema {{schema}}, which is not on this connection's search path.",
+      "extension_unknown": "The status of pgvector could not be read.",
+      "definition_too_long": "The definition of the virtual table {{table}} is longer than 64 KiB, so Studio does not read it."
+    }
   }
 }

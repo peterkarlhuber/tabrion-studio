@@ -31,7 +31,7 @@ const STUDIO_ENV = {
   PYTHON_KEYRING_BACKEND: 'keyring.backends.null.Keyring',
   [PASSWORD_VARIABLE]: postgres ? decodeURIComponent(new URL(postgres).password) : '',
 };
-const LINK = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/;
+const LINK = /do not share\): (http:\/\/127(?:\.\d{1,3}){3}:\d+\/launch#\S+)/;
 
 let studio: ChildProcess | undefined;
 let root = '';

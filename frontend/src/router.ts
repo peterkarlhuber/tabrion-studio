@@ -12,6 +12,7 @@ export const ROUTES = [
   '/sql',
   '/migrations',
   '/diagnostics',
+  '/vectors',
   '/history',
   '/settings',
 ] as const;

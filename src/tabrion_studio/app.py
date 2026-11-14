@@ -79,7 +79,16 @@ _logger = logging.getLogger("tabrion_studio.app")
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 #: Paths of the single-page app's own views (frontend/src/router.ts); a reload or a typed address on one of them gets
 #: index.html. Every other unknown path stays a 404.
-CLIENT_ROUTES = ("/connections", "/explorer", "/sql", "/history", "/migrations", "/diagnostics", "/settings")
+CLIENT_ROUTES = (
+    "/connections",
+    "/explorer",
+    "/sql",
+    "/history",
+    "/migrations",
+    "/diagnostics",
+    "/vectors",
+    "/settings",
+)
 #: How often expired launch tokens and their redirect files are removed.
 SWEEP_SECONDS = 5.0
 _MAX_BODY = 4096
@@ -142,6 +151,8 @@ class Runtime:
     scripts: Scripts | None = None
     #: The SQL editor's drafts in the state database (TD-033, review F-5); None serves no draft route.
     drafts: Drafts | None = None
+    #: The loopback address the server listens on: a random ``127.a.b.c`` per instance, or ``127.0.0.1`` (A-01).
+    host: str = "127.0.0.1"
 
 
 def _problem(code: str) -> Response:
@@ -222,6 +233,7 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     app.add_middleware(
         AccessMiddleware,
         port=runtime.port,
+        host=runtime.host,
         sessions=runtime.sessions,
         control_token=runtime.control_token,
         on_activity=runtime.idle.touch,

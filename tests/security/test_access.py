@@ -139,6 +139,40 @@ def test_missing_or_duplicate_host_is_refused() -> None:
     assert _asgi_status([own, own]) == 403
 
 
+def test_an_instance_on_a_random_loopback_address_answers_only_that_address() -> None:
+    """A-01: the Host and Origin allowlist is exactly the instance's own ``127.a.b.c:<port>``, nothing else."""
+    reached: list[str] = []
+    sent: list[dict[str, Any]] = []
+
+    async def app(scope: Any, receive: Any, send: Any) -> None:
+        reached.append("app")
+
+    async def send(message: Any) -> None:
+        sent.append(message)
+
+    async def receive() -> Any:
+        return {"type": "http.request", "body": b""}
+
+    middleware = AccessMiddleware(app, port=PORT, host="127.45.6.7", sessions=Sessions(), control_token=TOKEN)
+
+    def status(host: str, origin: str | None = None) -> int:
+        reached.clear()
+        sent.clear()
+        headers = [(b"host", host.encode())]
+        if origin is not None:
+            headers.append((b"origin", origin.encode()))
+        scope = {"type": "http", "method": "GET", "path": "/api/health", "headers": headers}
+        asyncio.run(middleware(scope, receive, send))
+        return 0 if reached else int(sent[0]["status"])
+
+    assert middleware.origin == f"http://127.45.6.7:{PORT}"
+    assert status(f"127.45.6.7:{PORT}") == 0
+    assert status(f"127.45.6.7:{PORT}", origin=f"http://127.45.6.7:{PORT}") == 0
+    for other in ("127.0.0.1", "127.45.6.8", "127.0.0.2", "localhost", "[::1]"):
+        assert status(f"{other}:{PORT}") == 403, other
+        assert status(f"127.45.6.7:{PORT}", origin=f"http://{other}:{PORT}") == 403, other
+
+
 def test_only_get_and_head_of_the_proof_skip_the_control_token() -> None:
     """STU-016 review F-8 and I-2 of sec-limits-review.md: any other method on the proof path, and any other path
     under the control prefix, is refused in the middleware without the token, before a route is chosen."""

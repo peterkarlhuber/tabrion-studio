@@ -11,6 +11,11 @@
 > JSON and logging, PR #7); before that against branch `claude/project-thread-rdo6g3` (the review recommendations U-1..U-5
 > of `stu-005-051-review.md`; PR #5: STU-005 and STU-051 with S-1 and S-4 of `stu-003-review.md`; PR #4: STU-003 and
 > R-1..R-7 of `stu-002-018-review.md`; PR #1: STU-001, STU-002, STU-018, STU-031).
+>
+> CR-DBX planning (2026-11-13, branch `claude/project-thread-rdo6g3-crdbx`): the owner accepted change request CR-DBX
+> (planning document 15) as planning, not as the start of implementation; section
+> [CR-DBX](#cr-dbx-studio-11-to-13-planned-not-started) added, the "Later" note on the Schema Designer corrected (W-2),
+> [STU-ADR-0005](adr/0005-crdbx-write-and-admin-gates.md) records the per-area locks.
 
 ## Summary
 
@@ -31,6 +36,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | Blocked: planned, not started; needs Studio 1.0 (G-R), the repository migration and the development-start approval G-CX; each area then stays locked until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-planned-not-started)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -82,6 +88,9 @@
 | TD-064 DC-TS-1 dependency confusion (owner decision of 2026-11-13 22:37Z: no PyPI placeholder for `tabrion` or `tabrion-studio`; every install hardened): `check-installed` verifies tabrion's source, a pip floor before the `-c` installs, the bare install in `docs/development/building.md`; and a negative CI job `install (poisoned index)` with the shared `scripts/check_tabrion_source.py` of nodestro-studio (checksummed copy): zero index requests for `tabrion` and the pinned commit installed | P2 | Partly done (DC-TS-1 PR: the source check with tests, the pip floor with a workflow test, the docs, and the job `install (poisoned index)` with the copy of nodestro-studio's script at `bf51022`, SHA-256 pinned; listed in `.github/ci-manifest.json`, reported by ci-ok). `direct_url.json` checks only detect an accidental index install; the zero-request assertion is the proof. Open: the workflow-change review; refresh the copy and its SHA-256 if nodestro-studio's script changes before its PR merges |
 | TD-060 STU-054 UX acceptance 1.0: what stays open (the owner decisions on the "403" wording, D-07, tabrion's English finding texts and the start page are done, 2026-11-13; TD-032's dependency resolved by PR #85; open: TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR #84; owner decisions 2026-11-13) |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
+| TD-063 Security assessment B-1 and B-2: the statement check's function denylist in every PostgreSQL call form, the pg_surgery and pg_visibility functions, dblink connections closed at check-in; what stays open (newer servers' functions, a diagnostics hint) | P1 | In progress (PR #92): B-1 and B-2 done; open: the PostgreSQL 17/18 candidates and the diagnostics hint (see the entry) |
+| TD-065 Security assessment A-01: a fresh random loopback address `127.a.b.c` per start, so no later Studio reuses an earlier origin (service workers, storage); the macOS fallback to `127.0.0.1` and the `--port` advice; what stays open (real Windows and macOS browsers) | P1 | In progress (A-01 PR): the fix, the residual-risk note in STU-ADR-0002 and the regression tests are done; open: the real-device checks (see the entry) |
+| TD-066 STU-055 vector data view: what it leaves for later (pgvector tests outside the CI PostgreSQL job, the sqlite-vec install status, `halfvec`/`sparsevec` on a pgvector 0.7+ server, an e2e test, other layouts) | P3 | Open (STU-055 PR) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -401,6 +410,7 @@ merge after OA-004.
 | TABRION STU-054 | UX acceptance 1.0 (without the Data Editor) | P1 | STU-020..STU-025 | Owner decisions done; acceptance waits on QA-S1 (manual). STU-054 PR #84 merged: the 1.0 section of `docs/architecture/ux-acceptance.md` maps every 1.0 criterion of 08 (history, scripts, format, export, DDL, ER diagram, Levuvo status, diagnosis report, the locked writing, the 1.0 settings and dialogs, de/en) and 09's acceptance to its test or manual check, run on 2026-11-13 against the built app (SQLite, Chromium; Firefox and WebKit in CI). New `e2e/ux-acceptance-1-0.spec.ts` against a real server: the 1.0 tour in English and German with axe in light and dark at every step and no English catalog text or raw key on the German pages; the negative tests (no data editing in the page on DEV and PROD, the access chip is no control, every write refused by the API on DEV and PROD with the database file unchanged, every changing route of the documented API on a reviewed list, with the full list in `tests/security/test_every_route.py`); new `src/i18n/coverage.test.ts` (every key the source names exists, both plural forms, no visible text written into the markup). TD-046 B-3 done (the `alembic upgrade head` command with Copy). The owner decided the four TD-060 items on 2026-11-13 (each option A: refused writes stay 400/405, an error-semantics decision only and no acceptance of STU-026; D-07 after 1.0; tabrion's `TAB-*` texts stay English, marked `lang="en"`; no project chooser on the start page). TD-032's dependency is resolved by PR #85 (the German `STU-DX-*` and `STU-BK-*` texts). Not accepted yet: the manual QA-S1 session (TD-046 B-5) and the other remaining TD-060 prerequisites; STU-026 stays locked behind G-S2 |
 | TABRION STU-017 | MVP docs and tag 0.1.0 (no publication) | P1 | STU-016 | In progress (first part merged in PR #27; the docs part in the STU-017 docs PR): `docs/guide/` for what exists (installation by Git SHA, start, connections and trust, settings and keyboard, security model, troubleshooting). The docs PR adds the documentation checklist `docs/development/docs-checklist.md` (every requirement of 03 §10 and 09 mapped to its page and check, D-1..D-23), the clean-install test (manual on Linux on 2026-11-13 from a locally built wheel of master `7093bea`: install with the Tabrion pin, start without Node.js, sign-in link, a SQLite profile saved, tested and connected read-only, the explorer and the data viewer, `--stop`; passed. Automated: `scripts/smoke_wheel.py` now installs with the pin and signs in, connects a SQLite profile and reads its rows, in the `packaging` job on Linux, macOS and Windows), install from a wheel, troubleshooting for installing, the views and the `--stop` failures (I-5), the residual risks on the security page, the README status and install command (it had no Tabrion pin and failed), and the settings page (the timeout applies on connect; `log_sql` is saved but not used, TD-013). Open: the tag `v0.1.0` (a separate step after G-S1; no publication, G-R) and the build-only release workflow; the rest is TD-023 |
 | TABRION STU-028 | Docs 1.0, clean install, release preparation | P1 | STU-054 | In progress, **preparation only** (STU-028 PR; G-R not granted: no tag, no GitHub Release, no PyPI or npm upload, no announcement). `docs/development/release-checklist.md`: every step of a 1.0 release with its check and state, and the hard stops G-S1 (passed 2026-11-13 for master `9a5d4fa`), the human security review before any public release (E-QA2, mandatory) and G-R (per publication). `scripts/release_bom.py` (standard library): the release SBOM (CycloneDX 1.5) and the third-party license report (with the psycopg LGPL-3.0 notice and the frontend licenses) from `constraints/runtime-lock.txt`, the Tabrion pin and the non-dev packages of `frontend/package-lock.json`, judged by the STU-031 policy (copyleft, unknown, missing or stale records fail; `--strict` for the release run); same bytes for the same inputs; tested offline by `tests/supply_chain/test_release_bom.py`. `collect_licenses.py` also records the commit of a Git install (PEP 610), and the Tabrion record must be of the pinned commit (review M-2). Run on 2026-11-13 for master `d72a14f` with the license records of Linux (Python 3.13 and 3.11): policy ok, 103 components; `--strict` lists the two Windows-only pins. Clean install on Linux from a wheel of `d72a14f`: `scripts/smoke_wheel.py` passed; `uv tool install` (lock versions) and pipx with pip and the Tabrion pin only passed, neither checks the lock's hashes (the first pipx form with the lock failed with pip, review H-1). Review `pr83-stu028-review.md`: ACCEPTED WITH CONDITIONS; H-1, M-1, M-2, L-1..L-5 and I-4 fixed, L-6 tracked in TD-061; delta review at `730e19a` ACCEPTED WITH CONDITIONS, D-1 (every record of a name judged, in any file order), D-2 (no URL with user information recorded), D-3 (only input errors exit 2) and D-4 (shared npm license helpers) fixed. Docs 1.0: guide index and README list the 1.0 features, `guide/installation.md` gains "pipx or uv", the Git-URL wording of 03 §4.6 is corrected (also ADR 0001), docs checklist D-24..D-26. Open: STU-054 and the rest of A-1 (STU-020..STU-025 are merged; open are the Windows checks and owner decision D-4 of STU-020, TD-052 of STU-023 and the CLI report of TD-036), the result of the first nightly `release SBOM (strict)` run (TD-061: the macOS and Windows license records and the strict run are nightly CI jobs since PR #90), pipx/uv and the guide by hand on macOS and Windows (TD-023), and every owner step (the human security review, the trademark check, the tag, G-R) |
+| TABRION STU-055 | Vector data view (read-only) | P2 | STU-010, STU-014 | In progress (STU-055 PR; owner approval for immediate implementation): the view **Vector data** (`/vectors`) and `GET /api/connections/{id}/vectors` (`services/vectors.py`, design note `docs/architecture/vector-inspection.md`, guide `docs/guide/vector-data.md`). For SQLite and PostgreSQL: vector columns and types (pgvector `vector`/`halfvec`/`sparsevec` by `pg_type` and extension membership, sqlite-vec `vec0` from `sqlite_master`, Orkexa's layouts by their documented structure, no Orkexa import), vector indexes with method and state (`pg_index`/`pg_am`, `indisvalid`/`indisready`/`indislive`), dimensions, Orkexa's embedding identities, bounded counts (`LIMIT 100001`, a 10 s timer, `reltuples` estimates past the bound, at most 50 counts) and pgvector's status through Tabrion's `tabrion.postgres.extension_status`; sqlite-vec's status is "not determinable". ANN only with a valid HNSW/IVFFlat/DiskANN index, everything else "exact search (no ANN index)". Same guards and read-only path as the explorer routes; de/en. Follow-ups in TD-066 |
 
 Later: STU-020..STU-025 and STU-054 (Studio 1.0, without the Data Editor); STU-028 (release preparation) is prepared,
 publication only after G-R; STU-021
@@ -409,8 +419,9 @@ STU-017 on 2026-11-12 under the owner's allowance of normal ordering decisions (
 change of its dependency is not yet recorded in doc 09 (coordinating thread); the STU-022 backend was started before
 STU-017 as well (see its row);
 STU-026 (Data Editor) stays locked behind G-S2 and outside the 1.0 acceptance; STU-027 (more UI languages) is a
-later extension. The Studio 1.1 Schema Designer (change request 14 §3.5) is not planned here; the process model
-and the server-side write flag (STU-ADR-0003) leave room for it.
+later extension. The Schema Designer (change request 14 §3.5) is planned as Studio **1.2** under change request
+CR-DBX, gated by G-S3; the Data Editor becomes Studio 1.1 (G-S2) and the Database Manager Studio 1.3 (G-S4). None of
+them has started: see [CR-DBX](#cr-dbx-studio-11-to-13-planned-not-started).
 
 ### OA-010 · Independent review of STU-008 (TABRION STU-008)
 
@@ -428,6 +439,40 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   `"secret_removed": false`; the test that kills W11), I-1 (the e2e server uses the null keyring), I-2 (`env:` says
   "set in the environment"), I-3 (the file is read again just before the replace; no lock, TD-011) and I-4 (the 0755
   to 0700 change is documented, as for the state folder).
+
+## CR-DBX: Studio 1.1 to 1.3 (planned, not started)
+
+The owner accepted change request CR-DBX on 2026-11-13 (E-X1, E-X2 at 23:28Z; E-X3..E-X13 at 23:35Z as recommended,
+with binding refinements of E-X4, E-X5, E-X6 and E-X9). This confirms the **planning, not the start of
+implementation**. Nothing here starts before Studio 1.0 (G-R), the repository migration and a separate
+development-start approval (G-CX). G-CX enables no write or admin feature: each area stays technically locked until
+its own gate, and an independent human security review is mandatory before any public release (G-R stays locked).
+The work packages are defined in planning document 15 section 9.2 and the program status
+(`tabrion/docs/program/STATUS.md`, section "Change request CR-DBX"); the rules are in
+[STU-ADR-0005](adr/0005-crdbx-write-and-admin-gates.md).
+
+| Version | Area | Work packages | Gate | Status |
+|---|---|---|---|---|
+| 1.1 | Shared write foundation: threat model and the ADR successor of 0003 (STU-XW-5), write and admin profiles, unlocking, PROD lock, flags (STU-XW-1), audit log (STU-XW-2), plan, preview and confirmation framework (STU-XW-3), I-109 j confirmation (STU-XW-4) | TABRION STU-XW-1..STU-XW-5 | G-S2 | Blocked (planned, not started; G-CX) |
+| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked (planned, not started; G-CX) |
+| 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked (planned, not started; G-CX, Studio 1.1, tabrion 0.3) |
+| 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked (planned, not started; G-CX, Studio 1.2) |
+
+Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
+
+- **E-X4:** direct schema changes only on DEV and TEST databases without existing migration management; for Alembic
+  projects Studio by default only generates revisions and never runs `env.py`; preview, plan binding, drift check and
+  explicit confirmation are mandatory.
+- **E-X5:** PostgreSQL backup and restore only through verified `pg_dump`/`pg_restore` with safe process execution and
+  secret handling; restore tests are mandatory; the docs say that `pg_dump` is not a complete backup of global roles
+  and cluster objects.
+- **E-X6:** role management only for PostgreSQL, only through a separate admin profile with minimal rights; Studio
+  never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION; existing grants, memberships and indirect privileges
+  are checked on every change; the admin rights are provisioned outside Studio.
+- **E-X7:** PROD stays write-locked (backup only). **E-X8:** separate write and admin profiles.
+- **W-9:** a refused write answers 400 or 405; only the write mode answers 403 (owner decision on STU-054).
+- **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion
+  TB-148) is decided with STU-CR-6 and the profile import and export of STU-XDM-5.
 
 ## Cross-repository checks still to add
 
@@ -1988,3 +2033,77 @@ and the server-side write flag (STU-ADR-0003) leave room for it.
   - **R-1:** `release_bom.py` fails (with or without `--strict`) on every license record whose canonical name is
     neither a pin nor `tabrion-studio`, and lists it in the report
     (`test_a_record_of_a_package_the_lock_does_not_pin_fails`).
+
+### TD-063 · Security assessment B-1 and B-2: refused functions in every call form
+
+- **Priority:** P1 · **Status:** In progress (PR #92) · **Refs:** the security assessment of 2026-11 (B-1 Medium,
+  B-2 Low; the report and its reproductions stay with the planning documents), TD-048 (F-3),
+  `docs/architecture/connections.md`
+- **Done in the PR:** B-1: `readonly._calls_refused_function` counts a refused name as a call when the next token is
+  `(` or the token before it is `.` (PostgreSQL's attribute notation), on the existing tokens (comments and white
+  space dropped, quoted identifiers unquoted, both lexings of `'...'`); a column or table named like a refused
+  function is refused after a `.`, the bare name stays allowed. The check-in reset (`tabrion_compat.reset_session`)
+  closes the session's named and unnamed dblink connections when the database has dblink, and drops a connection
+  where that fails. B-2: `heap_force_kill`, `heap_force_freeze` and `pg_truncate_visibility_map` are refused. Tests in
+  `tests/security/test_function_call_forms.py` (every call form, reads that only mention a name, the reset with and
+  without dblink; the PostgreSQL ones in the PostgreSQL CI job).
+- **Open:** the assessment's untested candidates of newer servers (PostgreSQL 17 `pg_buffercache_evict*`, 18
+  `pg_restore_*_stats` and `pg_clear_*_stats`): check whether they act in a read-only transaction and refuse them if
+  so; a diagnostics hint when the profile's role may run dblink, adminpack or session-ending functions. The text
+  check stays best effort, and the role's privileges stay the boundary.
+
+### TD-065 · Security assessment A-01: a fresh loopback origin per start
+
+- **Priority:** P1 · **Status:** In progress (A-01 PR) · **Refs:** the security assessment of 2026-11 (A-01 Medium;
+  the report and its reproduction stay with the planning documents), STU-ADR-0002 ("Residual risk: origin reuse on
+  loopback"), `docs/architecture/access-protection.md` ("Origin per start"), `docs/architecture/process-model.md`
+- **Done in the PR:** `server.bind_loopback` listens on a random `127.a.b.c` (not `127.0.0.1`) chosen anew for every
+  server, also with `--port` (another random address when the fixed port is taken on one, up to 8 tries); where the
+  address is not configured (`EADDRNOTAVAIL`, macOS by default) it uses `127.0.0.1`, and with `--port` prints a note.
+  The Host and Origin allowlist answers exactly that `<address>:<port>`; the instance info file records the address
+  (`host`; a file without it means `127.0.0.1`, any value outside `127.0.0.0/8` makes the file invalid), and the
+  control client connects there. The page removes any service worker registration on its origin at start
+  (`frontend/src/serviceWorkers.ts`, cleanup only). Docs: the user guide's `--port` advice (starting, security,
+  troubleshooting), the README, the development setup (`TABRION_STUDIO_BACKEND` now names the printed address).
+  Tests: `tests/unit/test_server.py` (fresh address per start, the fixed port on a new address, the fallback; the
+  Linux and Windows `backend test` jobs assert that a random address can be bound), `tests/unit/test_instance.py`,
+  `tests/security/test_access.py`, `tests/process/test_process_model.py`, frontend `serviceWorkers.test.ts`, and the
+  e2e regression `frontend/e2e/origin-backend.spec.ts` (two starts on one `--port` get two addresses, in every
+  browser; in Chromium a service worker that another program registered on `127.0.0.1:<port>` does not reach a later
+  Studio on that port). The assessment's `Clear-Site-Data` suggestion is not adopted: on `POST /api/session` it also
+  clears the CSRF value in `sessionStorage` of every other open tab (checked in Chromium), and it cannot reach a page
+  load that a worker answers; the browser makes no request when Studio stops.
+- **Open:** on real devices before G-R (with TD-023): Edge, Chrome and Firefox on Windows open, sign in and copy on a
+  `127.a.b.c` address (no proxy, a secure context); on macOS the fallback note with `--port`. Accepted residual risk
+  for the owner to confirm (STU-ADR-0002): the macOS fallback with a fixed `--port`, and an old Studio tab that is
+  reloaded after the stop on an address another local user has taken over (no session).
+- **Review conditions** (independent review of the A-01 PR, accepted with conditions): C-2 before G-R, folded into
+  GR-2: with a logging HTTP proxy configured, check that Firefox and WebKit/Safari do not send `127.a.b.c` requests
+  through the proxy (Chromium bypasses the proxy for all of `127.0.0.0/8`; the others are unverified). C-3 before
+  G-R: a real-Mac check of the `127.0.0.1` fallback and the `--port` note; the macOS residual risk stays an
+  owner-known risk.
+
+### TD-066 · STU-055 vector data view: what it leaves for later
+
+- **Priority:** P3 · **Status:** Open · **Refs:** STU-055, `docs/architecture/vector-inspection.md`,
+  `docs/guide/vector-data.md`
+- **pgvector in CI:** the CI PostgreSQL job runs `postgres:17` without pgvector, and it must not skip a test. The
+  tests that need pgvector (HNSW, an invalid IVFFlat, a B-tree on a vector column, undeclared dimensions, an expression
+  HNSW index on Orkexa's `real[]`, dropping the extension) carry their own marker `pgvector` and run with
+  `TABRION_STUDIO_TEST_PGVECTOR` (a superuser URL of a server with pgvector); they passed locally on PostgreSQL 16 with
+  pgvector 0.6.0. Running them in CI needs a pgvector image in `ci.yml` (a `.github/` change with its review).
+- **sqlite-vec install status:** not determinable from a database file (the module lives in the application's
+  process), and Studio loads no extension; the view shows the `vec0` tables and their `CREATE_VERSION`. Tabrion has no
+  SQLite counterpart of `extension_status`; one would not help either, for the same reason. Nothing to do unless the
+  owner wants a different source (for example the project's own dependency pins).
+- **`halfvec` and `sparsevec`:** recognized by type name and extension membership, not tested against a server
+  (pgvector 0.6 has neither; 0.7 added them).
+- **sqlite-vec ANN:** `vec0` tables are shown as exact search, since released sqlite-vec versions scan a `vec0` table's
+  chunks. If a later sqlite-vec version adds an approximate index to `vec0`, this rule and its test change.
+- **Other layouts:** libSQL's `F32_BLOB(n)` columns, LanceDB-style or application-specific metadata tables are not
+  recognized; a float array or BLOB without confirming metadata is never called a vector column.
+- **e2e:** the view has unit tests (Vitest, with the axe check of `a11y.test.tsx`) and backend tests; no Playwright
+  spec yet (the e2e harness has no vector fixture).
+- **Tabrion 0.2 (TD-013):** tabrion 0.2.0 offers `extension_status` only on a psycopg connection (no `Database` or
+  `Transaction` method), so `tabrion_compat.extension_status` keeps running it on the driver connection of a
+  `Database.read()`, like `check`; it goes when tabrion offers it on a `Database` or `Transaction`.

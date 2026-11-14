@@ -7,6 +7,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-055: the **Vector data** view (`/vectors`, `GET /api/connections/{id}/vectors`), read-only for SQLite and
+  PostgreSQL: vector columns and their types, vector indexes with method and state, embedding dimensions, the
+  embedding model identities of Orkexa's metadata, bounded counts of stored embeddings, and the pgvector status
+  (Tabrion's `extension_status`); sqlite-vec's status is reported as not determinable. A column is shown as
+  ANN-indexed only with a valid HNSW, IVFFlat or DiskANN index; everything else as "exact search (no ANN index)".
+  Hints for a missing extension, no ANN index, unreadable tables and incomplete metadata, in English and German.
+  Texts from the database are cut to 64 KiB in SQL and `vec0` definitions are parsed in linear time (PR #97 review
+  M-1, L-1); expression and partial indexes are marked.
+  Design note `docs/architecture/vector-inspection.md`, guide page `docs/guide/vector-data.md`, follow-ups TD-066.
+- Docs: change request CR-DBX (planning document 15; the owner accepted the planning on 2026-11-13, not the start of
+  implementation). STU-ADR-0005 amends STU-ADR-0003: one server-side flag and one gate per area (Data Editor 1.1
+  behind G-S2, Schema Designer 1.2 behind G-S3, Database Manager 1.3 behind G-S4), G-CX enables no write feature, a
+  refused write answers 400/405 and only the write mode 403, PROD stays write-locked, separate write and admin
+  profiles, revisions instead of migrations (never `env.py`), `pg_dump`/`pg_restore` only as verified system tools
+  and not a complete cluster backup, PostgreSQL role management without SUPERUSER, BYPASSRLS, CREATEROLE or
+  REPLICATION. `docs/TODO.md` gets a CR-DBX section (all blocked on the development-start approval) and no longer
+  says that the Schema Designer is not planned; the README non-goals and `docs/architecture/migrations.md` say what
+  1.0 excludes and that Studio never runs migrations. No code change.
 - TD-031 (owner decision G-S1 2): the nightly job `newest dependencies (Python 3.11 and 3.14)` installs Studio and the
   pinned Tabrion without the hashed runtime lock, so with the newest releases inside the `pyproject.toml` ranges,
   prints `pip freeze`, and runs `pip check` and the backend tests. It is not a pull request check; a failure opens the
@@ -648,6 +666,20 @@ All notable changes to this project are documented here. The format follows
   classifier name with parentheses (`ISC License (ISCL)`) stays one name. `scripts/release_bom.py` fails on a license
   record of a package that the lock does not pin (other than `tabrion-studio`), also without `--strict`, instead of
   ignoring it.
+
+- A-01 of the security assessment (TD-065): every start listens on a fresh random loopback address `127.a.b.c`
+  instead of `127.0.0.1`, also with `--port`, and answers only that address and port. Nothing another local program
+  left in the browser for an earlier Studio origin (a service worker, storage) applies to a later Studio. Where only
+  `127.0.0.1` is configured (macOS by default) Studio uses it, and with `--port` says that the address is then the
+  same every time; the guide advises leaving `--port` out on a shared computer. The instance info file records the
+  address. The page removes any service worker found on its origin. For `npm run dev`, set `TABRION_STUDIO_BACKEND`
+  to the printed address.
+
+- B-1 and B-2 of the security assessment (TD-063): the read-only statement check now recognizes every call form of
+  refused functions, and also refuses pg_surgery's `heap_force_kill` and `heap_force_freeze` and pg_visibility's
+  `pg_truncate_visibility_map`. The PostgreSQL check-in reset closes the session's dblink connections. A column named
+  like a refused function can no longer be written as `table.column` (the bare name and aliases still work). The
+  database role stays the boundary; the check is defense in depth.
 
 - `tabrion-studio diagnose --output`: hardened against a folder swap. On POSIX the output folder is opened once and
   the checks, the temporary file and the final move all act on that opened folder; the guide now says that a folder
