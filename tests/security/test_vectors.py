@@ -10,8 +10,8 @@
   search) and the extension status as the server reports it; with ``TABRION_STUDIO_TEST_POSTGRES_SUPERUSER``
   (marker ``postgres_superuser``) a role without ``SELECT`` on the tables gets hints, not an error.
 * pgvector (``TABRION_STUDIO_TEST_PGVECTOR``, a superuser URL of a server with pgvector; marker ``pgvector``, run
-  in the CI PostgreSQL job, whose image has pgvector available but not created): ``vector`` columns with an HNSW
-  index, an IVFFlat index made invalid, no index, undeclared dimensions, an expression HNSW index on Orkexa's
+  in the CI PostgreSQL job against a second server with pgvector; the main one has none): ``vector`` columns with an
+  HNSW index, an IVFFlat index made invalid, no index, undeclared dimensions, an expression HNSW index on Orkexa's
   ``real[]``, and pgvector dropped again.
 """
 

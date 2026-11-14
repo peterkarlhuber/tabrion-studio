@@ -8,9 +8,9 @@ All notable changes to this project are documented here. The format follows
 ### Added
 
 - TD-066 (STU-055): the CI job `backend integration (PostgreSQL 17)` also runs the `pgvector` tests of the vector
-  data view. Its service image is `pgvector/pgvector:0.8.7-pg17-trixie` (PostgreSQL 17 with pgvector available but
-  not created), pinned by digest, and `TABRION_STUDIO_TEST_PGVECTOR` is the throwaway server's superuser; the job still
-  fails on any skipped test. `docs/TODO.md` marks STU-055 done (PR #97, `41763cf`).
+  data view against a second service, `pgvector/pgvector:0.8.7-pg17-trixie` (PostgreSQL 17 with pgvector available
+  but not created, pinned by digest), whose superuser is `TABRION_STUDIO_TEST_PGVECTOR`; the main `postgres:17.10`
+  server stays without pgvector, so a missing extension is still tested. The job still fails on any skipped test. `docs/TODO.md` marks STU-055 done (PR #97, `41763cf`).
 - STU-055: the **Vector data** view (`/vectors`, `GET /api/connections/{id}/vectors`), read-only for SQLite and
   PostgreSQL: vector columns and their types, vector indexes with method and state, embedding dimensions, the
   embedding model identities of Orkexa's metadata, bounded counts of stored embeddings, and the pgvector status

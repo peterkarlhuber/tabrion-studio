@@ -2091,13 +2091,11 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **pgvector in CI:** done (pgvector CI PR). The tests that need pgvector (HNSW, an invalid IVFFlat, a B-tree on a
   vector column, undeclared dimensions, an expression HNSW index on Orkexa's `real[]`, dropping the extension) carry
   their own marker `pgvector` and run with `TABRION_STUDIO_TEST_PGVECTOR` (a superuser URL of a server with pgvector).
-  The CI job `backend integration (PostgreSQL 17)` now runs `pgvector/pgvector:0.8.7-pg17-trixie` (PostgreSQL 17.12
-  with pgvector 0.8.7, pinned by digest) instead of `postgres:17.10`, with
-  `-m "postgres or postgres_superuser or pgvector"` and the service's superuser as `TABRION_STUDIO_TEST_PGVECTOR`; the
-  job still fails on any skip. The extension is available but not created, so the `postgres` test sees the state
-  "available" and the `pgvector` test creates and drops it in the test database. The state "missing" (no pgvector on
-  the server) is no longer seen by a CI server; the `postgres` test still accepts it on a server without pgvector.
-  Passed locally on PostgreSQL 16.15 with pgvector 0.6.0 (137 tests, none skipped).
+  The CI job `backend integration (PostgreSQL 17)` keeps `postgres:17.10` (no pgvector) as its main server, so the
+  `postgres` tests still see a missing extension, and gets a second service `pgvector/pgvector:0.8.7-pg17-trixie`
+  (PostgreSQL 17 with pgvector 0.8.7, available but not created; pinned by digest, port 5433) whose superuser is
+  `TABRION_STUDIO_TEST_PGVECTOR`; the step runs `-m "postgres or postgres_superuser or pgvector"` and the job still
+  fails on any skip. Passed locally on PostgreSQL 16.15 with pgvector 0.6.0 (137 tests, none skipped).
 - **sqlite-vec install status:** not determinable from a database file (the module lives in the application's
   process), and Studio loads no extension; the view shows the `vec0` tables and their `CREATE_VERSION`. Tabrion has no
   SQLite counterpart of `extension_status`; one would not help either, for the same reason. Nothing to do unless the
