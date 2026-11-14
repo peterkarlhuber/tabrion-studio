@@ -33,6 +33,7 @@ from tabrion.sql import split_statements
 from tabrion_studio.config.schema import TARGET_FIELDS, Profile, SecretRef, Settings
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import scrub
+from tabrion_studio.problems import db_problem
 from tabrion_studio.services import connections as connections_module
 from tabrion_studio.services import readonly as readonly_module
 from tabrion_studio.services import tabrion_compat
@@ -287,6 +288,9 @@ def test_f2_sqlite_functions_outside_the_allowlist_are_denied(
         with pytest.raises(TabrionError) as raised:
             connection.fetch(sql)
         assert expected in str(raised.value.original)
+        # TD-053: a denied function is a permission problem, like a denied table or pragma, not db.unknown.
+        code = "db.permission" if _sqlite_has_function(name) else "db.undefined_object"
+        assert db_problem(raised.value).code == code
         with pytest.raises(TabrionError):
             below_the_check(connection, sql)
     assert connection.fetch("SELECT count(*) FROM part") == [(2,)]
