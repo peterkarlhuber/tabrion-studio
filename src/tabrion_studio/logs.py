@@ -46,6 +46,7 @@ DEBUG after the opt-in ``log_sql = true``, cut to 2 KB (STU-011). Uvicorn's acce
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import io
@@ -58,6 +59,7 @@ import re
 import stat
 import sys
 import threading
+import time
 import traceback
 from types import TracebackType
 from typing import Any, TextIO
@@ -92,6 +94,11 @@ _EDGE_FRAMES = 20
 MAX_TRACEBACK = 32 * 1024
 _MIN_SECRET = 8
 _MAX_SECRETS = 512
+#: Secrets that live as long as the process or a profile (the control token, database passwords) are kept in a set
+#: that is never evicted (security assessment C-01): only short-lived values (launch tokens, session IDs, CSRF
+#: values) go through the bounded store above, so hundreds of sign-ins cannot push a lasting secret out. Beyond this
+#: many lasting values, a further one goes to the bounded store.
+_MAX_LASTING_SECRETS = 4096
 #: Shorter secrets (I-1 of stu-007-review.md) are kept in a set that is never evicted. Below 4 characters a value is
 #: not registered: replacing every "ab" or "1" in a log record would make the log useless, and such a password is no
 #: protection anyway.
@@ -127,14 +134,15 @@ _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f\u061c\u200e\u200f\u2028\u2029\u202a-
 
 
 class _Secrets:
-    """The secret values of this process; bounded, the oldest entries are dropped first."""
+    """The secret values of this process: lasting ones are never evicted, short-lived ones are bounded (LRU)."""
 
     def __init__(self) -> None:
         self._values: OrderedDict[str, None] = OrderedDict()
+        self._lasting: set[str] = set()
         self._short: set[str] = set()
         self._lock = threading.Lock()
 
-    def add(self, value: str) -> None:
+    def add(self, value: str, *, lasting: bool = False) -> None:
         if not isinstance(value, str) or len(value) < _MIN_SHORT_SECRET:
             return
         if len(value) < _MIN_SECRET:
@@ -143,6 +151,12 @@ class _Secrets:
                     self._short.add(value)
             return
         with self._lock:
+            if value in self._lasting:
+                return
+            if lasting and len(self._lasting) < _MAX_LASTING_SECRETS:
+                self._lasting.add(value)
+                self._values.pop(value, None)
+                return
             self._values[value] = None
             self._values.move_to_end(value)
             while len(self._values) > _MAX_SECRETS:
@@ -151,20 +165,26 @@ class _Secrets:
     def snapshot(self) -> list[str]:
         with self._lock:
             # Longest first, so that a secret that contains another one is replaced as a whole.
-            return sorted([*self._values, *self._short], key=len, reverse=True)
+            return sorted([*self._lasting, *self._values, *self._short], key=len, reverse=True)
 
     def clear(self) -> None:
         with self._lock:
             self._values.clear()
+            self._lasting.clear()
             self._short.clear()
 
 
 _SECRETS = _Secrets()
 
 
-def register_secret(value: str) -> None:
-    """Redact ``value`` from every log record of this process from now on (values shorter than 4 are ignored)."""
-    _SECRETS.add(value)
+def register_secret(value: str, *, lasting: bool = False) -> None:
+    """Redact ``value`` from every log record of this process from now on (values shorter than 4 are ignored).
+
+    ``lasting=True`` for a value that stays valid for the life of the process or of a profile (the control token, a
+    database password): it is never evicted. Short-lived values (launch tokens, session IDs, CSRF values) share a
+    bounded store, where the oldest go first (security assessment C-01).
+    """
+    _SECRETS.add(value, lasting=lasting)
 
 
 def forget_secrets() -> None:
@@ -296,16 +316,73 @@ class _ExceptionType:
     __str__ = __repr__
 
 
-def _safe_arg(value: object) -> object:
-    return _ExceptionType(value) if isinstance(value, BaseException) else value
+class _NotShown:
+    """Stands in for a container that is nested too deep or holds too many items to be checked for exceptions."""
+
+    def __init__(self, value: object) -> None:
+        self._text = f"[{type(value).__name__} not shown]"
+
+    def __repr__(self) -> str:
+        return self._text
+
+    __str__ = __repr__
+
+
+#: How deep and how many items :func:`_safe_args` looks into containers (lists, tuples, sets, dicts) of arguments.
+_MAX_ARG_DEPTH = 4
+_MAX_ARG_ITEMS = 1000
+_CONTAINERS = (list, tuple, set, frozenset, dict)
+
+
+class _Budget:
+    def __init__(self) -> None:
+        self.items = _MAX_ARG_ITEMS
+
+
+def _safe_arg(value: object, depth: int, budget: _Budget) -> object:
+    """``value`` with every exception in it, also inside containers, replaced by its type (C-02).
+
+    A container is rebuilt as its plain type only when something in it was replaced, so other arguments format as
+    before. One that is nested deeper than :data:`_MAX_ARG_DEPTH` or goes beyond :data:`_MAX_ARG_ITEMS` items in all
+    is not formatted at all: an exception in it could not be ruled out.
+    """
+    if isinstance(value, BaseException):
+        return _ExceptionType(value)
+    if not isinstance(value, _CONTAINERS):
+        return value
+    if depth >= _MAX_ARG_DEPTH:
+        return _NotShown(value)
+    try:
+        size = len(value)
+        budget.items -= size
+        if budget.items < 0:
+            return _NotShown(value)
+        if isinstance(value, dict):
+            pairs = [(_safe_arg(k, depth + 1, budget), _safe_arg(v, depth + 1, budget)) for k, v in value.items()]
+            if all(new_k is k and new_v is v for (new_k, new_v), (k, v) in zip(pairs, value.items(), strict=True)):
+                return value
+            return dict(pairs)
+        items = [_safe_arg(item, depth + 1, budget) for item in value]
+        if all(new is old for new, old in zip(items, value, strict=True)):
+            return value
+    except Exception:  # a container subclass that fails while it is read: not formatted at all
+        return _NotShown(value)
+    if isinstance(value, list):
+        return items
+    if isinstance(value, tuple):
+        return tuple(items)
+    # A set of replaced items: the stand-ins are distinct objects, so nothing collapses; sets keep no order anyway.
+    return set(items) if isinstance(value, set) else frozenset(items)
 
 
 def _safe_args(args: Any) -> Any:
-    """``%s``/``%r`` arguments with every exception replaced by its type: its text is never formatted (L-1)."""
+    """``%s``/``%r`` arguments with every exception replaced by its type, also inside lists, tuples, sets and dicts:
+    its text is never formatted (L-1, C-02). The arguments themselves are a tuple, or one mapping for ``%(name)s``."""
+    budget = _Budget()
     if isinstance(args, tuple):
-        return tuple(_safe_arg(value) for value in args)
+        return tuple(_safe_arg(value, 1, budget) for value in args)
     if isinstance(args, dict):
-        return {key: _safe_arg(value) for key, value in args.items()}
+        return {key: _safe_arg(value, 1, budget) for key, value in args.items()}
     return args
 
 
@@ -442,6 +519,58 @@ class LogSetup:
         self.owned.clear()
 
 
+#: At most this many records with the same first line per logger of :data:`OWNED_LOGGERS` in one window (A-02).
+FLOOD_BURST = 20
+FLOOD_WINDOW_S = 60.0
+_FLOOD_KEYS = 256
+_FLOOD_KEY_CHARS = 200
+
+
+class FloodFilter(logging.Filter):
+    """Drops repeats of the same record of Uvicorn's and asyncio's loggers beyond :data:`FLOOD_BURST` per
+    :data:`FLOOD_WINDOW_S` (security assessment A-02).
+
+    Those loggers report what any local program can cause without a session: a connection that sends no valid HTTP
+    request, or a ``socket.accept()`` that fails while the process is out of file descriptors (logged with a
+    traceback, many times a second). Without a limit, such a flood rotates the whole log away in seconds. A record
+    is counted by its logger and the first line of its message (before formatting); the first record after a
+    window with drops says how many were dropped. Studio's own loggers are not limited.
+    """
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        super().__init__()
+        self._clock = clock
+        self._lock = threading.Lock()
+        # key -> [window start, records in the window, records dropped and not reported yet]
+        self._seen: dict[tuple[str, str], list[float]] = {}
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if getattr(record, "_tabrion_redacted", False):
+            return True
+        text = record.msg if isinstance(record.msg, str) else type(record.msg).__name__
+        key = (record.name, text[:_FLOOD_KEY_CHARS].split("\n", 1)[0])
+        now = self._clock()
+        with self._lock:
+            entry = self._seen.get(key)
+            if entry is None or now - entry[0] >= FLOOD_WINDOW_S:
+                dropped = 0 if entry is None else int(entry[2])
+                if entry is None and len(self._seen) >= _FLOOD_KEYS:
+                    self._seen = {k: v for k, v in self._seen.items() if now - v[0] < FLOOD_WINDOW_S}
+                    if len(self._seen) >= _FLOOD_KEYS:
+                        self._seen.clear()
+                self._seen[key] = [now, 1, 0]
+            else:
+                entry[1] += 1
+                if entry[1] > FLOOD_BURST:
+                    entry[2] += 1
+                    return False
+                dropped = 0
+        if dropped and isinstance(record.msg, str):
+            # No "%" is added: the message is still a format string for the record's arguments.
+            record.msg = f"{record.msg} [{dropped} similar records dropped]"
+        return True
+
+
 def _take_over(filters: list[logging.Filter]) -> list[_LoggerState]:
     """Route :data:`OWNED_LOGGERS` to the root handlers and filter them on the logger itself (TD-055)."""
     states: list[_LoggerState] = []
@@ -521,7 +650,8 @@ def configure_logging(
     for handler in handlers:
         root.addHandler(handler)
     setup.handlers = handlers
-    setup.owned = _take_over([redaction, db_redaction])
+    # The flood limit first: a dropped record is not formatted at all (A-02).
+    setup.owned = _take_over([FloodFilter(), redaction, db_redaction])
     root.setLevel(min(level, console_level))
     if failure is not None:
         logging.getLogger("tabrion_studio.logs").warning(

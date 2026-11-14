@@ -154,6 +154,17 @@ path); saving or deleting the profile and trusting the project file again forget
      that cannot exist, and the password is the empty string, so `PGPASSWORD`, `PGPASSFILE`, `~/.pgpass` and a
      service file's password are never sent to the host a (project) profile names (M-1). Use `env:PGPASSWORD` to
      send that variable on purpose.
+   - **A project profile refuses a clear-text password request** (security assessment B-3): its connections, and the
+     migration worker's (`worker_target`'s `refuse_cleartext`), get libpq's `require_auth=!password`
+     (`driver_options(refuse_cleartext=True)`, decided by `refuses_cleartext(entry)`: every source but `user`). A
+     hostile project file names the host, and the password may come from one of the user's environment variables;
+     with this option a server that asks for the password in clear text (`password`, and LDAP, PAM, RADIUS and BSD
+     authentication) gets nothing and the connection fails. `!password` rather than `scram-sha-256`: a server that
+     plays SCRAM or MD5 can only try to guess the password offline (it chooses the salt and the iteration count in
+     both), clear text hands it over; `scram-sha-256` alone would also break trust, certificate and GSSAPI logins.
+     User profiles keep every method (the user chose the server; LDAP, PAM and RADIUS need clear text). The option
+     is a constant per profile source, not a target field. libpq older than 16 does not know it: then it is left
+     out and `studio.require_auth_unavailable` is logged (`psycopg[binary]` bundles a newer libpq).
 4. **The URL** is built by `connection_url` from the fields in `TARGET_FIELDS` and the password, and from nothing
    else. A stored password is bound to the fingerprint of exactly these fields (C-1 of `stu-007-review.md`; L-1 of
    `stu-008-review.md`, binding for STU-009).

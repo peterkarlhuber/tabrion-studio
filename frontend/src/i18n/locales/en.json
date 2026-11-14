@@ -39,7 +39,7 @@
     },
     "access": {
       "readOnly": "Read-only",
-      "readOnlyHint": "This connection is read-only. Studio does not offer write access in this version.",
+      "readOnlyHint": "Studio opens this connection read-only and sends only reading statements. Only a database role without write privileges is a hard boundary.",
       "locked": "Writing locked",
       "lockedHint": "Production connection: writing is always locked."
     },

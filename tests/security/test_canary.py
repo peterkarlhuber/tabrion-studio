@@ -411,3 +411,87 @@ def test_a_database_detail_in_the_middle_of_a_line_is_redacted(logs: Logs, label
     records = [record for record in logs.records() if "insert failed" in str(record.get("message", ""))]
     assert records, logs.records()
     assert "[redacted: database server text]" in str(records[0]["message"])
+
+
+def test_lasting_secrets_stay_redacted_after_many_sign_ins(static_dir: Path, logs: Logs) -> None:
+    """Security assessment C-01: the control token and a database password are never evicted from the redaction by
+    the short-lived values of many sign-ins (each one registers a launch token, a session ID and a CSRF value)."""
+    from tabrion_studio.config.schema import SecretRef
+    from tabrion_studio.config.secrets import Secrets, SecretTarget
+
+    studio = make_studio(static_dir)  # registers the control token
+    secrets = Secrets(environ={"STUDIO_TEST_PASSWORD": CANARY})
+    target = SecretTarget(SecretRef("env", "STUDIO_TEST_PASSWORD"), "user", "user:p:0", static_dir, None)
+    assert secrets.resolve(target) == CANARY
+    for _ in range(200):  # 600 short-lived registrations, more than the bounded store holds
+        studio.launch_token()
+        studio.runtime.sessions.create()
+    log = logging.getLogger("tabrion_studio.test")
+    log.warning("control %s password %s", TOKEN, CANARY)
+    text = logs.everything()
+    assert TOKEN not in text
+    _assert_no_canary(text)
+
+
+def test_short_lived_values_still_go_from_the_bounded_store(logs: Logs) -> None:
+    """C-01: only lasting values are kept for good; the oldest short-lived ones still make room (bounded memory)."""
+    first = f"short-lived-{uuid.uuid4()}"
+    register_secret(first)
+    for _ in range(600):
+        register_secret(f"short-lived-{uuid.uuid4()}")
+    logging.getLogger("tabrion_studio.test").warning("value %s", first)
+    assert first in logs.everything()
+
+
+class _PgLikeError(Exception):
+    """A driver error whose text echoes the statement with a literal, as PostgreSQL's ``LINE n:`` part does."""
+
+
+def _db_error() -> _PgLikeError:
+    return _PgLikeError(f"invalid input syntax for type integer\nLINE 1: SELECT '{CANARY}'::int\n       ^")
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        lambda: [_db_error()],
+        lambda: (_db_error(),),
+        lambda: {"error": _db_error()},
+        lambda: {_db_error()},
+        lambda: frozenset({_db_error()}),
+        lambda: [{"k": (1, _db_error())}],
+    ],
+    ids=["list", "tuple", "dict", "set", "frozenset", "nested"],
+)
+def test_an_exception_inside_a_container_argument_is_shown_by_its_type(
+    logs: Logs, argument: Callable[[], object]
+) -> None:
+    """Security assessment C-02: an exception nested in a list, tuple, set or dict argument is formatted by its type
+    only, like one passed directly; its text (a statement with literals) never reaches the log."""
+    logging.getLogger("tabrion_studio.c02").error("query failed: %s", argument())
+    logging.getLogger("tabrion_studio.c02").error("query failed: %(result)s", {"result": argument()})
+    _assert_no_canary(logs.everything())
+    messages = [str(record["message"]) for record in logs.records() if "query failed" in str(record["message"])]
+    assert len(messages) == 2
+    assert all("_PgLikeError: [message redacted]" in message for message in messages)
+
+
+def test_containers_too_deep_or_too_large_are_not_formatted(logs: Logs) -> None:
+    """C-02: what cannot be checked in full is not formatted at all."""
+    deep: object = [_db_error()]
+    for _ in range(10):
+        deep = [deep]
+    large = [*range(5000), _db_error()]
+    log = logging.getLogger("tabrion_studio.c02")
+    log.error("deep %s", deep)
+    log.error("large %s", large)
+    _assert_no_canary(logs.everything())
+    messages = [str(record["message"]) for record in logs.records()]
+    assert any("[list not shown]" in message for message in messages if message.startswith("deep"))
+    assert "large [list not shown]" in messages
+
+
+def test_containers_without_exceptions_format_as_before(logs: Logs) -> None:
+    log = logging.getLogger("tabrion_studio.c02")
+    log.warning("values %s %r", [1, "a", (2, None)], {"k": {"n": 1}})
+    assert "values [1, 'a', (2, None)] {'k': {'n': 1}}" in [str(r["message"]) for r in logs.records()]

@@ -34,12 +34,20 @@ a profile still succeeds and answers `"secret_removed": false`, and the page say
 the keyring (L-3 of `stu-008-review.md`).
 
 Every resolved or entered value of 4 characters or more is redacted from the logs (values of 4 to 7 characters in a
-set that is never evicted). Shorter values are not registered: redacting every "ab" in a log line would make the log
+set that is never evicted). Passwords, like the control token, are registered as lasting values, which are never
+evicted either (security assessment C-01); only the short-lived launch tokens, session IDs and CSRF values share the
+bounded store of 512 entries, where the oldest go first. Shorter values are not registered: redacting every "ab" in a log line would make the log
 unreadable.
 
 `select_backend()` picks one keyring backend: the usable backend with the highest priority, never the chainer, which
-could reach a backend Studio refuses. **Refused:** `keyring.backends.fail`, `keyring.backends.null` and the whole
-`keyrings.alt` package, whose backends keep secrets in a file. Without a usable backend (for example Linux without a
+could reach a backend Studio refuses. **Usable** (security assessment C-04): only a backend whose class is defined in
+one of the `keyring` package's OS modules (`keyring.backends.macOS`, `Windows`, `SecretService`, `libsecret`,
+`kwallet`), compared by the class's exact module, so a subclass in another package does not count; or the one
+backend whose `module.Class` the user names in `TABRION_STUDIO_KEYRING_BACKEND` (an explicit opt-in, for a password
+manager's own backend). A denylist alone would accept any third-party backend with a positive priority, which may keep
+passwords in a plain file. **Refused always, also when named:** `keyring.backends.fail`, `keyring.backends.null` and
+the whole `keyrings.alt` package, whose backends keep secrets in a file. The selected backend is logged once at INFO
+(`studio.keyring_backend`, its `module.Class`). Without a usable backend (for example Linux without a
 Secret Service), Studio logs one warning (`studio.keyring_unavailable`), `GET /api/secrets` answers
 `{"keyring": {"available": false}}`, storing in the keyring is refused with `studio.keyring_unavailable`, and a
 `keyring:` profile can still use a secret entered for this session. `env:` and `file:` references work as usual

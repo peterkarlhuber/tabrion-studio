@@ -30,7 +30,9 @@ Studio is a tool for one person on one computer. In short:
   (0600), its trust records, the instance files of a running Studio, the one-time sign-in files and its logs. It never writes a project's `.tabrion/studio.toml`, and never rewrites a file of yours that
   has issues or comments without asking.
 - **Untrusted projects.** A project's profiles are used only after you confirmed exactly that file in the trust
-  dialog, which shows where each password would go.
+  dialog, which shows where each password would go. A connection of a project profile never answers a server that
+  asks for the password in clear text, so even a server the project names cannot read it that way (see
+  [Connections](connections.md#the-projects-profiles-and-the-trust-dialog)).
 - **No passwords in files or logs.** A profile names where its password comes from (keyring, variable, file, this
   session); a plain password in a profile is refused. Passwords, sign-in tokens, parameter values and database error
   texts never reach the log or an error message.
@@ -67,6 +69,10 @@ Studio is a tool for one person on one computer. In short:
 - **Windows: Studio's folders in a synced profile folder.** On Windows, Studio does not check the permissions of its
   state folder inside your user profile. The default (`%LOCALAPPDATA%`) is not synced; do not move Studio's folders
   into OneDrive or another synced folder.
+- **Other local users can slow Studio down.** Any program on the computer can open connections to Studio's port
+  without signing in. Studio closes a connection that does not send a complete request within 10 seconds and limits
+  how often the same server error is logged, but a program that keeps opening connections can still make Studio slow
+  or unreachable while it runs; it gets no access to your data that way.
 - **Warnings are not protection.** Refusing `BEGIN`, `SET` and similar statements, and every warning before a
   statement, help you avoid mistakes; they are not the security boundary.
 - **Drafts are SQL text on disk.** The SQL editor keeps your tabs' text in Studio's private state database (0600, in

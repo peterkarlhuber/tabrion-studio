@@ -8,6 +8,7 @@ the database (so that only Studio's settings, not missing privileges, stop the w
 from __future__ import annotations
 
 from collections.abc import Iterator
+import contextlib
 from dataclasses import dataclass, field, replace
 import hashlib
 import itertools
@@ -16,7 +17,10 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import socket
 import sqlite3
+import struct
+import threading
 import time
 from typing import Any
 
@@ -39,6 +43,7 @@ from tabrion_studio.services.connections import (
     RegistryError,
     connection_url,
     driver_options,
+    refuses_cleartext,
     studio_profile,
 )
 from tabrion_studio.services.readonly import StatementRefused, check_statement, first_word, sqlite_authorizer
@@ -862,6 +867,141 @@ def test_driver_options_keep_libpq_from_finding_a_password() -> None:
     assert without["password"] == "" and without["prepare_threshold"] == 0
     assert not Path(without["passfile"]).exists() and Path(without["passfile"]).parent.is_file()
     assert "password" not in driver_options("pw")  # never overrides the URL's password
+
+
+class _AuthServer:
+    """A minimal PostgreSQL wire endpoint on loopback that asks every client for its password in clear text (the
+    ``password`` method) and records the password messages it receives; it never completes a login."""
+
+    _SSL_OR_GSS_REQUEST = (80877103, 80877104)
+
+    def __init__(self) -> None:
+        self._listener = socket.create_server(("127.0.0.1", 0))
+        self._listener.settimeout(10)
+        self.port = int(self._listener.getsockname()[1])
+        self.password_messages: list[bytes] = []
+        self.startups = 0
+        self._stopped = False
+        self._thread = threading.Thread(target=self._serve, daemon=True)
+        self._thread.start()
+
+    def _serve(self) -> None:
+        with contextlib.suppress(OSError):
+            while True:
+                peer, _ = self._listener.accept()
+                with peer:
+                    if self._stopped:
+                        return
+                    self._one(peer)
+
+    @staticmethod
+    def _read(peer: socket.socket, size: int) -> bytes:
+        data = b""
+        while len(data) < size:
+            chunk = peer.recv(size - len(data))
+            if not chunk:
+                break
+            data += chunk
+        return data
+
+    def _one(self, peer: socket.socket) -> None:
+        peer.settimeout(5)
+        with contextlib.suppress(OSError):
+            while True:
+                head = self._read(peer, 8)
+                if len(head) < 8:
+                    return
+                length, code = struct.unpack(">ii", head)
+                if length == 8 and code in self._SSL_OR_GSS_REQUEST:
+                    peer.sendall(b"N")  # no TLS, no GSS encryption: the client goes on in plain text
+                    continue
+                self._read(peer, length - 8)  # the rest of the startup message
+                self.startups += 1
+                peer.sendall(b"R" + struct.pack(">ii", 8, 3))  # AuthenticationCleartextPassword
+                kind = self._read(peer, 1)
+                if kind == b"p":
+                    (size,) = struct.unpack(">i", self._read(peer, 4))
+                    self.password_messages.append(self._read(peer, size - 4))
+                return
+
+    def close(self) -> None:
+        self._stopped = True
+        with contextlib.suppress(OSError), socket.create_connection(("127.0.0.1", self.port), timeout=1):
+            pass  # wakes the accept() above
+        self._thread.join(5)
+        self._listener.close()
+
+
+@pytest.fixture
+def auth_server() -> Iterator[_AuthServer]:
+    endpoint = _AuthServer()
+    try:
+        yield endpoint
+    finally:
+        endpoint.close()
+
+
+def _cleartext_source(port: int, password: str) -> Source:
+    profile = Profile(
+        "remote",
+        "postgresql",
+        "dev",
+        host="127.0.0.1",
+        port=port,
+        database="d",
+        user="u",
+        sslmode="disable",
+        password=SecretRef("env", "STUDIO_TEST_PASSWORD"),
+    )
+    return Source(
+        profiles={"project:remote": profile, "user:remote": profile},
+        passwords={"project:remote": password, "user:remote": password},
+    )
+
+
+def test_a_project_profile_never_answers_a_clear_text_password_request(auth_server: _AuthServer) -> None:
+    """Security assessment B-3: a project's file names the host; a connection of a project profile refuses the
+    server's request for the password in clear text (libpq ``require_auth=!password``), so the password, here one
+    from an ``env:`` variable, never leaves Studio that way. A user profile, the user's own choice of server, still
+    answers (LDAP, PAM and RADIUS use this exchange); that also shows the endpoint asks."""
+    password = f"canary-{secrets.token_hex(8)}"
+    registry = ConnectionRegistry(_cleartext_source(auth_server.port, password))
+    try:
+        with pytest.raises((RegistryError, TabrionError, HealthError)):
+            registry.open("project:remote")
+        assert auth_server.startups >= 1
+        assert auth_server.password_messages == []
+        with pytest.raises((RegistryError, TabrionError, HealthError)):
+            registry.open("user:remote")
+        assert auth_server.password_messages and auth_server.password_messages[0] == password.encode() + b"\x00"
+    finally:
+        registry.close_all()
+
+
+def test_driver_options_refuse_clear_text_for_project_profiles(monkeypatch: pytest.MonkeyPatch) -> None:
+    assert driver_options("pw", refuse_cleartext=True)["require_auth"] == "!password"
+    assert "require_auth" not in driver_options("pw")
+    assert refuses_cleartext(Entry("project:p", "project", PG_PROFILE))
+    assert not refuses_cleartext(Entry("user:p", "user", PG_PROFILE))
+    # A libpq without require_auth (older than 16) does not know the option: it is left out, with a warning.
+    monkeypatch.setattr(connections_module, "_libpq_version", lambda: 150000)
+    assert "require_auth" not in driver_options("pw", refuse_cleartext=True)
+
+
+def test_the_migration_worker_target_carries_the_clear_text_refusal(sqlite_file: Path) -> None:
+    """B-3: the migration worker opens its own connection from ``worker_target``; it gets the same refusal."""
+    profile = Profile("parts", "sqlite", "dev", path="data/parts.db")
+    source = Source(
+        profiles={"project:parts": profile, "user:parts": profile},
+        files={"project:parts": sqlite_file, "user:parts": sqlite_file},
+    )
+    registry = ConnectionRegistry(source)
+    try:
+        for profile_id, refused in (("project:parts", True), ("user:parts", False)):
+            opened = registry.open(profile_id)
+            assert registry.worker_target(opened.id)["refuse_cleartext"] is refused
+    finally:
+        registry.close_all()
 
 
 def test_a_connection_test_shares_the_limit(sqlite_file: Path) -> None:

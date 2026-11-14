@@ -5,9 +5,10 @@ when a connection is made (STU-009) and never reaches the frontend, a log or an 
 
 * ``keyring:``: the OS keyring (macOS Keychain, Windows Credential Manager, Secret Service or KWallet), service
   :data:`SERVICE`, one entry per profile and connection target (:func:`keyring_key`). **There is no plain-text
-  fallback:** a backend that stores secrets in a file (the ``keyrings.alt`` package) or that does nothing
-  (``fail``, ``null``) counts as "no keyring" (R-S4). Without a keyring, a ``keyring:`` profile can only use a
-  secret entered for this session.
+  fallback:** only the ``keyring`` package's own OS backends count as a keyring; a backend that stores secrets in a
+  file (the ``keyrings.alt`` package) or that does nothing (``fail``, ``null``) counts as "no keyring" (R-S4), and
+  a backend of any other package only when the user names it in ``TABRION_STUDIO_KEYRING_BACKEND`` (C-04). Without
+  a keyring, a ``keyring:`` profile can only use a secret entered for this session.
 * ``env:NAME``: the variable of the Studio process.
 * ``file:PATH``: read by :func:`read_secret_file`, which enforces the binding requirement C-3 of
   ``stu-006-review.md`` at read time: no ``expanduser``, no URL decoding and no Unicode normalization (the value is
@@ -17,9 +18,9 @@ when a connection is made (STU-009) and never reaches the frontend, a log or an 
   by the user and private (no group or other bit; POSIX), at most :data:`MAX_SECRET_BYTES`.
 * **session**: a secret entered in the page for this process only (:class:`SessionSecrets`), kept in memory.
 
-Every resolved or entered value is registered with :func:`tabrion_studio.logs.register_secret`, so it is redacted
-from every log record. Every refusal is a :class:`SecretError` with a problem code and nothing else: no path, no
-variable value, no keyring message.
+Every resolved or entered value is registered with :func:`tabrion_studio.logs.register_secret` as a lasting value
+(never evicted, C-01), so it is redacted from every log record. Every refusal is a :class:`SecretError` with a
+problem code and nothing else: no path, no variable value, no keyring message.
 """
 
 from __future__ import annotations
@@ -58,7 +59,23 @@ _BINARY = getattr(os, "O_BINARY", 0)
 _REPARSE = 0x400
 _POSIX = sys.platform != "win32"
 #: Keyring backends that are not a keyring: they fail, do nothing, or keep secrets in a file (no plain-text fallback).
+#: Refused always, also when named in :data:`KEYRING_BACKEND_ENV`.
 _REFUSED_MODULES = ("keyring.backends.fail", "keyring.backends.null", "keyrings.alt")
+#: The OS keyrings of the ``keyring`` package itself (security assessment C-04): macOS Keychain, Windows Credential
+#: Manager, Secret Service (also through libsecret) and KWallet. A backend of any other module is used only when the
+#: user names its class in :data:`KEYRING_BACKEND_ENV`: a package or a configuration that brings its own backend
+#: cannot make Studio store passwords somewhere that is not an OS keyring without the user's say.
+_OS_KEYRING_MODULES = frozenset(
+    {
+        "keyring.backends.macOS",
+        "keyring.backends.Windows",
+        "keyring.backends.SecretService",
+        "keyring.backends.libsecret",
+        "keyring.backends.kwallet",
+    }
+)
+#: ``module.Class`` of one more keyring backend the user accepts (for example a password manager's own backend).
+KEYRING_BACKEND_ENV = "TABRION_STUDIO_KEYRING_BACKEND"
 
 logger = logging.getLogger("tabrion_studio.secrets")
 
@@ -185,7 +202,7 @@ def read_secret_file(text: str, base: Path, roots: list[Path] | None) -> str:
     value = value[:-2] if value.endswith("\r\n") else value.removesuffix("\n")
     if not value or "\x00" in value:
         raise SecretError("studio.secret_file_unreadable")
-    register_secret(value)
+    register_secret(value, lasting=True)
     return value
 
 
@@ -206,9 +223,18 @@ def keyring_key(owner: Owner, profile: Profile, project_key: str) -> str:
     return f"project:{project_key}:{profile.name}:{target}"
 
 
-def _allowed(backend: Any) -> bool:
+def backend_name(backend: Any) -> str:
+    """``module.Class`` of a keyring backend (no secret: what the log and the opt-in name)."""
+    cls = type(backend)
+    return f"{cls.__module__}.{cls.__qualname__}"
+
+
+def _allowed(backend: Any, accepted: str | None = None) -> bool:
     module = type(backend).__module__
     if any(module == refused or module.startswith(refused + ".") for refused in _REFUSED_MODULES):
+        return False
+    # The exact module of the class, not isinstance: a subclass in another package is another backend (C-04).
+    if module not in _OS_KEYRING_MODULES and backend_name(backend) != accepted:
         return False
     try:
         return float(backend.priority) > 0
@@ -216,17 +242,23 @@ def _allowed(backend: Any) -> bool:
         return False
 
 
-def select_backend() -> Any | None:
-    """The best usable keyring backend, or None (``fail``, ``null`` and the file backends of ``keyrings.alt``)."""
+def select_backend(environ: Mapping[str, str] | None = None) -> Any | None:
+    """The best usable keyring backend, or None.
+
+    Usable: one of the ``keyring`` package's OS keyrings (:data:`_OS_KEYRING_MODULES`), or the one backend whose
+    ``module.Class`` the user names in :data:`KEYRING_BACKEND_ENV`; never ``fail``, ``null`` or the file backends of
+    ``keyrings.alt``.
+    """
     import keyring
     from keyring.backends.chainer import ChainerBackend
 
+    accepted = (os.environ if environ is None else environ).get(KEYRING_BACKEND_ENV) or None
     try:
         current = keyring.get_keyring()
     except Exception:
         return None
     candidates = list(current.backends) if isinstance(current, ChainerBackend) else [current]
-    usable = [backend for backend in candidates if _allowed(backend)]
+    usable = [backend for backend in candidates if _allowed(backend, accepted)]
     if not usable:
         return None
     return max(usable, key=lambda backend: float(backend.priority))
@@ -252,6 +284,13 @@ class KeyringStore:
                         "(env: and file: references still work; there is no plain-text fallback)",
                         extra={"event": "studio.keyring_unavailable"},
                     )
+                else:
+                    # C-04: say which backend keeps the passwords.
+                    logger.info(
+                        "keyring backend: %s",
+                        backend_name(self._backend),
+                        extra={"event": "studio.keyring_backend"},
+                    )
             return self._backend
 
     @property
@@ -271,7 +310,7 @@ class KeyringStore:
             return None
         if not isinstance(value, str):
             raise SecretError("studio.keyring_failed")
-        register_secret(value)
+        register_secret(value, lasting=True)
         return value
 
     def set(self, key: str, value: str) -> None:
@@ -308,7 +347,7 @@ class SessionSecrets:
         self._lock = threading.Lock()
 
     def set(self, key: str, value: str) -> None:
-        register_secret(value)
+        register_secret(value, lasting=True)
         with self._lock:
             self._values[key] = value
 
@@ -371,7 +410,7 @@ class Secrets:
             value = self.environ.get(ref.target)
             if not value:
                 raise SecretError("studio.secret_env_missing")
-            register_secret(value)
+            register_secret(value, lasting=True)
             return value
         if ref is not None and ref.source == "file":
             return read_secret_file(ref.target, target.base, target.roots)
@@ -405,7 +444,7 @@ class Secrets:
         if where == "keyring":
             if target.ref is None:
                 raise SecretError("studio.secret_not_storable")  # the profile has no keyring: reference
-            register_secret(secret)
+            register_secret(secret, lasting=True)
             self.keyring.set(target.key, secret)
             self.session.delete(target.key)
         elif where == "session":

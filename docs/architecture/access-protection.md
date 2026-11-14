@@ -185,6 +185,25 @@ forbids `dangerouslySetInnerHTML`.
 16.4) is still held off by the Host allowlist, the Origin check, `SameSite=Strict` and the CSRF value, and its
 heartbeat counts because it carries the session. Supported are current Chrome, Edge, Firefox and Safari.
 
+## Slow and idle connections (finding A-02)
+
+Any local program can open connections to Studio's port without a session. Uvicorn waits without limit for the first
+request on a new connection, and its keep-alive timer stops at the first byte of the next one, so connections that
+send nothing or a request a byte at a time stayed open for good, until the process ran out of file descriptors.
+`server.RequestTimeoutProtocol` (Uvicorn's h11 protocol with one timer) closes a connection that does not deliver a
+complete request, head and body, within `REQUEST_READ_TIMEOUT_S` (10 seconds) from when the server starts waiting for
+it: after the connection opened or after the previous answer. Arriving data does not restart the timer; it stops when
+the request is complete, so a long query is never cut. Uvicorn's own 5-second idle timeout after an answer stays.
+
+Not adopted: Uvicorn's `limit_concurrency`. Uvicorn counts open connections for it and answers *every* request with
+503 while the limit is reached, so a handful of idle connections would lock the owner out sooner than without it.
+Records of the owned loggers (`uvicorn.*`, `asyncio`) are limited per first line (`logs.FloodFilter`, see
+[Errors and logging](errors-and-logging.md)), so a flood of failing `accept()` calls or invalid requests cannot rotate
+the log away. What remains: a local program that keeps opening connections faster than they time out can still make
+Studio slow or unreachable while it runs (availability only; no session, no data). Tests:
+`tests/unit/test_server.py` (a silent connection and a request that trickles in are closed, keep-alive requests and a
+long answer are not cut) and `tests/unit/test_logs.py` (the flood limit).
+
 ## Development server
 
 `npm run dev` (Vite on `127.0.0.1:5173`) proxies `/api` to the backend named by `TABRION_STUDIO_BACKEND`. The backend

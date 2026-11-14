@@ -39,7 +39,7 @@
     },
     "access": {
       "readOnly": "Schreibgeschützt",
-      "readOnlyHint": "Diese Verbindung ist schreibgeschützt. Studio bietet in dieser Version keinen Schreibzugriff.",
+      "readOnlyHint": "Studio öffnet diese Verbindung schreibgeschützt und sendet nur lesende Anweisungen. Eine harte Grenze ist nur eine Datenbankrolle ohne Schreibrechte.",
       "locked": "Schreiben gesperrt",
       "lockedHint": "Produktionsverbindung: Schreiben ist immer gesperrt."
     },

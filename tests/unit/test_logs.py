@@ -16,11 +16,14 @@ import pytest
 
 from tabrion_studio.logs import (
     BACKUP_COUNT,
+    FLOOD_BURST,
+    FLOOD_WINDOW_S,
     MAX_BYTES,
     MAX_TRACEBACK,
     MESSAGE_REDACTED,
     OWNED_LOGGERS,
     REDACTED,
+    FloodFilter,
     PrivateRotatingFileHandler,
     RedactionFilter,
     configure_logging,
@@ -332,3 +335,53 @@ def test_default_log_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     assert "tabrion-studio" in str(default_log_dir())
     monkeypatch.setenv("TABRION_STUDIO_LOG_DIR", str(tmp_path / "x"))
     assert default_log_dir(tmp_path) == tmp_path / "x"
+
+
+# --- A-02: a flood of Uvicorn's or asyncio's records cannot rotate the log away ----------------------------------
+
+
+def test_a_flood_of_asyncio_records_is_cut_and_counted(tmp_path: Path, console: io.StringIO) -> None:
+    setup = configure_logging(tmp_path / "logs", "studio-x", console=console)
+    try:
+        flood = logging.getLogger("asyncio")
+        for _ in range(5000):
+            try:
+                raise OSError(24, "Too many open files")
+            except OSError:
+                flood.error("socket.accept() out of system resource\nsocket: <socket fd=7>", exc_info=True)
+        for index in range(50):
+            logging.getLogger("uvicorn.error").warning("Invalid HTTP request received.")
+            logging.getLogger("tabrion_studio.test").warning("own record %d", index)  # Studio's own: not limited
+    finally:
+        setup.close()
+    assert setup.file is not None
+    records = _records(setup.file)
+    assert sum(1 for r in records if r["logger"] == "asyncio") == FLOOD_BURST
+    assert sum(1 for r in records if r["logger"] == "uvicorn.error") == FLOOD_BURST
+    assert sum(1 for r in records if r["logger"] == "tabrion_studio.test") == 50
+    assert setup.file.stat().st_size < 1024 * 1024
+
+
+def test_the_flood_filter_reports_what_it_dropped_in_the_next_window() -> None:
+    now = [0.0]
+    limit = FloodFilter(clock=lambda: now[0])
+
+    def record(message: str, name: str = "asyncio") -> logging.LogRecord:
+        return logging.LogRecord(name, logging.ERROR, __file__, 1, message, None, None)
+
+    passed = [limit.filter(record("Fatal error on transport\ndetails")) for _ in range(FLOOD_BURST + 30)]
+    assert passed.count(True) == FLOOD_BURST
+    assert limit.filter(record("Fatal error on transport\nother details")) is False  # the same first line
+    assert limit.filter(record("Exception in callback")) is True  # another message has its own count
+    assert limit.filter(record("Fatal error on transport", name="uvicorn.error")) is True  # and another logger
+    now[0] += FLOOD_WINDOW_S
+    after = record("Fatal error on transport\nlater")
+    assert limit.filter(after) is True
+    assert after.getMessage().endswith("[31 similar records dropped]")
+
+
+def test_the_flood_filter_keeps_a_bounded_number_of_keys() -> None:
+    limit = FloodFilter(clock=lambda: 0.0)
+    for index in range(10_000):
+        assert limit.filter(logging.LogRecord("asyncio", logging.ERROR, __file__, 1, f"m{index}", None, None))
+    assert len(limit._seen) <= 256
