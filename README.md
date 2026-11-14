@@ -8,8 +8,8 @@
 # Tabrion Studio
 
 Tabrion Studio is a **local developer tool** for SQLite files and PostgreSQL databases, built on
-[Tabrion](https://github.com/peterkarlhuber/tabrion). It runs on your machine, binds to `127.0.0.1` only and opens
-in your browser. It focuses on understanding schemas, running queries safely (read-only by default) and checking
+[Tabrion](https://github.com/peterkarlhuber/tabrion). It runs on your machine, binds to a loopback address (`127.x.y.z`) only
+and opens in your browser. It focuses on understanding schemas, running queries safely (read-only by default) and checking
 migration states and Tabrion profiles.
 
 > **Status: MVP in development, not released.** On `master`: starting and signing in, connection profiles with the
@@ -63,8 +63,9 @@ tabrion-studio --stop [PROJECT]
 tabrion-studio --version
 ```
 
-- `PROJECT` is the project folder (default: the current folder). Studio serves it on `127.0.0.1` at a free port and
-  opens the system browser.
+- `PROJECT` is the project folder (default: the current folder). Studio serves it on a fresh random loopback address
+  `127.x.y.z` at a free port and opens the system browser. On macOS, where only `127.0.0.1` exists by default, it
+  uses that address; there, leave `--port` out on a computer shared with other users (`docs/guide/security.md`).
 - Studio opens the browser with a one-time sign-in link (through a private file, so the link never shows up in the
   process list). `--no-browser --print-url` prints such a link instead, for a browser you start yourself; it works
   once.

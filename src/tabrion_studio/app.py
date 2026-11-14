@@ -142,6 +142,8 @@ class Runtime:
     scripts: Scripts | None = None
     #: The SQL editor's drafts in the state database (TD-033, review F-5); None serves no draft route.
     drafts: Drafts | None = None
+    #: The loopback address the server listens on: a random ``127.a.b.c`` per instance, or ``127.0.0.1`` (A-01).
+    host: str = "127.0.0.1"
 
 
 def _problem(code: str) -> Response:
@@ -222,6 +224,7 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     app.add_middleware(
         AccessMiddleware,
         port=runtime.port,
+        host=runtime.host,
         sessions=runtime.sessions,
         control_token=runtime.control_token,
         on_activity=runtime.idle.touch,

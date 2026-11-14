@@ -82,7 +82,7 @@ CATALOG: dict[str, Entry] = {
         403,
         ProblemKind.ACCESS,
         "Host not allowed",
-        "Studio answers only requests addressed to its own 127.0.0.1 address and port.",
+        "Studio answers only requests addressed to its own loopback address and port.",
         "Open Studio with the link that tabrion-studio opens or prints.",
     ),
     "access.forwarded_not_allowed": Entry(
@@ -90,7 +90,7 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.ACCESS,
         "Forwarded request",
         "Studio does not answer requests forwarded by a proxy.",
-        "Connect to Studio directly on 127.0.0.1.",
+        "Connect to Studio directly on its loopback address.",
     ),
     "access.origin_not_allowed": Entry(
         403, ProblemKind.ACCESS, "Origin not allowed", "Studio does not answer requests from other web pages."

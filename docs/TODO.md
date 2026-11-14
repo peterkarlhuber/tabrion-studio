@@ -88,6 +88,7 @@
 | TD-060 STU-054 UX acceptance 1.0: what stays open (the owner decisions on the "403" wording, D-07, tabrion's English finding texts and the start page are done, 2026-11-13; TD-032's dependency resolved by PR #85; open: TD-046 B-4, B-5 (QA-S1 for 1.0), B-7; the history as its own view) | P2 | Open (STU-054 PR #84; owner decisions 2026-11-13) |
 | TD-053 A SQLite function denied by the authorizer surfaces as `db.unknown` ("not authorized") instead of `db.permission`, a vaguer message (re-review of STU-016, not a security issue) | P3 | Open |
 | TD-063 Security assessment B-1 and B-2: the statement check's function denylist in every PostgreSQL call form, the pg_surgery and pg_visibility functions, dblink connections closed at check-in; what stays open (newer servers' functions, a diagnostics hint) | P1 | In progress (PR #92): B-1 and B-2 done; open: the PostgreSQL 17/18 candidates and the diagnostics hint (see the entry) |
+| TD-065 Security assessment A-01: a fresh random loopback address `127.a.b.c` per start, so no later Studio reuses an earlier origin (service workers, storage); the macOS fallback to `127.0.0.1` and the `--port` advice; what stays open (real Windows and macOS browsers) | P1 | In progress (A-01 PR): the fix, the residual-risk note in STU-ADR-0002 and the regression tests are done; open: the real-device checks (see the entry) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -2047,3 +2048,34 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   `pg_restore_*_stats` and `pg_clear_*_stats`): check whether they act in a read-only transaction and refuse them if
   so; a diagnostics hint when the profile's role may run dblink, adminpack or session-ending functions. The text
   check stays best effort, and the role's privileges stay the boundary.
+
+### TD-065 · Security assessment A-01: a fresh loopback origin per start
+
+- **Priority:** P1 · **Status:** In progress (A-01 PR) · **Refs:** the security assessment of 2026-11 (A-01 Medium;
+  the report and its reproduction stay with the planning documents), STU-ADR-0002 ("Residual risk: origin reuse on
+  loopback"), `docs/architecture/access-protection.md` ("Origin per start"), `docs/architecture/process-model.md`
+- **Done in the PR:** `server.bind_loopback` listens on a random `127.a.b.c` (not `127.0.0.1`) chosen anew for every
+  server, also with `--port` (another random address when the fixed port is taken on one, up to 8 tries); where the
+  address is not configured (`EADDRNOTAVAIL`, macOS by default) it uses `127.0.0.1`, and with `--port` prints a note.
+  The Host and Origin allowlist answers exactly that `<address>:<port>`; the instance info file records the address
+  (`host`; a file without it means `127.0.0.1`, any value outside `127.0.0.0/8` makes the file invalid), and the
+  control client connects there. The page removes any service worker registration on its origin at start
+  (`frontend/src/serviceWorkers.ts`, cleanup only). Docs: the user guide's `--port` advice (starting, security,
+  troubleshooting), the README, the development setup (`TABRION_STUDIO_BACKEND` now names the printed address).
+  Tests: `tests/unit/test_server.py` (fresh address per start, the fixed port on a new address, the fallback; the
+  Linux and Windows `backend test` jobs assert that a random address can be bound), `tests/unit/test_instance.py`,
+  `tests/security/test_access.py`, `tests/process/test_process_model.py`, frontend `serviceWorkers.test.ts`, and the
+  e2e regression `frontend/e2e/origin-backend.spec.ts` (two starts on one `--port` get two addresses, in every
+  browser; in Chromium a service worker that another program registered on `127.0.0.1:<port>` does not reach a later
+  Studio on that port). The assessment's `Clear-Site-Data` suggestion is not adopted: on `POST /api/session` it also
+  clears the CSRF value in `sessionStorage` of every other open tab (checked in Chromium), and it cannot reach a page
+  load that a worker answers; the browser makes no request when Studio stops.
+- **Open:** on real devices before G-R (with TD-023): Edge, Chrome and Firefox on Windows open, sign in and copy on a
+  `127.a.b.c` address (no proxy, a secure context); on macOS the fallback note with `--port`. Accepted residual risk
+  for the owner to confirm (STU-ADR-0002): the macOS fallback with a fixed `--port`, and an old Studio tab that is
+  reloaded after the stop on an address another local user has taken over (no session).
+- **Review conditions** (independent review of the A-01 PR, accepted with conditions): C-2 before G-R, folded into
+  GR-2: with a logging HTTP proxy configured, check that Firefox and WebKit/Safari do not send `127.a.b.c` requests
+  through the proxy (Chromium bypasses the proxy for all of `127.0.0.0/8`; the others are unverified). C-3 before
+  G-R: a real-Mac check of the `127.0.0.1` fallback and the `--port` note; the macOS residual risk stays an
+  owner-known risk.

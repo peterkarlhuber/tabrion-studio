@@ -2,9 +2,14 @@
 
 Studio is a tool for one person on one computer. In short:
 
-- **Only this computer.** The server listens on `127.0.0.1` and nowhere else; there is no option to change that.
-  Studio answers only addresses of the form `http://127.0.0.1:<port>/`, not `localhost`, so a web page that points
-  its own name at your computer cannot read Studio.
+- **Only this computer.** The server listens on a loopback address (`127.x.y.z`) and nowhere else; there is no
+  option to change that. Studio answers only the exact address it printed, `http://127.x.y.z:<port>/`, not
+  `localhost`, so a web page that points its own name at your computer cannot read Studio.
+- **A new address for every start.** Each start picks a fresh random loopback address such as `127.83.41.29`, so
+  nothing another user's program left in your browser for an earlier Studio address (for example a service worker)
+  can take over a later Studio, also with `--port`. On macOS only `127.0.0.1` exists by default, and Studio uses it:
+  there, on a computer shared with other users, leave `--port` out (see
+  [below](#what-studio-does-not-protect-against)).
 - **No login, but a sign-in per tab.** The `tabrion-studio` command opens the browser with a one-time link. The tab
   then holds a session cookie and a second value only that tab knows. Other web pages and the programs of other
   users of the computer have neither, and the server refuses them; a program running as you is not kept out (see
@@ -52,6 +57,11 @@ Studio is a tool for one person on one computer. In short:
 - **Migration code you trust.** When you trust a project's migration files, Studio runs them as you, with your
   rights: such code can do more than Studio checks (read files, open its own database connection). Studio asks
   again whenever a trusted file changes, but trust only projects whose code you would also run with `alembic` yourself.
+- **A fixed port on macOS, and old Studio tabs.** Where only `127.0.0.1` exists (macOS by default), Studio's address
+  is `http://127.0.0.1:<port>/`; with `--port` it is the same every time, and another user of the computer could
+  prepare that address in your browser while Studio is not running. Leave `--port` out on a shared computer. On every
+  system, close Studio's tabs after you stop it: a reloaded old tab may show a page of another program that now uses
+  the address (it gets no session).
 - **The sign-in link in the browser history.** The one-time link that opens Studio stays in the browser's history.
   It is worthless once used, and otherwise expires within 120 seconds.
 - **Windows: Studio's folders in a synced profile folder.** On Windows, Studio does not check the permissions of its

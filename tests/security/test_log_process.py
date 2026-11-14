@@ -31,12 +31,16 @@ def test_log_file_and_request_log_without_canary(project: Path, state_dir: Path,
     with start_studio(project, state_dir, "--log-dir", str(log_dir)) as studio:
         info, _ = studio.wait_ready()
         port = info.port
-        status, _, body = redeem(port, CANARY)  # a canary as the launch token
+        status, _, body = redeem(port, CANARY, host=info.host)  # a canary as the launch token
         assert status == 401 and CANARY not in body.decode()
         session = sign_in(info)
-        status, headers, body = request(port, "GET", f"/api/heartbeat?token={CANARY}", session.headers())
+        status, headers, body = request(
+            port, "GET", f"/api/heartbeat?token={CANARY}", session.headers(), host=info.host
+        )
         assert status == 204
-        status, headers, body = request(port, "GET", f"/api/nowhere?password={CANARY}", {"X-Canary": CANARY})
+        status, headers, body = request(
+            port, "GET", f"/api/nowhere?password={CANARY}", {"X-Canary": CANARY}, host=info.host
+        )
         assert status == 401
         assert headers["content-type"] == "application/problem+json"
         assert json.loads(body)["code"] == "access.session_required"

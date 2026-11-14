@@ -646,6 +646,14 @@ All notable changes to this project are documented here. The format follows
   record of a package that the lock does not pin (other than `tabrion-studio`), also without `--strict`, instead of
   ignoring it.
 
+- A-01 of the security assessment (TD-065): every start listens on a fresh random loopback address `127.a.b.c`
+  instead of `127.0.0.1`, also with `--port`, and answers only that address and port. Nothing another local program
+  left in the browser for an earlier Studio origin (a service worker, storage) applies to a later Studio. Where only
+  `127.0.0.1` is configured (macOS by default) Studio uses it, and with `--port` says that the address is then the
+  same every time; the guide advises leaving `--port` out on a shared computer. The instance info file records the
+  address. The page removes any service worker found on its origin. For `npm run dev`, set `TABRION_STUDIO_BACKEND`
+  to the printed address.
+
 - B-1 and B-2 of the security assessment (TD-063): the read-only statement check now recognizes every call form of
   refused functions, and also refuses pg_surgery's `heap_force_kill` and `heap_force_freeze` and pg_visibility's
   `pg_truncate_visibility_map`. The PostgreSQL check-in reset closes the session's dblink connections. A column named

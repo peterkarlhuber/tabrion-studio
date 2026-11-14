@@ -15,8 +15,8 @@ tabrion-studio diagnose [PROJECT] --profile PROFILE [--format markdown|json] [--
 
 Run `tabrion-studio` in your project folder, or name the folder: `tabrion-studio ~/src/parts`. Studio
 
-1. starts a local server on `127.0.0.1` at a free port and prints its address, for example
-   `http://127.0.0.1:53817/`;
+1. starts a local server on a fresh random loopback address at a free port and prints its address, for example
+   `http://127.83.41.29:53817/` (on macOS usually `http://127.0.0.1:53817/`, see `--port` below);
 2. opens your default browser with a **one-time sign-in link**. The link goes through a private file, so it never
    shows up in the process list, and it works once, within 2 minutes;
 3. shows the start page. If the project has a `.tabrion/studio.toml`, the trust dialog comes first (see
@@ -36,7 +36,7 @@ the address, shows "Not signed in". Run `tabrion-studio` again to get a signed-i
 | Option | What it does |
 |---|---|
 | `PROJECT` | the project folder; default: the current folder |
-| `--port N` | listen on this port of `127.0.0.1`; default: a free port. Studio never listens on another address |
+| `--port N` | listen on this port; default: a free port. The address is still a fresh random `127.x.y.z` for every start, and Studio never listens outside loopback. **On macOS** (only `127.0.0.1` exists by default) a fixed port gives the same address every time, which another user of the computer could prepare in your browser: on a shared computer, leave `--port` out (Studio prints a note when this applies) |
 | `--no-browser` | do not open the browser (and issue no sign-in link) |
 | `--print-url` | also print a one-time sign-in link; the browser still opens unless you add `--no-browser`. Use `--no-browser --print-url` for a browser you start yourself. Anyone who sees the link can use it once; do not share it |
 | `--idle-timeout MINUTES` | stop after this many minutes without an open Studio tab; default 30, `0` = never |

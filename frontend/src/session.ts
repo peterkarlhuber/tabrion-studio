@@ -1,7 +1,8 @@
 /**
  * Sign-in through the one-time launch link (STU-003, 03 section 4.1, review F-02/F-09).
  *
- * `tabrion-studio` opens `http://127.0.0.1:<port>/launch#<token>`. The token is in the fragment, so it never
+ * `tabrion-studio` opens `http://127.a.b.c:<port>/launch#<token>` (a fresh random loopback address for every start,
+ * finding A-01; `127.0.0.1` where only that exists). The token is in the fragment, so it never
  * reaches a server log or a Referer. This page removes it from the address bar and the history at once, sends it
  * to `POST /api/session` and gets the session cookie (HttpOnly) plus a CSRF value. The CSRF value lives only in
  * `sessionStorage`, which is scoped to this origin including the port: a program on another local port that

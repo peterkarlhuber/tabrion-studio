@@ -63,7 +63,7 @@ test.beforeAll(async () => {
     const timer = setTimeout(() => reject(new Error(`no sign-in link: ${out}`)), 30_000);
     studio?.stdout?.on('data', (chunk: Buffer) => {
       out += chunk.toString();
-      const match = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/.exec(out);
+      const match = /do not share\): (http:\/\/127(?:\.\d{1,3}){3}:\d+\/launch#\S+)/.exec(out);
       if (match?.[1]) {
         clearTimeout(timer);
         resolve(match[1]);
@@ -103,7 +103,7 @@ function newLink(): string {
     ],
     { encoding: 'utf-8', env: NO_KEYRING_ENV },
   );
-  const match = /do not share\): (http:\/\/127\.0\.0\.1:\d+\/launch#\S+)/.exec(out);
+  const match = /do not share\): (http:\/\/127(?:\.\d{1,3}){3}:\d+\/launch#\S+)/.exec(out);
   if (!match?.[1]) throw new Error(`no sign-in link: ${out}`);
   return match[1];
 }
@@ -516,7 +516,7 @@ test('QA-9, SQ-08: no request leaves the local server', async ({ page }) => {
   }
   await page.reload();
   await page.waitForLoadState('networkidle');
-  // The page loaded its script, styles, fonts and logo, and called the API: all from 127.0.0.1.
+  // The page loaded its script, styles, fonts and logo, and called the API: all from its own loopback origin.
   expect(seen).toContain('/api/health');
   expect(seen.some((path) => path.startsWith('/assets/'))).toBe(true);
   expect(foreign).toEqual([]);
