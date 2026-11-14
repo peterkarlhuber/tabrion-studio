@@ -38,7 +38,7 @@ while one of them is open. Each is tracked in `docs/TODO.md`; the decision numbe
 | GR-2 | The launch flow checked in Firefox and WebKit against the built wheel | 6 | TD-007 | **Open** |
 | GR-3 | Windows: the state folder's permissions checked inside the user profile too | 7 | TD-003 | **Open** |
 | GR-4 | A check on a real Windows machine of the refused device names (for example `CON.sql`) and of OneDrive-synced and other reparse-point folders (STU-020 decision D-4); so far CI and tests only | 7 (and 11) | TD-003 | **Open** |
-| GR-5 | tabrion's log redaction also strips database details in the middle of a line, and Studio takes the new tabrion pin | 13 | TD-056 (owner: tabrion) | **Open** |
+| GR-5 | tabrion's log redaction also strips database details in the middle of a line, and Studio takes the new tabrion pin | 13 | TD-056 (owner: tabrion) | **Met** (tabrion 0.2.0 pinned in the TD-013 PR; `test_a_database_detail_in_the_middle_of_a_line_is_redacted`) |
 
 These are in addition to the human security review (H-2) and to every step below. The other decisions accept a
 residual risk or name follow-up work that is not a G-R precondition (TD-031's nightly job, TD-033's usability rest,

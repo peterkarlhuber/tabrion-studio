@@ -1,8 +1,8 @@
 """STU-011 (TD-013): the tabrion 0.1 workarounds stay in ``services/tabrion_compat.py``.
 
-Only that module reaches below tabrion's public 0.1 surface (``Transaction.connection``, the driver's connection, its
-cursors and cancel functions). When tabrion 0.2 brings ``Transaction.stream``/``cancel`` and ``Database.inspector``
-(TAB-033, TAB-042), the move changes that file only.
+Only that module reaches below tabrion's public surface (``Transaction.connection``, the driver's connection, its
+cursors and cancel functions). Reflection uses tabrion 0.2's ``Database.inspector()`` since TD-013; the parts that
+0.2 does not replace yet (``stream``, ``Cancel``, ``Column``, ``check``, the session reset) stay in that file.
 """
 
 from __future__ import annotations

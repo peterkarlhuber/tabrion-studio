@@ -24,7 +24,11 @@ migration states and Tabrion profiles.
 > See [docs/TODO.md](docs/TODO.md) for what comes next.
 
 **Non-goals:** no hosted service, no shared server, no multi-user login, no replacement for administration tools
-such as DBeaver or pgAdmin, no engines besides SQLite and PostgreSQL.
+such as DBeaver or pgAdmin, no engines besides SQLite and PostgreSQL. Studio 1.0 excludes writing data, schema
+changes, running migrations, running backups and role management. Later versions may add the Data Editor (1.1), the
+Schema Designer (1.2) and the Database Manager (1.3) only under change request CR-DBX, each locked until its own gate
+(G-S2, G-S3, G-S4; [STU-ADR-0005](docs/adr/0005-crdbx-write-and-admin-gates.md)); Studio never runs a project's
+migrations or `env.py`.
 
 ## Installation (from source, before the first release)
 

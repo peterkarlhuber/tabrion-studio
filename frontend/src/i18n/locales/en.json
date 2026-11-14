@@ -926,6 +926,7 @@
     "choice": "Not a valid choice.",
     "control_character": "Contains a control character or a space.",
     "network_path": "Network paths and devices are not allowed.",
+    "url_character": "A SQLite path must not contain ?, # or %.",
     "not_for_engine": "Not used by this database type.",
     "plain_password": "Only a reference such as keyring: or env:NAME is allowed.",
     "rename_unsupported": "The name cannot be changed.",

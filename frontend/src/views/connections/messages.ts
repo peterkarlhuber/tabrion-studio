@@ -85,6 +85,7 @@ const ISSUES = new Set([
   'choice',
   'control_character',
   'network_path',
+  'url_character',
   'not_for_engine',
   'plain_password',
   'rename_unsupported',

@@ -203,6 +203,23 @@ def test_secret_files_outside_project_and_config_are_refused(env: Env, password:
     assert env.trust(digest).json()["code"] == "studio.project_invalid"
 
 
+@pytest.mark.parametrize("path", ["data/100%.db", "%2F%2Fattacker.example/share/x.db", "a.db?mode=rwc", "a.db#x"])
+def test_url_characters_in_a_sqlite_path_make_the_project_file_invalid(env: Env, path: str) -> None:
+    """TD-013 (tabrion 0.2, ``profilefile.value``, G-T2 B-1): a "?", "#" or "%" in a SQLite ``path`` of
+    ``.tabrion/studio.toml`` makes the file invalid with its issue, not a crash; it cannot be trusted, no profile is
+    offered and the value is not repeated."""
+    text = f'version = 1\n[[profile]]\nname = "p"\nengine = "sqlite"\npath = "{path}"\nenvironment = "dev"\n'
+    digest = env.write(text)
+    response = env.studio.client.get("/api/project", headers=env.headers)
+    assert response.status_code == 200
+    doc = response.json()
+    assert doc["state"] == "invalid"
+    assert doc["issues"] == [{"pointer": "profile[0].path", "code": "config.url_character", "severity": "error"}]
+    assert path not in response.text
+    assert env.trust(digest).json()["code"] == "studio.project_invalid"
+    assert env.project_profiles() == []
+
+
 def test_secret_files_inside_project_or_config_are_listed(env: Env) -> None:
     secret_in_config = env.config_dir / "db-secret"
     text = (
