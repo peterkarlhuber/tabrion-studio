@@ -445,6 +445,7 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         # secret confirmations (next to it) live in the flag file's folder, never in a state folder that an
         # environment variable chose (review N-1 of PR #116).
         audit_dir=None if write_state is None else write_state / "audit",
+        log_dir=options.log_dir,
     )
 
     def on_ready() -> None:

@@ -67,6 +67,7 @@ from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import (
     WriteConnection,
     WriteError,
+    createdb_findings,
     file_identity,
     open_write_connection,
     require_auth_supported,
@@ -241,6 +242,13 @@ class Unlocks:
         if not isinstance(typed_name, str) or typed_name != write.name:
             raise WriteError("studio.unlock_name_mismatch")
         opened, pair_digest = self._open(write, read, connection)
+        # Open point 1 of the PR #128 review (b): CREATEDB where Studio does not need it is a warning, never a refusal.
+        opened.findings += createdb_findings(
+            opened.facts,
+            kind=write.kind,
+            environment=read.environment,
+            data_editor_on=self.areas.on(Area.DATA_EDITOR),
+        )
         try:
             # Before the unlock takes effect: no record, no unlock (fail closed).
             self.audit.append(

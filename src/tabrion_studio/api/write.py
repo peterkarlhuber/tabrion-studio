@@ -97,11 +97,13 @@ def add_write_routes(
     config: Configuration | None = None,
     registry: ConnectionRegistry | None = None,
     audit_dir: Path | None = None,
+    log_dir: Path | None = None,
 ) -> Unlocks | None:
     """Register the write foundation's routes; the unlocks when an area is on (closed by the app on shutdown).
 
     ``audit_dir`` is the audit log's folder (``audit`` in the folder of ``write-areas.toml``); without one, every unlock
-    and write is refused (fail closed). It is neither created nor read while every area is off."""
+    and write is refused (fail closed). It is neither created nor read while every area is off. ``log_dir`` is Studio's
+    log folder, one of the folders the Schema Designer creates no database in."""
     snapshot = areas.to_dict()
 
     @app.get("/api/write/areas")
@@ -116,4 +118,4 @@ def add_write_routes(
     # Imported only now: with every flag off, no write code is loaded.
     from tabrion_studio.write.routes import add_enabled_write_routes
 
-    return add_enabled_write_routes(app, areas, config, registry, audit_dir)
+    return add_enabled_write_routes(app, areas, config, registry, audit_dir, log_dir)

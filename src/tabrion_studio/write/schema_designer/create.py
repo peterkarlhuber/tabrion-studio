@@ -9,20 +9,28 @@ unlock for a file that does not exist yet, so the typed confirmation is the new 
 last part of ``path``). The rules, each checked before anything is written:
 
 * ``path`` is an absolute, normalized local path (no ``..``, no network, device or drive-relative form, no control
-  character), at most :data:`MAX_PATH` characters, whose file name ends in ``.db``, ``.sqlite`` or ``.sqlite3``;
-* the folder exists and is reached through **no link** at all (its real path is the path given; on Windows compared
-  case-folded), is not itself a link (opened with ``O_NOFOLLOW`` where the platform has it and compared by device and
-  inode with the checked folder), belongs to this user and is not writable by group or others (POSIX; the
-  checks of Studio's own folders), and is not inside Studio's configuration, state or audit folders;
+  character and no space other than U+0020), at most :data:`MAX_PATH` characters, whose file name ends in ``.db``,
+  ``.sqlite`` or ``.sqlite3``;
+* the platform is POSIX: on Windows Studio creates no SQLite file (``studio.schema_create_platform``), because it
+  does not check a folder's access control list (open point 5 of the PR #128 review);
+* the folder exists and is reached through **no link** at all (its real path is the path given), is not itself a
+  link, belongs to this user and is not writable by group or others; every folder above it is a folder of root or
+  this user that group and others may not write unless its sticky bit is set (like OpenSSH's ``StrictModes``);
+* neither the folder nor any folder above it is one of Studio's own folders (configuration, state, audit, log, the
+  project's ``.tabrion`` folder), compared by **device and inode**, so a second name of one of them is refused too;
 * neither the file nor a side file (``-wal``, ``-shm``, ``-journal``) exists, as a file or as a link.
 
-Then ``run.start`` is written to the audit log (no record, no file), tabrion's ``create_private_file`` creates the
-file (``O_CREAT|O_EXCL|O_NOFOLLOW``, exactly ``0600``), Studio checks that the name is now its own new, empty,
-private regular file (an existing name is left alone by tabrion, so a file that appeared in between is
-``studio.schema_file_exists``), and ``tabrion.sqlite.connect(create=False)`` with the default ``SQLiteProfile``
-(WAL, foreign keys on) writes the header. A failure removes the file Studio created (only if the name is still that
-file). ``run.result`` follows (``committed`` or the problem code). The answer is the path and the mode; the page
-offers to save a connection profile for it (through the normal profile route, with the environment the user picks).
+Then ``run.start`` is written to the audit log (no record, no file). Studio opens the checked folder without
+following a link, compares it by device and inode with the folder it checked, and creates the file **relative to
+that open folder** (``O_CREAT|O_EXCL|O_NOFOLLOW``, exactly ``0600`` whatever the umask), so the file lands in the
+checked folder even if a folder on the path is replaced meanwhile; an existing name is ``studio.schema_file_exists``.
+Before ``tabrion.sqlite.connect(create=False)`` with the default ``SQLiteProfile`` (WAL, foreign keys on) writes the
+header, and again afterwards, Studio checks that the path still leads to the folder it checked (same device and
+inode, same real path, safe folders above it) and that the name, through the path and in the open folder, is still
+the file it created (device and inode, private regular file of this user). A failure removes that file from the open
+folder (only if the name is still that file). ``run.result`` follows (``committed`` or the problem code). The answer
+is the path and the mode; the page offers to save a connection profile for it (through the normal profile route,
+with the environment the user picks).
 
 **PostgreSQL** (``POST /api/write/schema-designer/create/postgresql``, ``{"connection_id", "name", "owner",
 "template", "encoding", "locale", "typed"}``). It runs on the write connection of this session's unlock of
@@ -68,7 +76,7 @@ import unicodedata
 
 from tabrion.errors import Classification, PermissionDenied, RoleMissing, TabrionError, classify, safe_message
 from tabrion.postgres import create_database
-from tabrion.sqlite import SQLiteProfile, create_private_file
+from tabrion.sqlite import SQLiteProfile
 from tabrion.sqlite import connect as sqlite_connect
 
 from tabrion_studio.config.locations import network_or_device, safe_realpath
@@ -113,7 +121,14 @@ def _invalid(field: str, code: str) -> WriteError:
 
 
 def _has_control(text: str) -> bool:
-    return any(unicodedata.category(char) in ("Cc", "Cf", "Cs", "Co", "Cn") for char in text)
+    """A control, format, surrogate, private-use or unassigned character, or a space other than U+0020 (a no-break
+    space and the other ``Zs`` characters, and the line and paragraph separators ``Zl``, ``Zp``), which look like a
+    blank or like nothing (review P128-03)."""
+    return any(
+        unicodedata.category(char) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
+        or (unicodedata.category(char) == "Zs" and char != " ")
+        for char in text
+    )
 
 
 # --- SQLite (STU-CR-2) -------------------------------------------------------------------------------------------
@@ -142,93 +157,185 @@ def _check_path(raw: object) -> tuple[str, str, str]:
     return raw, folder, name
 
 
-def _same_path(left: str, right: str) -> bool:
-    module: Any = posixpath if _POSIX else ntpath
-    return bool(module.normcase(module.normpath(left)) == module.normcase(module.normpath(right)))
-
-
-def _inside(path: str, root: str) -> bool:
-    module: Any = posixpath if _POSIX else ntpath
-    name = module.normcase(module.normpath(path))
-    base = module.normcase(module.normpath(root)).rstrip("\\/")
-    sep = "/" if _POSIX else "\\"
-    return bool(base) and (name == base or name.startswith(base + sep))
-
-
 def _is_link(info: os.stat_result) -> bool:
     return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & _REPARSE)
 
 
-def _check_folder(folder: str, reserved: Iterable[Path]) -> os.stat_result:
-    """The folder's ``lstat`` if Studio may create a file in it, else :class:`WriteError`."""
-    real = safe_realpath(Path(folder))
-    if real is None or not _same_path(str(real), folder):
-        raise WriteError("studio.schema_folder_unsafe")  # a link somewhere on the way: use the real path
+def _identity(info: os.stat_result) -> tuple[int, int]:
+    return info.st_dev, info.st_ino
+
+
+def _unsafe() -> WriteError:
+    return WriteError("studio.schema_folder_unsafe")
+
+
+def ancestor_is_safe(info: os.stat_result, uid: int) -> bool:
+    """Whether a folder above the target folder is safe to go through (like OpenSSH's ``StrictModes``): a real folder
+    (no link) of root or this user that neither group nor others may write, unless its sticky bit is set (``/tmp``).
+    A folder that others may write lets them replace what lies below it by something of theirs (review P128-01)."""
+    if _is_link(info) or not stat.S_ISDIR(info.st_mode):
+        return False
+    if info.st_uid not in (0, uid):
+        return False
+    return not (info.st_mode & _GROUP_OTHER_WRITE) or bool(info.st_mode & stat.S_ISVTX)
+
+
+def _folders_up(folder: str) -> Iterator[str]:
+    """``folder`` and every folder above it, up to the root."""
+    current = folder
+    while True:
+        yield current
+        parent = posixpath.dirname(current)
+        if parent == current:
+            return
+        current = parent
+
+
+def reserved_identities(reserved: Iterable[Path]) -> frozenset[tuple[int, int]]:
+    """``(st_dev, st_ino)`` of each of Studio's own folders that exists (a link to one counts as the folder)."""
+    found: set[tuple[int, int]] = set()
     for root in reserved:
-        root_real = safe_realpath(Path(os.path.abspath(root)))
-        if root_real is not None and _inside(folder, str(root_real)):
-            raise WriteError("studio.schema_folder_reserved")
+        with contextlib.suppress(OSError, ValueError):
+            found.add(_identity(os.stat(root)))
+    return frozenset(found)
+
+
+def _safe_ancestors(folder: str, uid: int) -> list[os.stat_result]:
+    """The ``lstat`` of every folder above ``folder`` if each passes :func:`ancestor_is_safe`; else refused."""
+    found = []
+    for current in list(_folders_up(folder))[1:]:
+        try:
+            info = os.lstat(current)
+        except OSError:
+            raise _unsafe() from None
+        if not ancestor_is_safe(info, uid):
+            raise _unsafe()
+        found.append(info)
+    return found
+
+
+def _check_folder(folder: str, reserved: frozenset[tuple[int, int]]) -> os.stat_result:
+    """The folder's ``lstat`` if Studio may create a file in it, else :class:`WriteError` (POSIX only).
+
+    The folder is reached through no link (its real path is the path given), belongs to this user and neither group
+    nor others may write it; every folder above it passes :func:`ancestor_is_safe`. Neither it nor any folder above
+    it is one of Studio's own folders, compared by device and inode, so a second name of the same folder (a bind
+    mount, another spelling on a case-insensitive file system) is refused too (review P128-02)."""
+    real = safe_realpath(Path(folder))
+    if real is None or str(real) != folder:
+        raise _unsafe()  # a link somewhere on the way: use the real path
     try:
         info = os.lstat(folder)
     except OSError:
-        raise WriteError("studio.schema_folder_unsafe") from None
+        raise _unsafe() from None
     if _is_link(info) or not stat.S_ISDIR(info.st_mode):
-        raise WriteError("studio.schema_folder_unsafe")
-    if _POSIX and (info.st_uid != os.geteuid() or info.st_mode & _GROUP_OTHER_WRITE):
-        raise WriteError("studio.schema_folder_unsafe")
+        raise _unsafe()
+    uid = os.geteuid()
+    if info.st_uid != uid or info.st_mode & _GROUP_OTHER_WRITE:
+        raise _unsafe()
+    above = _safe_ancestors(folder, uid)
+    if any(_identity(each) in reserved for each in (info, *above)):
+        raise WriteError("studio.schema_folder_reserved")
     return info
 
 
 @contextlib.contextmanager
-def _folder_held(folder: str, checked: os.stat_result) -> Iterator[None]:
-    """Hold the checked folder open (``O_NOFOLLOW`` where available) and refuse if it is not the folder checked."""
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    if not _POSIX:
-        yield  # Windows cannot open a folder like this; the lstat checks above and below stand
-        return
+def _folder_held(folder: str, checked: os.stat_result) -> Iterator[int]:
+    """The checked folder, opened without following a link; refused if it is not the folder checked."""
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
     try:
         descriptor = os.open(folder, flags)
     except OSError:
-        raise WriteError("studio.schema_folder_unsafe") from None
+        raise _unsafe() from None
     try:
-        opened = os.fstat(descriptor)
-        if (opened.st_dev, opened.st_ino) != (checked.st_dev, checked.st_ino):
-            raise WriteError("studio.schema_folder_unsafe")
-        yield
+        if _identity(os.fstat(descriptor)) != _identity(checked):
+            raise _unsafe()
+        yield descriptor
     finally:
         os.close(descriptor)
+
+
+def _entry(descriptor: int, name: str) -> os.stat_result | None:
+    """The ``lstat`` of ``name`` in the held folder, None if there is none."""
+    try:
+        return os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        return None
 
 
 def _exists(path: str) -> bool:
     return any(os.path.lexists(path + suffix) for suffix in ("", *_SIDE_FILES))
 
 
-def _remove_created(path: str, identity: tuple[int, int]) -> None:
-    """Remove the file Studio created, and its side files, if the name is still that file (never another one)."""
+def _create_in(descriptor: int, name: str) -> tuple[int, int]:
+    """Create ``name`` in the held folder (``O_CREAT|O_EXCL|O_NOFOLLOW``, exactly ``0600``); its identity.
+
+    Relative to the folder's descriptor, so the file is made in the folder that was checked whatever happens to the
+    path's folders meanwhile (review P128-01). An existing name, a dangling link included, is left alone."""
+    for suffix in _SIDE_FILES:
+        if _entry(descriptor, name + suffix) is not None:
+            raise WriteError("studio.schema_file_exists")
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+    try:
+        handle = os.open(name, flags, 0o600, dir_fd=descriptor)
+    except FileExistsError:
+        raise WriteError("studio.schema_file_exists") from None
+    try:
+        os.fchmod(handle, 0o600)  # whatever the umask
+        info = os.fstat(handle)
+    except BaseException:
+        os.close(handle)
+        with contextlib.suppress(OSError):
+            os.unlink(name, dir_fd=descriptor)
+        raise
+    os.close(handle)
+    return _identity(info)
+
+
+def _still_there(folder: str, checked: os.stat_result, descriptor: int, path: str, identity: tuple[int, int]) -> None:
+    """The path still leads to the file Studio created in the folder it checked; :class:`WriteError` otherwise.
+
+    The folder at the path is still the checked one, reached through no link and through safe folders only, and the
+    name in it, by the path and in the held folder, is still the new private regular file (device and inode)."""
+    try:
+        at_path = os.lstat(folder)
+    except OSError:
+        raise _unsafe() from None
+    if _identity(at_path) != _identity(checked):
+        raise _unsafe()
+    real = safe_realpath(Path(folder))
+    if real is None or str(real) != folder:
+        raise _unsafe()
+    uid = os.geteuid()
+    _safe_ancestors(folder, uid)
+    name = posixpath.basename(path)
+    for info in (_entry(descriptor, name), _lstat_or_none(path)):
+        if info is None or _identity(info) != identity or _is_link(info) or not stat.S_ISREG(info.st_mode):
+            raise WriteError("studio.schema_file_exists")
+        if info.st_uid != uid or stat.S_IMODE(info.st_mode) != 0o600:
+            raise WriteError("studio.schema_file_exists")
+
+
+def _lstat_or_none(path: str) -> os.stat_result | None:
+    try:
+        return os.lstat(path)
+    except OSError:
+        return None
+
+
+def _remove_created(descriptor: int, name: str, identity: tuple[int, int]) -> None:
+    """Remove the file Studio created, and its side files, from the held folder if the name is still that file
+    (never another one)."""
     with contextlib.suppress(OSError):
-        info = os.lstat(path)
-        if (info.st_dev, info.st_ino) != identity or not stat.S_ISREG(info.st_mode):
+        info = _entry(descriptor, name)
+        if info is None or _identity(info) != identity or not stat.S_ISREG(info.st_mode):
             return
         for suffix in _SIDE_FILES:
-            side = path + suffix
             with contextlib.suppress(OSError):
-                side_info = os.lstat(side)
-                if stat.S_ISREG(side_info.st_mode) and (not _POSIX or side_info.st_uid == os.geteuid()):
-                    os.unlink(side)
-        os.unlink(path)
-
-
-def _created_identity(path: str) -> tuple[int, int]:
-    """The new file's identity if the name is now an empty private regular file of this user; else refused."""
-    try:
-        info = os.lstat(path)
-    except OSError:
-        raise WriteError("studio.schema_file_exists") from None
-    if _is_link(info) or not stat.S_ISREG(info.st_mode) or info.st_size != 0:
-        raise WriteError("studio.schema_file_exists")
-    if _POSIX and (info.st_uid != os.geteuid() or stat.S_IMODE(info.st_mode) != 0o600):
-        raise WriteError("studio.schema_file_exists")
-    return info.st_dev, info.st_ino
+                side = _entry(descriptor, name + suffix)
+                if side is not None and stat.S_ISREG(side.st_mode) and side.st_uid == os.geteuid():
+                    os.unlink(name + suffix, dir_fd=descriptor)
+        os.unlink(name, dir_fd=descriptor)
 
 
 @dataclass(frozen=True)
@@ -242,7 +349,7 @@ class CreatedFile:
             "engine": "sqlite",
             "path": self.path,
             "file_name": self.name,
-            "mode": "0600" if _POSIX else None,
+            "mode": "0600",
             "audit_pending": self.audit_pending,
         }
 
@@ -252,7 +359,11 @@ def create_sqlite_file(audit: AuditLog, reserved: Iterable[Path], raw_path: obje
     path, folder, name = _check_path(raw_path)
     if not isinstance(typed, str) or typed != name:
         raise WriteError("studio.schema_create_unconfirmed")
-    checked = _check_folder(folder, reserved)
+    if not _POSIX:
+        # Open point 5 of the PR #128 review: Windows has no owner and mode check of the folder here (its access
+        # control lists are not checked), so Studio creates no SQLite file there.
+        raise WriteError("studio.schema_create_platform")
+    checked = _check_folder(folder, reserved_identities(reserved))
     if _exists(path):
         raise WriteError("studio.schema_file_exists")
     run = secrets.token_hex(8)
@@ -264,20 +375,18 @@ def create_sqlite_file(audit: AuditLog, reserved: Iterable[Path], raw_path: obje
         raise WriteError("studio.audit_unavailable") from None
     result = "failed"
     try:
-        with _folder_held(folder, checked):
-            create_private_file(path)
-            identity = _created_identity(path)
+        with _folder_held(folder, checked) as descriptor:
+            identity = _create_in(descriptor, name)
             try:
+                _still_there(folder, checked, descriptor, path, identity)
                 connection = sqlite_connect(path, profile=SQLiteProfile(), create=False)
                 try:
                     connection.execute("PRAGMA user_version").fetchone()
                 finally:
                     connection.close()
-                after = os.lstat(path)
-                if (after.st_dev, after.st_ino) != identity or (_POSIX and stat.S_IMODE(after.st_mode) != 0o600):
-                    raise WriteError("studio.schema_file_exists")
+                _still_there(folder, checked, descriptor, path, identity)
             except BaseException:
-                _remove_created(path, identity)
+                _remove_created(descriptor, name, identity)
                 raise
         result = "committed"
     except WriteError as exc:

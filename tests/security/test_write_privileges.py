@@ -8,7 +8,11 @@ D-2 counts it: a role a user created under a ``pg_`` name is not one (the rows h
 ``test_write_postgres.py`` proves the same against a server.
 
 Owner decision 1A at G-S2: for ``kind="write"`` superuser, BYPASSRLS, REPLICATION and the server-file roles refuse the
-unlock (``studio.write_role_over_privileged``); every other finding stays a warning."""
+unlock (``studio.write_role_over_privileged``); every other finding stays a warning.
+
+Open point 1 of the PR #128 review (condition b): CREATEDB is ``admin.createdb`` (a warning, never refusing) on a write
+unlock the Data Editor may use and on any unlock outside DEV and TEST; for the Schema Designer on DEV or TEST it is
+the fact ``createdb`` only."""
 
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ from tabrion_studio.write.connection import (
     FIRST_NORMAL_OBJECT_ID,
     SERVER_FILE_ROLES,
     WRITE_REFUSING_FINDINGS,
+    createdb_findings,
     privilege_findings,
     refusing_findings,
 )
@@ -197,3 +202,40 @@ def test_the_refusing_set_is_exactly_decision_1a() -> None:
     } == WRITE_REFUSING_FINDINGS
     assert "admin.createrole" not in WRITE_REFUSING_FINDINGS
     assert "admin.createrole_pre16" not in WRITE_REFUSING_FINDINGS
+
+
+def _createdb_row(*, own: bool) -> tuple[Any, ...]:
+    return (own, False, False, False, False, True, 0, None, False, 20000)
+
+
+@pytest.mark.parametrize("own", [True, False], ids=["direct", "inherited"])
+def test_createdb_is_a_fact_with_how_it_is_held(own: bool) -> None:
+    rows = [_createdb_row(own=True)] if own else [_row(own=True), _createdb_row(own=False)]
+    facts, findings = privilege_findings(rows, 160000)
+    assert facts["createdb"] is True and facts["createdb_via"] == ("direct" if own else "inherited")
+    assert findings == []
+    assert privilege_findings([_row(own=True)], 160000)[0]["createdb_via"] is None
+
+
+@pytest.mark.parametrize(
+    ("kind", "environment", "data_editor_on", "warned"),
+    [
+        ("write", "dev", False, False),  # the Schema Designer on DEV: needed, a fact only
+        ("write", "test", False, False),
+        ("write", "dev", True, True),  # the Data Editor may use the same unlock
+        ("write", "test", True, True),
+        ("write", "prod", False, True),
+        ("write", "stage", False, True),
+        ("admin", "dev", True, False),  # the Database Manager is not the Data Editor
+        ("admin", "prod", False, True),
+    ],
+)
+def test_createdb_where_it_is_not_needed_is_a_warning(
+    kind: str, environment: str, data_editor_on: bool, warned: bool
+) -> None:
+    facts, _ = privilege_findings([_createdb_row(own=True)], 160000)
+    found = createdb_findings(facts, kind=kind, environment=environment, data_editor_on=data_editor_on)
+    assert found == ([{"code": "admin.createdb", "via": "direct", "severity": "warning"}] if warned else [])
+    assert refusing_findings(found) == []  # a warning only, never a refusal
+    plain, _ = privilege_findings([_row(own=True)], 160000)
+    assert createdb_findings(plain, kind=kind, environment=environment, data_editor_on=data_editor_on) == []

@@ -44,6 +44,9 @@ SCHEMA_DESIGNER = WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))
 POSIX = sys.platform != "win32"
 # Python 3.11 refuses every SQLite write unlock (no defensive mode; test_write_unlock.py proves the refusal).
 needs_defensive = pytest.mark.skipif(not defensive_available(), reason="Python 3.11 refuses a SQLite write connection")
+# Windows: Studio creates no SQLite file there (open point 5 of the PR #128 review), see
+# test_windows_refuses_the_sqlite_creation.
+creates_files = pytest.mark.skipif(not POSIX, reason="no SQLite creation on Windows")
 
 
 def _refused(response: Any, status: int, code: str) -> None:
@@ -217,6 +220,7 @@ def test_the_areas_route_says_the_schema_designer_is_off_by_default(tmp_path: Pa
 # --- 2. SQLite (STU-CR-2, GS3-21) ------------------------------------------------------------------------------------
 
 
+@creates_files
 def test_a_new_sqlite_file_is_private_initialized_and_audited(env: WriteEnv, folder: Path) -> None:
     target = folder / "inventory.db"
     response = _create(env, target)
@@ -249,6 +253,7 @@ def test_a_new_sqlite_file_is_private_initialized_and_audited(env: WriteEnv, fol
     assert str(folder) not in json.dumps(_records(env))
 
 
+@creates_files
 def test_the_new_file_can_be_saved_as_a_profile_and_opened(env: WriteEnv, folder: Path) -> None:
     """The page's second step: a read profile through the normal profile route, then a connection."""
     target = folder / "fresh.sqlite3"
@@ -267,6 +272,7 @@ def test_the_file_name_must_be_typed_exactly(env: WriteEnv, folder: Path, typed:
     assert _runs(env) == []
 
 
+@creates_files
 @pytest.mark.parametrize("suffix", ["", "-wal", "-shm", "-journal"])
 def test_an_existing_file_or_side_file_is_never_overwritten(env: WriteEnv, folder: Path, suffix: str) -> None:
     target = folder / "inventory.db"
@@ -325,25 +331,196 @@ def test_a_folder_others_may_write_is_refused(env: WriteEnv, folder: Path, mode:
         folder.chmod(0o700)
 
 
+@creates_files
+@pytest.mark.parametrize(("mode", "created"), [(0o777, False), (0o770, False), (0o702, False), (0o1777, True)])
+def test_a_folder_above_that_others_may_write_is_refused_unless_sticky(
+    env: WriteEnv, tmp_path: Path, mode: int, created: bool
+) -> None:
+    """Review P128-01: every folder above the target folder belongs to root or this user, and group and others may
+    not write it unless its sticky bit is set (like OpenSSH's StrictModes)."""
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    mine = shared / "mine"
+    mine.mkdir(mode=0o700)
+    mine.chmod(0o700)
+    shared.chmod(mode)
+    try:
+        response = _create(env, mine / "a.db")
+        if created:
+            assert response.status_code == 201, response.text
+        else:
+            _refused(response, 400, "studio.schema_folder_unsafe")
+            assert list(mine.iterdir()) == []
+    finally:
+        shared.chmod(0o700)
+
+
+def _info(mode: int, uid: int) -> os.stat_result:
+    return os.stat_result((mode, 1, 1, 1, uid, 0, 0, 0, 0, 0))
+
+
+@pytest.mark.parametrize(
+    ("mode", "uid", "safe"),
+    [
+        (stat.S_IFDIR | 0o755, 0, True),
+        (stat.S_IFDIR | 0o700, 1000, True),
+        (stat.S_IFDIR | 0o755, 1001, False),  # another user's folder
+        (stat.S_IFDIR | 0o775, 1000, False),
+        (stat.S_IFDIR | 0o757, 0, False),
+        (stat.S_IFDIR | 0o1777, 0, True),  # /tmp
+        (stat.S_IFDIR | 0o1777, 1001, False),  # sticky, but another user's
+        (stat.S_IFLNK | 0o777, 1000, False),
+        (stat.S_IFREG | 0o700, 1000, False),
+    ],
+)
+def test_which_folders_above_are_safe(mode: int, uid: int, safe: bool) -> None:
+    from tabrion_studio.write.schema_designer.create import ancestor_is_safe
+
+    assert ancestor_is_safe(_info(mode, uid), 1000) is safe
+
+
+@creates_files
+def test_a_folder_above_replaced_by_a_link_after_the_check_creates_nothing_there(
+    env: WriteEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review P128-01: a folder on the path is replaced by a link to another folder after the checks. The file is
+    created relative to the folder Studio holds open, the changed path is noticed before the database is opened, and
+    the new file is removed again: nothing is left in either folder."""
+    from tabrion_studio.write.schema_designer import create as create_module
+
+    base = tmp_path / "base"
+    (base / "mine").mkdir(mode=0o700, parents=True)
+    (base / "mine").chmod(0o700)
+    other = tmp_path / "other"
+    (other / "mine").mkdir(mode=0o700, parents=True)
+    (other / "mine").chmod(0o700)
+    moved = tmp_path / "moved"
+    create_in = create_module._create_in
+
+    def swapped(descriptor: int, name: str) -> tuple[int, int]:
+        base.rename(moved)
+        base.symlink_to(other, target_is_directory=True)
+        return create_in(descriptor, name)
+
+    monkeypatch.setattr(create_module, "_create_in", swapped)
+    _refused(_create(env, base / "mine" / "a.db"), 400, "studio.schema_folder_unsafe")
+    assert list((other / "mine").iterdir()) == []
+    assert list((moved / "mine").iterdir()) == []
+    results = [r["fields"]["result"] for r in _runs(env) if r["event"] == "run.result"]
+    assert results == ["studio.schema_folder_unsafe"]
+
+
+@creates_files
+def test_the_file_is_checked_by_identity_before_it_is_opened(
+    env: WriteEnv, folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The name is replaced by another file between the create and the open: refused before SQLite opens it, and
+    the other file is neither opened, changed nor removed."""
+    from tabrion_studio.write.schema_designer import create as create_module
+
+    target = folder / "a.db"
+    create_in = create_module._create_in
+    opened: list[str] = []
+
+    def replaced(descriptor: int, name: str) -> tuple[int, int]:
+        identity = create_in(descriptor, name)
+        target.rename(folder / "kept.db")  # kept, so the replacement cannot reuse its inode
+        target.write_bytes(CANARY_VALUE.encode())
+        target.chmod(0o600)
+        return identity
+
+    monkeypatch.setattr(create_module, "_create_in", replaced)
+    monkeypatch.setattr(create_module, "sqlite_connect", lambda path, **_: opened.append(path))
+    _refused(_create(env, target), 400, "studio.schema_file_exists")
+    assert opened == []
+    assert target.read_bytes() == CANARY_VALUE.encode()
+
+
+@pytest.mark.skipif(POSIX, reason="Windows only")
+def test_windows_refuses_the_sqlite_creation(env: WriteEnv, folder: Path) -> None:
+    """Open point 5 of the PR #128 review: on Windows Studio creates no SQLite file (it does not check a folder's
+    access control list); a valid request is refused before anything is written or recorded."""
+    _refused(_create(env, folder / "a.db"), 400, "studio.schema_create_platform")
+    assert list(folder.iterdir()) == []
+    assert _runs(env) == []
+
+
+@creates_files
 def test_a_missing_folder_is_refused_and_not_created(env: WriteEnv, folder: Path) -> None:
     _refused(_create(env, folder / "missing" / "a.db"), 400, "studio.schema_folder_unsafe")
     assert not (folder / "missing").exists()
 
 
+@creates_files
 def test_a_file_as_folder_is_refused(env: WriteEnv, folder: Path) -> None:
     (folder / "plain").write_text("x")
     _refused(_create(env, folder / "plain" / "a.db"), 400, "studio.schema_folder_unsafe")
 
 
-@pytest.mark.parametrize("which", ["config", "audit", "state"])
-def test_studios_own_folders_are_refused(env: WriteEnv, which: str) -> None:
+@creates_files
+@pytest.mark.parametrize("nested", [False, True], ids=["itself", "below"])
+@pytest.mark.parametrize("which", ["config", "audit", "state", "log", "project"])
+def test_studios_own_folders_are_refused(env: WriteEnv, which: str, nested: bool) -> None:
     """No database file in the configuration folder (where profiles.toml and write-areas.toml live), the audit
-    log's folder or the state folder (Studio's own state database)."""
-    folder = {"config": env.config_dir, "audit": env.audit_dir, "state": env.state}[which]
+    log's folder, the state folder (Studio's own state database), the log folder or the project's .tabrion folder,
+    nor in a folder below one of them (review P128-02)."""
+    folder = {
+        "config": env.config_dir,
+        "audit": env.audit_dir,
+        "state": env.state,
+        "log": env.log_dir,
+        "project": env.project / ".tabrion",
+    }[which]
     folder.mkdir(mode=0o700, parents=True, exist_ok=True)
     folder.chmod(0o700)
+    if nested:
+        folder = folder / "inner"
+        folder.mkdir(mode=0o700)
+        folder.chmod(0o700)
     _refused(_create(env, folder / "studio.db"), 400, "studio.schema_folder_reserved")
     assert not (folder / "studio.db").exists()
+
+
+@creates_files
+def test_studios_own_folders_are_compared_by_identity(tmp_path: Path) -> None:
+    """Review P128-02: the reserved folders are compared by device and inode, not by their spelling: a reserved folder
+    named through a link (another name of the same folder) still covers the folder and everything below it."""
+    from tabrion_studio.write.schema_designer import create as create_module
+
+    own = tmp_path / "own"
+    (own / "inner").mkdir(mode=0o700, parents=True)
+    own.chmod(0o700)
+    alias = tmp_path / "alias"
+    alias.symlink_to(own, target_is_directory=True)
+    reserved = create_module.reserved_identities([alias, tmp_path / "missing"])
+    assert reserved == {(os.stat(own).st_dev, os.stat(own).st_ino)}
+    for folder in (own, own / "inner"):
+        with pytest.raises(WriteError) as caught:
+            create_module._check_folder(str(folder), reserved)
+        assert caught.value.code == "studio.schema_folder_reserved"
+    other = tmp_path / "other"
+    other.mkdir(mode=0o700)
+    other.chmod(0o700)
+    assert create_module._check_folder(str(other), reserved).st_ino == os.stat(other).st_ino
+
+
+@creates_files
+@pytest.mark.skipif(not hasattr(os, "geteuid") or os.geteuid() != 0, reason="a bind mount needs root")
+def test_a_bind_mount_of_a_reserved_folder_is_refused(env: WriteEnv, tmp_path: Path) -> None:
+    """Review P128-02: a second name of the configuration folder (a bind mount: same device and inode, a path outside
+    it) is refused; skipped where this user cannot mount."""
+    env.config_dir.mkdir(mode=0o700, exist_ok=True)
+    env.config_dir.chmod(0o700)
+    alias = tmp_path / "mounted"
+    alias.mkdir(mode=0o700)
+    mounted = subprocess.run(["mount", "--bind", str(env.config_dir), str(alias)], capture_output=True, check=False)
+    if mounted.returncode != 0:
+        pytest.skip("mount --bind is not available here")
+    try:
+        _refused(_create(env, alias / "via-alias.db"), 400, "studio.schema_folder_reserved")
+        assert not (env.config_dir / "via-alias.db").exists()
+    finally:
+        subprocess.run(["umount", str(alias)], check=True)
 
 
 @pytest.mark.parametrize(
@@ -358,6 +535,12 @@ def test_studios_own_folders_are_refused(env: WriteEnv, which: str) -> None:
         ("{root}{s}a", "create.suffix"),
         ("{root}{s}a\x00.db", "create.control_character"),
         ("{root}{s}a\n.db", "create.control_character"),
+        # Review P128-03: a space other than U+0020 (no-break, narrow no-break, ideographic) and the line and paragraph
+        # separators look like a blank; U+0020 itself is a valid character of a file name.
+        ("{root}{s}a\u00a0.db", "create.control_character"),
+        ("{root}{s}a\u202f.db", "create.control_character"),
+        ("{root}{s}a\u3000.db", "create.control_character"),
+        ("{root}{s}a\u2028.db", "create.control_character"),
         ("//host/share/a.db", "create.network_path"),
         ("/net/host/a.db", "create.network_path"),
         ("", "create.required"),
@@ -392,6 +575,7 @@ def test_a_body_with_another_key_is_refused(env: WriteEnv, folder: Path, extra: 
     assert list(folder.iterdir()) == []
 
 
+@creates_files
 def test_without_an_audit_record_nothing_is_created(
     env: WriteEnv, folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -420,26 +604,30 @@ def test_without_an_audit_log_nothing_is_created(tmp_path: Path, static_dir: Pat
         (tmp_path / "config" / "audit").chmod(0o700)
 
 
+@creates_files
 def test_a_file_that_appears_meanwhile_is_left_alone(
     env: WriteEnv, folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """tabrion leaves an existing name unchanged: a file made by someone else between Studio's check and the create
-    is refused as existing and neither changed nor removed; the run is recorded as refused."""
+    """An existing name is left unchanged (``O_EXCL``): a file made by someone else between Studio's check and the
+    create is refused as existing and neither changed nor removed; the run is recorded as refused."""
     from tabrion_studio.write.schema_designer import create as create_module
 
     target = folder / "race.db"
+    create_in = create_module._create_in
 
-    def planted(path: str) -> None:
-        Path(path).write_bytes(CANARY_VALUE.encode())
-        Path(path).chmod(0o600)
+    def planted(descriptor: int, name: str) -> tuple[int, int]:
+        target.write_bytes(CANARY_VALUE.encode())
+        target.chmod(0o600)
+        return create_in(descriptor, name)
 
-    monkeypatch.setattr(create_module, "create_private_file", planted)
+    monkeypatch.setattr(create_module, "_create_in", planted)
     _refused(_create(env, target), 400, "studio.schema_file_exists")
     assert target.read_bytes() == CANARY_VALUE.encode()
     results = [r["fields"]["result"] for r in _runs(env) if r["event"] == "run.result"]
     assert results == ["studio.schema_file_exists"]
 
 
+@creates_files
 def test_a_failure_after_the_create_removes_only_the_new_file(
     env: WriteEnv, folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -554,6 +742,9 @@ def test_only_dev_and_test_unlocks_reach_the_creation(
         ({"name": " a"}, "name", "create.whitespace"),
         ({"name": 5}, "name", "create.type"),
         ({"name": "a", "owner": "o​x"}, "owner", "create.control_character"),
+        # Review P128-03: a space other than U+0020 in a database or owner name.
+        ({"name": "a\u00a0b"}, "name", "create.control_character"),
+        ({"name": "a", "owner": "o\u2007x"}, "owner", "create.control_character"),
         ({"name": "a", "template": "postgres"}, "template", "create.choice"),
         ({"name": "a", "encoding": "UTF8;"}, "encoding", "create.format"),
         ({"name": "a", "locale": "C' x"}, "locale", "create.format"),

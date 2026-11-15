@@ -763,6 +763,14 @@ CATALOG: dict[str, Entry] = {
         "A PostgreSQL database is created on an unlocked PostgreSQL connection of the same server.",
         "Connect to the PostgreSQL server, unlock its write profile and try again.",
     ),
+    "studio.schema_create_platform": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Not on Windows",
+        "On Windows Studio does not create SQLite files: it cannot yet check who may write the folder. Nothing was "
+        "created.",
+        "Create the file with another tool and add it as a connection profile.",
+    ),
     "studio.schema_file_exists": Entry(
         400,
         ProblemKind.REQUEST,
@@ -775,15 +783,16 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "Folder not usable",
-        "The folder does not exist, is or goes through a link, belongs to another user, or others may write to it. "
-        "Nothing was created.",
+        "The folder does not exist, is or goes through a link, belongs to another user, or others may write to it or "
+        "to a folder above it (unless that folder has the sticky bit, as /tmp has). Nothing was created.",
         "Choose a folder of your own that only you may write, by its real path.",
     ),
     "studio.schema_folder_reserved": Entry(
         400,
         ProblemKind.REQUEST,
         "Studio's own folder",
-        "Studio does not create databases in its own configuration, state or audit folders.",
+        "Studio does not create databases in its own configuration, state, audit or log folders, in the project's "
+        ".tabrion folder or in a folder inside one of them.",
         "Choose another folder.",
     ),
     "studio.schema_database_exists": Entry(
