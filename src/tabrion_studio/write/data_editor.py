@@ -285,9 +285,9 @@ class DataEditorExecutor:
             if step.action == "row.insert":
                 statement: Any = insert_row(table, bound(data["values"]))
             elif step.action == "row.update":
-                statement = update_row(table, bound(data["key"]), bound(data["old"]), bound(data["new"]))
+                statement = update_row(table, bound(data["key"]), old=bound(data["old"]), new=bound(data["new"]))
             elif step.action == "row.delete":
-                statement = delete_row(table, bound(data["key"]), bound(data["old"]))
+                statement = delete_row(table, bound(data["key"]), old=bound(data["old"]))
             else:  # pragma: no cover - build makes no other action
                 raise _invalid()
         except (KeyError, ValueError, TypeError, UsageError):
