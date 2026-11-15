@@ -15,14 +15,15 @@ the user may write; :func:`load_tools`)::
     pg_dump = "/usr/lib/postgresql/17/bin/pg_dump"
     pg_restore = "/usr/lib/postgresql/17/bin/pg_restore"
 
-Never ``PATH``, the page, a settings save, a project file, an environment variable or a profile: nothing else builds
-a :class:`Tools`. Before **every** run :func:`verify_tool` checks the path again: absolute and its own real path (no
-link anywhere on it), a regular file, executable, not writable by group or others, owned by the user or root, in a
-folder with the same rules; then it runs ``<tool> --version`` (an argument list, no shell, the clean environment
-below), which must name the expected program, and reads its major version. The client's major version must be at
-least 16 (``require_auth`` of libpq 16, which every connection sets) and at least the server's; ``pg_restore`` also at
-least the archive's ``pg_dump``. The tool's file name, version and SHA-256 go into the backup's metadata. Windows is
-refused (``tool.platform``): the passfile and the mode checks are POSIX rules (an open point).
+Never ``PATH``, the page, a settings save, a project file, an environment variable or a profile: nothing else builds a
+:class:`Tools`. Before **every** run :func:`verify_tool` checks the path again: absolute and its own real path (no link
+anywhere on it), a regular file, executable, not writable by group or others, owned by the user or root, in a folder
+with the same rules, and every folder above that one of root or the user and not writable by group or others unless
+sticky (review L-1 of PR #136); then it runs ``<tool> --version`` (an argument list, no shell, the clean environment
+below), which must name the expected program, and reads its major version. The client's major version must be at least
+16 (``require_auth`` of libpq 16, which every connection sets) and at least the server's; ``pg_restore`` also at least
+the archive's ``pg_dump``. The tool's file name, version and SHA-256 go into the backup's metadata. Windows is refused
+(``tool.platform``): the passfile and the mode checks are POSIX rules (an open point).
 
 **Process (GS4-05).** :func:`run_tool`: ``subprocess.Popen`` with an argument list Studio builds (``shell=False``; no
 user text in an option: the connection is one ``--dbname=<connection string>`` argument with every value quoted, the
@@ -79,6 +80,7 @@ from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_
 from tabrion_studio.paths import UnsafePathError, check_private_dir, ensure_private_dir
 from tabrion_studio.services.connections import APPLICATION_NAME, RegistryError, pin_libpq_environment
 from tabrion_studio.write.connection import WriteError, require_auth
+from tabrion_studio.write.folders import ancestor_is_safe, folders_up
 
 __all__ = [
     "MIN_TOOL_MAJOR",
@@ -244,6 +246,16 @@ def _check_file(name: str, path: Path) -> os.stat_result:
     folder = os.lstat(path.parent)
     if stat.S_ISLNK(folder.st_mode) or folder.st_mode & 0o022 or not _safe_owner(folder):
         raise _tool_error("studio.backup_tool_unavailable", name, "folder")
+    # Every folder above it too (review L-1 of PR #136): one that others may write lets them put their own folder,
+    # and so their own program, in place of the checked one between the check and the start.
+    uid = os.getuid()
+    for above in list(folders_up(str(path.parent)))[1:]:
+        try:
+            ok = ancestor_is_safe(os.lstat(above), uid)
+        except OSError:
+            ok = False
+        if not ok:
+            raise _tool_error("studio.backup_tool_unavailable", name, "folder")
     return info
 
 

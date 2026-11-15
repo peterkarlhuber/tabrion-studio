@@ -63,7 +63,8 @@ The file must be yours, mode `0600`, not a link, in a folder only you may write.
 that each tool:
 
 - is an absolute path to a regular file, not a link, owned by you or `root`, not writable by group or others, in a
-  folder with the same rules;
+  folder with the same rules, and every folder above it belongs to you or `root` and is not writable by group or
+  others (unless it has the sticky bit, as `/tmp`);
 - answers `--version` with its own program name;
 - is PostgreSQL 16 or newer and at least as new as the server (`pg_restore` also at least as new as the archive).
 
@@ -73,6 +74,10 @@ file that only you may read and that is removed afterwards, and a time limit. Th
 logged; Studio says only what kind of failure it was (sign-in, connection, permission, version, other).
 
 **Not on Windows yet.** On Windows Studio does not run the tools (`tool.platform`); SQLite backups work there.
+
+**Certificates.** Studio passes no `sslrootcert`, `sslcert` or `sslkey` to the tools, as for its own connections:
+libpq then uses the files in `~/.postgresql/` (`root.crt` for `verify-full`, and a client certificate there is used
+without asking). A server whose CA is not in `~/.postgresql/root.crt` is refused at `verify-full`.
 
 **Row security.** Studio never passes `--enable-row-security`. If a table has row security and the admin role does
 not have BYPASSRLS (which Studio refuses anyway), `pg_dump` fails instead of writing a backup that silently lacks
@@ -104,7 +109,8 @@ Studio restores only backups from its own folder whose file still matches its de
 changed backup, a link or a file from elsewhere is refused.
 
 - **SQLite:** into a **new file** next to the connection's file (a plain name ending in `.db`, `.sqlite` or
-  `.sqlite3`), or over the connection's **own file**. Before the file is replaced Studio backs it up, closes its own
+  `.sqlite3`; the folder must be yours and writable only by you, every folder above it safe as for
+  [New database](new-database.md), and not one of Studio's own), or over the connection's **own file**. Before the file is replaced Studio backs it up, closes its own
   connections to it and checks afterwards that it is still the same file. SQLite's `integrity_check` runs on the
   restored file.
 - **PostgreSQL:** only into a **new database** on the same server, which Studio creates. The archive's functions run
@@ -113,7 +119,9 @@ changed backup, a link or a file from elsewhere is refused.
   BYPASSRLS, REPLICATION, CREATEROLE or CREATEDB and no predefined role. Studio checks that right before the restore
   and refuses otherwise (`studio.dbm_restore_role_unsafe`). Set the role up outside Studio, and let the admin role act
   as it (`GRANT <restore role> TO <admin role>`), because the new database belongs to the restore role. The restore
-  runs in one transaction; if it fails, the new database stays empty for you to inspect or drop.
+  runs in one transaction; if it fails, the new database stays empty for you to inspect or drop. Use the restore
+  role for nothing else and let it own nothing else: it owns every restored database, and the archive's code may
+  create trusted extensions there (the preview shows how many).
 
 After a restore Studio compares the schema of the target with the backup's fingerprint and says whether they match.
 A backup is only as trustworthy as the database it came from: restore backups of databases whose content you trust.

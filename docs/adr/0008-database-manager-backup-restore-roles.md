@@ -64,7 +64,9 @@ an admin unlock, which a PROD connection never gets, so a PROD backup is refused
   owner's local configuration, because a tool path set from the page would let whoever controls the page choose a
   program to run.
 - **Checks before every run:** the path is absolute, a regular file and not a link, not writable by group or others,
-  owned by the user or root, in a folder with the same rules; `--version` is run (argument list, no shell, the
+  owned by the user or root, in a folder with the same rules, and every folder above that one of root or the user
+  and not writable by group or others unless sticky (review L-1 of PR #136; the tool is still started by its path,
+  so a swap by a process of the same user stays residual risk 2 of the threat model); `--version` is run (argument list, no shell, the
   environment below) and must name the expected program; the client major version must be at least the server's
   (for `pg_restore` also at least the archive's). The tool's file name, version and SHA-256 are recorded in the
   backup metadata. The libpq of the tool must support `require_auth` (16 or later) when the connection sends a

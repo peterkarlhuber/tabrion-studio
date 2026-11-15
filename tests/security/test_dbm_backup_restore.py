@@ -31,7 +31,7 @@ from typing import Any
 import pytest
 
 from tabrion_studio.config.write_areas import Area, WriteAreas
-from tabrion_studio.write.connection import defensive_available
+from tabrion_studio.write.connection import WriteError, defensive_available
 from tests.support.write import CANARY_SECRET, CANARY_VALUE, DATABASE_MANAGER, WriteEnv, digest
 
 pytestmark = pytest.mark.security
@@ -410,6 +410,38 @@ def test_a_backup_that_is_a_link_is_refused(dbm: Dbm) -> None:
     archive.symlink_to(elsewhere)
     _refused(dbm.preview(name), 400, "studio.dbm_backup_invalid", [("backup.file", "backup.link")])
     _refused(dbm.restore(name, "new", "copy.db", "copy.db"), 400, "studio.dbm_backup_invalid")
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX modes")
+def test_a_new_file_in_a_folder_others_may_write_is_refused(dbm: Dbm) -> None:
+    """Review I-2 of PR #136: the folder of a new SQLite file follows STU-CR-2's folder rules, so nobody else can swap
+    the restored file; nothing is created."""
+    backup = dbm.made()
+    folder = dbm.env.db.parent
+    before = stat.S_IMODE(os.stat(folder).st_mode)
+    folder.chmod(0o777)
+    try:
+        response = dbm.restore(backup, "new", "copy.db", "copy.db")
+    finally:
+        folder.chmod(before)
+    _refused(response, 400, "studio.dbm_restore_not_allowed", [("restore.target", "restore.folder_unsafe")])
+    assert not (folder / "copy.db").exists()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="a symbolic link needs extra rights on Windows")
+def test_a_reserved_folder_is_compared_by_identity(tmp_path: Path) -> None:
+    """Review I-1 of PR #136: a second name of one of Studio's own folders (here a link to it, as a bind mount
+    would be) still counts as that folder."""
+    from tabrion_studio.write.database_manager.backups import _check_new_file_folder
+
+    folder = Path(os.path.realpath(tmp_path)) / "own"
+    folder.mkdir(mode=0o700)
+    alias = Path(os.path.realpath(tmp_path)) / "alias"
+    alias.symlink_to(folder, target_is_directory=True)
+    with pytest.raises(WriteError) as found:
+        _check_new_file_folder(folder, [alias])
+    assert found.value.issues == [("restore.target", "restore.reserved_folder")]
+    _check_new_file_folder(folder, [Path(os.path.realpath(tmp_path)) / "missing"])
 
 
 @pytest.mark.parametrize("name", ["copy.txt", "../copy.db", ".hidden.db", "a/b.db", "copy‮.db", ""])

@@ -2172,7 +2172,9 @@
         "role_unknown": "the restore profile is not an admin profile of this connection",
         "role_is_admin": "the restore profile must use another role than the unlocked admin profile",
         "in_use": "the file is in use",
-        "integrity": "the restored file failed the integrity check"
+        "integrity": "the restored file failed the integrity check",
+        "folder_unsafe": "others may write the target's folder or a folder above it",
+        "reserved_folder": "the folder is one of Studio's own"
       },
       "unknown": "Detail: {{code}}"
     }

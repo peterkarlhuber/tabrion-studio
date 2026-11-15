@@ -2172,7 +2172,9 @@
         "role_unknown": "das Wiederherstellungsprofil ist kein Admin-Profil dieser Verbindung",
         "role_is_admin": "das Wiederherstellungsprofil muss eine andere Rolle nutzen als das entsperrte Admin-Profil",
         "in_use": "die Datei wird gerade benutzt",
-        "integrity": "die wiederhergestellte Datei hat die Integritätsprüfung nicht bestanden"
+        "integrity": "die wiederhergestellte Datei hat die Integritätsprüfung nicht bestanden",
+        "folder_unsafe": "andere dürfen den Ordner des Ziels oder einen Ordner darüber ändern",
+        "reserved_folder": "der Ordner gehört zu Studio selbst"
       },
       "unknown": "Einzelheit: {{code}}"
     }

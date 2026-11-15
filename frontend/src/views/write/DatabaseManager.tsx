@@ -94,6 +94,8 @@ const ISSUE_TEXTS = new Set([
   'restore.role_is_admin',
   'restore.in_use',
   'restore.integrity',
+  'restore.folder_unsafe',
+  'restore.reserved_folder',
 ]);
 
 function issueText(t: ReturnType<typeof useTranslation>['t'], code: string): string {

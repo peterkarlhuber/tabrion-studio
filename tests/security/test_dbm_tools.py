@@ -29,6 +29,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import stat
 import sys
 import time
 from typing import Any
@@ -234,6 +235,27 @@ def test_an_unsafe_tool_is_refused(fakes: Fakes, setup: str, reason: str) -> Non
     finally:
         fakes.bin.chmod(0o755)
     assert _reason(found) == ("studio.backup_tool_unavailable", [("tool.pg_dump", f"tool.{reason}")])
+
+
+@posix_only
+@pytest.mark.parametrize(("mode", "accepted"), [(0o777, False), (0o775, False), (0o1777, True), (0o755, True)])
+def test_every_folder_above_the_tool_is_checked(fakes: Fakes, mode: int, accepted: bool) -> None:
+    """Review L-1 of PR #136: a folder above the tool's own folder that others may write (and that is not sticky)
+    lets them swap the folder below it, and with it the program, after the check: refused."""
+    fakes.configure(fakes.tool("pg_dump"), None)
+    tools = load_tools(fakes.state)
+    scratch = fakes.scratch()
+    before = stat.S_IMODE(os.stat(fakes.base).st_mode)
+    fakes.base.chmod(mode)
+    try:
+        if accepted:
+            assert verify_tool("pg_dump", tools, scratch).major == 17
+        else:
+            with pytest.raises(WriteError) as found:
+                verify_tool("pg_dump", tools, scratch)
+            assert _reason(found) == ("studio.backup_tool_unavailable", [("tool.pg_dump", "tool.folder")])
+    finally:
+        fakes.base.chmod(before)
 
 
 @posix_only

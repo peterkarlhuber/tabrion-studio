@@ -27,7 +27,9 @@ All notable changes to this project are documented here. The format follows
   (English and German); guide page "Database Manager". The conditions of the STU-XDM-1 review (M-1, L-1..L-3, A-1)
   are folded into STU-ADR-0008, the threat model and the G-S4 definition. New tests `test_dbm_backup_restore.py`,
   `test_dbm_tools.py`, `test_dbm_restore_roundtrip.py`, `DatabaseManager.test.tsx` and
-  `e2e/database-manager-backend.spec.ts`.
+  `e2e/database-manager-backend.spec.ts`. Following the PR #136 review, every folder above a tool and the folder of a new
+  SQLite file follow the Schema Designer's folder rules (shared in `tabrion_studio.write.folders`), and Studio's own
+  folders are compared by device and inode.
 
 - G-S2 follow-up 7A: pins tabrion at the merge commit of tabrion #93 (`3520b21`), which makes the names the Data
   Editor uses stable (`tabrion.rowedit.insert_row`, `update_row`, `delete_row`, `tabrion.errors.RowCountMismatch`,

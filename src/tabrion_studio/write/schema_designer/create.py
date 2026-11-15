@@ -83,6 +83,9 @@ from tabrion_studio.config.locations import network_or_device, safe_realpath
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError, refusing_findings_now
+from tabrion_studio.write.folders import ancestor_is_safe as ancestor_is_safe  # re-exported (tests)
+from tabrion_studio.write.folders import folders_up
+from tabrion_studio.write.folders import reserved_identities as reserved_identities  # re-exported (tests)
 from tabrion_studio.write.unlock import Unlock, Unlocks
 
 logger = logging.getLogger("tabrion_studio.write")
@@ -169,41 +172,10 @@ def _unsafe() -> WriteError:
     return WriteError("studio.schema_folder_unsafe")
 
 
-def ancestor_is_safe(info: os.stat_result, uid: int) -> bool:
-    """Whether a folder above the target folder is safe to go through (like OpenSSH's ``StrictModes``): a real folder
-    (no link) of root or this user that neither group nor others may write, unless its sticky bit is set (``/tmp``).
-    A folder that others may write lets them replace what lies below it by something of theirs (review P128-01)."""
-    if _is_link(info) or not stat.S_ISDIR(info.st_mode):
-        return False
-    if info.st_uid not in (0, uid):
-        return False
-    return not (info.st_mode & _GROUP_OTHER_WRITE) or bool(info.st_mode & stat.S_ISVTX)
-
-
-def _folders_up(folder: str) -> Iterator[str]:
-    """``folder`` and every folder above it, up to the root."""
-    current = folder
-    while True:
-        yield current
-        parent = posixpath.dirname(current)
-        if parent == current:
-            return
-        current = parent
-
-
-def reserved_identities(reserved: Iterable[Path]) -> frozenset[tuple[int, int]]:
-    """``(st_dev, st_ino)`` of each of Studio's own folders that exists (a link to one counts as the folder)."""
-    found: set[tuple[int, int]] = set()
-    for root in reserved:
-        with contextlib.suppress(OSError, ValueError):
-            found.add(_identity(os.stat(root)))
-    return frozenset(found)
-
-
 def _safe_ancestors(folder: str, uid: int) -> list[os.stat_result]:
     """The ``lstat`` of every folder above ``folder`` if each passes :func:`ancestor_is_safe`; else refused."""
     found = []
-    for current in list(_folders_up(folder))[1:]:
+    for current in list(folders_up(folder))[1:]:
         try:
             info = os.lstat(current)
         except OSError:

@@ -1138,6 +1138,30 @@ flag stays off by default. Each point needs the independent review or the owner.
 11. **The listing** names a backup's source by database name and profile only, never its address; at most 500
     backups are listed, all are counted.
 
+**Review result (PR #136, `reviews/pr136-stuxdm2-review.md`): ACCEPTED with condition L-1 (Low)** and notes I-1..I-5;
+G-S4, G-S3, H-2 and G-R are not granted by it.
+
+12. [x] **L-1: every folder above the tool** is now checked like STU-CR-2's `ancestor_is_safe` (root or the user, not
+    writable by group or others unless sticky, no link), shared in `tabrion_studio.write.folders`;
+    `test_dbm_tools.py::test_every_folder_above_the_tool_is_checked`. Not done: running the checked file descriptor
+    (`/proc/self/fd/N`, `fexecve`). The tool is started by its path, so a process of the same user could still swap
+    the file between the check and the start; that is outside the protection goal (residual risk 2 of the threat
+    model), and nobody else can since every folder on the way is checked.
+13. [x] **I-1:** the reserved folders for a new SQLite file are compared by device and inode
+    (`reserved_identities`), not by real path.
+14. [x] **I-2:** the folder of a new SQLite file gets STU-CR-2's folder rules (the user's own, not writable by group
+    or others, every folder above safe; a link on the stored path must be root's or the user's), else
+    `restore.folder_unsafe`.
+15. **I-3 (guide):** the restore role should serve only this purpose and own nothing else: it owns each restored
+    database, and the archive's code may create trusted extensions there (their number is shown in the preview).
+    The guide says so.
+16. **I-4:** the tool's connection string carries no `sslrootcert`, `sslcert` or `sslkey`, as Studio's own
+    connections do not either: libpq falls back to `~/.postgresql/` (`root.crt`, and a client certificate there is
+    used silently). A profile with its own CA file fails closed at `verify-full`. Documented in the guide; passing
+    them from the profile waits for profiles that store them.
+17. [x] **I-5:** the redundant second OID read right after `create_database` is removed; the OID is read once after
+    the creation and compared after the restore.
+
 ## Cross-repository checks still to add
 
 | Ref | What | Priority |

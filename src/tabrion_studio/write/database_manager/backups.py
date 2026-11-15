@@ -25,12 +25,12 @@ and the target's engine; only on an unlock whose stored environment is ``dev`` o
 target's name (D-12).
 
 * **PostgreSQL** restores only into a **new** database (no ``--clean``): ``tabrion.postgres.create_database`` on the
-  admin connection (``template0``, the owner the restore role), its OID read and read again right before the tool
-  runs (a database swapped in between is refused), then ``pg_restore --single-transaction --exit-on-error
-  --no-owner --no-privileges`` **as a separate restore role** (review M-1 of STU-XDM-1): the archive's functions
-  (check constraints, index expressions, materialized views) run as the role that restores. So the restore connects,
-  as its own login and not through a role switch, with a second stored admin profile
-  of the same read profile whose role is lean: no SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE or CREATEDB and no
+  admin connection (``template0``, the owner the restore role), its OID read right after it is created and compared
+  again after the tool ran (a database swapped in between is refused), then ``pg_restore --single-transaction
+  --exit-on-error --no-owner --no-privileges`` **as a separate restore role** (review M-1 of STU-XDM-1): the
+  archive's functions (check constraints, index expressions, materialized views) run as the role that restores. So
+  the restore connects, as its own login and not through a role switch, with a second stored admin profile of the
+  same read profile whose role is lean: no SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE or CREATEDB and no
   predefined role, directly or through a reachable role (:func:`restore_role_refusals`, read on its own checked
   connection before the run). Without one the restore is refused (``studio.dbm_restore_role_unsafe``). The admin role
   must be allowed to make it the owner (``SET`` on its membership; provisioned outside Studio, like every right). A
@@ -101,6 +101,7 @@ from tabrion_studio.write.connection import (
     privileges_now,
     restore_role_refusals,
 )
+from tabrion_studio.write.folders import GROUP_OTHER_WRITE, ancestor_is_safe, folders_up, reserved_identities
 from tabrion_studio.write.pgtools import Connection, Runner, Tool, open_archive, verify_tool
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, Unlock, Unlocks
 
@@ -649,7 +650,7 @@ def _restore_postgres(manager: Manager, unlock: Unlock, loaded: Loaded, doc: dic
         with _audited(manager, unlock, ACTION_RESTORE, start) as outcome:
             _create_database(unlock, name, role_write.user)
             oid = _database_oid(unlock, name)
-            if oid is None or _database_oid(unlock, name) != oid:
+            if oid is None:
                 raise WriteError("studio.dbm_restore_target_changed")
             manager.runner.restore(pg_restore, into, archive)
             if _database_oid(unlock, name) != oid:
@@ -741,19 +742,36 @@ def _close_connections_to(manager: Manager, identity: tuple[int, int]) -> int:
     return closed
 
 
-def _within_reserved(folder: Path, reserved: Iterable[Path]) -> bool:
+def _check_new_file_folder(folder: Path, reserved: Iterable[Path]) -> None:
+    """The folder a new SQLite file is restored into (review I-1 and I-2 of PR #136): neither it nor a folder above it
+    is one of Studio's own folders, compared by device and inode (a second name of one is refused too, P128-02). On
+    POSIX the rules of the Schema Designer's database creation (STU-CR-2) apply to its real path, so nobody else can
+    swap the restored file: the folder belongs to this user and neither group nor others may write it, and every
+    folder above it passes :func:`ancestor_is_safe`. A link on the stored path (macOS ``/var``) must belong to root or
+    this user, and the folder holding it is checked as a folder above. Raises ``studio.dbm_restore_not_allowed``."""
+    ids = reserved_identities(reserved)
+    real = os.path.realpath(folder)
     try:
-        here = Path(os.path.realpath(folder))
+        real_chain = [os.lstat(each) for each in folders_up(real)]
+        given_chain = [os.lstat(each) for each in folders_up(str(folder))]
     except OSError:
-        return True
-    for root in reserved:
-        try:
-            base = Path(os.path.realpath(root))
-        except OSError:
-            continue
-        if here == base or base in here.parents:
-            return True
-    return False
+        raise _not_allowed("folder_unsafe") from None
+    if any((info.st_dev, info.st_ino) in ids for info in real_chain):
+        raise _not_allowed("reserved_folder")
+    if os.name != "posix":
+        return
+    uid = os.geteuid()
+    here = real_chain[0]
+    if not stat.S_ISDIR(here.st_mode) or here.st_uid != uid or here.st_mode & GROUP_OTHER_WRITE:
+        raise _not_allowed("folder_unsafe")
+    if not all(ancestor_is_safe(info, uid) for info in real_chain[1:]):
+        raise _not_allowed("folder_unsafe")
+    for index, info in enumerate(given_chain):
+        if stat.S_ISLNK(info.st_mode):
+            if info.st_uid not in (0, uid):
+                raise _not_allowed("folder_unsafe")
+        elif index > 0 and not ancestor_is_safe(info, uid):
+            raise _not_allowed("folder_unsafe")
 
 
 def _restore_sqlite(
@@ -775,10 +793,9 @@ def _restore_sqlite(
         target = file.parent / name
         if os.path.lexists(target):
             raise WriteError("studio.dbm_restore_target_exists")
-        if _within_reserved(
+        _check_new_file_folder(
             target.parent, (*manager.reserved, *([] if manager.store.path is None else [manager.store.path]))
-        ):
-            raise _not_allowed("reserved_folder")
+        )
     size, digest, _source_identity = _sha256_file(loaded.path)
     _same_backup(loaded, size, digest)
     pre_backup: str | None = None
