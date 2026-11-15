@@ -222,15 +222,18 @@ the server answers `405` and the write code is not even loaded.
   password (`require_auth=!password`), your own read profiles keep every method.
 - **The Data Editor (STU-026, in development, locked by G-S2).** The Data Editor is not usable or supported: it
   exists only behind `data_editor` in `write-areas.toml`, which is off by default, and stays locked until G-S2 is
-  granted. What it does when that flag is on in a test setup:
-    - the page shows an "Edit data" tab on a table only when the server says the flag is on; the page never decides
-      it, and with the flag off its routes answer `405` and its code is not loaded;
+  granted. Its steps and limits are in the [Data Editor](data-editor.md) page. What it does when that flag is on in a
+  test setup:
+    - the page shows an "Edit data" tab on a table only when the server says the flag is on, and never on a `PROD`
+      connection; the page never decides it, and with the flag off its routes answer `405` and its code is not
+      loaded;
     - a changeset (cells changed, rows added and deleted) runs only as a plan (above): preview, the typed
       confirmation (the table's name when a row is deleted) and one run in one transaction;
     - every column the page showed is sent as the row's old value and must still match: a row that someone changed
       or deleted in the meantime (`studio.data_editor_conflict`), or a statement that changed not exactly one row
       (`studio.data_editor_rowcount`), rolls back the whole changeset, and the message names no value. Rows that
-      triggers or rules change elsewhere are not counted; the preview names those triggers and rules;
+      triggers or rules change elsewhere are not counted. A table with triggers or rules gets a notice, not a block
+      (owner decision 2026-11-15): the tab names them above the grid, and the preview names them again;
     - tables without a primary key, views, partitioned tables and `PROD` are refused, and so is a PostgreSQL table
       with a column whose type cannot be compared (`xml`, `point`, `box`, a composite type, `json[]`;
       `studio.data_editor_column_incomparable`): its value could not be checked, so a change made by someone else

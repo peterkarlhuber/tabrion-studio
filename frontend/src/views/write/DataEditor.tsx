@@ -485,9 +485,21 @@ function EditorGrid({
           {t('dataEditor.lock')}
         </Button>
       </div>
-      {table.triggers.length > 0 || table.rules.length > 0 || table.rowSecurity ? (
-        <p role="note" className={connectionStyles.warning}>
-          {t('dataEditor.sideEffects')}
+      <p className={connectionStyles.hint} data-testid="data-editor-help">
+        {t('dataEditor.help')}
+      </p>
+      {table.triggers.length > 0 || table.rules.length > 0 ? (
+        // Owner decision 2026-11-15: a table with triggers or rules gets a notice, not a block.
+        <p role="note" className={connectionStyles.warning} data-testid="data-editor-side-effects">
+          {t('dataEditor.sideEffects', {
+            names: [...table.triggers, ...table.rules].join(', '),
+            interpolation: { escapeValue: false },
+          })}
+        </p>
+      ) : null}
+      {table.rowSecurity ? (
+        <p role="note" className={connectionStyles.warning} data-testid="data-editor-row-security">
+          {t('dataEditor.rowSecurity')}
         </p>
       ) : null}
       {!keyShown ? (

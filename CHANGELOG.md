@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDE-2 (in development, locked by G-S2): the user guide page "Data Editor (in development)" with the switch for
+  development, the write profile, unlock, editing, NULL and the empty text, the formats, preview, confirmation,
+  execution, conflicts and the limits (PROD refused, tables without a primary key, views and partitioned tables
+  refused, incomparable column types refused, `json` compared as `jsonb`, triggers and rules a notice, rows only),
+  linked from the guide index and the security guide. The `data_editor` flag stays off by default; no default
+  changes. A table with triggers or rules gets a notice that names them, not a block (owner decision 2026-11-15),
+  row security its own notice, and the grid a short help text; English and German. New E2E tests (the harness
+  states and four more against a real server: NULL against the empty text, a trigger, the refused view and table,
+  PROD), with axe in light and dark, English and German, run by CI in Chromium, Firefox and WebKit.
+
 - STU-XDE-1 (in development, locked by G-S2): validation, type editors and a change overview for the Data Editor,
   behind the same `data_editor` flag of `write-areas.toml`, which stays off by default; no default changes. The
   table route sends each column's type (kind, NULL, whether an insert may leave it out, generated or identity
@@ -1009,6 +1019,10 @@ All notable changes to this project are documented here. The format follows
   the ci-ok run link before every merge (R-1).
 
 ### Changed
+
+- STU-XDE-2: a PROD connection has no "Edit data" tab even with the `data_editor` flag on (the server refused its
+  unlock before too), and the Data Editor's "no write profile" text points to Settings, where the write and admin
+  profiles are (it named Connections).
 
 - CI: the Windows leg of `backend test` runs in two shards, `backend test (windows-latest, security)` (`tests/security`)
   and `backend test (windows-latest, other)` (the rest): the whole suite took 18 to 20 minutes against the job's
