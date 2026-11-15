@@ -750,16 +750,20 @@ def _check_new_file_folder(folder: Path, reserved: Iterable[Path]) -> None:
     folder above it passes :func:`ancestor_is_safe`. A link on the stored path (macOS ``/var``) must belong to root or
     this user, and the folder holding it is checked as a folder above. Raises ``studio.dbm_restore_not_allowed``."""
     ids = reserved_identities(reserved)
-    real = os.path.realpath(folder)
+    real = Path(os.path.realpath(folder))
     try:
-        real_chain = [os.lstat(each) for each in folders_up(real)]
-        given_chain = [os.lstat(each) for each in folders_up(str(folder))]
+        # Path.parents: the folders above in the platform's own path syntax (folders_up is POSIX only).
+        real_chain = [os.lstat(each) for each in (real, *real.parents)]
     except OSError:
         raise _not_allowed("folder_unsafe") from None
     if any((info.st_dev, info.st_ino) in ids for info in real_chain):
         raise _not_allowed("reserved_folder")
     if os.name != "posix":
-        return
+        return  # Windows: no owner or mode rules (its access lists are not read), as STU-CR-2 notes
+    try:
+        given_chain = [os.lstat(each) for each in folders_up(str(folder))]
+    except OSError:
+        raise _not_allowed("folder_unsafe") from None
     uid = os.geteuid()
     here = real_chain[0]
     if not stat.S_ISDIR(here.st_mode) or here.st_uid != uid or here.st_mode & GROUP_OTHER_WRITE:
