@@ -748,6 +748,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- M-1 of the PR #117 review (TD-072, pre-existing): a profile `host` with a comma, which libpq reads as a list of
+  hosts, is refused in every profile, project or user, and so for write and admin profiles too (`config.host_list`,
+  en/de text). Before, such a list could count as loopback, which skipped the TLS default, the D-01 warnings and the
+  foreign-host checks of write profiles. `is_loopback()` is now False for any list, and `connection_url()`, which
+  every connection goes through, refuses a host or port list before the driver sees it. Studio is now as strict as
+  tabrion's `profilefile`, which refuses a comma in a host name.
 - DC-TS-1 follow-up: `scripts/check_tabrion_source.py` is nodestro-studio's new copy (#198, SHA-256
   `f1edfc71b5da4986547abe0824833fb73bba532cb5e6a00e202c9ff317747456`): the poisoned `tabrion` is 0.2.99 (was 0.1.0,
   outside Studio's `>=0.2,<0.3`), so an install by range would pick it over the pinned 0.2.1.

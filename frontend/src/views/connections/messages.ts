@@ -123,6 +123,7 @@ const ISSUES = new Set([
   'control_character',
   'network_path',
   'url_character',
+  'host_list',
   'not_for_engine',
   'plain_password',
   'rename_unsupported',

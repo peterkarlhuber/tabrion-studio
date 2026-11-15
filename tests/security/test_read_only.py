@@ -816,6 +816,27 @@ def test_the_driver_gets_only_the_fingerprinted_fields() -> None:
     assert sqlite.database == str(Path("/real/x.db"))  # the path as given (backslashes on Windows)
 
 
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"host": "/var/run/postgresql,db.attacker.example"},
+        # The socket-only scenario of M-1 (PR #117 review): a socket refused by its peer check must not fall back to
+        # TCP, so the list is refused before any connection is made.
+        {"host": "/var/run/postgresql,127.0.0.1"},
+        {"host": "localhost,db.attacker.example"},
+        {"port": "5432,5433"},
+    ],
+)
+def test_the_driver_never_gets_a_libpq_host_or_port_list(changes: dict[str, Any]) -> None:
+    """M-1 of the PR #117 review: whatever built the profile (the validator refuses it already), connection_url, which
+    every read, write, diagnostics and migration-worker connection goes through, refuses a list before the driver
+    sees it; the refusal names no value."""
+    with pytest.raises(RegistryError) as raised:
+        connection_url(replace(PG_PROFILE, **changes), "pw")
+    assert raised.value.code == "studio.profile_invalid"
+    assert str(raised.value) == "studio.profile_invalid"
+
+
 def test_a_connection_whose_profile_changes_is_closed(
     sqlite_connection: tuple[OpenConnection, ConnectionRegistry, Source], sqlite_file: Path, tmp_path: Path
 ) -> None:

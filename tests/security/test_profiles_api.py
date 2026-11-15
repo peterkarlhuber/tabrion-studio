@@ -160,6 +160,9 @@ def test_a_plain_password_is_refused_without_echo(env: Env) -> None:
         ({**SQLITE, "host": "h"}, [{"pointer": "profile.host", "code": "config.not_for_engine"}]),
         ({**SQLITE, "path": "//attacker.example/s/x.db"}, [{"pointer": "profile.path", "code": "config.network_path"}]),
         ({**SQLITE, "path": "%2F%2Fhost/s/x.db"}, [{"pointer": "profile.path", "code": "config.url_character"}]),
+        # M-1 of the PR #117 review: a libpq host list, also one that starts with a socket folder.
+        ({**PG, "host": f"/run/pg,{CANARY}.example"}, [{"pointer": "profile.host", "code": "config.host_list"}]),
+        ({**PG, "host": f"localhost,{CANARY}.example"}, [{"pointer": "profile.host", "code": "config.host_list"}]),
         ({**PG, f"x-{CANARY}": 1}, [{"pointer": "profile", "code": "config.unknown_key"}]),
         ({**PG, "name": "a\nb"}, [{"pointer": "profile.name", "code": "config.control_character"}]),
         ("not a profile", [{"pointer": "profile", "code": "config.type"}]),

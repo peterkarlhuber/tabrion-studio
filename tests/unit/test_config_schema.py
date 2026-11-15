@@ -13,6 +13,7 @@ from tabrion_studio.config.schema import (
     MAX_PROFILES,
     SecretRef,
     Settings,
+    is_host_list,
     is_loopback,
     parse_secret_ref,
     validate_profiles,
@@ -239,6 +240,43 @@ def test_names_that_only_look_like_loopback_are_remote(host: str) -> None:
 @pytest.mark.parametrize("host", ["localhost", "LOCALHOST", "127.0.0.1", "127.8.9.10", "::1", "[::1]", "/run/pg"])
 def test_loopback_hosts(host: str) -> None:
     assert is_loopback(host)
+
+
+#: libpq host lists (M-1 of the PR #117 review): a comma separates hosts that libpq tries in turn.
+HOST_LISTS = [
+    "/var/run/postgresql,db.attacker.example",
+    "/var/run/postgresql,127.0.0.1",
+    "localhost,db.attacker.example",
+    "127.0.0.1,::1",
+    "db.example.internal,",
+    ",localhost",
+]
+
+
+@pytest.mark.parametrize("host", HOST_LISTS)
+def test_a_host_list_is_never_loopback(host: str) -> None:
+    """Defense in depth: even a list that starts with a socket folder or a loopback address is not loopback."""
+    assert is_host_list(host)
+    assert not is_loopback(host)
+
+
+@pytest.mark.parametrize("host", ["/run/pg", "localhost", "db.example.internal", "::1", "[::1]"])
+def test_a_single_host_is_not_a_list(host: str) -> None:
+    assert not is_host_list(host)
+
+
+@pytest.mark.parametrize("owner", ["project", "user"])
+@pytest.mark.parametrize("host", HOST_LISTS)
+def test_a_host_list_is_refused_in_every_profile_file(host: str, owner: str) -> None:
+    """M-1 of the PR #117 review: refused with ``config.host_list`` in a project and in the user's file, so no
+    profile with it exists and no sslmode default is derived from it; the value is not repeated."""
+    doc = _one(engine="postgresql", path=None, host=host, database="d", password="keyring:")
+    result = validate_profiles(doc, owner=owner)  # type: ignore[arg-type]
+    assert [(issue.pointer, issue.code, issue.severity) for issue in result.issues] == [
+        ("profile[0].host", "config.host_list", "error")
+    ]
+    assert result.profiles == []
+    assert host not in json.dumps([issue.to_dict() for issue in result.issues])
 
 
 @pytest.mark.parametrize(
