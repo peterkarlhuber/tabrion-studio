@@ -124,7 +124,7 @@ def test_a_draft_of_a_schema_is_planned_with_the_servers_version(pg: Env, monkey
     from tabrion_studio.write.schema_designer import draft as draft_module
 
     seen: list[object] = []
-    real = draft_module.plan
+    from tabrion.plan import plan as real
 
     def spy(current: Any, target: Any, **options: Any) -> Any:
         seen.append(options.get("server_version"))

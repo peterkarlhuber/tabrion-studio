@@ -125,7 +125,7 @@ def designer(tmp_path: Path, static_dir: Path) -> Iterator[Designer]:
 
 # --- 1. the kill switch (GS3-01, GS3-02) ---------------------------------------------------------------------------
 
-ROUTES = [
+ROUTES: list[tuple[str, str, dict[str, Any]]] = [
     ("POST", DRAFT, {"schema": "main"}),
     ("DELETE", DRAFT, {}),
     ("POST", VIEW, {}),
@@ -342,7 +342,7 @@ def test_every_plan_call_passes_the_write_connections_sqlite_version(
     from tabrion_studio.write.schema_designer import draft as draft_module
 
     seen: list[object] = []
-    real = draft_module.plan
+    from tabrion.plan import plan as real
 
     def spy(current: Any, target: Any, **options: Any) -> Any:
         seen.append(options.get("server_version"))
