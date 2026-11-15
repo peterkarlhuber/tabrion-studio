@@ -321,7 +321,7 @@ contract I-124. Each item names the test that proves it; the gate review re-runs
 
 | Id | Precondition | How it is shown |
 |---|---|---|
-| GS3-P1 | The pinned Tabrion has the executor `tabrion.plan.execute_plan` (TAB-XW-5: plan hash and fingerprint, locks then drift check, dry run, `lock_timeout`, SQLite foreign keys off and `foreign_key_check`, K-1 again at execution, `environment` required) | `constraints/tabrion-integration.txt` names a commit that contains TAB-XW-5; its review accepted |
+| GS3-P1 | The pinned Tabrion has the executor `tabrion.plan.execute_plan` (TAB-XW-5: plan hash and fingerprint, locks then drift check, dry run, `lock_timeout`, SQLite foreign keys off and `foreign_key_check`, K-1 again at execution, `environment` required) | `constraints/tabrion-integration.txt` names a commit that contains TAB-XW-5 (`71370a6`, after tabrion #91 `7c0da1a`); its review accepted |
 | GS3-P2 | D-5 implemented, independently reviewed and tested in Tabrion (tabrion ADR 0015 section 10: "G-S3 stays locked until then") | tabrion TB-149 records D-5.1..D-5.4 done with an accepted review |
 | GS3-P3 | The 0.3 G-T2 review (TAB-XW-10), or the owner's accepted exception for the experimental names `tabrion.schema` level 2, `tabrion.ddl`, `tabrion.plan` | tabrion STATUS / TB-149 |
 | GS3-P4 | G-S2 granted (the shared write foundation the area uses) | the owner's G-S2 record |
@@ -358,10 +358,13 @@ contract I-124. Each item names the test that proves it; the gate review re-runs
 | GS3-26 | The owner's decisions for G-S3 recorded (below) | docs/TODO.md | - |
 | GS3-27 | Audit: every run with `run.start` and `run.result` (direct execution, revision output, database creation, an opted-out backup); no value, no default or check text beyond the plan hash; an unwritable log stops the run (ADR 0007 section 11) | audit tests | STU-CR-2..5, STU-XSD-3 |
 | GS3-28 | G-S2 decision 1A applies to the Schema Designer unlock: a write role that has or reaches superuser, bypassrls, replication or a server-file role is refused with 405 `studio.write_role_over_privileged` | unlock test for `schema_designer`; for database creation: `test_schema_designer_create_postgres.py` (the unlock refused, and the check again at the start of each run, which ends the unlock). CREATEDB (open point 1 of the PR #128 review, accepted with conditions): the warning `admin.createdb`, never a refusal, on a write unlock while the Data Editor's flag is on and on any unlock outside DEV and TEST (`test_write_privileges.py`, `test_schema_designer_create_postgres.py::test_createdb_is_a_warning_where_the_data_editor_may_use_the_role`); the guides recommend a separate CREATEDB role for the Schema Designer on DEV and TEST and an up-to-date server | STU-CR-3, STU-CR-5 |
+| GS3-29 | A dry run (`execute_plan(dry_run=True)`) only on the user's explicit request, never automatic, with the run's confirmations and unlock, a notice of the `ACCESS EXCLUSIVE` locks and of sequence values that stay consumed, audited like a run (ADR 0007 section 4 item 5) | dry-run tests | STU-CR-5 |
 
 **Open decisions for the owner at G-S3** (recorded in [docs/TODO.md](../TODO.md#g-s3-and-g-s4-definitions)):
 whether a loaded snapshot may start a draft; whether revision output may be offered for a PROD connection (it writes only the project file); whether drafts may be saved to disk; whether direct execution may ever
-include non-transactional steps; the release exception for Tabrion's experimental names.
+include non-transactional steps; that database creation runs on the write profile with `CREATEDB`, not an admin
+profile (ADR 0007 section 1); that the runtime-role wizard needs the `database_manager` area and G-S4 (ADR 0007
+section 12); the release exception for Tabrion's experimental names.
 
 ## G-S4 definition (Database Manager)
 

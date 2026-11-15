@@ -222,6 +222,6 @@ def test_the_constraints_file_pins_tabrion_0_3_0_dev0() -> None:
     pre-release specifier is refused above); the pinned commit is the one tested. Once 0.3 is final, the range moves
     to ``>=0.3,<0.4``."""
     lines = [line for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
-    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@28c8839f72a2d7232d973c71f99df1e57001a260"]
+    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@71370a6c706c85eb7635861e8d39c3024a9b0de6"]
     deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
     assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.4"]
