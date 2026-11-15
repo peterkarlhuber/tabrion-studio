@@ -148,6 +148,20 @@ const PROBLEMS = new Set([
   'schema_run_check_failed',
   'schema_run_outcome_unknown',
   'schema_run_failed',
+  // The Database Manager's backup and restore (STU-XDM-2).
+  'backup_tool_unavailable',
+  'backup_tool_failed',
+  'dbm_backup_failed',
+  'dbm_backup_unknown',
+  'dbm_backup_invalid',
+  'dbm_restore_not_allowed',
+  'dbm_restore_name_invalid',
+  'dbm_restore_name_mismatch',
+  'dbm_restore_role_unsafe',
+  'dbm_restore_target_exists',
+  'dbm_restore_target_changed',
+  'dbm_restore_failed',
+  'admin_over_privileged',
 ]);
 
 const ISSUES = new Set([

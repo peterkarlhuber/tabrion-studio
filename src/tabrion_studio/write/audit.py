@@ -222,6 +222,14 @@ FIELDS: dict[str, Callable[[object], object]] = {
     "steps": _count,  # STU-CR-5: the number of steps of a schema change run (planned at start, run at result)
     "backup": _token,  # STU-CR-5: made, opted_out, not_needed or dry_run; never the backup's path
     "dry_run": _flag,  # STU-CR-5: the run was a dry run, rolled back
+    # STU-XDM-2 (STU-ADR-0008 section 9): backup and restore. File names Studio made, hashes, versions and names only.
+    "backup_file": _token,  # the backup's file name in Studio's backup folder (Studio makes it), never a path
+    "sha256": _plan_hash,  # the backup file's SHA-256
+    "tool_version": _token,  # the version of pg_dump or pg_restore that ran
+    "target": _text,  # the restore target's database or file name (escaped like every name)
+    "restore_profile": _text,  # the admin profile whose lean role ran the restore (review M-1 of STU-XDM-1)
+    "pre_backup": _token,  # the file name of the target's own backup taken before the restore
+    "verified": _flag,  # whether the restored schema's fingerprint equals the backup's
 }
 
 

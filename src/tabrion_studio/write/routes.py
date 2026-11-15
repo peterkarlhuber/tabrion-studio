@@ -18,7 +18,10 @@ STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`), its draft and pre
 :mod:`tabrion_studio.write.schema_designer.designer`; the drafts in ``app.state.schema_drafts``, ended with their
 unlock) and the confirmation and run of a previewed plan (STU-CR-5,
 :mod:`tabrion_studio.write.schema_designer.execute`) answer; with that flag off they answer 405 and import nothing of
-the area.
+the area. With the Database Manager flag on, its backup and restore routes (STU-XDM-2,
+:mod:`tabrion_studio.write.database_manager.backups`, with the tool runner :mod:`tabrion_studio.write.pgtools` and the
+backup folder :mod:`tabrion_studio.write.backup_store`) answer; with that flag off they answer 405 and import nothing
+of the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -140,6 +143,10 @@ _PLAN_CONFIRM_KEYS = frozenset(
     {"connection_id", "plan_hash", "typed", "tables", "steps", "locking", "backup", "backup_typed"}
 )
 _PLAN_RUN_KEYS = frozenset({"connection_id", "plan_hash", "dry_run"})
+#: The keys of the Database Manager's routes (STU-XDM-2): never a path, a tool, an environment or a server.
+_DBM_BACKUP_KEYS = frozenset({"connection_id"})
+_DBM_PREVIEW_KEYS = frozenset({"connection_id", "backup_id"})
+_DBM_RESTORE_KEYS = frozenset({"connection_id", "backup_id", "target", "name", "typed", "restore_profile_id"})
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -629,6 +636,48 @@ def add_enabled_write_routes(
     designer_route("/api/write/schema-designer/draft/preview", "POST", _DRAFT_KEYS, _MAX_BODY, "preview")
     designer_route("/api/write/schema-designer/plan/confirm", "POST", _PLAN_CONFIRM_KEYS, _MAX_BODY, "confirm")
     designer_route("/api/write/schema-designer/plan/run", "POST", _PLAN_RUN_KEYS, _MAX_BODY, "run")
+
+    # --- the Database Manager's backup and restore (STU-XDM-2) ------------------------------------------------------
+
+    manager: Any = None
+    if areas.on(Area.DATABASE_MANAGER):
+        # Imported only with the Database Manager flag on (GS4-01): the area's code, the tool runner, the backups.
+        from tabrion_studio.write.backup_store import BackupStore
+        from tabrion_studio.write.database_manager.backups import Manager
+        from tabrion_studio.write.pgtools import Runner
+
+        # The folder of write-areas.toml holds the tools file, the run folder and the backups; none: fail closed.
+        write_state = None if audit_dir is None else audit_dir.parent
+        runner = Runner(write_state)
+        runner.remove_stale()  # a passfile a crashed run left (GS4-06)
+        manager = Manager(unlocks, runner, BackupStore(write_state), registry, tuple(reserved))
+        app.state.database_manager = manager
+
+    def manager_route(path: str, method: str, keys: frozenset[str], action: str) -> None:
+        @route(path, method)
+        async def handle(request: Request) -> Response:
+            if manager is None:
+                return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+            from tabrion_studio.write.database_manager import backups
+
+            if method == "GET":
+                if request.query_params:
+                    return problem_response("access.bad_request")
+                return await run(lambda: JSONResponse(backups.listing(manager)))
+
+            def call(session: str, doc: dict[str, Any]) -> Response:
+                try:
+                    answer_doc = getattr(backups, action)(manager, session, doc)
+                except backups.DriverFailure as exc:
+                    return db_problem_response(exc.classification)
+                return JSONResponse(answer_doc, status_code=201 if action in ("backup", "restore") else 200)
+
+            return await plan_call(request, keys, _MAX_BODY, call)
+
+    manager_route("/api/write/database-manager/backups", "GET", frozenset(), "listing")
+    manager_route("/api/write/database-manager/backup", "POST", _DBM_BACKUP_KEYS, "backup")
+    manager_route("/api/write/database-manager/restore/preview", "POST", _DBM_PREVIEW_KEYS, "preview")
+    manager_route("/api/write/database-manager/restore", "POST", _DBM_RESTORE_KEYS, "restore")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

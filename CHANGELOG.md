@@ -7,6 +7,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDM-2 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
+  changes): the Database Manager's backup and restore. A verified runner for `pg_dump` and `pg_restore`
+  (`tabrion_studio.write.pgtools`, reusable by the Schema Designer later): paths only from the owner's
+  `database-tools.toml` next to `write-areas.toml` (absolute, regular file, no link, owned by the user or root, not
+  writable by others, the right program, PostgreSQL 16 or newer and at least the server's and the archive's version),
+  an argument list without a shell, an environment built from nothing, the password only in a temporary `0600`
+  passfile, time limits that end the tool's process group, `stderr` never logged. Backups go to
+  `backups/database-manager` (0700, files 0600, never overwritten) with a description (engine, server and tool
+  version, size, SHA-256, fingerprint, extensions, and that a `pg_dump` archive holds no global roles); an archive is
+  kept only after `pg_restore --list` reads it. Restore only from that folder with a matching SHA-256: PostgreSQL only
+  into a new database, run as a separate lean restore profile (no CREATEROLE, CREATEDB, SUPERUSER, BYPASSRLS,
+  REPLICATION or predefined role); SQLite into a new file or over the DEV or TEST file after its own backup, with
+  Studio's connections to it closed first; never into a target any PROD profile names (the server compared by its
+  `system_identifier` or its resolved addresses). Routes `GET /api/write/database-manager/backups`, `POST .../backup`,
+  `.../restore/preview` and `.../restore` (405 and nothing imported with the flag off); every action needs the admin
+  unlock, checks the admin role again (`studio.admin_over_privileged`) and is audited (`run.start`, `run.result`).
+  Thirteen new problems (`studio.backup_tool_*`, `studio.dbm_*`, `studio.admin_over_privileged`); the page section
+  (English and German); guide page "Database Manager". The conditions of the STU-XDM-1 review (M-1, L-1..L-3, A-1)
+  are folded into STU-ADR-0008, the threat model and the G-S4 definition. New tests `test_dbm_backup_restore.py`,
+  `test_dbm_tools.py`, `test_dbm_restore_roundtrip.py`, `DatabaseManager.test.tsx` and
+  `e2e/database-manager-backend.spec.ts`.
+
 - G-S2 follow-up 7A: pins tabrion at the merge commit of tabrion #93 (`3520b21`), which makes the names the Data
   Editor uses stable (`tabrion.rowedit.insert_row`, `update_row`, `delete_row`, `tabrion.errors.RowCountMismatch`,
   `Transaction.execute_checked`). `update_row` and `delete_row` now take `old` and `new` by keyword only; the Data

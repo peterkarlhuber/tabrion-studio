@@ -52,6 +52,15 @@
   hash with the confirmed one, make the backup and run the plan once through tabrion's ``execute_plan`` on a DEV or
   TEST database without migration management (:mod:`tabrion_studio.write.schema_designer.execute`). Schema Designer
   flag only, like the creation routes.
+* ``GET /api/write/database-manager/backups``: the Database Manager's backups (newest first, with their metadata and
+  the scope notice), their count and total size, and whether ``pg_dump`` and ``pg_restore`` are configured and pass
+  their checks (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`). ``POST
+  /api/write/database-manager/backup``: ``{"connection_id"}``: back up the database of this session's unlocked admin
+  connection. ``POST /api/write/database-manager/restore/preview``: ``{"connection_id", "backup_id"}``: what a
+  restore would do (changes nothing). ``POST /api/write/database-manager/restore``: ``{"connection_id",
+  "backup_id", "target", "name", "typed", "restore_profile_id"}``: restore into a new database (PostgreSQL, as the
+  lean restore profile) or a new or the profile's own DEV or TEST SQLite file (its backup first). Database Manager
+  flag only; with it off they answer 405 and nothing of the area is imported.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -107,6 +116,11 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # STU-CR-5: confirm the previewed plan per risk class, then run it once (or dry-run it) on DEV or TEST (G-S3).
     ("/api/write/schema-designer/plan/confirm", ("POST",)),
     ("/api/write/schema-designer/plan/run", ("POST",)),
+    # STU-XDM-2: the Database Manager's backups, a backup, and the preview and run of a restore (G-S4).
+    ("/api/write/database-manager/backups", ("GET",)),
+    ("/api/write/database-manager/backup", ("POST",)),
+    ("/api/write/database-manager/restore/preview", ("POST",)),
+    ("/api/write/database-manager/restore", ("POST",)),
 )
 
 

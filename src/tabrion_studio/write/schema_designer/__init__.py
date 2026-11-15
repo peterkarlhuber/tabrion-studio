@@ -9,5 +9,6 @@ on). The read paths never import it (import-linter contract ``read-paths-never-w
 Built so far: the database creation wizards (STU-CR-2, STU-CR-3; :mod:`.create`), the table designer with its
 server-side draft and plan preview (STU-CR-4; :mod:`.draft`, :mod:`.designer`) and the confirmed direct run of a plan
 on DEV or TEST with its backup (STU-CR-5; :mod:`.execute`). The graphical mode, comparison and revision output
-(STU-XSD-*) and the PostgreSQL backup runner (STU-ADR-0008) are open; G-S3 is not granted.
+(STU-XSD-*) and the PostgreSQL backup before a destructive run are open (the verified runner
+:mod:`tabrion_studio.write.pgtools` exists since STU-XDM-2 but is not used here yet); G-S3 is not granted.
 """

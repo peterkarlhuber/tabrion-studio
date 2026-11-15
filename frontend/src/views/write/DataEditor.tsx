@@ -56,7 +56,7 @@ import {
 } from '../../api/dataEditor';
 import type { Problem } from '../../api/problem';
 import { fetchPage } from '../../api/viewer';
-import { fetchWriteProfiles, type WriteProfileItem } from '../../api/write';
+import { fetchWriteProfiles, type WriteKind, type WriteProfileItem } from '../../api/write';
 import { Button } from '../../components/ui/Button';
 import clsx from '../../lib/clsx';
 import connectionStyles from '../connections/Connections.module.css';
@@ -127,7 +127,8 @@ export function DataEditor({
 
 /**
  * Unlock the write mode of a connection with one of its write profiles, its name typed (D-03). Shared with the
- * Schema Designer's database creation (STU-CR-3), which passes its own `lead`.
+ * Schema Designer's database creation (STU-CR-3), which passes its own `lead`, and the Database Manager (STU-XDM-2),
+ * which offers the connection's admin profiles (`kind="admin"`); the server decides which kind an area accepts.
  */
 export function UnlockForm({
   fetcher,
@@ -135,12 +136,17 @@ export function UnlockForm({
   profileId,
   onUnlocked,
   lead,
+  kind = 'write',
+  empty,
 }: {
   fetcher: typeof fetch;
   connectionId: string;
   profileId: string;
   onUnlocked: () => void;
   lead?: string;
+  kind?: WriteKind;
+  /** The text when the connection has no profile of this kind. */
+  empty?: string;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -154,7 +160,7 @@ export function UnlockForm({
     void fetchWriteProfiles(fetcher).then((list) => {
       if (!alive) return;
       const own = list.filter(
-        (item) => item.kind === 'write' && (profileId === '' || item.readProfileId === profileId),
+        (item) => item.kind === kind && (profileId === '' || item.readProfileId === profileId),
       );
       setProfiles(own);
       setChosen(own[0]?.id ?? '');
@@ -162,7 +168,7 @@ export function UnlockForm({
     return () => {
       alive = false;
     };
-  }, [fetcher, profileId]);
+  }, [fetcher, profileId, kind]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -176,7 +182,7 @@ export function UnlockForm({
   if (profiles.length === 0) {
     return (
       <p className={connectionStyles.hint} data-testid="data-editor-no-profile">
-        {t('dataEditor.noProfile')}
+        {empty ?? t('dataEditor.noProfile')}
       </p>
     );
   }

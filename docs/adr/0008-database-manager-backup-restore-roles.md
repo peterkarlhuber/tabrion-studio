@@ -5,8 +5,11 @@ are already binding (E-X5, E-X6, E-X7, E-X8, E-X9 with their refinements, W-9, W
 reviews set for Studio (tabrion contract I-170, I-171, I-180..I-186, I-190..I-193; the "Open for Studio before
 G-S4" list of tabrion TODO TB-149), fixes what an over-privileged admin profile leads to (planning document 15
 section 3.1 item 3, left to STU-XDM-1), and adds the rules that make them testable. It needs the independent review
-of STU-XDM-1 and stays "proposed" until that review accepts it. **G-S4 is not granted and this record grants
-nothing:** the `database_manager` flag stays off by default, no code of the area exists yet, and no default changes.
+of STU-XDM-1. **That review accepted it with conditions** (2026-11-15, `reviews/stu-xdm1-review.md` in the
+planning documents: M-1, L-1..L-3, A-1 and the notes I-1..I-4); STU-XDM-2 folds the conditions into this record, the
+threat model and the G-S4 definition, and the record goes to "accepted" when that change is merged. **G-S4 is not
+granted and this record grants nothing:** the `database_manager` flag stays off by default and no default changes.
+STU-XDM-2 builds backup and restore behind the flag (see "As built (STU-XDM-2)" below).
 It builds on [STU-ADR-0006](0006-per-area-write-kill-switches.md), which applies unchanged. The threat model is
 [Database Manager threat model](../architecture/database-manager-threat-model.md) (TX-32..TX-46); the gate is
 defined in [G-S4 definition](../architecture/security-review-prep.md#g-s4-definition-database-manager).
@@ -37,15 +40,27 @@ tools is Studio's.
 On a profile whose stored environment is `prod` the only action is **creating a backup**, which reads and runs with
 the read profile's role (a PROD profile has no coupled write or admin profile). Restore to PROD, deleting a PROD
 database or file and role changes on PROD have no code path. In addition Studio refuses to restore into, delete or
-change roles on a database that **any** profile in the user's store labels `prod` (same host, port and database, or
-the same SQLite file by device and inode), whichever profile the request came through.
+change roles on a database that **any** profile in the user's store labels `prod`, whichever profile the request
+came through. The server is compared by an identity it reports itself where Studio can read it (review L-1): the
+`system_identifier` of `pg_control_system()` read on an open connection of the PROD profile and on the target. Where
+that is not available, normalized addresses decide: the same port and an overlap of the resolved addresses (a
+Unix socket directory, `localhost` and every loopback address count as this computer), so `localhost`,
+`127.0.0.1`, another DNS name of the same address and a socket path are one server. A SQLite file is compared by
+device and inode. What stays is a residual risk (threat model): a PROD server reached under an address Studio cannot
+relate (a port forward, a proxy) and whose identity Studio cannot read.
+
+A backup of a PROD database runs with the read profile's role; such a backup follows the same connection rules as a
+write or admin profile (review L-2 b: `require_auth` SCRAM for a password, `verify-full` for a host that is not this
+computer, nothing weakened), or it is refused. STU-XDM-2 does not build it yet: every Database Manager action needs
+an admin unlock, which a PROD connection never gets, so a PROD backup is refused (fail closed; an open point).
 
 ### 3. PostgreSQL backup and restore only through verified tools (E-X5, R-X5)
 
 - **Which tool:** `pg_dump` and `pg_restore` are taken only from absolute paths the owner sets in the local
   configuration folder of `write-areas.toml` (with that file's checks: user-owned, 0600, no link, a folder only the
   user may write). Never from `PATH`, the page, a settings save, a project file, an environment variable or a
-  profile. STU-XDM-2 fixes the key names. Planning document 15 says "from the settings"; this record reads it as the
+  profile. The file is `database-tools.toml` next to `write-areas.toml`: `version = 1` and a table `[postgresql]`
+  with the keys `pg_dump` and `pg_restore` (absolute paths); any other key makes the file invalid (STU-XDM-2). Planning document 15 says "from the settings"; this record reads it as the
   owner's local configuration, because a tool path set from the page would let whoever controls the page choose a
   program to run.
 - **Checks before every run:** the path is absolute, a regular file and not a link, not writable by group or others,
@@ -65,9 +80,25 @@ the same SQLite file by device and inode), whichever profile the request came th
 - **Secret:** the password only in a temporary passfile (0600, in a 0700 private folder, one exact entry with `:`
   and `\` escaped), removed in a `finally` block; leftovers from a crashed run are removed at the next start. The
   password is never in an argument, the environment, a log, the audit log, the backup metadata or an answer.
-- **Output and errors:** the tool's `stderr` can hold object names and values from server messages: it goes to the
-  log only through the redaction filters, cut to a limit; the answer is a catalog problem with the exit status class
-  (`studio.backup_tool_failed`), never the tool's text.
+- **Output and errors:** the tool's `stderr` can hold object names and values from server messages. STU-XDM-2 is
+  stricter than "through the redaction filters": `stderr` is read only to classify the failure (authentication,
+  connection, permission, version, other) and is never logged; the answer is a catalog problem with that class as an
+  issue (`studio.backup_tool_failed`, `tool.<class>`), never the tool's text.
+- **Incomplete output (review L-3):** `pg_dump` writes to a temporary file Studio created exclusively (0600) in the
+  backup folder; on a timeout the tool's whole process group is ended. Only after exit 0, a readable archive header
+  and a successful `pg_restore --list` of the new file (with a `pg_restore` of at least the archive's version) is
+  the file renamed to its final name without overwriting and its metadata written. Otherwise the temporary file is
+  removed and the action that depends on the backup (a restore, a delete, a Schema Designer run) is not done. The
+  same holds for the backup of a target before a restore or a delete.
+- **Row security (review L-2 c):** Studio never passes `--enable-row-security`. A role without BYPASSRLS then fails
+  on a table with row security instead of writing an archive that silently lacks rows; the guide says so.
+- **Who may use the runner (review L-2 a):** the runner (`tabrion_studio.write.pgtools`) is not part of the
+  Database Manager's package, so the Schema Designer may import it under its own `schema_designer` flag for the
+  backup before a destructive PostgreSQL run (STU-ADR-0007 section 7). GS4-04..GS4-07 and GS4-22 are then also
+  conditions of G-S3. STU-XDM-2 does not change the Schema Designer: its PostgreSQL refusal `backup_unavailable`
+  stays until that work package.
+- **Platforms:** STU-XDM-2 runs the tools on Linux and macOS only; on Windows the checks of owner and mode do not
+  apply as written, so the tools are refused (`tool.platform`; an open point).
 - **Archive format:** only the custom format (`-Fc`). A restore runs `pg_restore` directly against the database with
   `--single-transaction`, `--exit-on-error`, `--no-owner` and `--no-privileges`; Studio never produces a plain SQL
   script and never runs `psql`.
@@ -80,17 +111,36 @@ the same SQLite file by device and inode), whichever profile the request came th
 - **Where:** a backup folder in Studio's private data folder (0700, no link); backup files 0600 with names Studio
   makes; next to each a metadata file: time, the profile's `safe_url`, environment, engine, size, SHA-256, format,
   tool and version (PostgreSQL), server version, the level-2 fingerprint of the source, and the scope notice. No
-  secret, no value. Studio never deletes a backup of its own accord.
+  secret, no value. Studio never deletes a backup of its own accord. STU-XDM-2 uses the layout of the Schema
+  Designer's backups (STU-CR-5): `backups/database-manager` next to `write-areas.toml`, beside
+  `backups/schema-designer`. The page lists the backups with their count and total size and says that Studio never
+  deletes one (review I-3: the same rule as STU-CR-5; retention stays the owner's decision).
 - **Which backups can be restored:** only a backup from Studio's own backup folder whose metadata matches its file
   (SHA-256, size) and the target's engine. An archive from elsewhere is not restored in 1.3 (a custom-format archive
   holds SQL that runs with the restoring role).
 - **Target:** a new database or file, or an existing one whose stored environment is `dev` or `test`. PostgreSQL in
-  1.3 restores only into a **new** database that Studio creates for it (`create_database`, owner the admin profile's
-  role), so no `--clean` runs; SQLite restores into a new file or, with `overwrite=True` (tabrion I-170), an existing
-  non-PROD file.
+  1.3 restores only into a **new** database that Studio creates for it (`create_database` on the admin connection,
+  template `template0`, owner the restore role below), so no `--clean` runs; SQLite restores into a new file next to
+  the connection's file or, with `overwrite=True` (tabrion I-170), the connection's own non-PROD file.
+- **The restore role (review M-1).** An archive holds functions, and CHECK constraints, domain checks, index
+  expressions and the like run them while the data is loaded, as the role that restores. So a PostgreSQL restore
+  never runs with the admin role's rights:
+  - it runs as a **separate restore profile**: another admin profile of the same read profile with its own login
+    role, provided outside Studio like the admin rights (E-X6). The restore connects as the restore role itself
+    (its own login, not a role switch inside the admin's session);
+  - right before the restore Studio reads that role's privileges on its own checked connection with the logic of
+    decision 1A and refuses (`studio.dbm_restore_role_unsafe`) when it has or reaches SUPERUSER, BYPASSRLS,
+    REPLICATION, CREATEROLE (also on 16 and later), CREATEDB or any predefined role;
+  - the new database belongs to the restore role (the admin role needs to be able to act as it, set up outside
+    Studio); the archive's objects are created without owners or grants (`--no-owner`, `--no-privileges`);
+  - without such a profile a PostgreSQL restore is refused (fail closed). The preview shows the number of extensions
+    the archive creates (review I-2; with a lean restore role a trusted extension's script is limited to that
+    role's database).
 - **Before:** an existing target gets its own backup first (mandatory; opt-out only on `dev` with a typed
-  confirmation, audited). The user types the target's name (D-12). The target's identity (SQLite device and inode;
-  PostgreSQL host, port, database name and the database's OID) is checked again right before the run.
+  confirmation, audited; STU-XDM-2 offers no opt-out). The user types the target's name (D-12). The target's identity
+  (SQLite device and inode; PostgreSQL host, port, database name and the database's OID) is checked again right before
+  the run. Before a SQLite file is replaced, Studio closes its own open connections to that file (read pools and the
+  unlock) and checks the file's identity again afterwards (review I-4).
 - **After:** SQLite `integrity_check` (in tabrion's `restore`) and the level-2 fingerprint compared with the backup's
   metadata; PostgreSQL the level-2 fingerprint of the new database compared with the metadata. A difference is
   shown as a failed restore; the restored database is left for the user to inspect, never used silently.
@@ -129,7 +179,11 @@ the same SQLite file by device and inode), whichever profile the request came th
   - **Show, do not refuse:** CREATEROLE on PostgreSQL 16 and later (the attribute role management needs; shown as
     "needed only for role management"), CREATEDB, memberships in other predefined roles (`broad:*`), the K-2 grants
     of the role, `owned_objects`.
-  - The decision for `kind = "write"` stays the open G-S2 decision (I-3 of the PR #111 review).
+  - For `kind = "write"` the owner decided at G-S2 (decision 1A, PR #127): `studio.write_role_over_privileged`,
+    GS3-28.
+  - STU-XDM-2: until the owner decides this section at G-S4, the admin unlock still opens and shows its findings, but
+    every Database Manager action reads the check again on its own session and refuses these findings with
+    `studio.admin_over_privileged`, which ends the unlock.
 - **Checks around every change (E-X6):** Tabrion checks before and after the statement in the change's transaction
   (I-182). Studio in addition:
   - shows `role_privileges` of the target before the change (attributes, memberships, reachable roles, ownership,
@@ -174,13 +228,28 @@ A record before the run that cannot be written stops the action.
 
 ## Consequences
 
-- Nothing of the Database Manager is implemented by this record; STU-XDM-2..STU-XDM-7 follow it, each behind the
+- STU-XDM-2 implements sections 2 to 4 for backup and restore; STU-XDM-3..STU-XDM-7 follow, each behind the
   `database_manager` flag with the kill-switch proof of STU-ADR-0006.
 - CI needs `pg_dump` and `pg_restore` of the server's major version or newer for the restore tests (the
   `postgres` job already has `pg_dump`).
-- Studio uses Tabrion's experimental (`X`) role, restore, delete and database names; a release of Studio 1.3 needs
-  them stable or an accepted exception.
+- Tabrion's `rowedit` and `Transaction.execute_checked` are stable since decision 7A; the role, restore, delete and
+  database names Studio uses stay experimental (`X`). The review of STU-XDM-1 recommends no release exception:
+  Tabrion promotes the names Studio uses to stable (`S`) before Studio 1.3 (a TODO item).
 - The planning non-goal "no backup execution, no role management" of document 03 section 1 stays for 1.0 to 1.2.
+
+## As built (STU-XDM-2)
+
+- Routes, all behind `database_manager` (405 and no import with the flag off): `GET /api/write/database-manager/backups`
+  (the list, count, total size and the tools' state without a path), `POST .../backup`, `POST .../restore/preview`
+  (changes nothing) and `POST .../restore`. The page sends IDs, the target's name, the typed text and, on PostgreSQL,
+  the restore profile's ID; never a path, a tool or an environment.
+- Every action needs the connection's admin unlock (`kind = "admin"`), and the admin check of section 6 runs again
+  at its start. Backups of SQLite go through `tabrion.sqlite.backup`, restores through `tabrion.sqlite.restore`
+  (with `integrity_check`).
+- Audit: `run.start` (fail closed) and `run.result` with the action (`dbm.backup`,
+  `dbm.restore`), the backup file, its SHA-256, the tool version, the target, the restore profile, the
+  target's own backup and whether the fingerprint matched; no value, no path, no secret.
+- Stricter than the text above: no opt-out of the target's backup; `stderr` never logged; Windows refused.
 
 ## Tests
 

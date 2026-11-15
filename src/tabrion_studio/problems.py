@@ -76,9 +76,9 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
-    r"|(?:tables|dropped)\.\d{1,4}"
+    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore)\.[a-z_]{1,32}"
 )
-_ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema)\.[a-z_]{1,48}")
+_ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore)\.[a-z_]{1,48}")
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
 #: where the database named it, and a constraint.* code.
 _CONSTRAINT_POINTER = re.compile(r"changes\.\d{1,4}(?:\.\d{1,4})?")
@@ -948,6 +948,109 @@ CATALOG: dict[str, Entry] = {
         "Change not run",
         "The change could not be run. Nothing was changed.",
         "Preview the change again.",
+    ),
+    # The Database Manager's backup and restore (STU-XDM-2, STU-ADR-0008 sections 2 to 4 and 6, GS4-03..09). W-9: 400
+    # or 405; issues name a tool, the backup or the restore and a fixed reason, never a path, a name or tool output.
+    "studio.backup_tool_unavailable": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup tool not usable",
+        "Studio runs pg_dump and pg_restore only from the absolute paths set in database-tools.toml next to its "
+        "write settings, and only when the file is a program of the expected name and a version at least as new as "
+        "the server (and 16 or newer), owned by you or root, not writable by others and not a link. Nothing was run.",
+        "Set the paths of pg_dump and pg_restore of a matching PostgreSQL version in database-tools.toml.",
+    ),
+    "studio.backup_tool_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup tool failed",
+        "pg_dump or pg_restore ended with an error or ran out of time. A backup that did not finish was removed, and "
+        "nothing that depends on it was done.",
+        "Check the connection and the rights of the role, then try again.",
+    ),
+    "studio.dbm_backup_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup failed",
+        "The backup could not be written to Studio's backup folder, so nothing that depends on it was done.",
+        "Check the free space and the backups folder next to Studio's write settings, then try again.",
+    ),
+    "studio.dbm_backup_unknown": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup not found",
+        "Studio restores only backups from its own backup folder, named as Studio names them.",
+        "Choose a backup from the list.",
+    ),
+    "studio.dbm_backup_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup not usable",
+        "The backup or its description does not match: it was changed, it is not private, it is a link, its format "
+        "is not the one Studio makes, or it is for another kind of database. Nothing was restored.",
+        "Choose another backup. Studio never restores a changed backup.",
+    ),
+    "studio.dbm_restore_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Restore not allowed",
+        "Studio restores only into a DEV or TEST database or a new one, never into a database or file that a PROD "
+        "profile names, and on PostgreSQL only into a new database. Nothing was restored.",
+        "Choose another target.",
+    ),
+    "studio.dbm_restore_name_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Name not usable",
+        "The name of the new database or file is empty, too long, has blanks at either end or holds characters that "
+        "cannot be seen. A new SQLite file ends in .db, .sqlite or .sqlite3.",
+        "Choose a plain name.",
+    ),
+    "studio.dbm_restore_name_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Name not confirmed",
+        "The typed name does not match the target's name exactly. Nothing was restored.",
+        "Type the target's name exactly as shown.",
+    ),
+    "studio.dbm_restore_role_unsafe": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Restore role not usable",
+        "A PostgreSQL restore runs as a separate restore profile whose role has none of SUPERUSER, BYPASSRLS, "
+        "REPLICATION, CREATEROLE or CREATEDB and no predefined role, because the archive's functions run as that "
+        "role. Nothing was restored.",
+        "Create a lean role outside Studio and an admin profile for it on the same read profile.",
+    ),
+    "studio.dbm_restore_target_exists": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Target exists",
+        "A database or file of this name exists already. Nothing was restored.",
+        "Choose a new name.",
+    ),
+    "studio.dbm_restore_target_changed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Target changed",
+        "The target is no longer the database or file that was checked. Nothing more was done.",
+        "Look at the target, then start the restore again.",
+    ),
+    "studio.dbm_restore_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Restore failed",
+        "The restore could not be done. A PostgreSQL restore runs in one transaction, so the new database stays "
+        "empty; it is left for you to inspect or drop.",
+        "Check the restore role's rights and the target, then try again.",
+    ),
+    "studio.admin_over_privileged": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Admin role has too many rights",
+        "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before "
+        "PostgreSQL 16. The Database Manager does nothing with it, and the unlock ended.",
+        "Use an admin role with only the rights the Database Manager needs, set up outside Studio.",
     ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
