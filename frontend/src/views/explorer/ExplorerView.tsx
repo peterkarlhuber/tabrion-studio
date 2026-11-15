@@ -688,7 +688,10 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         fetcher={fetcher}
         connectionId={opened?.connectionId ?? ''}
         onGone={dataGone}
-        editProfileId={dataEditor && opened !== null ? opened.profileId : null}
+        editProfileId={
+          // E-X7: no edit tab on a PROD connection; the server has no unlock for PROD either.
+          dataEditor && opened !== null && opened.environment !== 'prod' ? opened.profileId : null
+        }
       />
     );
   } else if (detail?.status === 'extensions') {

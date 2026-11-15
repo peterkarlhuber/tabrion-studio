@@ -35,7 +35,13 @@ function page(rows: unknown[][]) {
   };
 }
 
-function server(options: { unlocked?: boolean; execute?: () => Response } = {}) {
+function server(
+  options: { unlocked?: boolean; execute?: () => Response; sideEffects?: boolean } = {},
+) {
+  const triggers = options.sideEffects
+    ? [{ name: 'parts_audit', timing: 'AFTER', events: ['UPDATE'], enabled: true }]
+    : [];
+  const rules = options.sideEffects ? [{ name: 'parts_log', event: 'UPDATE', instead: false }] : [];
   const calls: Call[] = [];
   let unlocked = options.unlocked ?? false;
   let rows: unknown[][] = [
@@ -78,9 +84,9 @@ function server(options: { unlocked?: boolean; execute?: () => Response } = {}) 
         table: 'parts',
         columns: ['id', 'name', 'qty'],
         primary_key: ['id'],
-        triggers: [],
-        rules: [],
-        row_security: false,
+        triggers,
+        rules,
+        row_security: options.sideEffects === true,
         max_changes: 1000,
       });
     }
@@ -92,7 +98,7 @@ function server(options: { unlocked?: boolean; execute?: () => Response } = {}) 
         destructive: false,
         risks: [],
         steps: [{ action: 'row.update', target: 'main.parts', destructive: false, rows: 1 }],
-        targets: [{ schema: 'main', table: 'parts', triggers: [], rules: [] }],
+        targets: [{ schema: 'main', table: 'parts', triggers, rules }],
       });
     }
     if (url === '/api/write/plans/confirm') return json({ plan_hash: HASH, confirmed: true });
@@ -130,6 +136,35 @@ async function editQty(user: ReturnType<typeof userEvent.setup>, value: string) 
 }
 
 describe('DataEditor (STU-026)', () => {
+  it('a table with triggers, rules or row security gets a notice, not a block (owner decision 2026-11-15)', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = server({ unlocked: true, sideEffects: true });
+    show(fetcher);
+    const notice = await screen.findByTestId('data-editor-side-effects');
+    expect(notice).toHaveAttribute('role', 'note');
+    expect(notice).toHaveTextContent('triggers or rules: parts_audit, parts_log.');
+    expect(notice).toHaveTextContent('You can still edit the table');
+    expect(screen.getByTestId('data-editor-row-security')).toHaveTextContent('Row security is on');
+    expect(screen.getByTestId('data-editor-help')).toHaveTextContent('nothing is saved until');
+    await editQty(user, '5');
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
+    const review = await screen.findByTestId('data-editor-review');
+    expect(review).toHaveTextContent('Triggers and rules also run: parts_audit, parts_log.');
+    await user.type(within(review).getByLabelText('Type parts-w to confirm'), 'parts-w');
+    await user.click(within(review).getByRole('button', { name: 'Confirm' }));
+    await user.click(await screen.findByTestId('data-editor-execute'));
+    expect(await screen.findByTestId('data-editor-saved')).toHaveTextContent('Saved: 1 updated');
+    expect(calls.filter((c) => c.url === '/api/write/plans/execute')).toHaveLength(1);
+  });
+
+  it('a table without triggers, rules or row security gets no notice', async () => {
+    const { fetcher } = server({ unlocked: true });
+    show(fetcher);
+    await screen.findByTestId('data-editor-grid');
+    expect(screen.queryByTestId('data-editor-side-effects')).toBeNull();
+    expect(screen.queryByTestId('data-editor-row-security')).toBeNull();
+  });
+
   it('asks for the unlock with the coupled write profile only, then shows the grid', async () => {
     const user = userEvent.setup();
     const { fetcher, calls } = server();

@@ -1248,8 +1248,27 @@ describe('the Data Editor tab (STU-026, behind the server-side flag)', () => {
     ]);
   });
 
+  /** The PostgreSQL profile of the fake server as a DEV profile: opened without D-02. */
+  const devProfiles = () =>
+    json({
+      ...PROFILES,
+      profiles: PROFILES.profiles.map((item) =>
+        item.id === 'user:measure' ? { ...item, environment: 'dev' } : item,
+      ),
+    });
+  async function openPgDev(fetcher: typeof fetch) {
+    const user = userEvent.setup();
+    render(<ExplorerView fetcher={fetcher} />);
+    await screen.findByRole('option', { name: 'parts-dev (DEV)' });
+    await user.selectOptions(screen.getByLabelText('Connection profile'), 'user:measure');
+    await user.click(screen.getByTestId('explorer-open'));
+    await screen.findByRole('tree');
+    return user;
+  }
+
   it('the flag on: a table gets the edit tab, which asks for the unlock first', async () => {
     const { fetcher, calls } = server({
+      'GET /api/profiles': devProfiles,
       'GET /api/write/areas': areas(true),
       'GET /api/write/unlocks': () => json({ unlocks: [] }),
       'GET /api/write/profiles': () =>
@@ -1265,13 +1284,25 @@ describe('the Data Editor tab (STU-026, behind the server-side flag)', () => {
           ],
         }),
     });
-    const user = await openPg(fetcher);
+    const user = await openPgDev(fetcher);
     await user.click(row('measurement'));
     await user.click(await screen.findByRole('tab', { name: 'Edit data' }));
     expect(await screen.findByTestId('data-editor-unlock')).toBeVisible();
     // Opening the tab only reads; nothing is unlocked or changed until the user types and submits.
     expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url}`)).toEqual([
       'POST /api/connections',
+    ]);
+  });
+
+  it('the flag on and a PROD connection: no edit tab and no write request (E-X7)', async () => {
+    const { fetcher, calls } = server({ 'GET /api/write/areas': areas(true) });
+    const user = await openPg(fetcher);
+    await user.click(row('measurement'));
+    await screen.findAllByTestId('detail-column');
+    expect(screen.getByRole('tab', { name: 'Data' })).toBeVisible();
+    expect(screen.queryByRole('tab', { name: 'Edit data' })).toBeNull();
+    expect(calls.filter((c) => c.url.startsWith('/api/write/')).map((c) => c.url)).toEqual([
+      '/api/write/areas',
     ]);
   });
 });

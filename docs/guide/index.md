@@ -27,6 +27,8 @@ This guide is for people who use Tabrion Studio. It describes what the current d
 - [Query history and favorites](history.md): the statements you ran (without parameter values), favorite
   and recently opened connections.
 - [Data viewer](data-viewer.md): the rows of a table or view, page by page, with sorting and filters.
+- [Data Editor (in development)](data-editor.md): changing, adding and deleting rows of one table with preview
+  and typed confirmation; not usable or supported, off by default and locked until G-S2, with its limits.
 - [Settings and keyboard](settings.md): language, theme, density, query limits, the command palette and the
   shortcuts.
 - [How Studio protects your data](security.md): what Studio does and does not do, in short.

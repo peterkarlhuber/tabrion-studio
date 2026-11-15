@@ -14,7 +14,8 @@
  * catalogs and details of STU-010 and the data viewer's pages of STU-013; `er=150` gives the PostgreSQL schema
  * `audit` 150 tables for the ER diagram of STU-023), `path` (/, /connections, /explorer, /sql, /history, /migrations,
  * /diagnostics, /settings); data-editor: the Data Editor's grid alone (STU-XDE-1, `dataEditor.ts`: an unlocked typed
- * table, the plans the page sent in `window.dataEditorLog`). In every scenario the fake answers STU-020's routes
+ * table, the plans the page sent in `window.dataEditorLog`; STU-XDE-2: `locked=1` or `locked=prod`, `triggers=1`,
+ * `refuse=<code>` and `conflict=1`, see `dataEditor.ts`). In every scenario the fake answers STU-020's routes
  * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
  * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
  * `theme` (light, dark) and `lang` (en, de). The editor's drafts (TD-033) go to a fake `/api/drafts` (`drafts.ts`) that
@@ -527,7 +528,12 @@ if (root === null) throw new Error('#root is missing');
 const session: SessionState = scenario === 'used' ? 'used' : 'ok';
 if (scenario === 'data-editor') {
   // STU-XDE-1: the grid with its type editors and change overview, without the shell (the flag is the server's).
-  const dataEditor = createDataEditorServer();
+  const dataEditor = createDataEditorServer({
+    locked: params.get('locked') === 'prod' ? 'prod' : params.get('locked') === '1' ? 'yes' : null,
+    triggers: params.get('triggers') === '1',
+    refuse: params.get('refuse'),
+    conflict: params.get('conflict') === '1',
+  });
   (window as unknown as { dataEditorLog: unknown }).dataEditorLog = dataEditor.log;
   createRoot(root).render(
     <StrictMode>

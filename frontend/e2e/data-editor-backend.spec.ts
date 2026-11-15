@@ -6,7 +6,9 @@
  * Unlock with the typed write profile name (D-03), change a NULL cell, add a row and delete one, preview, confirm by
  * typing the table's name (a delete is destructive, D-10) and execute once under the strict Content-Security-Policy;
  * the database holds exactly the changes. Then a row changed behind the page's back: the run rolls back, says so and
- * names no value. The changes never go to the query history or the drafts (N-3).
+ * names no value. The changes never go to the query history or the drafts (N-3). STU-XDE-2 adds NULL against the
+ * empty text in the database, a trigger (a notice, not a block), the refused view and table without a primary key,
+ * and PROD (no write profile, no edit tab, no unlock).
  *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
@@ -84,6 +86,16 @@ test.beforeAll(async () => {
       // STU-XDE-1: a STRICT table, whose column types the server checks and the page edits by type.
       "db.execute('create table bins (id integer primary key, qty integer not null, label text) strict')",
       'db.execute("insert into bins values (1, 5, \'top\')")',
+      // STU-XDE-2: NULL and the empty text; a trigger (a notice, not a block); the refused targets.
+      "db.execute('create table notes (id integer primary key, body text) strict')",
+      "db.execute(\"insert into notes values (1, 'a'), (2, 'b')\")",
+      "db.execute('create table stock (id integer primary key, qty integer not null)')",
+      "db.execute('create table stock_log (id integer primary key, note text not null)')",
+      'db.execute("insert into stock values (1, 10)")',
+      'db.execute("create trigger stock_audit after update on stock begin insert into stock_log (note) values (\'changed\'); end")',
+      "db.execute('create table loose (msg text)')",
+      'db.execute("insert into loose values (\'x\')")',
+      "db.execute('create view parts_view as select id, name from parts')",
       'db.commit()',
     ].join('\n'),
   );
@@ -148,14 +160,38 @@ async function api(
   );
 }
 
-/** Open the explorer on the read profile, select the table and its "Edit data" tab. */
-async function openEditor(page: Page, table = 'parts'): Promise<void> {
+/** Open the explorer on a profile (D-02 confirmed for PROD) and select an object. */
+async function openObject(page: Page, object: string, profile = 'user:e2e-editor'): Promise<void> {
   await page.getByRole('link', { name: 'Explorer' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Explorer' })).toBeVisible();
-  await page.getByRole('combobox').first().selectOption('user:e2e-editor');
+  await page.getByRole('combobox').first().selectOption(profile);
   await page.getByTestId('explorer-open').click();
-  await page.getByRole('treeitem', { name: table, exact: true }).click();
+  if (profile === 'user:e2e-prod') {
+    const ask = page.getByRole('dialog', { name: 'Production database' });
+    await ask.getByRole('button', { name: 'Connect' }).click();
+  }
+  await page.getByRole('treeitem', { name: object, exact: true }).click();
+}
+
+/** Open the explorer on the read profile, select the table and its "Edit data" tab. */
+async function openEditor(page: Page, table = 'parts'): Promise<void> {
+  await openObject(page, table);
   await page.getByRole('tab', { name: 'Edit data' }).click();
+}
+
+/** Unlock the write mode of this page's connection with the typed write profile name (D-03). */
+async function unlockEditor(page: Page): Promise<void> {
+  const unlock = page.getByTestId('data-editor-unlock');
+  await unlock.getByLabel('Type e2e-editor-w to unlock').fill('e2e-editor-w');
+  await unlock.getByRole('button', { name: 'Unlock' }).click();
+}
+
+/** The digest of the user's profiles.toml, for the next write of it. */
+async function profilesDigest(page: Page): Promise<string | null> {
+  const listed = (await api(page, 'GET', '/api/profiles')).body as {
+    user_file?: { digest?: string | null } | null;
+  };
+  return listed.user_file?.digest ?? null;
 }
 
 /** The requests the page sends that are not GETs, with their bodies. */
@@ -329,4 +365,157 @@ test('STU-XDE-1: a STRICT table is edited by type; the server checks again and n
     JSON.parse(sqlite("print(json.dumps(db.execute('select * from bins').fetchall()))")),
   ).toEqual([[1, 12, '']]);
   await expectNoViolations(page, violations);
+});
+
+test('STU-XDE-2: NULL and the empty text reach the database apart', async ({ page }) => {
+  await signIn(page);
+  await openEditor(page, 'notes');
+  await unlockEditor(page);
+  await page.getByRole('textbox', { name: 'Row 1, body' }).fill('');
+  await page.getByRole('button', { name: 'Set Row 2, body to NULL' }).click();
+  await expect(page.getByRole('textbox', { name: 'Row 2, body' })).toHaveAttribute(
+    'placeholder',
+    'NULL',
+  );
+  await expect(page.getByTestId('data-editor-changes').getByRole('row')).toHaveText([
+    'ColumnBeforeAfter',
+    'bodya(empty text)',
+    'ColumnBeforeAfter',
+    'bodybNULL',
+  ]);
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-saved')).toContainText('Saved: 2 updated');
+  expect(
+    JSON.parse(
+      sqlite(
+        "print(json.dumps(db.execute('select id, body, body is null from notes order by id').fetchall()))",
+      ),
+    ),
+  ).toEqual([
+    [1, '', 0],
+    [2, null, 1],
+  ]);
+});
+
+test('STU-XDE-2: a table with a trigger gets a notice, not a block; the review names it', async ({
+  page,
+}) => {
+  const violations = await signIn(page);
+  await openEditor(page, 'stock');
+  await unlockEditor(page);
+  await expect(page.getByTestId('data-editor-side-effects')).toContainText(
+    'This table has triggers or rules: stock_audit.',
+  );
+  await page.getByRole('textbox', { name: 'Row 1, qty' }).fill('11');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.getByTestId('data-editor-review').getByRole('note')).toHaveText(
+    'Triggers and rules also run: stock_audit.',
+  );
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-saved')).toContainText('Saved: 1 updated');
+  // The trigger ran in the same transaction; its row is not in Studio's count.
+  expect(
+    JSON.parse(
+      sqlite(
+        "print(json.dumps([db.execute('select qty from stock').fetchall(), db.execute('select note from stock_log').fetchall()]))",
+      ),
+    ),
+  ).toEqual([[[11]], [['changed']]]);
+  await expectNoViolations(page, violations);
+});
+
+test('STU-XDE-2: refused targets: a view has no edit tab, a table without a primary key is refused', async ({
+  page,
+}) => {
+  await signIn(page);
+  await openObject(page, 'parts');
+  await page.getByRole('treeitem', { name: 'Views (1)' }).click();
+  await page.getByRole('treeitem', { name: 'parts_view', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Data', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Edit data' })).toHaveCount(0);
+  await page.getByRole('treeitem', { name: 'loose', exact: true }).click();
+  await page.getByRole('tab', { name: 'Edit data' }).click();
+  await unlockEditor(page);
+  await expect(page.getByTestId('data-editor-problem')).toHaveText(
+    'The table has no primary key, so Studio cannot edit its rows.',
+  );
+  await expect(page.getByTestId('data-editor-grid')).toHaveCount(0);
+  // The server refuses a plan for it too, before a plan exists, and the file is unchanged.
+  const connectionId = (
+    (await api(page, 'GET', '/api/write/unlocks')).body as { unlocks: { connection_id: string }[] }
+  ).unlocks[0]?.connection_id;
+  for (const [table, code] of [
+    ['loose', 'studio.plan_target_no_primary_key'],
+    ['parts_view', 'studio.plan_target_invalid'],
+  ] as const) {
+    const refused = await api(page, 'POST', '/api/write/plans', {
+      connection_id: connectionId,
+      executor: 'data_editor.changeset',
+      request: {
+        schema: 'main',
+        table,
+        columns: ['name'],
+        changes: [{ op: 'insert', values: { name: CANARY } }],
+      },
+    });
+    expect(refused.status).toBe(400);
+    expect(refused.body).toMatchObject({ code });
+  }
+  expect(
+    JSON.parse(sqlite("print(json.dumps(db.execute('select * from loose').fetchall()))")),
+  ).toEqual([['x']]);
+});
+
+test('STU-XDE-2: PROD is refused: no write profile, no unlock and no edit tab (E-X7)', async ({
+  page,
+}) => {
+  await signIn(page);
+  const created = await api(page, 'POST', '/api/profiles', {
+    profile: { name: 'e2e-prod', engine: 'sqlite', environment: 'prod', path: database },
+    digest: await profilesDigest(page),
+    overwrite: false,
+  });
+  expect(created.status).toBe(201);
+  const coupled = await api(page, 'POST', '/api/write/profiles', {
+    profile: { name: 'e2e-prod-w', kind: 'write', read_profile: 'e2e-prod' },
+    digest: await profilesDigest(page),
+    confirm_no_prod_credentials: true,
+  });
+  expect(coupled.status).toBe(400);
+  expect(coupled.body).toMatchObject({
+    code: 'studio.write_profile_invalid',
+    issues: [{ pointer: 'profile.read_profile', code: 'config.coupling_prod' }],
+  });
+  // A coupled profile never becomes PROD.
+  const toProd = await api(page, 'PUT', '/api/profiles', {
+    id: 'user:e2e-editor',
+    profile: { name: 'e2e-editor', engine: 'sqlite', environment: 'prod', path: database },
+    digest: await profilesDigest(page),
+  });
+  expect(toProd.status).toBe(422);
+  expect(toProd.body).toMatchObject({
+    code: 'studio.profile_invalid',
+    issues: [{ pointer: 'profile.environment', code: 'config.coupling_prod' }],
+  });
+  // The PROD connection: the page offers no edit tab, and the server unlocks nothing on it.
+  await openObject(page, 'parts', 'user:e2e-prod');
+  await expect(page.getByRole('tab', { name: 'Data', exact: true })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Edit data' })).toHaveCount(0);
+  const connections = (await api(page, 'GET', '/api/connections')).body as {
+    connections?: { connection_id: string; profile_id: string }[];
+  };
+  const prod = connections.connections?.find((item) => item.profile_id === 'user:e2e-prod');
+  expect(prod).toBeDefined();
+  const unlock = await api(page, 'POST', '/api/write/unlocks', {
+    connection_id: prod?.connection_id,
+    write_profile_id: 'write:e2e-editor-w',
+    typed_name: 'e2e-editor-w',
+  });
+  expect([400, 405]).toContain(unlock.status);
+  expect((await api(page, 'GET', '/api/write/unlocks')).body).toEqual({ unlocks: [] });
 });
