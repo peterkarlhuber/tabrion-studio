@@ -71,14 +71,14 @@
 > PostgreSQL tables with a column without a proper equality (no default btree or hash operator class: `xml`,
 > `point`, `box`, composites, `json[]`; review I-1 of PR #119). Review of PR #119 accepted; L-1 (explicit collations),
 > I-1 and I-2 fixed. The page: an "Edit data" tab on a table, shown only when `GET /api/write/areas` answers the flag on (en, de). Pins tabrion
-> 0.3.0.dev0 (`a864d10`, draft tabrion #80) for now: the pin moves to the merge commit once tabrion #80 merges.
+> 0.3.0.dev0 (`72e2d03`, the merge commit of tabrion #80).
 > Follow-ups: STU-XDE-1 (type editors, validation, paging), STU-XDE-2.
 
 ## Summary
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `a864d10` (draft tabrion #80, temporary) and `>=0.2,<0.4` in the STU-026 PR) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -186,11 +186,11 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   to tabrion 0.2.0, the untagged merge commit of tabrion PR #65 (`52353daee6cd6e37a7efc45b74061a48beb2b280`), and
   the range `tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3`. The TD-071 PR moves the pin to tabrion 0.2.1, the
   untagged merge commit of tabrion PR #71 (`af0458d54467571abfc1afdd44d76e1f4d727c06`); the range stays. The STU-026
-  PR moves the pin to tabrion 0.3.0.dev0, the head of tabrion draft PR #80 (`a864d10fc02fc8b2f2b2a0c53105813b2b605b89`,
-  temporary until #80 merges), and the range to `>=0.2,<0.4`: the RC-8 check allows final-only bounds, and a lower
+  PR moves the pin to tabrion 0.3.0.dev0, the merge commit of tabrion PR #80
+  (`72e2d03fea2b83e159a4ae9df3b7c40246b8a232`), and the range to `>=0.2,<0.4`: the RC-8 check allows final-only bounds, and a lower
   bound of `0.3` would exclude the prerelease `0.3.0.dev0`. The shared `scripts/check_tabrion_source.py` (SHA-pinned
   copy) still uses its poison version `0.2.99`; it should move above the new range's floor (for example `0.3.99`)
-  in the canonical copy once tabrion #80 merges.
+  in the canonical copy.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for

@@ -995,8 +995,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
-- STU-026: Studio is built and tested against tabrion 0.3.0.dev0, the head of tabrion draft PR #80
-  (`a864d10fc02fc8b2f2b2a0c53105813b2b605b89`; untagged, temporary until that PR merges), pinned by full SHA in
+- STU-026: Studio is built and tested against tabrion 0.3.0.dev0, the merge commit of tabrion PR #80
+  (`72e2d03fea2b83e159a4ae9df3b7c40246b8a232`; untagged, no release; it contains tabrion 0.2.2), pinned by full SHA in
   `constraints/tabrion-integration.txt`; the range in `pyproject.toml` is `>=0.2,<0.4`.
 - TD-071: Studio is built and tested against tabrion 0.2.1, the untagged merge commit of tabrion PR #71
   (`af0458d54467571abfc1afdd44d76e1f4d727c06`; no tag, no release), pinned by full SHA in
