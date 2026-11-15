@@ -44,8 +44,14 @@
   (add, drop or rename a table or column, change a column, add or drop a constraint or an index), checked by the
   server against the level-2 model and by a tabrion plan. ``POST /api/write/schema-designer/draft/preview``:
   ``{"connection_id"}``: the read-only plan preview from a fresh snapshot to the draft (steps, risk classes, SQL,
-  fingerprints, plan hash). The draft lives only on the server; no route takes a model, a snapshot or a plan from the
-  page (GS3-09), and none runs a plan. Schema Designer flag only, like the creation routes.
+  fingerprints, plan hash, the preview warnings, what the confirmation needs and whether the plan may run directly).
+  The draft lives only on the server; no route takes a model, a snapshot or a plan from the page (GS3-09).
+  ``POST /api/write/schema-designer/plan/confirm``: ``{"connection_id", "plan_hash", "typed", "tables", "steps",
+  "locking", "backup", "backup_typed"}``: confirm the previewed plan per risk class (STU-CR-5);
+  ``POST /api/write/schema-designer/plan/run``: ``{"connection_id", "plan_hash", "dry_run"}``: plan again, compare the
+  hash with the confirmed one, make the backup and run the plan once through tabrion's ``execute_plan`` on a DEV or
+  TEST database without migration management (:mod:`tabrion_studio.write.schema_designer.execute`). Schema Designer
+  flag only, like the creation routes.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -98,6 +104,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/schema-designer/draft/view", ("POST",)),
     ("/api/write/schema-designer/draft/edits", ("POST",)),
     ("/api/write/schema-designer/draft/preview", ("POST",)),
+    # STU-CR-5: confirm the previewed plan per risk class, then run it once (or dry-run it) on DEV or TEST (G-S3).
+    ("/api/write/schema-designer/plan/confirm", ("POST",)),
+    ("/api/write/schema-designer/plan/run", ("POST",)),
 )
 
 

@@ -1,11 +1,13 @@
 /**
- * The Schema Designer's database creation (STU-CR-2, STU-CR-3) and its table designer with the read-only plan
- * preview (STU-CR-4; STU-ADR-0007, gate G-S3, not granted). The routes
+ * The Schema Designer's database creation (STU-CR-2, STU-CR-3), its table designer with the plan preview (STU-CR-4)
+ * and the confirmed run of a plan (STU-CR-5; STU-ADR-0007, gate G-S3, not granted). The routes
  * answer only while the owner of the Studio process turned the `schema_designer` flag on in `write-areas.toml`; the
  * page reads that state (`GET /api/write/areas`) to show the wizard at all and never sets it. The server decides
  * everything that matters: the folder and file checks and the mode of a SQLite file, the unlock, the stored
  * environment (never PROD) and the owner checks of a PostgreSQL database. The draft lives on the server; the page
- * sends one change at a time and never a model or a plan. The page builds no SQL.
+ * sends one change at a time and never a model or a plan. The page builds no SQL. A run names only the plan hash the
+ * server recorded at the preview, with what the user typed and ticked; the server keeps the plan, plans again and
+ * decides whether it may run (DEV or TEST, no migration management, the backup).
  */
 import { send, type Result } from './profiles';
 
@@ -129,7 +131,7 @@ export async function createPostgresDatabase(
 //
 // The draft (the target model) lives only on the server, bound to this session's unlock of the connection. The page
 // sends one edit operation at a time and gets the whole draft back; it never sends a model, a snapshot or a plan
-// (GS3-09). The preview is read only: no route of this version runs a plan.
+// (GS3-09). The preview keeps the plan on the server; a confirmed plan runs once (STU-CR-5).
 
 export type ConstraintKind = 'primary_key' | 'unique' | 'foreign_key' | 'check';
 
@@ -202,6 +204,28 @@ export interface PlanStep {
   statements: PlanStatement[];
 }
 
+/** A fixed warning of the preview (STU-ADR-0007 section 8), with the bare table name where one applies. */
+export interface PlanWarning {
+  code: string;
+  table: string | null;
+  lockTimeoutS: number | null;
+}
+
+/** What the confirmation of the plan needs (STU-ADR-0007 sections 6 and 7). */
+export interface PlanConfirmationNeeds {
+  profile: string;
+  tables: string[];
+  dataChangingSteps: number[];
+  locking: boolean;
+  lockTimeoutS: number;
+  backup: {
+    required: boolean;
+    engine: string;
+    optOutAllowed: boolean;
+    optOutText: string | null;
+  };
+}
+
 export interface PlanPreview {
   revision: number;
   dialect: string;
@@ -213,6 +237,40 @@ export interface PlanPreview {
   transactional: boolean;
   baseChanged: boolean;
   steps: PlanStep[];
+  environment: string;
+  executable: boolean;
+  blocked: string[];
+  warnings: PlanWarning[];
+  confirmation: PlanConfirmationNeeds;
+  expiresInS: number;
+}
+
+/** What the user typed and ticked for the plan (the server checks every part against the plan it keeps). */
+export interface PlanConfirmation {
+  typed: string;
+  tables: string[];
+  steps: number[];
+  locking: boolean;
+  backup: 'make' | 'skip';
+  backupTyped: string;
+}
+
+export interface PlanConfirmed {
+  planHash: string;
+  backup: string;
+  expiresInS: number;
+}
+
+export interface RunOutcome {
+  result: 'committed' | 'rolled_back';
+  dryRun: boolean;
+  stepsRun: number;
+  fingerprintAfter: string | null;
+  backup: string;
+  backupPath: string | null;
+  auditPending: boolean;
+  draftEnded: boolean;
+  revision: number;
 }
 
 /** One edit operation as the server takes it (`op` and its own keys; the server checks every part). */
@@ -404,10 +462,26 @@ export function parsePreview(body: unknown): PlanPreview | null {
   });
   const risks = strings(doc.risks);
   const version = numbers(doc.server_version);
+  const blocked = strings(doc.blocked);
+  const warnings = list(doc.warnings, (item) =>
+    typeof item.code === 'string'
+      ? {
+          code: item.code,
+          table: text(item.table),
+          lockTimeoutS: typeof item.lock_timeout_s === 'number' ? item.lock_timeout_s : null,
+        }
+      : null,
+  );
+  const confirmation = parseNeeds(record(doc.confirmation));
   if (
     steps === null ||
     risks === null ||
     version === null ||
+    blocked === null ||
+    warnings === null ||
+    confirmation === null ||
+    typeof doc.environment !== 'string' ||
+    typeof doc.expires_in_s !== 'number' ||
     typeof doc.revision !== 'number' ||
     typeof doc.dialect !== 'string' ||
     typeof doc.source_fingerprint !== 'string' ||
@@ -427,6 +501,80 @@ export function parsePreview(body: unknown): PlanPreview | null {
     transactional: doc.transactional === true,
     baseChanged: doc.base_changed === true,
     steps,
+    environment: doc.environment,
+    executable: doc.executable === true,
+    blocked,
+    warnings,
+    confirmation,
+    expiresInS: doc.expires_in_s,
+  };
+}
+
+function parseNeeds(doc: Doc | null): PlanConfirmationNeeds | null {
+  if (doc === null) return null;
+  const tables = strings(doc.tables);
+  const steps = numbers(doc.data_changing_steps);
+  const backup = record(doc.backup);
+  if (
+    tables === null ||
+    steps === null ||
+    backup === null ||
+    typeof doc.profile !== 'string' ||
+    typeof doc.lock_timeout_s !== 'number' ||
+    typeof backup.engine !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    profile: doc.profile,
+    tables,
+    dataChangingSteps: steps,
+    locking: doc.locking === true,
+    lockTimeoutS: doc.lock_timeout_s,
+    backup: {
+      required: backup.required === true,
+      engine: backup.engine,
+      optOutAllowed: backup.opt_out_allowed === true,
+      optOutText: text(backup.opt_out_text),
+    },
+  };
+}
+
+export function parseConfirmed(body: unknown): PlanConfirmed | null {
+  const doc = record(body);
+  if (
+    doc === null ||
+    doc.confirmed !== true ||
+    typeof doc.plan_hash !== 'string' ||
+    typeof doc.backup !== 'string' ||
+    typeof doc.expires_in_s !== 'number'
+  ) {
+    return null;
+  }
+  return { planHash: doc.plan_hash, backup: doc.backup, expiresInS: doc.expires_in_s };
+}
+
+export function parseOutcome(body: unknown): RunOutcome | null {
+  const doc = record(body);
+  if (
+    doc === null ||
+    (doc.result !== 'committed' && doc.result !== 'rolled_back') ||
+    typeof doc.steps_run !== 'number' ||
+    typeof doc.backup !== 'string' ||
+    typeof doc.revision !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    result: doc.result,
+    dryRun: doc.dry_run === true,
+    stepsRun: doc.steps_run,
+    fingerprintAfter: text(doc.fingerprint_after),
+    backup: doc.backup,
+    backupPath: text(doc.backup_path),
+    auditPending: doc.audit_pending === true,
+    draftEnded: doc.draft_ended === true,
+    revision: doc.revision,
   };
 }
 
@@ -489,4 +637,46 @@ export async function previewDraft(
   if (!result.ok) return result;
   const preview = parsePreview(result.value);
   return preview === null ? UNREADABLE : { ok: true, value: preview };
+}
+
+const PLAN_ROUTE = '/api/write/schema-designer/plan';
+
+/** `POST /api/write/schema-designer/plan/confirm`: confirm the previewed plan (its hash and what each class asks). */
+export async function confirmPlan(
+  fetcher: typeof fetch,
+  connectionId: string,
+  planHash: string,
+  confirmation: PlanConfirmation,
+): Promise<Result<PlanConfirmed>> {
+  const body: Record<string, unknown> = {
+    connection_id: connectionId,
+    plan_hash: planHash,
+    typed: confirmation.typed,
+    tables: confirmation.tables,
+    steps: confirmation.steps,
+    locking: confirmation.locking,
+    backup: confirmation.backup,
+  };
+  if (confirmation.backup === 'skip') body.backup_typed = confirmation.backupTyped;
+  const result = await send<unknown>(fetcher, 'POST', `${PLAN_ROUTE}/confirm`, body);
+  if (!result.ok) return result;
+  const confirmed = parseConfirmed(result.value);
+  return confirmed === null ? UNREADABLE : { ok: true, value: confirmed };
+}
+
+/** `POST /api/write/schema-designer/plan/run`: run the confirmed plan once, or dry-run it (rolled back). */
+export async function runPlan(
+  fetcher: typeof fetch,
+  connectionId: string,
+  planHash: string,
+  dryRun: boolean,
+): Promise<Result<RunOutcome>> {
+  const result = await send<unknown>(fetcher, 'POST', `${PLAN_ROUTE}/run`, {
+    connection_id: connectionId,
+    plan_hash: planHash,
+    dry_run: dryRun,
+  });
+  if (!result.ok) return result;
+  const outcome = parseOutcome(result.value);
+  return outcome === null ? UNREADABLE : { ok: true, value: outcome };
 }

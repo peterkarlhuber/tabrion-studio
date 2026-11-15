@@ -9,11 +9,24 @@
  * plan), nothing runs (the file keeps its tables and columns), and the audit log holds no run. axe in the light and
  * the dark theme.
  *
+ * STU-CR-5: drop a column, read the preview's warnings, confirm the plan (typed profile and table names, the ticked
+ * data-changing step; the backup kept), try it as a dry run (rolled back: the file is unchanged), preview and confirm
+ * again and run it: the column is gone, the backup file is in Studio's backup folder (0600) with the old column, and
+ * the audit log holds the dry run and the run. The page sends the recorded hash and what was typed, never a plan.
+ *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
  */
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process';
-import { chmodSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  mkdtempSync,
+  mkdirSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -256,7 +269,7 @@ for (const theme of ['light', 'dark'] as Theme[]) {
 
     await designer.getByRole('button', { name: 'Show plan' }).click();
     const preview = designer.getByTestId('schema-designer-preview');
-    await expect(preview).toContainText('This is a preview: nothing is run from here.');
+    await expect(preview).toContainText('Nothing runs until you confirm the plan and run it.');
     await expect(preview.getByTestId('schema-designer-plan-hash')).toContainText('sha256:');
     await expect(preview.getByTestId('schema-designer-step').first()).toContainText(
       `ALTER TABLE parts ADD COLUMN ${column} INTEGER DEFAULT (0)`,
@@ -288,3 +301,107 @@ for (const theme of ['light', 'dark'] as Theme[]) {
     expect(foreign).toEqual([]);
   });
 }
+
+/** Type and tick what the confirmation asks (the names shown in each label), keep the backup, and confirm. */
+async function confirm(preview: ReturnType<Page['getByTestId']>) {
+  const form = preview.getByTestId('schema-designer-run');
+  await form.getByLabel('Type the write profile name: e2e-designer-w').fill('e2e-designer-w');
+  await form.getByLabel('Type the table name: parts').fill('parts');
+  for (const step of await form.getByTestId('schema-designer-run-step').all()) await step.check();
+  await expect(form.getByTestId('schema-designer-run-backup')).toContainText(
+    'A copy of the database file is made before the run.',
+  );
+  await form.getByRole('button', { name: 'Confirm' }).click();
+  await expect(form.getByTestId('schema-designer-confirmed')).toBeVisible();
+  // Neither the run nor the dry run has the focus by default.
+  await expect(form.getByRole('button', { name: 'Run the plan' })).not.toBeFocused();
+  await expect(form.getByRole('button', { name: 'Dry run' })).not.toBeFocused();
+  return form;
+}
+
+test('drop a column: confirm, dry run, then run with its backup (light)', async ({ page }) => {
+  const foreign = foreignRequests(page, () => base);
+  const violations = await signIn(page);
+  const sent = writes(page);
+  const designer = await openDesigner(page);
+  const unlock = designer.getByTestId('data-editor-unlock');
+  await unlock.getByLabel('Type e2e-designer-w to unlock').fill('e2e-designer-w');
+  await unlock.getByRole('button', { name: 'Unlock' }).click();
+  await designer.getByRole('button', { name: 'Start draft' }).click();
+  const parts = designer.getByTestId('schema-designer-table').filter({ hasText: 'parts' });
+  await parts.getByRole('button', { name: 'Drop name', exact: true }).click();
+  await expect(parts.getByRole('rowheader', { name: 'name' })).toHaveCount(0);
+
+  await designer.getByRole('button', { name: 'Show plan' }).click();
+  let preview = designer.getByTestId('schema-designer-preview');
+  await expect(preview.getByTestId('schema-designer-warnings')).toContainText(
+    'The draft does not show views, triggers',
+  );
+  let form = await confirm(preview);
+  expect(await seriousViolations(page)).toEqual([]);
+  await form.getByRole('button', { name: 'Dry run' }).click();
+  await expect(designer.getByTestId('schema-designer-outcome')).toContainText('rolled back');
+  expect(
+    sqlite("print(json.dumps([r[1] for r in db.execute('pragma table_info(parts)')]))").trim(),
+  ).toBe('["id", "name"]');
+
+  // The dry run used the confirmation up: preview and confirm again, then run.
+  await designer.getByRole('button', { name: 'Show plan' }).click();
+  preview = designer.getByTestId('schema-designer-preview');
+  form = await confirm(preview);
+  await form.getByRole('button', { name: 'Run the plan' }).click();
+  const outcome = designer.getByTestId('schema-designer-outcome');
+  await expect(outcome).toContainText('run and committed');
+  await expect(outcome.getByTestId('schema-designer-backup-path')).toContainText('schema-designer');
+  expect(await seriousViolations(page)).toEqual([]);
+  expect(
+    sqlite("print(json.dumps([r[1] for r in db.execute('pragma table_info(parts)')]))").trim(),
+  ).toBe('["id"]');
+
+  // The backup: one file in Studio's backup folder, owner-only, with the dropped column still in it.
+  const folder = join(root, 'state', 'config', 'backups', 'schema-designer');
+  const files = readdirSync(folder);
+  expect(files).toHaveLength(1);
+  expect(statSync(folder).mode & 0o777).toBe(0o700);
+  expect(statSync(join(folder, files[0] as string)).mode & 0o777).toBe(0o600);
+  const kept = execFileSync(
+    python as string,
+    [
+      '-I',
+      '-c',
+      "import json, sqlite3, sys\nprint(json.dumps([r[1] for r in sqlite3.connect(sys.argv[1]).execute('pragma table_info(parts)')]))",
+      join(folder, files[0] as string),
+    ],
+    { encoding: 'utf-8' },
+  ).trim();
+  expect(kept).toBe('["id", "name"]');
+
+  const audit = (await api(page, 'GET', '/api/write/audit?limit=100')).body as {
+    records: { event: string; fields: Record<string, unknown> }[];
+  };
+  const runs = audit.records.filter((r) => r.event === 'run.start');
+  expect(runs.map((r) => r.fields.action).sort()).toEqual([
+    'schema_designer.dry_run',
+    'schema_designer.run',
+  ]);
+  // The page sent the recorded hash and what was typed and ticked: never a plan, a model or an environment.
+  for (const write of sent.filter((s) => s.path.startsWith('/api/write/schema-designer/plan/'))) {
+    const body = JSON.parse(write.body) as Record<string, unknown>;
+    expect(
+      Object.keys(body).every((key) =>
+        [
+          'connection_id',
+          'plan_hash',
+          'typed',
+          'tables',
+          'steps',
+          'locking',
+          'backup',
+          'dry_run',
+        ].includes(key),
+      ),
+    ).toBe(true);
+  }
+  await expectNoViolations(page, violations);
+  expect(foreign).toEqual([]);
+});

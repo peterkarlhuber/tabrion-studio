@@ -14,9 +14,11 @@ The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan
 make and preview, confirm with the hash and the typed text, execute once. With the Data Editor flag on, the Data
 Editor's executor (STU-026, :mod:`tabrion_studio.write.data_editor`) is registered there and its table route answers;
 with that flag off neither is imported. With the Schema Designer flag on, its two database creation routes (STU-CR-2,
-STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`) and its draft and preview routes (STU-CR-4,
+STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`), its draft and preview routes (STU-CR-4,
 :mod:`tabrion_studio.write.schema_designer.designer`; the drafts in ``app.state.schema_drafts``, ended with their
-unlock) answer; with that flag off they answer 405 and import nothing of the area.
+unlock) and the confirmation and run of a previewed plan (STU-CR-5,
+:mod:`tabrion_studio.write.schema_designer.execute`) answer; with that flag off they answer 405 and import nothing of
+the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -132,6 +134,12 @@ _MAX_CREATE_BODY = MAX_FORM_BODY
 _DRAFT_START_KEYS = frozenset({"connection_id", "schema"})
 _DRAFT_KEYS = frozenset({"connection_id"})
 _DRAFT_EDIT_KEYS = frozenset({"connection_id", "revision", "edit"})
+#: The keys of the plan confirmation and the run (STU-CR-5): never an environment, a plan, a target or a class list;
+#: the server takes all of them from its own record (GS3-05, GS3-09).
+_PLAN_CONFIRM_KEYS = frozenset(
+    {"connection_id", "plan_hash", "typed", "tables", "steps", "locking", "backup", "backup_typed"}
+)
+_PLAN_RUN_KEYS = frozenset({"connection_id", "plan_hash", "dry_run"})
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -585,7 +593,9 @@ def add_enabled_write_routes(
         # Imported only with the Schema Designer flag on (GS3-01); a draft ends with the unlock it belongs to.
         from tabrion_studio.write.schema_designer.draft import MAX_EDIT_BODY, Drafts
 
-        drafts = Drafts()
+        # The project folder (an alembic.ini there means revisions only) and the folder of write-areas.toml (the
+        # backups before a run go below it, STU-CR-5); no such folder: no run that needs it (fail closed).
+        drafts = Drafts(config.project.project, None if audit_dir is None else audit_dir.parent)
         unlocks.end_listeners.append(drafts.unlock_ended)
         app.state.schema_drafts = drafts
         draft_edit_body = MAX_EDIT_BODY
@@ -617,6 +627,8 @@ def add_enabled_write_routes(
     designer_route("/api/write/schema-designer/draft/view", "POST", _DRAFT_KEYS, _MAX_BODY, "view")
     designer_route("/api/write/schema-designer/draft/edits", "POST", _DRAFT_EDIT_KEYS, draft_edit_body, "edit")
     designer_route("/api/write/schema-designer/draft/preview", "POST", _DRAFT_KEYS, _MAX_BODY, "preview")
+    designer_route("/api/write/schema-designer/plan/confirm", "POST", _PLAN_CONFIRM_KEYS, _MAX_BODY, "confirm")
+    designer_route("/api/write/schema-designer/plan/run", "POST", _PLAN_RUN_KEYS, _MAX_BODY, "run")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

@@ -1089,7 +1089,13 @@
     "schema_draft_limit": "The draft would exceed a limit of the Schema Designer (tables, columns, constraints and indexes, edits or size). Nothing was changed.",
     "schema_edit_invalid": "The edit is not valid. The draft was not changed.",
     "schema_plan_refused": "Tabrion refuses to plan this change. There is no way around the refusal; leave that table unchanged or use your own migration tooling.",
-    "schema_model_invalid": "Tabrion cannot make the change as designed. Check the type, the texts and the names."
+    "schema_model_invalid": "Tabrion cannot make the change as designed. Check the type, the texts and the names.",
+    "schema_run_not_allowed": "Studio does not run this plan directly (the reason is below). Nothing was changed.",
+    "schema_backup_required": "This plan needs a backup before it runs. The backup can be left out on DEV only.",
+    "schema_backup_failed": "The backup before the run could not be made, so nothing was run. Check the free space and the backup folder.",
+    "schema_run_check_failed": "A check before the commit failed (see below). The run was rolled back; nothing was changed.",
+    "schema_run_outcome_unknown": "It is not known whether the run was committed (the connection broke at the commit). Check the database before anything else.",
+    "schema_run_failed": "The run failed and was rolled back; nothing was changed."
   },
   "keyboard": {
     "palette": {
@@ -1980,13 +1986,15 @@
       "ddl_identifier_too_long": "A name is longer than the database allows.",
       "ddl_unsupported_feature": "The table has a column or element Tabrion cannot write (for example an identity or generated column).",
       "ddl_invalid_shape": "A part of the table is not valid.",
-      "other": "Refused by Tabrion ({{code}})."
+      "other": "Refused by Tabrion ({{code}}).",
+      "table": "Table: {{name}}",
+      "tableUnknown": "A table that is not in the draft."
     },
     "previewTitle": "Plan",
     "previewEmpty": "The draft matches the database: there is nothing to change.",
     "previewSteps_one": "Tabrion plans {{count}} step.",
     "previewSteps_other": "Tabrion plans {{count}} steps.",
-    "previewNotRun": "This is a preview: nothing is run from here.",
+    "previewNotRun": "Nothing runs until you confirm the plan and run it.",
     "baseChanged": "The database changed since the draft started. The plan also undoes what changed since then, such as a table added meanwhile.",
     "planHash": "Plan hash",
     "sourceFingerprint": "Fingerprint of the database",
@@ -2019,6 +2027,55 @@
       "rebuild": "rebuild",
       "locking": "locks the table",
       "non_transactional": "outside the transaction"
+    },
+    "warningsTitle": "Before you run it",
+    "warnings": {
+      "not_modelled": "The draft does not show views, triggers, row security policies and other objects of the database. Check them yourself: the plan may refuse or affect them.",
+      "pg_dependent_code": "PostgreSQL does not track functions and other code that may use table {{table}}. Check that code yourself.",
+      "function_drift": "A changed function is not part of the fingerprint, so a change to one since the preview is not found.",
+      "sqlite_rowid": "Table {{table}} is rebuilt and has no INTEGER PRIMARY KEY: its rowid values may change.",
+      "fingerprint_gaps": "The fingerprint does not cover everything (for example the rows, functions and grants). A change there is not found as drift.",
+      "locking": "A step locks its table. The run waits at most {{seconds}} s for the lock, then stops without changing anything."
+    },
+    "blockedTitle": "Studio does not run this plan",
+    "blockedLead": "Use your own migration tooling for this change.",
+    "reasons": {
+      "nothing_to_run": "There is nothing to run.",
+      "environment": "Plans run directly on DEV and TEST only.",
+      "migration_managed": "The database has a migration version table (Alembic, Nodestro, Axentra) or a SQLite user_version: migrations manage it.",
+      "levuvo_managed": "The database has a Levuvo version table (Orkexa's too): migrations manage it.",
+      "alembic_project": "The project has an alembic.ini: its changes go through Alembic revisions.",
+      "non_transactional": "A step cannot run in a transaction.",
+      "too_many_tables": "The plan changes more tables than one run may.",
+      "backup_unavailable": "The plan drops, rebuilds or changes data on PostgreSQL, and Studio cannot back up a PostgreSQL database yet.",
+      "foreign_key_check": "A row breaks a foreign key (foreign_key_check).",
+      "integrity_check": "SQLite's integrity_check found a problem.",
+      "failed": "A check before the commit failed."
+    },
+    "run": {
+      "title": "Confirm and run",
+      "lead": "Studio plans again right before the run and runs only this plan (hash above). Type and tick what each step asks.",
+      "typedProfile": "Type the write profile name: {{name}}",
+      "typedTable": "Type the table name: {{name}}",
+      "acceptStep": "I accept that step {{number}} changes or removes data.",
+      "acceptLocking": "I accept that the run locks tables (it waits at most {{seconds}} s for a lock).",
+      "backupMade": "A copy of the database file is made before the run.",
+      "backupNotNeeded": "No backup is needed for this plan.",
+      "backupSkip": "Leave the backup out (DEV only; recorded in the audit log)",
+      "backupSkipTyped": "Type the database file name to leave the backup out: {{name}}",
+      "confirm": "Confirm",
+      "confirmed": "Confirmed. Run the plan within {{seconds}} s, or try it as a dry run first.",
+      "run": "Run the plan",
+      "dryRun": "Dry run",
+      "dryRunNote": "A dry run makes every step in a transaction and then rolls it back. It takes the same locks as the run (on PostgreSQL an ACCESS EXCLUSIVE lock on each changed table), and sequence values it uses stay used. Afterwards show the plan and confirm it again to run it.",
+      "committed_one": "Done: {{count}} step run and committed.",
+      "committed_other": "Done: {{count}} steps run and committed.",
+      "rolledBack_one": "Dry run: {{count}} step run and rolled back. Nothing was changed.",
+      "rolledBack_other": "Dry run: {{count}} steps run and rolled back. Nothing was changed.",
+      "backupPath": "Backup: {{path}}",
+      "backupSkipped": "The backup was left out.",
+      "auditPending": "The audit record is still pending; see the audit log under write profiles.",
+      "draftEnded": "The draft ended. Start it again to make further changes."
     }
   }
 }

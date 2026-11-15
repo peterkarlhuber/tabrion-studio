@@ -12,6 +12,26 @@ All notable changes to this project are documented here. The format follows
   `Transaction.execute_checked`). `update_row` and `delete_row` now take `old` and `new` by keyword only; the Data
   Editor passes them by keyword. No behavior change; the `data_editor` flag stays off.
 
+- STU-CR-5 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer runs a confirmed plan on a DEV or TEST database. The preview keeps the plan on the
+  server for 5 minutes, bound to the browser tab, connection and unlock, and shows the warnings of STU-ADR-0007
+  section 8 (objects not modelled, PostgreSQL dependent code and function drift, SQLite `rowid`, fingerprint gaps,
+  locks), why a plan is not run directly and what its confirmation needs. `POST
+  /api/write/schema-designer/plan/confirm` takes the typed write profile and table names, each data-changing step,
+  the lock acknowledgement and the backup choice; `POST .../plan/run` runs it once (a dry run only on request,
+  rolled back). Studio plans again from a fresh snapshot and compares the hash and risk classes, then calls
+  `tabrion.plan.execute_plan` with the environment from the stored profile, the server's version,
+  `concurrent_indexes=False` and a 5 s lock timeout. Direct execution is refused for a migration version table
+  (tabrion's markers, Levuvo's), an `alembic.ini` in the project, a non-transactional step and outside DEV and TEST;
+  on PostgreSQL the write role's rights are checked again on the run's session. A SQLite plan with a destructive,
+  rebuild or data-changing step first gets a backup with `tabrion.sqlite.backup` into `backups/schema-designer`
+  (0700, files 0600; left out on DEV only with the typed file name); such a PostgreSQL plan is refused until a
+  verified `pg_dump` runner exists. Each run is audited (`run.start`, `run.result`). Six new problems
+  `studio.schema_run_not_allowed`, `schema_backup_required`, `schema_backup_failed`, `schema_run_check_failed`,
+  `schema_run_outcome_unknown` and `schema_run_failed`; a refusal names its table by its position on the page only
+  (English and German). New tests `test_schema_designer_execution.py` and `test_schema_designer_execution_postgres.py`;
+  guide section "Run a plan".
+
 - STU-CR-4 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's table view on the Connections page. `POST`/`DELETE
   /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` keep one draft

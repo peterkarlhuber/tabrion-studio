@@ -14,7 +14,8 @@ export interface Problem {
    * `constraint.*` code; or the
    * fields of a refused database creation (STU-CR-2, STU-CR-3): `create.<field>` and `create.*` codes; or the parts
    * of a refused Schema Designer edit or plan (STU-CR-4): `edit.<field>` with `edit.*` codes, `plan.<part>` with
-   * tabrion's fixed reason or code (`plan.*`, `ddl.*`, `schema.*`).
+   * tabrion's fixed reason or code (`plan.*`, `ddl.*`, `schema.*`), and (STU-CR-5) the table such a refusal is
+   * about, by its position on the page only: `tables.<n>` or `dropped.<n>`.
    */
   issues?: ProblemIssue[];
   /** The SQLSTATE of a `db.<kind>` problem (five characters), when the database gave one. */
@@ -27,7 +28,7 @@ export interface ProblemIssue {
 }
 
 const ISSUE_POINTER =
-  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}(?:\.\d{1,4})?|(?:create|edit|plan)\.[a-z_]{1,32})$/;
+  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}(?:\.\d{1,4})?|(?:create|edit|plan)\.[a-z_]{1,32}|(?:tables|dropped)\.\d{1,4})$/;
 const ISSUE_CODE = /^(?:config|value|constraint|create|edit|plan|ddl|schema)\.[a-z_]{1,48}$/;
 
 function issues(value: unknown): ProblemIssue[] | undefined {

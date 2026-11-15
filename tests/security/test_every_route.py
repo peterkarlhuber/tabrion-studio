@@ -227,7 +227,11 @@ CHANGING_ROUTES: dict[str, str] = {
     "DELETE /api/write/schema-designer/draft": "drops this session's draft from server memory (Schema Designer flag)",
     "POST /api/write/schema-designer/draft/view": "reads this session's draft from server memory (flag)",
     "POST /api/write/schema-designer/draft/edits": "one edit of the draft in server memory; writes nothing (flag)",
-    "POST /api/write/schema-designer/draft/preview": "plans from a fresh snapshot to the draft; runs nothing (flag)",
+    "POST /api/write/schema-designer/draft/preview": "plans from a fresh snapshot to the draft, kept in memory (flag)",
+    # STU-CR-5 (G-S3): the confirmation per risk class and the one run of a previewed plan through tabrion's
+    # execute_plan, on DEV or TEST without migration management only (tests/security/test_schema_designer_execution.py).
+    "POST /api/write/schema-designer/plan/confirm": "records the confirmed hash and classes in memory (flag)",
+    "POST /api/write/schema-designer/plan/run": "backup, then DDL via execute_plan on DEV/TEST (Schema Designer flag)",
 }
 
 

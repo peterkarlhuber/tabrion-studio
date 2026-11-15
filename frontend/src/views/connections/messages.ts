@@ -141,6 +141,13 @@ const PROBLEMS = new Set([
   'schema_edit_invalid',
   'schema_plan_refused',
   'schema_model_invalid',
+  // The Schema Designer's confirmed run (STU-CR-5).
+  'schema_run_not_allowed',
+  'schema_backup_required',
+  'schema_backup_failed',
+  'schema_run_check_failed',
+  'schema_run_outcome_unknown',
+  'schema_run_failed',
 ]);
 
 const ISSUES = new Set([

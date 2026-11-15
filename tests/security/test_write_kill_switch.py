@@ -58,6 +58,13 @@ for _path, _methods in WRITE_ROUTES:
                     "schema": "main",
                     "revision": 0,
                     "edit": {"op": "drop_table", "table": "parts"},
+                    # STU-CR-5: the confirmation and the run of a previewed plan (G-S3).
+                    "plan_hash": "sha256:" + "0" * 64,
+                    "tables": ["parts"],
+                    "steps": [],
+                    "locking": False,
+                    "backup": "skip",
+                    "dry_run": False,
                 },
             )
         )
@@ -65,7 +72,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 25
+    assert len(methods) == 27
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -85,6 +92,8 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/schema-designer/draft/view",
         "POST /api/write/schema-designer/draft/edits",
         "POST /api/write/schema-designer/draft/preview",
+        "POST /api/write/schema-designer/plan/confirm",  # STU-CR-5: confirm and run a previewed plan (G-S3)
+        "POST /api/write/schema-designer/plan/run",
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

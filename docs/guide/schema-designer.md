@@ -9,11 +9,12 @@
 
 The **Schema Designer** section on the **Connections** page lets you design the tables, columns, keys, constraints
 and indexes of one schema of a development or test database, and shows the plan Tabrion makes for the change: every
-step with its risk classes, whether it runs in a transaction, its exact SQL, and the plan hash.
+step with its risk classes, whether it runs in a transaction, its exact SQL, and the plan hash. On a **DEV** or
+**TEST** database that no migration tool manages, you can confirm the plan and run it (see
+[Run a plan](#run-a-plan)).
 
-**In this version nothing is run.** The designer only shows the plan. Running a plan (a confirmation per risk class,
-a new plan right before the run, a backup before a destructive change) is a later step of the Schema Designer and
-is not built yet. The designer never writes to the database, the project folder or the disk.
+Designing and previewing never write to the database, the project folder or the disk. Only a confirmed run changes
+the database, and only after Studio made its backup where one is needed.
 
 ## Turn it on for development
 
@@ -108,11 +109,76 @@ PostgreSQL the server's version). It shows:
 - a warning when the database changed since the draft started: the plan then also undoes that change (for example,
   it drops a table that was added meanwhile, because the draft does not have it).
 
+The plan also lists **warnings** to read before a run:
+
+- views, triggers, row security policies and other objects are not shown in the draft: check them yourself;
+- on PostgreSQL, functions and other code that may use a table you drop or whose column type you change are not
+  tracked, and a changed function is not part of the fingerprint;
+- on SQLite, a table without an `INTEGER PRIMARY KEY` that is rebuilt may get new `rowid` values;
+- the fingerprint does not cover everything (rows, functions, grants), so a change there is not found as drift;
+- a step that locks its table waits at most 5 seconds for the lock; then the run stops without changing anything.
+
+When a table is the reason Tabrion refuses a plan, the page names it from its position in the draft; the problem
+itself carries no name.
+
 The SQL is shown to you only. It is never written to Studio's log, the audit log, the query history or a diagnosis
-report. The designer writes no audit record, because it changes nothing.
+report.
+
+## Run a plan
+
+Studio runs a plan directly only when **all** of these hold, checked on the server when the plan is shown and again
+right before the run:
+
+- the read profile's stored environment is **DEV** or **TEST** (PROD is never unlocked);
+- the database has no migration version table: no `alembic_version`, `nodestro_schema_migrations` or
+  `axentra_schema_migrations` in any schema, no Levuvo version table (Orkexa's `orkexa_schema` included) and, on
+  SQLite, no `user_version` above 0;
+- the project folder has no `alembic.ini`;
+- every step runs in a transaction;
+- on **PostgreSQL**, the plan has no `destructive`, `rebuild` or `changes data` step. Studio cannot back up a
+  PostgreSQL database yet, so such a plan is refused (`backup_unavailable`) until it can. Plans that only add, or
+  that lock a table, run.
+
+Otherwise the page says why and offers no confirmation; use your own migration tooling for that change.
+
+**Confirm.** Type the write profile's name and the name of every table the plan changes, tick every step that
+changes or removes data, tick the lock warning when a step locks a table, and keep the backup. Studio compares all of
+it with the plan it keeps on the server; the page only sends the plan hash it was shown. A confirmation is valid for
+5 minutes, for this browser tab, connection and unlock, and for one attempt.
+
+**Run the plan** or **Dry run.** Neither button has the focus by default. Right before the run Studio takes a fresh
+snapshot, plans again and compares the plan hash and the risk classes with the confirmed ones; if anything changed,
+nothing runs (`studio.plan_drift`). On PostgreSQL it also checks the write role's rights again on the session that
+runs the plan (`studio.write_role_over_privileged` ends the unlock). Tabrion then plans once more inside its own
+transaction, runs every step, checks foreign keys (and, on SQLite, the file's integrity) before the commit, and rolls
+everything back if a check fails.
+
+A **dry run** happens only when you ask for it: it runs every step and rolls back, so the schema does not change.
+It takes the same locks as the run (on PostgreSQL an `ACCESS EXCLUSIVE` lock on each changed table), and sequence
+values it uses stay used. It uses the confirmation up; show the plan and confirm it again to run it.
+
+### The backup
+
+Before a SQLite plan with a `destructive`, `rebuild` or `changes data` step, Studio copies the database file with
+SQLite's backup function into the `backups/schema-designer` folder next to `write-areas.toml` in Studio's
+configuration folder. The folder is readable by you only (0700) and so is each file (0600); a file is named by the
+time of the run in UTC and a random part. When the backup fails, nothing runs (`studio.schema_backup_failed`).
+
+On **DEV only** you may leave the backup out: tick **Leave the backup out** and type the database file's name. The
+audit log records that the backup was left out. On TEST the backup cannot be left out.
+
+Studio never deletes a backup. Remove old ones yourself: delete the files in `backups/schema-designer` that you no
+longer need (each is a plain SQLite file you can open to check it first).
+
+### What is recorded
+
+Each run and dry run writes a `run.start` and a `run.result` record to the audit log: the action
+(`schema_designer.run` or `schema_designer.dry_run`), the environment, the changed tables, the plan hash, the risk
+classes, the number of steps, the backup state (`made`, `opted_out`, `not_needed` or `dry_run`) and the result. When
+the audit record cannot be written, nothing runs. No value, default or check text and no SQL is recorded.
 
 ## Not yet
 
-- Running a plan, with its confirmations and the backup before a destructive change (STU-CR-5).
+- A backup of a PostgreSQL database (and with it destructive, rebuild and data-changing runs on PostgreSQL).
 - The graphical mode (STU-XSD-1), the schema comparison (STU-XSD-2) and the Alembic revision output (STU-XSD-3).
 - Starting a draft from a schema file, and saving a draft.

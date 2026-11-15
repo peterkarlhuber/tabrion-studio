@@ -644,7 +644,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.2 | Wizards: create a SQLite file and a PostgreSQL database (Tabrion `create_private_file`, `create_database`; TX-29) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Built, locked by G-S3 (PR #128, merged `4b9fb7c`; review ACCEPTED with conditions, `reviews/pr128-stucr23-review.md`: Low P128-01, P128-02, Info P128-03, closed in the follow-up row below; STU-CR-1 is still to be accepted): the "New database" wizard on the Connections page, routes `POST /api/write/schema-designer/create/sqlite` and `/create/postgresql`, ten `studio.schema_*` problems, guide page [New database](guide/new-database.md). Evidence: GS3-01 (kill-switch sweep and import check), GS3-02 (the other flags, query and header), GS3-03 (PROD per route), GS3-20, GS3-21, GS3-28 (decision 1A at the unlock and at each run) in `tests/security/test_schema_designer_create.py` and `test_schema_designer_create_postgres.py`; driver errors only through `safe_message`. Open: [STU-CR-2 and STU-CR-3 open points](#stu-cr-2-and-stu-cr-3-open-points) |
 | 1.2 | STU-CR-2/3 follow-up: review conditions of PR #128 (all before G-S3) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Done (PR #130; its delta review accepted it with no new finding; info: the SQLite connection opens the file by path, and the second identity check detects a swap): [x] P128-01 (Low) the SQLite file is created with `os.open(..., dir_fd=<held folder>)`, `O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`, and before and after the header the folder's device, inode and real path, the folders above it and the file's device and inode (by the path and in the held folder) are checked again; every folder above the target must belong to root or the user and not be writable by group or others unless sticky (`StrictModes`); [x] P128-02 (Low) Studio's own folders compared by device and inode for the folder and every folder above it, the log folder and the project's `.tabrion` folder added; [x] P128-03 (Info) and open point 7: Unicode `Zs` other than U+0020, `Zl` and `Zp` refused in the file name and in database and owner names (`create.control_character`); [x] open point 1 (a)-(c): the guides recommend a separate CREATEDB role for the Schema Designer on DEV/TEST and an up-to-date server, and the warning `admin.createdb` (never refusing) on a write unlock while the Data Editor's flag is on and on any unlock outside DEV/TEST; [x] open point 5: Windows is excluded, SQLite creation there answers `400 studio.schema_create_platform` (an ACL check of owner and DACL was not small enough for this follow-up; it can replace the exclusion later). Evidence GS3-21, GS3-28 in [security-review-prep](architecture/security-review-prep.md#g-s3-definition-schema-designer). Still open before G-S3: the STU-CR-1 review |
 | 1.2 | Designer for tables, columns, constraints, indexes: the server-side draft and its edit operations on `tabrion.schema` level 2 | TABRION STU-CR-4 | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr4`, draft PR; review pending): the Schema Designer section on the Connections page (table view), routes `POST`/`DELETE /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` (read-only plan preview; no route runs DDL), seven `studio.schema_*` problems, guide page [Schema Designer](guide/schema-designer.md). Evidence: GS3-09 (body-key refusal of a model or plan, static check that `from_json` is never called), GS3-13 (a spy on `tabrion.plan.plan` against the SQLite library version and PostgreSQL `server_version_num`), the kill-switch sweep and import check, in `tests/security/test_schema_designer_draft.py` and `test_schema_designer_draft_postgres.py`. Open: [STU-CR-4 open points](#stu-cr-4-open-points); STU-CR-1 review still open |
-| 1.2 | Plan preview, confirmation per risk class, re-plan and hash compare, direct execution through `execute_plan`, backup before destructive runs, the I-124 preview warnings | TABRION STU-CR-5 | G-S3 | Open; needs STU-CR-4 and a Tabrion pin with TAB-XW-5 (GS3-P1, GS3-P2). Acceptance: GS3-03..05, GS3-09..20 |
+| 1.2 | Plan preview, confirmation per risk class, re-plan and hash compare, direct execution through `execute_plan`, backup before destructive runs, the I-124 preview warnings | TABRION STU-CR-5 | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr5`, draft PR; review pending): the preview keeps the plan on the server (bound to session, connection, unlock, 5 minutes) with its warnings, why it is not run and what its confirmation needs; routes `POST /api/write/schema-designer/plan/confirm` and `.../plan/run` (one attempt per confirmation, a dry run only on request); Studio's re-plan and hash compare before `tabrion.plan.execute_plan` (environment from the stored profile, `server_version`, `concurrent_indexes=False`, `lock_timeout` 5 s); direct execution on DEV and TEST only, never with a migration marker, a Levuvo version table or an `alembic.ini`; decision 1A again on the run's PostgreSQL session; SQLite backup with `tabrion.sqlite.backup` into `backups/schema-designer` (0700/0600), opt-out on DEV only; PostgreSQL plans with a `destructive`, `rebuild` or `data_changing` step refused (no `pg_dump` runner); audit `run.start`/`run.result`; six `studio.schema_run_*`/`schema_backup_*` problems; the page's confirmation, Run and Dry run; guide section "Run a plan". Evidence: GS3-01, 03..05, 10..20, 27..29 in `tests/security/test_schema_designer_execution.py` and `test_schema_designer_execution_postgres.py`, `SchemaDesigner.test.tsx`, `e2e/schema-designer-backend.spec.ts`. Open: [STU-CR-5 open points](#stu-cr-5-open-points) |
 | 1.2 | Runtime-role wizard and profile export (single-host only, W-10, TB-148) | TABRION STU-CR-6 | G-S3 | Open; needs STU-CR-3, STU-XW-4. Acceptance: GS3-22 (the role rules GS4-12..GS4-19 that apply), TX-30 |
 | 1.2 | i18n, docs, E2E in three browsers and axe | TABRION STU-CR-7 | G-S3 | Open. Acceptance: GS3-14 (focus), GS3-24 (the guide states the limits of doc 15 section 3.1) |
 | 1.2 | G-S3 review and fixes | TABRION STU-CR-8 | G-S3 | Open. Acceptance: GS3-25; the review re-checks the lock until the gate (doc 15 section 9.4) |
@@ -1020,7 +1020,8 @@ flag stays off by default and nothing in STU-CR-4 runs DDL. Each point needs the
    when the match is only in a string literal; a text with a PostgreSQL Unicode-escape name (`U&"..."`) blocks every
    column of the table. The independent review of #132 accepted STU-CR-4 with one Low finding (P132-01: bare names
    were matched in ASCII only), fixed in the same PR with regression tests; the review's notes for STU-CR-5: warn
-   that views, triggers and policies are not modelled, and run directly only on DEV and TEST (E-X4).
+   that views, triggers and policies are not modelled, and run directly only on DEV and TEST (E-X4). (Both done in
+   STU-CR-5: the warning `not_modelled` on every preview, and the environment gate of the run.)
 4. **Problems carry no names:** a refusal names the field (`edit.table`, `edit.column`, ...) and a fixed code, never
    the table, column or SQL text, so that no user text reaches a problem body or the log.
 5. **The draft lives in memory** for one browser tab (session), bound to the connection and the unlock; it ends with
@@ -1032,10 +1033,52 @@ flag stays off by default and nothing in STU-CR-4 runs DDL. Each point needs the
 7. **PostgreSQL:** the write connection's `search_path` is `pg_catalog`, so the draft always names its schema; system
    schemas (`pg_*`, `information_schema`) are refused. SQLite: only `main`.
 8. **Concurrent indexes:** every `plan` call passes `concurrent_indexes=False` (STU-ADR-0007); the decision for
-   `CREATE INDEX CONCURRENTLY` belongs to STU-CR-5.
+   `CREATE INDEX CONCURRENTLY` belongs to STU-CR-5. (STU-CR-5: the run passes `concurrent_indexes=False` too; a
+   concurrent index stays out of direct execution.)
 9. **Platforms:** the SQLite tests of the designer skip on Python 3.11 like the other write tests; Windows is not
    excluded for the designer (it only reads the schema).
 10. **Firefox and WebKit:** the new Playwright spec ran in Chromium locally; CI runs the three browsers.
+
+### STU-CR-5 open points
+
+Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stucr5`). **G-S3 is not granted;** the `schema_designer`
+flag stays off by default. Each point needs the independent review or the owner.
+
+1. **PostgreSQL backup (owner, STU-ADR-0008):** the verified `pg_dump` runner does not exist, so a PostgreSQL plan
+   with a `destructive`, `rebuild` or `data_changing` step is refused (`studio.schema_run_not_allowed`, reason
+   `backup_unavailable`), fail closed. Plans that only add, or that only lock, run. The runner is a separate work
+   package; until then such changes go through the user's own tooling.
+2. **Backup retention (owner question):** Studio keeps every backup in `backups/schema-designer` next to
+   `write-areas.toml` and never deletes one; the guide tells the user how to remove them. Should Studio offer a
+   cleanup, a count or age limit, or a size warning?
+3. **A dry run uses the confirmation up** (the plan is taken for one attempt, run or dry run); the user previews and
+   confirms again to run. Simpler to reason about; the owner may prefer that a dry run keeps the confirmation.
+4. **`alembic.ini` is checked by presence** (also an empty file or a link), stricter than "a configured Alembic
+   project"; an unknown project folder fails closed. Levuvo's file sets in the project are not looked at, only its
+   version tables in the database (`orkexa_schema`, `<prefix>_orkexa_schema`, `nodestro_schema_migrations`,
+   `axentra_schema_migrations`, matched case-insensitively among tables, views and foreign tables).
+5. **SQLite schema authorizer:** during the run's transaction the write connection's authorizer allows schema
+   statements on `main` (create, drop and alter of tables, indexes and triggers; SQLite's own writes to
+   `sqlite_master`; its internal `ALTER TABLE` functions; the pragmas `foreign_keys` and `trusted_schema` that
+   tabrion sets) and is set back to the write authorizer afterwards, also on failure. `ATTACH`, other pragmas and
+   other schemas stay refused. A reviewer should check the list against tabrion's SQLite steps.
+6. **Limits:** one run changes at most 64 tables (the audit record's object cap; reason `too_many_tables`); the
+   confirmation is valid for 5 minutes. tabrion's own single-statement checks of every default, check and predicate
+   text run in each `plan` call, so also in Studio's re-plan and in the executor's own plan; Studio adds no cap of its
+   own. The owner confirms or changes them.
+7. **Refusals by position:** a refusal of tabrion names its table only by its position on the page (`tables.<n>` of
+   the draft, `dropped.<n>` of the dropped tables), so a problem never carries a name. A table added to the database
+   since the draft started is not on the page and gets no pointer.
+8. **Drift on PostgreSQL:** a trigger added to a table after the confirmation is refused by tabrion as a feature it
+   does not change (`unsupported_feature`, `trigger`) before Studio's hash compare; a policy or function-body change
+   relies on tabrion's D-5 fingerprint and its own tests.
+9. **Lock timeout:** fixed at 5 s (tabrion's default); a held lock ends the run as `409 db.locked` with nothing
+   changed.
+10. **Platforms:** the SQLite run tests skip on Python 3.11 (no `setconfig`); there the executor refuses a SQLite plan
+    that recreates a trigger. Firefox and WebKit: the new Playwright test ran in Chromium locally; CI runs the three
+    browsers.
+11. **Not in this package:** the revision output for Alembic projects (STU-XSD-3), `CREATE INDEX CONCURRENTLY`
+    (always `concurrent_indexes=False`), and the runtime role (STU-CR-6).
 
 ## Cross-repository checks still to add
 

@@ -17,8 +17,10 @@ STU-CR-3) and for the Schema Designer's draft (STU-CR-4): ``studio.schema_edit_i
 ``studio.schema_draft_limit`` (``[{"pointer": "edit.column", "code": "edit.column_in_use"}]``: a field of the edit
 and an ``edit.*`` code), ``studio.schema_plan_refused`` and ``studio.schema_model_invalid``
 (``[{"pointer": "plan.reason", "code": "plan.unsupported_feature"}]``: tabrion's reason, feature kind or error code,
-``plan.*``, ``ddl.*`` or ``schema.*``, never a name or a text) and, from
-STU-011 on, ``sqlstate`` and ``position`` for database
+``plan.*``, ``ddl.*`` or ``schema.*``, never a name or a text; from STU-CR-5 on also the table tabrion named, by
+its position on the page only: ``tables.<n>`` or ``dropped.<n>``), ``studio.schema_run_not_allowed``
+(``plan.reason``: why a plan is not run directly), ``studio.schema_run_check_failed`` (``plan.check``: the check
+before the commit that failed) and, from STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
 **Nothing in a problem comes from an exception or from the request (threat T-05, SQ-04).** ``title``, ``detail`` and
@@ -74,6 +76,7 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
+    r"|(?:tables|dropped)\.\d{1,4}"
 )
 _ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema)\.[a-z_]{1,48}")
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
@@ -898,6 +901,53 @@ CATALOG: dict[str, Entry] = {
         "Tabrion cannot make the change as designed, for example for an unknown type, a default or check text that "
         "is not one plain expression, a name that is too long, or a change it does not support.",
         "Check the type, the texts and the names of the change.",
+    ),
+    # Running a Schema Designer plan (STU-CR-5, STU-ADR-0007 sections 4 to 11, GS3-03..05, GS3-10..20). W-9: 400 or
+    # 405; no name, statement, default or check text, no server text.
+    "studio.schema_run_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Not run directly",
+        "Studio runs a schema change directly only on a DEV or TEST database without migration management (no "
+        "Alembic project, no Alembic or Levuvo version table, a SQLite user_version of 0), for a plan whose steps all "
+        "run in one transaction and, on PostgreSQL, without a step that needs a backup. Nothing was run.",
+        "Use your own migration tooling for this database, or change the plan.",
+    ),
+    "studio.schema_backup_required": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup required",
+        "This change needs a backup before it runs. It may be left out only on a DEV database. Nothing was run.",
+        "Confirm the change with the backup.",
+    ),
+    "studio.schema_backup_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup failed",
+        "The backup before the change could not be made, so nothing was run.",
+        "Check the free space and the backups folder next to Studio's write settings, then try again.",
+    ),
+    "studio.schema_run_check_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Check failed",
+        "A check before the commit found a problem (foreign keys or the database's integrity), so the change was "
+        "rolled back. Nothing was changed.",
+        "Fix the data the check names in your own tools, then preview the change again.",
+    ),
+    "studio.schema_run_outcome_unknown": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Outcome unknown",
+        "The connection was lost while the change was committed, so Studio cannot tell whether it was applied.",
+        "Reconnect and look at the schema before you do anything else.",
+    ),
+    "studio.schema_run_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Change not run",
+        "The change could not be run. Nothing was changed.",
+        "Preview the change again.",
     ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
