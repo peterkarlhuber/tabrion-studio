@@ -121,7 +121,7 @@ const INTEGER = /^[+-]?\d+$/;
 const DECIMAL = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/;
 const SPECIAL_FLOAT = /^(?:[+-]?(?:inf|infinity)|nan)$/i;
 const DATE = String.raw`(\d{4})-(\d{2})-(\d{2})`;
-const TIME = String.raw`(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,6})?)?`;
+const TIME = String.raw`(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?`;
 const OFFSET = String.raw`(?:Z|[+-](\d{2}):(\d{2})(?::(\d{2}))?)`;
 const FORMATS: Partial<Record<Kind, RegExp>> = {
   date: new RegExp(`^${DATE}$`),
@@ -140,7 +140,14 @@ const ARRAY_KINDS: readonly Kind[] = [
   'int8',
   'float4',
   'float8',
+  'numeric',
   'text',
+  'date',
+  'time',
+  'timetz',
+  'timestamp',
+  'timestamptz',
+  'uuid',
 ];
 
 /** The checks of `check_value` on the server: null when `value` fits `column`, else the issue. */
@@ -199,14 +206,25 @@ function checkScalar(column: ColumnType, value: unknown): IssueCode | null {
   return checkFormat(kind, value);
 }
 
+/** The whitespace PostgreSQL (and SQLite) take around a number: the C `isspace` set, not Unicode spaces. */
+const NUMBER_SPACE = /^[ \t\n\r\v\f]+|[ \t\n\r\v\f]+$/g;
+/** More digits than this (after leading zeros) are out of the range of any integer column: int8 has 19. */
+const INTEGER_DIGITS = 19;
+
+const trimNumber = (text: string) => text.replace(NUMBER_SPACE, '');
+
 function checkInteger(limit: bigint, value: unknown): IssueCode | null {
   let number: bigint;
   if (typeof value === 'number') {
     if (!Number.isInteger(value)) return 'value.type';
     number = BigInt(value);
   } else if (typeof value === 'string') {
-    if (!INTEGER.test(value)) return 'value.format';
-    number = BigInt(value);
+    const text = trimNumber(value);
+    if (!INTEGER.test(text)) return 'value.format';
+    if (text.replace(/^[+-]/, '').replace(/^0+/, '').length > INTEGER_DIGITS) {
+      return 'value.out_of_range';
+    }
+    number = BigInt(text);
   } else {
     return 'value.type';
   }
@@ -216,9 +234,10 @@ function checkInteger(limit: bigint, value: unknown): IssueCode | null {
 function checkFloat(kind: Kind, value: unknown): IssueCode | null {
   let number: number;
   if (typeof value === 'string') {
-    if (SPECIAL_FLOAT.test(value)) return null;
-    if (decimalParts(value) === null) return 'value.format';
-    number = Number(value);
+    const text = trimNumber(value);
+    if (SPECIAL_FLOAT.test(text)) return null;
+    if (decimalParts(text) === null) return 'value.format';
+    number = Number(text);
   } else if (typeof value === 'number') {
     number = value;
   } else {
@@ -250,7 +269,7 @@ function checkNumeric(column: ColumnType, value: unknown): IssueCode | null {
     if (!Number.isFinite(value)) return 'value.out_of_range';
     text = String(value);
   } else if (typeof value === 'string') {
-    text = value;
+    text = trimNumber(value);
   } else {
     return 'value.type';
   }
@@ -266,18 +285,18 @@ function checkNumeric(column: ColumnType, value: unknown): IssueCode | null {
 
 /**
  * Whether `digits * 10 ** exponent`, rounded half away from zero to `scale` places as PostgreSQL does, has at most
- * `precision` digits (as `_fits` on the server).
+ * `precision` digits (as `_fits` on the server). It works on the digits as text, so no number is built.
  */
 function fits(digits: string, exponent: number, precision: number, scale: number): boolean {
   if (digits === '') return true;
   const shift = exponent + scale;
   if (shift >= 0) return digits.length + shift <= precision;
-  if (-shift > digits.length) return true;
-  const divisor = 10n ** BigInt(-shift);
-  const whole = BigInt(digits);
-  let quotient = whole / divisor;
-  if (2n * (whole % divisor) >= divisor) quotient += 1n;
-  return quotient === 0n || quotient.toString().length <= precision;
+  // Rounds to 0 or to 1 in the last place kept: one digit at most.
+  if (-shift >= digits.length) return true;
+  const kept = digits.slice(0, digits.length + shift);
+  const roundsUp = (digits[digits.length + shift] ?? '0') >= '5';
+  const carries = roundsUp && /^9+$/.test(kept);
+  return kept.length + (carries ? 1 : 0) <= precision;
 }
 
 function checkFormat(kind: Kind, value: string): IssueCode | null {
@@ -301,9 +320,13 @@ function checkFormat(kind: Kind, value: string): IssueCode | null {
     at = 3;
   }
   if (kind !== 'date') {
-    const [hour, minute, second] = numbers.slice(at, at + 3);
-    if ((hour ?? 0) > 23 || (minute ?? 0) > 59 || (second ?? 0) > 59) return 'value.format';
-    const [offsetHour, offsetMinute, offsetSecond] = numbers.slice(at + 3, at + 6);
+    const [hour, minute, second, fraction] = numbers.slice(at, at + 4).map((part) => part ?? 0);
+    // Like PostgreSQL, a time may be exactly 24:00 (24:00:00, 24:00:00.000), nothing later.
+    const midnight = hour === 24 && minute === 0 && second === 0 && fraction === 0;
+    if (((hour ?? 0) > 23 && !midnight) || (minute ?? 0) > 59 || (second ?? 0) > 59) {
+      return 'value.format';
+    }
+    const [offsetHour, offsetMinute, offsetSecond] = numbers.slice(at + 4, at + 7);
     if ((offsetHour ?? 0) > 23 || (offsetMinute ?? 0) > 59 || (offsetSecond ?? 0) > 59) {
       return 'value.format';
     }

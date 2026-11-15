@@ -1091,6 +1091,8 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- The data viewer and the SQL editor show an array of dates, decimals, UUIDs, times, intervals, bytes or non-finite
+  floats item by item, each as it is shown alone; such a table or result answered 500 before (review I-3 of #120).
 - TABRION QA-7: `scripts/check_tabrion_api.py --surface` no longer reports a `__x__` name such as
   `tabrion.postgres.SessionSettings.__dataclass_fields__` (axentra) as missing from Tabrion's
   `docs/api/surface.json`. Such names are public (the `__all__` check already skipped them) and have no entry of

@@ -14,13 +14,13 @@ from typing import Any
 import pytest
 
 from tabrion_studio.problems import problem
+from tabrion_studio.write.plan import _sqlite_table_options
 from tabrion_studio.write.values import (
     KINDS,
     ColumnType,
     check_value,
     pg_column_type,
     sqlite_column_type,
-    sqlite_strict,
 )
 
 pytestmark = pytest.mark.security
@@ -123,20 +123,20 @@ def test_postgres_nullability_defaults_identity_and_generated_columns() -> None:
     assert check_value(generated, None) == "value.read_only"
 
 
-@pytest.mark.parametrize(
-    ("sql", "expected"),
-    [
-        ("CREATE TABLE t (a INT) STRICT", (True, False)),
-        ("CREATE TABLE t (a INT)\n  WITHOUT ROWID ,\n STRICT;", (True, True)),
-        ("CREATE TABLE t (a INT) WITHOUT ROWID", (False, True)),
-        ("CREATE TABLE t (a INT)", (False, False)),
-        ("CREATE TABLE t (a INT) -- STRICT", (False, False)),
-        ("CREATE TABLE strict (strict INT)", (False, False)),
-        (None, (False, False)),
-    ],
-)
-def test_sqlite_table_options(sql: str | None, expected: tuple[bool, bool]) -> None:
-    assert sqlite_strict(sql) == expected
+def test_an_sqlite_without_pragma_table_list_reads_every_table_as_untyped() -> None:
+    """Before SQLite 3.37 there are no STRICT tables; the table is read as a lenient rowid table, unasked."""
+    asked: list[str] = []
+
+    def fetch(sql: str, params: dict[str, Any] | None) -> list[tuple[Any, ...]]:
+        asked.append(sql)
+        return [("3.36.9",)] if "sqlite_version" in sql else [(1, 1)]
+
+    assert _sqlite_table_options(fetch, "t") == (False, False)
+    assert len(asked) == 1
+    assert _sqlite_table_options(lambda sql, params: [("3.37.0",)] if "version" in sql else [(1, 0)], "t") == (
+        True,
+        False,
+    )
 
 
 def test_sqlite_columns() -> None:

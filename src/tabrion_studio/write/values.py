@@ -14,14 +14,16 @@ made (:func:`check_value`, from the executor's ``check``), so the page's checks 
 database stays the last instance (CHECK, UNIQUE, foreign keys, a domain's constraints, triggers).
 
 * PostgreSQL: the kind comes from the column's type after unwrapping domains (a domain's own length or precision
-  counts); an array of booleans, integers, floats or text is checked element by element (rectangular, NULL elements
-  allowed, at most 6 dimensions).
+  counts); an array of booleans, numbers, decimals, text, dates, times or UUIDs is checked element by element
+  (rectangular, NULL elements allowed, at most 6 dimensions).
   Types without a kind of their own (``interval``, ``inet``, ``money``, ranges, extension types such as ``citext``,
   arrays of enums or domains, which the viewer shows as array text) are ``other``: any JSON value, checked by the
   database only.
 * SQLite: a column's declared type is advice, not a rule, so every column of an ordinary table is ``other``; a
   ``STRICT`` table's columns are ``int8`` (``INT``, ``INTEGER``), ``float8`` (``REAL``), ``text`` (``TEXT``),
-  ``bytes`` (``BLOB``) or ``other`` (``ANY``).
+  ``bytes`` (``BLOB``) or ``other`` (``ANY``). Whether a table is ``STRICT`` is read from ``pragma_table_list``
+  (SQLite 3.37 and later), never from the SQL text, which a trailing comment can fool; an older SQLite has no
+  ``STRICT`` tables.
 
 The catalog fingerprint covers what the checks depend on (PostgreSQL: each column's type with its modifier,
 nullability, default, identity and generation; SQLite: the table's SQL), so a check made at preview time cannot be
@@ -53,7 +55,6 @@ __all__ = [
     "is_bytes",
     "pg_column_type",
     "sqlite_column_type",
-    "sqlite_strict",
 ]
 
 #: The kinds of a column (the page has a cell editor and the same checks for each).
@@ -79,9 +80,26 @@ KINDS = frozenset(
         "other",
     }
 )
-#: The kinds an array may have elements of: those whose values the viewer sends as JSON (others: the array is
-#: ``other``; the viewer cannot show an array of dates, decimals or UUIDs yet, docs/TODO.md).
-_ARRAY_KINDS = frozenset({"boolean", "int2", "int4", "int8", "float4", "float8", "text"})
+#: The kinds an array may have elements of: those whose items the viewer sends as JSON, each in the form it has
+#: alone (review I-3 of #120). An array of enums, JSON or bytes is ``other`` (the driver gives enum arrays as text).
+_ARRAY_KINDS = frozenset(
+    {
+        "boolean",
+        "int2",
+        "int4",
+        "int8",
+        "float4",
+        "float8",
+        "numeric",
+        "text",
+        "date",
+        "time",
+        "timetz",
+        "timestamp",
+        "timestamptz",
+        "uuid",
+    }
+)
 #: At most this many enum labels are sent and checked (PostgreSQL allows more; beyond it the kind is ``other``).
 MAX_ENUM_VALUES = 1000
 
@@ -90,9 +108,9 @@ _FLOAT4_MAX = 3.4028234663852886e38
 _INTEGER = re.compile(r"[+-]?\d+", re.ASCII)
 _DECIMAL = re.compile(r"([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?", re.ASCII)
 _SPECIAL_FLOAT = re.compile(r"[+-]?(?:inf|infinity)|nan", re.IGNORECASE | re.ASCII)
-_DATE = r"\d{4}-\d{2}-\d{2}"
-_TIME = r"\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?"
-_OFFSET = r"(?:Z|[+-]\d{2}:\d{2}(?::\d{2})?)"
+_DATE = r"(\d{4})-(\d{2})-(\d{2})"
+_TIME = r"(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6}))?)?"
+_OFFSET = r"(?:Z|[+-](\d{2}):(\d{2})(?::(\d{2}))?)"
 _FORMATS = {
     "date": re.compile(_DATE, re.ASCII),
     "time": re.compile(_TIME, re.ASCII),
@@ -224,19 +242,7 @@ def pg_column_type(row: Sequence[Any]) -> ColumnType:
     )
 
 
-#: The table options at the end of a SQLite ``CREATE TABLE``: ``WITHOUT ROWID`` and ``STRICT``, in any order.
-_SQLITE_OPTIONS = re.compile(
-    r"\)\s*((?:WITHOUT\s+ROWID|STRICT)(?:\s*,\s*(?:WITHOUT\s+ROWID|STRICT))*)?\s*;?\s*\Z", re.IGNORECASE
-)
 _SQLITE_STRICT_KINDS = {"INT": "int8", "INTEGER": "int8", "REAL": "float8", "TEXT": "text", "BLOB": "bytes"}
-
-
-def sqlite_strict(sql: str | None) -> tuple[bool, bool]:
-    """Whether a SQLite table's SQL ends with ``STRICT`` and with ``WITHOUT ROWID``. Anything else after the closing
-    parenthesis (a comment, say) counts as neither: the checks then stay lenient and the database decides."""
-    found = _SQLITE_OPTIONS.search(sql or "")
-    options = re.sub(r"\s+", " ", (found.group(1) or "") if found else "").upper()
-    return "STRICT" in options, "WITHOUT ROWID" in options
 
 
 def sqlite_column_type(
@@ -318,11 +324,23 @@ def _check_scalar(column: ColumnType, value: Any) -> str | None:
     return _check_format(kind, value)
 
 
+#: The whitespace PostgreSQL (and SQLite) take around a number: the C ``isspace`` set, not Unicode spaces.
+_NUMBER_SPACE = " \t\n\r\v\f"
+#: More digits than this (after leading zeros) are out of the range of any integer column: int8 has 19. The text is
+#: then not turned into a number, which Python refuses for more than ``sys.int_max_str_digits`` digits anyway.
+_INTEGER_DIGITS = 19
+
+
 def _check_integer(kind: str, value: Any) -> str | None:
     if isinstance(value, float) and value.is_integer():
         value = int(value)
-    if isinstance(value, str) and _INTEGER.fullmatch(value):
-        value = int(value)
+    if isinstance(value, str):
+        value = value.strip(_NUMBER_SPACE)
+        if _INTEGER.fullmatch(value):
+            digits = value.lstrip("+-").lstrip("0")
+            if len(digits) > _INTEGER_DIGITS:
+                return "value.out_of_range"
+            value = int(digits or "0") * (-1 if value.startswith("-") else 1)
     if not isinstance(value, int):
         return "value.format" if isinstance(value, str) else "value.type"
     limit = _INT_RANGES[kind]
@@ -331,6 +349,7 @@ def _check_integer(kind: str, value: Any) -> str | None:
 
 def _check_float(kind: str, value: Any) -> str | None:
     if isinstance(value, str):
+        value = value.strip(_NUMBER_SPACE)
         if _SPECIAL_FLOAT.fullmatch(value):
             return None
         if not _decimal_parts(value):
@@ -362,6 +381,7 @@ def _check_numeric(column: ColumnType, value: Any) -> str | None:
         value = repr(value) if isinstance(value, float) else str(value)
     if not isinstance(value, str):
         return "value.type"
+    value = value.strip(_NUMBER_SPACE)
     if value.lower() == "nan":
         return None
     if _SPECIAL_FLOAT.fullmatch(value):
@@ -376,34 +396,43 @@ def _check_numeric(column: ColumnType, value: Any) -> str | None:
 
 def _fits(digits: str, exponent: int, precision: int, scale: int) -> bool:
     """Whether ``digits * 10 ** exponent``, rounded half away from zero to ``scale`` places as PostgreSQL does, has
-    at most ``precision`` digits. Only powers as large as the input are computed."""
+    at most ``precision`` digits. It works on the digits as text, so no number is built however long the input."""
     if not digits:
         return True
     shift = exponent + scale
     if shift >= 0:
         return len(digits) + shift <= precision
-    if -shift > len(digits):
-        return True  # below half of the last place: rounds to zero
-    quotient, rest = divmod(int(digits), 10**-shift)
-    if 2 * rest >= 10**-shift:
-        quotient += 1
-    return quotient == 0 or len(str(quotient)) <= precision
+    if -shift >= len(digits):
+        return True  # rounds to 0 or to 1 in the last place kept: one digit at most
+    kept = digits[: len(digits) + shift]  # the digits down to the last place kept; no leading zeros
+    rounds_up = digits[len(digits) + shift] >= "5"  # half away from zero: the first digit cut decides
+    carries = rounds_up and kept.strip("9") == ""  # 99.5 rounds to 100: one more digit
+    return len(kept) + carries <= precision
 
 
 def _check_format(kind: str, value: str) -> str | None:
+    """Checks the parts by number, not with ``fromisoformat``, whose rules change between Python versions (3.14 takes
+    ``24:00``). Like PostgreSQL, a time may be exactly ``24:00`` (``24:00:00``, ``24:00:00.000``), nothing later."""
     pattern = _FORMATS.get(kind)
-    if pattern is None or not pattern.fullmatch(value):
+    found = None if pattern is None else pattern.fullmatch(value)
+    if found is None:
         return "value.format"
     if kind == "uuid":
         return None
-    try:
-        if kind == "date":
-            datetime.date.fromisoformat(value)
-        elif kind in ("time", "timetz"):
-            datetime.time.fromisoformat(value)
-        else:
-            datetime.datetime.fromisoformat(value)
-    except ValueError:
+    parts = list(found.groups())
+    if kind in ("date", "timestamp", "timestamptz"):
+        try:
+            datetime.date(int(parts[0]), int(parts[1]), int(parts[2]))
+        except ValueError:
+            return "value.format"
+        parts = parts[3:]
+    if kind == "date":
+        return None
+    hour, minute, second, fraction = (int(part or 0) for part in parts[:4])
+    midnight = hour == 24 and minute == 0 and second == 0 and fraction == 0
+    if (hour > 23 and not midnight) or minute > 59 or second > 59:
+        return "value.format"
+    if any(int(part or 0) > limit for part, limit in zip(parts[4:], (23, 59, 59), strict=False)):
         return "value.format"
     return None
 

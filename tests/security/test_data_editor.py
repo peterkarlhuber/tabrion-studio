@@ -612,6 +612,29 @@ def test_a_strict_tables_column_types_reach_the_page(env: WriteEnv) -> None:
     }
 
 
+@pytest.mark.parametrize(
+    ("options", "kinds"),
+    [
+        # A trailing comment that reads like the table options does not make a table STRICT (review I-2 of #120).
+        ("-- ) STRICT", ("other", "other")),
+        ("/* ) STRICT */", ("other", "other")),
+        # Only SQLite's own reading counts, in any spelling and order.
+        ("without  ROWID,\n strict -- )", ("int8", "text")),
+    ],
+)
+def test_strict_is_what_sqlite_says_not_what_the_text_ends_with(
+    env: WriteEnv, options: str, kinds: tuple[str, str]
+) -> None:
+    _alter(env.db, f"CREATE TABLE opts (id INTEGER PRIMARY KEY, label TEXT) {options}\n;")
+    connection_id = _unlocked(env)
+    answer = env.send("POST", TABLE_ROUTE, {"connection_id": connection_id, "table": "opts"})
+    assert answer.status_code == 200, answer.text
+    columns = {c["name"]: c for c in answer.json()["column_types"]}
+    assert (columns["id"]["kind"], columns["label"]["kind"]) == kinds
+    # The key of a rowid table is its rowid alias (may be left out); of a WITHOUT ROWID table it is not.
+    assert columns["id"]["optional"] is (kinds[0] == "other")
+
+
 def test_values_that_do_not_fit_are_refused_before_the_plan_with_positions_only(env: WriteEnv) -> None:
     """The page's checks are help only: a request that skips them is refused by the server (400, W-9) before a plan
     exists. The issues name the change's and the column's position and the check, never the value or a name."""

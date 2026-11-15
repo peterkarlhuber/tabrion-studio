@@ -75,7 +75,7 @@ import tabrion
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write.connection import WriteConnection, WriteError, file_identity
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, AuditedRun, Unlocks
-from tabrion_studio.write.values import PG_COLUMN_TYPES, ColumnType, pg_column_type, sqlite_column_type, sqlite_strict
+from tabrion_studio.write.values import PG_COLUMN_TYPES, ColumnType, pg_column_type, sqlite_column_type
 
 __all__ = [
     "MAX_TARGETS",
@@ -242,6 +242,12 @@ _SQLITE_SCHEMA = "SELECT type, name, tbl_name, sql FROM main.sqlite_master ORDER
 _SQLITE_COLUMNS = (
     "SELECT name, pk, hidden, type, \"notnull\", dflt_value FROM pragma_table_xinfo(:table, 'main') ORDER BY cid"
 )
+#: Whether a table is ``STRICT`` and ``WITHOUT ROWID``, as SQLite itself reads its SQL (3.37 and later), not from
+#: the text, which a trailing comment can fool. Covered by the fingerprint through the table's SQL.
+_SQLITE_TABLE_OPTIONS = "SELECT strict, wr FROM main.pragma_table_list(:table)"
+_SQLITE_VERSION = "SELECT sqlite_version()"
+#: The first SQLite with ``pragma_table_list`` (and ``STRICT`` tables).
+_SQLITE_TABLE_LIST = (3, 37)
 
 _PG_CLASS = (
     "SELECT c.oid::pg_catalog.int8, c.relkind::pg_catalog.text, c.relrowsecurity, c.relforcerowsecurity,"
@@ -413,8 +419,7 @@ def _sqlite_catalog(
         described = [row for row in fetch(_SQLITE_COLUMNS, {"table": target.table}) if row[2] != 1]
         columns = tuple(str(row[0]) for row in described)
         primary_key = tuple(str(row[0]) for row in sorted((row for row in described if row[1] > 0), key=lambda r: r[1]))
-        sql = next((row[3] for row in rows if row[0] == "table" and (row[1] or "").lower() == table), None)
-        strict, without_rowid = sqlite_strict(sql)
+        strict, without_rowid = _sqlite_table_options(fetch, target.table)
         alias = (
             primary_key[0]
             if len(primary_key) == 1
@@ -432,6 +437,17 @@ def _sqlite_catalog(
             )
         )
     return _digest({"engine": "sqlite", "identity": list(identity), "schema": rows}), tuple(catalogs)
+
+
+def _sqlite_table_options(fetch: Fetch, table: str) -> tuple[bool, bool]:
+    """``(strict, without_rowid)`` of a table. An SQLite older than 3.37 has no STRICT tables and no
+    ``pragma_table_list``: the table is then untyped and taken as a rowid table, the lenient reading (the database
+    decides what the checks let through)."""
+    version = tuple(int(part) for part in str(fetch(_SQLITE_VERSION, None)[0][0]).split(".")[:2])
+    if version < _SQLITE_TABLE_LIST:
+        return False, False
+    found = fetch(_SQLITE_TABLE_OPTIONS, {"table": table})
+    return (bool(found[0][0]), bool(found[0][1])) if found else (False, False)
 
 
 def _trigger(tgtype: int, enabled: str, name: str) -> Trigger:

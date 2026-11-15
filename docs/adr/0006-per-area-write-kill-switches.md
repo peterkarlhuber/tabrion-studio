@@ -165,6 +165,9 @@ A value a changeset writes is checked twice; the server's check decides (threat 
 - Where a silent conversion would change a value's meaning, the checks refuse instead of converting: a
   `timestamptz` or `timetz` needs an offset, a `timestamp` or `time` takes none, NULL is never the empty text, and a
   top-level JSON `null` is not taken for SQL `NULL`.
+- Where PostgreSQL takes a spelling without changing the value, the checks take it too: whitespace around a number,
+  and a time of exactly `24:00`. The checks parse each part themselves and do not depend on the Python version (3.14's
+  `fromisoformat` takes `24:00`, earlier ones do not).
 
 ### Proof required from every kill-switch pull request
 

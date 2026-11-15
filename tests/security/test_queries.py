@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import replace
+import datetime
+import decimal
 import gc
 import io
 import logging
@@ -140,6 +142,23 @@ def test_json_values_for_the_page() -> None:
     assert json_value(float("inf"))[0] == "inf"
     assert json_value(b"\x01\x02")[0] == {"base64": "AQI="}
     assert json_value({"a": [1]})[0] == {"a": [1]}
+    # STU-XDE-1 review I-3: an array's items take the form each has alone; a JSON document is kept.
+    items = [
+        datetime.date(2024, 2, 29),
+        decimal.Decimal("1.50"),
+        uuid.UUID(int=1),
+        (float("nan"), 2.5, None),
+        [b"\x01", {"k": [1]}],
+        datetime.timedelta(days=1),
+    ]
+    assert json_value(items)[0] == [
+        "2024-02-29",
+        "1.50",
+        "00000000-0000-0000-0000-000000000001",
+        ["nan", 2.5, None],
+        [{"base64": "AQ=="}, {"k": [1]}],
+        "1 day, 0:00:00",
+    ]
     value, _, cut = json_value("y" * 70_000)
     assert cut and len(value) == 64 * 1024
 

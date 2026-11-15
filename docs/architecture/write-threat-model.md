@@ -96,7 +96,8 @@ STRIDE as in 03 section 7.3. "Tests" names what the work package must add; the g
    range, NULL and an enum's labels; a CHECK constraint, a domain's own constraints, uniqueness, foreign keys and
    triggers are left to the database, which refuses such a value inside the run's transaction (nothing is saved).
    A label added to an enum after the preview is not drift: it can only make the database take a value Studio
-   refused. On SQLite only `STRICT` tables have column types; an ordinary table's declared types are advice, so its
+   refused. On SQLite only `STRICT` tables have column types (as SQLite reports them in `pragma_table_list`, not
+   read from the SQL text); an ordinary table's declared types are advice, so its
    values are checked for NULL only and stored as SQLite's affinity rules decide.
 
 ## Review of PR #109: conditions and notes

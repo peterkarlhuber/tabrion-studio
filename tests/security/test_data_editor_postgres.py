@@ -401,9 +401,27 @@ def test_the_table_route_sends_each_columns_type(pg: Env) -> None:
 TYPED = (
     "id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY, mood {p}.mood, short varchar(5), code {p}.code,"
     " small int2, nums int4[], tags varchar(3)[], stamp timestamp, clock timetz,"
-    " twice integer GENERATED ALWAYS AS (small * 2) STORED, label text NOT NULL, moods {p}.mood[]"
+    " twice integer GENERATED ALWAYS AS (small * 2) STORED, label text NOT NULL, moods {p}.mood[],"
+    " days date[], amounts numeric(4,2)[], ids uuid[], seen timestamptz[]"
 )
-TYPED_COLUMNS = ["id", "mood", "short", "code", "small", "nums", "tags", "stamp", "clock", "twice", "label", "moods"]
+TYPED_COLUMNS = [
+    "id",
+    "mood",
+    "short",
+    "code",
+    "small",
+    "nums",
+    "tags",
+    "stamp",
+    "clock",
+    "twice",
+    "label",
+    "moods",
+    "days",
+    "amounts",
+    "ids",
+    "seen",
+]
 
 
 def _typed(pg: Env) -> None:
@@ -428,6 +446,10 @@ def test_enums_domains_arrays_and_generated_columns_are_typed(pg: Env) -> None:
     assert (types["nums"]["kind"], types["nums"]["array"]) == ("int4", True)
     assert (types["tags"]["kind"], types["tags"]["length"], types["tags"]["array"]) == ("text", 3, True)
     assert (types["moods"]["kind"], types["moods"]["array"]) == ("other", False)  # the viewer shows array text
+    # Review I-3 of #120: the viewer shows these arrays item by item, so their items are checked.
+    assert (types["days"]["kind"], types["days"]["array"]) == ("date", True)
+    assert (types["amounts"]["kind"], types["amounts"]["precision"], types["amounts"]["array"]) == ("numeric", 4, True)
+    assert (types["ids"]["kind"], types["seen"]["kind"]) == ("uuid", "timestamptz")
     assert types["id"]["read_only"] and types["twice"]["read_only"]
     assert (types["label"]["nullable"], types["label"]["optional"]) == (False, False)
 
@@ -447,6 +469,10 @@ def test_values_that_do_not_fit_are_refused_by_the_server_without_echo(pg: Env) 
         "stamp": "2024-01-01T00:00:00+01:00",
         "clock": "10:00",
         "twice": 1,
+        "days": ["2023-02-29"],
+        "amounts": [1, 123.45],
+        "ids": ["not-a-uuid"],
+        "seen": [["2024-01-01 10:00"]],
     }
     refused = pg.plan([{"op": "insert", "values": values}], table="typed", columns=TYPED_COLUMNS)
     assert (refused.status_code, refused.json()["code"]) == (400, "studio.data_editor_value_invalid"), refused.text
@@ -464,6 +490,10 @@ def test_values_that_do_not_fit_are_refused_by_the_server_without_echo(pg: Env) 
         "changes.0.8": "value.format",
         "changes.0.9": "value.read_only",
         "changes.0.10": "value.required",
+        "changes.0.12": "value.format",
+        "changes.0.13": "value.out_of_range",
+        "changes.0.14": "value.format",
+        "changes.0.15": "value.format",
     }
     assert pg.sql("SELECT count(*) FROM {p}.typed") == [(0,)]
 
@@ -485,12 +515,16 @@ def test_the_type_editors_values_are_written_and_read_back_as_old(pg: Env) -> No
         "clock": "10:00:00+02:00",
         "label": "",
         "moods": "{ok,bad}",
+        "days": ["2024-02-29", None],
+        "amounts": [" 1.5 ", "-0.25"],
+        "ids": ["A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11"],
+        "seen": [["2024-01-02 03:04:05+02:00"], ["2024-12-31 24:00Z"]],
     }
     done = _run_on(pg, "typed", TYPED_COLUMNS, [{"op": "insert", "values": values}])
     assert done.status_code == 200, done.text
     assert pg.sql(
         "SELECT mood::text, short, code, small, nums::text, tags::text, stamp::text, clock::text, twice, label,"
-        " moods::text FROM {p}.typed"
+        " moods::text, days::text, amounts::text, ids::text, seen::text FROM {p}.typed"
     ) == [
         (
             "bad",
@@ -504,12 +538,24 @@ def test_the_type_editors_values_are_written_and_read_back_as_old(pg: Env) -> No
             14,
             "",
             "{ok,bad}",
+            "{2024-02-29,NULL}",
+            "{1.50,-0.25}",
+            "{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11}",
+            '{{"2024-01-02 01:04:05+00"},{"2025-01-01 00:00:00+00"}}',
         )
     ]
     query = urlencode({"schema": pg.prefix, "name": "typed", "limit": 10})
     page = pg.env.send("GET", f"/api/connections/{pg.connection_id}/rows?{query}").json()
     old = dict(zip([column["name"] for column in page["columns"]], page["rows"][0], strict=True))
-    change = {"op": "update", "key": {"id": old["id"]}, "old": old, "new": {"label": "x", "tags": [None, "e"]}}
+    assert (old["days"], old["amounts"], old["ids"]) == (
+        ["2024-02-29", None],
+        ["1.50", "-0.25"],
+        ["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"],
+    )
+    new = {"label": "x", "tags": [None, "e"], "days": ["2024-03-01"], "amounts": ["99.99"]}
+    change = {"op": "update", "key": {"id": old["id"]}, "old": old, "new": new}
     updated = _run_on(pg, "typed", list(old), [change])
     assert updated.status_code == 200, updated.text
-    assert pg.sql("SELECT label, tags::text FROM {p}.typed") == [("x", "{NULL,e}")]
+    assert pg.sql("SELECT label, tags::text, days::text, amounts::text FROM {p}.typed") == [
+        ("x", "{NULL,e}", "{2024-03-01}", "{99.99}")
+    ]

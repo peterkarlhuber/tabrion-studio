@@ -77,7 +77,8 @@
 > STU-XDE-1 (2026-11-15, branch `claude/project-thread-rdo6g3-stuxde1`, draft): **in development, locked by G-S2.**
 > Validation, type editors and the change overview of the Data Editor, behind the same default-off `data_editor`
 > flag; no default changes. The catalog read gives each column's type (`tabrion_studio.write.values`: kind, NULL,
-> optional, read only, length, precision and scale, enum labels, arrays of booleans, integers, floats and text); the
+> optional, read only, length, precision and scale, enum labels, arrays of booleans, numbers, decimals, text, dates,
+> times and UUIDs); the
 > table route sends it, the page picks a cell editor (a choice for boolean and enum, text fields with the format in the
 > header, JSON and arrays as JSON, bytes and generated columns read only) and checks every changed value
 > (`frontend/src/api/cellValues.ts`). The server checks every new value again before the plan
@@ -85,8 +86,12 @@
 > TX-17, STU-ADR-0006 "Values of the Data Editor"); page and server run the same vectors
 > (`cellValues.vectors.json`). An insert names only the columns the user set (no key fetched ahead from a sequence,
 > which an identity `ALWAYS` refused). The change overview lists each changed row with its columns before and after,
-> the new rows and the deleted rows, before the preview and in the review. Open: see "STU-XDE-1 open points" in the
-> CR-DBX section.
+> the new rows and the deleted rows, before the preview and in the review. Review of #120 (accepted) fixed in the
+> same PR: an integer text of any length is an issue at its cell (L-1); numbers take surrounding whitespace as
+> PostgreSQL does (I-1); SQLite `STRICT` is read from `pragma_table_list`, not the SQL text (I-2); the viewer gives an
+> array of dates, decimals, UUIDs, times, intervals or bytes item by item instead of failing with 500 (I-3); a time
+> may be exactly `24:00`, as in PostgreSQL, checked without `fromisoformat` (whose rules change in Python 3.14).
+> Open: see "STU-XDE-1 open points" in the CR-DBX section.
 
 ## Summary
 
@@ -668,10 +673,9 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   - **Trigger details on SQLite:** the preview names SQLite triggers without timing and events (parsing the trigger
     text is left out); PostgreSQL reports both.
 - **STU-XDE-1 open points (for STU-XDE-2 and G-S2):**
-  - **Arrays the viewer cannot show.** The viewer answers 500 for a table with an array of dates, decimals, UUIDs or
-    other values without a JSON form (`services/queries.json_value` keeps the list's Python values); such arrays are
-    therefore `other` in the Data Editor, and only arrays of booleans, integers, floats and text get element checks.
-    Fixing the viewer is a read-path change for its own PR (STU-013 follow-up).
+  - **Arrays of enums, JSON and bytes** stay `other` in the Data Editor (the driver gives an enum array as array
+    text; JSON and bytes arrays have no editor). Arrays of dates, decimals, UUIDs and times are shown by the viewer
+    item by item (fixed in this PR, review I-3) and checked item by item.
   - **Bytes.** Bytes stay read only; planning document 15 section 4 asks for "replace by file" (STU-XDE-2 or later).
   - **Paging.** The editor still loads only the first page of rows (`EDITOR_ROWS`).
   - **The database's own refusals at the cell.** A CHECK, UNIQUE or foreign-key refusal is a `db.<kind>` problem for
