@@ -62,6 +62,13 @@ activation, and the error semantics of W-9.
    server refuses regardless of what the page shows.
 6. Each area's state is logged once at start (area and on or off, nothing else), so a flag left on is visible.
 
+**As built (STU-XW-1, recorded for G-S2):** the source is the file `write-areas.toml` in the folder that
+`--config-dir` names, else `<--state-dir>/config`, else the platform's configuration folder; never a folder that an
+environment variable chose. Its `[areas]` table has three keys, each on only when its value is literally `true`:
+`data_editor` (G-S2: the shared write foundation and the Data Editor), `schema_designer` (G-S3) and
+`database_manager` (G-S4). The code is `tabrion_studio.config.write_areas`; the audit log and the confirmed secret
+pairs live in the same folder (review N-1 of PR #116). No environment variable sets a flag.
+
 ### Error semantics (W-9)
 
 A refused write is answered the same way with the flag off and, after a gate, for any refusal of the lock rules:

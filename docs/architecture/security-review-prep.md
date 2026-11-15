@@ -1,4 +1,4 @@
-# Security review preparation (STU-016, G-S1)
+# Security review preparation (STU-016, G-S1; G-S2 readiness)
 
 This page prepares the security gate **G-S1** of the Studio MVP. It is a readiness checklist and the result of an
 internal pre-review pass, **not** the gate: G-S1 is decided by the owner after an independent security review and its
@@ -82,13 +82,13 @@ The measures are those of doc 03 section 7.3; T-16 is in `docs/architecture/migr
 | T-03 Token theft | One-time launch token in the fragment, redirect file 0600, session cookie | STU-T-005, -006 | Covered; TD-005 (spent URL in history) is an accepted risk |
 | T-04 Files read by other accounts | Files 0600, folders 0700, symlinks refused | No STU-T-007 label; in substance `tests/unit/test_paths.py`, `test_logs.py`, `test_secrets.py`, `test_config_writer.py`, `tests/security/test_profiles_api.py` | Covered on POSIX; Windows DACL inside the profile is TD-003. The state database with the history (STU-020): `tests/security/test_history.py` (0600, link and shared-file refusal, no parameter value in any byte); the editor drafts too (TD-033, F-5): `tests/security/test_drafts.py` (only in the state database), `e2e/drafts-backend.spec.ts` (none in browser storage) |
 | T-05 Secret leaks | Redaction, canaries, safe URLs, Problem JSON without server text | STU-T-008, -009; `test_canary_flows.py` | Covered |
-| T-06 Accidental writes | Read-only in the database, prod marking; the text check refuses `INTO` (F-1) and side-effect functions (F-3); `STU-DX-003` reports schema `CREATE` and database `TEMP` | STU-T-010..013 and the F-1/F-3 tests (`test_read_only.py`, `test_queries.py`, `test_exports.py`, `test_diagnostics.py`) | Covered: review F-1 fixed (PR #65/#66), independent re-review accepted at `2a8a229`. Residual: side-effect functions the database itself defines (see the residual risks). The write mode is G-S2 |
+| T-06 Accidental writes | Read-only in the database, prod marking; the text check refuses `INTO` (F-1) and side-effect functions (F-3); `STU-DX-003` reports schema `CREATE` and database `TEMP` | STU-T-010..013 and the F-1/F-3 tests (`test_read_only.py`, `test_queries.py`, `test_exports.py`, `test_diagnostics.py`) | Covered: review F-1 fixed (PR #65/#66), independent re-review accepted at `2a8a229`. Residual: side-effect functions the database itself defines (see the residual risks). The write mode is G-S2 ([G-S2 readiness](#g-s2-readiness-data-editor-and-the-shared-write-foundation)) |
 | T-07 XSS through database text | React text only, ESLint rule against `dangerouslySetInnerHTML`, CSP | STU-T-014; no STU-T-015 label, in substance `test_access.py::test_eslint_forbids_dangerously_set_inner_html` and hostile-value tests of the views | Covered |
 | T-08 Hostile project | Project trust (D-01), bound to digests; script paths (STU-020) judged as text, then reached through folder descriptors with `O_NOFOLLOW` (07 TM-04), no device, 8.3 or format-character names, no hard links | STU-T-016, -017 (`test_project_trust.py`); `tests/security/test_scripts.py` | Covered on POSIX; on Windows a folder swapped between the check and a save's rename remains (documented in [History, favorites and scripts](history-and-scripts.md)) |
 | T-09 Resource exhaustion | Row, byte and cell caps, timeouts, cancel, parallel limits; request body caps while streaming (review F-4) | STU-T-018..020; `test_body_limits.py` | Covered |
 | T-10 TLS downgrade | `STU-DX-002` for PROD without verify-full | STU-T-021 (`test_diagnostics.py`) | Covered as a finding; Studio does not refuse such a profile |
 | T-11 Supply chain | Locked dependencies, license policy, SBOM, audits | No STU-T-022 label; CI jobs `license and supply chain`, `dependency audit` | Covered; TD-030 (dev-only advisory), TD-031 (hashed pins in CI) |
-| T-12 Change log | Writes logged | STU-T-023 | Not applicable before G-S2 (no write mode) |
+| T-12 Change log | Writes logged | STU-T-023 | Not applicable in 1.0 (no write mode); for G-S2 see [G-S2 readiness](#g-s2-readiness-data-editor-and-the-shared-write-foundation) |
 | T-13 SQLite extensions and `ATTACH` | Authorizer as an allowlist, functions included (F-2); `trusted_schema` off | STU-T-024 and the F-2 tests (`test_read_only.py`) | Covered: review F-2 fixed (PR #65/#66), independent re-review accepted at `2a8a229` |
 | T-14 Network exposure | No `--host` | STU-T-025 | Covered |
 | T-15 Cached answers | `Cache-Control: no-store` | STU-T-026; every refusal in `test_every_route.py` | Covered |
@@ -247,3 +247,52 @@ review before a publication:
 7. The CI workflow-change gate (TD-004, TD-006) and the supply chain (TD-030, TD-031; review F-6).
 8. Code trust for migrations (T-16): the worker's isolation and what the digest binds (review F-7).
 9. The re-review of the independent review's fixes on merged SHAs: done and accepted at `2a8a229` (see above).
+
+## G-S2 readiness (Data Editor and the shared write foundation)
+
+G-S2 is the owner's activation decision for the shared write foundation (STU-XW-1..4) and the Data Editor
+(STU-026, STU-XDE-1, STU-XDE-2): the `data_editor` flag of `write-areas.toml` ([STU-ADR-0006](../adr/0006-per-area-write-kill-switches.md)).
+This section is a readiness checklist, **not** the gate and not its review. **G-S2 is not granted**: the flag stays
+off by default, nothing turns it on, and no default changes. G-S2 would not allow PROD writes (E-X7), a tag or a
+release; the human security review (H-2) and G-R stay mandatory before any publication, and G-S3 and G-S4 stay
+locked.
+
+State: prepared at master `3af4b79` (2026-11-15). Sensitive specifics of the reviews stay with the planning
+documents.
+
+### What G-S2 asks
+
+From planning document 15 (section 10: "write foundation, T-06, T-12, negative tests flag off"; section 7 item 8;
+section 9.4), doc 07 (gate table and section 6: an independent review agent for G-S2) and ADR 10 ("G-S2 checks
+threats T-06/T-12, test results and review findings"):
+
+| Criterion | State | Evidence |
+|---|---|---|
+| The write foundation built and reviewed | Met: STU-XW-5 (PR #109), STU-XW-1 (#111, #112), STU-XW-2 (#114), STU-XW-3 (#115), STU-XW-4 (#116), hardening (#117, #118); each review accepted, its "before G-S2" findings fixed (L-1, L-2 of #111; M-1 of #117) | `reviews/pr109`..`pr118` (planning documents); [threat model](write-threat-model.md) TX-01..TX-17 |
+| The Data Editor built and reviewed | Met: STU-026 (#119), STU-XDE-1 (#120), STU-XDE-2 (#122); reviews accepted, L-1 of #119 and L-2 of #120 fixed before the merge | `reviews/pr119`..`pr122`; [Data Editor guide](../guide/data-editor.md) |
+| T-06 accidental writes: non-prod only, unlocked, time-limited, PROD technically locked | Met in code and tests | `tests/security/test_write_profiles.py`, `test_write_unlock.py` (PROD coupling refused, 15-minute idle expiry, typed name), `test_data_editor.py`, `test_data_editor_postgres.py`; E2E `data-editor-backend.spec.ts` (PROD: no write profile, no tab, no unlock) and `data-editor-states.spec.ts` |
+| T-12 change log without values | Met: append-only audit log with a hash chain, no values (canary-tested), fail closed before a run or an unlock, pending marker after it, the recent records in Settings | `tests/security/test_write_audit.py`; `AuditStatus` in the page |
+| Negative tests "flag off" for every endpoint (W-9: 400/405, 403 only for the write mode) | Met | `tests/security/test_write_kill_switch.py` (every write route 405 and nothing changed; no write module imported; no query, header or setting turns a flag on), `test_every_route.py` |
+| Preview, confirmation, transaction and rollback shown end to end (doc 07) | Met: a two-step changeset whose second step conflicts rolls the first one back too, against a real server (added for G-S2) | `frontend/e2e/data-editor-backend.spec.ts`; pytest `test_data_editor.py` (conflict, row count, constraint error) |
+| C-01 fixed before G-S2 (planning document 15 section 7 item 8) | Met: lasting secrets, write passwords included, are never evicted from the redaction (PR #99) | `tests/security/test_canary.py`; `write/unlock.py` registers each write password as lasting |
+| An independent review agent for G-S2 (doc 07 section 6) | **Open**: the gate review itself, on the merged head | - |
+| The owner's decisions below | **Open** | - |
+
+### Open decisions for the owner
+
+These are recorded in [docs/TODO.md](../TODO.md) (CR-DBX section, "G-S2 readiness"); each needs an explicit choice at
+G-S2, none is implemented ahead of it:
+
+1. **I-3 of the review of PR #111:** which privilege findings of a write role refuse the unlock (today all are shown
+   and logged only; a SUPERUSER write role can be unlocked).
+2. **Residual risk 4 (N-2 of PR #116): loopback TCP without TLS** for a write profile with a password.
+3. **The audit log's anchor outside its folder** (N-1 of PR #114: the chain is unkeyed; removing the whole folder
+   starts a new chain unnoticed) and **retention** of old segments (N-4).
+4. **Whether refusals before a run are audited** (a refused unlock of an area that is off, a plan refused before its
+   run).
+5. **Data Editor scope for 1.1:** bytes stay read only (planning document 15 section 4 asks for "replace by file"),
+   the database's own constraint refusals are shown for the changeset, not at the cell, only the first page of rows
+   is editable, partitioned tables stay refused, and enum labels (catalog names, not values) reach the page.
+6. **Tabrion's experimental names:** the Data Editor uses `tabrion.rowedit` and `tabrion.errors.RowCountMismatch`,
+   which the tabrion 0.3.0.dev0 surface marks `X` (`check_tabrion_api.py --surface` reports them); a release of
+   Studio 1.1 needs them stable (02 section 14 S-2) or an accepted exception.

@@ -1012,7 +1012,7 @@ def db_problem(error: BaseException | Classification, *, log_id: str | None = No
         classification = classify(error)
     kind = classification.kind.value if classification is not None else "unknown"
     if kind == "unknown" and _sqlite_function_denied(error, classification):
-        kind = Kind.PERMISSION.value
+        kind = str(Kind.PERMISSION)  # a StrEnum: its value; `.value` is not a name the surface lists
     if kind not in DB_CATALOG:
         kind = "unknown"
     entry = DB_CATALOG[kind]

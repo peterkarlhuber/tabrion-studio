@@ -119,9 +119,16 @@ test.beforeAll(async () => {
   base = new URL(first).origin;
 });
 
-test.afterAll(() => {
-  studio?.kill('SIGTERM');
-  rmSync(root, { recursive: true, force: true });
+// Stop the server and wait for it before the folders go: removing the folder of write-areas.toml under a running
+// server made its audit log report `studio.audit_write_failed` on shutdown (the teardown race of STU-XDE-1).
+test.afterAll(async () => {
+  const proc = studio;
+  if (proc && proc.exitCode === null && proc.signalCode === null) {
+    const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()));
+    proc.kill('SIGTERM');
+    await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 10_000))]);
+  }
+  if (root) rmSync(root, { recursive: true, force: true });
 });
 
 function newLink(): string {
@@ -292,23 +299,35 @@ test('a row changed behind the page: the run rolls back and names no value', asy
   await unlock.getByLabel('Type e2e-editor-w to unlock').fill('e2e-editor-w');
   await unlock.getByRole('button', { name: 'Unlock' }).click();
   await expect(page.getByRole('textbox', { name: 'Row 1, qty' })).toHaveValue('3');
-  sqlite('db.execute("update parts set name = \'bolt M4\' where id = 1")\ndb.commit()');
+  await expect(page.getByRole('textbox', { name: 'Row 2, qty' })).toHaveValue('9');
+  sqlite('db.execute("update parts set name = \'nut M4\' where id = 2")\ndb.commit()');
+  // Two steps: row 1 runs first and fits, row 2 changed behind the page. The conflict of the second step rolls the
+  // first one back too: one changeset, one transaction (03 section 5.2; 07 G-S2: rollback shown end to end).
   await page.getByRole('textbox', { name: 'Row 1, qty' }).fill('42');
+  await page.getByRole('textbox', { name: 'Row 2, qty' }).fill('43');
+  await expect(page.getByTestId('data-editor-pending')).toHaveText('2 changes');
   await page.getByRole('button', { name: 'Preview' }).click();
   await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
   await page.getByRole('button', { name: 'Confirm' }).click();
   await page.getByTestId('data-editor-execute').click();
   const problem = page.getByRole('alert').filter({ hasText: 'Nothing was saved' });
   await expect(problem).toContainText('changed or deleted by someone else');
-  await expect(problem).not.toContainText('bolt');
+  await expect(problem).not.toContainText('nut');
   await expect(problem).not.toContainText('42');
+  await expect(problem).not.toContainText('43');
   expect(
     JSON.parse(
-      sqlite("print(json.dumps(db.execute('select * from parts where id = 1').fetchall()))"),
+      sqlite(
+        "print(json.dumps(db.execute('select * from parts where id in (1, 2) order by id').fetchall()))",
+      ),
     ),
-  ).toEqual([[1, 'bolt M4', 3]]);
+  ).toEqual([
+    [1, 'bolt', 3],
+    [2, 'nut M4', 9],
+  ]);
   await page.getByRole('button', { name: 'Reload the rows' }).click();
-  await expect(page.getByRole('textbox', { name: 'Row 1, name' })).toHaveValue('bolt M4');
+  await expect(page.getByRole('textbox', { name: 'Row 1, qty' })).toHaveValue('3');
+  await expect(page.getByRole('textbox', { name: 'Row 2, name' })).toHaveValue('nut M4');
 });
 
 test('STU-XDE-1: a STRICT table is edited by type; the server checks again and names no value', async ({
