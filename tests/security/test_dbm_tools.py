@@ -243,7 +243,7 @@ def test_a_tool_of_a_foreign_owner_is_refused(fakes: Fakes, monkeypatch: pytest.
     if os.geteuid() == 0:
         os.chown(dump, 65534, -1)  # nobody: neither the user (root here) nor root
     else:
-        monkeypatch.setattr(pgtools.os, "getuid", lambda: os.geteuid() + 4242)  # the file is no longer "ours"
+        monkeypatch.setattr(os, "getuid", lambda: os.geteuid() + 4242)  # the file is no longer "ours"
     with pytest.raises(WriteError) as found:
         verify_tool("pg_dump", load_tools(fakes.state), fakes.scratch())
     assert _reason(found) == ("studio.backup_tool_unavailable", [("tool.pg_dump", "tool.owner")])
