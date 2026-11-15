@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S2 preparation (G-S2 not granted; no default changes, the `data_editor` flag stays off): the readiness
+  checklist for the activation gate of the shared write foundation and the Data Editor in
+  `docs/architecture/security-review-prep.md` (what G-S2 asks, the evidence, the owner's open decisions) and the
+  inventory of every "before G-S2" item in `docs/TODO.md`. A new end-to-end check against a real server: a two-step
+  changeset whose second step conflicts rolls the first step back too. STU-ADR-0006 names the flag source and keys
+  as built.
+
 - STU-XDE-2 (in development, locked by G-S2): the user guide page "Data Editor (in development)" with the switch for
   development, the write profile, unlock, editing, NULL and the empty text, the formats, preview, confirmation,
   execution, conflicts and the limits (PROD refused, tables without a primary key, views and partitioned tables
@@ -1108,6 +1115,11 @@ All notable changes to this project are documented here. The format follows
   backend's own Host and Origin.
 
 ### Fixed
+
+- `scripts/check_tabrion_api.py --surface` no longer reports `tabrion.errors.Kind.PERMISSION.value` as missing from
+  Tabrion's surface: Studio names the `Kind` member (a `StrEnum`) instead of its `.value`. The Data Editor's end-to-end
+  teardown waits for the server to stop before it removes the folder of `write-areas.toml`, so the audit log no longer
+  reports a failed write on shutdown.
 
 - A configuration file nested deeper than 64 levels (arrays, inline tables and the segments of dotted keys and table
   headers) is refused (`config.too_deep`) before the TOML parser runs, so the parser no longer recurses to the
