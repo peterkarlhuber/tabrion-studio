@@ -1151,7 +1151,10 @@ G-S4, G-S3, H-2 and G-R are not granted by it.
     (`reserved_identities`), not by real path.
 14. [x] **I-2:** the folder of a new SQLite file gets STU-CR-2's folder rules (the user's own, not writable by group
     or others, every folder above safe; a link on the stored path must be root's or the user's), else
-    `restore.folder_unsafe`.
+    `restore.folder_unsafe`. **Residual (Info, delta review of PR #136):** on Windows these owner and mode rules do
+    not apply and the folder's access list (ACL) is not checked: a restore into a new file next to the existing
+    profile file stays possible there, with only Studio's own folders refused (by device and inode). Tracked with
+    [TD-003](#td-003-windows-check-the-dacl-inside-the-profile-too-review-r-6) for G-R.
 15. **I-3 (guide):** the restore role should serve only this purpose and own nothing else: it owns each restored
     database, and the archive's code may create trusted extensions there (their number is shown in the preview).
     The guide says so.
@@ -1214,6 +1217,9 @@ G-S4, G-S3, H-2 and G-R are not granted by it.
   G-R precondition (GR-3). So is a check on a real Windows machine (GR-4) of what so far only CI and tests cover: the
   refused device names of script files (for example `CON.sql`) and OneDrive-synced and other reparse-point folders,
   which Studio refuses for scripts (STU-020 D-4, kept for 1.0 by decision 11). TD-008 is done with PR #76.
+- **Also (Info, STU-XDM-2, delta review of PR #136):** on Windows the Database Manager's restore into a new SQLite
+  file does not check the access list of the target folder (the folder of the existing profile file); only Studio's
+  own folders are refused there. The restore into a new file stays possible on Windows (STU-XDM-2 open point 14).
 
 ### TD-004 · Fork pull requests in the workflow-change gate (review R-7)
 
