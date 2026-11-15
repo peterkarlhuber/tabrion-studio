@@ -766,7 +766,8 @@ Every item that a plan or a review asked for "before G-S2":
 | G2-01 (Medium): libpq environment variables (`PGHOSTADDR`, a service file's `hostaddr`, ...) could send a socket or loopback profile elsewhere, past `requirepeer` and the loopback rules | `gs2-gate-review.md` | Done (branch `claude/project-thread-rdo6g3-gs2fix`): every Studio PostgreSQL connection gives libpq's defaults itself or refuses (`studio.connection_environment`) |
 | G2-02 (Low): a SQLite integer wider than 64 bits failed only at run time (500) | `gs2-gate-review.md` | Done (same branch): refused before the plan, `value.out_of_range` |
 | G2-03 (Low): `24:00` passed the check but failed at run time before Python 3.14 | `gs2-gate-review.md` | Done (same branch): bound as text on every Python version |
-| G2-04 (Low): the platform configuration folder followed `XDG_CONFIG_HOME` | `gs2-gate-review.md` | Done (same branch): no environment variable moves it, as STU-ADR-0006 says |
+| G2-04 (Low): the platform configuration folder followed `XDG_CONFIG_HOME` | `gs2-gate-review.md` | Done (same branch): no environment variable moves it, as STU-ADR-0006 says; a user without an account entry gets no folder and a read-only start (L-1 of the PR #125 review) |
+| PR #125 review: L-1 (start without an account entry), I-1 (`PGTZ`, `PGDATESTYLE`, `PGGEQO` as session settings) | `pr125-gs2fix-review.md` | Done (same branch): L-1 every area off with `studio.write_areas_no_folder`; I-1 refused like the other variables |
 | G2-08 (Low): bytes "replace by file" and `constraint.*` at the cell (planning document 15 section 4) | `gs2-gate-review.md` | **Open, owner decision** (the row above) |
 
 Info findings of the G-S2 gate review, recorded and not changed (none blocks G-S2):

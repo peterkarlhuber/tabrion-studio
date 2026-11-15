@@ -795,6 +795,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- **Behavior change for Studio 1.0 users: `PG*` environment variables no longer reach PostgreSQL connections**,
+  read connections included (G2-01 below). A profile without a host, user, database or TLS mode no longer takes it
+  from `PGHOST`, `PGUSER`, `PGDATABASE` or `PGSSLMODE`; with such a variable set, the connection is refused
+  (`422 studio.connection_environment`), as it is while `PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR`,
+  `PGREQUIREPEER`, `PGREQUIREAUTH`, `PGSSLCERTMODE`, `PGTZ`, `PGDATESTYLE` or `PGGEQO` is set. Variables Studio
+  overrides (`PGHOSTADDR`, `PGPORT`, `PGSSLROOTCERT`, `PGPASSWORD`, ...) are ignored without an error.
+  **Remedy:** put the host, user, database and TLS mode into the profile under Connections, and start
+  `tabrion-studio` without the refused variables (for example `env -u PGSERVICE -u PGTZ tabrion-studio`).
+  `PGCONNECT_TIMEOUT` and `PGCLIENTENCODING` still apply.
 - Findings of the independent G-S2 gate review (G-S2 not granted; every write area stays off, no default changes):
   - G2-01: libpq's environment no longer chooses the server, the authentication or TLS of any Studio PostgreSQL
     connection (read connections, the connection test, the migration worker, write and admin connections). Every
@@ -802,7 +811,9 @@ All notable changes to this project are documented here. The format follows
     (for example an empty `hostaddr` and empty TLS file options, so `PGHOSTADDR` or `PGSSLROOTCERT` no longer
     apply); where that is not possible (`PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR`, `PGREQUIREPEER`,
     `PGREQUIREAUTH`, `PGSSLCERTMODE`, or `PGUSER`, `PGDATABASE`, `PGHOST`, `PGSSLMODE` for a profile without that
-    field) the connection is refused while the variable is set: `422 studio.connection_environment`, which names
+    field), and for `PGTZ`, `PGDATESTYLE` and `PGGEQO`, which libpq sends as session settings (`TimeZone` decides how
+    a `timestamptz` without an offset is read; I-1 of the PR #125 review), the connection is refused while the
+    variable is set: `422 studio.connection_environment`, which names
     no variable and no value. `PGCONNECT_TIMEOUT` and `PGCLIENTENCODING` still apply. A socket or loopback profile
     with `requirepeer` can therefore no longer be sent to another server over TCP.
   - G2-02: on SQLite an integer wider than 64 bits (a new value, a key or an `old` value, in any column) is refused
@@ -815,7 +826,10 @@ All notable changes to this project are documented here. The format follows
     longer follows an environment variable: `XDG_CONFIG_HOME`, `HOME` and platformdirs' `WIN_PD_OVERRIDE_*` are
     ignored (the home folder comes from the account database on POSIX, the `LocalAppData` known folder on
     Windows), as STU-ADR-0006 states. When such a variable moves Studio's other configuration, write profiles stay
-    unused while an area is on (`studio.write_profiles_ignored`); start Studio with `--config-dir` to use them.
+    unused while an area is on (`studio.write_profiles_ignored`); start Studio with `--config-dir` to use them. A
+    user without an entry in the account database (a container started with `--user 1234`, OpenShift) has no
+    such folder: Studio starts read-only with every area off and logs `studio.write_areas_no_folder` (L-1 of the
+    PR #125 review; the first version of this fix stopped Studio from starting there).
 
 - STU-XW hardening (CR-DBX; notes N-1, N-2 and N-4 of the PR #116 review, I-1 consistency with tabrion #77 D-2),
   with every write area still off:

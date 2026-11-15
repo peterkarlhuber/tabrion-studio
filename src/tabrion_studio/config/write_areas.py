@@ -101,9 +101,10 @@ class WriteAreas:
 ALL_OFF = WriteAreas()
 
 
-def flag_dir(config_dir: Path | None, state_dir: Path | None, default: Path) -> Path:
+def flag_dir(config_dir: Path | None, state_dir: Path | None, default: Path | None) -> Path | None:
     """The folder of ``write-areas.toml``: ``--config-dir``, else ``<--state-dir>/config``, else ``default`` (the
-    platform's per-user configuration folder). Only command-line arguments count: no environment variable moves it."""
+    platform's per-user configuration folder; None when there is none, then every area stays off). Only command-line
+    arguments count: no environment variable moves it."""
     if config_dir is not None:
         return config_dir
     if state_dir is not None:

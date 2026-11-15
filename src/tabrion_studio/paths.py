@@ -86,7 +86,7 @@ def default_config_dir(state_dir: Path | None = None) -> Path:
     return Path(platformdirs.user_config_dir(APP_NAME, appauthor=False))
 
 
-def platform_config_dir() -> Path:
+def platform_config_dir() -> Path | None:
     """The platform's per-user configuration folder, never moved by an environment variable (the write-area flags,
     STU-XW-1, review N-1 of PR #109; G2-04 of the G-S2 gate review).
 
@@ -96,14 +96,27 @@ def platform_config_dir() -> Path:
     (``~/Library/Application Support/<app>`` on macOS); from the known folder ``LocalAppData``
     (``SHGetKnownFolderPath``) on Windows. Usually it is the same folder as :func:`default_config_dir`; when an
     environment variable moves that one, the two differ and write profiles stay unused while an area is on
-    (``write_areas.write_profiles_allowed``)."""
+    (``write_areas.write_profiles_allowed``).
+
+    None when there is no such folder (review L-1 of PR #125): a process whose user has no entry in the account
+    database (a container started with ``--user 1234``, OpenShift) or a known-folder lookup that fails. Studio then
+    starts read-only with every write area off (fail closed) and logs ``studio.write_areas_no_folder``."""
     if sys.platform == "win32":
         from platformdirs.windows import get_win_folder_via_ctypes
 
-        return Path(get_win_folder_via_ctypes("CSIDL_LOCAL_APPDATA")) / APP_NAME
+        try:
+            return Path(get_win_folder_via_ctypes("CSIDL_LOCAL_APPDATA")) / APP_NAME
+        except (OSError, ValueError, KeyError):
+            return None
     import pwd
 
-    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    try:
+        entry = pwd.getpwuid(os.getuid())
+    except KeyError:  # no account entry for this user
+        return None
+    if not entry.pw_dir:
+        return None
+    home = Path(entry.pw_dir)
     if sys.platform == "darwin":
         return home / "Library" / "Application Support" / APP_NAME
     return home / ".config" / APP_NAME

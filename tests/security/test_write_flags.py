@@ -132,6 +132,7 @@ def test_the_platform_folder_follows_no_environment_variable(tmp_path: Path, mon
     from tabrion_studio.paths import APP_NAME, platform_config_dir
 
     before = platform_config_dir()
+    assert before is not None
     home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     assert before.parent.parent == home or before.parent.parent.parent == home  # ~/.config or ~/Library/...
     assert before.name == APP_NAME
@@ -139,6 +140,61 @@ def test_the_platform_folder_follows_no_environment_variable(tmp_path: Path, mon
     monkeypatch.setenv("HOME", str(tmp_path / "project"))
     assert platform_config_dir() == before
     assert str(tmp_path) not in str(platform_config_dir())
+
+
+@pytest.mark.skipif(not POSIX, reason="the POSIX account database")
+def test_a_user_without_an_account_entry_has_no_platform_folder(monkeypatch: pytest.MonkeyPatch) -> None:
+    """L-1 of the PR #125 review: a container user without a passwd entry (``--user 1234``) gets no flag folder
+    instead of an error: every area off."""
+    import pwd
+
+    from tabrion_studio.paths import platform_config_dir
+
+    def no_entry(uid: int) -> Any:
+        raise KeyError(f"getpwuid(): uid not found: {uid}")
+
+    monkeypatch.setattr(pwd, "getpwuid", no_entry)
+    assert platform_config_dir() is None
+    assert flag_dir(None, None, None) is None
+    assert flag_dir(Path("cli"), None, None) == Path("cli")
+
+
+#: Runs Studio's command with ``pwd.getpwuid`` failing as it does for a user without an account entry.
+_NO_ACCOUNT_ENTRY = (
+    "import pwd, runpy, sys\n"
+    "def no_entry(uid):\n"
+    "    raise KeyError('getpwuid(): uid not found')\n"
+    "pwd.getpwuid = no_entry\n"
+    "sys.argv = ['tabrion-studio', *sys.argv[1:]]\n"
+    "runpy.run_module('tabrion_studio', run_name='__main__', alter_sys=True)\n"
+)
+
+
+@pytest.mark.process
+@pytest.mark.skipif(not POSIX, reason="the POSIX account database")
+def test_studio_starts_read_only_for_a_user_without_an_account_entry(
+    project: Path, state_dir: Path, monkeypatch: pytest.MonkeyPatch, clean_env: None
+) -> None:
+    """L-1 of the PR #125 review with a real process: Studio starts (it did not), every area is off and the start
+    log says why."""
+    from tests.support import studio as studio_support
+
+    monkeypatch.setattr(
+        studio_support, "studio_command", lambda *args: [sys.executable, "-c", _NO_ACCOUNT_ENTRY, *args]
+    )
+    monkeypatch.setenv("TABRION_STUDIO_STATE_DIR", str(state_dir))  # no --state-dir: the platform folder decides
+    with studio_support.start_studio(project, state_dir, state_option=False) as studio:
+        info, _ = studio.wait_ready()
+        assert _areas(info) == ALL_OFF.to_dict()
+        lines = _logged_states(state_dir)
+        notices = [
+            line
+            for log in (state_dir / "logs").glob("*.log*")
+            for line in log.read_text(encoding="utf-8").splitlines()
+            if "studio.write_areas_no_folder" in line
+        ]
+    assert len(lines) == 3 and all("is off" in line for line in lines), lines
+    assert len(notices) == 1
 
 
 def test_no_environment_variable_sets_a_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

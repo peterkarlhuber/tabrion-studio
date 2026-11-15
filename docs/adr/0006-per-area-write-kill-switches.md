@@ -67,7 +67,9 @@ activation, and the error semantics of W-9.
 environment variable chose. The platform's folder follows no variable either (G2-04 of the G-S2 gate review):
 `~/.config/tabrion-studio` on Linux and `~/Library/Application Support/tabrion-studio` on macOS, with the home
 folder from the account database, not `HOME` or `XDG_CONFIG_HOME`, and the `LocalAppData` known folder on Windows,
-not `WIN_PD_OVERRIDE_*` (`paths.platform_config_dir`). Its `[areas]` table has three keys, each on only when its value is literally `true`:
+not `WIN_PD_OVERRIDE_*` (`paths.platform_config_dir`). Without such a folder (a user without an account entry, a
+failed known-folder lookup) there is no source and every area is off; Studio starts read-only and logs
+`studio.write_areas_no_folder` (L-1 of the PR #125 review). Its `[areas]` table has three keys, each on only when its value is literally `true`:
 `data_editor` (G-S2: the shared write foundation and the Data Editor), `schema_designer` (G-S3) and
 `database_manager` (G-S4). The code is `tabrion_studio.config.write_areas`; the audit log and the confirmed secret
 pairs live in the same folder (review N-1 of PR #116). No environment variable sets a flag.

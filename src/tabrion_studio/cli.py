@@ -176,6 +176,9 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
 
     from tabrion_studio.server import PortUnavailableError, ServeOptions, serve
 
+    # STU-XW-1: the write-area flags come from the folder the command line names, never one an environment variable
+    # names (review N-1 of PR #109). No folder at all (a user without a home folder, L-1 of PR #125): every area off.
+    flags_folder = flag_dir(args.config_dir, args.state_dir, platform_config_dir())
     options = ServeOptions(
         project=project,
         state_dir=state_dir,
@@ -185,9 +188,8 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         print_url=args.print_url,
         log_dir=log_dir,
         config_dir=config_dir.expanduser().resolve(),
-        # STU-XW-1: the write-area flags come from the folder the command line names, never one an environment
-        # variable names (review N-1 of PR #109).
-        write_areas_dir=flag_dir(args.config_dir, args.state_dir, platform_config_dir()).expanduser().resolve(),
+        write_areas_dir=None if flags_folder is None else flags_folder.expanduser().resolve(),
+        write_areas_no_folder=flags_folder is None,
         # Review N-1 of PR #116: a state folder from the variable keeps no audit log or secret confirmation.
         state_dir_from_env=args.state_dir is None and bool(os.environ.get(STATE_DIR_ENV)),
         started=_STARTED,

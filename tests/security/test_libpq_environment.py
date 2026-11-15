@@ -46,7 +46,7 @@ _FAILED = (RegistryError, WriteError, HealthError, TabrionError)
 #: Every variable of libpq's that is read for an option, plus the service file ones.
 _EVERY_VARIABLE = sorted(
     {variable for _keyword, variable, _default in connections_module._libpq_options() if variable is not None}
-    | {"PGSERVICEFILE", "PGSYSCONFDIR"}
+    | {"PGSERVICEFILE", "PGSYSCONFDIR", "PGDATESTYLE", "PGTZ", "PGGEQO"}
 )
 
 
@@ -193,6 +193,10 @@ def test_only_options_the_loaded_libpq_knows_are_given() -> None:
         ("PGREQUIREPEER", _pg("/var/run/postgresql", 5432)),
         ("PGREQUIREAUTH", _pg("localhost", 5432)),
         ("PGUSER", _pg("localhost", 5432, user=None)),
+        # I-1 of the PR #125 review: libpq sends these as session settings (DateStyle, TimeZone, geqo).
+        ("PGDATESTYLE", _pg("localhost", 5432)),
+        ("PGTZ", _pg("localhost", 5432)),
+        ("PGGEQO", _pg("localhost", 5432)),
     ],
 )
 def test_a_variable_studio_cannot_override_refuses_the_connection(
@@ -296,6 +300,29 @@ def test_a_service_variable_refuses_read_test_and_write_before_any_connection(
     assert built == [] and listener.accepted == 0
 
 
+@pytest.mark.parametrize(
+    ("variable", "value"), [("PGTZ", "Pacific/Apia"), ("PGDATESTYLE", "SQL, DMY"), ("PGGEQO", "off")]
+)
+def test_a_session_setting_variable_refuses_read_test_and_write(
+    monkeypatch: pytest.MonkeyPatch, listener: _Listener, variable: str, value: str
+) -> None:
+    """I-1 of the PR #125 review: libpq sends PGTZ, PGDATESTYLE and PGGEQO as session settings at startup (TimeZone
+    decides how a timestamptz without an offset is read). Refused like the rest, before anything connects."""
+    monkeypatch.setenv(variable, value)
+    registry = ConnectionRegistry(_Source(_pg("127.0.0.1", listener.port)))
+    try:
+        for attempt in (lambda: registry.open("user:pg"), lambda: registry.test("user:pg")):
+            with pytest.raises(RegistryError) as refused:
+                attempt()
+            assert refused.value.code == "studio.connection_environment"
+    finally:
+        registry.close_all()
+    with pytest.raises(RegistryError) as refused:
+        open_write_connection("admin", _pg("127.0.0.1", listener.port), Settings(), password=CANARY)
+    assert refused.value.code == "studio.connection_environment"
+    assert value not in str(refused.value) and listener.accepted == 0
+
+
 def test_the_migration_worker_path_pins_the_same_options(monkeypatch: pytest.MonkeyPatch) -> None:
     """``read_only_database`` (the registry's and the migration worker's) gives the pinned options to the driver."""
     seen: list[dict[str, Any]] = []
@@ -367,3 +394,22 @@ def test_pghostaddr_at_the_test_server_does_not_reach_it_for_another_host(monkey
     with pytest.raises(_FAILED) as failed:
         open_write_connection("write", profile, Settings(), password=password, requirepeer="nobody-at-all")
     assert password not in str(failed.value)
+
+
+@pytest.mark.postgres
+@postgres
+def test_pgtz_does_not_reach_the_test_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    """I-1 of the PR #125 review against a real server: with PGTZ set no session opens, so no session gets the
+    variable's TimeZone; without it the profile connects as before."""
+    profile, password = _server_profile()
+    registry = ConnectionRegistry(_Source(profile, password))
+    try:
+        monkeypatch.setenv("PGTZ", "Pacific/Apia")
+        with pytest.raises(RegistryError) as refused:
+            registry.open("user:pg")
+        assert refused.value.code == "studio.connection_environment"
+        monkeypatch.delenv("PGTZ")
+        connection = registry.open("user:pg")
+        assert connection.fetch("SELECT current_setting('TimeZone') <> 'Pacific/Apia'") == [(True,)]
+    finally:
+        registry.close_all()

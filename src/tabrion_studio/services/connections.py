@@ -311,9 +311,12 @@ _EMPTY_IS_UNSET = frozenset(
 )
 #: libpq options that choose neither the server, nor the authentication, nor TLS: the environment may set them.
 _ENVIRONMENT_HARMLESS = frozenset({"connect_timeout", "client_encoding"})
-#: libpq variables that are no connection option but choose a file libpq reads connection options from (the
-#: service file). Studio never names a service, but refuses them too: nothing outside the profile picks a target.
-_ENVIRONMENT_FILES = ("PGSERVICEFILE", "PGSYSCONFDIR")
+#: libpq variables that are no connection option, refused whenever set: ``PGSERVICEFILE`` and ``PGSYSCONFDIR`` choose
+#: the service file libpq reads connection options from (Studio never names a service, but nothing outside the profile
+#: picks a target); ``PGDATESTYLE``, ``PGTZ`` and ``PGGEQO`` become session settings at startup (``DateStyle``,
+#: ``TimeZone``, ``geqo``; I-1 of the PR #125 review), and ``TimeZone`` decides how a ``timestamptz`` without an
+#: offset is read and shown.
+_ENVIRONMENT_REFUSED = ("PGSERVICEFILE", "PGSYSCONFDIR", "PGDATESTYLE", "PGTZ", "PGGEQO")
 
 
 def _libpq_options() -> list[tuple[str, str | None, str | None]]:
@@ -341,10 +344,11 @@ def pin_libpq_environment(url: sqlalchemy.URL, connect_args: Mapping[str, Any]) 
     out is given here, as libpq's own default: the empty value of :data:`_EMPTY_IS_UNSET`, otherwise the loaded
     libpq's compiled-in default. What cannot be pinned that way (an option of :data:`_FROM_PROFILE` the profile does
     not give, or one without a default) refuses the connection with ``studio.connection_environment`` when its
-    variable is set, as does a service file variable. :data:`_ENVIRONMENT_HARMLESS` stays the environment's. The
+    variable is set, as does a variable of :data:`_ENVIRONMENT_REFUSED`. :data:`_ENVIRONMENT_HARMLESS` stays the
+    environment's. The
     refusal names no variable and no value. Raises :class:`RegistryError`.
     """
-    if any(name in os.environ for name in _ENVIRONMENT_FILES):
+    if any(name in os.environ for name in _ENVIRONMENT_REFUSED):
         raise RegistryError("studio.connection_environment")
     given = {key for key, value in url.query.items() if value is not None} | set(connect_args)
     for key, value in (("host", url.host), ("port", url.port), ("dbname", url.database), ("user", url.username)):

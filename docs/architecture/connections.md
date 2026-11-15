@@ -164,7 +164,9 @@ path); saving or deleting the profile and trusting the project file again forget
      `ssl_max_protocol_version`, `gsslib`), otherwise the libpq's compiled-in default (`channel_binding`,
      `ssl_min_protocol_version`, `gssencmode`, `target_session_attrs`, `load_balance_hosts`, ...). What it cannot pin
      refuses the connection while its variable is set, before anything connects: `PGSERVICE`, `PGSERVICEFILE` and
-     `PGSYSCONFDIR`; `PGREQUIREPEER`, `PGREQUIREAUTH`, `PGSSLCERTMODE` and the protocol version variables when Studio
+     `PGSYSCONFDIR`; `PGTZ`, `PGDATESTYLE` and `PGGEQO`, which are no connection options but which libpq sends as
+     session settings at startup (`TimeZone` decides how a `timestamptz` without an offset is read; I-1 of the PR
+     #125 review); `PGREQUIREPEER`, `PGREQUIREAUTH`, `PGSSLCERTMODE` and the protocol version variables when Studio
      does not set that option; `PGHOST`, `PGUSER`, `PGDATABASE`, `PGSSLMODE`, `PGOPTIONS` and `PGAPPNAME` when the
      profile (or Studio) gives no value (`422 studio.connection_environment`, no variable or value named).
      `PGCONNECT_TIMEOUT` and `PGCLIENTENCODING` choose neither the server nor the authentication nor TLS and still

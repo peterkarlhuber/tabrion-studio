@@ -107,6 +107,8 @@ class ServeOptions:
     #: The folder of ``write-areas.toml``, the one source of the write-area flags (STU-XW-1), named by the command
     #: line only; None: no source, every area stays off.
     write_areas_dir: Path | None = None
+    #: The command line named no folder and the platform has none for this user (L-1 of PR #125): logged at start.
+    write_areas_no_folder: bool = False
     #: Whether ``TABRION_STUDIO_STATE_DIR`` chose ``state_dir`` (no ``--state-dir``): then, while an area is on, the
     #: audit log and the secret confirmations there are not used (review N-1 of PR #116; they live in
     #: ``write_areas_dir`` in any case).
@@ -390,6 +392,11 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
     config_dir = options.config_dir if options.config_dir is not None else default_config_dir()
     # Read once, now; a change needs a restart (STU-ADR-0006). Each area's state is logged (point 6).
     write_areas = ALL_OFF if options.write_areas_dir is None else load_write_areas(options.write_areas_dir)
+    if options.write_areas_no_folder:
+        logging.getLogger("tabrion_studio.server").warning(
+            "no configuration folder for this user (no home folder); every write area is off, Studio stays read-only",
+            extra={"event": "studio.write_areas_no_folder"},
+        )
     log_write_areas(write_areas)
     configuration = Configuration(
         project=ProjectConfig(options.project, options.state_dir, project_key(options.project), config_dir),
