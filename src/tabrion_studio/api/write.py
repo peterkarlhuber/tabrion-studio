@@ -25,9 +25,11 @@
   ``{"write_profile_id"}`` revokes it. Without a confirmed pair no secret of the profile is resolved and no unlock
   happens.
 * ``POST /api/write/data-editor/table``: ``{"connection_id", "schema", "table"}``: the Data Editor's table (STU-026,
-  :mod:`tabrion_studio.write.data_editor`): its columns, its primary key, its triggers, rules and row security, read on
-  the unlock's write connection; a view, a partitioned table and a table without a primary key are refused. Its
-  changesets run as plans of the executor ``data_editor.changeset`` through the plan routes above. Only the Data
+  :mod:`tabrion_studio.write.data_editor`): its columns with their types (STU-XDE-1, ``column_types``), its primary
+  key, its triggers, rules and row security, read on the unlock's write connection; a view, a partitioned table and a
+  table without a primary key are refused. Its changesets run as plans of the executor ``data_editor.changeset``
+  through the plan routes above; a value that does not fit its column is refused when the plan is made
+  (``400 studio.data_editor_value_invalid`` with positions only). Only the Data
   Editor flag opens it and registers the executor; with that flag off it answers 405 like every write route.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of

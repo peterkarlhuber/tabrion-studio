@@ -1,0 +1,1839 @@
+{
+  "about": "STU-XDE-1: the value checks of the Data Editor, run by tests/security/test_data_editor_values.py (server, write/values.py) and src/api/cellValues.test.ts (page, cellValues.ts). Each case: a column type as the table route sends it, a page value and the expected issue (null: the value fits).",
+  "cases": [
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": null,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": false,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": null,
+      "issue": "value.not_null"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": true,
+        "array": false
+      },
+      "value": 1,
+      "issue": "value.read_only"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": true,
+        "array": false
+      },
+      "value": null,
+      "issue": "value.read_only"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": true,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": false,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "true",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": " F ",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "yes",
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 1,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": null,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int2",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 32767,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int2",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": -32768,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int2",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 32768,
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int2",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "-32769",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 2147483647,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2147483648",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 1.0,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 1.5,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1.5",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "12a",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": " 12",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "+7",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": true,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": [1],
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "9223372036854775807",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "-9223372036854775808",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "9223372036854775808",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "١٢",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 0.5,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "0.5",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1e308",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1e309",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "NaN",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "-Infinity",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "inf",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "abc",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": ".5",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1.",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": ".",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1e",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "3.4e38",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "3.5e38",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 1e39,
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "float8",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": false,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "999.99",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "999.995",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "-999.994",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "0.001",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "1e2",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "1e3",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "NaN",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "Infinity",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "Infinity",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "-inf",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "abc",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": 12.5,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": 1000,
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 3,
+        "scale": 0
+      },
+      "value": "999.4",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 3,
+        "scale": 0
+      },
+      "value": "999.5",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 2,
+        "scale": -2
+      },
+      "value": "9949",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 2,
+        "scale": -2
+      },
+      "value": "9950",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 4,
+        "scale": 4
+      },
+      "value": "0.99995",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 4,
+        "scale": 4
+      },
+      "value": "0.99994",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 10,
+        "scale": 2
+      },
+      "value": "1e999999999999",
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 10,
+        "scale": 2
+      },
+      "value": "1e-999999999999",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "123456789012345678901234567890.123456789",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": "00012.30",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": true,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "precision": 5,
+        "scale": 2
+      },
+      "value": {
+        "a": 1
+      },
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "numeric",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1,5",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "anything",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "length": 3
+      },
+      "value": "abc",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "length": 3
+      },
+      "value": "abc   ",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "length": 3
+      },
+      "value": "abcd",
+      "issue": "value.too_long"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "length": 3
+      },
+      "value": "äöü",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "length": 2
+      },
+      "value": "😀😀",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "length": 1
+      },
+      "value": "😀😀",
+      "issue": "value.too_long"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "a\u0000b",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 1,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": true,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2024-02-29",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2023-02-29",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2024-13-01",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "0000-01-01",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2024-1-01",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "20240101",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 20240101,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "time",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:00",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "time",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "23:59:59.123456",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "time",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "24:00:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "time",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:00:00+02:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "time",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:60",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "time",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:00:00.1234567",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timetz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:00:00+02:00",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timetz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:00:00Z",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timetz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "10:00:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamp",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01 10:00:00",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamp",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01T10:00",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamp",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01T10:00:00+02:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamp",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-02-30 10:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamptz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01T10:00:00+02:00",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamptz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01 10:00:00.5Z",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamptz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "1850-01-01T00:00:00+00:53:28",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamptz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01 10:00:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamptz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "2025-01-01T10:00:00+24:00",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "timestamptz",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "yesterday",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "uuid",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "uuid",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "uuid",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "a0eebc999c0b4ef8bb6d6bb9bd380a11",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "uuid",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11}",
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "uuid",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 5,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "json",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": {
+        "a": [1, 2]
+      },
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "json",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": [1, "x"],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "json",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "text",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "json",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 3,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "json",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": true,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "enum",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "values": ["ok", "bad"]
+      },
+      "value": "ok",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "enum",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "values": ["ok", "bad"]
+      },
+      "value": "OK",
+      "issue": "value.not_allowed"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "enum",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false,
+        "values": ["ok", "bad"]
+      },
+      "value": 1,
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "bytes",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": {
+        "base64": "AQI="
+      },
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "bytes",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": {
+        "base64": "AQI"
+      },
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "bytes",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "AQI=",
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "bytes",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": {
+        "base64": "AQI=",
+        "x": 1
+      },
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "other",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": "x",
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "other",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": 1,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "other",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": [1],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "other",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": {
+        "a": 1
+      },
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "other",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": false
+      },
+      "value": true,
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [1, 2, null],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [
+        [1, 2],
+        [3, 4]
+      ],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [[1, 2], [3]],
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [[1, 2], 3],
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [1, "x"],
+      "issue": "value.format"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [1, 2147483648],
+      "issue": "value.out_of_range"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": "{1,2}",
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true,
+        "length": 2
+      },
+      "value": ["ab", "abc"],
+      "issue": "value.too_long"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": ["a", null],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "text",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [1],
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "date",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": ["2024-01-01"],
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "boolean",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [true, "f"],
+      "issue": null
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": false,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": null,
+      "issue": "value.not_null"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [[[[[[[1]]]]]]],
+      "issue": "value.type"
+    },
+    {
+      "column": {
+        "name": "c",
+        "kind": "int4",
+        "nullable": true,
+        "optional": true,
+        "read_only": false,
+        "array": true
+      },
+      "value": [[[[[[1]]]]]],
+      "issue": null
+    }
+  ]
+}

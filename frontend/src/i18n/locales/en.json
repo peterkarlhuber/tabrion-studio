@@ -1067,7 +1067,7 @@
     "plan_target_no_primary_key": "The table has no primary key, so Studio cannot edit its rows.",
     "data_editor_conflict": "A row was changed or deleted by someone else since it was loaded. Nothing was saved. Reload the rows and try again.",
     "data_editor_rowcount": "A change did not affect exactly one row. Nothing was saved.",
-    "data_editor_value_invalid": "A value does not fit its column. Nothing was saved.",
+    "data_editor_value_invalid": "A value does not fit its column, or a required value is missing. Nothing was saved; the cells in question are marked.",
     "data_editor_column_incomparable": "A column of this table has a type that cannot be compared (for example xml or point), so a change by someone else could not be detected. Studio does not edit this table at all, whichever columns are shown; edit it with another tool."
   },
   "keyboard": {
@@ -1664,11 +1664,6 @@
       "type": "Type {{name}} to unlock",
       "submit": "Unlock"
     },
-    "change": {
-      "insert": "Insert a new row",
-      "delete": "Delete the row {{key}}",
-      "update": "Change {{columns}} of the row {{key}}"
-    },
     "review": {
       "title": "Review the changes",
       "oneTransaction": "All changes run in one transaction. If a row was changed by someone else in the meantime, or a change affects not exactly one row, nothing is saved.",
@@ -1677,6 +1672,55 @@
       "back": "Back",
       "confirm": "Confirm",
       "execute": "Execute"
+    },
+    "issueRow": "Row {{row}}",
+    "issueNewRow": "New row {{row}}",
+    "issueAt": "{{row}}, column {{column}}: {{issue}}",
+    "issuesLead_one": "{{count}} value does not fit its column. Correct it before the preview:",
+    "issuesLead_other": "{{count}} values do not fit their columns. Correct them before the preview:",
+    "issue": {
+      "read_only": "This column takes no value (it is generated or an identity).",
+      "not_null": "This column takes no NULL.",
+      "required": "Required: this column has no default and takes no NULL.",
+      "type": "Wrong kind of value; expected {{format}}.",
+      "format": "Not valid; expected {{format}}.",
+      "too_long": "Too long: at most {{length}} characters.",
+      "out_of_range": "Out of the range of this column ({{format}}).",
+      "not_allowed": "Not one of the allowed values.",
+      "json_null": "A JSON null is not taken here; use the NULL button for NULL."
+    },
+    "format": {
+      "boolean": "true or false",
+      "int2": "a whole number from -32768 to 32767",
+      "int4": "a whole number from -2147483648 to 2147483647",
+      "int8": "a whole number from -9223372036854775808 to 9223372036854775807",
+      "float4": "a number such as 1.5, 2e-3, NaN or Infinity, up to about 3.4e38",
+      "float8": "a number such as 1.5, 2e-3, NaN or Infinity",
+      "numeric": "a decimal number such as 12.50 that fits the column's precision and scale",
+      "text": "text",
+      "date": "a date as YYYY-MM-DD",
+      "time": "a time as HH:MM or HH:MM:SS",
+      "timetz": "a time with its offset as HH:MM:SS+HH:MM",
+      "timestamp": "a date and time as YYYY-MM-DD HH:MM:SS, without an offset",
+      "timestamptz": "a date and time with its offset as YYYY-MM-DD HH:MM:SS+HH:MM (or Z for UTC)",
+      "uuid": "a UUID such as 123e4567-e89b-12d3-a456-426614174000",
+      "json": "a JSON value such as {\"a\": 1}",
+      "enum": "one of the listed values",
+      "bytes": "bytes",
+      "other": "a value of the column's type",
+      "array": "a JSON array such as [1, 2] (NULL elements allowed, sub-arrays of the same length)"
+    },
+    "overview": {
+      "summary": "Rows: {{updated}} changed, {{inserted}} new, {{deleted}} deleted",
+      "update": "Change the row {{key}}",
+      "insert": "New row {{row}}",
+      "delete": "Delete the row {{key}}",
+      "column": "Column",
+      "before": "Before",
+      "after": "After",
+      "value": "Value",
+      "empty": "(empty text)",
+      "defaults": "Columns not set get their default."
     }
   }
 }

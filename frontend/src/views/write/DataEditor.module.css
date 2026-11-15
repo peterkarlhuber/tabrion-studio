@@ -1,4 +1,5 @@
-/* The Data Editor's grid (STU-026, 08 section 4.6): changed cells amber, new rows green, rows to delete red. */
+/* The Data Editor's grid (STU-026, 08 section 4.6): changed cells amber, new rows green, rows to delete red; the cell
+   editors, their issues and the change overview (STU-XDE-1). */
 .editor {
   display: flex;
   flex-direction: column;
@@ -35,7 +36,8 @@
   align-items: center;
   gap: var(--tb-space-1);
 }
-.cell input {
+.cell input,
+.cell select {
   min-width: 8rem;
   height: var(--tb-control-height);
   padding: 0 var(--tb-space-2);
@@ -49,8 +51,31 @@
   color: var(--tb-null);
   font-style: italic;
 }
-.changed input {
+.changed input,
+.changed select {
   background: var(--tb-diff-changed);
+}
+.cell input.code {
+  font-family: var(--tb-font-mono);
+}
+.cell [aria-invalid='true'] {
+  border-color: var(--tb-color-danger);
+  border-width: 2px;
+}
+.issue {
+  display: block;
+  margin-top: var(--tb-space-1);
+  color: var(--tb-color-danger);
+  font-size: var(--tb-text-xs);
+  white-space: normal;
+  max-width: 16rem;
+}
+.typeLabel {
+  display: block;
+  color: var(--tb-color-text-muted);
+  font-family: var(--tb-font-mono);
+  font-size: var(--tb-text-xs);
+  font-weight: var(--tb-weight-regular);
 }
 .added td {
   background: var(--tb-diff-added);
@@ -71,4 +96,56 @@
   margin: 0;
   padding-left: var(--tb-space-5);
   font-size: var(--tb-text-sm);
+}
+.overview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  font-size: var(--tb-text-sm);
+}
+.overview ol {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  margin: 0;
+  padding-left: var(--tb-space-5);
+}
+.overviewSummary {
+  margin: 0;
+  font-weight: var(--tb-weight-semibold);
+}
+.changedTitle,
+.addedTitle,
+.removedTitle {
+  font-weight: var(--tb-weight-semibold);
+}
+.removedTitle {
+  text-decoration: line-through;
+}
+.overviewTable {
+  margin-top: var(--tb-space-1);
+  border-collapse: collapse;
+}
+.overviewTable th,
+.overviewTable td {
+  padding: var(--tb-space-1) var(--tb-space-2);
+  border: 1px solid var(--tb-color-border);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.overviewTable thead th {
+  background: var(--tb-color-surface-2);
+}
+.overviewTable tbody th {
+  font-family: var(--tb-font-mono);
+  font-weight: var(--tb-weight-regular);
+}
+.nullValue {
+  color: var(--tb-null);
+  font-style: italic;
+}
+.overviewNote {
+  display: block;
+  color: var(--tb-color-text-muted);
 }

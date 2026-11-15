@@ -75,6 +75,7 @@ import tabrion
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write.connection import WriteConnection, WriteError, file_identity
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, AuditedRun, Unlocks
+from tabrion_studio.write.values import PG_COLUMN_TYPES, ColumnType, pg_column_type, sqlite_column_type, sqlite_strict
 
 __all__ = [
     "MAX_TARGETS",
@@ -219,6 +220,9 @@ class TargetCatalog:
     primary_key: tuple[str, ...] = ()
     #: The columns whose type has no equality for an optimistic comparison (PostgreSQL; see ``_PG_INCOMPARABLE``).
     incomparable: tuple[str, ...] = ()
+    #: Each column's type as the Data Editor checks values (STU-XDE-1, :mod:`tabrion_studio.write.values`), in table
+    #: order; covered by the fingerprint like the columns.
+    column_types: tuple[ColumnType, ...] = ()
 
 
 class CatalogCheck(Protocol):
@@ -232,9 +236,12 @@ class CatalogCheck(Protocol):
 Fetch = Callable[[str, dict[str, Any] | None], list[tuple[Any, ...]]]
 
 _SQLITE_SCHEMA = "SELECT type, name, tbl_name, sql FROM main.sqlite_master ORDER BY type, name"
-#: The columns of one table (a generated column has ``hidden`` 2 or 3; 1 is a hidden column of a virtual table) and
-#: their place in the primary key (0: not in it). Covered by the fingerprint: the schema rows hold the table's SQL.
-_SQLITE_COLUMNS = "SELECT name, pk, hidden FROM pragma_table_xinfo(:table, 'main') ORDER BY cid"
+#: The columns of one table (a generated column has ``hidden`` 2 or 3; 1 is a hidden column of a virtual table), their
+#: place in the primary key (0: not in it), declared type, NOT NULL and default (STU-XDE-1). Covered by the
+#: fingerprint: the schema rows hold the table's SQL.
+_SQLITE_COLUMNS = (
+    "SELECT name, pk, hidden, type, \"notnull\", dflt_value FROM pragma_table_xinfo(:table, 'main') ORDER BY cid"
+)
 
 _PG_CLASS = (
     "SELECT c.oid::pg_catalog.int8, c.relkind::pg_catalog.text, c.relrowsecurity, c.relforcerowsecurity,"
@@ -403,11 +410,27 @@ def _sqlite_catalog(
             for row in rows
             if row[0] == "trigger" and (row[2] or "").lower() == table and row[1]
         )
-        described = [(str(name), int(pk)) for name, pk, hidden in fetch(_SQLITE_COLUMNS, {"table": target.table})
-                     if hidden != 1]  # fmt: skip
-        columns = tuple(name for name, _pk in described)
-        primary_key = tuple(name for name, pk in sorted((d for d in described if d[1] > 0), key=lambda d: d[1]))
-        catalogs.append(TargetCatalog(target, triggers=triggers, columns=columns, primary_key=primary_key))
+        described = [row for row in fetch(_SQLITE_COLUMNS, {"table": target.table}) if row[2] != 1]
+        columns = tuple(str(row[0]) for row in described)
+        primary_key = tuple(str(row[0]) for row in sorted((row for row in described if row[1] > 0), key=lambda r: r[1]))
+        sql = next((row[3] for row in rows if row[0] == "table" and (row[1] or "").lower() == table), None)
+        strict, without_rowid = sqlite_strict(sql)
+        alias = (
+            primary_key[0]
+            if len(primary_key) == 1
+            and not without_rowid
+            and any(str(row[0]) == primary_key[0] and str(row[3] or "").upper() == "INTEGER" for row in described)
+            else None
+        )
+        column_types = tuple(
+            sqlite_column_type(name, declared, int(not_null), default, int(hidden), strict=strict, rowid=name == alias)
+            for name, _pk, hidden, declared, not_null, default in ((str(row[0]), *row[1:]) for row in described)
+        )
+        catalogs.append(
+            TargetCatalog(
+                target, triggers=triggers, columns=columns, primary_key=primary_key, column_types=column_types
+            )
+        )
     return _digest({"engine": "sqlite", "identity": list(identity), "schema": rows}), tuple(catalogs)
 
 
@@ -451,7 +474,10 @@ def _postgres_catalog(fetch: Fetch, targets: tuple[Target, ...]) -> tuple[str, t
         columns = tuple(str(row[1]) for row in doc["columns"])
         primary_key = tuple(str(row[0]) for row in fetch(_PG_PRIMARY_KEY, {"oid": int(oid)}))
         incomparable = tuple(str(row[0]) for row in fetch(_PG_INCOMPARABLE, {"oid": int(oid)}))
-        catalogs.append(TargetCatalog(target, triggers, rules, bool(row_security), columns, primary_key, incomparable))
+        column_types = tuple(pg_column_type(row) for row in fetch(PG_COLUMN_TYPES, {"oid": int(oid)}))
+        catalogs.append(
+            TargetCatalog(target, triggers, rules, bool(row_security), columns, primary_key, incomparable, column_types)
+        )
     return _digest({"engine": "postgresql", "targets": docs}), tuple(catalogs)
 
 

@@ -11,3 +11,7 @@
   background: var(--tb-color-surface);
   font-size: var(--tb-text-xs);
 }
+/* The data-editor scenario: the grid alone on the page (STU-XDE-1). */
+.page {
+  padding: var(--tb-space-4);
+}

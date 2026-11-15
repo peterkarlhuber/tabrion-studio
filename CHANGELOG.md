@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDE-1 (in development, locked by G-S2): validation, type editors and a change overview for the Data Editor,
+  behind the same `data_editor` flag of `write-areas.toml`, which stays off by default; no default changes. The
+  table route sends each column's type (kind, NULL, whether an insert may leave it out, generated or identity
+  `ALWAYS`, length, precision and scale, enum labels, arrays). The grid has an editor per type: a choice for boolean
+  and enum, text fields with the format in the header for numbers, decimals, dates, times, timestamps with and
+  without an offset and UUIDs, JSON and arrays as JSON, bytes and generated columns read only; NULL is a button and
+  never the empty text. Every changed value is checked at its cell (type, length, range, NULL, enum labels, required
+  columns of a new row) and the preview waits until none is left. The server checks every new value again before it
+  makes the plan: `400 studio.data_editor_value_invalid` with `issues` (`changes.<change>.<column>` and a `value.*`
+  code; no value, no column name). The change overview lists every changed row with its columns before and after, the
+  new rows and the deleted rows, before the preview and in the review. Page and server share their check vectors.
+  An insert names only the columns that were set: SQLAlchemy no longer fetches a key ahead from a sequence, which a
+  table with an identity `ALWAYS` key refused. English and German. Threat TX-17 and STU-ADR-0006 "Values of the Data
+  Editor".
+
 - STU-026 (in development, locked by G-S2): the Data Editor behind the `data_editor` flag of `write-areas.toml`,
   which stays off by default; it is not usable or supported until G-S2 is granted. While the flag is on, the plan
   executor `data_editor.changeset` turns a changeset (rows changed, added, deleted) into plan steps; preview, typed

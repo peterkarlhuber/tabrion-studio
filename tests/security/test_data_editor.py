@@ -273,6 +273,20 @@ def test_the_table_route_names_columns_and_primary_key(env: WriteEnv) -> None:
         "schema": "main",
         "table": "parts",
         "columns": COLUMNS,
+        # STU-XDE-1: an ordinary SQLite table's declared types are advice, so every column is untyped ("other");
+        # the rowid alias may be left out of an insert, the others have no default.
+        "column_types": [
+            {"name": "id", "kind": "other", "nullable": True, "optional": True, "read_only": False, "array": False},
+            {
+                "name": "material",
+                "kind": "other",
+                "nullable": True,
+                "optional": False,
+                "read_only": False,
+                "array": False,
+            },
+            {"name": "note", "kind": "other", "nullable": True, "optional": False, "read_only": False, "array": False},
+        ],
         "primary_key": ["id"],
         "triggers": [],
         "rules": [],
@@ -560,6 +574,84 @@ def test_one_change_per_row(env: WriteEnv) -> None:
     connection_id = _unlocked(env)
     changes = [_update(*STEEL, {"note": "a"}), _delete(*STEEL)]
     _refused(_plan(env, connection_id, changes), 400, "studio.plan_invalid")
+
+
+# --- STU-XDE-1: the server checks every value again --------------------------------------------------------------
+
+TYPED = (
+    "CREATE TABLE typed (id INTEGER PRIMARY KEY, qty INTEGER NOT NULL, ratio REAL, label TEXT NOT NULL DEFAULT 'x',"
+    " data BLOB, twice INTEGER GENERATED ALWAYS AS (qty * 2) VIRTUAL) STRICT;"
+    "INSERT INTO typed (id, qty, ratio, label) VALUES (1, 4, 0.5, 'a');"
+)
+TYPED_COLUMNS = ["id", "qty", "ratio", "label", "data", "twice"]
+TYPED_OLD = {"id": 1, "qty": 4, "ratio": 0.5, "label": "a", "data": None, "twice": 8}
+
+
+def _typed_plan(env: WriteEnv, connection_id: str, changes: list[dict[str, Any]]) -> Any:
+    request = {"schema": "main", "table": "typed", "columns": TYPED_COLUMNS, "changes": changes}
+    return env.send(
+        "POST", "/api/write/plans", {"connection_id": connection_id, "executor": EXECUTOR, "request": request}
+    )
+
+
+def test_a_strict_tables_column_types_reach_the_page(env: WriteEnv) -> None:
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    answer = env.send("POST", TABLE_ROUTE, {"connection_id": connection_id, "table": "typed"})
+    assert answer.status_code == 200, answer.text
+    kinds = {
+        c["name"]: (c["kind"], c["nullable"], c["optional"], c["read_only"]) for c in answer.json()["column_types"]
+    }
+    assert kinds == {
+        "id": ("int8", True, True, False),
+        "qty": ("int8", False, False, False),
+        "ratio": ("float8", True, False, False),
+        "label": ("text", False, True, False),
+        "data": ("bytes", True, False, False),
+        "twice": ("int8", True, True, True),
+    }
+
+
+def test_values_that_do_not_fit_are_refused_before_the_plan_with_positions_only(env: WriteEnv) -> None:
+    """The page's checks are help only: a request that skips them is refused by the server (400, W-9) before a plan
+    exists. The issues name the change's and the column's position and the check, never the value or a name."""
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    changes = [
+        {"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"qty": CANARY_VALUE, "label": None}},
+        {"op": "insert", "values": {"ratio": CANARY_VALUE, "twice": 2, "data": {"base64": "AQI="}}},
+    ]
+    refused = _typed_plan(env, connection_id, changes)
+    _refused(refused, 400, "studio.data_editor_value_invalid")
+    assert refused.json()["issues"] == [
+        {"pointer": "changes.0.1", "code": "value.format"},
+        {"pointer": "changes.0.3", "code": "value.not_null"},
+        {"pointer": "changes.1.2", "code": "value.format"},
+        {"pointer": "changes.1.5", "code": "value.read_only"},
+        {"pointer": "changes.1.1", "code": "value.required"},
+    ]
+    assert "typed" not in refused.text and "qty" not in refused.text
+    assert _rows(env.db, "typed") == [(1, 4, 0.5, "a", None, 8)]
+    assert not any(entry.get("plan_hash") for entry in _audit(env))
+
+
+def test_values_that_fit_run_and_strict_sqlite_takes_number_text(env: WriteEnv) -> None:
+    """The database stays the last instance: SQLite has no NaN, so a REAL "NaN" that the checks let through is
+    refused by the database and the whole changeset rolls back."""
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    request = {"schema": "main", "table": "typed", "columns": TYPED_COLUMNS}
+    changes = [
+        {"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"qty": "12", "ratio": "1.25", "label": ""}},
+        {"op": "insert", "values": {"qty": 3, "data": {"base64": "AQI="}}},
+    ]
+    done = _run(env, connection_id, changes, **request)
+    assert done.status_code == 200, done.text
+    assert _rows(env.db, "typed") == [(1, 12, 1.25, "", None, 24), (2, 3, None, "x", b"\x01\x02", 6)]
+    old = {"id": 1, "qty": 12, "ratio": 1.25, "label": "", "data": None, "twice": 24}
+    nan = _run(env, connection_id, [{"op": "update", "key": {"id": 1}, "old": old, "new": {"ratio": "NaN"}}], **request)
+    assert nan.status_code in (400, 409, 422) and nan.json()["code"].startswith("db."), nan.text
+    assert _rows(env.db, "typed")[0] == (1, 12, 1.25, "", None, 24)
 
 
 # --- canary: no value outside the database (TX-13, TX-14, N-3) ------------------------------------------------

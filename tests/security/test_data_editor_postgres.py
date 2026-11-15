@@ -366,3 +366,150 @@ def test_columns_with_an_equality_are_editable(pg: Env) -> None:
     done = _run_on(pg, "fine", list(old), [{"op": "delete", "key": {"id": 1}, "old": old}])
     assert done.status_code == 200, done.text
     assert pg.sql("SELECT count(*) FROM {p}.fine") == [(0,)]
+
+
+# --- STU-XDE-1: column types for the page, the server's checks, and the type editors' values -----------------------
+
+
+def test_the_table_route_sends_each_columns_type(pg: Env) -> None:
+    info = pg.env.send(
+        "POST",
+        "/api/write/data-editor/table",
+        {"connection_id": pg.connection_id, "schema": pg.prefix, "table": "parts"},
+    )
+    assert info.status_code == 200, info.text
+    types = {column["name"]: column for column in info.json()["column_types"]}
+    assert list(types) == COLUMNS
+    assert {name: column["kind"] for name, column in types.items()} == {
+        "id": "int4",
+        "material": "text",
+        "price": "numeric",
+        "made": "date",
+        "seen": "timestamptz",
+        "ok": "boolean",
+        "doc": "json",
+        "raw": "bytes",
+        "weight": "float4",
+        "tag": "uuid",
+        "note": "text",
+    }
+    assert (types["price"]["precision"], types["price"]["scale"]) == (10, 2)
+    assert (types["id"]["nullable"], types["id"]["optional"], types["id"]["read_only"]) == (False, True, False)
+    assert (types["material"]["nullable"], types["material"]["optional"]) == (False, False)
+
+
+TYPED = (
+    "id integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY, mood {p}.mood, short varchar(5), code {p}.code,"
+    " small int2, nums int4[], tags varchar(3)[], stamp timestamp, clock timetz,"
+    " twice integer GENERATED ALWAYS AS (small * 2) STORED, label text NOT NULL, moods {p}.mood[]"
+)
+TYPED_COLUMNS = ["id", "mood", "short", "code", "small", "nums", "tags", "stamp", "clock", "twice", "label", "moods"]
+
+
+def _typed(pg: Env) -> None:
+    pg.sql("CREATE TYPE {p}.mood AS ENUM ('ok', 'bad')")
+    pg.sql("CREATE DOMAIN {p}.code AS varchar(3)")
+    _table(pg, "typed", TYPED.format(p="{p}"))
+    pg.sql("GRANT USAGE ON ALL SEQUENCES IN SCHEMA {p} TO {p}_w")
+
+
+def test_enums_domains_arrays_and_generated_columns_are_typed(pg: Env) -> None:
+    _typed(pg)
+    info = pg.env.send(
+        "POST",
+        "/api/write/data-editor/table",
+        {"connection_id": pg.connection_id, "schema": pg.prefix, "table": "typed"},
+    )
+    assert info.status_code == 200, info.text
+    types = {column["name"]: column for column in info.json()["column_types"]}
+    assert types["mood"]["kind"] == "enum" and types["mood"]["values"] == ["ok", "bad"]
+    assert (types["short"]["kind"], types["short"]["length"]) == ("text", 5)
+    assert (types["code"]["kind"], types["code"]["length"]) == ("text", 3)  # the domain's own length
+    assert (types["nums"]["kind"], types["nums"]["array"]) == ("int4", True)
+    assert (types["tags"]["kind"], types["tags"]["length"], types["tags"]["array"]) == ("text", 3, True)
+    assert (types["moods"]["kind"], types["moods"]["array"]) == ("other", False)  # the viewer shows array text
+    assert types["id"]["read_only"] and types["twice"]["read_only"]
+    assert (types["label"]["nullable"], types["label"]["optional"]) == (False, False)
+
+
+def test_values_that_do_not_fit_are_refused_by_the_server_without_echo(pg: Env) -> None:
+    """The server checks again what the page checks (400, W-9), before a plan exists; the issues are positions and
+    codes only. Nothing is written."""
+    _typed(pg)
+    values = {
+        "id": 5,
+        "mood": "meh",
+        "short": CANARY_VALUE,
+        "code": "abcd",
+        "small": 40000,
+        "nums": [[1], [2, 3]],
+        "tags": ["abcd"],
+        "stamp": "2024-01-01T00:00:00+01:00",
+        "clock": "10:00",
+        "twice": 1,
+    }
+    refused = pg.plan([{"op": "insert", "values": values}], table="typed", columns=TYPED_COLUMNS)
+    assert (refused.status_code, refused.json()["code"]) == (400, "studio.data_editor_value_invalid"), refused.text
+    assert CANARY_VALUE not in refused.text and "meh" not in refused.text and "short" not in refused.text
+    issues = {issue["pointer"]: issue["code"] for issue in refused.json()["issues"]}
+    assert issues == {
+        "changes.0.0": "value.read_only",
+        "changes.0.1": "value.not_allowed",
+        "changes.0.2": "value.too_long",
+        "changes.0.3": "value.too_long",
+        "changes.0.4": "value.out_of_range",
+        "changes.0.5": "value.format",
+        "changes.0.6": "value.too_long",
+        "changes.0.7": "value.format",
+        "changes.0.8": "value.format",
+        "changes.0.9": "value.read_only",
+        "changes.0.10": "value.required",
+    }
+    assert pg.sql("SELECT count(*) FROM {p}.typed") == [(0,)]
+
+
+def test_the_type_editors_values_are_written_and_read_back_as_old(pg: Env) -> None:
+    """The values the page's editors send (an enum label, text with trailing spaces beyond the length, integer text,
+    nested arrays with NULL elements, a timestamp without and a time with an offset, an enum array as array text) are
+    written; an identity ALWAYS key and a generated column are left to the database; the viewer's values
+    of the new row are then the old values of an update that runs without a false conflict."""
+    _typed(pg)
+    values = {
+        "mood": "bad",
+        "short": "abcde   ",
+        "code": "ab",
+        "small": "7",
+        "nums": [[1, 2], [3, None]],
+        "tags": [["ab", "c"], [None, "d"]],
+        "stamp": "2024-01-01 10:00:00",
+        "clock": "10:00:00+02:00",
+        "label": "",
+        "moods": "{ok,bad}",
+    }
+    done = _run_on(pg, "typed", TYPED_COLUMNS, [{"op": "insert", "values": values}])
+    assert done.status_code == 200, done.text
+    assert pg.sql(
+        "SELECT mood::text, short, code, small, nums::text, tags::text, stamp::text, clock::text, twice, label,"
+        " moods::text FROM {p}.typed"
+    ) == [
+        (
+            "bad",
+            "abcde",
+            "ab",
+            7,
+            "{{1,2},{3,NULL}}",
+            "{{ab,c},{NULL,d}}",
+            "2024-01-01 10:00:00",
+            "10:00:00+02",
+            14,
+            "",
+            "{ok,bad}",
+        )
+    ]
+    query = urlencode({"schema": pg.prefix, "name": "typed", "limit": 10})
+    page = pg.env.send("GET", f"/api/connections/{pg.connection_id}/rows?{query}").json()
+    old = dict(zip([column["name"] for column in page["columns"]], page["rows"][0], strict=True))
+    change = {"op": "update", "key": {"id": old["id"]}, "old": old, "new": {"label": "x", "tags": [None, "e"]}}
+    updated = _run_on(pg, "typed", list(old), [change])
+    assert updated.status_code == 200, updated.text
+    assert pg.sql("SELECT label, tags::text FROM {p}.typed") == [("x", "{NULL,e}")]

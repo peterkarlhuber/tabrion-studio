@@ -165,7 +165,7 @@ def add_enabled_write_routes(
             return problem_response("studio.audit_unavailable")
         if isinstance(exc, WriteError):
             logger.info("write refused", extra={"event": "studio.write_refused", "code": exc.code})
-            return problem_response(exc.code)
+            return problem_response(exc.code, issues=exc.issues)
         if isinstance(exc, SecretError) and exc.code == "studio.profile_not_found":
             return problem_response("studio.write_target_changed")  # never 404 for a refused write (W-9)
         if isinstance(exc, SaveError | SecretError):

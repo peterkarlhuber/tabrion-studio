@@ -81,6 +81,9 @@ test.beforeAll(async () => {
     [
       "db.execute('create table parts (id integer primary key, name text not null, qty integer)')",
       "db.executemany('insert into parts values (?, ?, ?)', [(1, 'bolt', 3), (2, 'nut', None), (3, 'washer', 7)])",
+      // STU-XDE-1: a STRICT table, whose column types the server checks and the page edits by type.
+      "db.execute('create table bins (id integer primary key, qty integer not null, label text) strict')",
+      'db.execute("insert into bins values (1, 5, \'top\')")',
       'db.commit()',
     ].join('\n'),
   );
@@ -146,12 +149,12 @@ async function api(
 }
 
 /** Open the explorer on the read profile, select the table and its "Edit data" tab. */
-async function openEditor(page: Page): Promise<void> {
+async function openEditor(page: Page, table = 'parts'): Promise<void> {
   await page.getByRole('link', { name: 'Explorer' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Explorer' })).toBeVisible();
   await page.getByRole('combobox').first().selectOption('user:e2e-editor');
   await page.getByTestId('explorer-open').click();
-  await page.getByRole('treeitem', { name: 'parts', exact: true }).click();
+  await page.getByRole('treeitem', { name: table, exact: true }).click();
   await page.getByRole('tab', { name: 'Edit data' }).click();
 }
 
@@ -270,4 +273,60 @@ test('a row changed behind the page: the run rolls back and names no value', asy
   ).toEqual([[1, 'bolt M4', 3]]);
   await page.getByRole('button', { name: 'Reload the rows' }).click();
   await expect(page.getByRole('textbox', { name: 'Row 1, name' })).toHaveValue('bolt M4');
+});
+
+test('STU-XDE-1: a STRICT table is edited by type; the server checks again and names no value', async ({
+  page,
+}) => {
+  const violations = await signIn(page);
+  await openEditor(page, 'bins');
+  const unlock = page.getByTestId('data-editor-unlock');
+  await unlock.getByLabel('Type e2e-editor-w to unlock').fill('e2e-editor-w');
+  await unlock.getByRole('button', { name: 'Unlock' }).click();
+  await expect(page.getByRole('columnheader', { name: /qty/ })).toContainText('int8');
+  const qty = page.getByRole('textbox', { name: 'Row 1, qty' });
+  await qty.fill(CANARY);
+  await expect(qty).toHaveAttribute('aria-invalid', 'true');
+  await expect(qty).toHaveAccessibleDescription(/Not valid; expected a whole number/);
+  await expect(page.getByRole('button', { name: 'Preview' })).toBeDisabled();
+  // No NULL for a NOT NULL column; NULL and the empty text stay apart for the other.
+  await expect(page.getByRole('button', { name: 'Set Row 1, qty to NULL' })).toHaveCount(0);
+
+  // The page's checks are help only: a request around them is refused by the server, before a plan exists.
+  const connectionId = (
+    (await api(page, 'GET', '/api/write/unlocks')).body as { unlocks: { connection_id: string }[] }
+  ).unlocks[0]?.connection_id;
+  const refused = await api(page, 'POST', '/api/write/plans', {
+    connection_id: connectionId,
+    executor: 'data_editor.changeset',
+    request: {
+      schema: 'main',
+      table: 'bins',
+      columns: ['id', 'qty', 'label'],
+      changes: [{ op: 'insert', values: { qty: CANARY, label: CANARY } }],
+    },
+  });
+  expect(refused.status).toBe(400);
+  expect(refused.body).toMatchObject({
+    code: 'studio.data_editor_value_invalid',
+    issues: [{ pointer: 'changes.0.1', code: 'value.format' }],
+  });
+  expect(JSON.stringify(refused.body)).not.toContain(CANARY);
+
+  await qty.fill('12');
+  await page.getByRole('textbox', { name: 'Row 1, label' }).fill('');
+  await expect(page.getByTestId('data-editor-changes').getByRole('row')).toHaveText([
+    'ColumnBeforeAfter',
+    'qty512',
+    'labeltop(empty text)',
+  ]);
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-saved')).toContainText('Saved: 1 updated');
+  expect(
+    JSON.parse(sqlite("print(json.dumps(db.execute('select * from bins').fetchall()))")),
+  ).toEqual([[1, 12, '']]);
+  await expectNoViolations(page, violations);
 });
