@@ -24,6 +24,11 @@
   ``{"confirmation_hash", "typed"}`` (the host, typed) confirms it; ``DELETE /api/write/secret-confirmations`` with
   ``{"write_profile_id"}`` revokes it. Without a confirmed pair no secret of the profile is resolved and no unlock
   happens.
+* ``POST /api/write/data-editor/table``: ``{"connection_id", "schema", "table"}``: the Data Editor's table (STU-026,
+  :mod:`tabrion_studio.write.data_editor`): its columns, its primary key, its triggers, rules and row security, read on
+  the unlock's write connection; a view, a partitioned table and a table without a primary key are refused. Its
+  changesets run as plans of the executor ``data_editor.changeset`` through the plan routes above. Only the Data
+  Editor flag opens it and registers the executor; with that flag off it answers 405 like every write route.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -66,6 +71,8 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # STU-XW-4: the I-109 j confirmation of a write or admin secret's pair of server and reference (D-15).
     ("/api/write/secret-confirmations", ("POST", "DELETE")),
     ("/api/write/secret-confirmations/confirm", ("POST",)),
+    # STU-026: the Data Editor's table (columns, primary key, triggers and rules) for its grid; Data Editor flag only.
+    ("/api/write/data-editor/table", ("POST",)),
 )
 
 

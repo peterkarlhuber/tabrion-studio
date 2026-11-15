@@ -1,6 +1,6 @@
-"""A plan executor for the tests of the plan framework (STU-XW-3). Studio itself registers none until the Data Editor
-(STU-026) brings Tabrion's guided write transaction; this one updates or deletes rows of one table by id, with bound
-values and schema-qualified, quoted names, and counts the rows it changed."""
+"""A plan executor for the tests of the plan framework (STU-XW-3), independent of the Data Editor's (STU-026,
+``tests/security/test_data_editor.py``): this one updates or deletes rows of one table by id, with bound values and
+schema-qualified, quoted names, and counts the rows it changed."""
 
 from __future__ import annotations
 

@@ -617,6 +617,35 @@ CATALOG: dict[str, Entry] = {
         "was run.",
         "Preview the change again.",
     ),
+    "studio.plan_target_no_primary_key": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Table has no primary key",
+        "Studio changes rows only of tables with a primary key, and never by an internal row ID.",
+    ),
+    # The Data Editor (STU-026, 03 section 5.2). The whole changeset is rolled back; no value is named (TX-14).
+    "studio.data_editor_conflict": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Row changed meanwhile",
+        "A row you changed or deleted was changed or deleted by someone else since it was loaded. Nothing was "
+        "saved: all changes were rolled back.",
+        "Reload the rows, check them, and make your changes again.",
+    ),
+    "studio.data_editor_rowcount": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Unexpected number of rows",
+        "A change affected another number of rows than one. Nothing was saved: all changes were rolled back.",
+        "Reload the rows and check the table's rules and triggers.",
+    ),
+    "studio.data_editor_value_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Value not valid",
+        "A value does not fit its column's type. Nothing was saved: all changes were rolled back.",
+        "Check the values you entered.",
+    ),
     # The I-109 j confirmation and require_auth (STU-XW-4, D-15, TX-07). W-9: 400 or 405, never 403 or 404.
     "studio.secret_unconfirmed": Entry(
         400,

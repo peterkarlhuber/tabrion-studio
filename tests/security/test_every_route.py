@@ -87,6 +87,7 @@ FAMILIES = (
     "/api/write/audit",
     "/api/write/plans",
     "/api/write/secret-confirmations",
+    "/api/write/data-editor",
 )
 
 
@@ -214,6 +215,7 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/secret-confirmations": "previews a write secret's server and reference; writes nothing (flags)",
     "POST /api/write/secret-confirmations/confirm": "confirms the pair: Studio's state file, audit log (flags)",
     "DELETE /api/write/secret-confirmations": "revokes a pair's confirmation and ends its unlocks (flags)",
+    "POST /api/write/data-editor/table": "reads a table's columns and key on the write connection; no write (flags)",
 }
 
 
