@@ -18,7 +18,9 @@ The switch is read once, when Studio starts, from `write-areas.toml` in Studio's
 else turns it on: no environment variable, project file, setting, URL or profile
 ([How Studio protects your data](security.md#write-areas-are-off-unless-you-turn-them-on)).
 
-1. Use a separate configuration folder for the test, for example with `--state-dir`:
+1. Use a separate configuration folder for the test, for example with `--state-dir`. The folder should not exist
+   yet: an existing folder that other users can write to makes Studio ignore the file, and the area stays off
+   without a message.
 
     ```bash
     mkdir -m 700 -p /tmp/studio-dev/state/config
@@ -47,8 +49,9 @@ The Data Editor never writes through the read profile you browse with. It needs 
 3. Read the note on production credentials and confirm it: Studio relies on the environment you gave the profile and
    cannot tell whether a database is production. Write credentials for a production database do not belong in Studio.
 4. On PostgreSQL, confirm the pair of server and secret reference in the same section before the first unlock
-   (I-109 j). A server that is not on this computer needs TLS mode `verify-full` or `verify-ca`, and SCRAM
-   authentication.
+   (I-109 j). A server that is not on this computer needs TLS mode `verify-full` or `verify-ca`. Every write
+   connection that sends a password uses SCRAM authentication only, also on this computer; a local socket
+   connection can name the expected server user with `requirepeer`.
 
 Write profiles live only in your own `profiles.toml`, never in a project file. On SQLite, the write connection needs
 Python 3.12 or later; on Python 3.11 Studio refuses the unlock (`studio.write_unsupported`).
