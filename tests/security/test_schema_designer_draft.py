@@ -728,6 +728,48 @@ def test_a_column_a_check_names_is_neither_dropped_nor_renamed(designer: Designe
     designer.ok({"op": "drop_column", "table": "parts", "column": "material"})
 
 
+@pytest.mark.parametrize(
+    ("text", "column", "named"),
+    [
+        ("größe > 0", "größe", True),  # review P132-01: a non-ASCII bare name
+        ("länge(größe) > 0", "länge", True),
+        ("_x1$ > 0", "_x1$", True),
+        ("名前 <> ''", "名前", True),
+        ("a > b", "a", True),
+        ("a > b", "c", False),
+        ('"Größe" > 0', "größe", True),
+        ('U&"gr\\00F6\\00DFe" > 0', "anything", True),  # a Unicode-escape name fails closed
+        ('u&"x" > 0', "y", True),
+        ("1 > 0", "x", False),
+        (None, "x", False),
+    ],
+)
+def test_which_texts_may_name_a_column(text: str | None, column: str, named: bool) -> None:
+    from tabrion_studio.write.schema_designer.draft import text_may_name
+
+    assert text_may_name(text, column.casefold()) is named
+
+
+def test_a_column_with_a_non_ascii_name_a_check_names_is_kept(designer: Designer) -> None:
+    """Review P132-01: a check that names a column with a non-ASCII bare name blocks its drop and rename."""
+    assert designer.start().status_code == 201
+    designer.ok({"op": "add_column", "table": "parts", "column": {"name": "größe", "type": "INTEGER"}})
+    designer.ok({"op": "add_constraint", "table": "parts", "constraint": {"kind": "check", "expression": "größe > 0"}})
+    issues = [("edit.column", "edit.column_named_in_text")]
+    _refused(
+        designer.edit({"op": "drop_column", "table": "parts", "column": "größe"}),
+        400,
+        "studio.schema_edit_invalid",
+        issues,
+    )
+    _refused(
+        designer.edit({"op": "rename_column", "table": "parts", "column": "größe", "new_name": "x"}),
+        400,
+        "studio.schema_edit_invalid",
+        issues,
+    )
+
+
 def test_a_referenced_table_and_its_key_are_not_dropped(designer: Designer) -> None:
     assert designer.start().status_code == 201
     designer.ok({"op": "add_table", "table": "orders", "columns": [{"name": "part", "type": "INTEGER"}]})

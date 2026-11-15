@@ -1011,8 +1011,11 @@ flag stays off by default and nothing in STU-CR-4 runs DDL. Each point needs the
    and an add, marked `destructive`, and its data is not carried over. The guide says so; a real rename needs
    support in tabrion's planner.
 3. **Careful refusals:** a column that a check, an index expression, a partial-index condition or a generated column
-   may name (a plain token match, case-insensitive) cannot be dropped or renamed, even when the match is only in a
-   string literal.
+   may name (a plain token match, case-insensitive, Unicode bare names included) cannot be dropped or renamed, even
+   when the match is only in a string literal; a text with a PostgreSQL Unicode-escape name (`U&"..."`) blocks every
+   column of the table. The independent review of #132 accepted STU-CR-4 with one Low finding (P132-01: bare names
+   were matched in ASCII only), fixed in the same PR with regression tests; the review's notes for STU-CR-5: warn
+   that views, triggers and policies are not modelled, and run directly only on DEV and TEST (E-X4).
 4. **Problems carry no names:** a refusal names the field (`edit.table`, `edit.column`, ...) and a fixed code, never
    the table, column or SQL text, so that no user text reaches a problem body or the log.
 5. **The draft lives in memory** for one browser tab (session), bound to the connection and the unlock; it ends with

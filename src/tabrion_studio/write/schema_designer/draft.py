@@ -115,7 +115,12 @@ REFERENTIAL_ACTIONS = frozenset({"CASCADE", "SET NULL", "SET DEFAULT", "RESTRICT
 _SYSTEM_SCHEMA = re.compile(r"pg_.*|information_schema", re.IGNORECASE | re.DOTALL)
 #: An identifier-like token of schema text (a check, a partial-index predicate, an index expression, a generated
 #: column): used only to refuse dropping or renaming a column such a text may name (fail closed), never to change it.
-_TOKEN = re.compile(r'"((?:[^"]|"")*)"|`([^`]*)`|\[([^\]]*)\]|([A-Za-z_][A-Za-z0-9_$]*)')
+# A bare identifier is any Unicode letter or underscore followed by letters, digits, underscores or ``$`` (as
+# PostgreSQL and SQLite accept them); quoted, backtick and bracket names are taken as written (review P132-01).
+_TOKEN = re.compile(r'"((?:[^"]|"")*)"|`([^`]*)`|\[([^\]]*)\]|([^\W\d][\w$]*)')
+# A PostgreSQL Unicode-escape name (``U&"d\0061ta"``) cannot be compared by its text: a text with one may name any
+# column, so the check fails closed.
+_UNICODE_ESCAPE = re.compile(r'(?<![\w$])[Uu]&"')
 _ISSUE_TOKEN = re.compile(r"[a-z_]{1,48}")
 
 
@@ -397,7 +402,15 @@ def _texts_naming(table: TableShape, column: str) -> bool:
         texts.append(index.where)
         texts.extend(index.columns[position] for position in index.expressions if position < len(index.columns))
     texts.extend(c.generation_expression for c in table.columns)
-    return any(wanted in _tokens(text) for text in texts)
+    return any(text_may_name(text, wanted) for text in texts)
+
+
+def text_may_name(text: str | None, wanted: str) -> bool:
+    """Whether ``text`` may name the column ``wanted`` (case-folded): a token match, or any column at all when the text
+    holds a Unicode-escape name it cannot read (fails closed)."""
+    if text and _UNICODE_ESCAPE.search(text):
+        return True
+    return wanted in _tokens(text)
 
 
 def _uses_column(model: _Model, table: TableShape, column: str) -> bool:
