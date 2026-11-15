@@ -18,6 +18,36 @@ All notable changes to this project are documented here. The format follows
   stays bound to its row. `POST /api/write/plans` takes a body up to the plan framework's own 256 KiB cap (it was
   held to the default 16 KiB); with every flag off it still answers 405.
 
+- Pins tabrion 0.3.0.dev0 at the merge commit of tabrion #92 (`71370a6`: adds TAB-XW-5 `execute_plan`, which
+  STU-CR-5 needs, and raises tabrion's psycopg floor to 3.2.3; the Studio lock already has psycopg 3.3.9). Studio uses
+  none of the new names yet.
+
+- STU-ADR-0007 accepted after the independent review of STU-CR-1 (documentation only; G-S3 not granted, no default
+  changes). The record now names the executor signature Studio uses (`execute_plan` with the recorded plan hash,
+  the confirmed source fingerprint, `environment`, `allow`, `server_version` and `concurrent_indexes=False`; Studio's
+  own re-plan is only a pre-check), states that database creation runs on the Schema Designer's write profile with
+  `CREATEDB` (no admin connection; conditions and an owner confirmation at G-S3), that the runtime-role wizard needs
+  the `database_manager` area and G-S4, and that a dry run happens only on the user's explicit request with a notice
+  of its locks and consumed sequence values (new G-S3 row GS3-29). The Schema Designer threat model (TX-29, TX-30,
+  residual risk 1) is aligned.
+
+- STU-CR-2 and STU-CR-3 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off,
+  no default changes): the "New database" wizard on the Connections page. `POST
+  /api/write/schema-designer/create/sqlite` creates a new, empty SQLite file through tabrion's
+  `create_private_file` (mode `0600`, never through a link, never over an existing file or its `-wal`, `-shm` or
+  `-journal` side files, only in a folder of the user's that others cannot write to and that is not Studio's own,
+  with an absolute path ending in `.db`, `.sqlite` or `.sqlite3`; confirmed by the typed file name).
+  `POST /api/write/schema-designer/create/postgresql` creates a database through tabrion's `create_database` on the
+  Schema Designer's unlocked write profile of a `DEV` or `TEST` connection (the stored environment re-checked, PROD
+  refused), with owner, template, encoding and locale, a duplicate check before the statement and the duplicate race
+  mapped, `CREATEDB` and owner refusals as catalog problems with guided steps (no SQL), driver errors only as `db.*`
+  through `safe_message`. Ten new `studio.schema_*` problems in English and German; `run.start` and `run.result`
+  audit records without values or folders. With the flag off both routes answer `405` and import nothing of the
+  area (kill-switch sweep extended). G-S2 decision 1A applies to the wizard's unlock and is checked again at the start
+  of each PostgreSQL creation on the session that runs it (a hit refuses and ends the unlock). The new profile can be saved from the wizard. New tests: security (flag off,
+  PROD, links, folder modes, canaries), PostgreSQL 16, vitest with axe, and Playwright against a real server in light
+  and dark. User guide page "New database (in development)".
+
 - G-S2 granted by the owner on 2026-11-15 with decisions 1A to 7A, for local use on DEV, TEST and STAGE databases
   only: PROD stays technically write-locked, every write area stays off by default and nothing turns one on
   automatically; G-S3, G-S4, H-2 and G-R stay open, nothing is tagged or released. Binding condition: the

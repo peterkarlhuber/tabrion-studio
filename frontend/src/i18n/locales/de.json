@@ -1071,7 +1071,17 @@
     "data_editor_rowcount": "Eine Änderung hat nicht genau eine Zeile betroffen. Es wurde nichts gespeichert.",
     "data_editor_value_invalid": "Ein Wert passt nicht zu seiner Spalte, oder ein Pflichtwert fehlt. Es wurde nichts gespeichert; die betroffenen Zellen sind markiert.",
     "data_editor_constraint": "Die Datenbank hat eine Änderung abgelehnt, weil sie eine Regel der Tabelle verletzt (ein eindeutiger Wert, ein Verweis, NOT NULL oder eine Prüfung). Es wurde nichts gespeichert: Alle Änderungen wurden zurückgerollt. Die betroffene Änderung ist markiert.",
-    "data_editor_column_incomparable": "Eine Spalte dieser Tabelle hat einen Typ, der sich nicht vergleichen lässt (zum Beispiel xml oder point), daher ließe sich eine Änderung durch jemand anderen nicht erkennen. Studio bearbeitet diese Tabelle gar nicht, egal welche Spalten angezeigt werden; bearbeite sie mit einem anderen Werkzeug."
+    "data_editor_column_incomparable": "Eine Spalte dieser Tabelle hat einen Typ, der sich nicht vergleichen lässt (zum Beispiel xml oder point), daher ließe sich eine Änderung durch jemand anderen nicht erkennen. Studio bearbeitet diese Tabelle gar nicht, egal welche Spalten angezeigt werden; bearbeite sie mit einem anderen Werkzeug.",
+    "schema_create_invalid": "Ein Feld der neuen Datenbank fehlt oder ist ungültig; das Feld sagt, welches. Es wurde nichts angelegt.",
+    "schema_create_unconfirmed": "Zum Anlegen den Namen genau wie angezeigt eintippen. Es wurde nichts angelegt.",
+    "schema_create_engine": "Eine PostgreSQL-Datenbank wird auf einer entsperrten PostgreSQL-Verbindung desselben Servers angelegt.",
+    "schema_file_exists": "Eine Datei oder ein Link mit diesem Namen oder eine Nebendatei davon (-wal, -shm, -journal) gibt es schon. Studio überschreibt nie eine Datei; bitte einen anderen Namen wählen.",
+    "schema_folder_unsafe": "Studio legt die Datei in diesem Ordner nicht an: Er fehlt, ist oder führt über einen Link, gehört einem anderen Benutzer, oder andere dürfen darin schreiben. Bitte einen eigenen Ordner mit seinem echten Pfad wählen.",
+    "schema_folder_reserved": "Studio legt keine Datenbanken in seinen eigenen Konfigurations-, Zustands- oder Audit-Ordnern an. Bitte einen anderen Ordner wählen.",
+    "schema_database_exists": "Der Server hat schon eine Datenbank mit diesem Namen. Bitte einen anderen Namen wählen.",
+    "schema_createdb_required": "Die Rolle des Schreibprofils darf auf diesem Server keine Datenbanken anlegen (CREATEDB). Es wurde nichts angelegt.",
+    "schema_owner_missing": "Der Server hat keine Rolle mit dem Namen des Eigentümers. Es wurde nichts angelegt.",
+    "schema_owner_not_allowed": "Die Rolle des Schreibprofils darf nicht als Eigentümerrolle handeln und ihr die Datenbank deshalb nicht geben. Eigentümer leer lassen oder die Administration fragen."
   },
   "keyboard": {
     "palette": {
@@ -1749,6 +1759,79 @@
       "value": "Wert",
       "empty": "(leerer Text)",
       "defaults": "Nicht gesetzte Spalten erhalten ihren Standardwert."
+    }
+  },
+  "createDatabase": {
+    "title": "Neue Datenbank (in Entwicklung)",
+    "lead": "Eine leere SQLite-Datei oder PostgreSQL-Datenbank für Entwicklung und Tests anlegen und danach ein Verbindungsprofil dafür speichern. Studio legt nie eine Datenbank auf einer PROD-Verbindung an und überschreibt nie eine Datei.",
+    "engine": "Art der Datenbank",
+    "engines": {
+      "sqlite": "SQLite-Datei",
+      "postgresql": "PostgreSQL-Datenbank"
+    },
+    "loading": "Wird geladen …",
+    "another": "Weitere Datenbank anlegen",
+    "auditPending": "Der Audit-Eintrag steht noch aus.",
+    "sqlite": {
+      "path": "Dateipfad",
+      "pathHint": "Der vollständige Pfad der neuen Datei, endend auf .db, .sqlite oder .sqlite3.",
+      "rules": "Der Ordner muss vorhanden sein, Ihnen gehören, nur von Ihnen beschreibbar sein und mit seinem echten Pfad (ohne Link) angegeben werden. Studio legt die Datei nur für Sie les- und schreibbar an (0600) und schaltet WAL ein; es überschreibt nie eine Datei.",
+      "type": "{{name}} eintippen, um die Datei anzulegen",
+      "create": "Datei anlegen",
+      "done": "{{path}} angelegt, nur für Sie les- und schreibbar."
+    },
+    "postgres": {
+      "noConnection": "Zuerst mit einem PostgreSQL-Server verbinden: einem eigenen DEV- oder TEST-Profil mit einem Schreibprofil, dessen Rolle Datenbanken anlegen darf.",
+      "connection": "Verbindung",
+      "on": "Auf dem Server von {{name}}.",
+      "unlockLead": "Zum Anlegen einer Datenbank braucht diese Verbindung den Schreibmodus. Schreibprofil wählen und seinen Namen eintippen; die Entsperrung endet nach 15 Minuten ohne Nutzung.",
+      "name": "Datenbankname",
+      "owner": "Eigentümer (optional)",
+      "ownerHint": "Eine Rolle, als die die Rolle des Schreibprofils handeln darf (SET ROLE). Leer: Die Rolle des Schreibprofils ist Eigentümer.",
+      "template": "Vorlage",
+      "templates": {
+        "template1": "template1 (Standard)",
+        "template0": "template0"
+      },
+      "templateHint": "template0, wenn Kodierung oder Locale von template1 abweichen.",
+      "encoding": "Kodierung",
+      "locale": "Locale (optional)",
+      "localeHint": "Zum Beispiel C.UTF-8 oder de_DE.UTF-8. Leer: die Locale der Vorlage.",
+      "type": "{{name}} eintippen, um die Datenbank anzulegen",
+      "create": "Datenbank anlegen",
+      "done": "Datenbank {{name}} angelegt.",
+      "guided": {
+        "lead": "Dieser Server lässt die Rolle des Schreibprofils keine Datenbanken anlegen, wie viele verwaltete Dienste. So richten Sie die Datenbank ein:",
+        "ask": "Die Administration des Servers bitten oder die Konsole des Anbieters nutzen, um die Datenbank anzulegen (Studio zeigt dafür kein SQL).",
+        "profile": "Danach unter Verbindungen ein Verbindungsprofil dafür anlegen und verbinden."
+      }
+    },
+    "profile": {
+      "title": "Verbindungsprofil speichern",
+      "lead": "Studio speichert das Profil in Ihren eigenen Profilen. Wählen Sie die Umgebung, für die es gilt.",
+      "name": "Profilname",
+      "environment": "Umgebung",
+      "environments": {
+        "dev": "DEV",
+        "test": "TEST",
+        "prod": "PROD"
+      },
+      "save": "Profil speichern",
+      "saved": "Profil {{name}} gespeichert. Es steht in der Liste der Verbindungen."
+    },
+    "issues": {
+      "required": "Pflichtfeld.",
+      "type": "Ungültig.",
+      "too_long": "Zu lang.",
+      "control_character": "Enthält ein Steuerzeichen.",
+      "whitespace": "Hat ein Leerzeichen am Anfang oder Ende.",
+      "network_path": "Ein Netzwerk- oder Gerätepfad ist nicht erlaubt.",
+      "not_absolute": "Den vollständigen Pfad ab der Wurzel angeben.",
+      "not_normalized": "Den Pfad ohne '..', '.' oder doppelte Trenner angeben.",
+      "no_file_name": "Der Pfad nennt keine Datei.",
+      "suffix": "Der Dateiname muss auf .db, .sqlite oder .sqlite3 enden.",
+      "choice": "Einen der angebotenen Werte wählen.",
+      "format": "Nicht in der erwarteten Form."
     }
   }
 }

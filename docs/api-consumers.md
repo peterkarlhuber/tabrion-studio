@@ -25,7 +25,7 @@ is used.
 | `tabrion.check.Severity.INFO` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.Severity.WARNING` | `tests/security/test_diagnose_cli.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `tests/security/test_levuvo_migrations.py` |
+| `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
 | `tabrion.errors.Kind` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/services/vectors.py`, `src/tabrion_studio/write/data_editor.py`, `tests/security/test_connection_loss.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
@@ -38,15 +38,19 @@ is used.
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.Kind.UNIQUE` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.Kind.UNKNOWN` | `tests/unit/test_problems.py` |
+| `tabrion.errors.PermissionDenied` | `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.errors.RoleMissing` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.errors.RowCountMismatch` | `src/tabrion_studio/write/data_editor.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py` |
-| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.safe_message` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.postgres` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.ExtensionStatus` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
+| `tabrion.postgres.create_database` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.postgres.extension_status` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.rowedit.delete_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.insert_row` | `src/tabrion_studio/write/data_editor.py` |
@@ -54,8 +58,9 @@ is used.
 | `tabrion.safe_url` | `src/tabrion_studio/services/connections.py` |
 | `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py`, `tests/security/test_definitions.py`, `tests/security/test_read_only.py` |
 | `tabrion.sqlite.JournalMode` | `src/tabrion_studio/write/connection.py` |
-| `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
+| `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
 | `tabrion.sqlite.backup` | `src/tabrion_studio/services/state.py` |
-| `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_drafts.py` |
+| `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py` |
+| `tabrion.sqlite.create_private_file` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.write_transaction` | `src/tabrion_studio/services/state.py` |

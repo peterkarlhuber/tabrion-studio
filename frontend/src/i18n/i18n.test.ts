@@ -30,6 +30,12 @@ const SAME_IN_BOTH = new Set([
   'dataEditor.null',
   // Placeholders only: "{{row}}: {{issue}}" (G-S2 6A).
   'dataEditor.issueAtRow',
+  // STU-CR-3: PostgreSQL's template name, "Locale (optional)" and the environment tags DEV, TEST, PROD (STU-CR-2).
+  'createDatabase.postgres.templates.template0',
+  'createDatabase.postgres.locale',
+  'createDatabase.profile.environments.dev',
+  'createDatabase.profile.environments.test',
+  'createDatabase.profile.environments.prod',
   // Product names and technical terms that German uses as they are (STU-008).
   'connections.engine.sqlite',
   'connections.engine.postgresql',

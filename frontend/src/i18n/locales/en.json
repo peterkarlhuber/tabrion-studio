@@ -1071,7 +1071,17 @@
     "data_editor_rowcount": "A change did not affect exactly one row. Nothing was saved.",
     "data_editor_value_invalid": "A value does not fit its column, or a required value is missing. Nothing was saved; the cells in question are marked.",
     "data_editor_constraint": "The database refused a change because it breaks a rule of the table (a unique value, a reference, NOT NULL or a check). Nothing was saved: all changes were rolled back. The change in question is marked.",
-    "data_editor_column_incomparable": "A column of this table has a type that cannot be compared (for example xml or point), so a change by someone else could not be detected. Studio does not edit this table at all, whichever columns are shown; edit it with another tool."
+    "data_editor_column_incomparable": "A column of this table has a type that cannot be compared (for example xml or point), so a change by someone else could not be detected. Studio does not edit this table at all, whichever columns are shown; edit it with another tool.",
+    "schema_create_invalid": "A field of the new database is missing or not valid; the field says what. Nothing was created.",
+    "schema_create_unconfirmed": "To create the database, type its name exactly as shown. Nothing was created.",
+    "schema_create_engine": "A PostgreSQL database is created on an unlocked PostgreSQL connection of the same server.",
+    "schema_file_exists": "A file or link with this name, or one of its side files (-wal, -shm, -journal), exists already. Studio never overwrites a file; choose another name.",
+    "schema_folder_unsafe": "Studio does not create the file in this folder: it does not exist, is or goes through a link, belongs to another user, or others may write to it. Choose a folder of your own by its real path.",
+    "schema_folder_reserved": "Studio does not create databases in its own configuration, state or audit folders. Choose another folder.",
+    "schema_database_exists": "The server has a database with this name already. Choose another name.",
+    "schema_createdb_required": "The write profile's role may not create databases (CREATEDB) on this server. Nothing was created.",
+    "schema_owner_missing": "The server has no role with the owner's name. Nothing was created.",
+    "schema_owner_not_allowed": "The write profile's role may not act as the owner role, so it cannot give it the database. Leave the owner empty or ask the administrator."
   },
   "keyboard": {
     "palette": {
@@ -1749,6 +1759,79 @@
       "value": "Value",
       "empty": "(empty text)",
       "defaults": "Columns not set get their default."
+    }
+  },
+  "createDatabase": {
+    "title": "New database (in development)",
+    "lead": "Create an empty SQLite file or PostgreSQL database for development and tests, then save a connection profile for it. Studio never creates a database on a PROD connection and never overwrites a file.",
+    "engine": "Kind of database",
+    "engines": {
+      "sqlite": "SQLite file",
+      "postgresql": "PostgreSQL database"
+    },
+    "loading": "Loading …",
+    "another": "Create another database",
+    "auditPending": "The audit record is still pending.",
+    "sqlite": {
+      "path": "File path",
+      "pathHint": "The full path of the new file, ending in .db, .sqlite or .sqlite3.",
+      "rules": "The folder must exist, belong to you and be writable only by you, and be given by its real path (no link). Studio creates the file only you may read and write (0600) and turns on WAL; it never overwrites a file.",
+      "type": "Type {{name}} to create the file",
+      "create": "Create file",
+      "done": "Created {{path}}, readable and writable only by you."
+    },
+    "postgres": {
+      "noConnection": "Connect to a PostgreSQL server first: one of your own DEV or TEST profiles with a write profile whose role may create databases.",
+      "connection": "Connection",
+      "on": "On the server of {{name}}.",
+      "unlockLead": "Creating a database needs this connection's write mode. Choose the write profile and type its name; the unlock ends after 15 minutes without use.",
+      "name": "Database name",
+      "owner": "Owner (optional)",
+      "ownerHint": "A role the write profile's role may act as (SET ROLE). Empty: the write profile's role owns it.",
+      "template": "Template",
+      "templates": {
+        "template1": "template1 (default)",
+        "template0": "template0"
+      },
+      "templateHint": "template0 when the encoding or locale differs from template1's.",
+      "encoding": "Encoding",
+      "locale": "Locale (optional)",
+      "localeHint": "For example C.UTF-8 or en_US.UTF-8. Empty: the template's locale.",
+      "type": "Type {{name}} to create the database",
+      "create": "Create database",
+      "done": "Created the database {{name}}.",
+      "guided": {
+        "lead": "This server does not let the write profile's role create databases, as many managed services do. Set the database up this way:",
+        "ask": "Ask the server's administrator, or use your provider's console, to create the database (Studio shows no SQL for it).",
+        "profile": "Then add a connection profile for it under Connections and connect to it."
+      }
+    },
+    "profile": {
+      "title": "Save a connection profile",
+      "lead": "Studio saves the profile in your own profiles. Pick the environment it is for.",
+      "name": "Profile name",
+      "environment": "Environment",
+      "environments": {
+        "dev": "DEV",
+        "test": "TEST",
+        "prod": "PROD"
+      },
+      "save": "Save profile",
+      "saved": "Saved the profile {{name}}. It is in the list of connections."
+    },
+    "issues": {
+      "required": "Required.",
+      "type": "Not valid.",
+      "too_long": "Too long.",
+      "control_character": "Contains a control character.",
+      "whitespace": "Has a blank at the start or the end.",
+      "network_path": "A network or device path is not allowed.",
+      "not_absolute": "Give the full path, starting at the root.",
+      "not_normalized": "Give the path without '..', '.' or double separators.",
+      "no_file_name": "The path names no file.",
+      "suffix": "The file name must end in .db, .sqlite or .sqlite3.",
+      "choice": "Choose one of the offered values.",
+      "format": "Not in the expected form."
     }
   }
 }
