@@ -153,7 +153,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR; to `28c8839` (merge of tabrion #90) in the STU-CR-1 PR) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR; to `28c8839` (merge of tabrion #90) in the STU-CR-1 PR; to `71370a6` (merge of tabrion #92, TAB-XW-5 `execute_plan`) in the tabrion repin PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |

@@ -7,6 +7,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Pins tabrion 0.3.0.dev0 at the merge commit of tabrion #92 (`71370a6`: adds TAB-XW-5 `execute_plan`, which
+  STU-CR-5 needs, and raises tabrion's psycopg floor to 3.2.3; the Studio lock already has psycopg 3.3.9). Studio uses
+  none of the new names yet.
+
 - G-S2 granted by the owner on 2026-11-15 with decisions 1A to 7A, for local use on DEV, TEST and STAGE databases
   only: PROD stays technically write-locked, every write area stays off by default and nothing turns one on
   automatically; G-S3, G-S4, H-2 and G-R stay open, nothing is tagged or released. Binding condition: the
