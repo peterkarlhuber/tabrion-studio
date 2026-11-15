@@ -1,10 +1,10 @@
 # STU-ADR-0007: Schema Designer: server-side plans, direct DDL only on DEV and TEST, revisions only for Alembic projects
 
-**Status:** proposed (work package STU-CR-1, change request CR-DBX, Studio 1.2). It records owner decisions that are
+**Status:** accepted (work package STU-CR-1, change request CR-DBX, Studio 1.2; the independent review of STU-CR-1
+accepted it on master `4b9fb7c` with conditions A-1..A-4, which this version takes in). It records owner decisions that are
 already binding (E-X3, E-X4 with its refinement, E-X7, E-X9, W-9, D-5 of tabrion ADR 0015 section 10) and the
 conditions tabrion's reviews set for Studio (tabrion contract I-124 a, e, j; ADR 0015 sections 2 to 4), and adds the
-rules that make them testable. It needs the independent review of STU-CR-1 and stays "proposed" until that review
-accepts it. **G-S3 is not granted and this record grants nothing:** the `schema_designer` flag stays off by default,
+rules that make them testable. **G-S3 is not granted and this record grants nothing:** the `schema_designer` flag stays off by default,
 no code of the area exists yet, and no default changes. It builds on [STU-ADR-0006](0006-per-area-write-kill-switches.md)
 (one flag and one gate per area, the PROD lock, write profiles, the kill-switch proof), which applies unchanged. The
 threat model is [Schema Designer threat model](../architecture/schema-designer-threat-model.md) (TX-18..TX-31); the
@@ -21,8 +21,9 @@ from Tabrion, built on SQLAlchemy Core and Alembic operations, not from Studio, 
 schema directly only on DEV and TEST databases without migration management, and writes only revision text for an
 Alembic project. Tabrion's part exists in the pinned commit as experimental (`X`) names: `tabrion.schema` level 2
 (TAB-XW-2), `tabrion.ddl` (TAB-XW-3) and `tabrion.plan` (TAB-XW-4: `plan`, `MigrationPlan`, `revision_text`,
-`migration_markers`). The executor `tabrion.plan.execute_plan` (TAB-XW-5: plan binding, the drift check after the
-locks, dry run, `lock_timeout`, the foreign key check) and the G-T2 review of 0.3 (TAB-XW-10) are still open.
+`migration_markers`) and the executor `tabrion.plan.execute_plan` (TAB-XW-5, tabrion #91 `7c0da1a`, reviewed and
+merged: plan binding, the drift check after the locks, dry run, `lock_timeout`, the foreign key check). Studio pins
+tabrion `71370a6` (merge of tabrion #92), which contains it. The G-T2 review of 0.3 (TAB-XW-10) is still open.
 
 ## Decision
 
@@ -39,7 +40,14 @@ locks, dry run, `lock_timeout`, the foreign key check) and the G-T2 review of 0.
   the flag off (it runs on the read profile's connection, TX-03).
 - G-S3 cannot be granted before the pinned Tabrion has the executor of TAB-XW-5 with the D-5 parts that need a
   connection (D-5.4), independently reviewed (tabrion ADR 0015 section 10: "G-S3 stays locked until the
-  implementation is in place, independently reviewed and tested").
+  implementation is in place, independently reviewed and tested"). Tabrion #91 (`7c0da1a`) delivers it and was
+  accepted; Studio pins a commit that contains it (GS3-P1).
+- Creating a PostgreSQL database (STU-CR-3) runs on the Schema Designer's unlocked **write profile**, whose role needs
+  `CREATEDB`; there is no admin connection in this area (admin profiles unlock only under `database_manager`,
+  STU-ADR-0008). Such a role can create databases it owns and install trusted extensions in them; it gains nothing
+  in existing databases. Conditions (review of #128): a separate role with `CREATEDB` used only for DEV and TEST
+  and the Schema Designer, a `CREATEDB` warning when another area's write profile or a profile on PROD or STAGE has
+  it, and the advice to keep the server up to date. The owner confirms this at G-S3 (GS3-26).
 
 ### 2. Studio builds no DDL and no plan text of its own (E-X3)
 
@@ -75,9 +83,19 @@ locks, dry run, `lock_timeout`, the foreign key check) and the G-T2 review of 0.
    server recorded, never one sent with the request). A different hash refuses the run before anything is sent
    (`400 studio.plan_drift`). The risk classes the executor may run (`allow`) are the classes the user confirmed,
    and they must cover every class of the new plan.
-4. The executor (TAB-XW-5) gets `plan_hash`, `expected_fingerprint` and `environment` (section 5), locks the target
-   tables under `lock_timeout` and checks the fingerprint again in the run's transaction (D-5.4). Its `SchemaDrift`
-   or `PlanMismatch` is `400 studio.plan_drift`, without data.
+4. Studio's own re-plan in step 3 is only a pre-check. The binding check is the executor's: Studio calls
+   `execute_plan(database, target, plan_hash=<the recorded hash>, expected_fingerprint=<the source fingerprint of
+   the confirmed preview>, environment=<"dev" or "test", section 5>, allow=<the confirmed classes>,
+   server_version=<section 9>, concurrent_indexes=False)`. The executor plans again itself inside its transaction
+   (it never takes a plan from the caller), locks the target tables under `lock_timeout` and checks the fingerprint
+   again after the locks (D-5.4). Its `SchemaDrift` or `PlanMismatch` is `400 studio.plan_drift`, without data.
+   Because direct execution allows no non-transactional step, a direct run either commits completely or changes
+   nothing: there is no partial result in this path, and the TB-149 obligations for drops and partial runs apply
+   only to revision output.
+5. **Dry run:** `execute_plan(dry_run=True)` runs the plan and rolls it back. On PostgreSQL it takes the same
+   `ACCESS EXCLUSIVE` locks and advances sequences, which a rollback does not undo. Studio runs a dry run only when
+   the user asks for it explicitly, never automatically, with the same confirmations and unlock as a real run, and
+   with a notice of the locks and of sequence values that stay consumed (GS3-29). It is audited like a run.
 
 ### 5. Two outputs, chosen by the server (E-X4)
 
@@ -185,7 +203,11 @@ fails K-1 again at execution. Studio adds no statement of its own around it.
 
 The runtime-role wizard creates a role and grants it object privileges through the role DDL of Tabrion (TAB-XW-8)
 and therefore follows every role rule of STU-ADR-0008 section 6 (admin profile, attribute ban, checks before and
-after, the TB-149 obligations); it is part of G-S3 and its gate review checks those rules too. The profile export
+after, the TB-149 obligations). Role DDL needs an admin profile, and an admin profile is unlocked only under the
+`database_manager` area. The runtime-role wizard therefore **requires the `database_manager` area and G-S4**: it is
+built with STU-CR-6 but runs only when both flags are on; the Schema Designer adds no admin unlock of its own. (The
+alternative, a separate admin unlock under `schema_designer` with the rules of GS4-11, GS4-12 and GS4-19, is not
+chosen; changing this needs the owner.) The profile export
 writes single-host profiles only (W-10, TB-148): a multi-host profile is refused, never cut short. Write and admin
 secrets are never exported (N-5).
 
@@ -195,8 +217,9 @@ secrets are never exported (N-5).
   it, each behind the `schema_designer` flag with the kill-switch proof of STU-ADR-0006.
 - Studio uses `tabrion.schema` level 2, `tabrion.ddl` and `tabrion.plan`, which are experimental (`X`). A release
   of Studio 1.2 needs them stable (02 section 14 S-2) or an accepted exception, as for `tabrion.rowedit` in 1.1.
-- The executor (TAB-XW-5) and the 0.3 G-T2 review (TAB-XW-10) are preconditions of G-S3; until Studio pins a
-  Tabrion with the executor, no plan of the area can run, even in tests.
+- The executor (TAB-XW-5, pinned since `71370a6`) and the 0.3 G-T2 review (TAB-XW-10) are preconditions of G-S3.
+- Open sizing and retention rules for STU-CR-4 and STU-CR-5 (review info I-1, I-2): a limit for the size of a draft
+  and the number of edits in it, and how long backups made before a run are kept (and how the user removes them).
 - Studio still never runs a migration: direct execution runs one confirmed plan once and keeps no version table.
 
 ## Tests
