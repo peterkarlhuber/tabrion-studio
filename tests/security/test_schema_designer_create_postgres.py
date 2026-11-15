@@ -30,11 +30,16 @@ PG_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES")
 PG_SUPERUSER_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES_SUPERUSER")
 ROUTE = "/api/write/schema-designer/create/postgresql"
 SCHEMA_DESIGNER = WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))
+WITH_DATA_EDITOR = WriteAreas(frozenset({Area.SCHEMA_DESIGNER, Area.DATA_EDITOR}))
 
 
 class Env:
-    def __init__(self, env: WriteEnv, connection_id: str, admin: sqlalchemy.Engine, prefix: str) -> None:
+    def __init__(
+        self, env: WriteEnv, connection_id: str, admin: sqlalchemy.Engine, prefix: str, unlocked: dict[str, Any]
+    ) -> None:
         self.env, self.connection_id, self.admin, self.prefix = env, connection_id, admin, prefix
+        #: The write state the unlock of ``pg-cdb`` answered (its findings and facts).
+        self.unlocked = unlocked
 
     def create(self, name: str, **fields: object) -> Any:
         body = {"connection_id": self.connection_id, "name": name, "typed": name, **fields}
@@ -54,9 +59,10 @@ class Env:
 
 
 @pytest.fixture
-def pg(tmp_path: Path, static_dir: Path) -> Iterator[Env]:
+def pg(tmp_path: Path, static_dir: Path, request: pytest.FixtureRequest) -> Iterator[Env]:
     """``<p>_cdb`` (CREATEDB, member of ``<p>_mine``), ``<p>_plain`` (no CREATEDB), ``<p>_mine`` and ``<p>_other``
-    (NOLOGIN owners); a write profile for each login role coupled to a read profile of the test database."""
+    (NOLOGIN owners); a write profile for each login role coupled to a read profile of the test database. The areas
+    are the Schema Designer's, or the indirect parameter's."""
     if PG_URL is None or PG_SUPERUSER_URL is None:
         pytest.skip("TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed")
     prefix = f"stucr3_{secrets.token_hex(4)}"
@@ -74,7 +80,7 @@ def pg(tmp_path: Path, static_dir: Path) -> Iterator[Env]:
             f'GRANT CONNECT ON DATABASE "{url.database}" TO {prefix}_cdb, {prefix}_plain',
         ):
             connection.exec_driver_sql(statement)
-    env = WriteEnv(tmp_path, static_dir, SCHEMA_DESIGNER)
+    env = WriteEnv(tmp_path, static_dir, getattr(request, "param", SCHEMA_DESIGNER))
     read = {
         "name": "pg",
         "engine": "postgresql",
@@ -100,9 +106,10 @@ def pg(tmp_path: Path, static_dir: Path) -> Iterator[Env]:
         assert secret.status_code == 204
         assert env.confirm_pair(f"write:pg-{role}").status_code == 200
     connection_id = env.open("user:pg")
-    assert env.unlock(connection_id, "write:pg-cdb", "pg-cdb").status_code == 200
+    unlocked = env.unlock(connection_id, "write:pg-cdb", "pg-cdb")
+    assert unlocked.status_code == 200, unlocked.text
     try:
-        yield Env(env, connection_id, admin, prefix)
+        yield Env(env, connection_id, admin, prefix, unlocked.json())
     finally:
         env.close()
         with admin.connect() as connection:
@@ -136,6 +143,22 @@ def test_a_database_is_created_with_an_owner_the_role_may_become(pg: Env) -> Non
     assert result["result"] == "committed" and result["run"] == start["run"]
     # No owner, locale or statement in the audit log (names, codes and counts only).
     assert f"{pg.prefix}_mine" not in str(runs) and "CREATE" not in str(runs)
+
+
+@pytest.mark.parametrize(
+    ("pg", "warned"),
+    [(SCHEMA_DESIGNER, False), (WITH_DATA_EDITOR, True)],
+    ids=["schema_designer", "data_editor_too"],
+    indirect=["pg"],
+)
+def test_createdb_is_a_warning_where_the_data_editor_may_use_the_role(pg: Env, warned: bool) -> None:
+    """Open point 1 of the PR #128 review (b): a write role with CREATEDB is reported as ``admin.createdb`` (a
+    warning) when the Data Editor's flag is on too, since the same unlock then edits rows; for the Schema Designer
+    alone on DEV it is the fact only. Either way nothing is refused."""
+    assert pg.unlocked["facts"]["createdb"] is True
+    found = [f for f in pg.unlocked["findings"] if f["code"] == "admin.createdb"]
+    assert found == ([{"code": "admin.createdb", "via": "direct", "severity": "warning"}] if warned else [])
+    assert pg.create(f"{pg.prefix}_warned").status_code == 201
 
 
 def test_without_an_owner_the_role_owns_it_and_a_name_that_needs_quoting_works(pg: Env) -> None:

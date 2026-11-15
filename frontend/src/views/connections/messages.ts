@@ -127,6 +127,7 @@ const PROBLEMS = new Set([
   'schema_file_exists',
   'schema_folder_unsafe',
   'schema_folder_reserved',
+  'schema_create_platform',
   'schema_database_exists',
   'schema_createdb_required',
   'schema_owner_missing',

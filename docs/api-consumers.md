@@ -56,6 +56,5 @@ is used.
 | `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
 | `tabrion.sqlite.backup` | `src/tabrion_studio/services/state.py` |
 | `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py` |
-| `tabrion.sqlite.create_private_file` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.write_transaction` | `src/tabrion_studio/services/state.py` |

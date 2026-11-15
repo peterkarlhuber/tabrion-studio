@@ -224,7 +224,8 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
   it.each([
     ['studio.schema_folder_unsafe', 'Studio does not create the file in this folder'],
     ['studio.schema_file_exists', 'Studio never overwrites a file'],
-    ['studio.schema_folder_reserved', 'its own configuration, state or audit folders'],
+    ['studio.schema_folder_reserved', "the project's .tabrion folder"],
+    ['studio.schema_create_platform', 'On Windows Studio does not create SQLite files yet'],
   ])('shows %s with its own text, never the server text', async (code, text) => {
     const user = userEvent.setup();
     setup({ sqlite: { status: 400, body: { code, detail: 'SERVER-TEXT-CANARY' } } });

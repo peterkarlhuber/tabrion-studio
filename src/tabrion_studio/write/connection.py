@@ -64,6 +64,11 @@ role:
   ``pg_execute_server_program``, ``pg_read_server_files`` and ``pg_write_server_files`` are superuser-equivalent
   (``dangerous``); every other one, ``pg_read_all_data`` and ``pg_write_all_data`` among them, is a ``warning``.
 
+``admin.createdb`` (``warning``, :func:`createdb_findings`): CREATEDB, held directly or through a reachable role, on
+an unlock that does not need it: a ``kind="write"`` unlock while the Data Editor's flag is on (the same role then
+edits rows too), and any unlock outside DEV and TEST. The Schema Designer on DEV or TEST needs CREATEDB, so there it
+is the fact ``createdb`` only (open point 1 of the PR #128 review: accepted, with a separate role recommended).
+
 The only role names a finding carries are those of predefined roles (fixed names of PostgreSQL); a role of the
 database's own is never named.
 
@@ -124,6 +129,7 @@ __all__ = [
     "WRITE_SEARCH_PATH",
     "WriteConnection",
     "WriteError",
+    "createdb_findings",
     "defensive_available",
     "file_identity",
     "open_write_connection",
@@ -168,6 +174,8 @@ SERVER_FILE_ROLES = frozenset({"pg_execute_server_program", "pg_read_server_file
 WRITE_REFUSING_FINDINGS = frozenset(
     {"admin.superuser", "admin.bypassrls", "admin.replication"} | {f"admin.broad:{role}" for role in SERVER_FILE_ROLES}
 )
+#: The environments where the Schema Designer creates databases, so a write role with CREATEDB there is expected.
+CREATEDB_ENVIRONMENTS = frozenset({"dev", "test"})
 #: PostgreSQL ``FirstNormalObjectId``: every predefined role has a smaller oid.
 FIRST_NORMAL_OBJECT_ID = 16384
 #: The first PostgreSQL version (``server_version_num``) where CREATEROLE no longer reaches almost every role (D-1).
@@ -308,13 +316,14 @@ def privilege_findings(
     """
     reachable = 0
     owned = 0
-    createdb = False
+    createdb: str | None = None
     held: dict[str, str] = {}
     broad: dict[str, str] = {}
     for own, superuser, bypassrls, createrole, replication, can_createdb, databases, predefined, member, oid in rows:
         reachable += 0 if own else 1
         owned += int(databases or 0)
-        createdb = createdb or bool(can_createdb)
+        if can_createdb and createdb != "direct":
+            createdb = "direct" if own else "inherited"
         for name, value in zip(DANGEROUS_ATTRIBUTES, (superuser, bypassrls, createrole, replication), strict=True):
             if value:
                 if own:
@@ -330,7 +339,8 @@ def privilege_findings(
     facts = {
         "reachable_roles": reachable,
         "owned_databases": owned,
-        "createdb": createdb,
+        "createdb": createdb is not None,
+        "createdb_via": createdb,
         "server_version": server_version,
     }
     findings = [
@@ -346,6 +356,21 @@ def privilege_findings(
         severity = "dangerous" if role in SERVER_FILE_ROLES else "warning"
         findings.append({"code": f"admin.broad:{role}", "via": broad[role], "severity": severity})
     return facts, findings
+
+
+def createdb_findings(
+    facts: dict[str, Any], *, kind: str, environment: str, data_editor_on: bool
+) -> list[dict[str, str]]:
+    """``admin.createdb`` (``warning``, never refusing) for a role with CREATEDB, held directly or through a reachable
+    role, where Studio does not need it: a ``kind="write"`` unlock that the Data Editor may use too (its flag is on),
+    and any unlock outside DEV and TEST (open point 1 of the PR #128 review, condition b). The Schema Designer on
+    DEV or TEST needs CREATEDB, so there it is a fact only; a separate role for it is recommended (security guide)."""
+    via = facts.get("createdb_via")
+    if not facts.get("createdb") or not isinstance(via, str):
+        return []
+    if environment in CREATEDB_ENVIRONMENTS and not (kind == "write" and data_editor_on):
+        return []
+    return [{"code": "admin.createdb", "via": via, "severity": "warning"}]
 
 
 def refusing_findings(findings: list[dict[str, str]]) -> list[str]:
