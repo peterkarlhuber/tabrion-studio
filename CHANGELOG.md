@@ -1091,9 +1091,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
-- A configuration file nested deeper than 64 arrays or inline tables is refused (`config.too_deep`) before the TOML
-  parser runs, so the parser no longer recurses to the interpreter's limit, where a finalizer run by the garbage
-  collector (an event loop's) failed with its own `RecursionError` (seen in CI on Windows, Python 3.13).
+- A configuration file nested deeper than 64 levels (arrays, inline tables and the segments of dotted keys and table
+  headers) is refused (`config.too_deep`) before the TOML parser runs, so the parser no longer recurses to the
+  interpreter's limit, where a finalizer run by the garbage collector (an event loop's) failed with its own
+  `RecursionError` (seen in CI on Windows, Python 3.13).
 - The data viewer and the SQL editor show an array of dates, decimals, UUIDs, times, intervals, bytes or non-finite
   floats item by item, each as it is shown alone; such a table or result answered 500 before (review I-3 of #120).
 - TABRION QA-7: `scripts/check_tabrion_api.py --surface` no longer reports a `__x__` name such as

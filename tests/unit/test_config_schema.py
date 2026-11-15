@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 import tomllib
 from typing import Any
@@ -330,19 +331,33 @@ def test_deeply_nested_toml_is_too_deep_not_a_crash() -> None:
     assert caught.value.code in ("config.too_deep", "config.syntax")
 
 
+def _path(segments: int, name: str = "a") -> str:
+    return ".".join([name] * segments)
+
+
 def test_too_deep_toml_never_reaches_the_recursive_parser(monkeypatch: pytest.MonkeyPatch) -> None:
     """A file nested deeper than ``MAX_NESTING`` is refused before tomllib runs, so the parser never recurses to the
     interpreter's limit, where a finalizer the garbage collector runs (an event loop's ``__del__``) failed with its
-    own RecursionError (CI on Windows, Python 3.13)."""
+    own RecursionError (CI on Windows, Python 3.13). Dotted keys and table headers nest as deep as brackets do
+    (review L-2 of #120: tomllib recurses once per segment, RecursionError from about 1000 on 3.13)."""
 
     def parser(text: str) -> dict[str, Any]:
         raise AssertionError("tomllib must not run")
 
     monkeypatch.setattr(tomllib, "loads", parser)
-    for nested in (b"x = " + b"[" * 900 + b"]" * 900, b"x = " + b"{a = " * 65 + b"1" + b"}" * 65):
+    nested = [
+        "x = " + "[" * 900 + "]" * 900,
+        "x = " + "{a = " * 65 + "1" + "}" * 65,
+        f"{_path(1000)} = 1",
+        f"[{_path(1000)}]",
+        f"[[{_path(1000)}]]",
+        "x = " + "{a.b = " * 33 + "1" + "}" * 33,
+        f"[{_path(40, 't')}]\n{_path(30, 'k')} = 1",
+    ]
+    for text in nested:
         with pytest.raises(ConfigFileError) as caught:
-            parse_toml(nested)
-        assert caught.value.code == "config.too_deep"
+            parse_toml(text.encode())
+        assert caught.value.code == "config.too_deep", text[:40]
 
 
 @pytest.mark.parametrize(
@@ -357,19 +372,58 @@ def test_too_deep_toml_never_reaches_the_recursive_parser(monkeypatch: pytest.Mo
         ('x = "\\\\"\ny = [[1]]', 2),
         ('x = """a"""""\ny = [1]', 1),
         ('x = "unclosed [[[[', 0),
+        # The dots of a key, of the table header and of the keys that hold an open bracket or brace count.
+        ("a.b.c = 1", 2),
+        ("[a.b]\nc.d = 1", 3),
+        ("[[a.b]]\nc = 1", 3),
+        ("x.y = {a.b = {c = [1]}}", 5),
+        # A dot in a quoted key, a value or a comment does not.
+        ("\"a.b.c\".d = 1\n['x.y.z']", 1),
+        ("x = 1.5\ny = [2.25, {a = 3.5}]", 2),
+        ("x = [1,\n  2.5] # a.b.c\na.b = 1", 1),
     ],
 )
-def test_the_nesting_scan_skips_comments_and_strings(text: str, nesting: int) -> None:
+def test_the_nesting_scan_skips_comments_strings_and_values(text: str, nesting: int) -> None:
     assert files_module._nesting(text) == nesting
 
 
-def test_the_deepest_allowed_nesting_parses() -> None:
+@pytest.mark.parametrize(
+    "file",
+    [
+        lambda depth: "x = " + "[" * depth + "]" * depth,
+        lambda depth: _path(depth + 1) + " = 1",
+        lambda depth: f"[{_path(depth)}]",
+        lambda depth: f"[[{_path(depth - 1)}]]",
+    ],
+)
+def test_the_deepest_allowed_nesting_parses(file: Callable[[int], str]) -> None:
     deepest = files_module.MAX_NESTING
-    assert parse_toml(b"x = " + b"[" * deepest + b"]" * deepest)["x"] is not None
-    with pytest.raises(ConfigFileError):
-        parse_toml(b"x = " + b"[" * (deepest + 1) + b"]" * (deepest + 1))
+    assert parse_toml(file(deepest).encode())
+    with pytest.raises(ConfigFileError) as caught:
+        parse_toml(file(deepest + 1).encode())
+    assert caught.value.code == "config.too_deep"
+
+
+def test_quoted_keys_with_dots_are_one_level_each() -> None:
+    dotted = "." * 1000
+    assert parse_toml(f'"{dotted}" = 1\n["{dotted}x"]\n\'{dotted}\'.b = 2'.encode()) == {
+        dotted: 1,
+        dotted + "x": {dotted: {"b": 2}},
+    }
 
 
 def test_the_nesting_scan_is_linear_on_hostile_text() -> None:
-    for text in ('"' * 256_000, '"""' + "x\\" * 100_000, "'''" * 80_000, '"\\' * 120_000, "[" * 256_000):
+    hostile = (
+        '"' * 256_000,
+        '"""' + "x\\" * 100_000,
+        "'''" * 80_000,
+        '"\\' * 120_000,
+        "[" * 256_000,
+        "a." * 128_000,
+        "x = [" + "1.5," * 60_000 + "]",
+        "\n" * 256_000,
+        "," * 256_000,
+        "x = [" + "{}," * 80_000 + "]",
+    )
+    for text in hostile:
         files_module._nesting(text)  # a quadratic scan would take minutes here
