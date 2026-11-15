@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-2 and STU-CR-3 follow-up (review conditions of PR #128, all before G-S3; still in development, locked by
+  G-S3, the `schema_designer` flag stays off, no default changes). SQLite creation: the file is created relative to
+  the folder Studio checked and holds open (`O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`), and before and after the header is
+  written Studio checks that the path still leads to that folder and to the file it created (device and inode);
+  every folder above the target folder must belong to root or the user and not be writable by group or others
+  unless it has the sticky bit (like OpenSSH's `StrictModes`); Studio's own folders are compared by device and inode
+  (the folder and every folder above it), and the log folder and the project's `.tabrion` folder are added; a space
+  other than U+0020 (Unicode `Zs`) and the line and paragraph separators are refused in file, database and owner
+  names; on Windows no SQLite file is created (new problem `studio.schema_create_platform`, English and German),
+  because Studio does not check a folder's access control list there. PostgreSQL: the warning finding
+  `admin.createdb` (never a refusal) on a write unlock whose role has `CREATEDB` while the Data Editor's flag is on,
+  and on any unlock outside DEV and TEST; the guides recommend a separate `CREATEDB` role for the Schema Designer on
+  DEV and TEST only and an up-to-date server. New regression tests in `test_schema_designer_create.py`,
+  `test_schema_designer_create_postgres.py` and `test_write_privileges.py`.
+
 - STU-CR-2 and STU-CR-3 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off,
   no default changes): the "New database" wizard on the Connections page. `POST
   /api/write/schema-designer/create/sqlite` creates a new, empty SQLite file through tabrion's

@@ -156,6 +156,14 @@
 > unlocked write profile of a DEV or TEST connection). With the flag off both routes answer 405 and import nothing
 > of the area. Uses tabrion `create_private_file` and `postgres.create_database` (API export updated). Open: see
 > [STU-CR-2 and STU-CR-3 open points](#stu-cr-2-and-stu-cr-3-open-points).
+>
+> PR #128 review (merged as `4b9fb7c`): **ACCEPTED with conditions** (`reviews/pr128-stucr23-review.md`): Low P128-01
+> and P128-02, Info P128-03, all to be closed before G-S3. Closed in the follow-up (branch
+> `claude/project-thread-rdo6g3-p128fix`, draft PR): the SQLite file is created relative to the held folder and
+> checked by device and inode before it is opened, the folders above it are checked like OpenSSH's `StrictModes`,
+> Studio's own folders (now with the log folder and the project's `.tabrion`) are compared by device and inode, no
+> space other than U+0020 in names, the `admin.createdb` warning, and no SQLite creation on Windows. SQLite creation
+> no longer uses tabrion `create_private_file` (API export updated).
 
 ## Summary
 
@@ -633,7 +641,8 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | STU-XW hardening: notes N-1, N-2, N-4 of the PR #116 review, I-1 consistency with tabrion #77 D-2 | TABRION STU-XW-1, STU-XW-2, STU-XW-4 | G-S2 | Done (PR #117, merged `def79f9`, and the host-list fix M-1 in PR #118, merged `c5c29d2`; reviews accepted, `reviews/pr117-stuxwh-review.md`, `reviews/pr118-hostfix-review.md`): N-1 the audit log and `write-secret-confirmations.json` in the folder of `write-areas.toml` (`--config-dir`, `<--state-dir>/config` or the platform's), a state folder from `TABRION_STUDIO_STATE_DIR` neither read nor written (`studio.write_state_ignored`; process test with a planted confirmation and log); N-2 `require_auth=scram-sha-256` for every connection that sends a password (loopback and socket included) and the optional write profile key `requirepeer` (the server's OS user, Unix socket only, part of the confirmed pair, form field en/de); N-4 the guide says every PostgreSQL write profile needs the pair confirmation and a changed pair a new one; I-1 `privilege_findings` checks the OID below 16384 as well as the `pg_` name (unit test with a mocked catalog, PostgreSQL test with a role renamed to `pg_like_*`). Every area stays off |
 | 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Done, locked by G-S2: STU-026 (PR #119, merged `40958d0`, tabrion 0.3.0.dev0 pin `72e2d03`), STU-XDE-1 (PR #120, merged `a18b3f5`) and STU-XDE-2 (PR #122, merged `3af4b79`), each review accepted (`reviews/pr119-stu026-review.md`, `pr120-stuxde1-review.md`, `pr122-stuxde2-review.md`); the first plan executor (`data_editor.changeset`) and the `PlanReview`/`ChangesetReview` UI behind the default-off `data_editor` flag. Readiness for the gate: [G-S2 readiness](#g-s2-readiness) below |
 | 1.2 | Schema Designer: threat model, ADR, G-S3 definition | TABRION STU-CR-1 | G-S3 | Drafted (branch `claude/project-thread-rdo6g3-crxdm1`, documentation only; needs its independent review): [STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md), [Schema Designer threat model](architecture/schema-designer-threat-model.md) TX-18..TX-31, [G-S3 definition](architecture/security-review-prep.md#g-s3-definition-schema-designer) GS3-P1..P4, GS3-01..28 |
-| 1.2 | Wizards: create a SQLite file and a PostgreSQL database (Tabrion `create_private_file`, `create_database`; TX-29) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr23`, draft PR; needs its independent review, and STU-CR-1 is still to be accepted): the "New database" wizard on the Connections page, routes `POST /api/write/schema-designer/create/sqlite` and `/create/postgresql`, ten `studio.schema_*` problems, guide page [New database](guide/new-database.md). Evidence: GS3-01 (kill-switch sweep and import check), GS3-02 (the other flags, query and header), GS3-03 (PROD per route), GS3-20, GS3-21, GS3-28 (decision 1A at the unlock and at each run) in `tests/security/test_schema_designer_create.py` and `test_schema_designer_create_postgres.py`; driver errors only through `safe_message`. Open: [STU-CR-2 and STU-CR-3 open points](#stu-cr-2-and-stu-cr-3-open-points) |
+| 1.2 | Wizards: create a SQLite file and a PostgreSQL database (Tabrion `create_private_file`, `create_database`; TX-29) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Built, locked by G-S3 (PR #128, merged `4b9fb7c`; review ACCEPTED with conditions, `reviews/pr128-stucr23-review.md`: Low P128-01, P128-02, Info P128-03, closed in the follow-up row below; STU-CR-1 is still to be accepted): the "New database" wizard on the Connections page, routes `POST /api/write/schema-designer/create/sqlite` and `/create/postgresql`, ten `studio.schema_*` problems, guide page [New database](guide/new-database.md). Evidence: GS3-01 (kill-switch sweep and import check), GS3-02 (the other flags, query and header), GS3-03 (PROD per route), GS3-20, GS3-21, GS3-28 (decision 1A at the unlock and at each run) in `tests/security/test_schema_designer_create.py` and `test_schema_designer_create_postgres.py`; driver errors only through `safe_message`. Open: [STU-CR-2 and STU-CR-3 open points](#stu-cr-2-and-stu-cr-3-open-points) |
+| 1.2 | STU-CR-2/3 follow-up: review conditions of PR #128 (all before G-S3) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Done (branch `claude/project-thread-rdo6g3-p128fix`, draft PR; not reviewed yet): [x] P128-01 (Low) the SQLite file is created with `os.open(..., dir_fd=<held folder>)`, `O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`, and before and after the header the folder's device, inode and real path, the folders above it and the file's device and inode (by the path and in the held folder) are checked again; every folder above the target must belong to root or the user and not be writable by group or others unless sticky (`StrictModes`); [x] P128-02 (Low) Studio's own folders compared by device and inode for the folder and every folder above it, the log folder and the project's `.tabrion` folder added; [x] P128-03 (Info) and open point 7: Unicode `Zs` other than U+0020, `Zl` and `Zp` refused in the file name and in database and owner names (`create.control_character`); [x] open point 1 (a)-(c): the guides recommend a separate CREATEDB role for the Schema Designer on DEV/TEST and an up-to-date server, and the warning `admin.createdb` (never refusing) on a write unlock while the Data Editor's flag is on and on any unlock outside DEV/TEST; [x] open point 5: Windows is excluded, SQLite creation there answers `400 studio.schema_create_platform` (an ACL check of owner and DACL was not small enough for this follow-up; it can replace the exclusion later). Evidence GS3-21, GS3-28 in [security-review-prep](architecture/security-review-prep.md#g-s3-definition-schema-designer). Still open before G-S3: the STU-CR-1 review |
 | 1.2 | Designer for tables, columns, constraints, indexes: the server-side draft and its edit operations on `tabrion.schema` level 2 | TABRION STU-CR-4 | G-S3 | Open; needs STU-CR-1. Acceptance: GS3-09, GS3-13 (`server_version` on every `plan` call), STU-ADR-0007 sections 2 and 3 |
 | 1.2 | Plan preview, confirmation per risk class, re-plan and hash compare, direct execution through `execute_plan`, backup before destructive runs, the I-124 preview warnings | TABRION STU-CR-5 | G-S3 | Open; needs STU-CR-4 and a Tabrion pin with TAB-XW-5 (GS3-P1, GS3-P2). Acceptance: GS3-03..05, GS3-09..20 |
 | 1.2 | Runtime-role wizard and profile export (single-host only, W-10, TB-148) | TABRION STU-CR-6 | G-S3 | Open; needs STU-CR-3, STU-XW-4. Acceptance: GS3-22 (the role rules GS4-12..GS4-19 that apply), TX-30 |
@@ -942,19 +951,26 @@ Open decisions for the owner (none is implemented ahead of its gate):
 
 Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stucr23`). **G-S3 is not granted;** the `schema_designer`
 flag stays off by default. Where STU-ADR-0007 or TX-29 left a point open, the build takes the safest reading; each
-needs the independent review or the owner:
+needs the independent review or the owner.
 
-1. **Write profile, not admin profile.** TX-29 speaks of the "admin connection"; an admin profile unlocks only under
+**Review result (PR #128, `reviews/pr128-stucr23-review.md`): ACCEPTED with conditions**, Low P128-01 and P128-02,
+Info P128-03; G-S3, H-2 and G-R are not granted by it. Outcome of the open points: 1 accepted with conditions (a)-(c),
+done in the follow-up; 2, 3, 4, 8, 9, 10, 11, 12 and 13 accepted; 5 accepted with the flag off, Windows now
+excluded (done); 6 changed to the comparison by device and inode with the log folder added (P128-02, done); 7
+accepted with the `Zs` characters added (P128-03, done). The review also requires the STU-CR-1 review to be closed
+before G-S3 (open).
+
+1. [x] **Write profile, not admin profile.** (accepted with conditions (a)-(c), done) TX-29 speaks of the "admin connection"; an admin profile unlocks only under
    `database_manager` (STU-ADR-0006, `KIND_AREAS`), so the PostgreSQL creation runs on the Schema Designer's unlocked
    **write** profile, whose role needs `CREATEDB`. The owner confirms this or moves the creation to G-S4.
 2. **SQLite has no unlock.** There is no connection to unlock before the file exists; the safeguards are the flag,
    the typed file name, the folder checks, `0600` and the audit records.
 3. **File name endings** limited to `.db`, `.sqlite` and `.sqlite3`.
 4. **No link anywhere on the folder path** (the real path is compared): macOS `/tmp` is refused; use `/private/tmp`.
-5. **The folder** must belong to the user and have no group or world write bit (POSIX); on Windows only the link
+5. [x] (Windows excluded: `studio.schema_create_platform`) **The folder** must belong to the user and have no group or world write bit (POSIX); on Windows only the link
    checks apply and the folder's access list decides.
-6. **Studio's own folders** (configuration, state with the trust records, and the audit folder) are refused.
-7. **Database and owner names** are stricter than tabrion's: no control or format characters, no blank at either
+6. [x] (now by device and inode, with the log folder and the project's `.tabrion`) **Studio's own folders** (configuration, state with the trust records, and the audit folder) are refused.
+7. [x] (`Zs` other than U+0020, `Zl`, `Zp` added) **Database and owner names** are stricter than tabrion's: no control or format characters, no blank at either
    end, at most 63 bytes; the encoding and locale are checked against a plain pattern before tabrion.
 8. **DEV and TEST only:** besides `require_unlock`'s PROD lock, the route accepts only a stored environment of `dev`
    or `test` (a second lock for an unknown environment).
