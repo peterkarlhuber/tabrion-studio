@@ -1089,7 +1089,13 @@
     "schema_draft_limit": "Der Entwurf würde eine Grenze des Schema-Designers überschreiten (Tabellen, Spalten, Constraints und Indizes, Änderungen oder Größe). Es wurde nichts geändert.",
     "schema_edit_invalid": "Die Änderung ist nicht gültig. Der Entwurf wurde nicht geändert.",
     "schema_plan_refused": "Tabrion lehnt es ab, diese Änderung zu planen. Daran führt kein Weg vorbei; die Tabelle unverändert lassen oder eigene Migrationswerkzeuge verwenden.",
-    "schema_model_invalid": "Tabrion kann die Änderung so nicht machen. Bitte Typ, Texte und Namen prüfen."
+    "schema_model_invalid": "Tabrion kann die Änderung so nicht machen. Bitte Typ, Texte und Namen prüfen.",
+    "schema_run_not_allowed": "Studio führt diesen Plan nicht direkt aus (Grund siehe unten). Es wurde nichts geändert.",
+    "schema_backup_required": "Dieser Plan braucht vor dem Ausführen eine Sicherung. Nur bei DEV kann sie weggelassen werden.",
+    "schema_backup_failed": "Die Sicherung vor dem Ausführen ließ sich nicht anlegen, deshalb wurde nichts ausgeführt. Bitte freien Platz und Sicherungsordner prüfen.",
+    "schema_run_check_failed": "Eine Prüfung vor dem Commit ist fehlgeschlagen (siehe unten). Der Lauf wurde zurückgerollt; es wurde nichts geändert.",
+    "schema_run_outcome_unknown": "Ob der Lauf festgeschrieben wurde, ist unbekannt (die Verbindung brach beim Commit ab). Bitte zuerst die Datenbank prüfen.",
+    "schema_run_failed": "Der Lauf ist fehlgeschlagen und wurde zurückgerollt; es wurde nichts geändert."
   },
   "keyboard": {
     "palette": {
@@ -1980,13 +1986,15 @@
       "ddl_identifier_too_long": "Ein Name ist länger, als die Datenbank erlaubt.",
       "ddl_unsupported_feature": "Die Tabelle hat eine Spalte oder ein Element, das Tabrion nicht schreiben kann (zum Beispiel eine Identity- oder generierte Spalte).",
       "ddl_invalid_shape": "Ein Teil der Tabelle ist nicht gültig.",
-      "other": "Von Tabrion abgelehnt ({{code}})."
+      "other": "Von Tabrion abgelehnt ({{code}}).",
+      "table": "Tabelle: {{name}}",
+      "tableUnknown": "Eine Tabelle, die nicht im Entwurf ist."
     },
     "previewTitle": "Plan",
     "previewEmpty": "Der Entwurf entspricht der Datenbank: es gibt nichts zu ändern.",
     "previewSteps_one": "Tabrion plant {{count}} Schritt.",
     "previewSteps_other": "Tabrion plant {{count}} Schritte.",
-    "previewNotRun": "Das ist eine Vorschau: von hier aus wird nichts ausgeführt.",
+    "previewNotRun": "Nichts wird ausgeführt, bevor du den Plan bestätigst und ausführst.",
     "baseChanged": "Die Datenbank hat sich geändert, seit der Entwurf begonnen hat. Der Plan macht auch rückgängig, was sich seither geändert hat, etwa eine inzwischen hinzugefügte Tabelle.",
     "planHash": "Plan-Hash",
     "sourceFingerprint": "Fingerabdruck der Datenbank",
@@ -2019,6 +2027,55 @@
       "rebuild": "Neuaufbau",
       "locking": "sperrt die Tabelle",
       "non_transactional": "außerhalb der Transaktion"
+    },
+    "warningsTitle": "Vor dem Ausführen",
+    "warnings": {
+      "not_modelled": "Der Entwurf zeigt keine Views, Trigger, Row-Security-Policies und anderen Objekte der Datenbank. Prüfe sie selbst: Der Plan kann sie ablehnen oder betreffen.",
+      "pg_dependent_code": "PostgreSQL verfolgt Funktionen und anderen Code nicht, der Tabelle {{table}} verwenden kann. Bitte diesen Code selbst prüfen.",
+      "function_drift": "Geänderte Funktionen gehören nicht zum Fingerabdruck; eine Änderung seit der Vorschau wird daher nicht erkannt.",
+      "sqlite_rowid": "Tabelle {{table}} wird neu aufgebaut und hat keinen INTEGER PRIMARY KEY: Ihre rowid-Werte können sich ändern.",
+      "fingerprint_gaps": "Der Fingerabdruck deckt nicht alles ab (etwa Zeilen, Funktionen und Rechte). Eine Änderung dort wird nicht als Abweichung erkannt.",
+      "locking": "Ein Schritt sperrt seine Tabelle. Der Lauf wartet höchstens {{seconds}} s auf die Sperre und bricht dann ohne Änderung ab."
+    },
+    "blockedTitle": "Studio führt diesen Plan nicht aus",
+    "blockedLead": "Für diese Änderung bitte die eigenen Migrationswerkzeuge verwenden.",
+    "reasons": {
+      "nothing_to_run": "Es gibt nichts auszuführen.",
+      "environment": "Pläne laufen direkt nur bei DEV und TEST.",
+      "migration_managed": "Die Datenbank hat eine Migrations-Versionstabelle (Alembic, Nodestro, Axentra) oder eine SQLite-user_version: Migrationen verwalten sie.",
+      "levuvo_managed": "Die Datenbank hat eine Levuvo-Versionstabelle (auch die von Orkexa): Migrationen verwalten sie.",
+      "alembic_project": "Das Projekt hat eine alembic.ini: Seine Änderungen laufen über Alembic-Revisionen.",
+      "non_transactional": "Ein Schritt kann nicht in einer Transaktion laufen.",
+      "too_many_tables": "Der Plan ändert mehr Tabellen, als ein Lauf darf.",
+      "backup_unavailable": "Der Plan löscht, baut neu auf oder ändert Daten in PostgreSQL, und Studio kann eine PostgreSQL-Datenbank noch nicht sichern.",
+      "foreign_key_check": "Eine Zeile verletzt einen Fremdschlüssel (foreign_key_check).",
+      "integrity_check": "SQLites integrity_check hat ein Problem gefunden.",
+      "failed": "Eine Prüfung vor dem Commit ist fehlgeschlagen."
+    },
+    "run": {
+      "title": "Bestätigen und ausführen",
+      "lead": "Studio plant direkt vor dem Lauf noch einmal und führt nur diesen Plan aus (Hash oben). Bitte eintippen und ankreuzen, was jeder Schritt verlangt.",
+      "typedProfile": "Namen des Schreibprofils eintippen: {{name}}",
+      "typedTable": "Tabellennamen eintippen: {{name}}",
+      "acceptStep": "Ich nehme in Kauf, dass Schritt {{number}} Daten ändert oder entfernt.",
+      "acceptLocking": "Ich nehme in Kauf, dass der Lauf Tabellen sperrt (er wartet höchstens {{seconds}} s auf eine Sperre).",
+      "backupMade": "Vor dem Lauf wird eine Kopie der Datenbankdatei angelegt.",
+      "backupNotNeeded": "Für diesen Plan ist keine Sicherung nötig.",
+      "backupSkip": "Sicherung weglassen (nur DEV; wird im Audit-Log vermerkt)",
+      "backupSkipTyped": "Zum Weglassen der Sicherung den Dateinamen der Datenbank eintippen: {{name}}",
+      "confirm": "Bestätigen",
+      "confirmed": "Bestätigt. Den Plan innerhalb von {{seconds}} s ausführen oder zuerst als Probelauf testen.",
+      "run": "Plan ausführen",
+      "dryRun": "Probelauf",
+      "dryRunNote": "Ein Probelauf führt alle Schritte in einer Transaktion aus und rollt sie dann zurück. Er nimmt dieselben Sperren wie der Lauf (in PostgreSQL eine ACCESS-EXCLUSIVE-Sperre auf jede geänderte Tabelle), und Sequenzwerte, die er verbraucht, bleiben verbraucht. Danach zum Ausführen den Plan erneut anzeigen und bestätigen.",
+      "committed_one": "Fertig: {{count}} Schritt ausgeführt und festgeschrieben.",
+      "committed_other": "Fertig: {{count}} Schritte ausgeführt und festgeschrieben.",
+      "rolledBack_one": "Probelauf: {{count}} Schritt ausgeführt und zurückgerollt. Es wurde nichts geändert.",
+      "rolledBack_other": "Probelauf: {{count}} Schritte ausgeführt und zurückgerollt. Es wurde nichts geändert.",
+      "backupPath": "Sicherung: {{path}}",
+      "backupSkipped": "Die Sicherung wurde weggelassen.",
+      "auditPending": "Der Audit-Eintrag steht noch aus; siehe Audit-Log bei den Schreibprofilen.",
+      "draftEnded": "Der Entwurf ist beendet. Für weitere Änderungen bitte neu beginnen."
     }
   }
 }

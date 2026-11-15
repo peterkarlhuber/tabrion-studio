@@ -1,14 +1,18 @@
 /**
  * STU-CR-4: the Schema Designer's table view is hidden while its flag is off, unlocks first, starts a draft, sends one
  * edit operation at a time with the revision it shows (never a model or a plan), shows the server's refusals by field
- * and by tabrion's reason, and shows the read-only plan preview with its SQL and hash. axe finds no serious or
- * critical violation (jsdom: no colour contrast; the E2E test has it).
+ * and by tabrion's reason, and shows the plan preview with its SQL and hash. axe finds no serious or critical
+ * violation (jsdom: no colour contrast; the E2E test has it).
+ *
+ * STU-CR-5: the preview's warnings and why a plan is not run; the confirmation sends exactly what the user typed and
+ * ticked with the recorded hash (never a plan); Run and Dry run only after it, neither focused by default; the
+ * outcome with the backup's path; a refused run drops the preview; a table in a refusal is named from its position.
  */
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 
-import { parseDraft, parsePreview } from '../../api/schemaDesigner';
+import { parseConfirmed, parseDraft, parseOutcome, parsePreview } from '../../api/schemaDesigner';
 import { SchemaDesignerSection } from './SchemaDesigner';
 
 const PROFILE = {
@@ -98,7 +102,41 @@ const PREVIEW = {
       ],
     },
   ],
+  environment: 'dev',
+  write_profile_id: 'write:parts-w',
+  executable: true,
+  blocked: [],
+  warnings: [
+    { code: 'not_modelled', table: null },
+    { code: 'sqlite_rowid', table: 'parts' },
+    { code: 'fingerprint_gaps', table: null },
+  ],
+  confirmation: {
+    profile: 'parts-w',
+    tables: ['parts'],
+    data_changing_steps: [0],
+    locking: false,
+    lock_timeout_s: 5,
+    backup: { required: true, engine: 'sqlite', opt_out_allowed: true, opt_out_text: 'parts.db' },
+  },
+  expires_in_s: 300,
+};
+const BLOCKED = {
+  ...PREVIEW,
   executable: false,
+  blocked: ['migration_managed', 'alembic_project'],
+};
+const OUTCOME = {
+  plan_hash: PREVIEW.plan_hash,
+  result: 'committed',
+  dry_run: false,
+  steps_run: 1,
+  fingerprint_after: `v2:sha256:${'d'.repeat(64)}`,
+  backup: 'made',
+  backup_path:
+    '/home/u/.config/tabrion-studio/backups/schema-designer/20261115T101010Z-0a1b2c3d.sqlite',
+  audit_pending: false,
+  revision: 2,
 };
 
 interface Call {
@@ -112,6 +150,8 @@ interface Answers {
   unlocked?: boolean;
   started?: boolean;
   edit?: { status: number; body: unknown };
+  preview?: { status: number; body: unknown };
+  run?: { status: number; body: unknown };
 }
 
 const ON = { data_editor: false, schema_designer: true, database_manager: false };
@@ -203,7 +243,29 @@ function setup(answers: Answers = {}) {
       ]);
       return json(current);
     }
-    if (url === '/api/write/schema-designer/draft/preview') return json(PREVIEW);
+    if (url === '/api/write/schema-designer/draft/preview')
+      return answers.preview === undefined
+        ? json(PREVIEW)
+        : json(answers.preview.body, answers.preview.status);
+    if (url === '/api/write/schema-designer/plan/confirm')
+      return json({
+        plan_hash: PREVIEW.plan_hash,
+        confirmed: true,
+        backup: 'make',
+        expires_in_s: 280,
+      });
+    if (url === '/api/write/schema-designer/plan/run') {
+      if (answers.run !== undefined) return json(answers.run.body, answers.run.status);
+      return body?.dry_run === true
+        ? json({
+            ...OUTCOME,
+            result: 'rolled_back',
+            dry_run: true,
+            backup: 'dry_run',
+            backup_path: null,
+          })
+        : json(OUTCOME);
+    }
     return new Response(null, { status: 404 });
   };
   const view = render(<SchemaDesignerSection fetcher={fetcher} />);
@@ -225,6 +287,25 @@ describe('the answers of the draft routes', () => {
     expect(parsePreview(PREVIEW)?.steps[0]?.statements[0]?.target).toBe('main.parts.qty');
     expect(parsePreview({ ...PREVIEW, steps: [{ index: 0 }] })).toBeNull();
     expect(parsePreview('x')).toBeNull();
+    const parsed = parsePreview(PREVIEW);
+    expect(parsed?.confirmation.backup.optOutText).toBe('parts.db');
+    expect(parsed?.warnings[1]).toEqual({
+      code: 'sqlite_rowid',
+      table: 'parts',
+      lockTimeoutS: null,
+    });
+    expect(parsePreview({ ...PREVIEW, blocked: [1] })).toBeNull();
+    expect(parsePreview({ ...PREVIEW, confirmation: { profile: 'x' } })).toBeNull();
+    expect(
+      parseConfirmed({ plan_hash: 'h', confirmed: true, backup: 'make', expires_in_s: 1 }),
+    ).toEqual({
+      planHash: 'h',
+      backup: 'make',
+      expiresInS: 1,
+    });
+    expect(parseConfirmed({ plan_hash: 'h', confirmed: false })).toBeNull();
+    expect(parseOutcome(OUTCOME)?.backupPath).toBe(OUTCOME.backup_path);
+    expect(parseOutcome({ ...OUTCOME, result: 'maybe' })).toBeNull();
   });
 });
 
@@ -346,13 +427,13 @@ describe('SchemaDesignerSection (STU-CR-4)', () => {
     expect(within(form).getByLabelText('Column name')).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('shows the read-only plan preview with its SQL and hash', async () => {
+  it('shows the plan preview with its SQL, hash and warnings', async () => {
     const user = userEvent.setup();
     const { view } = setup();
     await user.click(await screen.findByRole('button', { name: 'Show plan' }));
     const preview = await screen.findByTestId('schema-designer-preview');
-    expect(within(preview).getByRole('status')).toHaveTextContent(
-      'Tabrion plans 1 step. This is a preview: nothing is run from here.',
+    expect(within(preview).getAllByRole('status')[0]).toHaveTextContent(
+      'Tabrion plans 1 step. Nothing runs until you confirm the plan and run it.',
     );
     expect(screen.getByTestId('schema-designer-plan-hash')).toHaveTextContent(PREVIEW.plan_hash);
     expect(screen.getByTestId('schema-designer-base-changed')).toBeInTheDocument();
@@ -360,9 +441,181 @@ describe('SchemaDesignerSection (STU-CR-4)', () => {
     expect(step).toHaveTextContent('Add column main.parts');
     expect(step).toHaveTextContent('changes data');
     expect(step).toHaveTextContent('ALTER TABLE parts ADD COLUMN qty INTEGER DEFAULT (0)');
-    // No button runs the plan.
-    expect(screen.queryByRole('button', { name: /run|execute|ausführen/i })).toBeNull();
+    const warnings = screen.getAllByTestId('schema-designer-warning');
+    expect(warnings.map((w) => w.dataset.code)).toEqual([
+      'not_modelled',
+      'sqlite_rowid',
+      'fingerprint_gaps',
+    ]);
+    expect(warnings[1]).toHaveTextContent('Table parts is rebuilt and has no INTEGER PRIMARY KEY');
+    // Before the confirmation no button runs the plan.
+    expect(screen.queryByRole('button', { name: /run the plan|dry run/i })).toBeNull();
     expect(await serious(view.container)).toEqual([]);
+  });
+
+  it('says why a plan is not run and offers no confirmation', async () => {
+    const user = userEvent.setup();
+    setup({ preview: { status: 200, body: BLOCKED } });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const blocked = await screen.findByTestId('schema-designer-blocked');
+    expect(blocked).toHaveTextContent('Studio does not run this plan');
+    expect(blocked).toHaveTextContent('migrations manage it');
+    expect(blocked).toHaveTextContent('alembic.ini');
+    expect(screen.queryByTestId('schema-designer-run')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
+  });
+
+  it('confirms with what was typed and ticked, then runs once with the recorded hash', async () => {
+    const user = userEvent.setup();
+    const { calls, view } = setup();
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const form = await screen.findByTestId('schema-designer-run');
+    expect(screen.getByTestId('schema-designer-run-backup')).toHaveTextContent(
+      'A copy of the database file is made before the run.',
+    );
+    await user.type(within(form).getByLabelText('Type the write profile name: parts-w'), 'parts-w');
+    await user.type(within(form).getByLabelText('Type the table name: parts'), 'parts');
+    await user.click(within(form).getByLabelText('I accept that step 1 changes or removes data.'));
+    expect(await serious(view.container)).toEqual([]);
+    await user.click(within(form).getByRole('button', { name: 'Confirm' }));
+    await screen.findByTestId('schema-designer-confirmed');
+    expect(calls.find((c) => c.url.endsWith('/plan/confirm'))?.body).toEqual({
+      connection_id: 'c_1',
+      plan_hash: PREVIEW.plan_hash,
+      typed: 'parts-w',
+      tables: ['parts'],
+      steps: [0],
+      locking: false,
+      backup: 'make',
+    });
+    const go = screen.getByRole('button', { name: 'Run the plan' });
+    expect(go).not.toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Dry run' })).not.toHaveFocus();
+    await user.click(go);
+    const outcome = await screen.findByTestId('schema-designer-outcome');
+    expect(outcome).toHaveTextContent('Done: 1 step run and committed.');
+    expect(screen.getByTestId('schema-designer-backup-path')).toHaveTextContent(
+      OUTCOME.backup_path,
+    );
+    expect(calls.find((c) => c.url.endsWith('/plan/run'))?.body).toEqual({
+      connection_id: 'c_1',
+      plan_hash: PREVIEW.plan_hash,
+      dry_run: false,
+    });
+    expect(screen.queryByTestId('schema-designer-preview')).toBeNull();
+    // The draft is read again after the run.
+    await waitFor(() =>
+      expect(calls.filter((c) => c.url.endsWith('/draft/view')).length).toBeGreaterThan(1),
+    );
+    for (const call of calls) {
+      for (const key of ['model', 'snapshot', 'plan', 'target', 'environment']) {
+        expect(call.body ?? {}).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it('leaves the backup out on DEV only with the typed file name, and dry-runs on request', async () => {
+    const user = userEvent.setup();
+    const { calls } = setup();
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const form = await screen.findByTestId('schema-designer-run');
+    await user.type(within(form).getByLabelText('Type the write profile name: parts-w'), 'parts-w');
+    await user.type(within(form).getByLabelText('Type the table name: parts'), 'parts');
+    await user.click(within(form).getByLabelText('I accept that step 1 changes or removes data.'));
+    await user.click(within(form).getByLabelText(/Leave the backup out/));
+    await user.type(
+      within(form).getByLabelText('Type the database file name to leave the backup out: parts.db'),
+      'parts.db',
+    );
+    await user.click(within(form).getByRole('button', { name: 'Confirm' }));
+    await screen.findByTestId('schema-designer-confirmed');
+    expect(calls.find((c) => c.url.endsWith('/plan/confirm'))?.body).toMatchObject({
+      backup: 'skip',
+      backup_typed: 'parts.db',
+    });
+    await user.click(screen.getByRole('button', { name: 'Dry run' }));
+    expect(await screen.findByTestId('schema-designer-outcome')).toHaveTextContent(
+      'Dry run: 1 step run and rolled back. Nothing was changed.',
+    );
+    expect(calls.find((c) => c.url.endsWith('/plan/run'))?.body).toMatchObject({ dry_run: true });
+  });
+
+  it('offers no opt-out where the server allows none', async () => {
+    const user = userEvent.setup();
+    setup({
+      preview: {
+        status: 200,
+        body: {
+          ...PREVIEW,
+          environment: 'test',
+          confirmation: {
+            ...PREVIEW.confirmation,
+            backup: {
+              required: true,
+              engine: 'sqlite',
+              opt_out_allowed: false,
+              opt_out_text: null,
+            },
+          },
+        },
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    await screen.findByTestId('schema-designer-run');
+    expect(screen.queryByTestId('schema-designer-run-skip')).toBeNull();
+  });
+
+  it('shows a refused run and drops the used-up preview', async () => {
+    const user = userEvent.setup();
+    setup({
+      run: {
+        status: 400,
+        body: {
+          code: 'studio.schema_run_check_failed',
+          kind: 'request',
+          status: 400,
+          title: 'x',
+          detail: 'x',
+          issues: [{ pointer: 'plan.check', code: 'plan.foreign_key_check' }],
+        },
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const form = await screen.findByTestId('schema-designer-run');
+    await user.type(within(form).getByLabelText('Type the write profile name: parts-w'), 'parts-w');
+    await user.type(within(form).getByLabelText('Type the table name: parts'), 'parts');
+    await user.click(within(form).getByLabelText('I accept that step 1 changes or removes data.'));
+    await user.click(within(form).getByRole('button', { name: 'Confirm' }));
+    await user.click(await screen.findByRole('button', { name: 'Run the plan' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('A check before the commit failed');
+    expect(screen.getByTestId('schema-designer-plan-issues')).toHaveTextContent(
+      'A row breaks a foreign key (foreign_key_check).',
+    );
+    expect(screen.queryByTestId('schema-designer-preview')).toBeNull();
+  });
+
+  it('names the table of a refused preview from its position', async () => {
+    const user = userEvent.setup();
+    setup({
+      preview: {
+        status: 400,
+        body: {
+          code: 'studio.schema_plan_refused',
+          kind: 'request',
+          status: 400,
+          title: 'x',
+          detail: 'x',
+          issues: [
+            { pointer: 'plan.reason', code: 'plan.dependent_object' },
+            { pointer: 'tables.0', code: 'plan.dependent_object' },
+          ],
+        },
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    expect(await screen.findByTestId('schema-designer-plan-table')).toHaveTextContent(
+      'Table: parts',
+    );
   });
 
   it('discards the draft', async () => {

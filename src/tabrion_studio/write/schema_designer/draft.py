@@ -170,12 +170,12 @@ def refusal(exc: PlanRefused | UsageError, locate: Callable[[str], str | None] |
     return WriteError("studio.schema_model_invalid")
 
 
-def locator(model: SchemaSnapshot, *others: SchemaSnapshot) -> Callable[[str], str | None]:
+def locator(model: SchemaSnapshot, base: SchemaSnapshot) -> Callable[[str], str | None]:
     """Where the page shows a table tabrion names in a refusal: ``tables.<n>`` (the model's tables, in its order) or
-    ``dropped.<n>`` (the tables of ``others``, the draft's start and the fresh snapshot, that the model drops, by
-    name order), so a problem names no table (GS3-12)."""
+    ``dropped.<n>`` (the tables of the draft's start that the model drops, in name order: the draft view's
+    ``dropped``), so a problem names no table (GS3-12). A table the page does not show gets no pointer."""
     names = [table.name for table in model.tables]
-    dropped = sorted({table.name for other in others for table in other.tables} - set(names))
+    dropped = sorted({table.name for table in base.tables} - set(names))
 
     def locate(table: str) -> str | None:
         if table in names:

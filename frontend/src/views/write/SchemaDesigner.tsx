@@ -10,8 +10,12 @@
  *   index) on the revision it shows, and shows the draft the server answers. It never sends a model or a plan and
  *   builds no SQL.
  * - **Preview:** the plan tabrion makes from a fresh snapshot of the database to the draft: every step with its risk
- *   classes, whether it runs in a transaction and its SQL, both fingerprints and the plan hash. Nothing runs from
- *   here; running a plan (confirmation per risk class, backup) is a later step of the Schema Designer.
+ *   classes, whether it runs in a transaction and its SQL, both fingerprints and the plan hash, the warnings of
+ *   STU-ADR-0007 section 8 and, when the server does not run it, why.
+ * - **Run (STU-CR-5):** the user types the write profile's name and each table's name, ticks every data-changing
+ *   step and the lock, and keeps the backup (or, on DEV only, types the file's name to leave it out); the page sends
+ *   that with the plan hash the server recorded. Then **Run the plan** or a **Dry run** (only on request; rolled
+ *   back). The server plans again, compares, makes the backup and runs; no button has the focus by default.
  *
  * The graphical ER mode (STU-XSD-1) will send the same edits to the same routes.
  */
@@ -26,7 +30,9 @@ import { fetchProfiles, type ProfileItem } from '../../api/profiles';
 import {
   discardDraft,
   editDraft,
+  confirmPlan,
   previewDraft,
+  runPlan,
   startDraft,
   viewDraft,
   type ConstraintKind,
@@ -34,7 +40,9 @@ import {
   type DraftColumn,
   type DraftEdit,
   type DraftTable,
+  type PlanConfirmed,
   type PlanPreview,
+  type RunOutcome,
 } from '../../api/schemaDesigner';
 import { fetchWriteAreas } from '../../api/write';
 import { Button } from '../../components/ui/Button';
@@ -221,6 +229,7 @@ function DraftPanel({
   const [busy, setBusy] = useState(false);
   const [action, setAction] = useState<Action | null>(null);
   const [preview, setPreview] = useState<PlanPreview | null>(null);
+  const [outcome, setOutcome] = useState<RunOutcome | null>(null);
 
   const fail = useCallback(
     (found: Problem) => {
@@ -295,6 +304,7 @@ function DraftPanel({
 
   const showPreview = async () => {
     setProblem(null);
+    setOutcome(null);
     setBusy(true);
     const result = await previewDraft(fetcher, connectionId);
     setBusy(false);
@@ -303,6 +313,21 @@ function DraftPanel({
       setPreview(null);
       fail(result.problem);
     }
+  };
+
+  /** A run (or a dry run) used the plan up: the preview goes; after a real run the draft is read again. */
+  const ran = (result: RunOutcome) => {
+    setPreview(null);
+    setOutcome(result);
+    if (result.dryRun) return;
+    if (result.draftEnded) setDraft(null);
+    else void reload();
+  };
+
+  /** A refused run also used the plan up (or ended the unlock): the preview goes and the problem shows. */
+  const runFailed = (found: Problem) => {
+    setPreview(null);
+    fail(found);
   };
 
   if (draft === undefined)
@@ -328,6 +353,7 @@ function DraftPanel({
           )}
         </Field>
         <ProblemLine problem={problem} />
+        {outcome !== null ? <RunResult outcome={outcome} /> : null}
         <div className={connectionStyles.actions}>
           <Button type="submit" variant="primary" disabled={busy}>
             {t('schemaDesigner.start')}
@@ -360,6 +386,8 @@ function DraftPanel({
         </Button>
       </div>
       <ProblemLine problem={problem} />
+      <PlanIssues problem={problem} draft={draft} />
+      {outcome !== null ? <RunResult outcome={outcome} /> : null}
       {action?.op === 'add_table' ? (
         <EditForm action={action} draft={draft} onSubmit={edit} onCancel={() => setAction(null)} />
       ) : null}
@@ -383,7 +411,17 @@ function DraftPanel({
           onEdit={edit}
         />
       ))}
-      {preview !== null ? <PreviewPanel preview={preview} /> : null}
+      {preview !== null ? (
+        <PreviewPanel
+          key={preview.planHash}
+          preview={preview}
+          fetcher={fetcher}
+          connectionId={connectionId}
+          onRan={ran}
+          onRunFailed={runFailed}
+          onLocked={onLocked}
+        />
+      ) : null}
     </div>
   );
 }
@@ -951,18 +989,70 @@ function EditForm({
   );
 }
 
-/** Tabrion's reason, feature kind or code of a refused change (`plan.*`), each with its own text. */
-function PlanIssues({ problem }: { problem: Problem | null }) {
+const TABLE_POINTER = /^(tables|dropped)\.(\d+)$/;
+
+/**
+ * Tabrion's reason, feature kind or code of a refused change (`plan.*`), why a plan is not run (`plan.reason`) or
+ * which check failed (`plan.check`), each with its own text. With the draft, the table the refusal is about: the
+ * problem names it only by its position (`tables.<n>` or `dropped.<n>`, GS3-12), and the page looks it up.
+ */
+function PlanIssues({ problem, draft }: { problem: Problem | null; draft?: Draft }) {
   const { t } = useTranslation();
-  const issues = (problem?.issues ?? []).filter((issue) => issue.pointer.startsWith('plan.'));
-  if (issues.length === 0) return null;
+  const all = problem?.issues ?? [];
+  const issues = all.filter((issue) => issue.pointer.startsWith('plan.'));
+  const tables =
+    draft === undefined
+      ? []
+      : all.flatMap((issue) => {
+          const match = TABLE_POINTER.exec(issue.pointer);
+          if (match === null) return [];
+          const position = Number(match[2]);
+          const name =
+            match[1] === 'tables' ? draft.tables[position]?.name : draft.dropped[position];
+          return [name ?? null];
+        });
+  if (issues.length === 0 && tables.length === 0) return null;
   return (
     <ul className={connectionStyles.issues} data-testid="schema-designer-plan-issues">
       {issues.map((issue) => (
         <li key={`${issue.pointer}:${issue.code}`}>{planIssueText(t, issue)}</li>
       ))}
+      {tables.map((name, position) => (
+        <li key={`table:${position}`} data-testid="schema-designer-plan-table">
+          {name === null
+            ? t('schemaDesigner.planIssues.tableUnknown')
+            : t('schemaDesigner.planIssues.table', {
+                name: visible(name),
+                interpolation: { escapeValue: false },
+              })}
+        </li>
+      ))}
     </ul>
   );
+}
+
+/** Why the server does not run a plan (`plan.reason`) and which check before the commit failed (`plan.check`). */
+const RUN_REASONS = new Set([
+  'nothing_to_run',
+  'environment',
+  'migration_managed',
+  'levuvo_managed',
+  'alembic_project',
+  'non_transactional',
+  'too_many_tables',
+  'backup_unavailable',
+  'foreign_key_check',
+  'integrity_check',
+  'failed',
+]);
+
+function reasonText(t: TFunction, reason: string): string {
+  return RUN_REASONS.has(reason)
+    ? t(`schemaDesigner.reasons.${reason}`)
+    : t('schemaDesigner.planIssues.other', {
+        code: reason,
+        interpolation: { escapeValue: false },
+      });
 }
 
 const PLAN_CODES = new Set([
@@ -979,6 +1069,13 @@ const PLAN_CODES = new Set([
 ]);
 
 function planIssueText(t: TFunction, issue: ProblemIssue): string {
+  const reason = issue.code.slice('plan.'.length);
+  if (
+    (issue.pointer === 'plan.reason' || issue.pointer === 'plan.check') &&
+    RUN_REASONS.has(reason)
+  ) {
+    return reasonText(t, reason);
+  }
   if (issue.pointer === 'plan.feature') {
     return t('schemaDesigner.planIssues.feature', {
       feature: issue.code.slice('plan.'.length),
@@ -1001,7 +1098,21 @@ function sqlText(sql: string): string {
     .join('\n');
 }
 
-function PreviewPanel({ preview }: { preview: PlanPreview }) {
+function PreviewPanel({
+  preview,
+  fetcher,
+  connectionId,
+  onRan,
+  onRunFailed,
+  onLocked,
+}: {
+  preview: PlanPreview;
+  fetcher: typeof fetch;
+  connectionId: string;
+  onRan: (outcome: RunOutcome) => void;
+  onRunFailed: (problem: Problem) => void;
+  onLocked: (why: Problem) => void;
+}) {
   const { t } = useTranslation();
   const id = useId();
   return (
@@ -1084,6 +1195,310 @@ function PreviewPanel({ preview }: { preview: PlanPreview }) {
           </table>
         </div>
       ) : null}
+      <Warnings preview={preview} />
+      {preview.executable ? (
+        <RunForm
+          preview={preview}
+          fetcher={fetcher}
+          connectionId={connectionId}
+          onRan={onRan}
+          onRunFailed={onRunFailed}
+          onLocked={onLocked}
+        />
+      ) : (
+        <div className={connectionStyles.warning} data-testid="schema-designer-blocked">
+          <p>
+            <strong>{t('schemaDesigner.blockedTitle')}</strong>
+          </p>
+          <ul className={connectionStyles.issues}>
+            {preview.blocked.map((reason) => (
+              <li key={reason}>{reasonText(t, reason)}</li>
+            ))}
+          </ul>
+          <p>{t('schemaDesigner.blockedLead')}</p>
+        </div>
+      )}
     </section>
+  );
+}
+
+const WARNINGS = new Set([
+  'not_modelled',
+  'pg_dependent_code',
+  'function_drift',
+  'sqlite_rowid',
+  'fingerprint_gaps',
+  'locking',
+]);
+
+/** The fixed warnings of the preview (STU-ADR-0007 section 8), each with its own text. */
+function Warnings({ preview }: { preview: PlanPreview }) {
+  const { t } = useTranslation();
+  const shown = preview.warnings.filter((warning) => WARNINGS.has(warning.code));
+  if (shown.length === 0) return null;
+  return (
+    <div data-testid="schema-designer-warnings">
+      <h4 className={designer.tableName}>{t('schemaDesigner.warningsTitle')}</h4>
+      <ul className={connectionStyles.issues}>
+        {shown.map((warning, position) => (
+          <li key={position} data-testid="schema-designer-warning" data-code={warning.code}>
+            {t(`schemaDesigner.warnings.${warning.code}`, {
+              table: visible(warning.table ?? ''),
+              seconds: warning.lockTimeoutS ?? preview.confirmation.lockTimeoutS,
+              interpolation: { escapeValue: false },
+            })}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/**
+ * The confirmation per risk class (STU-ADR-0007 sections 6 and 7), then the run or a dry run. Nothing here is
+ * checked by the page: the server compares every part with the plan it keeps and refuses a mismatch.
+ */
+function RunForm({
+  preview,
+  fetcher,
+  connectionId,
+  onRan,
+  onRunFailed,
+  onLocked,
+}: {
+  preview: PlanPreview;
+  fetcher: typeof fetch;
+  connectionId: string;
+  onRan: (outcome: RunOutcome) => void;
+  onRunFailed: (problem: Problem) => void;
+  onLocked: (why: Problem) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const need = preview.confirmation;
+  const [typed, setTyped] = useState('');
+  const [tables, setTables] = useState<string[]>(() => need.tables.map(() => ''));
+  const [steps, setSteps] = useState<number[]>([]);
+  const [locking, setLocking] = useState(false);
+  const [skip, setSkip] = useState(false);
+  const [skipTyped, setSkipTyped] = useState('');
+  const [confirmed, setConfirmed] = useState<PlanConfirmed | null>(null);
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const confirm = async (event: FormEvent) => {
+    event.preventDefault();
+    setProblem(null);
+    setBusy(true);
+    const result = await confirmPlan(fetcher, connectionId, preview.planHash, {
+      typed,
+      tables,
+      steps,
+      locking,
+      backup: skip ? 'skip' : 'make',
+      backupTyped: skipTyped,
+    });
+    setBusy(false);
+    if (result.ok) setConfirmed(result.value);
+    else if (LOCKED.has(result.problem.code)) onLocked(result.problem);
+    else setProblem(result.problem);
+  };
+
+  const run = async (dryRun: boolean) => {
+    setProblem(null);
+    setBusy(true);
+    const result = await runPlan(fetcher, connectionId, preview.planHash, dryRun);
+    setBusy(false);
+    if (result.ok) onRan(result.value);
+    else if (LOCKED.has(result.problem.code)) onLocked(result.problem);
+    else onRunFailed(result.problem);
+  };
+
+  const toggleStep = (index: number, on: boolean) =>
+    setSteps((current) =>
+      on
+        ? [...current.filter((item) => item !== index), index]
+        : current.filter((item) => item !== index),
+    );
+
+  return (
+    <form
+      className={connectionStyles.form}
+      onSubmit={(event) => void confirm(event)}
+      aria-labelledby={`${id}-title`}
+      data-testid="schema-designer-run"
+    >
+      <h4 id={`${id}-title`} className={designer.tableName}>
+        {t('schemaDesigner.run.title')}
+      </h4>
+      <p className={connectionStyles.hint}>{t('schemaDesigner.run.lead')}</p>
+      <fieldset className={designer.confirm} disabled={confirmed !== null || busy}>
+        <Field
+          label={t('schemaDesigner.run.typedProfile', {
+            name: visible(need.profile),
+            interpolation: { escapeValue: false },
+          })}
+        >
+          {(props) => (
+            <input
+              {...props}
+              className={connectionStyles.input}
+              value={typed}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setTyped(event.target.value)}
+              data-testid="schema-designer-run-profile"
+            />
+          )}
+        </Field>
+        {need.tables.map((name, position) => (
+          <Field
+            key={name}
+            label={t('schemaDesigner.run.typedTable', {
+              name: visible(name),
+              interpolation: { escapeValue: false },
+            })}
+          >
+            {(props) => (
+              <input
+                {...props}
+                className={connectionStyles.input}
+                value={tables[position] ?? ''}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) =>
+                  setTables((current) =>
+                    current.map((item, at) => (at === position ? event.target.value : item)),
+                  )
+                }
+                data-testid="schema-designer-run-table"
+              />
+            )}
+          </Field>
+        ))}
+        {need.dataChangingSteps.map((index) => (
+          <label key={index} className={connectionStyles.check}>
+            <input
+              type="checkbox"
+              checked={steps.includes(index)}
+              onChange={(event) => toggleStep(index, event.target.checked)}
+              data-testid="schema-designer-run-step"
+            />
+            {t('schemaDesigner.run.acceptStep', { number: index + 1 })}
+          </label>
+        ))}
+        {need.locking ? (
+          <label className={connectionStyles.check}>
+            <input
+              type="checkbox"
+              checked={locking}
+              onChange={(event) => setLocking(event.target.checked)}
+              data-testid="schema-designer-run-locking"
+            />
+            {t('schemaDesigner.run.acceptLocking', { seconds: need.lockTimeoutS })}
+          </label>
+        ) : null}
+        <p className={connectionStyles.hint} data-testid="schema-designer-run-backup">
+          {need.backup.required
+            ? t('schemaDesigner.run.backupMade')
+            : t('schemaDesigner.run.backupNotNeeded')}
+        </p>
+        {need.backup.required && need.backup.optOutAllowed && need.backup.optOutText !== null ? (
+          <>
+            <label className={connectionStyles.check}>
+              <input
+                type="checkbox"
+                checked={skip}
+                onChange={(event) => setSkip(event.target.checked)}
+                data-testid="schema-designer-run-skip"
+              />
+              {t('schemaDesigner.run.backupSkip')}
+            </label>
+            {skip ? (
+              <Field
+                label={t('schemaDesigner.run.backupSkipTyped', {
+                  name: visible(need.backup.optOutText),
+                  interpolation: { escapeValue: false },
+                })}
+              >
+                {(props) => (
+                  <input
+                    {...props}
+                    className={connectionStyles.input}
+                    value={skipTyped}
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => setSkipTyped(event.target.value)}
+                    data-testid="schema-designer-run-skip-typed"
+                  />
+                )}
+              </Field>
+            ) : null}
+          </>
+        ) : null}
+      </fieldset>
+      <ProblemLine problem={problem} />
+      <PlanIssues problem={problem} />
+      {confirmed === null ? (
+        <div className={connectionStyles.actions}>
+          <Button type="submit" variant="primary" disabled={busy}>
+            {t('schemaDesigner.run.confirm')}
+          </Button>
+        </div>
+      ) : (
+        <>
+          <p
+            className={connectionStyles.status}
+            role="status"
+            data-testid="schema-designer-confirmed"
+          >
+            {t('schemaDesigner.run.confirmed', { seconds: confirmed.expiresInS })}
+          </p>
+          <p className={connectionStyles.hint}>{t('schemaDesigner.run.dryRunNote')}</p>
+          <div className={connectionStyles.actions}>
+            <Button
+              variant="danger"
+              onClick={() => void run(false)}
+              disabled={busy}
+              data-testid="schema-designer-run-go"
+            >
+              {t('schemaDesigner.run.run')}
+            </Button>
+            <Button
+              onClick={() => void run(true)}
+              disabled={busy}
+              data-testid="schema-designer-run-dry"
+            >
+              {t('schemaDesigner.run.dryRun')}
+            </Button>
+          </div>
+        </>
+      )}
+    </form>
+  );
+}
+
+/** What a run did: committed or rolled back (a dry run), its steps and the backup. */
+function RunResult({ outcome }: { outcome: RunOutcome }) {
+  const { t } = useTranslation();
+  return (
+    <div className={connectionStyles.status} role="status" data-testid="schema-designer-outcome">
+      <p>
+        {outcome.result === 'committed'
+          ? t('schemaDesigner.run.committed', { count: outcome.stepsRun })
+          : t('schemaDesigner.run.rolledBack', { count: outcome.stepsRun })}
+      </p>
+      {outcome.backupPath !== null ? (
+        <p data-testid="schema-designer-backup-path">
+          {t('schemaDesigner.run.backupPath', {
+            path: visible(outcome.backupPath),
+            interpolation: { escapeValue: false },
+          })}
+        </p>
+      ) : null}
+      {outcome.backup === 'opted_out' ? <p>{t('schemaDesigner.run.backupSkipped')}</p> : null}
+      {outcome.auditPending ? <p>{t('schemaDesigner.run.auditPending')}</p> : null}
+      {outcome.draftEnded ? <p>{t('schemaDesigner.run.draftEnded')}</p> : null}
+    </div>
   );
 }

@@ -179,7 +179,7 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
         version = unlock.connection.engine_version()
         current = _snapshot(unlock.connection, draft.schema)
         try:
-            change = plan_for(current, draft.model, version, locator(draft.model, draft.base, current))
+            change = plan_for(current, draft.model, version, locator(draft.model, draft.base))
         except WriteError as exc:
             logger.info("schema plan refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
             raise
@@ -291,7 +291,7 @@ def run(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> 
             raise WriteError("studio.plan_drift")
         current = _snapshot(unlock.connection, plan.schema)
         try:
-            change = plan_for(current, plan.target, version, locator(draft.model, draft.base, current))
+            change = plan_for(current, plan.target, version, locator(draft.model, draft.base))
         except WriteError as exc:
             logger.info("schema run refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
             raise
