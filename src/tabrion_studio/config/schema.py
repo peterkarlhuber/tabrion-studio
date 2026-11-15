@@ -228,12 +228,25 @@ def _key(text: str) -> str:
     return '"' + _CONTROL.sub(lambda m: f"\\x{ord(m.group()):02x}", text[:64]).replace('"', '\\"') + '"'
 
 
+def is_host_list(host: str) -> bool:
+    """True for a ``host`` that libpq reads as a list of hosts (a comma separates them; M-1 of the PR #117 review).
+
+    libpq tries the hosts of a list in turn, so one profile could name a local socket folder and a remote server at
+    once. Every profile with such a host is refused (``config.host_list``), as tabrion's ``profilefile`` refuses a
+    comma in a host name.
+    """
+    return "," in host
+
+
 def is_loopback(host: str) -> bool:
     """A Unix socket folder, the literal ``localhost`` or a loopback IP address; never a DNS name (review T-4).
 
     ``127.evil.example`` or ``127.0.0.1.nip.io`` are names that anyone can point anywhere, so they are remote and
-    default to ``verify-full``.
+    default to ``verify-full``. A host list (:func:`is_host_list`) is never loopback, even if it starts with a socket
+    folder: libpq may go on to the next host (defense in depth; the validator refuses it anyway).
     """
+    if is_host_list(host):
+        return False
     if host.startswith("/"):
         return True
     name = host.lower()
@@ -367,6 +380,11 @@ def _profile(raw: Any, where: str, issues: list[Issue], unknown: list[str]) -> P
             issues.append(Issue(f"{where}.host", "config.required"))
         elif host is not None and (_CONTROL.search(host) or any(c.isspace() for c in host)):
             issues.append(Issue(f"{where}.host", "config.control_character"))
+        elif host is not None and is_host_list(host):
+            # M-1 of the PR #117 review: libpq would read it as several hosts and try them in turn. The value is not
+            # repeated, and no sslmode default is derived from it.
+            issues.append(Issue(f"{where}.host", "config.host_list"))
+            host = None
         port = _integer(raw, "port", where, 1, 65535, issues)
         database = _text(raw, "database", where, issues, limit=255)
         if "database" not in raw:
@@ -489,6 +507,8 @@ def coupling_issue(write: WriteProfile, read: Profile | None) -> str | None:
     if read.engine == "sqlite" and (write.user is not None or write.password is not None):
         return "config.not_for_engine"
     if read.engine == "postgresql":
+        if read.host is not None and is_host_list(read.host):
+            return "config.host_list"  # never reached through the validator, which refuses the read profile
         if write.user is None:
             return "config.coupling_role_required"
         if write.user == read.user:

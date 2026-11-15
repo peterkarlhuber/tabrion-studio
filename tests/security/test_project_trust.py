@@ -245,6 +245,29 @@ def _pg(name: str, host: str, password: str, sslmode: str | None = None) -> str:
     )
 
 
+@pytest.mark.parametrize(
+    "host", ["/var/run/postgresql,{canary}.example", "/var/run/postgresql,127.0.0.1", "localhost,{canary}.example"]
+)
+def test_a_host_list_makes_the_project_file_invalid(env: Env, host: str) -> None:
+    """M-1 of the PR #117 review: libpq reads a host with a comma as a list and tries each host in turn, so a list
+    that starts with a socket folder would pass as loopback (no ``remote_host`` or ``weak_tls`` warning, ``prefer``
+    instead of ``verify-full``). The project file is invalid, cannot be trusted, offers no profile and does not repeat
+    the value."""
+    canary = f"tabrion-canary-{uuid.uuid4().hex}"
+    host = host.format(canary=canary)
+    digest = env.write("version = 1\n" + _pg("listed", host, "keyring:"))
+    response = env.studio.client.get("/api/project", headers=env.headers)
+    assert response.status_code == 200
+    doc = response.json()
+    assert doc["state"] == "invalid"
+    assert doc["issues"] == [{"pointer": "profile[0].host", "code": "config.host_list", "severity": "error"}]
+    assert host not in response.text and canary not in response.text
+    refused = env.trust(digest)
+    assert refused.json()["code"] == "studio.project_invalid"
+    assert canary not in refused.text
+    assert env.project_profiles() == []
+
+
 def test_d01_says_where_each_password_goes(env: Env) -> None:
     """T-5, T-4 (stu-006-review.md) and L-1 (stu-007-review.md): one flow per connection, with its warnings."""
     secret_in_config = env.config_dir / "prod.pw"

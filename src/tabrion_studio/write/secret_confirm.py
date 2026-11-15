@@ -52,7 +52,7 @@ import threading
 import time
 from typing import Any
 
-from tabrion_studio.config.schema import Profile, WriteProfile, is_loopback
+from tabrion_studio.config.schema import Profile, WriteProfile, is_host_list, is_loopback
 from tabrion_studio.paths import UnsafePathError, read_private_file, write_private_file
 from tabrion_studio.write.connection import WriteError
 
@@ -137,8 +137,9 @@ def secret_pair(write: WriteProfile, read: Profile) -> SecretPair | None:
     """The pair of ``write`` coupled to ``read``; None for SQLite (no secret, nothing to confirm)."""
     if read.engine != "postgresql":
         return None
-    if read.host is None:
-        raise WriteError("studio.write_coupling_invalid")  # a PostgreSQL profile always has one (schema)
+    if read.host is None or is_host_list(read.host):
+        # A PostgreSQL profile always has one host (schema); a libpq host list is refused there too (M-1, PR #117).
+        raise WriteError("studio.write_coupling_invalid")
     ref = write.password
     return SecretPair(
         write_name=write.name,
