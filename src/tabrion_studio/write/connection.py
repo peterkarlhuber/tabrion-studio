@@ -65,8 +65,17 @@ role:
   (``dangerous``); every other one, ``pg_read_all_data`` and ``pg_write_all_data`` among them, is a ``warning``.
 
 The only role names a finding carries are those of predefined roles (fixed names of PostgreSQL); a role of the
-database's own is never named. What a finding blocks is open: for ``kind="write"`` it is decided at G-S2 (review I-3
-of PR #111, docs/TODO.md), for ``admin`` by STU-XDM-1 (G-S4). Studio never grants or widens its own rights.
+database's own is never named.
+
+**What a finding refuses (owner decision 1A at G-S2, review I-3 of PR #111).** For ``kind="write"``,
+:func:`open_write_connection` refuses the connection, and with it the unlock, with
+``405 studio.write_role_over_privileged`` when the role holds, directly or through a reachable role, any of
+:data:`WRITE_REFUSING_FINDINGS`: ``admin.superuser``, ``admin.bypassrls``, ``admin.replication`` or membership in a
+server-file role (``admin.broad:pg_read_server_files``, ``admin.broad:pg_write_server_files``,
+``admin.broad:pg_execute_server_program``). The connection is closed before anything is unlocked. Every other finding
+(``admin.createrole``, ``admin.createrole_pre16``, every other ``admin.broad:<role>``, ``pg_read_all_data`` and
+``pg_write_all_data`` among them) stays a warning shown in the write state. For ``admin`` nothing refuses yet:
+STU-XDM-1 decides it at G-S4. Studio never grants or widens its own rights.
 """
 
 from __future__ import annotations
@@ -111,6 +120,7 @@ from tabrion_studio.services.readonly import ACTING_PRAGMAS, READING_PRAGMAS, SQ
 __all__ = [
     "REQUIRE_AUTH",
     "REQUIRE_AUTH_SCRAM",
+    "WRITE_REFUSING_FINDINGS",
     "WRITE_SEARCH_PATH",
     "WriteConnection",
     "WriteError",
@@ -118,6 +128,7 @@ __all__ = [
     "file_identity",
     "open_write_connection",
     "privilege_findings",
+    "refusing_findings",
     "require_auth",
     "require_auth_supported",
     "write_authorizer",
@@ -150,6 +161,12 @@ _READING = frozenset(
 DANGEROUS_ATTRIBUTES = ("superuser", "bypassrls", "createrole", "replication")
 #: Predefined roles that are superuser-equivalent (read or write any server file, run a server program): ``dangerous``.
 SERVER_FILE_ROLES = frozenset({"pg_execute_server_program", "pg_read_server_files", "pg_write_server_files"})
+#: The findings that refuse a ``kind="write"`` connection and its unlock (owner decision 1A at G-S2): superuser,
+#: BYPASSRLS and REPLICATION, and membership in a server-file role, each held directly or through a reachable role.
+#: CREATEROLE (also before PostgreSQL 16) and every other predefined role stay warnings.
+WRITE_REFUSING_FINDINGS = frozenset(
+    {"admin.superuser", "admin.bypassrls", "admin.replication"} | {f"admin.broad:{role}" for role in SERVER_FILE_ROLES}
+)
 #: PostgreSQL ``FirstNormalObjectId``: every predefined role has a smaller oid.
 FIRST_NORMAL_OBJECT_ID = 16384
 #: The first PostgreSQL version (``server_version_num``) where CREATEROLE no longer reaches almost every role (D-1).
@@ -328,6 +345,11 @@ def privilege_findings(
         severity = "dangerous" if role in SERVER_FILE_ROLES else "warning"
         findings.append({"code": f"admin.broad:{role}", "via": broad[role], "severity": severity})
     return facts, findings
+
+
+def refusing_findings(findings: list[dict[str, str]]) -> list[str]:
+    """The codes of ``findings`` that refuse a ``kind="write"`` unlock (:data:`WRITE_REFUSING_FINDINGS`), sorted."""
+    return sorted({f["code"] for f in findings if f.get("code") in WRITE_REFUSING_FINDINGS})
 
 
 def _server_version(rows: list[tuple[Any, ...]]) -> int | None:
@@ -516,6 +538,8 @@ def open_write_connection(
 
     SQLite needs ``database_file`` (the read connection's real path), its ``identity`` taken at unlock and its current
     ``journal_mode``. ``requirepeer`` (PostgreSQL over a Unix socket) is the server's OS user that libpq checks.
+    A ``kind="write"`` role with a finding of :data:`WRITE_REFUSING_FINDINGS` is refused
+    (``studio.write_role_over_privileged``) and its connection closed (owner decision 1A at G-S2).
     Raises :class:`WriteError`, :class:`RegistryError` or a tabrion error (``db.<kind>``).
     """
     if profile.environment == "prod":
@@ -551,6 +575,13 @@ def open_write_connection(
             _check_session(connection)
             connection.verify()
             connection.check_privileges()
+        if kind == "write" and refusing_findings(connection.findings):
+            # Owner decision 1A (G-S2): an over-privileged write role is never unlocked. Fixed codes only, no role name.
+            logger.warning(
+                "the write role has superuser, BYPASSRLS, REPLICATION or server-file rights; the unlock is refused",
+                extra={"event": "studio.write_role_over_privileged", "code": "studio.write_role_over_privileged"},
+            )
+            raise WriteError("studio.write_role_over_privileged")
     except BaseException:
         connection.close()
         raise

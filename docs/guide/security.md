@@ -121,9 +121,16 @@ the server answers `405` and the write code is not even loaded.
   predefined role (`admin.broad:<role>`: a `pg_*` role with an OID below 16384, never a role someone created under
   a `pg_` name), dangerous for `pg_execute_server_program`, `pg_read_server_files`
   and `pg_write_server_files`, which equal superuser rights, and a warning for the others, such as
-  `pg_write_all_data` and `pg_read_all_data`. Use a role without any of these. Which finding blocks an unlock is
-  decided before the areas are approved (G-S2 for write profiles, G-S4 for admin profiles); until then they are
-  shown and logged.
+  `pg_write_all_data` and `pg_read_all_data`. Use a role without any of these. **A write profile whose role is a
+  superuser, has `BYPASSRLS` or `REPLICATION`, or is a member of `pg_read_server_files`, `pg_write_server_files` or
+  `pg_execute_server_program`, directly or through a role it belongs to, is not unlocked**
+  (`405 studio.write_role_over_privileged`, owner decision 1A at G-S2): Studio closes the connection, unlocks
+  nothing and records the refused unlock in the audit log. `CREATEROLE` (also before PostgreSQL 16) and the other
+  predefined roles, such as `pg_read_all_data`, stay warnings: the unlock goes ahead and the write state shows
+  them. To see the role and every role it reaches with their attributes, run
+  `SELECT r.rolname, r.rolsuper, r.rolbypassrls, r.rolreplication FROM pg_roles r WHERE pg_has_role('<role>', r.oid, 'MEMBER');`.
+  For admin profiles, which finding blocks is decided with the Database Manager (G-S4); until then they are shown
+  and logged.
 - **Refusals echo nothing.** A refused write answers `400` or `405` with a fixed text (`403` only for the write mode
   of a query), never with a value or a secret of the request.
 - **The audit log (STU-XW-2).** While an area is on, Studio records every write and admin action in a local,
@@ -156,7 +163,11 @@ the server answers `405` and the write code is not even loaded.
     - several Studio windows for different projects share one log: each record is written under a lock across
       processes (`audit/audit.lock`), after reading the end of the chain again, so their records form one chain;
     - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a
-      segment. `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
+      segment, and keeps every segment without limit (retention is unlimited, decision 3A at G-S2). To archive the
+      log, stop Studio and move the whole `audit` folder aside as described above; Studio then begins a new chain.
+      Do not remove single segments: the log would no longer verify. The chain has no key and no anchor outside its
+      folder yet, so removing the whole folder starts a new chain without a warning (residual risk 3; an anchor in
+      the keyring is planned before a public release). `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
       log, and with every area off it answers `405` like every other write route.
 - **Plans, preview and confirmation (STU-XW-3).** While an area is on, a change runs only as a plan that Studio
   keeps on the server and that you saw and confirmed:
