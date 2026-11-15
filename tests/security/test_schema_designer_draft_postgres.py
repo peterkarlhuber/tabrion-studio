@@ -169,7 +169,8 @@ def test_a_draft_of_a_schema_is_planned_with_the_servers_version(pg: Env, monkey
     version = _server_version(pg.admin)
     assert plan["server_version"] == list(version)
     assert seen and all(item == version for item in seen)
-    assert plan["dialect"] == "postgresql" and plan["executable"] is False
+    # STU-CR-5: an additive and locking plan on DEV may run after its own confirmation (no backup needed).
+    assert plan["dialect"] == "postgresql" and plan["executable"] is True and plan["blocked"] == []
     steps = {(s["operation"], s["target"]): s for s in plan["steps"]}
     assert "locking" in steps[("add_column", f"{pg.prefix}.parts")]["risks"]
     assert ("create_table", f"{pg.prefix}.orders") in steps
@@ -202,8 +203,9 @@ def test_tabrions_refusals_are_fixed_problems(pg: Env) -> None:
     assert response.json()["issues"] == [
         {"pointer": "plan.reason", "code": "plan.unsupported_feature"},
         {"pointer": "plan.feature", "code": "plan.partitioned"},
+        {"pointer": "tables.0", "code": "plan.unsupported_feature"},  # STU-CR-5: by position (GS3-12)
     ]
-    assert pg.prefix not in response.text
+    assert pg.prefix not in response.text and "events" not in response.text
 
 
 def test_constraints_need_a_name_on_postgresql(pg: Env) -> None:

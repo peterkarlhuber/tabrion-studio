@@ -465,6 +465,35 @@ class WriteConnection:
         finally:
             pooled.close()
 
+    @property
+    def database(self) -> tabrion.Database:
+        """The tabrion ``Database`` of this connection, for the Schema Designer's run only (STU-CR-5): tabrion's
+        ``execute_plan`` and ``migration_markers`` take a layer-B ``Database``. The file identity is checked first
+        (TX-16); no other caller gets it."""
+        self.verify()
+        return self._db
+
+    @contextlib.contextmanager
+    def raw_sqlite(self) -> Iterator[sqlite3.Connection]:
+        """The SQLite connection of this write connection's pool, idle and with the pool's guards in place
+        (``trusted_schema`` off, defensive mode, the write authorizer), for ``tabrion.sqlite.backup`` (STU-CR-5: the
+        backup before a run reads the file through the checked connection, so it copies the file the unlock checked).
+        An open transaction is rolled back first; the connection goes back to the pool afterwards.
+        ``studio.write_unsupported`` on PostgreSQL."""
+        if self.engine != "sqlite":
+            raise WriteError("studio.write_unsupported")
+        self.verify()
+        pooled = self._db.engine.raw_connection()
+        try:
+            driver = pooled.driver_connection
+            if not isinstance(driver, sqlite3.Connection):  # pragma: no cover - the engine is pysqlite's
+                raise WriteError("studio.write_unsupported")
+            if driver.in_transaction:
+                driver.rollback()
+            yield driver
+        finally:
+            pooled.close()
+
     def inspect(self, consume: Callable[[sqlalchemy.Inspector], Any]) -> Any:
         """``consume(inspector)`` with tabrion's ``Database.inspector()`` on this write connection, inside one of its
         read-only transactions (the Schema Designer's level-2 snapshot, STU-CR-4). The file identity is checked

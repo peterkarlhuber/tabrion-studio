@@ -418,7 +418,10 @@ def test_start_view_edit_and_preview(designer: Designer, caplog: pytest.LogCaptu
     preview = designer.preview()
     assert preview.status_code == 200, preview.text
     plan = preview.json()
-    assert plan["dialect"] == "sqlite" and plan["executable"] is False and plan["base_changed"] is False
+    assert plan["dialect"] == "sqlite" and plan["base_changed"] is False
+    # STU-CR-5: a DEV file without migration management may run the plan, after its own confirmation; the preview
+    # itself runs nothing (below).
+    assert plan["executable"] is True and plan["blocked"] == []
     assert plan["plan_hash"].startswith("sha256:") and plan["source_fingerprint"].startswith("v2:sha256:")
     assert plan["target_fingerprint"] == view["draft_fingerprint"]
     operations = [(s["operation"], s["target"]) for s in plan["steps"]]
@@ -811,8 +814,10 @@ def test_tabrion_refuses_a_column_a_view_names(designer: Designer) -> None:
     _sql(designer.env.db, f"CREATE VIEW v_{CANARY_VALUE[-8:]} AS SELECT material FROM parts")  # noqa: S608 - a fixed text
     assert designer.start().status_code == 201
     response = designer.edit({"op": "drop_column", "table": "parts", "column": "material"})
-    _refused(response, 400, "studio.schema_plan_refused", [("plan.reason", "plan.dependent_object")])
-    assert CANARY_VALUE[-8:] not in response.text
+    # STU-CR-5 (GS3-12): the table by its position in the draft, never by its name.
+    issues = [("plan.reason", "plan.dependent_object"), ("tables.0", "plan.dependent_object")]
+    _refused(response, 400, "studio.schema_plan_refused", issues)
+    assert CANARY_VALUE[-8:] not in response.text and "parts" not in response.text
 
 
 def test_the_preview_plans_from_a_fresh_snapshot(designer: Designer) -> None:

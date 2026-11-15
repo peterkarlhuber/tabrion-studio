@@ -1,5 +1,5 @@
-"""The Schema Designer's routes for drafts and the read-only plan preview (STU-CR-4; STU-ADR-0007 sections 2, 3, 4
-item 1, 9 and 11; TX-21, TX-26, TX-27; GS3-09, GS3-13, GS3-20).
+"""The Schema Designer's routes for drafts, the plan preview and the confirmed run (STU-CR-4, STU-CR-5;
+STU-ADR-0007 sections 2 to 11; TX-21, TX-26, TX-27; GS3-03..05, GS3-09..20, GS3-27..29).
 
 Imported only by :mod:`tabrion_studio.write.routes` when the ``schema_designer`` flag is on (GS3-01). Every call
 first re-checks this session's unlock of the connection for the Schema Designer (:meth:`Unlocks.require_unlock`: the
@@ -11,21 +11,28 @@ was started with (:class:`.draft.Drafts`).
   schema the role can see, not one of PostgreSQL's own) becomes both the draft's starting snapshot and its first
   model; the engine version for every plan is read on the same connection (:meth:`WriteConnection.engine_version`).
   Starting again replaces the draft.
-* :func:`edit`: one edit operation (:mod:`.draft`), made on the revision the page names.
+* :func:`edit`: one edit operation (:mod:`.draft`), made on the revision the page names. An edit drops the plan of
+  the last preview.
 * :func:`preview`: a **fresh** level-2 snapshot on the write connection, then ``tabrion.plan.plan(fresh, draft,
   server_version=<read now on the write connection>)``: every step with its operation, table, risk classes,
-  transactional flag and exact SQL, both fingerprints and the plan hash. Nothing runs: there is no route that executes
-  a plan of the Schema Designer (confirmation, re-plan, ``execute_plan`` and the backup are STU-CR-5). The plan is not
-  kept either; it is the user's view of what tabrion would do.
+  transactional flag and exact SQL, both fingerprints and the plan hash, the warnings of section 8, why the plan may
+  not run directly (section 5) and what its confirmation needs (sections 6 and 7). The server keeps that plan with the
+  draft (:class:`.execute.RunPlan`), bound to the session, the connection, the unlock and a short expiry.
+* :func:`confirm`: the user's confirmation per risk class (:func:`.execute.check_confirmation`).
+* :func:`run`: once per confirmation, the recorded plan is checked again (the unlock, the engine version, the
+  migration markers, Studio's re-plan from a fresh snapshot with its hash and classes compared: the pre-check of
+  section 4), then :func:`.execute.run` makes the backup and calls ``tabrion.plan.execute_plan``, which plans again
+  inside its own transaction and is the binding check. A dry run happens only when the request asks for it.
 
-**Nothing is written** to the database, the project or the disk by these routes, so they write no audit record
-(STU-ADR-0007 section 11 audits runs and revisions). The log gets fixed event names and problem codes only: never a
-table or column name, a type, a default or check text, a statement, a fingerprint or a hash (TX-27).
+The draft routes write nothing to the database, the project or the disk; a run is audited (section 11) and its backup
+is written to Studio's backup folder. The log gets fixed event names and problem codes only: never a table or column
+name, a type, a default or check text, a statement, a fingerprint or a hash (TX-27).
 """
 
 from __future__ import annotations
 
 import logging
+import secrets
 from typing import Any
 
 import sqlalchemy
@@ -42,12 +49,13 @@ from tabrion_studio.write.schema_designer.draft import (
     check_limits,
     check_schema,
     draft_view,
+    locator,
     plan_for,
     refusal,
     table_names,
     validate,
 )
-from tabrion_studio.write.unlock import Unlock, Unlocks
+from tabrion_studio.write.unlock import WRITE_ID_PREFIX, Unlock, Unlocks
 
 logger = logging.getLogger("tabrion_studio.write")
 
@@ -151,6 +159,7 @@ def edit(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) ->
         draft.model = model
         draft.revision += 1
         draft.edits += 1
+        draft.plan = None  # the previewed plan is of the model before this edit
         return draft_view(draft)
 
 
@@ -159,17 +168,32 @@ def _statement(statement: Any) -> dict[str, Any]:
 
 
 def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> dict[str, Any]:
-    """The plan from a fresh snapshot to the draft, for the user to read (see the module text). Runs nothing."""
+    """The plan from a fresh snapshot to the draft, for the user to read and, where section 5 allows it, to confirm
+    and run (STU-CR-5). The plan is kept with the draft (:class:`.execute.RunPlan`); nothing runs here."""
+    from tabrion_studio.write.schema_designer import execute
+
     unlock = _unlock(unlocks, session, doc.get("connection_id"))
     draft = drafts.get(session, unlock.connection_id, unlock.unlock_id)
     with draft.lock:
+        draft.plan = None
         version = unlock.connection.engine_version()
         current = _snapshot(unlock.connection, draft.schema)
         try:
-            change = plan_for(current, draft.model, version)
+            change = plan_for(current, draft.model, version, locator(draft.model, draft.base, current))
         except WriteError as exc:
             logger.info("schema plan refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
             raise
+        reasons = execute.blocked(unlock, change, drafts.project)
+        kept = execute.make_plan(
+            unlock,
+            schema=draft.schema,
+            target=draft.model,
+            change=change,
+            server_version=version,
+            blocked_reasons=reasons,
+            now=unlocks.clock(),
+        )
+        draft.plan = kept
         steps = [
             {
                 "index": step.index,
@@ -195,5 +219,99 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
             # The database is not the one the draft started from: the plan also undoes what changed since.
             "base_changed": fingerprint(current) != fingerprint(draft.base),
             "steps": steps,
-            "executable": False,
+            "environment": unlock.environment,
+            "write_profile_id": f"{WRITE_ID_PREFIX}{unlock.write_name}",
+            "executable": not reasons,
+            "blocked": list(reasons),
+            "warnings": execute.warnings(current, draft.model, change, draft.schema),
+            "confirmation": execute.requirements(kept),
+            "expires_in_s": execute.RUN_TTL_SECONDS,
         }
+
+
+def _run_draft(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> tuple[Unlock, Draft]:
+    unlock = _unlock(unlocks, session, doc.get("connection_id"))
+    try:
+        draft = drafts.get(session, unlock.connection_id, unlock.unlock_id)
+    except WriteError:
+        raise WriteError("studio.plan_unknown") from None
+    return unlock, draft
+
+
+def confirm(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> dict[str, Any]:
+    """Confirm the previewed plan (STU-CR-5, STU-ADR-0007 sections 4 item 2, 6, 7): the plan hash, the typed write
+    profile name and what each risk class asks. A wrong text may be typed again; a wrong binding or an expired plan
+    drops the plan."""
+    from tabrion_studio.write.schema_designer import execute
+
+    unlock, draft = _run_draft(unlocks, drafts, session, doc)
+    with draft.lock:
+        plan = execute._own(draft.plan, doc.get("plan_hash"))
+        now = unlocks.clock()
+        try:
+            execute._check_binding(plan, unlock, now)
+        except WriteError:
+            draft.plan = None
+            raise
+        try:
+            confirmation = execute.check_confirmation(plan, doc)
+        except WriteError as exc:
+            logger.info("schema plan not confirmed", extra={"event": "studio.schema_plan_refused", "code": exc.code})
+            raise
+        draft.plan, answer_doc = execute.confirmed(plan, confirmation, now)
+        return answer_doc
+
+
+def run(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> dict[str, Any]:
+    """Run the confirmed plan once, or dry-run it when the request asks (STU-CR-5; see :mod:`.execute`)."""
+    from tabrion_studio.write.schema_designer import execute
+
+    dry_run = doc.get("dry_run", False)
+    if type(dry_run) is not bool:
+        raise WriteError("studio.plan_invalid")
+    unlock, draft = _run_draft(unlocks, drafts, session, doc)
+    with draft.lock:
+        plan = execute._own(draft.plan, doc.get("plan_hash"))
+        draft.plan = None  # one attempt: a replay finds nothing
+        execute._check_binding(plan, unlock, unlocks.clock())
+        if plan.confirmation is None:
+            raise WriteError("studio.plan_not_confirmed")
+        # Again right before the run (section 5): the unlock and the stored environment as they are now ...
+        unlock = _unlock(unlocks, session, unlock.connection_id)
+        if not secrets.compare_digest(unlock.unlock_id, plan.unlock_id):
+            raise WriteError("studio.plan_binding")
+        # ... the migration markers and the project's Alembic setup first, so that a marker added since the
+        # preview is named as such rather than as a changed schema ...
+        managed = execute.management(unlock.connection, drafts.project)
+        if managed:
+            raise WriteError("studio.schema_run_not_allowed", [("plan.reason", f"plan.{managed[0]}")])
+        # ... Studio's re-plan from a fresh snapshot with the same engine version (the pre-check of section 4) ...
+        version = unlock.connection.engine_version()
+        if version != plan.server_version:
+            raise WriteError("studio.plan_drift")
+        current = _snapshot(unlock.connection, plan.schema)
+        try:
+            change = plan_for(current, plan.target, version, locator(draft.model, draft.base, current))
+        except WriteError as exc:
+            logger.info("schema run refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
+            raise
+        if not secrets.compare_digest(change.plan_hash, plan.plan_hash) or not {
+            risk.value for risk in change.risks
+        } <= {risk.value for risk in plan.confirmation.classes}:
+            logger.warning("schema run refused: the plan changed", extra={"event": "studio.plan_drift"})
+            raise WriteError("studio.plan_drift")
+        reasons = execute.blocked(unlock, change, drafts.project)
+        if reasons:
+            raise WriteError("studio.schema_run_not_allowed", [("plan.reason", f"plan.{reasons[0]}")])
+        outcome = execute.run(unlocks, unlock, plan, dry_run=dry_run, write_state=drafts.write_state)
+        answer_doc = outcome.to_dict()
+        if not dry_run:
+            # The draft starts again from the database as the run left it: nothing is left to change. If that
+            # schema cannot be read, the draft ends (the run has happened either way).
+            try:
+                draft.base = draft.model = _snapshot(unlock.connection, draft.schema)
+                draft.revision += 1
+            except (WriteError, DriverFailure):
+                drafts.discard(session, unlock.connection_id)
+                answer_doc["draft_ended"] = True
+        return {**answer_doc, "revision": draft.revision}

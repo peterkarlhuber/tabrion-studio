@@ -6,7 +6,8 @@ with ``405 studio.method_not_allowed`` without importing it (every flag off), an
 :mod:`tabrion_studio.write.routes` imports it only inside a handler, after it checked the flag (another area's flag
 on). The read paths never import it (import-linter contract ``read-paths-never-write``).
 
-Built so far: the database creation wizards (STU-CR-2, STU-CR-3; :mod:`.create`) and the table designer with its
-server-side draft and read-only plan preview (STU-CR-4; :mod:`.draft`, :mod:`.designer`). Running a plan
-(STU-CR-5) and the graphical mode, comparison and revision output (STU-XSD-*) are open; G-S3 is not granted.
+Built so far: the database creation wizards (STU-CR-2, STU-CR-3; :mod:`.create`), the table designer with its
+server-side draft and plan preview (STU-CR-4; :mod:`.draft`, :mod:`.designer`) and the confirmed direct run of a plan
+on DEV or TEST with its backup (STU-CR-5; :mod:`.execute`). The graphical mode, comparison and revision output
+(STU-XSD-*) and the PostgreSQL backup runner (STU-ADR-0008) are open; G-S3 is not granted.
 """

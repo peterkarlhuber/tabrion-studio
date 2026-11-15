@@ -218,6 +218,10 @@ FIELDS: dict[str, Callable[[object], object]] = {
     "source": _token,  # STU-XW-4: the kind of a confirmed secret reference (keyring, env, file, none), never its target
     "foreign": _flag,  # STU-XW-4: whether the confirmed pair's host is foreign (not loopback)
     "pair_hash": _plan_hash,  # STU-XW-4: the digest of the confirmed pair of server and reference
+    "risks": _tokens,  # STU-CR-5: the risk classes of a schema change run (additive, destructive, ...)
+    "steps": _count,  # STU-CR-5: the number of steps of a schema change run (planned at start, run at result)
+    "backup": _token,  # STU-CR-5: made, opted_out, not_needed or dry_run; never the backup's path
+    "dry_run": _flag,  # STU-CR-5: the run was a dry run, rolled back
 }
 
 

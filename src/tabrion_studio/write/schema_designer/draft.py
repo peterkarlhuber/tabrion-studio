@@ -38,9 +38,10 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 import re
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from tabrion.errors import PlanRefused, UsageError
 from tabrion.plan import plan
@@ -57,6 +58,9 @@ from tabrion.schema import (
 
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.schema_designer.create import _has_control
+
+if TYPE_CHECKING:
+    from tabrion_studio.write.schema_designer.execute import RunPlan
 
 #: The limits of a draft (I-1). Each is far above a hand-designed schema and keeps one draft's memory and the
 #: validation plan of every edit small.
@@ -139,10 +143,12 @@ def draft_limit(what: str) -> WriteError:
 # --- tabrion's refusals ----------------------------------------------------------------------------------------------
 
 
-def refusal(exc: PlanRefused | UsageError) -> WriteError:
+def refusal(exc: PlanRefused | UsageError, locate: Callable[[str], str | None] | None = None) -> WriteError:
     """A fixed catalog problem for a refusal of tabrion (STU-ADR-0007 section 2, GS3-20): the reason or code, and
     for an unsupported feature the feature's kind (``rule``, ``partitioned``, ``view`` ...), never a name, a text or
-    any other detail."""
+    any other detail. With ``locate`` (the preview and the run, STU-CR-5, GS3-12) the table tabrion names is given by
+    its position in what the page shows (``tables.<n>`` of the draft's tables, ``dropped.<n>`` of the dropped ones),
+    so the page can name it while the problem itself carries no name."""
     if isinstance(exc, PlanRefused):
         issues: list[tuple[str, str]] = []
         reason = exc.details.get("reason")
@@ -153,6 +159,10 @@ def refusal(exc: PlanRefused | UsageError) -> WriteError:
             kind = feature.partition(":")[0]
             if _ISSUE_TOKEN.fullmatch(kind):
                 issues.append(("plan.feature", f"plan.{kind}"))
+        table = exc.details.get("table")
+        pointer = locate(table) if locate is not None and isinstance(table, str) else None
+        if pointer is not None and issues:
+            issues.append((pointer, issues[0][1]))
         return WriteError("studio.schema_plan_refused", issues)
     family, _, name = exc.code.partition(".")
     if family in ("plan", "ddl", "schema") and _ISSUE_TOKEN.fullmatch(name):
@@ -160,15 +170,39 @@ def refusal(exc: PlanRefused | UsageError) -> WriteError:
     return WriteError("studio.schema_model_invalid")
 
 
-def plan_for(current: SchemaSnapshot, target: SchemaSnapshot, server_version: tuple[int, ...]) -> Any:
+def locator(model: SchemaSnapshot, *others: SchemaSnapshot) -> Callable[[str], str | None]:
+    """Where the page shows a table tabrion names in a refusal: ``tables.<n>`` (the model's tables, in its order) or
+    ``dropped.<n>`` (the tables of ``others``, the draft's start and the fresh snapshot, that the model drops, by
+    name order), so a problem names no table (GS3-12)."""
+    names = [table.name for table in model.tables]
+    dropped = sorted({table.name for other in others for table in other.tables} - set(names))
+
+    def locate(table: str) -> str | None:
+        if table in names:
+            return f"tables.{names.index(table)}"
+        if table in dropped:
+            return f"dropped.{dropped.index(table)}"
+        return None
+
+    return locate
+
+
+def plan_for(
+    current: SchemaSnapshot,
+    target: SchemaSnapshot,
+    server_version: tuple[int, ...],
+    locate: Callable[[str], str | None] | None = None,
+) -> Any:
     """``tabrion.plan.plan`` with ``server_version`` always passed (GS3-13, never None) and direct-execution options
-    (``concurrent_indexes=False``); tabrion's refusals become catalog problems."""
+    (``concurrent_indexes=False``); tabrion's refusals become catalog problems (``locate``: see :func:`refusal`).
+    tabrion's own checks of every default, check and predicate text (one complete expression, the statement-head
+    check) run in each call, so also in the re-plan before a run and in the executor's plan inside its transaction."""
     if not isinstance(server_version, tuple) or not server_version:
         raise WriteError("studio.write_unsupported")  # pragma: no cover - the draft always has one
     try:
         return plan(current, target, server_version=server_version, concurrent_indexes=False)
     except (PlanRefused, UsageError) as exc:
-        raise refusal(exc) from None
+        raise refusal(exc, locate) from None
 
 
 # --- the draft and its store -----------------------------------------------------------------------------------------
@@ -191,17 +225,25 @@ class Draft:
     revision: int = 0
     edits: int = 0
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    #: The plan of the last preview (STU-CR-5), until it is run once, a new preview or an edit replaces it, or the
+    #: draft ends; never sent whole to the page.
+    plan: RunPlan | None = field(default=None, repr=False)
 
     def qualified(self, name: str) -> str:
         return f"{self.schema}.{name}"
 
 
 class Drafts:
-    """The drafts of this process, by session and connection; each bound to its unlock. Thread-safe."""
+    """The drafts of this process, by session and connection; each bound to its unlock. Thread-safe.
 
-    def __init__(self) -> None:
+    ``project`` is the project folder (STU-CR-5: an ``alembic.ini`` there means revisions only) and ``write_state``
+    the folder of ``write-areas.toml`` (the backups go below it); None refuses a run that needs them."""
+
+    def __init__(self, project: Path | None = None, write_state: Path | None = None) -> None:
         self._drafts: dict[tuple[str, str], Draft] = {}
         self._lock = threading.Lock()
+        self.project = project
+        self.write_state = write_state
 
     def put(self, draft: Draft) -> None:
         key = (draft.session, draft.connection_id)
@@ -814,7 +856,7 @@ def apply_edit(draft: Draft, edit: object) -> SchemaSnapshot:
 def validate(draft: Draft, model: SchemaSnapshot) -> int:
     """tabrion plans from the draft's starting snapshot to ``model`` (``server_version`` passed, GS3-13); a model it
     cannot plan is refused with its catalog problem. The plan is not kept: the number of its steps is returned."""
-    return len(plan_for(draft.base, model, draft.server_version).steps)
+    return len(plan_for(draft.base, model, draft.server_version, locator(model, draft.base)).steps)
 
 
 # --- what the page sees ----------------------------------------------------------------------------------------------
