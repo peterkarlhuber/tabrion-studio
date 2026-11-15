@@ -52,12 +52,24 @@
 > confirmation of each write secret's pair of server and reference (D-15, `tabrion_studio.write.secret_confirm`,
 > loaded only while an area is on), checked at unlock and on every later use. Every area stays off. Open: see the
 > CR-DBX section.
+>
+> STU-026 (2026-11-15, branch `claude/project-thread-rdo6g3-stu026`, draft): **in development, locked by G-S2.** The
+> Data Editor exists only behind the `data_editor` flag, which stays off by default; nothing turns it on, and it is
+> not usable or supported until G-S2 is granted. The first plan executor `data_editor.changeset`
+> (`tabrion_studio.write.data_editor`, registered and loaded only while the flag is on): each changed, added or
+> deleted row is one plan step run with tabrion's `rowedit` statements and `execute_checked(expect_rowcount=1)` in
+> one audited transaction; every shown column is the row's `old` value (L-1 of tabrion #78), so a conflict or any
+> other row count rolls the whole changeset back (`studio.data_editor_conflict`, `studio.data_editor_rowcount`, no
+> values echoed). Tables without a primary key, views, partitioned tables and PROD are refused. The page: an "Edit
+> data" tab on a table, shown only when `GET /api/write/areas` answers the flag on (en, de). Pins tabrion
+> 0.3.0.dev0 (`a864d10`, draft tabrion #80) for now: the pin moves to the merge commit once tabrion #80 merges.
+> Follow-ups: STU-XDE-1 (type editors, validation, paging), STU-XDE-2.
 
 ## Summary
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `a864d10` (draft tabrion #80, temporary) and `>=0.2,<0.4` in the STU-026 PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -163,7 +175,12 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   (PR #29) adds the `migrations` extra: `tabrion[migrations,postgres,sqlalchemy]>=0.1,<0.2`. The TD-013 PR moves
   to tabrion 0.2.0, the untagged merge commit of tabrion PR #65 (`52353daee6cd6e37a7efc45b74061a48beb2b280`), and
   the range `tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3`. The TD-071 PR moves the pin to tabrion 0.2.1, the
-  untagged merge commit of tabrion PR #71 (`af0458d54467571abfc1afdd44d76e1f4d727c06`); the range stays.
+  untagged merge commit of tabrion PR #71 (`af0458d54467571abfc1afdd44d76e1f4d727c06`); the range stays. The STU-026
+  PR moves the pin to tabrion 0.3.0.dev0, the head of tabrion draft PR #80 (`a864d10fc02fc8b2f2b2a0c53105813b2b605b89`,
+  temporary until #80 merges), and the range to `>=0.2,<0.4`: the RC-8 check allows final-only bounds, and a lower
+  bound of `0.3` would exclude the prerelease `0.3.0.dev0`. The shared `scripts/check_tabrion_source.py` (SHA-pinned
+  copy) still uses its poison version `0.2.99`; it should move above the new range's floor (for example `0.3.99`)
+  in the canonical copy once tabrion #80 merges.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
   profile (later `sslrootcert`, `require_auth`, options) must be in `schema.TARGET_FIELDS`, the secret fingerprint,
   and a connection is built from `Profile` only, never from unknown keys. Options that are the same constant for
@@ -515,7 +532,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | Audit log (STU-XW-2) | TABRION STU-XW-2 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw2`): append-only log in `<state>/audit/` (0700/0600, no links, no open handles), SHA-256 hash chain with `head.json` anchor and `verify_log` (edit, deletion, insertion, reordering, truncation), rotation that never overwrites or deletes, fields by allowlist only (names, counts, codes, plan hash; never a value or secret, canary-tested); unlock and `run.start` fail closed (`405 studio.audit_unavailable`), lock, profile, secret and `run.result` records keep a pending marker on failure (N-4) shown in the write profile section; `GET /api/write/audit` read only, 405 with every flag off; the module is not loaded with every flag off. Hook for STU-XW-3 and STU-026: `Unlocks.audited_transaction(session, connection_id, area, action=, objects=, plan_hash=)`. Open points below |
 | 1.1 | Plan, preview and confirmation framework (STU-XW-3) | TABRION STU-XW-3 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw3`): `POST /api/write/plans` (plan and preview), `/confirm` (plan hash and typed text: the write profile's name, for a destructive plan the target's name), `/execute` (once), `DELETE` (drop); the plan hash covers session, connection, unlock, nonce, executor, targets, steps and fingerprint; refusals `studio.plan_*` (400) and the unlock's own (405); drift check inside the transaction (PostgreSQL also after `LOCK TABLE ... IN ROW EXCLUSIVE MODE`), SQLite file identity before each run; the preview names triggers and rules (TX-16); `run.start` carries the plan hash; 405 and no import with every flag off. Open points below |
 | 1.1 | I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-4 | G-S2 | Done, in review (branch `claude/project-thread-rdo6g3-stuxw4`): L-2 of PR #111 closed: every PostgreSQL write and admin connection (the privilege check included) sets libpq `require_auth=!password,!md5` (`scram-sha-256` for a foreign host that gets a password); libpq older than 16 refuses the connection and the unlock before any secret is read (`405 studio.require_auth_unavailable`). I-109 j confirmation (D-15): `POST /api/write/secret-confirmations` (preview of the pair of server and secret reference, read from the user's file, with a session-bound hash), `/confirm` (hash and the typed host), `DELETE` (revoke); the confirmed pair's SHA-256 in `<state>/write-secret-confirmations.json` (0600); an unconfirmed or changed pair refuses the unlock before any secret is resolved (`studio.secret_unconfirmed`), every use of an unlock (the plan confirmation and run of STU-XW-3 included) re-checks it; a foreign host needs `verify-ca` or `verify-full` (`studio.write_tls_required`); audit events `secret.confirm` and `secret.unconfirm`; the D-15 dialog in the write profile section (en, de); 405 and no import with every flag off. Open points below |
-| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Blocked on STU-XW-1..3 and tabrion TAB-XW-6 (in Studio's pin); brings the first plan executor (`data_editor.changeset`, Tabrion's guided write transaction) and the `PlanReview`/`ChangesetReview` UI |
+| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | STU-026 in development behind the default-off flag (draft PR, tabrion 0.3.0.dev0 pin), locked by G-S2; brings the first plan executor (`data_editor.changeset`, Tabrion's guided write transaction) and the `PlanReview`/`ChangesetReview` UI |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
 
