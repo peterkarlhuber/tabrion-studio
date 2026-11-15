@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from tabrion_studio.config import files as files_module
 from tabrion_studio.config.files import ConfigFileError, parse_toml
 from tabrion_studio.config.schema import (
     MAX_PROFILES,
@@ -327,3 +328,48 @@ def test_deeply_nested_toml_is_too_deep_not_a_crash() -> None:
         parse_toml(b"x = " + b"[" * 5000 + b"]" * 5000)
     # A parser with its own nesting limit reports a syntax error instead; either way the file is invalid.
     assert caught.value.code in ("config.too_deep", "config.syntax")
+
+
+def test_too_deep_toml_never_reaches_the_recursive_parser(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A file nested deeper than ``MAX_NESTING`` is refused before tomllib runs, so the parser never recurses to the
+    interpreter's limit, where a finalizer the garbage collector runs (an event loop's ``__del__``) failed with its
+    own RecursionError (CI on Windows, Python 3.13)."""
+
+    def parser(text: str) -> dict[str, Any]:
+        raise AssertionError("tomllib must not run")
+
+    monkeypatch.setattr(tomllib, "loads", parser)
+    for nested in (b"x = " + b"[" * 900 + b"]" * 900, b"x = " + b"{a = " * 65 + b"1" + b"}" * 65):
+        with pytest.raises(ConfigFileError) as caught:
+            parse_toml(nested)
+        assert caught.value.code == "config.too_deep"
+
+
+@pytest.mark.parametrize(
+    ("text", "nesting"),
+    [
+        ("x = [[1], {a = [2]}]", 3),
+        ('[[profile]]\nname = "a[[["\n', 2),
+        ("x = '[[[['", 0),
+        ('x = """a\\"""[[[["""', 0),
+        ("x = '''[[[''''' \ny = [1]", 1),
+        ("# [[[[\nx = [1]", 1),
+        ('x = "\\\\"\ny = [[1]]', 2),
+        ('x = """a"""""\ny = [1]', 1),
+        ('x = "unclosed [[[[', 0),
+    ],
+)
+def test_the_nesting_scan_skips_comments_and_strings(text: str, nesting: int) -> None:
+    assert files_module._nesting(text) == nesting
+
+
+def test_the_deepest_allowed_nesting_parses() -> None:
+    deepest = files_module.MAX_NESTING
+    assert parse_toml(b"x = " + b"[" * deepest + b"]" * deepest)["x"] is not None
+    with pytest.raises(ConfigFileError):
+        parse_toml(b"x = " + b"[" * (deepest + 1) + b"]" * (deepest + 1))
+
+
+def test_the_nesting_scan_is_linear_on_hostile_text() -> None:
+    for text in ('"' * 256_000, '"""' + "x\\" * 100_000, "'''" * 80_000, '"\\' * 120_000, "[" * 256_000):
+        files_module._nesting(text)  # a quadratic scan would take minutes here
