@@ -734,6 +734,10 @@ def test_a_column_a_check_names_is_neither_dropped_nor_renamed(designer: Designe
         ("größe > 0", "größe", True),  # review P132-01: a non-ASCII bare name
         ("länge(größe) > 0", "länge", True),
         ("_x1$ > 0", "_x1$", True),
+        ("preis€ > 0", "preis€", True),  # a symbol is an identifier character for both engines
+        ("x☃ > 0", "x☃", True),
+        ("cafe\u0301 > 0", "cafe\u0301", True),  # a combining mark (NFD)
+        ("préis1 > 0", "préis", False),
         ("名前 <> ''", "名前", True),
         ("a > b", "a", True),
         ("a > b", "c", False),

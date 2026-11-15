@@ -115,9 +115,13 @@ REFERENTIAL_ACTIONS = frozenset({"CASCADE", "SET NULL", "SET DEFAULT", "RESTRICT
 _SYSTEM_SCHEMA = re.compile(r"pg_.*|information_schema", re.IGNORECASE | re.DOTALL)
 #: An identifier-like token of schema text (a check, a partial-index predicate, an index expression, a generated
 #: column): used only to refuse dropping or renaming a column such a text may name (fail closed), never to change it.
-# A bare identifier is any Unicode letter or underscore followed by letters, digits, underscores or ``$`` (as
-# PostgreSQL and SQLite accept them); quoted, backtick and bracket names are taken as written (review P132-01).
-_TOKEN = re.compile(r'"((?:[^"]|"")*)"|`([^`]*)`|\[([^\]]*)\]|([^\W\d][\w$]*)')
+# A bare identifier follows the engines' lexer rule: an ASCII letter, ``_`` or any non-ASCII character first, then
+# ASCII letters, digits, ``_``, ``$`` or any non-ASCII character (PostgreSQL takes every byte from 0x80 as an
+# identifier character, SQLite every non-ASCII character); quoted, backtick and bracket names are taken as written
+# (review P132-01).
+_TOKEN = re.compile(
+    r'"((?:[^"]|"")*)"|`([^`]*)`|\[([^\]]*)\]|((?:[A-Za-z_]|[^\x00-\x7f])(?:[A-Za-z0-9_$]|[^\x00-\x7f])*)'
+)
 # A PostgreSQL Unicode-escape name (``U&"d\0061ta"``) cannot be compared by its text: a text with one may name any
 # column, so the check fails closed.
 _UNICODE_ESCAPE = re.compile(r'(?<![\w$])[Uu]&"')
