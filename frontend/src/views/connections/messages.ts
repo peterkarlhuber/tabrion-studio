@@ -132,6 +132,14 @@ const PROBLEMS = new Set([
   'schema_createdb_required',
   'schema_owner_missing',
   'schema_owner_not_allowed',
+  // The Schema Designer's draft and plan preview (STU-CR-4).
+  'schema_draft_missing',
+  'schema_draft_stale',
+  'schema_draft_schema',
+  'schema_draft_limit',
+  'schema_edit_invalid',
+  'schema_plan_refused',
+  'schema_model_invalid',
 ]);
 
 const ISSUES = new Set([
@@ -237,7 +245,43 @@ const CREATE_ISSUES = new Set([
   'format',
 ]);
 
+/** The `edit.*` codes of a refused Schema Designer edit (STU-CR-4), each with its own text. */
+const EDIT_ISSUES = new Set([
+  'required',
+  'type',
+  'too_long',
+  'control_character',
+  'whitespace',
+  'dot',
+  'unknown_key',
+  'choice',
+  'table_missing',
+  'table_exists',
+  'column_missing',
+  'column_exists',
+  'column_in_use',
+  'column_named_in_text',
+  'table_referenced',
+  'last_column',
+  'no_change',
+  'name_required',
+  'name_not_supported',
+  'name_exists',
+  'primary_key_exists',
+  'count_mismatch',
+  'constraint_missing',
+  'index_missing',
+  'duplicate',
+  'too_many',
+]);
+
 export function issueText(t: TFunction, issue: ProblemIssue): string {
+  if (issue.code.startsWith('edit.')) {
+    const code = issue.code.slice('edit.'.length);
+    return EDIT_ISSUES.has(code)
+      ? t(`schemaDesigner.issues.${code}`)
+      : t('issues.other', { code: issue.code });
+  }
   if (issue.code.startsWith('create.')) {
     const code = issue.code.slice('create.'.length);
     return CREATE_ISSUES.has(code)

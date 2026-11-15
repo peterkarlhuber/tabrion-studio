@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-4 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's table view on the Connections page. `POST`/`DELETE
+  /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` keep one draft
+  per browser tab on the server only, bound to the connection and the unlock of a non-PROD write profile, started from
+  a `tabrion.schema` level-2 snapshot of one schema (SQLite `main`, PostgreSQL any non-system schema). The page sends
+  one change at a time (add, rename, drop a table; add, change, rename, drop a column; add and drop keys,
+  constraints and indexes); the server checks names, references and limits, plans each change with tabrion and keeps
+  it only when it can be planned. The preview plans from a fresh snapshot to the draft and shows each step with its
+  risk classes, transaction and SQL and the plan hash; nothing is run and no route runs DDL. Every `plan` call passes
+  the write connection's `server_version` (GS3-13); no request can carry a model or plan and `from_json` is never
+  called (GS3-09). Seven new problems `studio.schema_draft_*`, `studio.schema_edit_invalid`,
+  `studio.schema_plan_refused` and `studio.schema_model_invalid` (English and German). New tests in
+  `test_schema_designer_draft.py` and `test_schema_designer_draft_postgres.py`, the kill-switch sweep and
+  `test_every_route.py` extended; guide page "Schema Designer (in development)".
+
 - STU-CR-2 and STU-CR-3 follow-up (review conditions of PR #128, all before G-S3; still in development, locked by
   G-S3, the `schema_designer` flag stays off, no default changes). SQLite creation: the file is created relative to
   the folder Studio checked and holds open (`O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`), and before and after the header is

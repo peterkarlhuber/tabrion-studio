@@ -643,7 +643,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.2 | Schema Designer: threat model, ADR, G-S3 definition | TABRION STU-CR-1 | G-S3 | Done, reviewed (documentation only; merged in #126; the independent review of STU-CR-1 accepted it on `4b9fb7c` with conditions A-1..A-4, taken in by the tabrion repin PR; STU-ADR-0007 is accepted): [STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md), [Schema Designer threat model](architecture/schema-designer-threat-model.md) TX-18..TX-31, [G-S3 definition](architecture/security-review-prep.md#g-s3-definition-schema-designer) GS3-P1..P4, GS3-01..29 |
 | 1.2 | Wizards: create a SQLite file and a PostgreSQL database (Tabrion `create_private_file`, `create_database`; TX-29) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Built, locked by G-S3 (PR #128, merged `4b9fb7c`; review ACCEPTED with conditions, `reviews/pr128-stucr23-review.md`: Low P128-01, P128-02, Info P128-03, closed in the follow-up row below; STU-CR-1 is still to be accepted): the "New database" wizard on the Connections page, routes `POST /api/write/schema-designer/create/sqlite` and `/create/postgresql`, ten `studio.schema_*` problems, guide page [New database](guide/new-database.md). Evidence: GS3-01 (kill-switch sweep and import check), GS3-02 (the other flags, query and header), GS3-03 (PROD per route), GS3-20, GS3-21, GS3-28 (decision 1A at the unlock and at each run) in `tests/security/test_schema_designer_create.py` and `test_schema_designer_create_postgres.py`; driver errors only through `safe_message`. Open: [STU-CR-2 and STU-CR-3 open points](#stu-cr-2-and-stu-cr-3-open-points) |
 | 1.2 | STU-CR-2/3 follow-up: review conditions of PR #128 (all before G-S3) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Done (PR #130; its delta review accepted it with no new finding; info: the SQLite connection opens the file by path, and the second identity check detects a swap): [x] P128-01 (Low) the SQLite file is created with `os.open(..., dir_fd=<held folder>)`, `O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`, and before and after the header the folder's device, inode and real path, the folders above it and the file's device and inode (by the path and in the held folder) are checked again; every folder above the target must belong to root or the user and not be writable by group or others unless sticky (`StrictModes`); [x] P128-02 (Low) Studio's own folders compared by device and inode for the folder and every folder above it, the log folder and the project's `.tabrion` folder added; [x] P128-03 (Info) and open point 7: Unicode `Zs` other than U+0020, `Zl` and `Zp` refused in the file name and in database and owner names (`create.control_character`); [x] open point 1 (a)-(c): the guides recommend a separate CREATEDB role for the Schema Designer on DEV/TEST and an up-to-date server, and the warning `admin.createdb` (never refusing) on a write unlock while the Data Editor's flag is on and on any unlock outside DEV/TEST; [x] open point 5: Windows is excluded, SQLite creation there answers `400 studio.schema_create_platform` (an ACL check of owner and DACL was not small enough for this follow-up; it can replace the exclusion later). Evidence GS3-21, GS3-28 in [security-review-prep](architecture/security-review-prep.md#g-s3-definition-schema-designer). Still open before G-S3: the STU-CR-1 review |
-| 1.2 | Designer for tables, columns, constraints, indexes: the server-side draft and its edit operations on `tabrion.schema` level 2 | TABRION STU-CR-4 | G-S3 | Open; needs STU-CR-1. Acceptance: GS3-09, GS3-13 (`server_version` on every `plan` call), STU-ADR-0007 sections 2 and 3 |
+| 1.2 | Designer for tables, columns, constraints, indexes: the server-side draft and its edit operations on `tabrion.schema` level 2 | TABRION STU-CR-4 | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr4`, draft PR; review pending): the Schema Designer section on the Connections page (table view), routes `POST`/`DELETE /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` (read-only plan preview; no route runs DDL), seven `studio.schema_*` problems, guide page [Schema Designer](guide/schema-designer.md). Evidence: GS3-09 (body-key refusal of a model or plan, static check that `from_json` is never called), GS3-13 (a spy on `tabrion.plan.plan` against the SQLite library version and PostgreSQL `server_version_num`), the kill-switch sweep and import check, in `tests/security/test_schema_designer_draft.py` and `test_schema_designer_draft_postgres.py`. Open: [STU-CR-4 open points](#stu-cr-4-open-points); STU-CR-1 review still open |
 | 1.2 | Plan preview, confirmation per risk class, re-plan and hash compare, direct execution through `execute_plan`, backup before destructive runs, the I-124 preview warnings | TABRION STU-CR-5 | G-S3 | Open; needs STU-CR-4 and a Tabrion pin with TAB-XW-5 (GS3-P1, GS3-P2). Acceptance: GS3-03..05, GS3-09..20 |
 | 1.2 | Runtime-role wizard and profile export (single-host only, W-10, TB-148) | TABRION STU-CR-6 | G-S3 | Open; needs STU-CR-3, STU-XW-4. Acceptance: GS3-22 (the role rules GS4-12..GS4-19 that apply), TX-30 |
 | 1.2 | i18n, docs, E2E in three browsers and axe | TABRION STU-CR-7 | G-S3 | Open. Acceptance: GS3-14 (focus), GS3-24 (the guide states the limits of doc 15 section 3.1) |
@@ -987,6 +987,38 @@ before G-S3 (open).
     records it as the run's result and ends the unlock. `CREATE DATABASE` cannot run in a transaction, so the check
     is not in one: only the duplicate look-up runs between the check and the statement.
 14. **Firefox and WebKit:** the new Playwright spec ran in Chromium locally; CI runs the three browsers.
+
+### STU-CR-4 open points
+
+Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stucr4`). **G-S3 is not granted;** the `schema_designer`
+flag stays off by default and nothing in STU-CR-4 runs DDL. Each point needs the independent review or the owner.
+
+1. **Limits** (refused with `studio.schema_draft_limit`, the draft stays as it was): 500 tables in a draft and in the
+   schema it starts from, 250 columns per table, 100 keys, constraints and indexes per table, 32 columns per key or
+   index, 500 changes per draft, 2 MiB per draft (its JSON form), 4000 characters per default, check or partial-index
+   condition, 128 characters per type, 63 bytes per name, 16 KiB per change request, 16 drafts per Studio process.
+   The owner confirms or changes them.
+2. **A rename is a drop and an add.** Tabrion matches tables and columns by name, so a rename is planned as a drop
+   and an add, marked `destructive`, and its data is not carried over. The guide says so; a real rename needs
+   support in tabrion's planner.
+3. **Careful refusals:** a column that a check, an index expression, a partial-index condition or a generated column
+   may name (a plain token match, case-insensitive) cannot be dropped or renamed, even when the match is only in a
+   string literal.
+4. **Problems carry no names:** a refusal names the field (`edit.table`, `edit.column`, ...) and a fixed code, never
+   the table, column or SQL text, so that no user text reaches a problem body or the log.
+5. **The draft lives in memory** for one browser tab (session), bound to the connection and the unlock; it ends with
+   the unlock (an unlock-end listener) and is lost when Studio stops. There is no saving and no start from a file.
+6. **The preview is allowed on every unlocked non-PROD environment**, STAGE included (only reading; running a plan in
+   STU-CR-5 has its own environment rules). The SQL is shown in the page only and never written to the log, the
+   audit log, the query history or a diagnosis report; the designer writes no audit record, because it changes
+   nothing.
+7. **PostgreSQL:** the write connection's `search_path` is `pg_catalog`, so the draft always names its schema; system
+   schemas (`pg_*`, `information_schema`) are refused. SQLite: only `main`.
+8. **Concurrent indexes:** every `plan` call passes `concurrent_indexes=False` (STU-ADR-0007); the decision for
+   `CREATE INDEX CONCURRENTLY` belongs to STU-CR-5.
+9. **Platforms:** the SQLite tests of the designer skip on Python 3.11 like the other write tests; Windows is not
+   excluded for the designer (it only reads the schema).
+10. **Firefox and WebKit:** the new Playwright spec ran in Chromium locally; CI runs the three browsers.
 
 ## Cross-repository checks still to add
 

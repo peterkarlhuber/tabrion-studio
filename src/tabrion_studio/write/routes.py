@@ -14,8 +14,9 @@ The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan
 make and preview, confirm with the hash and the typed text, execute once. With the Data Editor flag on, the Data
 Editor's executor (STU-026, :mod:`tabrion_studio.write.data_editor`) is registered there and its table route answers;
 with that flag off neither is imported. With the Schema Designer flag on, its two database creation routes (STU-CR-2,
-STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`) answer; with that flag off they answer 405 and import
-nothing of the area.
+STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`) and its draft and preview routes (STU-CR-4,
+:mod:`tabrion_studio.write.schema_designer.designer`; the drafts in ``app.state.schema_drafts``, ended with their
+unlock) answer; with that flag off they answer 405 and import nothing of the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -125,6 +126,10 @@ _MAX_PLAN_BODY = MAX_REQUEST_BYTES + 4096
 _CREATE_SQLITE_KEYS = frozenset({"path", "typed"})
 _CREATE_POSTGRES_KEYS = frozenset({"connection_id", "name", "owner", "template", "encoding", "locale", "typed"})
 _MAX_CREATE_BODY = MAX_FORM_BODY
+#: The keys of the Schema Designer's draft routes (STU-CR-4): never a model, a snapshot or a plan (GS3-09).
+_DRAFT_START_KEYS = frozenset({"connection_id", "schema"})
+_DRAFT_KEYS = frozenset({"connection_id"})
+_DRAFT_EDIT_KEYS = frozenset({"connection_id", "revision", "edit"})
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -570,6 +575,46 @@ def add_enabled_write_routes(
             return JSONResponse(created.to_dict(), status_code=201)
 
         return await plan_call(request, _CREATE_POSTGRES_KEYS, _MAX_BODY, create)
+
+    # --- the Schema Designer's draft and plan preview (STU-CR-4) ---------------------------------------------------
+
+    drafts: Any = None
+    if areas.on(Area.SCHEMA_DESIGNER):
+        # Imported only with the Schema Designer flag on (GS3-01); a draft ends with the unlock it belongs to.
+        from tabrion_studio.write.schema_designer.draft import MAX_EDIT_BODY, Drafts
+
+        drafts = Drafts()
+        unlocks.end_listeners.append(drafts.unlock_ended)
+        app.state.schema_drafts = drafts
+        draft_edit_body = MAX_EDIT_BODY
+    else:
+        draft_edit_body = _MAX_BODY
+
+    def designer_route(path: str, method: str, keys: frozenset[str], limit: int, action: str) -> None:
+        @route(path, method)
+        async def handle(request: Request) -> Response:
+            if drafts is None:
+                return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+            from tabrion_studio.write.schema_designer import designer
+            from tabrion_studio.write.schema_designer.create import DriverFailure
+
+            def call(session: str, doc: dict[str, Any]) -> Response:
+                try:
+                    if action == "discard":
+                        designer.discard(unlocks, drafts, session, doc)
+                        return Response(status_code=204)
+                    answer_doc = getattr(designer, action)(unlocks, drafts, session, doc)
+                except DriverFailure as exc:
+                    return db_problem_response(exc.classification)
+                return JSONResponse(answer_doc, status_code=201 if action == "start" else 200)
+
+            return await plan_call(request, keys, limit, call)
+
+    designer_route("/api/write/schema-designer/draft", "POST", _DRAFT_START_KEYS, _MAX_BODY, "start")
+    designer_route("/api/write/schema-designer/draft", "DELETE", _DRAFT_KEYS, _MAX_BODY, "discard")
+    designer_route("/api/write/schema-designer/draft/view", "POST", _DRAFT_KEYS, _MAX_BODY, "view")
+    designer_route("/api/write/schema-designer/draft/edits", "POST", _DRAFT_EDIT_KEYS, draft_edit_body, "edit")
+    designer_route("/api/write/schema-designer/draft/preview", "POST", _DRAFT_KEYS, _MAX_BODY, "preview")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

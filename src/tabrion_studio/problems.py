@@ -11,7 +11,11 @@ plus ``log_id`` for ``studio.internal_error``, ``issues`` for ``studio.profile_i
 ``studio.data_editor_value_invalid`` (``[{"pointer": "changes.2.5", "code": "value.too_long"}]``: positions in the
 request and the table, and a ``value.*`` code; STU-XDE-1) and for ``studio.schema_create_invalid``
 (``[{"pointer": "create.name", "code": "create.too_long"}]``: a field name and a ``create.*`` code; STU-CR-2,
-STU-CR-3) and, from
+STU-CR-3) and for the Schema Designer's draft (STU-CR-4): ``studio.schema_edit_invalid`` and
+``studio.schema_draft_limit`` (``[{"pointer": "edit.column", "code": "edit.column_in_use"}]``: a field of the edit
+and an ``edit.*`` code), ``studio.schema_plan_refused`` and ``studio.schema_model_invalid``
+(``[{"pointer": "plan.reason", "code": "plan.unsupported_feature"}]``: tabrion's reason, feature kind or error code,
+``plan.*``, ``ddl.*`` or ``schema.*``, never a name or a text) and, from
 STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
@@ -64,11 +68,12 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: An issue of a rejected profile or settings form: a key path of fixed names and a config.* code (STU-008); or of a
 #: refused Data Editor value (STU-XDE-1): the change's and the column's position and a value.* code, never a name.
 #: Or a field of the Schema Designer's database creation (STU-CR-2, STU-CR-3): ``create.<field>`` and a ``create.*``
-#: code, never the value.
+#: code, never the value. Or the Schema Designer's draft (STU-CR-4): ``edit.<field>`` with an ``edit.*`` code, and
+#: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
-    r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|create\.[a-z_]{1,32}"
+    r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
 )
-_ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}|value\.[a-z_]{1,48}|create\.[a-z_]{1,48}")
+_ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema)\.[a-z_]{1,48}")
 MAX_ISSUES = 32
 
 
@@ -823,6 +828,62 @@ CATALOG: dict[str, Entry] = {
         "The write profile's role may not act as the owner role (SET ROLE), so it cannot give it the new database. "
         "Nothing was created.",
         "Leave the owner empty (the write profile's role owns the database) or ask the administrator.",
+    ),
+    # The Schema Designer's draft and plan preview (STU-CR-4, STU-ADR-0007 sections 2 and 3, GS3-09, GS3-20). W-9:
+    # 400 or 405, never 403 or 404; no name, type, default, check text or statement from the request or tabrion.
+    "studio.schema_draft_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No draft",
+        "There is no draft for this connection: none was started, it was discarded, or the unlock it belonged to "
+        "ended.",
+        "Start a draft again.",
+    ),
+    "studio.schema_draft_stale": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Draft changed",
+        "The draft changed since this page last read it (another tab may have edited it), so the edit was not made.",
+        "Reload the draft and make the edit again.",
+    ),
+    "studio.schema_draft_schema": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Schema not usable",
+        "A draft starts from one schema the write profile can see: main on SQLite, and on PostgreSQL a schema "
+        "that exists and is not one of PostgreSQL's own.",
+        "Check the schema name.",
+    ),
+    "studio.schema_draft_limit": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Draft too large",
+        "The draft would exceed one of the Schema Designer's limits (tables, columns, constraints and indexes, "
+        "edits, or its size). Nothing was changed.",
+        "Make the change in smaller steps, or start a new draft.",
+    ),
+    "studio.schema_edit_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Edit not valid",
+        "A part of the edit is missing or not valid, or the draft does not allow it. The draft was not changed.",
+        "Check the fields in question.",
+    ),
+    "studio.schema_plan_refused": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Change refused",
+        "Tabrion refuses to plan this change, for example for a table with a feature it cannot check (partitions, "
+        "inheritance, rules, a domain column, a view that names it). There is no way around the refusal.",
+        "Leave the table in question unchanged, or change it with your own migration tooling.",
+    ),
+    "studio.schema_model_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Model not usable",
+        "Tabrion cannot make the change as designed, for example for an unknown type, a default or check text that "
+        "is not one plain expression, a name that is too long, or a change it does not support.",
+        "Check the type, the texts and the names of the change.",
     ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(
