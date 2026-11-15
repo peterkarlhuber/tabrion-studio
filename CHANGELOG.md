@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S2 follow-up 7A: pins tabrion at the merge commit of tabrion #93 (`3520b21`), which makes the names the Data
+  Editor uses stable (`tabrion.rowedit.insert_row`, `update_row`, `delete_row`, `tabrion.errors.RowCountMismatch`,
+  `Transaction.execute_checked`). `update_row` and `delete_row` now take `old` and `new` by keyword only; the Data
+  Editor passes them by keyword. No behavior change; the `data_editor` flag stays off.
+
 - G-S2 follow-up 6A for the Data Editor (behind the `data_editor` flag, which stays off by default; no default
   changes): a bytes value (`bytea`, a SQLite `BLOB`) is replaced by the content of a file the user picks, at most
   64 KiB (`value.too_large` on the page, before the file is read, and on the server); it is shown by its size and

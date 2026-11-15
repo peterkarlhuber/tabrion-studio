@@ -169,7 +169,7 @@
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR; to `28c8839` (merge of tabrion #90) in the STU-CR-1 PR; to `71370a6` (merge of tabrion #92, TAB-XW-5 `execute_plan`) in the tabrion repin PR) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR; to `28c8839` (merge of tabrion #90) in the STU-CR-1 PR; to `71370a6` (merge of tabrion #92, TAB-XW-5 `execute_plan`) in the tabrion repin PR; to `3520b21` (merge of tabrion #93, G-S2 7A) in the 7A repin PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -901,15 +901,20 @@ Follow-ups as TODO items:
   only as its own work package.
 - [x] **G-S2 6A, before the Studio 1.1 release:** bytes "replace by file", `constraint.*` errors at the cell, and
   paging beyond the first page in the Data Editor (planning document 15 section 4; G2-08). Enum labels confirmed.
-  Implemented in branch `claude/project-thread-rdo6g3-gs2-6a` (the `data_editor` flag stays off, no default changes): a bytes cell is replaced by a
+  Done in PR #131 (`9d0e72c`; the `data_editor` flag stays off, no default changes): a bytes cell is replaced by a
   picked file of at most 64 KiB (`value.too_large`, page and server; the plan route's body cap is now the plan
   framework's own 256 KiB instead of the default 16 KiB, so a changeset carries one or two such files); a change the
   database refuses for a constraint is `400 studio.data_editor_constraint` with `changes.<change>[.<column>]` and
   `constraint.<kind>`, marked at the cell or the row, the whole changeset rolled back; the grid loads 100 more rows at
-  a time, up to 1,000, with every pending change bound to its row. Open: the independent review and merge; whether
-  64 KiB per file and 1,000 rows are the right limits for Studio 1.1 is the owner's call.
-- [ ] **G-S2 7A, before the Studio 1.1 release:** tabrion stabilizes `tabrion.rowedit` and
-  `tabrion.errors.RowCountMismatch` to `S` (tabrion 0.3), and Studio moves its pin (02 section 14 S-2).
+  a time, up to 1,000, with every pending change bound to its row. The independent review accepted it with no finding
+  (notes only). Open: whether 64 KiB per file and 1,000 rows are the right limits for Studio 1.1 is the owner's call.
+- [x] **G-S2 7A, before the Studio 1.1 release:** tabrion stabilizes `tabrion.rowedit` and
+  `tabrion.errors.RowCountMismatch` to `S` (tabrion 0.3), and Studio moves its pin (02 section 14 S-2). Done: tabrion
+  #93 (`3520b21`, reviewed) makes `insert_row`, `update_row`, `delete_row`, `RowCountMismatch` and
+  `Transaction.execute_checked` stable, with `old` and `new` keyword-only and `rowedit.new_required` for an empty
+  `new`; Studio pins `3520b21` and passes `old=` and `new=` by keyword. Still experimental and used:
+  `tabrion.postgres.create_database` (Schema Designer, G-S3) and the `tabrion.schema`, `tabrion.ddl` and `tabrion.plan`
+  names of the Schema Designer (STU-ADR-0007, before a 1.2 release).
 
 ### G-S3 and G-S4 definitions
 
