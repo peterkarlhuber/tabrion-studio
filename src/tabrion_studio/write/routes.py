@@ -148,6 +148,7 @@ def add_enabled_write_routes(
     config: Configuration,
     registry: ConnectionRegistry,
     audit_dir: Path | None = None,
+    log_dir: Path | None = None,
 ) -> Unlocks:
     audit = AuditLog(audit_dir)
     # The audit folder is <folder of write-areas.toml>/audit (review N-1 of PR #116); the confirmed pairs live next
@@ -536,10 +537,13 @@ def add_enabled_write_routes(
 
     # --- the Schema Designer's database creation (STU-CR-2, STU-CR-3) ----------------------------------------------
 
-    # Studio's own folders: no database file is created in them (the configuration, the audit log's folder, the state).
-    reserved = [config.user.config_dir, config.project.record.parent]
+    # Studio's own folders: no database file is created in them or below them (the configuration, the audit log's
+    # folder, the state, the log folder, the project's .tabrion folder); compared by device and inode (P128-02).
+    reserved = [config.user.config_dir, config.project.record.parent, config.project.file.parent]
     if audit_dir is not None:
         reserved += [audit_dir, audit_dir.parent]
+    if log_dir is not None:
+        reserved.append(log_dir)
 
     @route("/api/write/schema-designer/create/sqlite", "POST")
     async def post_create_sqlite(request: Request) -> Response:

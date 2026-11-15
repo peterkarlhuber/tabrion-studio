@@ -94,6 +94,7 @@ def make_studio(
     drafts: Drafts | None = None,
     write_areas: WriteAreas = ALL_OFF,
     audit_dir: Path | None = None,
+    log_dir: Path | None = None,
 ) -> Studio:
     clock = Clock()
     shutdowns: list[str] = []
@@ -119,6 +120,7 @@ def make_studio(
         state=history.store if history is not None else None if drafts is None else drafts.store,
         write_areas=write_areas,
         audit_dir=audit_dir,
+        log_dir=log_dir,
     )
     client = TestClient(create_app(runtime, static_dir), base_url=ORIGIN)
     return Studio(client, runtime, clock, shutdowns)

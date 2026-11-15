@@ -61,6 +61,8 @@ class WriteEnv:
         self.audit_dir = self.config_dir / "audit"
         #: The confirmed pairs of STU-XW-4, next to the audit folder.
         self.confirmations_file = self.config_dir / "write-secret-confirmations.json"
+        #: Studio's log folder (not created here): no database is created in it (review P128-02).
+        self.log_dir = tmp_path / "logs"
         self.fake = FakeKeyring()
         secrets = Secrets(KeyringStore(lambda: self.fake), SessionSecrets(), {})
         project = ProjectConfig(self.project, self.state, "k1", self.config_dir)
@@ -81,6 +83,7 @@ class WriteEnv:
             drafts=Drafts(store, "k1", self.config.limits),
             write_areas=areas,
             audit_dir=self.audit_dir,
+            log_dir=self.log_dir,
         )
         self.store = store
         self.headers = {**self.studio.sign_in(), "Origin": ORIGIN}

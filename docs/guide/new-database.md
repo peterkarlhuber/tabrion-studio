@@ -34,18 +34,30 @@ both of its routes answer `405` and their code is not even loaded.
 3. Studio creates the file with the mode `0600` (only you may read and write it), writes the SQLite header and turns
    on WAL mode. The wizard shows the path.
 
+Studio creates the file inside the folder it checked, which it holds open, and checks before and after it writes the
+header that the path still leads to that folder and to the very file it created (by device and inode).
+
 Studio refuses, and creates nothing, when:
 
 - **the file exists**, or one of its side files (`-wal`, `-shm`, `-journal`) does: Studio never overwrites a file,
   and an existing file is left exactly as it was;
 - **the folder is not private enough**: it does not exist, it is not a folder, it is not yours, others may write to
-  it (on POSIX a mode with a group or world write bit, such as `0770` or `1777`), or its path holds a **symbolic
-  link** anywhere (give the real path: on macOS, `/private/tmp` instead of `/tmp`);
-- **the folder is Studio's own**: the configuration, state and audit folders and the folders inside them;
-- **the path is not plain**: relative, with `..`, with control characters, on a network share or a device path, or
-  longer than 4096 characters.
+  it (a mode with a group or world write bit, such as `0770` or `1777`), or its path holds a **symbolic link**
+  anywhere (give the real path: on macOS, `/private/tmp` instead of `/tmp`);
+- **a folder above it is not safe**: every folder above the target folder must belong to you or to `root`, and
+  neither group nor others may write it unless it has the sticky bit (as `/tmp` has), as OpenSSH's `StrictModes`
+  requires for `~/.ssh`. So `/tmp/mine/inventory.db` works when `/tmp/mine` is your own `0700` folder, but not
+  below a shared folder that every user may write without the sticky bit;
+- **the folder is Studio's own**: the configuration, state, audit and log folders, the project's `.tabrion` folder,
+  and the folders inside them. Studio compares the folders themselves (device and inode), not their names, so a
+  second name of one of them (a bind mount, or another spelling of the name on a case-insensitive disk) is refused
+  too;
+- **the path is not plain**: relative, with `..`, with control characters or with a space other than the plain space
+  (such as a no-break space), on a network share or a device path, or longer than 4096 characters.
 
-On Windows the folder's access list decides who may use the file; Studio checks only that the path holds no link.
+**Not on Windows.** On Windows Studio does not create SQLite files (`studio.schema_create_platform`): it does not yet
+check a folder's access control list, so it cannot tell whether others may write the folder. Create the file with
+another tool and add it as a connection profile; PostgreSQL databases can be created on Windows as elsewhere.
 
 ## A PostgreSQL database
 
@@ -55,7 +67,9 @@ profile** ([Data Editor: before the first edit](data-editor.md#before-the-first-
 1. Open a `DEV` or `TEST` PostgreSQL connection and couple a write profile to its profile under **Settings**. The
    write profile's role needs the `CREATEDB` attribute, and nothing more: a role that is a superuser, has
    `BYPASSRLS` or `REPLICATION`, or reaches a server-file role is refused at the unlock
-   (`studio.write_role_over_privileged`), as for the Data Editor.
+   (`studio.write_role_over_privileged`), as for the Data Editor. Use a **separate role** with `CREATEDB` for the
+   Schema Designer on `DEV` and `TEST` only, not the role you edit rows with (see
+   [CREATEDB below](#the-createdb-right)).
 2. In **New database**, choose **PostgreSQL database** and the connection, then **unlock** the write mode by typing
    the write profile's name. The unlock is the Schema Designer's and ends after 15 minutes without use.
 3. Enter the **database name** and, if you want, the **owner** (empty: the write profile's role), the **template**
@@ -68,6 +82,21 @@ database exists and refuses then without running anything. The owner must be a r
 the write profile's role is a member of (a role it cannot act as, such as `postgres`, is refused). If the role has no `CREATEDB`,
 the wizard shows the steps an administrator takes outside Studio to give it, without SQL to copy: Studio builds no
 statement for that.
+
+## The CREATEDB right
+
+`CREATEDB` is a property of the database role, not of Studio: the role keeps it in every tool and on every server
+where it exists. A role with `CREATEDB` can create databases of its own and, as their owner, do there what an owner
+may, including installing **trusted extensions**, which PostgreSQL installs with elevated rights. It gains nothing in
+the databases that exist already. So:
+
+- **Use a separate role** for the Schema Designer, with `CREATEDB` and nothing else, and only on `DEV` and `TEST`
+  servers. Do not give `CREATEDB` to the role you edit rows with in the Data Editor or to any role on a `PROD` server.
+- **Keep the server up to date.** Fixed security problems in extension scripts have let such a role gain more rights
+  on servers that were not updated.
+- Studio shows **`admin.createdb`** as a warning in the write state when a write profile's role has `CREATEDB` and
+  the Data Editor's switch is on too (the same unlock then edits rows), and for any role outside `DEV` and `TEST`.
+  It is a warning only: nothing is refused because of it.
 
 ## Save a connection profile
 
@@ -84,7 +113,8 @@ These are refused on purpose, by the server, whatever the page shows:
 - **Empty databases only.** The wizard creates no schema, table, role or grant and runs no migration. The rest of
   the Schema Designer is not built yet.
 - **No overwrite and no link.** A SQLite file is created only as a new file, never through a link and never in a
-  folder others may write to.
+  folder others may write to, or below a folder others may write to without the sticky bit.
+- **No SQLite file on Windows** (see above).
 - **Nothing secret in the logs.** The local audit log records the action, the profile, the environment and the file
   or database name, never the folder, a password or the server's message. A database error is shown as its kind
   (`db.*`), never as the server's text.
@@ -94,8 +124,9 @@ These are refused on purpose, by the server, whatever the page shows:
 | Message | What to do |
 |---|---|
 | A file or link with this name, or one of its side files (-wal, -shm, -journal), exists already. … | Choose another name, or move the file yourself first. |
-| Studio does not create the file in this folder … | Use a folder of your own that others cannot write to, by its real path without links. |
-| Studio does not create databases in its own configuration, state or audit folders. | Choose another folder. |
+| Studio does not create the file in this folder … | Use a folder of your own that others cannot write to, below folders of yours or of `root` that others cannot write to (or that have the sticky bit), by its real path without links. |
+| Studio does not create databases in its own configuration, state, audit or log folders or in the project's .tabrion folder. | Choose another folder. |
+| On Windows Studio does not create SQLite files yet. … | Create the file with another tool and add it as a connection profile. |
 | To create the database, type its name exactly as shown. | Type the file or database name exactly. |
 | The server has a database with this name already. | Choose another name. |
 | The write profile's role may not create databases (CREATEDB) on this server. | Follow the guided steps: an administrator gives the role `CREATEDB` outside Studio. |

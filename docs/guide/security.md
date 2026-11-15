@@ -127,7 +127,9 @@ the server answers `405` and the write code is not even loaded.
   (`405 studio.write_role_over_privileged`, owner decision 1A at G-S2): Studio closes the connection, unlocks
   nothing and records the refused unlock in the audit log. `CREATEROLE` (also before PostgreSQL 16) and the other
   predefined roles, such as `pg_read_all_data`, stay warnings: the unlock goes ahead and the write state shows
-  them. To see the role and every role it reaches with their attributes, run
+  them. `CREATEDB` is shown as the warning `admin.createdb` when a write profile's role has it and the Data
+  Editor's switch is on (the same unlock then edits rows), and for any role outside `DEV` and `TEST`; for the Schema
+  Designer alone on `DEV` or `TEST`, which needs it, it is a fact only. To see the role and every role it reaches with their attributes, run
   `SELECT r.rolname, r.rolsuper, r.rolbypassrls, r.rolreplication FROM pg_roles r WHERE pg_has_role('<role>', r.oid, 'MEMBER');`.
   For admin profiles, which finding blocks is decided with the Database Manager (G-S4); until then they are shown
   and logged.
@@ -292,11 +294,21 @@ the server answers `405` and the write code is not even loaded.
   default; with the flag off its two routes answer `405` and their code is not loaded. Its steps and limits are in
   the [New database](new-database.md) page. What it does when that flag is on in a test setup:
     - a SQLite file is created only as a new file with the mode `0600`, never through a link, never over an existing
-      file or its side files, and only in a folder of yours that others cannot write to and that is not one of
-      Studio's own folders; the typed file name confirms it;
+      file or its side files, and only in a folder of yours that others cannot write to, below folders of yours or
+      of `root` that others cannot write to unless they have the sticky bit, and not in or below one of Studio's own
+      folders (configuration, state, audit, log, the project's `.tabrion`; compared by device and inode). The file
+      is created relative to the folder Studio holds open, and before the header is written Studio checks that the
+      path still leads to that folder and to the file it created. The typed file name confirms it. On Windows no
+      SQLite file is created (`studio.schema_create_platform`): Studio does not check a folder's access control list
+      there yet;
     - a PostgreSQL database is created only through the Schema Designer's unlocked write profile of a `DEV` or
       `TEST` connection (the stored environment is checked again), with the typed database name; the owner must be a
       role the write profile's role is a member of; a database error is shown as its kind, never the server's text;
+    - **the role that creates databases**: give `CREATEDB` to a separate role used only by the Schema Designer on
+      `DEV` and `TEST` servers, never to the role you edit rows with or to a role on a `PROD` server. A role with
+      `CREATEDB` owns the databases it creates and may install trusted extensions in them, which PostgreSQL installs
+      with elevated rights; **keep the server up to date**, since security fixes in extension scripts close ways for
+      such a role to gain more rights. It gains nothing in existing databases;
     - the audit log records the start and the result with the file or database name, never the folder or a secret.
 
 !!! note "Python 3.11"

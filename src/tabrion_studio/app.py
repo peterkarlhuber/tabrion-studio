@@ -163,6 +163,9 @@ class Runtime:
     #: The audit log's folder (STU-XW-2): ``audit`` in the folder of ``write-areas.toml`` (never a state folder an
     #: environment variable chose, N-1 of PR #116), used only while an area is on; None refuses writes.
     audit_dir: Path | None = None
+    #: Studio's log folder (``--log-dir``, the platform's log folder or ``<state>/logs``): one of the folders the
+    #: Schema Designer creates no database in (review P128-02); None when Studio writes no log file.
+    log_dir: Path | None = None
 
 
 def _problem(code: str) -> Response:
@@ -340,7 +343,9 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
     if runtime.drafts is not None:
         add_draft_routes(app, runtime.drafts)
     # The write foundation (STU-XW-1): refusing handlers unless an area's flag was on at start (TX-02).
-    unlocks = add_write_routes(app, runtime.write_areas, runtime.config, runtime.connections, runtime.audit_dir)
+    unlocks = add_write_routes(
+        app, runtime.write_areas, runtime.config, runtime.connections, runtime.audit_dir, runtime.log_dir
+    )
     app.state.write_unlocks = unlocks
 
     index = static_dir / "index.html"
