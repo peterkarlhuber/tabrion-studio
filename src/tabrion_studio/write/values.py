@@ -23,7 +23,9 @@ database stays the last instance (CHECK, UNIQUE, foreign keys, a domain's constr
   ``STRICT`` table's columns are ``int8`` (``INT``, ``INTEGER``), ``float8`` (``REAL``), ``text`` (``TEXT``),
   ``bytes`` (``BLOB``) or ``other`` (``ANY``). Whether a table is ``STRICT`` is read from ``pragma_table_list``
   (SQLite 3.37 and later), never from the SQL text, which a trailing comment can fool; an older SQLite has no
-  ``STRICT`` tables.
+  ``STRICT`` tables. Whatever the kind, an integer for a SQLite column must fit in 64 bits, the widest integer
+  SQLite stores and its driver binds (``value.out_of_range``; G2-02 of the G-S2 gate review): a new value, and also a
+  key or ``old`` value (:func:`check_compared_value`), so that no such value reaches the run.
 
 The catalog fingerprint covers what the checks depend on (PostgreSQL: each column's type with its modifier,
 nullability, default, identity and generation; SQLite: the table's SQL), so a check made at preview time cannot be
@@ -51,8 +53,10 @@ __all__ = [
     "KINDS",
     "PG_COLUMN_TYPES",
     "ColumnType",
+    "check_compared_value",
     "check_value",
     "is_bytes",
+    "is_hour_24",
     "pg_column_type",
     "sqlite_column_type",
 ]
@@ -192,6 +196,8 @@ class ColumnType:
     scale: int | None = None
     array: bool = False
     values: tuple[str, ...] = field(default=())
+    #: A SQLite column: an integer must fit in 64 bits whatever the kind (G2-02). Not sent to the page.
+    sqlite: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         doc: dict[str, Any] = {
@@ -257,6 +263,7 @@ def sqlite_column_type(
         nullable=not not_null or rowid,
         optional=default is not None or rowid or hidden in (2, 3),
         read_only=hidden in (2, 3),
+        sqlite=True,
     )
 
 
@@ -270,9 +277,25 @@ def check_value(column: ColumnType, value: Any) -> str | None:
         return "value.read_only"
     if value is None:
         return None if column.nullable else "value.not_null"
+    if column.sqlite and _wider_than_sqlite(value):
+        return "value.out_of_range"
     if column.array and column.kind in _ARRAY_KINDS:
         return _check_array(column, value, 0)
     return _check_scalar(column, value)
+
+
+def check_compared_value(column: ColumnType, value: Any) -> str | None:
+    """None if a key or ``old`` value (what the viewer showed, compared, never stored) can be bound for ``column``,
+    else the issue code. Only the driver's limit is checked: a SQLite integer wider than 64 bits (G2-02)."""
+    return "value.out_of_range" if column.sqlite and _wider_than_sqlite(value) else None
+
+
+#: SQLite stores an integer in at most 64 bits, and its driver binds no wider Python integer (``OverflowError``).
+_SQLITE_INTEGER = 1 << 63
+
+
+def _wider_than_sqlite(value: Any) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and not -_SQLITE_INTEGER <= value < _SQLITE_INTEGER
 
 
 def _check_array(column: ColumnType, value: Any, depth: int) -> str | None:
@@ -435,6 +458,21 @@ def _check_format(kind: str, value: str) -> str | None:
     if any(int(part or 0) > limit for part, limit in zip(parts[4:], (23, 59, 59), strict=False)):
         return "value.format"
     return None
+
+
+#: A time or timestamp at exactly 24:00 (``24:00``, ``24:00:00``, ``24:00:00.000``, with a date or an offset): a value
+#: PostgreSQL takes and keeps (``time`` stores ``24:00:00``), which Python's ``datetime`` cannot hold.
+_HOUR_24 = re.compile(
+    r"(?:\d{4}-\d{2}-\d{2}[T ])?24:00(?::00(?:\.0{1,6})?)?(?:Z|[+-]\d{2}(?::\d{2}(?::\d{2})?)?)?", re.ASCII
+)
+
+
+def is_hour_24(value: object) -> bool:
+    """Whether ``value`` is a time or timestamp text at exactly 24:00, which :func:`check_value` lets through as
+    PostgreSQL does. The executor binds it as text for the database to read (G2-03 of the G-S2 gate review), the same
+    on every Python version: ``fromisoformat`` refuses it before Python 3.14 and turns it into the next midnight from
+    3.14 on (a ``time`` would become ``00:00``)."""
+    return isinstance(value, str) and _HOUR_24.fullmatch(value) is not None
 
 
 def is_bytes(value: object) -> bool:

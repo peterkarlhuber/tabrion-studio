@@ -677,6 +677,48 @@ def test_values_that_fit_run_and_strict_sqlite_takes_number_text(env: WriteEnv) 
     assert _rows(env.db, "typed")[0] == (1, 12, 1.25, "", None, 24)
 
 
+@pytest.mark.parametrize("wide", [1 << 63, -(1 << 63) - 1, 10**40])
+def test_a_sqlite_integer_wider_than_64_bits_is_refused_before_the_plan(env: WriteEnv, wide: int) -> None:
+    """G2-02 of the G-S2 gate review: SQLite (and its driver) take no integer wider than 64 bits. A new value, a key
+    and an ``old`` value are refused when the plan is made (400 with positions only), never at run time (500)."""
+    connection_id = _unlocked(env)
+    for changes, pointer in (
+        ([{"op": "insert", "values": {"id": wide, "material": "Titan", "note": None}}], "changes.0.0"),
+        ([_update(*STEEL, {"note": wide})], "changes.0.2"),
+        (
+            [
+                {
+                    "op": "update",
+                    "key": {"id": wide},
+                    "old": {"id": wide, "material": "Steel", "note": None},
+                    "new": {"note": "x"},
+                }
+            ],
+            "changes.0.0",
+        ),
+        (
+            [{"op": "delete", "key": {"id": wide}, "old": {"id": wide, "material": "Steel", "note": None}}],
+            "changes.0.0",
+        ),
+    ):
+        refused = _plan(env, connection_id, changes)
+        _refused(refused, 400, "studio.data_editor_value_invalid")
+        assert refused.json()["issues"] == [{"pointer": pointer, "code": "value.out_of_range"}]
+        assert str(wide) not in refused.text
+    assert _rows(env.db) == ORIGINAL
+    assert not any(entry.get("plan_hash") for entry in _audit(env))
+
+
+def test_a_sqlite_integer_of_64_bits_still_runs(env: WriteEnv) -> None:
+    connection_id = _unlocked(env)
+    widest = (1 << 63) - 1
+    done = _run(
+        env, connection_id, [{"op": "insert", "values": {"id": widest, "material": "Titan", "note": -(1 << 63)}}]
+    )
+    assert done.status_code == 200, done.text
+    assert _rows(env.db)[-1] == (widest, "Titan", str(-(1 << 63)))  # TEXT affinity stores the text
+
+
 # --- canary: no value outside the database (TX-13, TX-14, N-3) ------------------------------------------------
 
 

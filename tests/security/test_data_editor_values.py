@@ -18,7 +18,9 @@ from tabrion_studio.write.plan import _sqlite_table_options
 from tabrion_studio.write.values import (
     KINDS,
     ColumnType,
+    check_compared_value,
     check_value,
+    is_hour_24,
     pg_column_type,
     sqlite_column_type,
 )
@@ -166,3 +168,73 @@ def test_value_issues_are_positions_and_fixed_codes_only() -> None:
     ]:
         with pytest.raises(ValueError, match="malformed issues"):
             problem("studio.data_editor_value_invalid", issues=[(pointer, code)])
+
+
+# --- G2-02 and G2-03 of the G-S2 gate review ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_a_sqlite_integer_must_fit_in_64_bits_whatever_the_kind(strict: bool) -> None:
+    """G2-02: SQLite and its driver take no integer wider than 64 bits; refused before the plan, as a new value and
+    as a key or old value, for an untyped column too. PostgreSQL's untyped columns keep any JSON number."""
+    for declared in ("INTEGER", "TEXT", "ANY"):
+        column = sqlite_column_type("a", declared, 0, None, 0, strict=strict, rowid=False)
+        assert "sqlite" not in column.to_dict()
+        for fits in (0, (1 << 63) - 1, -(1 << 63), True, 1.5, "99999999999999999999999"):
+            assert check_compared_value(column, fits) is None
+        for wide in (1 << 63, -(1 << 63) - 1, 10**40):
+            assert check_value(column, wide) == "value.out_of_range"
+            assert check_compared_value(column, wide) == "value.out_of_range"
+    assert check_value(_pg("interval"), 10**40) is None
+    assert check_compared_value(_pg("int8"), 10**40) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "24:00",
+        "24:00:00",
+        "24:00:00.000",
+        "24:00:00.000000",
+        "24:00:00+02:00",
+        "24:00:00+02",
+        "24:00Z",
+        "2024-12-31 24:00",
+        "2024-12-31T24:00:00.0Z",
+        "2024-12-31 24:00:00+00",
+    ],
+)
+def test_hour_24_is_recognized_as_postgresql_writes_it(text: str) -> None:
+    assert is_hour_24(text)
+
+
+@pytest.mark.parametrize(
+    "text", ["24:00:01", "24:01", "24:00:00.000001", "00:00", "23:59:59", "2024-12-31", "x24:00", "24:00 ", 2400]
+)
+def test_other_times_are_not_hour_24(text: object) -> None:
+    assert not is_hour_24(text)
+
+
+@pytest.mark.parametrize("kind", ["time", "timetz", "timestamp", "timestamptz"])
+def test_hour_24_passes_the_check_and_binds_as_text_on_every_python_version(kind: str) -> None:
+    """G2-03: the check takes 24:00 (as PostgreSQL does), and bind_value hands the text to the database instead of
+    ``fromisoformat``, which refuses it before Python 3.14 and turns it into the next midnight from 3.14 on."""
+    import sqlalchemy
+    from sqlalchemy.dialects import postgresql
+
+    from tabrion_studio.write.data_editor import bind_value
+
+    text = {"time": "24:00", "timetz": "24:00:00+02:00", "timestamp": "2024-12-31 24:00"}.get(
+        kind, "2024-12-31 24:00:00Z"
+    )
+    assert check_value(ColumnType("c", kind=kind), text) is None
+    types: dict[str, sqlalchemy.types.TypeEngine[Any]] = {
+        "time": sqlalchemy.Time(),
+        "timetz": sqlalchemy.Time(timezone=True),
+        "timestamp": sqlalchemy.DateTime(),
+        "timestamptz": postgresql.TIMESTAMP(timezone=True),
+    }
+    column: sqlalchemy.Column[Any] = sqlalchemy.Column("c", types[kind])
+    assert bind_value(column, text, "postgresql") == text
+    # Any other time still goes through fromisoformat.
+    assert not isinstance(bind_value(column, text.replace("24:00", "23:00"), "postgresql"), str)

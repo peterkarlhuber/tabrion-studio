@@ -104,6 +104,7 @@ from tabrion_studio.services.connections import (
     connection_url,
     driver_options,
     libpq_version,
+    pin_libpq_environment,
 )
 from tabrion_studio.services.readonly import ACTING_PRAGMAS, READING_PRAGMAS, SQLITE_FUNCTIONS
 
@@ -487,6 +488,9 @@ def _postgres_database(
     connect_args["require_auth"] = require_auth(password)
     if requirepeer is not None:
         connect_args["requirepeer"] = requirepeer
+    # G2-01: no libpq environment variable (PGHOSTADDR, PGSERVICE, ...) turns the socket or loopback target into
+    # another server, past requirepeer and the loopback rules of check_transport.
+    connect_args.update(pin_libpq_environment(url, connect_args))
     options = {"connect_args": connect_args, "use_native_hstore": False}
     db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
     event.listen(db.engine, "checkin", tabrion_compat.reset_session)

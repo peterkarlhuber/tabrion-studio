@@ -123,6 +123,24 @@ def test_the_folder_comes_from_the_command_line_never_from_an_environment_variab
     assert flag_dir(None, tmp_path / "state", default) == tmp_path / "state" / "config"
 
 
+@pytest.mark.skipif(not POSIX, reason="POSIX folders; Windows uses the LocalAppData known folder")
+def test_the_platform_folder_follows_no_environment_variable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """G2-04 of the G-S2 gate review: XDG_CONFIG_HOME (which platformdirs follows) and HOME can be set by a
+    per-folder tool when the user enters a project; neither moves the folder of the flag file."""
+    import pwd
+
+    from tabrion_studio.paths import APP_NAME, platform_config_dir
+
+    before = platform_config_dir()
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    assert before.parent.parent == home or before.parent.parent.parent == home  # ~/.config or ~/Library/...
+    assert before.name == APP_NAME
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "project" / ".cfg"))
+    monkeypatch.setenv("HOME", str(tmp_path / "project"))
+    assert platform_config_dir() == before
+    assert str(tmp_path) not in str(platform_config_dir())
+
+
 def test_no_environment_variable_sets_a_flag(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "TABRION_STUDIO_WRITE_AREAS",

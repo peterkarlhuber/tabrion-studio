@@ -88,8 +88,25 @@ def default_config_dir(state_dir: Path | None = None) -> Path:
 
 def platform_config_dir() -> Path:
     """The platform's per-user configuration folder, never moved by an environment variable (the write-area flags,
-    STU-XW-1, review N-1 of PR #109)."""
-    return Path(platformdirs.user_config_dir(APP_NAME, appauthor=False))
+    STU-XW-1, review N-1 of PR #109; G2-04 of the G-S2 gate review).
+
+    ``platformdirs`` follows ``XDG_CONFIG_HOME`` (Linux, and macOS), ``WIN_PD_OVERRIDE_*`` (Windows) and ``HOME``,
+    which a per-folder tool (direnv, a ``.env`` loader) can set when the user enters a project folder. So this folder
+    is built without them: below the home folder of the account database (``pwd``) on POSIX, ``~/.config/<app>``
+    (``~/Library/Application Support/<app>`` on macOS); from the known folder ``LocalAppData``
+    (``SHGetKnownFolderPath``) on Windows. Usually it is the same folder as :func:`default_config_dir`; when an
+    environment variable moves that one, the two differ and write profiles stay unused while an area is on
+    (``write_areas.write_profiles_allowed``)."""
+    if sys.platform == "win32":
+        from platformdirs.windows import get_win_folder_via_ctypes
+
+        return Path(get_win_folder_via_ctypes("CSIDL_LOCAL_APPDATA")) / APP_NAME
+    import pwd
+
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    if sys.platform == "darwin":
+        return home / "Library" / "Application Support" / APP_NAME
+    return home / ".config" / APP_NAME
 
 
 def ensure_private_dir(path: Path) -> Path:

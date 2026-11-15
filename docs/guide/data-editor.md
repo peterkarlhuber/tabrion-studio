@@ -89,7 +89,7 @@ under the grid names every such cell, and **Preview** waits until none is left. 
 | `numeric` | a decimal number such as `12.50` that fits the precision and scale |
 | `float4`, `float8` | `1.5`, `2e-3`, `NaN`, `Infinity` |
 | `date` | `YYYY-MM-DD` |
-| `time` | `HH:MM` or `HH:MM:SS` |
+| `time` | `HH:MM` or `HH:MM:SS`; `24:00` is the end of the day and is stored as it is |
 | `timestamp` | `YYYY-MM-DD HH:MM:SS`, without an offset |
 | `timestamptz` | with its offset: `2025-01-01 10:00+02:00`, or `Z` for UTC (a value without an offset is refused, so nothing is shifted to another time zone) |
 | `uuid` | `123e4567-e89b-12d3-a456-426614174000` |
@@ -97,7 +97,8 @@ under the grid names every such cell, and **Preview** waits until none is left. 
 | Arrays | a JSON array such as `[1, 2]`; NULL elements are allowed, sub-arrays have the same length |
 | Bytes, generated and identity columns | read only |
 
-On SQLite, only `STRICT` tables have column types; in an ordinary table any value is taken as SQLite takes it. The
+On SQLite, only `STRICT` tables have column types; in an ordinary table any value is taken as SQLite takes it,
+except a whole number wider than 64 bits, which SQLite cannot store (the server refuses it with the preview). The
 checks on the page are help only: the server checks every value again before it makes the plan (a refused value
 marks its cell; the answer names positions, never a value), and the database checks the rest (CHECK constraints,
 uniqueness, foreign keys, domains, triggers).

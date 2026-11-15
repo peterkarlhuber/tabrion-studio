@@ -981,6 +981,7 @@
     "migrations_busy": "Studio liest bereits die Revisionen für einen anderen Migrationsstatus. Versuche es erneut, wenn das abgeschlossen ist.",
     "migrations_failed": "Das Lesen der Revisionen ist fehlgeschlagen. Führe alembic heads im Projekt aus, um zu sehen, ob sich die Revisionsdateien laden lassen.",
     "connection_failed": "Studio konnte die Datenbank nicht erreichen. Prüfe Host und Port des Profils und ob der Datenbankserver läuft.",
+    "connection_environment": "Eine libpq-Umgebungsvariable (etwa PGSERVICE) ist gesetzt, die einen anderen Server als das Profil wählen könnte. Starte Studio ohne sie.",
     "connection_config": "Der Treiber hat die Einstellungen des Profils nicht angenommen. Prüfe das Profil unter Verbindungen.",
     "connection_tls": "Der TLS-Modus des Profils ist schwächer, als der Host verlangt.",
     "connection_limit": "Studio hält höchstens 8 Verbindungen offen. Schließe zuerst eine.",

@@ -559,3 +559,22 @@ def test_the_type_editors_values_are_written_and_read_back_as_old(pg: Env) -> No
     assert pg.sql("SELECT label, tags::text, days::text, amounts::text FROM {p}.typed") == [
         ("x", "{NULL,e}", "{2024-03-01}", "{99.99}")
     ]
+
+
+def test_a_time_of_24_00_is_written_and_compared_on_every_python_version(pg: Env) -> None:
+    """G2-03 of the G-S2 gate review: the check takes 24:00 as PostgreSQL does, and the run binds it as text, so the
+    database stores it as it is (``time`` keeps ``24:00:00``) whatever Python's ``fromisoformat`` takes; the viewer's
+    24:00 is then an old value that matches without a false conflict."""
+    _table(pg, "clock", "id integer PRIMARY KEY, t time, tz timetz, s timestamp, st timestamptz")
+    columns = ["id", "t", "tz", "s", "st"]
+    values = {"id": 1, "t": "24:00", "tz": "24:00:00+02:00", "s": "2024-12-31 24:00", "st": "2024-12-31T24:00:00.000Z"}
+    done = _run_on(pg, "clock", columns, [{"op": "insert", "values": values}])
+    assert done.status_code == 200, done.text
+    assert pg.sql("SELECT t::text, tz::text, s::text, st = '2025-01-01 00:00:00+00'::timestamptz FROM {p}.clock") == [
+        ("24:00:00", "24:00:00+02", "2025-01-01 00:00:00", True)
+    ]
+    old = {"id": 1, "t": "24:00:00", "tz": "24:00:00+02", "s": "2025-01-01 00:00:00", "st": "2025-01-01 00:00:00+00"}
+    change = {"op": "update", "key": {"id": 1}, "old": old, "new": {"t": "24:00:00.000", "s": "2025-01-01 24:00"}}
+    updated = _run_on(pg, "clock", columns, [change])
+    assert updated.status_code == 200, updated.text
+    assert pg.sql("SELECT t::text, s::text FROM {p}.clock") == [("24:00:00", "2025-01-02 00:00:00")]

@@ -795,6 +795,28 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
+- Findings of the independent G-S2 gate review (G-S2 not granted; every write area stays off, no default changes):
+  - G2-01: libpq's environment no longer chooses the server, the authentication or TLS of any Studio PostgreSQL
+    connection (read connections, the connection test, the migration worker, write and admin connections). Every
+    option the profile leaves out that libpq would take from a `PG*` variable is given as libpq's own default
+    (for example an empty `hostaddr` and empty TLS file options, so `PGHOSTADDR` or `PGSSLROOTCERT` no longer
+    apply); where that is not possible (`PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR`, `PGREQUIREPEER`,
+    `PGREQUIREAUTH`, `PGSSLCERTMODE`, or `PGUSER`, `PGDATABASE`, `PGHOST`, `PGSSLMODE` for a profile without that
+    field) the connection is refused while the variable is set: `422 studio.connection_environment`, which names
+    no variable and no value. `PGCONNECT_TIMEOUT` and `PGCLIENTENCODING` still apply. A socket or loopback profile
+    with `requirepeer` can therefore no longer be sent to another server over TCP.
+  - G2-02: on SQLite an integer wider than 64 bits (a new value, a key or an `old` value, in any column) is refused
+    before the plan (`400 studio.data_editor_value_invalid`, `value.out_of_range`) instead of failing at run time;
+    a run that still meets one rolls back with the same problem.
+  - G2-03: a time or timestamp at exactly `24:00`, which the check takes as PostgreSQL does, is bound as text for the
+    database to read, the same on every supported Python version (before 3.14 `fromisoformat` refused it at run
+    time; from 3.14 on it would have turned a `time` into `00:00`).
+  - G2-04: the platform configuration folder of `write-areas.toml`, the audit log and the secret confirmations no
+    longer follows an environment variable: `XDG_CONFIG_HOME`, `HOME` and platformdirs' `WIN_PD_OVERRIDE_*` are
+    ignored (the home folder comes from the account database on POSIX, the `LocalAppData` known folder on
+    Windows), as STU-ADR-0006 states. When such a variable moves Studio's other configuration, write profiles stay
+    unused while an area is on (`studio.write_profiles_ignored`); start Studio with `--config-dir` to use them.
+
 - STU-XW hardening (CR-DBX; notes N-1, N-2 and N-4 of the PR #116 review, I-1 consistency with tabrion #77 D-2),
   with every write area still off:
   - the audit log (`audit/`) and the confirmed secret pairs (`write-secret-confirmations.json`) now live in the

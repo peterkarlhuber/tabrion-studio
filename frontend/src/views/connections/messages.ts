@@ -34,6 +34,7 @@ const PROBLEMS = new Set([
   'migrations_failed',
   'connection_failed',
   'connection_config',
+  'connection_environment',
   'connection_tls',
   'connection_limit',
   'connection_busy',

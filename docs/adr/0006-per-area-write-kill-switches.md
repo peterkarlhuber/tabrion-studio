@@ -64,7 +64,10 @@ activation, and the error semantics of W-9.
 
 **As built (STU-XW-1, recorded for G-S2):** the source is the file `write-areas.toml` in the folder that
 `--config-dir` names, else `<--state-dir>/config`, else the platform's configuration folder; never a folder that an
-environment variable chose. Its `[areas]` table has three keys, each on only when its value is literally `true`:
+environment variable chose. The platform's folder follows no variable either (G2-04 of the G-S2 gate review):
+`~/.config/tabrion-studio` on Linux and `~/Library/Application Support/tabrion-studio` on macOS, with the home
+folder from the account database, not `HOME` or `XDG_CONFIG_HOME`, and the `LocalAppData` known folder on Windows,
+not `WIN_PD_OVERRIDE_*` (`paths.platform_config_dir`). Its `[areas]` table has three keys, each on only when its value is literally `true`:
 `data_editor` (G-S2: the shared write foundation and the Data Editor), `schema_designer` (G-S3) and
 `database_manager` (G-S4). The code is `tabrion_studio.config.write_areas`; the audit log and the confirmed secret
 pairs live in the same folder (review N-1 of PR #116). No environment variable sets a flag.
@@ -174,7 +177,12 @@ A value a changeset writes is checked twice; the server's check decides (threat 
   top-level JSON `null` is not taken for SQL `NULL`.
 - Where PostgreSQL takes a spelling without changing the value, the checks take it too: whitespace around a number,
   and a time of exactly `24:00`. The checks parse each part themselves and do not depend on the Python version (3.14's
-  `fromisoformat` takes `24:00`, earlier ones do not).
+  `fromisoformat` takes `24:00`, earlier ones do not). **As built (G2-03 of the G-S2 gate review):** the run binds a
+  time or timestamp at exactly `24:00` as text for the database to read, also on every Python version, so what the
+  check takes is what runs and a `time` keeps `24:00:00`.
+- Where the driver has a limit of its own, the check refuses before the plan, not the run (G2-02 of the G-S2 gate
+  review): on SQLite an integer wider than 64 bits, in any column and also as a key or `old` value, is
+  `value.out_of_range`.
 
 ### Proof required from every kill-switch pull request
 

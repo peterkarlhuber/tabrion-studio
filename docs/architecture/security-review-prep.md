@@ -275,7 +275,7 @@ threats T-06/T-12, test results and review findings"):
 | Negative tests "flag off" for every endpoint (W-9: 400/405, 403 only for the write mode) | Met | `tests/security/test_write_kill_switch.py` (every write route 405 and nothing changed; no write module imported; no query, header or setting turns a flag on), `test_every_route.py` |
 | Preview, confirmation, transaction and rollback shown end to end (doc 07) | Met: a two-step changeset whose second step conflicts rolls the first one back too, against a real server (added for G-S2) | `frontend/e2e/data-editor-backend.spec.ts`; pytest `test_data_editor.py` (conflict, row count, constraint error) |
 | C-01 fixed before G-S2 (planning document 15 section 7 item 8) | Met: lasting secrets, write passwords included, are never evicted from the redaction (PR #99) | `tests/security/test_canary.py`; `write/unlock.py` registers each write password as lasting |
-| An independent review agent for G-S2 (doc 07 section 6) | **Open**: the gate review itself, on the merged head | - |
+| An independent review agent for G-S2 (doc 07 section 6) | Done: verdict accepted on master `8311c4c` (grants nothing); its Medium finding G2-01 (libpq environment variables could redirect a connection) and the Low findings G2-02..G2-04 are fixed (branch `claude/project-thread-rdo6g3-gs2fix`), the Info findings G2-05..G2-07 are recorded in [docs/TODO.md](../TODO.md#g-s2-readiness), G2-08 is decision 5 below | `reviews/gs2-gate-review.md` (planning documents); `tests/security/test_libpq_environment.py`, `test_data_editor.py`, `test_data_editor_values.py`, `test_data_editor_postgres.py`, `test_write_flags.py` |
 | The owner's decisions below | **Open** | - |
 
 ### Open decisions for the owner

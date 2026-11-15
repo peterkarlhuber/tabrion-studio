@@ -63,6 +63,7 @@ __all__ = [
     "RegistryError",
     "connection_facts",
     "connection_url",
+    "pin_libpq_environment",
     "read_only_database",
     "studio_profile",
 ]
@@ -284,6 +285,89 @@ def driver_options(
     return options
 
 
+#: libpq options Studio or tabrion give from the profile (or never give, like ``service``): never pinned to libpq's
+#: default here. When one is not given, a variable of the environment that would set it refuses the connection.
+_FROM_PROFILE = frozenset(
+    {
+        "host",
+        "port",
+        "dbname",
+        "user",
+        "password",
+        "passfile",
+        "sslmode",
+        "options",
+        "application_name",
+        "require_auth",
+        "requirepeer",
+        "service",
+        "servicefile",
+    }
+)
+#: libpq options whose empty value means "not set", libpq's own default (a file option falls back to libpq's default
+#: file under ``~/.postgresql``; an empty ``hostaddr`` resolves ``host``).
+_EMPTY_IS_UNSET = frozenset(
+    {"hostaddr", "sslrootcert", "sslcert", "sslkey", "sslcrl", "sslcrldir", "ssl_max_protocol_version", "gsslib"}
+)
+#: libpq options that choose neither the server, nor the authentication, nor TLS: the environment may set them.
+_ENVIRONMENT_HARMLESS = frozenset({"connect_timeout", "client_encoding"})
+#: libpq variables that are no connection option but choose a file libpq reads connection options from (the
+#: service file). Studio never names a service, but refuses them too: nothing outside the profile picks a target.
+_ENVIRONMENT_FILES = ("PGSERVICEFILE", "PGSYSCONFDIR")
+
+
+def _libpq_options() -> list[tuple[str, str | None, str | None]]:
+    """``(keyword, environment variable, compiled-in default)`` of every option the loaded libpq knows
+    (``PQconndefaults``)."""
+    import psycopg
+
+    return [
+        (
+            option.keyword.decode(),
+            None if option.envvar is None else option.envvar.decode(),
+            None if option.compiled is None else option.compiled.decode(),
+        )
+        for option in psycopg.pq.Conninfo.get_defaults()
+    ]
+
+
+def pin_libpq_environment(url: sqlalchemy.URL, connect_args: Mapping[str, Any]) -> dict[str, str]:
+    """The options that make a PostgreSQL connection independent of libpq's environment variables (G2-01).
+
+    libpq reads ``PGHOST``, ``PGHOSTADDR``, ``PGSERVICE``, ``PGSSLROOTCERT`` and others for every option the
+    connection does not give. Such a variable could send a connection to another server than the profile names (a
+    ``hostaddr`` turns a socket or ``localhost`` profile into TCP to any address, past ``requirepeer`` and Studio's
+    loopback rules) or change its authentication or TLS. So every option the URL (``url``) and ``connect_args`` leave
+    out is given here, as libpq's own default: the empty value of :data:`_EMPTY_IS_UNSET`, otherwise the loaded
+    libpq's compiled-in default. What cannot be pinned that way (an option of :data:`_FROM_PROFILE` the profile does
+    not give, or one without a default) refuses the connection with ``studio.connection_environment`` when its
+    variable is set, as does a service file variable. :data:`_ENVIRONMENT_HARMLESS` stays the environment's. The
+    refusal names no variable and no value. Raises :class:`RegistryError`.
+    """
+    if any(name in os.environ for name in _ENVIRONMENT_FILES):
+        raise RegistryError("studio.connection_environment")
+    given = {key for key, value in url.query.items() if value is not None} | set(connect_args)
+    for key, value in (("host", url.host), ("port", url.port), ("dbname", url.database), ("user", url.username)):
+        if value is not None:
+            given.add(key)
+    if url.password is not None:
+        given.add("password")
+    pinned: dict[str, str] = {}
+    for keyword, variable, default in _libpq_options():
+        if variable is None or keyword in given or keyword in _ENVIRONMENT_HARMLESS:
+            continue
+        if keyword not in _FROM_PROFILE:
+            if keyword in _EMPTY_IS_UNSET:
+                pinned[keyword] = ""
+                continue
+            if default is not None:
+                pinned[keyword] = default
+                continue
+        if variable in os.environ:
+            raise RegistryError("studio.connection_environment")
+    return pinned
+
+
 def studio_profile(profile: Profile, limits: Settings) -> tabrion.Profile:
     """The tabrion profile of a Studio connection: read-only, small pool, Studio's timeouts (03 section 5.3)."""
     timeout = profile.statement_timeout_ms
@@ -338,10 +422,10 @@ def read_only_database(
     if profile.engine != "sqlite":
         # use_native_hstore=False: no type lookup of the driver's when a connection is opened (TD-039); hstore values
         # are the server's text, as for every type the driver does not know.
-        options = {
-            "connect_args": driver_options(password, settings.postgres, refuse_cleartext=refuse_cleartext),
-            "use_native_hstore": False,
-        }
+        connect_args = driver_options(password, settings.postgres, refuse_cleartext=refuse_cleartext)
+        # G2-01: nothing of libpq's environment chooses the server, the authentication or TLS.
+        connect_args.update(pin_libpq_environment(url, connect_args))
+        options = {"connect_args": connect_args, "use_native_hstore": False}
     try:
         db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
     except FileNotFoundError:

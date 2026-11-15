@@ -119,6 +119,12 @@
 > against a real server), the E2E teardown race, `check_tabrion_api.py --surface` no longer reports
 > `Kind.PERMISSION.value`, STU-ADR-0006 names its flag source and keys ("As built"), and the CR-DBX rows say what is
 > merged. Open: the owner's decisions listed there and the independent G-S2 review.
+>
+> G-S2 review fixes (2026-11-15, branch `claude/project-thread-rdo6g3-gs2fix`): the independent G-S2 gate review
+> (`reviews/gs2-gate-review.md`, verdict accepted, G-S2 not granted) found one Medium and three Low findings; all four
+> are fixed here (G2-01 libpq environment, G2-02 SQLite integers wider than 64 bits, G2-03 `24:00`, G2-04 the
+> platform configuration folder and `XDG_CONFIG_HOME`), the Info findings G2-05..G2-07 are recorded under
+> [G-S2 readiness](#g-s2-readiness). Every area stays off; G-S2 is not granted.
 
 ## Summary
 
@@ -756,7 +762,27 @@ Every item that a plan or a review asked for "before G-S2":
 | Enum labels reach the page | STU-XDE-1 open points | **Open, owner confirmation** |
 | Partitioned tables stay refused | N-1 of the PR #115 review | **Open, owner confirmation** (built as a refusal) |
 | Bytes "replace by file", constraint refusals at the cell, paging | planning document 15 section 4; STU-XDE-1 open points | **Open, owner decision** (scope of 1.1; not built) |
-| The independent G-S2 review agent (doc 07 section 6) | doc 07 | **Open** (the gate review itself) |
+| The independent G-S2 review agent (doc 07 section 6) | doc 07 | Done: verdict accepted (`reviews/gs2-gate-review.md`); it grants nothing, G-S2 stays the owner's |
+| G2-01 (Medium): libpq environment variables (`PGHOSTADDR`, a service file's `hostaddr`, ...) could send a socket or loopback profile elsewhere, past `requirepeer` and the loopback rules | `gs2-gate-review.md` | Done (branch `claude/project-thread-rdo6g3-gs2fix`): every Studio PostgreSQL connection gives libpq's defaults itself or refuses (`studio.connection_environment`) |
+| G2-02 (Low): a SQLite integer wider than 64 bits failed only at run time (500) | `gs2-gate-review.md` | Done (same branch): refused before the plan, `value.out_of_range` |
+| G2-03 (Low): `24:00` passed the check but failed at run time before Python 3.14 | `gs2-gate-review.md` | Done (same branch): bound as text on every Python version |
+| G2-04 (Low): the platform configuration folder followed `XDG_CONFIG_HOME` | `gs2-gate-review.md` | Done (same branch): no environment variable moves it, as STU-ADR-0006 says |
+| G2-08 (Low): bytes "replace by file" and `constraint.*` at the cell (planning document 15 section 4) | `gs2-gate-review.md` | **Open, owner decision** (the row above) |
+
+Info findings of the G-S2 gate review, recorded and not changed (none blocks G-S2):
+
+- **G2-05:** with every area off, `GET` on a write route that has no `GET` (`/api/write/plans`, `/plans/confirm`,
+  `/plans/execute`, `/data-editor/table`, `/secret-confirmations*`, `/profiles/{id}/secret`) answers 404 from the
+  API fallback, not 405. No write is attempted; W-9 is about changing methods. Answering 405 would need a refusing
+  `GET` for each of them in `WRITE_ROUTES`, the route sweep of `tests/security/test_every_route.py` and the
+  enabled routes alike; left for a later cleanup.
+- **G2-06:** appending to the audit log checks the last record and `head.json`; a change to an older record is found
+  at start or by a listing (`GET /api/write/audit`), which then stops further records. Until then confirmations and
+  runs go on. Part of residual risk 3 (the audit anchor decision above); the guide's "a log that fails is not
+  appended to" holds from the moment the change is found.
+- **G2-07:** `logs._Secrets.add` keeps values shorter than 8 characters in a capped set and ignores `lasting` there,
+  so a very short lasting secret can leave the redaction after many other short values. Hardly reachable (write
+  passwords should be long); fix by keeping `lasting` short values outside the cap.
 
 Follow-ups that do not block G-S2 (residual risks or later work): the audit verification cost and the page's remedy
 text (N-4, N-5 of PR #114); several Studio processes confirming at once (N-3 of PR #116); H-1 of the PR #117 review
@@ -1055,9 +1081,10 @@ the canonical copy (the migration thread's item, see TS-001).
   `POST /api/connections`; the frontend part is not in the STU-009 draft. D-01's "password asked when connecting"
   holds now: without a reference, libpq gets no password of its own (M-1).
 - **The libpq environment:** `PGPASSWORD`, `PGPASSFILE`, `.pgpass` and a service file's password are off for every
-  Studio connection (M-1). Other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`,
-  `PGSSLROOTCERT`, ...) still apply to what the URL leaves out; a project file cannot set them. Decide whether
-  Studio should clear them too.
+  Studio connection (M-1). Decided and done with G2-01 of the G-S2 gate review: the other variables (`PGHOSTADDR`,
+  `PGSSLROOTCERT`, ...) no longer apply either; Studio gives libpq's defaults itself, and refuses a connection while a
+  variable it cannot override is set (`PGSERVICE`, `PGSERVICEFILE`, `PGSYSCONFDIR`, ...;
+  `studio.connection_environment`).
 
 ### TD-024 · STU-015 migration worker on Windows: children of trusted project code
 
