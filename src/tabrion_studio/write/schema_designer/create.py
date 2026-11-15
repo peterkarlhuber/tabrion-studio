@@ -39,6 +39,11 @@ builds no DDL. Its refusals are fixed problems (``studio.schema_createdb_require
 driver error is a ``db.<kind>`` problem from ``tabrion.errors.classify`` (the SQLSTATE only), logged with
 ``safe_message`` only (I-191 b, TX-46). ``run.result`` follows.
 
+**Decision 1A (G-S2, GS3-28).** The unlock the run uses was opened by ``open_write_connection``, which refuses a write
+role that has or reaches superuser, BYPASSRLS, REPLICATION or a server-file role. At the start of each run the same
+privilege check runs again on the session the statement uses (review L-1 of PR #127); a hit refuses the run with
+``405 studio.write_role_over_privileged`` and ends the unlock.
+
 **Audit (GS3-27).** ``run.start`` and ``run.result`` with the area, the action (``schema_designer.create_sqlite`` or
 ``schema_designer.create_postgresql``), the engine and the object's name (the file name, never its folder; the
 database name), plus the profile and environment for PostgreSQL; never an owner, a locale, a path or a secret.
@@ -69,7 +74,7 @@ from tabrion.sqlite import connect as sqlite_connect
 from tabrion_studio.config.locations import network_or_device, safe_realpath
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write.audit import AuditError, AuditLog
-from tabrion_studio.write.connection import WriteError
+from tabrion_studio.write.connection import WriteError, refusing_findings_now
 from tabrion_studio.write.unlock import Unlock, Unlocks
 
 logger = logging.getLogger("tabrion_studio.write")
@@ -422,6 +427,9 @@ def create_postgres_database(unlocks: Unlocks, session: str, doc: dict[str, Any]
         raise
     finally:
         pending = not unlocks.audit.record("run.result", **common, result=result)
+        if result == "studio.write_role_over_privileged":
+            # The unlock ends with the refusal (1A): the role must be fixed and unlocked again, where 1A refuses it.
+            unlocks.lock(session, unlock.connection_id)
     logger.info("PostgreSQL database created", extra={"event": "studio.schema_database_created"})
     return CreatedDatabase(request.name, request.owner, pending)
 
@@ -432,6 +440,22 @@ def _create(unlock: Unlock, request: DatabaseRequest) -> None:
 
     try:
         with unlock.connection.idle_autocommit() as connection:
+
+            def fetch(sql: str) -> list[tuple[Any, ...]]:
+                with psycopg.Cursor(connection, row_factory=tuple_row) as reading:
+                    reading.execute(sql)
+                    return reading.fetchall()
+
+            # Decision 1A at the start of the run, on the session the statement uses (GS3-28, review L-1 of PR #127):
+            # a role that gained superuser, BYPASSRLS, REPLICATION or a server-file role since its unlock is refused.
+            # CREATE DATABASE cannot run in a transaction; nothing runs between this check and the statement but the
+            # look-up below.
+            if refusing_findings_now(fetch):
+                logger.warning(
+                    "the write role has superuser, BYPASSRLS, REPLICATION or server-file rights; nothing was created",
+                    extra={"event": "studio.write_role_over_privileged", "code": "studio.write_role_over_privileged"},
+                )
+                raise WriteError("studio.write_role_over_privileged")
             with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
                 cursor.execute(_EXISTS, (request.name,))
                 if cursor.fetchone() is not None:

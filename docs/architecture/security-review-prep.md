@@ -357,7 +357,7 @@ contract I-124. Each item names the test that proves it; the gate review re-runs
 | GS3-25 | An independent G-S3 review agent (doc 07 section 6) accepts the area; every High and Medium finding fixed and re-reviewed | `reviews/gs3-gate-review.md` (planning documents) | STU-CR-8 |
 | GS3-26 | The owner's decisions for G-S3 recorded (below) | docs/TODO.md | - |
 | GS3-27 | Audit: every run with `run.start` and `run.result` (direct execution, revision output, database creation, an opted-out backup); no value, no default or check text beyond the plan hash; an unwritable log stops the run (ADR 0007 section 11) | audit tests | STU-CR-2..5, STU-XSD-3 |
-| GS3-28 | G-S2 decision 1A applies to the Schema Designer unlock: a write role that has or reaches superuser, bypassrls, replication or a server-file role is refused with 405 `studio.write_role_over_privileged` | unlock test for `schema_designer` | STU-CR-5 |
+| GS3-28 | G-S2 decision 1A applies to the Schema Designer unlock: a write role that has or reaches superuser, bypassrls, replication or a server-file role is refused with 405 `studio.write_role_over_privileged` | unlock test for `schema_designer`; for database creation: `test_schema_designer_create_postgres.py` (the unlock refused, and the check again at the start of each run, which ends the unlock) | STU-CR-3, STU-CR-5 |
 
 **Open decisions for the owner at G-S3** (recorded in [docs/TODO.md](../TODO.md#g-s3-and-g-s4-definitions)):
 whether a loaded snapshot may start a draft; whether revision output may be offered for a PROD connection (it writes only the project file); whether drafts may be saved to disk; whether direct execution may ever

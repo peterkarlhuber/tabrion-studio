@@ -242,3 +242,44 @@ def test_a_typed_name_that_does_not_match_creates_nothing(pg: Env) -> None:
     response = pg.env.send("POST", ROUTE, body)
     assert (response.status_code, response.json()["code"]) == (400, "studio.schema_create_unconfirmed")
     assert pg.database(name) is None
+
+
+# --- decision 1A (G-S2) for the Schema Designer's unlock and runs (GS3-28, review L-1 of PR #127) -------------------
+
+
+@pytest.mark.parametrize(
+    "grant",
+    ["ALTER ROLE {p}_cdb BYPASSRLS", "ALTER ROLE {p}_cdb REPLICATION", "GRANT pg_read_server_files TO {p}_mine"],
+)
+def test_the_schema_designer_unlock_refuses_an_over_privileged_role(pg: Env, grant: str) -> None:
+    """1A applies to the Schema Designer's unlock too: the role, directly or through ``<p>_mine``, is refused."""
+    pg.env.send("DELETE", "/api/write/unlocks", {"connection_id": pg.connection_id})
+    with pg.admin.connect() as connection:
+        connection.exec_driver_sql(grant.format(p=pg.prefix))
+    refused = pg.env.unlock(pg.connection_id, "write:pg-cdb", "pg-cdb")
+    assert (refused.status_code, refused.json()["code"]) == (405, "studio.write_role_over_privileged"), refused.text
+    assert pg.env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
+    name = f"{pg.prefix}_never"
+    response = pg.create(name)
+    assert (response.status_code, response.json()["code"]) == (405, "studio.write_locked")
+    assert pg.database(name) is None
+
+
+@pytest.mark.parametrize(
+    "grant",
+    ["ALTER ROLE {p}_cdb BYPASSRLS", "GRANT pg_execute_server_program TO {p}_mine"],
+)
+def test_a_right_gained_after_the_unlock_refuses_the_run_and_ends_the_unlock(pg: Env, grant: str) -> None:
+    """The privilege check runs again at the start of each run, on the session the statement uses: a role that
+    gained a refusing right since its unlock creates nothing, the unlock ends, and ``run.result`` names the code."""
+    with pg.admin.connect() as connection:
+        connection.exec_driver_sql(grant.format(p=pg.prefix))
+    name = f"{pg.prefix}_late"
+    response = pg.create(name)
+    assert (response.status_code, response.json()["code"]) == (405, "studio.write_role_over_privileged"), response.text
+    assert pg.database(name) is None
+    assert pg.env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
+    runs = pg.runs()
+    assert runs[0]["result"] == "studio.write_role_over_privileged" and runs[0]["run"] == runs[1]["run"]
+    again = pg.create(name)
+    assert (again.status_code, again.json()["code"]) == (405, "studio.write_locked")

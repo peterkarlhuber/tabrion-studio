@@ -80,7 +80,7 @@ STU-XDM-1 decides it at G-S4. Studio never grants or widens its own rights.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 import contextlib
 from dataclasses import dataclass, field
 import functools
@@ -129,6 +129,7 @@ __all__ = [
     "open_write_connection",
     "privilege_findings",
     "refusing_findings",
+    "refusing_findings_now",
     "require_auth",
     "require_auth_supported",
     "write_authorizer",
@@ -350,6 +351,15 @@ def privilege_findings(
 def refusing_findings(findings: list[dict[str, str]]) -> list[str]:
     """The codes of ``findings`` that refuse a ``kind="write"`` unlock (:data:`WRITE_REFUSING_FINDINGS`), sorted."""
     return sorted({f["code"] for f in findings if f.get("code") in WRITE_REFUSING_FINDINGS})
+
+
+def refusing_findings_now(fetch: Callable[[str], list[tuple[Any, ...]]]) -> list[str]:
+    """Decision 1A again at the start of a run (review L-1 of PR #127): the privilege check read through ``fetch``,
+    which runs one of Studio's fixed statements on the very session the run uses, and the codes of
+    :data:`WRITE_REFUSING_FINDINGS` among its findings. A role that gained such a right after its unlock is caught
+    before the run's statement."""
+    _, findings = privilege_findings(fetch(_PRIVILEGES), _server_version(fetch(_SERVER_VERSION)))
+    return refusing_findings(findings)
 
 
 def _server_version(rows: list[tuple[Any, ...]]) -> int | None:

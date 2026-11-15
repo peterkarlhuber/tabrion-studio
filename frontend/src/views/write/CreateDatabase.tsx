@@ -254,7 +254,11 @@ function PostgresWizard({ fetcher, onSaved }: { fetcher: typeof fetch; onSaved?:
   const [targets, setTargets] = useState<ReturnType<typeof candidates> | null>(null);
   const [chosen, setChosen] = useState('');
   /** Whether the chosen connection is unlocked, as last read for it; null until read. */
-  const [unlock, setUnlock] = useState<{ connectionId: string; unlocked: boolean } | null>(null);
+  const [unlock, setUnlock] = useState<{
+    connectionId: string;
+    unlocked: boolean;
+    ended?: Problem | null;
+  } | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -300,7 +304,9 @@ function PostgresWizard({ fetcher, onSaved }: { fetcher: typeof fetch; onSaved?:
   if (target === undefined) return null;
   const connectionId = target.connection.connectionId;
   const unlocked = unlock?.connectionId === connectionId ? unlock.unlocked : null;
-  const setUnlocked = (value: boolean) => setUnlock({ connectionId, unlocked: value });
+  const ended = unlock?.connectionId === connectionId ? (unlock.ended ?? null) : null;
+  const setUnlocked = (value: boolean, why: Problem | null = null) =>
+    setUnlock({ connectionId, unlocked: value, ended: why });
   return (
     <div className={connectionStyles.form}>
       {targets.length > 1 ? (
@@ -336,22 +342,31 @@ function PostgresWizard({ fetcher, onSaved }: { fetcher: typeof fetch; onSaved?:
           connectionId={target.connection.connectionId}
           source={target.profile}
           onSaved={onSaved}
-          onLocked={() => setUnlocked(false)}
+          onLocked={(why) => setUnlocked(false, why)}
         />
       ) : (
-        <UnlockForm
-          fetcher={fetcher}
-          connectionId={target.connection.connectionId}
-          profileId={target.profile.id}
-          lead={t('createDatabase.postgres.unlockLead')}
-          onUnlocked={() => setUnlocked(true)}
-        />
+        <>
+          <ProblemLine problem={ended} />
+          <UnlockForm
+            fetcher={fetcher}
+            connectionId={target.connection.connectionId}
+            profileId={target.profile.id}
+            lead={t('createDatabase.postgres.unlockLead')}
+            onUnlocked={() => setUnlocked(true)}
+          />
+        </>
       )}
     </div>
   );
 }
 
-const LOCKED = new Set(['studio.write_locked', 'studio.write_target_changed']);
+/** The problems after which the unlock is gone: the page shows the unlock again. */
+const LOCKED = new Set([
+  'studio.write_locked',
+  'studio.write_target_changed',
+  // Decision 1A, checked again at the start of the run: the server ended the unlock.
+  'studio.write_role_over_privileged',
+]);
 
 function PostgresForm({
   fetcher,
@@ -364,7 +379,8 @@ function PostgresForm({
   connectionId: string;
   source: ProfileItem;
   onSaved?: () => void;
-  onLocked: () => void;
+  /** The unlock ended; `why` is the problem that ended it, shown above the unlock. */
+  onLocked: (why: Problem) => void;
 }) {
   const { t } = useTranslation();
   const [fields, setFields] = useState<PostgresDatabaseFields>(EMPTY_FIELDS);
@@ -385,7 +401,7 @@ function PostgresForm({
     setBusy(false);
     if (!result.ok) {
       setProblem(result.problem);
-      if (LOCKED.has(result.problem.code)) onLocked();
+      if (LOCKED.has(result.problem.code)) onLocked(result.problem);
       return;
     }
     setCreated({ name: result.value.database, pending: result.value.auditPending });

@@ -19,7 +19,8 @@ All notable changes to this project are documented here. The format follows
   mapped, `CREATEDB` and owner refusals as catalog problems with guided steps (no SQL), driver errors only as `db.*`
   through `safe_message`. Ten new `studio.schema_*` problems in English and German; `run.start` and `run.result`
   audit records without values or folders. With the flag off both routes answer `405` and import nothing of the
-  area (kill-switch sweep extended). The new profile can be saved from the wizard. New tests: security (flag off,
+  area (kill-switch sweep extended). G-S2 decision 1A applies to the wizard's unlock and is checked again at the start
+  of each PostgreSQL creation on the session that runs it (a hit refuses and ends the unlock). The new profile can be saved from the wizard. New tests: security (flag off,
   PROD, links, folder modes, canaries), PostgreSQL 16, vitest with axe, and Playwright against a real server in light
   and dark. User guide page "New database (in development)".
 

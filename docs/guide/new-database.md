@@ -53,14 +53,18 @@ A PostgreSQL database is created on the server of a connection you have open, th
 profile** ([Data Editor: before the first edit](data-editor.md#before-the-first-edit-a-write-profile)):
 
 1. Open a `DEV` or `TEST` PostgreSQL connection and couple a write profile to its profile under **Settings**. The
-   write profile's role needs the `CREATEDB` attribute.
+   write profile's role needs the `CREATEDB` attribute, and nothing more: a role that is a superuser, has
+   `BYPASSRLS` or `REPLICATION`, or reaches a server-file role is refused at the unlock
+   (`studio.write_role_over_privileged`), as for the Data Editor.
 2. In **New database**, choose **PostgreSQL database** and the connection, then **unlock** the write mode by typing
    the write profile's name. The unlock is the Schema Designer's and ends after 15 minutes without use.
 3. Enter the **database name** and, if you want, the **owner** (empty: the write profile's role), the **template**
    (`template1` or `template0`), the **encoding** (default `UTF8`) and the **locale** (empty: the template's).
 4. Type the database name to confirm and press **Create database**.
 
-Studio checks first whether the database exists and refuses then without running anything. The owner must be a role
+Studio checks the role's rights again at the start of every creation, on the session that runs it: a role that
+gained one of those rights since the unlock creates nothing, and the unlock ends. Studio checks then whether the
+database exists and refuses then without running anything. The owner must be a role
 the write profile's role is a member of (a role it cannot act as, such as `postgres`, is refused). If the role has no `CREATEDB`,
 the wizard shows the steps an administrator takes outside Studio to give it, without SQL to copy: Studio builds no
 statement for that.
@@ -97,6 +101,7 @@ These are refused on purpose, by the server, whatever the page shows:
 | The write profile's role may not create databases (CREATEDB) on this server. | Follow the guided steps: an administrator gives the role `CREATEDB` outside Studio. |
 | The write profile's role may not act as the owner role … | Leave the owner empty, or name a role the write profile's role is a member of. |
 | The server has no role with the owner's name. | Check the name, or leave the owner empty. |
+| The write role is a superuser, has BYPASSRLS or REPLICATION, or is a member of a server-file role … | Use a role with only `CREATEDB` (and the owner roles it needs); the administrator removes the other rights outside Studio. |
 | The write mode is locked. Unlock it again. | The unlock ended (15 minutes without use, or the connection closed); unlock again. |
 
 ## Related pages

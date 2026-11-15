@@ -339,6 +339,26 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     await user.type(screen.getByLabelText('Type shop to create the database'), 'shop');
     await user.click(screen.getByRole('button', { name: 'Create database' }));
     expect(await screen.findByTestId('data-editor-unlock')).toBeInTheDocument();
+    expect(screen.getByTestId('create-database-problem')).toHaveTextContent(
+      'The write mode is locked. Unlock it again.',
+    );
+  });
+
+  it('shows why the unlock ended when the role became over-privileged (decision 1A)', async () => {
+    const user = userEvent.setup();
+    setup({
+      unlocked: true,
+      postgres: { status: 405, body: { code: 'studio.write_role_over_privileged' } },
+    });
+    await screen.findByTestId('create-database');
+    await user.click(screen.getByLabelText('PostgreSQL database'));
+    await user.type(await screen.findByLabelText('Database name'), 'shop');
+    await user.type(screen.getByLabelText('Type shop to create the database'), 'shop');
+    await user.click(screen.getByRole('button', { name: 'Create database' }));
+    expect(await screen.findByTestId('data-editor-unlock')).toBeInTheDocument();
+    expect(screen.getByTestId('create-database-problem')).toHaveTextContent(
+      'The write role is a superuser',
+    );
   });
 
   it('has German texts', async () => {
