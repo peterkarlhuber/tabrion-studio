@@ -125,12 +125,28 @@
 > are fixed here (G2-01 libpq environment, G2-02 SQLite integers wider than 64 bits, G2-03 `24:00`, G2-04 the
 > platform configuration folder and `XDG_CONFIG_HOME`), the Info findings G2-05..G2-07 are recorded under
 > [G-S2 readiness](#g-s2-readiness). Every area stays off; G-S2 is not granted.
+>
+> STU-CR-1 and STU-XDM-1 (2026-11-15, branch `claude/project-thread-rdo6g3-crxdm1`, draft): **documentation only;
+> G-S3 and G-S4 are not granted,** the `schema_designer` and `database_manager` flags stay off and no code of either
+> area exists. Pins tabrion 0.3.0.dev0 at the merge commit of tabrion #90 (`28c8839`: TAB-XW-2, -3, -4, -7, -8, -9
+> merged; Studio uses none of the new names yet, the API export is unchanged). New:
+> [STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md) (Schema Designer: server-side plans, re-plan and
+> hash compare, direct DDL only on DEV/TEST without migration management, revisions only for Alembic projects,
+> backup before destructive runs, the I-124 preview warnings),
+> [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md) (Database Manager: verified `pg_dump`/
+> `pg_restore`, restore and delete with a backup first, roles only through a minimal admin profile, the consequence of
+> an over-privileged admin profile, the TB-149 obligations), the threat models
+> [Schema Designer](architecture/schema-designer-threat-model.md) (TX-18..TX-31) and
+> [Database Manager](architecture/database-manager-threat-model.md) (TX-32..TX-46), and the gate definitions
+> [G-S3](architecture/security-review-prep.md#g-s3-definition-schema-designer) and
+> [G-S4](architecture/security-review-prep.md#g-s4-definition-database-manager). Open: the independent reviews of
+> STU-CR-1 and STU-XDM-1 and the owner's decisions listed under [G-S3 and G-S4 definitions](#g-s3-and-g-s4-definitions).
 
 ## Summary
 
 | Item | Priority | Status |
 |---|---|---|
-| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR) |
+| TS-001 add the tabrion dependency with STU-009 | P1 | Done (PR #15: `tabrion[postgres,sqlalchemy]>=0.1,<0.2`, tabrion v0.1.0 `d5821fa` pinned by full SHA in `constraints/tabrion-integration.txt`, no PyPI; installing with the constraints file needs pip 26.1 or later; moved to tabrion 0.2.0 `52353da` and `>=0.2,<0.3` in the TD-013 PR; to tabrion 0.2.1 `af0458d` in the TD-071 PR; to tabrion 0.3.0.dev0 `72e2d03` (merge of tabrion #80) and `>=0.2,<0.4` in the STU-026 PR; to `28c8839` (merge of tabrion #90) in the STU-CR-1 PR) |
 | OA-001 make `ci-ok` a required check (optional); check the ci-ok run link before every merge (stays) | P4 | Open (owner, optional) |
 | OA-002 independent review of the process model | P1 | Accepted (re-review at 988bc9d) |
 | OA-003 create the label `workflow-change-reviewed` | P1 | Open (owner) |
@@ -145,7 +161,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); the write foundation (STU-XW-1..5, PRs #109..#118) and the Data Editor (STU-026, STU-XDE-1, STU-XDE-2, PRs #119, #120, #122) are merged with accepted reviews; G-S2 readiness prepared, G-S2 not granted ([G-S2 readiness](#g-s2-readiness)); each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); the write foundation (STU-XW-1..5, PRs #109..#118) and the Data Editor (STU-026, STU-XDE-1, STU-XDE-2, PRs #119, #120, #122) are merged with accepted reviews; G-S2 readiness prepared, G-S2 not granted ([G-S2 readiness](#g-s2-readiness)); STU-CR-1 and STU-XDM-1 (threat models, ADRs 0007 and 0008, G-S3 and G-S4 definitions) drafted ([G-S3 and G-S4 definitions](#g-s3-and-g-s4-definitions)); each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -241,7 +257,9 @@ soon; **P3** minor gap or debt. Statuses: `Open`, `In progress` (PR linked), `Bl
   untagged merge commit of tabrion PR #71 (`af0458d54467571abfc1afdd44d76e1f4d727c06`); the range stays. The STU-026
   PR moves the pin to tabrion 0.3.0.dev0, the merge commit of tabrion PR #80
   (`72e2d03fea2b83e159a4ae9df3b7c40246b8a232`), and the range to `>=0.2,<0.4`: the RC-8 check allows final-only bounds, and a lower
-  bound of `0.3` would exclude the prerelease `0.3.0.dev0`. The shared `scripts/check_tabrion_source.py` (SHA-pinned
+  bound of `0.3` would exclude the prerelease `0.3.0.dev0`. The STU-CR-1 PR moves the pin to the merge commit of
+  tabrion PR #90 (`28c8839f72a2d7232d973c71f99df1e57001a260`, still 0.3.0.dev0, with TAB-XW-2..4, -7, -8, -9); the
+  range stays. The shared `scripts/check_tabrion_source.py` (SHA-pinned
   copy) still uses its poison version `0.2.99`; it should move above the new range's floor (for example `0.3.99`)
   in the canonical copy.
 - **Also with STU-009 (binding, L-1 of `stu-008-review.md`):** every parameter Studio passes to the driver from a
@@ -585,7 +603,9 @@ The work packages are defined in planning document 15 section 9.2 and the progra
 [STU-ADR-0005](adr/0005-crdbx-write-and-admin-gates.md); the shared lock model (one default-off flag per area, set
 only locally by the owner, W-9 error semantics, PROD lock, separate write and admin profiles, the proof every
 kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-kill-switches.md), the threat model
-[Write and admin threat model](architecture/write-threat-model.md) (TX-01..TX-16).
+[Write and admin threat model](architecture/write-threat-model.md) (TX-01..TX-17), with the extensions
+[Schema Designer threat model](architecture/schema-designer-threat-model.md) (TX-18..TX-31, STU-ADR-0007) and
+[Database Manager threat model](architecture/database-manager-threat-model.md) (TX-32..TX-46, STU-ADR-0008).
 
 | Version | Area | Work packages | Gate | Status |
 |---|---|---|---|---|
@@ -597,8 +617,23 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-4 | G-S2 | Done, locked by G-S2 (PR #116, merged `b1900a2`; review accepted, `reviews/pr116-stuxw4-review.md`): L-2 of PR #111 closed: every PostgreSQL write and admin connection (the privilege check included) sets libpq `require_auth=!password,!md5` (`scram-sha-256` for a foreign host that gets a password); libpq older than 16 refuses the connection and the unlock before any secret is read (`405 studio.require_auth_unavailable`). I-109 j confirmation (D-15): `POST /api/write/secret-confirmations` (preview of the pair of server and secret reference, read from the user's file, with a session-bound hash), `/confirm` (hash and the typed host), `DELETE` (revoke); the confirmed pair's SHA-256 in `write-secret-confirmations.json` (0600; since the STU-XW hardening in the folder of `write-areas.toml`, before in `<state>/`); an unconfirmed or changed pair refuses the unlock before any secret is resolved (`studio.secret_unconfirmed`), every use of an unlock (the plan confirmation and run of STU-XW-3 included) re-checks it; a foreign host needs `verify-ca` or `verify-full` (`studio.write_tls_required`); audit events `secret.confirm` and `secret.unconfirm`; the D-15 dialog in the write profile section (en, de); 405 and no import with every flag off. Open points below |
 | 1.1 | STU-XW hardening: notes N-1, N-2, N-4 of the PR #116 review, I-1 consistency with tabrion #77 D-2 | TABRION STU-XW-1, STU-XW-2, STU-XW-4 | G-S2 | Done (PR #117, merged `def79f9`, and the host-list fix M-1 in PR #118, merged `c5c29d2`; reviews accepted, `reviews/pr117-stuxwh-review.md`, `reviews/pr118-hostfix-review.md`): N-1 the audit log and `write-secret-confirmations.json` in the folder of `write-areas.toml` (`--config-dir`, `<--state-dir>/config` or the platform's), a state folder from `TABRION_STUDIO_STATE_DIR` neither read nor written (`studio.write_state_ignored`; process test with a planted confirmation and log); N-2 `require_auth=scram-sha-256` for every connection that sends a password (loopback and socket included) and the optional write profile key `requirepeer` (the server's OS user, Unix socket only, part of the confirmed pair, form field en/de); N-4 the guide says every PostgreSQL write profile needs the pair confirmation and a changed pair a new one; I-1 `privilege_findings` checks the OID below 16384 as well as the `pg_` name (unit test with a mocked catalog, PostgreSQL test with a role renamed to `pg_like_*`). Every area stays off |
 | 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | Done, locked by G-S2: STU-026 (PR #119, merged `40958d0`, tabrion 0.3.0.dev0 pin `72e2d03`), STU-XDE-1 (PR #120, merged `a18b3f5`) and STU-XDE-2 (PR #122, merged `3af4b79`), each review accepted (`reviews/pr119-stu026-review.md`, `pr120-stuxde1-review.md`, `pr122-stuxde2-review.md`); the first plan executor (`data_editor.changeset`) and the `PlanReview`/`ChangesetReview` UI behind the default-off `data_editor` flag. Readiness for the gate: [G-S2 readiness](#g-s2-readiness) below |
-| 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
-| 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
+| 1.2 | Schema Designer: threat model, ADR, G-S3 definition | TABRION STU-CR-1 | G-S3 | Drafted (branch `claude/project-thread-rdo6g3-crxdm1`, documentation only; needs its independent review): [STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md), [Schema Designer threat model](architecture/schema-designer-threat-model.md) TX-18..TX-31, [G-S3 definition](architecture/security-review-prep.md#g-s3-definition-schema-designer) GS3-P1..P4, GS3-01..28 |
+| 1.2 | Wizards: create a SQLite file and a PostgreSQL database (Tabrion `create_private_file`, `create_database`; TX-29) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Open; needs STU-CR-1 accepted. Acceptance: GS3-01..03, GS3-20, GS3-21; driver errors only through `safe_message` (I-191 b) |
+| 1.2 | Designer for tables, columns, constraints, indexes: the server-side draft and its edit operations on `tabrion.schema` level 2 | TABRION STU-CR-4 | G-S3 | Open; needs STU-CR-1. Acceptance: GS3-09, GS3-13 (`server_version` on every `plan` call), STU-ADR-0007 sections 2 and 3 |
+| 1.2 | Plan preview, confirmation per risk class, re-plan and hash compare, direct execution through `execute_plan`, backup before destructive runs, the I-124 preview warnings | TABRION STU-CR-5 | G-S3 | Open; needs STU-CR-4 and a Tabrion pin with TAB-XW-5 (GS3-P1, GS3-P2). Acceptance: GS3-03..05, GS3-09..20 |
+| 1.2 | Runtime-role wizard and profile export (single-host only, W-10, TB-148) | TABRION STU-CR-6 | G-S3 | Open; needs STU-CR-3, STU-XW-4. Acceptance: GS3-22 (the role rules GS4-12..GS4-19 that apply), TX-30 |
+| 1.2 | i18n, docs, E2E in three browsers and axe | TABRION STU-CR-7 | G-S3 | Open. Acceptance: GS3-14 (focus), GS3-24 (the guide states the limits of doc 15 section 3.1) |
+| 1.2 | G-S3 review and fixes | TABRION STU-CR-8 | G-S3 | Open. Acceptance: GS3-25; the review re-checks the lock until the gate (doc 15 section 9.4) |
+| 1.2 | Graphical mode on the ER diagram (xyflow) with the table view as the accessible alternative | TABRION STU-XSD-1 | G-S3 | Open; needs STU-CR-4. Acceptance: GS3-23, TX-31 |
+| 1.2 | Schema comparison against a connection, a snapshot file or the draft (a loaded snapshot is display only) | TABRION STU-XSD-2 | G-S3 | Open; Tabrion part in the pin (TAB-XW-4). Acceptance: GS3-09, TX-28 |
+| 1.2 | Alembic revision written into the trusted project (E-X4): `revision_text`, the name and folder checks, no `env.py` | TABRION STU-XSD-3 | G-S3 | Open; Tabrion part in the pin (TAB-XW-4). Acceptance: GS3-06..08, GS3-16 (j 5), GS3-19 |
+| 1.3 | Database Manager: threat model, G-S4 definition (and ADR) | TABRION STU-XDM-1 | G-S4 | Drafted (branch `claude/project-thread-rdo6g3-crxdm1`, documentation only; needs its independent review): [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md), [Database Manager threat model](architecture/database-manager-threat-model.md) TX-32..TX-46, [G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager) GS4-P1..P4, GS4-01..26; the consequence of an over-privileged admin profile proposed (STU-ADR-0008 section 6) |
+| 1.3 | Backup and restore: verified `pg_dump`/`pg_restore`, the backup folder and metadata, restore into a new or non-PROD target, mandatory restore tests | TABRION STU-XDM-2 | G-S4 | Open; needs STU-XDM-1 accepted; Tabrion part in the pin (TAB-XW-7). Acceptance: GS4-01..09, GS4-22 |
+| 1.3 | Delete a database: SQLite `delete_database_file`, PostgreSQL `drop_database`, backup and typed name first, `force` only explicit | TABRION STU-XDM-3 | G-S4 | Open; needs STU-XDM-2; Tabrion part in the pin (TAB-XW-7, TAB-XW-9). Acceptance: GS4-03, GS4-10, GS4-17, GS4-20 |
+| 1.3 | PostgreSQL roles through the admin profile (E-X6) with the TB-149 obligations: re-read after commit, per-database K-2 check, `public_definers` and CREATE-on-database warnings, escaped names, admin rules at least those of a write profile | TABRION STU-XDM-4 | G-S4 | Open; needs STU-XDM-1; Tabrion part in the pin (TAB-XW-8). Acceptance: GS4-11..20 |
+| 1.3 | Profile pairs, import and export (I-109 j per imported pair, single-host only) | TABRION STU-XDM-5 | G-S4 | Open; needs STU-XW-4. Acceptance: GS4-19, GS4-21 |
+| 1.3 | i18n, docs, E2E in three browsers and axe (D-11..D-14) | TABRION STU-XDM-6 | G-S4 | Open; needs STU-XDM-2..5. Acceptance: GS4-23, GS4-24 |
+| 1.3 | G-S4 review and fixes | TABRION STU-XDM-7 | G-S4 | Open; needs STU-XDM-6. Acceptance: GS4-25 |
 
 Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
@@ -794,6 +829,51 @@ SQLite trigger details; PostgreSQL in the browser E2E and Firefox/WebKit runs on
 Data Editor (`tabrion.rowedit`, `RowCountMismatch`) need to be stable before a Studio 1.1 release (02 section 14
 S-2); the poison version `0.2.99` of `scripts/check_tabrion_source.py` moves above the new floor (`0.3.99`) in
 the canonical copy (the migration thread's item, see TS-001).
+
+### G-S3 and G-S4 definitions
+
+Drafted 2026-11-15 (branch `claude/project-thread-rdo6g3-crxdm1`, STU-CR-1 and STU-XDM-1). **G-S3 and G-S4 are not
+granted;** the `schema_designer` and `database_manager` flags stay off by default and no code of either area exists.
+The checklists are [G-S3 definition](architecture/security-review-prep.md#g-s3-definition-schema-designer) and
+[G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager); the rules
+[STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md) and [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md).
+
+Studio obligations from Tabrion's contract and reviews, and where each is placed:
+
+| Obligation | Source | Where |
+|---|---|---|
+| Plans and target models server-side only; re-plan from a fresh snapshot before the run, compare the new `plan_hash` with the confirmed one, take the risk classes from the new plan | tabrion I-124 a, N-2 | STU-ADR-0007 section 4; TX-21; GS3-09, GS3-10 (STU-CR-5) |
+| Always pass `server_version` | tabrion I-124 e | STU-ADR-0007 section 9; TX-26; GS3-13 (STU-CR-4, STU-CR-5) |
+| PostgreSQL preview warning for PL/pgSQL references on every drop and type change; `rowid`; fingerprint gaps; the revision's source condition | tabrion I-124 j 2..5 | STU-ADR-0007 section 8; TX-23; GS3-16 (STU-CR-5, STU-XSD-3) |
+| D-5: triggers, policies, functions in the fingerprint; domain and partitioning blocked; unknown features fail closed; drift check after locking | tabrion ADR 0015 section 10 | TX-22; GS3-P2, GS3-12 (TAB-XW-5, STU-CR-5) |
+| SQLite rebuild: foreign keys off, `foreign_key_check`, `integrity_check`, K-1 at execution | tabrion I-124 f, g; ADR 0015 K-1 | STU-ADR-0007 section 10; TX-24; GS3-17 |
+| Revision text never run; file written by Studio after project trust, no path parts | tabrion ADR 0015 section 2, I-124 h, K-3 | STU-ADR-0007 section 5; TX-19, TX-20; GS3-06..08 (STU-XSD-3) |
+| `environment` from the user-local stored profile | tabrion ADR 0015 D-3 | STU-ADR-0007 section 5; TX-18; GS3-05 |
+| Name confirmation before drop, restore and delete | doc 15 section 4; tabrion TB-149 | STU-ADR-0008 sections 4, 5; TX-37, TX-39; GS4-09, GS4-10 |
+| Backup before drop, restore and delete | doc 15 section 7 item 7 | STU-ADR-0008 sections 4, 5; GS4-09, GS4-10 |
+| `drop_database(force=True)` only as an explicit, separately confirmed choice | tabrion I-192 d, ADR 0015 section 7 | STU-ADR-0008 section 5; TX-39; GS4-10 (STU-XDM-3) |
+| Driver errors of `create_database` and `drop_database` (passed through unchanged) only through `safe_message` | tabrion I-191 b, I-192 d | STU-ADR-0007 section 11, STU-ADR-0008 section 7; TX-29, TX-46; GS3-21, GS4-20 |
+| Preview warning for PUBLIC-executable SECURITY DEFINER functions (`public_definers`, `superuser_owner` first) and for CREATE on a database (trusted extensions) | tabrion I-181, I-186, P90-03, P90-07 | STU-ADR-0008 section 6; TX-42; GS4-14 (STU-XDM-4) |
+| K-2 check in every database the admin profile can reach before a membership change, or the limit shown | tabrion I-182, P90-04 | STU-ADR-0008 section 6; TX-42; GS4-16 |
+| Escape control and bidirectional characters of role names in every display | tabrion I-180, P90-05 | STU-ADR-0008 section 6; TX-43; GS4-17 |
+| Read `role_privileges` again after each commit and show any difference | tabrion I-182, P90-06 | STU-ADR-0008 section 6; TX-42; GS4-15 |
+| Admin profile at least as strict as a write profile: `verify-full` for a remote host, SCRAM | tabrion TB-149, P90-07 | STU-ADR-0008 section 6; TX-34; GS4-19 |
+| The admin profile is never superuser: Tabrion refuses a caller with SUPERUSER, BYPASSRLS or REPLICATION (`postgres.caller_unsafe`); Studio refuses the unlock earlier | tabrion I-182, P90-01 | STU-ADR-0008 section 6; TX-40; GS4-11 |
+
+Open decisions for the owner (none is implemented ahead of its gate):
+
+- **G-S3:** whether a loaded schema snapshot may start a draft (STU-ADR-0007 section 3); whether drafts may be saved
+  to disk; whether direct execution may ever include non-transactional steps (today revision output only); whether
+  revision output may be offered for a PROD connection (it writes only the project file; refused in the proposal);
+  the release exception for the experimental `tabrion.schema` level 2, `tabrion.ddl` and `tabrion.plan` until they
+  are stable.
+- **G-S4:** the consequence of an over-privileged admin profile as proposed in STU-ADR-0008 section 6 (SUPERUSER,
+  BYPASSRLS, REPLICATION, a server-access role or CREATEROLE before 16 refuse the admin unlock; the rest is shown);
+  the `pg_dump`/`pg_restore` paths from the owner's local configuration instead of the page's settings (E-X5 says
+  "from the settings"); PostgreSQL restore only into a new database in 1.3; backup retention (Studio never deletes a
+  backup today); the release exception for Tabrion's experimental role, restore, delete and database names.
+- **Both:** the independent reviews of STU-CR-1 and STU-XDM-1 (doc 07 section 6) accept or change ADRs 0007 and
+  0008 and the two threat models; G-S3 also waits for TAB-XW-5 and D-5 in Tabrion (GS3-P1, GS3-P2).
 
 ## Cross-repository checks still to add
 
