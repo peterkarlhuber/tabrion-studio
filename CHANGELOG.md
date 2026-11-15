@@ -12,6 +12,21 @@ All notable changes to this project are documented here. The format follows
   `Transaction.execute_checked`). `update_row` and `delete_row` now take `old` and `new` by keyword only; the Data
   Editor passes them by keyword. No behavior change; the `data_editor` flag stays off.
 
+- STU-CR-4 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's table view on the Connections page. `POST`/`DELETE
+  /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` keep one draft
+  per browser tab on the server only, bound to the connection and the unlock of a non-PROD write profile, started from
+  a `tabrion.schema` level-2 snapshot of one schema (SQLite `main`, PostgreSQL any non-system schema). The page sends
+  one change at a time (add, rename, drop a table; add, change, rename, drop a column; add and drop keys,
+  constraints and indexes); the server checks names, references and limits, plans each change with tabrion and keeps
+  it only when it can be planned. The preview plans from a fresh snapshot to the draft and shows each step with its
+  risk classes, transaction and SQL and the plan hash; nothing is run and no route runs DDL. Every `plan` call passes
+  the write connection's `server_version` (GS3-13); no request can carry a model or plan and `from_json` is never
+  called (GS3-09). Seven new problems `studio.schema_draft_*`, `studio.schema_edit_invalid`,
+  `studio.schema_plan_refused` and `studio.schema_model_invalid` (English and German). New tests in
+  `test_schema_designer_draft.py` and `test_schema_designer_draft_postgres.py`, the kill-switch sweep and
+  `test_every_route.py` extended; guide page "Schema Designer (in development)".
+
 - G-S2 follow-up 6A for the Data Editor (behind the `data_editor` flag, which stays off by default; no default
   changes): a bytes value (`bytea`, a SQLite `BLOB`) is replaced by the content of a file the user picks, at most
   64 KiB (`value.too_large` on the page, before the file is read, and on the server); it is shown by its size and

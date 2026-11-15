@@ -67,6 +67,7 @@ nav:
       - Data viewer: guide/data-viewer.md
       - Data Editor (in development): guide/data-editor.md
       - New database (in development): guide/new-database.md
+      - Schema Designer (in development): guide/schema-designer.md
       - Settings and keyboard: guide/settings.md
       - How Studio protects your data: guide/security.md
       - Troubleshooting: guide/troubleshooting.md

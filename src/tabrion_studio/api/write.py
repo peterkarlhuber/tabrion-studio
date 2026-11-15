@@ -36,6 +36,16 @@
   "template", "encoding", "locale", "typed"}``: a new PostgreSQL database on this session's unlocked write connection
   of a DEV or TEST server (STU-CR-3; :mod:`tabrion_studio.write.schema_designer.create`). Only the Schema Designer
   flag opens them; with it off they answer 405 and the Schema Designer's code is not imported.
+* ``POST /api/write/schema-designer/draft``: ``{"connection_id", "schema"}``: start (or start again) this session's
+  draft of the connection from a level-2 snapshot of one schema, read on the unlocked write connection (STU-CR-4,
+  :mod:`tabrion_studio.write.schema_designer.designer`); ``DELETE`` with ``{"connection_id"}`` discards it.
+  ``POST /api/write/schema-designer/draft/view``: ``{"connection_id"}``: the draft as it is.
+  ``POST /api/write/schema-designer/draft/edits``: ``{"connection_id", "revision", "edit"}``: one edit operation
+  (add, drop or rename a table or column, change a column, add or drop a constraint or an index), checked by the
+  server against the level-2 model and by a tabrion plan. ``POST /api/write/schema-designer/draft/preview``:
+  ``{"connection_id"}``: the read-only plan preview from a fresh snapshot to the draft (steps, risk classes, SQL,
+  fingerprints, plan hash). The draft lives only on the server; no route takes a model, a snapshot or a plan from the
+  page (GS3-09), and none runs a plan. Schema Designer flag only, like the creation routes.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -83,6 +93,11 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # STU-CR-2, STU-CR-3: the Schema Designer's database creation; Schema Designer flag only (G-S3).
     ("/api/write/schema-designer/create/sqlite", ("POST",)),
     ("/api/write/schema-designer/create/postgresql", ("POST",)),
+    # STU-CR-4: the Schema Designer's server-side draft, its edit operations and the read-only plan preview (G-S3).
+    ("/api/write/schema-designer/draft", ("POST", "DELETE")),
+    ("/api/write/schema-designer/draft/view", ("POST",)),
+    ("/api/write/schema-designer/draft/edits", ("POST",)),
+    ("/api/write/schema-designer/draft/preview", ("POST",)),
 )
 
 

@@ -180,6 +180,9 @@ class Unlocks:
         self.confirmations = confirmations if confirmations is not None else SecretConfirmations(None)
         self._unlocks: dict[tuple[str, str], Unlock] = {}
         self._lock = threading.Lock()
+        #: Called with an unlock's ``unlock_id`` after it ended, for whatever reason: what is bound to an unlock (the
+        #: Schema Designer's drafts, STU-CR-4) ends with it. A listener never stops the lock.
+        self.end_listeners: list[Callable[[str], None]] = []
         registry.on_close(self.connection_closed)
         config.listeners.append(self.profile_changed)
 
@@ -543,6 +546,9 @@ class Unlocks:
     def _close(self, record: Unlock, reason: str) -> None:
         with contextlib.suppress(Exception):
             record.connection.close()
+        for listener in list(self.end_listeners):
+            with contextlib.suppress(Exception):
+                listener(record.unlock_id)
         logger.info("write mode locked (%s)", reason, extra={"event": "studio.write_locked"})
         # After the fact: the lock has happened; a failed record is kept as pending (N-4).
         self.audit.record(

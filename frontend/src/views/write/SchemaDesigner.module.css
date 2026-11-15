@@ -1,0 +1,122 @@
+/* The Schema Designer's table view (STU-CR-4): one card per table of the draft, its columns as a table, its keys,
+   constraints and indexes as lists, and the read-only plan preview with each step's SQL. */
+.designer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-4);
+  min-width: 0;
+}
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.meta {
+  margin: 0;
+  font-size: var(--tb-text-sm);
+  color: var(--tb-color-text-muted);
+}
+.table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-3);
+  min-width: 0;
+  padding: var(--tb-space-4);
+  border: 1px solid var(--tb-color-border);
+  border-radius: var(--tb-radius-md);
+  background: var(--tb-color-bg);
+}
+.tableHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.tableName {
+  margin: 0;
+  font-size: var(--tb-text-md);
+  overflow-wrap: anywhere;
+}
+.badge {
+  padding: 0 var(--tb-space-2);
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-text);
+  font-size: var(--tb-text-sm);
+}
+.new {
+  background: var(--tb-diff-added);
+}
+.changed {
+  background: var(--tb-diff-changed);
+}
+.dropped {
+  background: var(--tb-diff-removed);
+}
+.scroll {
+  overflow: auto;
+  border: 1px solid var(--tb-color-border);
+  border-radius: var(--tb-radius-md);
+}
+.grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--tb-text-sm);
+}
+.grid caption {
+  padding: var(--tb-space-1) var(--tb-space-2);
+  text-align: left;
+  font-weight: var(--tb-weight-semibold);
+}
+.grid th,
+.grid td {
+  padding: var(--tb-space-1) var(--tb-space-2);
+  border-bottom: 1px solid var(--tb-color-border);
+  text-align: left;
+  vertical-align: top;
+}
+.grid th {
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-heading);
+  font-weight: var(--tb-weight-semibold);
+}
+.code {
+  font-family: var(--tb-font-mono);
+  overflow-wrap: anywhere;
+}
+.elements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--tb-text-sm);
+}
+.element {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.sql {
+  margin: 0;
+  padding: var(--tb-space-2);
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-color-surface-2);
+  font-family: var(--tb-font-mono);
+  font-size: var(--tb-text-sm);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.risks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--tb-space-1);
+}
+.hash {
+  font-family: var(--tb-font-mono);
+  font-size: var(--tb-text-sm);
+  overflow-wrap: anywhere;
+}

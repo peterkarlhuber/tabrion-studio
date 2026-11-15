@@ -39,14 +39,16 @@ is used.
 | `tabrion.errors.Kind.UNIQUE` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.Kind.UNKNOWN` | `tests/unit/test_problems.py` |
 | `tabrion.errors.PermissionDenied` | `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.errors.PlanRefused` | `src/tabrion_studio/write/schema_designer/draft.py` |
 | `tabrion.errors.RoleMissing` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.errors.RowCountMismatch` | `src/tabrion_studio/write/data_editor.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
-| `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py` |
-| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
-| `tabrion.errors.safe_message` | `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.safe_message` | `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
+| `tabrion.plan.plan` | `src/tabrion_studio/write/schema_designer/draft.py`, `tests/security/test_schema_designer_draft.py`, `tests/security/test_schema_designer_draft_postgres.py` |
 | `tabrion.postgres` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.ExtensionStatus` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
@@ -56,6 +58,15 @@ is used.
 | `tabrion.rowedit.insert_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.update_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.safe_url` | `src/tabrion_studio/services/connections.py` |
+| `tabrion.schema.CheckShape` | `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.ColumnShape` | `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.ForeignKeyShape` | `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.IndexShape` | `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.SchemaSnapshot` | `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py`, `tests/security/test_schema_designer_draft.py` |
+| `tabrion.schema.TableShape` | `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.UniqueShape` | `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.fingerprint` | `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py` |
+| `tabrion.schema.snapshot` | `src/tabrion_studio/write/schema_designer/designer.py` |
 | `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py`, `tests/security/test_definitions.py`, `tests/security/test_read_only.py` |
 | `tabrion.sqlite.JournalMode` | `src/tabrion_studio/write/connection.py` |
 | `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
