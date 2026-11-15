@@ -78,7 +78,9 @@ jobs:
           - { label: Python 3.13, os: ubuntu-latest, python: "3.13" }
           - { label: Python 3.14, os: ubuntu-latest, python: "3.14" }
           - { label: macos-latest, os: macos-latest, python: "3.13" }
-          - { label: windows-latest, os: windows-latest, python: "3.13" }
+          # The Windows leg runs in two shards: the whole suite took 18 to 20 minutes there (timeout 20).
+          - { label: "windows-latest, security", os: windows-latest, python: "3.13", tests: tests/security }
+          - { label: "windows-latest, other", os: windows-latest, python: "3.13", tests: "tests --ignore=tests/security" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -96,7 +98,7 @@ jobs:
       - run: python scripts/runtime_lock.py check-installed
       - run: pip list
       # Unit, process-model (STU-002: start < 2 s, reuse, idle exit, shutdown), security and supply-chain tests.
-      - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing
+      - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing ${{ matrix.tests }}
 
   security:
     name: security tests

@@ -1024,6 +1024,10 @@ All notable changes to this project are documented here. The format follows
   unlock before too), and the Data Editor's "no write profile" text points to Settings, where the write and admin
   profiles are (it named Connections).
 
+- CI: the Windows leg of `backend test` runs in two shards, `backend test (windows-latest, security)` (`tests/security`)
+  and `backend test (windows-latest, other)` (the rest): the whole suite took 18 to 20 minutes against the job's
+  20-minute timeout and was cancelled after all tests had passed. The timeout is unchanged; `.github/ci-manifest.json`
+  lists both shards.
 - STU-026: Studio is built and tested against tabrion 0.3.0.dev0, the merge commit of tabrion PR #80
   (`72e2d03fea2b83e159a4ae9df3b7c40246b8a232`; untagged, no release; it contains tabrion 0.2.2), pinned by full SHA in
   `constraints/tabrion-integration.txt`; the range in `pyproject.toml` is `>=0.2,<0.4`.
