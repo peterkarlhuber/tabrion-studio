@@ -7,8 +7,8 @@
  *
  * STU-XDE-2 (e2e/data-editor-states.spec.ts) adds the states the other specs do not reach, as options from the
  * harness's query: `locked` (no unlock yet: the unlock form, D-03, with the write profile `parts-w`; `prod` answers
- * the unlock with `studio.write_prod_locked`), `triggers` (the table has a trigger, a rule and row security: a notice,
- * not a block), `refuse` (the table route answers `studio.data_editor_column_incomparable`,
+ * the unlock with `studio.write_prod_locked`, `over_privileged` with `studio.write_role_over_privileged`, G-S2 1A),
+ * `triggers` (the table has a trigger, a rule and row security: a notice, not a block), `refuse` (the table route answers `studio.data_editor_column_incomparable`,
  * `studio.plan_target_partitioned`, `studio.plan_target_no_primary_key` or `studio.plan_target_invalid`) and
  * `conflict` (the run answers `studio.data_editor_conflict`).
  */
@@ -79,8 +79,11 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
 export interface DataEditorOptions {
-  /** No unlock yet: the page starts with the unlock form. `prod` refuses the unlock as the server does for PROD. */
-  locked?: 'yes' | 'prod' | null;
+  /**
+   * No unlock yet: the page starts with the unlock form. `prod` refuses the unlock as the server does for PROD,
+   * `over_privileged` as it does for a write role with superuser, BYPASSRLS, REPLICATION or server-file rights.
+   */
+  locked?: 'yes' | 'prod' | 'over_privileged' | null;
   /** The table has a trigger and a rule, and row security is on. */
   triggers?: boolean;
   /** The table route refuses the table with this code (without `studio.`). */
@@ -134,6 +137,7 @@ export function createDataEditorServer(options: DataEditorOptions = {}): {
     }
     if (url === '/api/write/unlocks' && method === 'POST') {
       if (options.locked === 'prod') return problem('write_prod_locked', 405);
+      if (options.locked === 'over_privileged') return problem('write_role_over_privileged', 405);
       if ((body as { typed_name?: string }).typed_name !== 'parts-w') {
         return problem('unlock_name_mismatch');
       }

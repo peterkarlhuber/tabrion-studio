@@ -84,6 +84,7 @@ const PROBLEMS = new Set([
   'write_profiles_ignored',
   'profile_coupled',
   'write_prod_locked',
+  'write_role_over_privileged',
   'write_coupling_invalid',
   'write_target_unknown',
   'unlock_name_mismatch',

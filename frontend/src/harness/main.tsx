@@ -529,7 +529,14 @@ const session: SessionState = scenario === 'used' ? 'used' : 'ok';
 if (scenario === 'data-editor') {
   // STU-XDE-1: the grid with its type editors and change overview, without the shell (the flag is the server's).
   const dataEditor = createDataEditorServer({
-    locked: params.get('locked') === 'prod' ? 'prod' : params.get('locked') === '1' ? 'yes' : null,
+    locked:
+      params.get('locked') === 'prod'
+        ? 'prod'
+        : params.get('locked') === 'over_privileged'
+          ? 'over_privileged'
+          : params.get('locked') === '1'
+            ? 'yes'
+            : null,
     triggers: params.get('triggers') === '1',
     refuse: params.get('refuse'),
     conflict: params.get('conflict') === '1',

@@ -123,7 +123,17 @@ A refused write is answered the same way with the flag off and, after a gate, fo
 - The **admin profile has the minimal rights** its area needs. On every connect Studio checks the role's privileges
   (attributes, memberships, privileges reachable through `SET ROLE` or inheritance, ownership) and reports a
   **finding on over-privilege** (for example SUPERUSER). What the finding blocks is fixed by STU-XDM-1 (G-S4
-  definition).
+  definition). **As built (owner decision 1A at G-S2, review I-3 of PR #111):** for a **write** profile
+  (`kind = "write"`) the same check refuses the write connection and the unlock with
+  `405 studio.write_role_over_privileged` when the role holds, directly or through a role it reaches by membership,
+  SUPERUSER, BYPASSRLS or REPLICATION, or is a member of `pg_read_server_files`, `pg_write_server_files` or
+  `pg_execute_server_program` (`tabrion_studio.write.connection.WRITE_REFUSING_FINDINGS`, checked in
+  `open_write_connection` before the unlock takes effect; the connection is closed). CREATEROLE (also
+  `admin.createrole_pre16`) and the other predefined roles, `pg_read_all_data` and `pg_write_all_data` among them,
+  stay warnings in the write state. The refusal is the existing `unlock` audit record with this result code; no new
+  audit event (decision 4A). The check runs when the unlock opens the write connection; a right granted to the role
+  while an unlock lasts is seen at the next unlock (an unlock ends after 15 idle minutes at the latest). For admin
+  profiles nothing blocks yet (G-S4).
 - **Studio never sets up admin rights for itself.** The admin rights are provisioned outside Studio; Studio does not
   create, grant or alter its own admin role, and never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION,
   directly or through membership (E-X6).

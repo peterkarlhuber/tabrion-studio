@@ -511,6 +511,15 @@ CATALOG: dict[str, Entry] = {
         "Production is write-locked",
         "Studio never writes to a database whose profile is PROD.",
     ),
+    "studio.write_role_over_privileged": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Write role has too many rights",
+        "The write profile's role is a superuser, has BYPASSRLS or REPLICATION, or is a member (directly or through "
+        "another role) of pg_read_server_files, pg_write_server_files or pg_execute_server_program. Studio does not "
+        "unlock the write mode with such a role.",
+        "Use a role with only the table rights the Data Editor needs; the security guide shows how to check the role.",
+    ),
     "studio.write_coupling_invalid": Entry(
         400,
         ProblemKind.CONFIG,

@@ -1038,6 +1038,7 @@
     "write_profiles_ignored": "Schreib- und Admin-Profile werden nur aus dem Konfigurationsordner verwendet, den die Kommandozeile nennt, oder aus dem Ordner der Plattform, nicht aus einem, den eine Umgebungsvariable gewählt hat. Starten Sie Studio mit --config-dir für diesen Ordner.",
     "profile_coupled": "An dieses Profil ist ein Schreib- oder Admin-Profil gekoppelt. Entfernen Sie es zuerst.",
     "write_prod_locked": "Studio schreibt nie in eine PROD-Datenbank.",
+    "write_role_over_privileged": "Die Schreibrolle ist Superuser, hat BYPASSRLS oder REPLICATION oder ist Mitglied einer Serverdatei-Rolle (pg_read_server_files, pg_write_server_files, pg_execute_server_program). Studio entsperrt den Schreibmodus mit ihr nicht; verwenden Sie eine Rolle, die nur die nötigen Tabellenrechte hat.",
     "write_coupling_invalid": "Dieses Schreibprofil ist nicht an das Profil dieser Verbindung gekoppelt.",
     "write_target_unknown": "Es gibt keine offene Verbindung mit dieser ID.",
     "unlock_name_mismatch": "Tippen Sie zum Entsperren den Namen des Schreibprofils genau ein.",

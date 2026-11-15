@@ -23,6 +23,14 @@ All notable changes to this project are documented here. The format follows
   PROD, links, folder modes, canaries), PostgreSQL 16, vitest with axe, and Playwright against a real server in light
   and dark. User guide page "New database (in development)".
 
+- G-S2 granted by the owner on 2026-11-15 with decisions 1A to 7A, for local use on DEV, TEST and STAGE databases
+  only: PROD stays technically write-locked, every write area stays off by default and nothing turns one on
+  automatically; G-S3, G-S4, H-2 and G-R stay open, nothing is tagged or released. Binding condition: the
+  `data_editor` flag is not switched on before decision 1A (below) is implemented, independently reviewed, merged
+  and green in CI. The decisions and their follow-ups with deadlines are recorded in `docs/TODO.md`
+  ("G-S2 readiness") and `docs/architecture/security-review-prep.md`; the security guide states that the audit
+  log's retention is unlimited (decision 3A).
+
 - STU-CR-1 and STU-XDM-1 (documentation only; G-S3 and G-S4 not granted, the `schema_designer` and
   `database_manager` flags stay off, no code of either area exists, no default changes):
   STU-ADR-0007 for the Schema Designer (plans and target models server-side only, a new plan before every run
@@ -824,6 +832,16 @@ All notable changes to this project are documented here. The format follows
   `db.connection`) and records every `POST /api/connections` body. Test only; the behavior is unchanged.
 
 ### Security
+
+- **An over-privileged PostgreSQL write role is no longer unlocked** (owner decision 1A at G-S2, review I-3 of PR
+  #111). A write profile (`kind = "write"`) whose role holds SUPERUSER, BYPASSRLS or REPLICATION, or is a member of
+  `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program`, directly or through a role it
+  reaches by membership, refuses the unlock: `405 studio.write_role_over_privileged`, which names no role and no
+  finding. The write connection is closed and nothing is unlocked; the refusal is the existing `unlock` record of the
+  audit log with this result code (no new audit event, decision 4A). CREATEROLE (also before PostgreSQL 16) and the
+  other predefined roles, such as `pg_read_all_data` and `pg_write_all_data`, stay warnings in the write state.
+  Admin profiles are unchanged (G-S4). Texts in English and German; tests without a server, through the unlock route
+  and against PostgreSQL (each refusing attribute and role held directly and through a group role).
 
 - **Behavior change for Studio 1.0 users: `PG*` environment variables no longer reach PostgreSQL connections**,
   read connections included (G2-01 below). A profile without a host, user, database or TLS mode no longer takes it

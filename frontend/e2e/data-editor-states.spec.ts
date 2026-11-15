@@ -99,6 +99,18 @@ test('PROD: the server refuses the unlock and no grid opens (E-X7)', async ({ pa
   expect((await log(page)).plans).toEqual([]);
 });
 
+test('an over-privileged write role: the server refuses the unlock and no grid opens (G-S2 1A)', async ({
+  page,
+}) => {
+  await open(page, { locked: 'over_privileged' });
+  await unlock(page);
+  await expect(page.getByTestId('data-editor-unlock').getByRole('alert')).toHaveText(
+    text('en', 'problems.write_role_over_privileged'),
+  );
+  await expect(page.getByTestId('data-editor-grid')).toHaveCount(0);
+  expect((await log(page)).plans).toEqual([]);
+});
+
 const REFUSALS: [string, RegExp][] = [
   ['data_editor_column_incomparable', /type that cannot be compared \(for example xml or point\)/],
   ['plan_target_partitioned', /does not change partitioned tables/],
