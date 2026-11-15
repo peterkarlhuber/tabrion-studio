@@ -53,7 +53,13 @@ from tabrion_studio.app import Runtime, create_app
 from tabrion_studio.config.code_trust import CodeTrust
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.user import UserConfig
-from tabrion_studio.config.write_areas import ALL_OFF, load_write_areas, log_write_areas, write_profiles_allowed
+from tabrion_studio.config.write_areas import (
+    ALL_OFF,
+    load_write_areas,
+    log_write_areas,
+    write_profiles_allowed,
+    write_state_folder,
+)
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import (
     LOOPBACK,
@@ -101,6 +107,10 @@ class ServeOptions:
     #: The folder of ``write-areas.toml``, the one source of the write-area flags (STU-XW-1), named by the command
     #: line only; None: no source, every area stays off.
     write_areas_dir: Path | None = None
+    #: Whether ``TABRION_STUDIO_STATE_DIR`` chose ``state_dir`` (no ``--state-dir``): then, while an area is on, the
+    #: audit log and the secret confirmations there are not used (review N-1 of PR #116; they live in
+    #: ``write_areas_dir`` in any case).
+    state_dir_from_env: bool = False
     started: float = field(default_factory=time.perf_counter)
 
 
@@ -389,6 +399,9 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
             write_profiles_allowed=write_profiles_allowed(write_areas, config_dir, options.write_areas_dir),
         ),
     )
+    write_state = write_state_folder(
+        write_areas, options.write_areas_dir, options.state_dir, options.state_dir_from_env
+    )
     registry = ConnectionRegistry(configuration)
     explorer = Explorer(registry)
     key = project_key(options.project)
@@ -421,8 +434,10 @@ def serve(options: ServeOptions, lock: InstanceLock, out: TextIO) -> int:
         launches=launches,
         request_shutdown=request_shutdown,
         write_areas=write_areas,
-        # STU-XW-2: the audit log of write and admin actions, created and read only while an area is on.
-        audit_dir=options.state_dir / "audit",
+        # STU-XW-2: the audit log of write and admin actions, created and read only while an area is on. It and the
+        # secret confirmations (next to it) live in the flag file's folder, never in a state folder that an
+        # environment variable chose (review N-1 of PR #116).
+        audit_dir=None if write_state is None else write_state / "audit",
     )
 
     def on_ready() -> None:

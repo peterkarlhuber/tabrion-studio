@@ -157,7 +157,8 @@ class Runtime:
     host: str = "127.0.0.1"
     #: The per-area write kill switches as read once at start (STU-ADR-0006, STU-XW-1): every area off by default.
     write_areas: WriteAreas = ALL_OFF
-    #: The audit log's folder (STU-XW-2): ``<state folder>/audit``, used only while an area is on; None refuses writes.
+    #: The audit log's folder (STU-XW-2): ``audit`` in the folder of ``write-areas.toml`` (never a state folder an
+    #: environment variable chose, N-1 of PR #116), used only while an area is on; None refuses writes.
     audit_dir: Path | None = None
 
 

@@ -188,6 +188,8 @@ def main(argv: Sequence[str] | None = None, out: TextIO | None = None) -> int:
         # STU-XW-1: the write-area flags come from the folder the command line names, never one an environment
         # variable names (review N-1 of PR #109).
         write_areas_dir=flag_dir(args.config_dir, args.state_dir, platform_config_dir()).expanduser().resolve(),
+        # Review N-1 of PR #116: a state folder from the variable keeps no audit log or secret confirmation.
+        state_dir_from_env=args.state_dir is None and bool(os.environ.get(STATE_DIR_ENV)),
         started=_STARTED,
     )
     try:

@@ -342,7 +342,12 @@ class Unlocks:
                 register_secret(password, lasting=True)
             entry = self.config.entry(connection.profile_id)
             opened = open_write_connection(
-                write.kind, profile, limits, password=password, refuse_cleartext=refuses_cleartext(entry)
+                write.kind,
+                profile,
+                limits,
+                password=password,
+                refuse_cleartext=refuses_cleartext(entry),
+                requirepeer=write.requirepeer,
             )
         return opened, pair_digest
 

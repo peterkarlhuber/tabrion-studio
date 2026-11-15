@@ -54,8 +54,11 @@ class WriteEnv:
         self.state = tmp_path / "state"
         self.state.mkdir(mode=0o700)
         self.config_dir = tmp_path / "config"
-        #: The audit log (STU-XW-2): created by the write package only while an area is on.
-        self.audit_dir = self.state / "audit"
+        #: The audit log (STU-XW-2): created by the write package only while an area is on, in the folder of
+        #: write-areas.toml (here the configuration folder, as with --config-dir; N-1 of PR #116).
+        self.audit_dir = self.config_dir / "audit"
+        #: The confirmed pairs of STU-XW-4, next to the audit folder.
+        self.confirmations_file = self.config_dir / "write-secret-confirmations.json"
         self.fake = FakeKeyring()
         secrets = Secrets(KeyringStore(lambda: self.fake), SessionSecrets(), {})
         project = ProjectConfig(self.project, self.state, "k1", self.config_dir)

@@ -283,6 +283,8 @@ _COUPLING_POINTERS = {
     "config.not_for_engine": "profile.engine",
     "config.coupling_role_required": "profile.user",
     "config.coupling_same_role": "profile.user",
+    # A coupled write profile names the server's OS user, which libpq checks only on a socket (N-2 of PR #116).
+    "config.requirepeer_socket_only": "profile.host",
 }
 
 

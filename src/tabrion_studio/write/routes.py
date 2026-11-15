@@ -14,10 +14,10 @@ The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan
 make and preview, confirm with the hash and the typed text, execute once.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
-:class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``<state>/write-secret-confirmations.json``, next to
-the audit folder; ``app.state.write_secret_confirmations``): preview the pair, confirm it with its hash and the typed
-host, revoke it. A confirmation and a revocation are recorded in the audit log (the pair's digest, the kind of
-reference and whether the host is foreign; never the host or the reference itself).
+:class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
+folder, in the folder of ``write-areas.toml``; ``app.state.write_secret_confirmations``): preview the pair, confirm it
+with its hash and the typed host, revoke it. A confirmation and a revocation are recorded in the audit log (the pair's
+digest, the kind of reference and whether the host is foreign; never the host or the reference itself).
 """
 
 from __future__ import annotations
@@ -63,6 +63,7 @@ _POINTERS = {
     "config.not_for_engine": "profile.user",
     "config.coupling_role_required": "profile.user",
     "config.coupling_same_role": "profile.user",
+    "config.requirepeer_socket_only": "profile.requirepeer",
 }
 
 
@@ -137,7 +138,8 @@ def add_enabled_write_routes(
     audit_dir: Path | None = None,
 ) -> Unlocks:
     audit = AuditLog(audit_dir)
-    # The audit folder is <state>/audit; the confirmed pairs live next to it. No state folder: nothing confirmed.
+    # The audit folder is <folder of write-areas.toml>/audit (review N-1 of PR #116); the confirmed pairs live next
+    # to it. No folder: nothing confirmed.
     confirmations = SecretConfirmations(None if audit_dir is None else audit_dir.parent / CONFIRMATION_FILE)
     app.state.write_secret_confirmations = confirmations
     unlocks = Unlocks(config, registry, areas, audit=audit, confirmations=confirmations)

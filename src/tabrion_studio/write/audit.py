@@ -13,8 +13,10 @@ result code. **Never a value**: no cell value, no parameter, no statement text, 
 message (TX-13, TX-14). Each field has a validator; an unknown field or one of the wrong shape is a coding error and
 refuses the record, and a text that contains a secret Studio knows (:func:`tabrion_studio.logs.scrub`) is replaced.
 
-**Where.** ``<state folder>/audit/``: the folder 0700, every file 0600, owned by the user, never opened through a link
-(``O_NOFOLLOW``; on Windows the state folder checks of :mod:`tabrion_studio.paths`). No file stays open between two
+**Where.** ``audit/`` in the folder of ``write-areas.toml`` (the command line's configuration folder or the
+platform's; never a state folder that ``TABRION_STUDIO_STATE_DIR`` chose, review N-1 of PR #116): the folder 0700,
+every file 0600, owned by the user, never opened through a link (``O_NOFOLLOW``; on Windows the state folder checks
+of :mod:`tabrion_studio.paths`). No file stays open between two
 records, so nothing holds a handle on the log (Windows). Files:
 
 * ``audit.jsonl``: the current segment, one JSON object per line, appended only (``O_APPEND``, ``fsync``);
@@ -27,13 +29,12 @@ records, so nothing holds a handle on the log (Windows). Files:
 
 **Tamper evidence.** Every record carries its sequence number, the hash of the record before it (``prev``; the first
 record has :data:`GENESIS`) and its own hash: SHA-256 over its canonical JSON without ``hash``. :func:`verify_log`
-recomputes the chain over every segment and checks the head, so it finds a changed record (``audit.record_changed``),
-a removed, inserted or reordered one (``audit.chain_broken``), a cut tail (``audit.truncated``) and a missing or
-changed anchor (``audit.head_missing``, ``audit.head_mismatch``). Without a key, someone who can write the user's
-state folder can rebuild a whole consistent chain; that is malware running as the user, outside the protection goal
-(threat model, residual risk 3). Studio verifies the log when it opens it and on every listing; a log that fails is
-not appended to, so no write runs until the user has moved the folder aside (it is kept for inspection, never
-repaired by Studio).
+recomputes the chain over every segment and checks the head, so it finds a changed record (``audit.record_changed``), a
+removed, inserted or reordered one (``audit.chain_broken``), a cut tail (``audit.truncated``) and a missing or changed
+anchor (``audit.head_missing``, ``audit.head_mismatch``). Without a key, someone who can write the user's configuration
+folder can rebuild a whole consistent chain; that is malware running as the user, outside the protection goal (threat
+model, residual risk 3). Studio verifies the log when it opens it and on every listing; a log that fails is not appended
+to, so no write runs until the user has moved the folder aside (it is kept for inspection, never repaired by Studio).
 
 **Failure behavior.** :meth:`AuditLog.append` fails closed: it raises :class:`AuditError` and the caller does not do
 the action. It is used for the records before an action (``run.start``, ``unlock``). A record after an action that
@@ -437,10 +438,10 @@ _LOCK_PAUSE_S = 0.01
 def _folder_lock(folder: Path) -> Iterator[None]:
     """Hold the audit folder's lock across processes (review M-1 of PR #114).
 
-    Several Studio processes (one per project) share ``<state>/audit``. Every write, head update, rotation, pending
-    marker change and verification happens under this lock: ``audit.lock`` (0600, never through a link), locked with
-    ``fcntl.flock`` on POSIX and ``msvcrt.locking`` on Windows. The handle is closed when the lock is released, so
-    nothing stays open between records. Raises :class:`UnsafePathError` or OSError (also after
+    Several Studio processes (one per project) share ``audit`` in the flag folder. Every write, head update, rotation,
+    pending marker change and verification happens under this lock: ``audit.lock`` (0600, never through a link),
+    locked with ``fcntl.flock`` on POSIX and ``msvcrt.locking`` on Windows. The handle is closed when the lock is
+    released, so nothing stays open between records. Raises :class:`UnsafePathError` or OSError (also after
     :data:`LOCK_TIMEOUT_S`)."""
     path = folder / LOCK
     if not _NOFOLLOW and path.is_symlink():
