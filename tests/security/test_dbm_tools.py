@@ -240,12 +240,15 @@ def test_an_unsafe_tool_is_refused(fakes: Fakes, setup: str, reason: str) -> Non
 def test_a_tool_of_a_foreign_owner_is_refused(fakes: Fakes, monkeypatch: pytest.MonkeyPatch) -> None:
     dump = fakes.tool("pg_dump")
     fakes.configure(dump, None)
+    # The tools file is read first: it must stay the user's own, as it is (a changed uid would refuse the file itself).
+    tools = load_tools(fakes.state)
+    scratch = fakes.scratch()
     if os.geteuid() == 0:
         os.chown(dump, 65534, -1)  # nobody: neither the user (root here) nor root
     else:
-        monkeypatch.setattr(os, "getuid", lambda: os.geteuid() + 4242)  # the file is no longer "ours"
+        monkeypatch.setattr(os, "getuid", lambda: os.geteuid() + 4242)  # the tool is no longer "ours"
     with pytest.raises(WriteError) as found:
-        verify_tool("pg_dump", load_tools(fakes.state), fakes.scratch())
+        verify_tool("pg_dump", tools, scratch)
     assert _reason(found) == ("studio.backup_tool_unavailable", [("tool.pg_dump", "tool.owner")])
 
 
@@ -308,7 +311,10 @@ def test_the_tool_gets_an_argument_list_a_clean_environment_and_the_passfile(
     assert "192.0.2.66" not in argv[4] and "intruder" not in argv[4]
     assert seen["stdin"] == 0  # stdin closed (DEVNULL)
     env = seen["env"]
-    assert set(env) == {"LC_ALL", "PGPASSFILE", "PGSYSCONFDIR", "PGSERVICEFILE"}
+    # macOS's CoreFoundation adds __CF_USER_TEXT_ENCODING to the environment of the started (Python) fake tool
+    # itself; Studio does not pass it, and it is no libpq variable.
+    os_added = {"__CF_USER_TEXT_ENCODING"} if sys.platform == "darwin" else set()
+    assert set(env) - os_added == {"LC_ALL", "PGPASSFILE", "PGSYSCONFDIR", "PGSERVICEFILE"}
     assert env["LC_ALL"] == "C" and not os.listdir(env["PGSYSCONFDIR"]) if os.path.exists(env["PGSYSCONFDIR"]) else True
     # The canary only in the passfile, as one exact, escaped entry; 0600 in a 0700 folder.
     assert seen["passfile"] == passfile_line(_connection())

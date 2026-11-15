@@ -424,6 +424,14 @@ def test_a_target_swapped_before_the_run_is_refused(dbm: Dbm) -> None:
     name = dbm.made()
     swapped = dbm.env.tmp_path / "swapped.db"
     swapped.write_bytes(dbm.env.db.read_bytes())
+    # Studio's handles closed first, as when the pools are idle between two requests: the window in which the file
+    # can be swapped. While a handle is open, Windows refuses to move the file at all (asserted there).
+    write = dbm.env.unlocks.require(dbm.env.session(), dbm.connection_id, Area.DATABASE_MANAGER)
+    if sys.platform == "win32":
+        with pytest.raises(PermissionError):
+            os.replace(swapped, dbm.env.db)
+    dbm.env.registry.get(dbm.connection_id)._db.engine.dispose()
+    write._db.engine.dispose()
     os.replace(swapped, dbm.env.db)
     before = digest(dbm.env.db)
     response = dbm.restore(name, "existing", None, "parts.db")
