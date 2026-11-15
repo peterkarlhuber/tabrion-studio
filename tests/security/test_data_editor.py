@@ -597,6 +597,8 @@ def test_no_cell_value_reaches_answers_logs_audit_history_or_drafts(env: WriteEn
         pytest.fail("the read query was not recorded in the history")
     assert CANARY_VALUE not in json.dumps(env.history.entries())
     assert CANARY_VALUE not in json.dumps(env.send("GET", "/api/drafts").json())
-    for path in env.state.rglob("*"):
+    # The state folder and the folder of write-areas.toml, where the audit log lives since the STU-XW hardening.
+    assert any(env.audit_dir.glob("audit*.jsonl"))
+    for path in [*env.state.rglob("*"), *env.config_dir.rglob("*")]:
         if path.is_file():
             assert CANARY_VALUE.encode() not in path.read_bytes(), path.name

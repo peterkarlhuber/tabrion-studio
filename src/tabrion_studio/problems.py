@@ -645,7 +645,7 @@ CATALOG: dict[str, Entry] = {
         "Table not editable",
         "A column of this table has a type that cannot be compared (for example xml, point or a composite type), so a "
         "change made by someone else could not be detected. The Data Editor does not edit this table.",
-        "Edit this table with another tool, or leave such columns out of a table you edit here.",
+        "The whole table is refused, whichever columns are shown. Edit it with another tool.",
     ),
     "studio.data_editor_value_invalid": Entry(
         400,

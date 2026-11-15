@@ -1068,7 +1068,7 @@
     "data_editor_conflict": "Eine Zeile wurde seit dem Laden von jemand anderem geändert oder gelöscht. Es wurde nichts gespeichert. Lade die Zeilen neu und versuche es erneut.",
     "data_editor_rowcount": "Eine Änderung hat nicht genau eine Zeile betroffen. Es wurde nichts gespeichert.",
     "data_editor_value_invalid": "Ein Wert passt nicht zu seiner Spalte. Es wurde nichts gespeichert.",
-    "data_editor_column_incomparable": "Eine Spalte dieser Tabelle hat einen Typ, der sich nicht vergleichen lässt (zum Beispiel xml oder point), daher ließe sich eine Änderung durch jemand anderen nicht erkennen. Studio bearbeitet diese Tabelle nicht."
+    "data_editor_column_incomparable": "Eine Spalte dieser Tabelle hat einen Typ, der sich nicht vergleichen lässt (zum Beispiel xml oder point), daher ließe sich eine Änderung durch jemand anderen nicht erkennen. Studio bearbeitet diese Tabelle gar nicht, egal welche Spalten angezeigt werden; bearbeite sie mit einem anderen Werkzeug."
   },
   "keyboard": {
     "palette": {
