@@ -63,7 +63,7 @@ from typing import Any, TypeVar
 from tabrion import TabrionError
 from tabrion.check import Finding
 
-from tabrion_studio.config.schema import is_loopback
+from tabrion_studio.config.schema import is_host_list, is_loopback
 from tabrion_studio.services import backup_hints
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection
 from tabrion_studio.services.diagnosis_texts import CAPPED_COUNT, studio_text
@@ -354,7 +354,8 @@ class Diagnostics:
         found: list[dict[str, Any]] = []
         sslmode = str(profile.sslmode or "")
         host = str(profile.host or "")
-        socket = host.startswith("/")  # a Unix socket folder has no TLS at all (L-3 of the review)
+        # A Unix socket folder has no TLS at all (L-3 of the review); a host list is never one (M-1 of PR #117).
+        socket = host.startswith("/") and not is_host_list(host)
         if prod and not socket and sslmode not in _SECURE_TLS:
             found.append(_finding(
                 "STU-DX-001", "error", "Production connection without a verified certificate",

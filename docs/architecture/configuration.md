@@ -108,6 +108,10 @@ statement_timeout_ms = 15000
   `config.network_path` (review T-2): `//host/...` and `\\host\...` (also mixed separators), `\\?\...`, `\??\...` and
   `\\.\...`, `C:foo`, `file://host/...` (also `file:///...`: write `file:/...`), and the automount folders `/net/...`
   and `/Network/...`. The check is text only and the same on every platform.
+- A PostgreSQL `host` with a comma is the error `config.host_list` in every profile (M-1 of the PR #117 review,
+  TD-072): libpq reads it as a list of hosts and tries them in turn, so a list that starts with a socket folder
+  would pass as loopback. `is_loopback()` is False for any list, and `connection_url()` refuses a host or port list
+  before the driver sees it. tabrion's `profilefile` refuses a comma in a host name too.
 - A SQLite `path` with a `?`, `#` or `%` is the error `config.url_character` (TD-013), as in tabrion 0.2's
   `tabrion.profilefile` (`profilefile.value`, its G-T2 review B-1): in a SQLAlchemy URL `?` and `#` start the query
   and the fragment, and `%` is unquoted, so `%2F%2Fhost/share/x.db` would become a network path there. Studio's own

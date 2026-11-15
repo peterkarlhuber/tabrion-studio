@@ -146,6 +146,9 @@ the server answers `405` and the write code is not even loaded.
     - a log that fails verification is never repaired or appended to, so no write runs. Move the `audit` folder out
       of the folder of `write-areas.toml`, keep it for inspection, and start Studio again; it then begins a new
       chain;
+    - old `<state>/audit` files are not migrated: the audit log and the confirmations now live in the folder of
+      `write-areas.toml`; an older log and its confirmations stay where they were for inspection, and Studio starts a
+      new chain (and asks for new confirmations) in the folder it uses now;
     - several Studio windows for different projects share one log: each record is written under a lock across
       processes (`audit/audit.lock`), after reading the end of the chain again, so their records form one chain;
     - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a

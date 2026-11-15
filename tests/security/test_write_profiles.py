@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from tabrion_studio.config.schema import WriteProfile, validate_profiles
+from tabrion_studio.config.schema import Profile, WriteProfile, coupling_issue, validate_profiles
 from tabrion_studio.config.writer import checked_profiles, dump_profiles
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tests.support.write import CANARY_SECRET, DATA_EDITOR, DATABASE_MANAGER, EVERY_AREA, WriteEnv
@@ -63,6 +63,31 @@ def test_a_profile_that_would_be_a_write_profile_or_a_coupling_is_refused(key: s
     result = validate_profiles(doc, owner=owner)  # type: ignore[arg-type]
     assert result.profiles == [] and result.write_profiles == []
     assert (f"profile[0].{key}", "config.write_key_not_allowed") in _issues(doc, owner)
+
+
+@pytest.mark.parametrize("host", ["/var/run/postgresql,db.attacker.example", "/var/run/postgresql,127.0.0.1"])
+def test_a_write_profile_never_couples_to_a_host_list(host: str) -> None:
+    """M-1 of the PR #117 review: in the user's own file a read profile with a libpq host list is refused, so a write
+    or admin profile cannot couple to it; ``coupling_issue`` refuses such a read profile on its own as well."""
+    doc = {
+        "version": 1,
+        "profile": [{**PG_READ, "host": host}],
+        "write_profile": [
+            {"name": "pg-write", "kind": "write", "read_profile": "pg", "user": "writer", "password": "keyring:"},
+            {"name": "pg-admin", "kind": "admin", "read_profile": "pg", "user": "admin", "password": "keyring:"},
+        ],
+    }
+    result = validate_profiles(doc, owner="user")
+    assert result.profiles == [] and result.write_profiles == []
+    assert _issues(doc) == {
+        ("profile[0].host", "config.host_list"),
+        ("write_profile[0].read_profile", "config.coupling_unknown"),
+        ("write_profile[1].read_profile", "config.coupling_unknown"),
+    }
+    assert host not in repr(result.issues)
+    read = Profile("pg", "postgresql", "dev", host=host, database="measurements", user="reader", sslmode="verify-full")
+    for kind in ("write", "admin"):
+        assert coupling_issue(WriteProfile("w", kind, "pg", user="writer"), read) == "config.host_list"
 
 
 def test_a_project_file_naming_a_users_write_profile_is_refused_through_the_api(

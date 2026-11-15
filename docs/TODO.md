@@ -139,6 +139,7 @@
 | TD-069 QA-S1 findings S1-09 (a mouse click on an ER diagram box did nothing), S1-15 (an editor tab and its text could get lost on the way back from the history) and S1-32 (the raw `access.csrf_invalid` after a second start); the German Sie/du outliers | P1 | Partly done (PR #104, `11217d5`): the three fixes with tests; open: the Sie/du wording (see the entry) |
 | TD-070 QA-S1 S1-32 (owner decision of 2026-11-14 14:13Z, option A): after the user's own "Disconnect", "Run" in the SQL editor, "Show status" (migrations), "Run diagnosis" and "Inspect" (vector data) no longer open the connection again by themselves; they show the banner with "Reconnect" and go on only after "Reconnect" (D-02 again for PROD); the header shows a connection the editor opened | P1 | Done (PR #106, `ab01ebb`): the fix, unit and e2e tests (DEV, PROD, a loss, the three views); known limit: a reload forgets the disconnect (see the entry) |
 | TD-071 Security assessment C-03: tabrion's redaction residues (`LINE n:` echo, a label before a line break, a no-break space; tabrion TB-145 and C-02); Studio moves its pin to tabrion 0.2.1 | P1 | In review (C-03 pin PR): pin `af0458d`, canary tests, docs; no shim removed (see the entry) |
+| TD-072 Review M-1 of PR #117: a libpq host list (a `host` with a comma) passed as loopback; refused in every profile (`config.host_list`) | P1 | In review (host-list PR, see the entry) |
 | STU-016 independent review F-4, F-8, F-9: request body caps enforced while the body streams in (`security/body.py`), every control request except GET/HEAD of the proof path needs the control token and no dot segments in `/api/*` paths, `security-review-prep.md` updated with the review's outcome and the pending owner decisions (F-5/TD-033, F-6/TD-031, F-7/T-16) | P1 | Done (PR #65); independent re-review accepted at `2a8a229` |
 
 Plus the open Studio work packages of M6 and the cross-repository checks in the tables below.
@@ -2475,6 +2476,25 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   as every new page session does).
 - **Note:** the header shows "No connection" after "Disconnect", as before; the banner names the disconnected
   profile.
+
+### TD-072 · Review M-1 of PR #117: libpq host lists in a profile's `host`
+
+- **Priority:** P1 · **Status:** In review (host-list PR) · **Refs:** `pr117-stuxwh-review.md` M-1 (pre-existing, not
+  added by #117), T-4, TX-07, tabrion `profilefile` (refuses a comma in a host name; TB-148 (1), W-10)
+- **What:** libpq reads a `host` with a comma as a list of hosts and tries them in turn. Studio's validator accepted
+  such a host, and `is_loopback()` looked only at the first character, so a list that starts with a socket folder
+  counted as loopback (the `sslmode` default `prefer`, no `remote_host`/`weak_tls` warning in D-01, not foreign for
+  the I-109 j confirmation), and a check that holds only for a socket could be passed by the next host in the list.
+- **Done in the PR:** every profile, project or user, and so every write or admin profile coupled to one, refuses a
+  host with a comma (`config.host_list`, en/de text); `is_loopback()` is False for any list, `coupling_issue()` and
+  `secret_pair()` refuse a read profile with one, the diagnostics socket check ignores one, and `connection_url()`,
+  which every read, write, privilege-check, diagnostics and migration-worker connection goes through, refuses a host
+  or port list before the driver sees it (`studio.profile_invalid`). `port` is an integer and there is no `hostaddr`
+  field, so no other libpq list can be written. Tests: `test_a_host_list_*` (schema, project trust, profiles API,
+  write profiles, secret confirmation, write connection) and `test_the_driver_never_gets_a_libpq_host_or_port_list`.
+- **Note for tabrion:** its `profilefile` reader returns a host that starts with `/` before its comma check, so
+  `/socket,host` passes there; worth the same refusal (TB-148).
+- **Next step:** review and merge.
 
 ### TD-071 · Security assessment C-03: tabrion 0.2.1 pin (tabrion's redaction residues)
 

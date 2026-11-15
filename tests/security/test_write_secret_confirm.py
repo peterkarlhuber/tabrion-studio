@@ -25,13 +25,20 @@ from typing import Any
 import pytest
 import tabrion
 
-from tabrion_studio.config.schema import Profile, Settings, target_fingerprint
+from tabrion_studio.config.schema import Profile, Settings, is_loopback, target_fingerprint
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tabrion_studio.services import connections as connections_module
+from tabrion_studio.services.connections import RegistryError
 from tabrion_studio.write import connection as write_connection
 from tabrion_studio.write import unlock as unlock_module
-from tabrion_studio.write.connection import REQUIRE_AUTH, REQUIRE_AUTH_SCRAM, WriteError, open_write_connection
+from tabrion_studio.write.connection import (
+    REQUIRE_AUTH,
+    REQUIRE_AUTH_SCRAM,
+    WriteError,
+    open_write_connection,
+    require_auth,
+)
 from tabrion_studio.write.secret_confirm import (
     CONFIRMATION_FILE,
     PREVIEW_TTL_SECONDS,
@@ -115,6 +122,39 @@ def test_every_write_and_admin_connection_sets_require_auth(
     (options,) = captured
     assert options["connect_args"]["require_auth"] == expected
     # The privilege check (check_privileges) runs on this same connection: it has no other door to the server.
+
+
+@pytest.mark.parametrize("kind", ["write", "admin"])
+@pytest.mark.parametrize(
+    "host", ["/var/run/postgresql,127.0.0.1", "/var/run/postgresql,db.example.org", "localhost,db.example.org"]
+)
+def test_a_host_list_never_reaches_the_driver_on_the_write_path(
+    captured: list[dict[str, Any]], kind: str, host: str
+) -> None:
+    """M-1 of the PR #117 review: a libpq host list (also one whose first entry is a socket folder, where a refused
+    socket would fall back to TCP) is refused before any connection is built, and the refusal names no value."""
+    with pytest.raises(RegistryError) as refused:
+        open_write_connection(kind, _pg(host), Settings(), password=CANARY_SECRET, refuse_cleartext=False)
+    assert refused.value.code == "studio.profile_invalid"
+    assert CANARY_SECRET not in str(refused.value) and host not in str(refused.value)
+    assert captured == []
+
+
+def test_a_host_list_is_never_loopback_and_a_password_gets_scram_only() -> None:
+    """Defense in depth (M-1 of the PR #117 review): a list is never loopback, and any password needs SCRAM."""
+    assert not is_loopback("/var/run/postgresql,db.example.org")
+    assert not is_loopback("localhost,db.example.org")
+    assert require_auth(CANARY_SECRET) == REQUIRE_AUTH_SCRAM
+    assert require_auth(None) == REQUIRE_AUTH
+
+
+@pytest.mark.parametrize("host", ["/var/run/postgresql,127.0.0.1", "/var/run/postgresql,db.example.org"])
+def test_requirepeer_with_a_socket_and_tcp_host_list_is_refused(captured: list[dict[str, Any]], host: str) -> None:
+    """Combination of N-2 of PR #116 and M-1 of the PR #117 review: a refused socket can never fall back to TCP."""
+    with pytest.raises((RegistryError, WriteError)) as refused:
+        open_write_connection("write", _pg(host), Settings(), password=CANARY_SECRET, requirepeer="postgres")
+    assert CANARY_SECRET not in str(refused.value) and host not in str(refused.value)
+    assert captured == []
 
 
 def test_require_auth_is_never_weaker_than_no_cleartext_no_md5() -> None:
@@ -220,6 +260,18 @@ def test_a_host_that_is_not_loopback_is_foreign(host: str) -> None:
 
     pair = secret_pair(WriteProfile("w", "write", "pg", user="u"), _pg(host=host, sslmode="verify-full"))
     assert pair is not None and pair.foreign
+
+
+@pytest.mark.parametrize("host", ["/var/run/postgresql,db.example.org", "localhost,127.0.0.1"])
+def test_a_host_list_has_no_secret_pair(host: str) -> None:
+    """M-1 of the PR #117 review: no pair (and so no confirmation) is ever built for a libpq host list."""
+    from tabrion_studio.config.schema import SecretRef, WriteProfile
+
+    write = WriteProfile("w", "write", "pg", user="u", password=SecretRef("env", "A"))
+    with pytest.raises(WriteError) as refused:
+        secret_pair(write, _pg(host=host, sslmode="verify-full"))
+    assert refused.value.code == "studio.write_coupling_invalid"
+    assert host not in str(refused.value)
 
 
 def test_a_record_that_is_missing_malformed_or_a_link_confirms_nothing(tmp_path: Path) -> None:
