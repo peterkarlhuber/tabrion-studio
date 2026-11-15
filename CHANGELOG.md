@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDE-1 (in development, locked by G-S2): validation, type editors and a change overview for the Data Editor,
+  behind the same `data_editor` flag of `write-areas.toml`, which stays off by default; no default changes. The
+  table route sends each column's type (kind, NULL, whether an insert may leave it out, generated or identity
+  `ALWAYS`, length, precision and scale, enum labels, arrays). The grid has an editor per type: a choice for boolean
+  and enum, text fields with the format in the header for numbers, decimals, dates, times, timestamps with and
+  without an offset and UUIDs, JSON and arrays as JSON, bytes and generated columns read only; NULL is a button and
+  never the empty text. Every changed value is checked at its cell (type, length, range, NULL, enum labels, required
+  columns of a new row) and the preview waits until none is left. The server checks every new value again before it
+  makes the plan: `400 studio.data_editor_value_invalid` with `issues` (`changes.<change>.<column>` and a `value.*`
+  code; no value, no column name). The change overview lists every changed row with its columns before and after, the
+  new rows and the deleted rows, before the preview and in the review. Page and server share their check vectors.
+  An insert names only the columns that were set: SQLAlchemy no longer fetches a key ahead from a sequence, which a
+  table with an identity `ALWAYS` key refused. English and German. Threat TX-17 and STU-ADR-0006 "Values of the Data
+  Editor".
+
 - STU-026 (in development, locked by G-S2): the Data Editor behind the `data_editor` flag of `write-areas.toml`,
   which stays off by default; it is not usable or supported until G-S2 is granted. While the flag is on, the plan
   executor `data_editor.changeset` turns a changeset (rows changed, added, deleted) into plan steps; preview, typed
@@ -1080,6 +1095,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- A configuration file nested deeper than 64 levels (arrays, inline tables and the segments of dotted keys and table
+  headers) is refused (`config.too_deep`) before the TOML parser runs, so the parser no longer recurses to the
+  interpreter's limit, where a finalizer run by the garbage collector (an event loop's) failed with its own
+  `RecursionError` (seen in CI on Windows, Python 3.13).
+- The data viewer and the SQL editor show an array of dates, decimals, UUIDs, times, intervals, bytes or non-finite
+  floats item by item, each as it is shown alone; such a table or result answered 500 before (review I-3 of #120).
 - TABRION QA-7: `scripts/check_tabrion_api.py --surface` no longer reports a `__x__` name such as
   `tabrion.postgres.SessionSettings.__dataclass_fields__` (axentra) as missing from Tabrion's
   `docs/api/surface.json`. Such names are public (the `__all__` check already skipped them) and have no entry of

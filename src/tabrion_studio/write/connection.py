@@ -160,9 +160,11 @@ _PREDEFINED_NAME = re.compile(r"pg_[a-z0-9_]{1,59}")
 class WriteError(Exception):
     """A write connection or unlock that Studio refuses; ``code`` is a problem code."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, issues: list[tuple[str, str]] | None = None) -> None:
         super().__init__(code)
         self.code = code
+        #: Issues of the problem (pointer, code): fixed words and numbers only (``problems.problem`` checks them).
+        self.issues = issues
 
 
 #: ``sqlite3.SQLITE_DBCONFIG_DEFENSIVE`` (Python 3.12+); None where this Python does not have it.

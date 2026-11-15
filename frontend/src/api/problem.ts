@@ -7,7 +7,10 @@ export interface Problem {
   kind: string;
   status: number;
   logId: string | null;
-  /** The fields of a refused form (STU-008): fixed key names (`profile.host`) and `config.*` codes. */
+  /**
+   * The fields of a refused form (STU-008): fixed key names (`profile.host`) and `config.*` codes; or the cells of a
+   * refused Data Editor changeset (STU-XDE-1): `changes.<change>.<column>` positions and `value.*` codes.
+   */
   issues?: ProblemIssue[];
   /** The SQLSTATE of a `db.<kind>` problem (five characters), when the database gave one. */
   sqlstate?: string;
@@ -18,8 +21,8 @@ export interface ProblemIssue {
   code: string;
 }
 
-const ISSUE_POINTER = /^(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}$/;
-const ISSUE_CODE = /^config\.[a-z_]{1,48}$/;
+const ISSUE_POINTER = /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4})$/;
+const ISSUE_CODE = /^(?:config|value)\.[a-z_]{1,48}$/;
 
 function issues(value: unknown): ProblemIssue[] | undefined {
   if (!Array.isArray(value)) return undefined;

@@ -373,6 +373,12 @@ def pg() -> Iterator[tuple[Viewer, str]]:
         "x xml, b bytea, long text)",
         "INSERT INTO \"Studio Viewer\".typed SELECT g, 0.1, jsonb_build_object('k', mod(g, 4)), ARRAY[mod(g, 3), 1], "
         "'{}', point(g, g), '<a/>', NULL, NULL FROM generate_series(1, 30) g",
+        # STU-XDE-1 review I-3: arrays whose items have no JSON form of their own.
+        'CREATE TABLE "Studio Viewer".arrays (id int PRIMARY KEY, d date[], n numeric[], u uuid[], s timestamptz[],'
+        " i interval[], b bytea[], f float8[], m int[][], j jsonb[])",
+        "INSERT INTO \"Studio Viewer\".arrays VALUES (1, '{2024-02-29,NULL}', '{1.50,-0.25}',"
+        " '{a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11}', '{2024-01-02 03:04:05+00}', '{1 day}', '{\\\\x0102}',"
+        " '{1.5,NaN,-Infinity}', '{{1,2},{3,4}}', ARRAY['{\"a\": [1, 2]}'::jsonb])",
     ]
     with admin.begin() as connection:
         for statement in statements:
@@ -746,6 +752,29 @@ def test_pg_keys_are_compared_in_their_own_type(pg: tuple[Viewer, str]) -> None:
         assert raised.value.code == "studio.viewer_sort_unsupported"
     page = viewer.rows(connection_id, "Studio Viewer", "typed", limit=3)
     assert page["columns"][5]["type"] == "point"  # a type SQLAlchemy does not know keeps its name
+
+
+@postgres
+def test_pg_arrays_of_values_without_a_json_form_are_shown_as_text(pg: tuple[Viewer, str]) -> None:
+    """STU-XDE-1 review I-3: an array of dates, decimals, UUIDs, times, intervals, bytes or non-finite floats is
+    given item by item in the form each item has alone (the response used to fail on the Python values)."""
+    viewer, connection_id = pg
+    page = viewer.rows(connection_id, "Studio Viewer", "arrays", limit=5)
+    json.dumps(page, allow_nan=False)  # what the response does; it raised for these arrays
+    assert page["rows"] == [
+        [
+            1,
+            ["2024-02-29", None],
+            ["1.50", "-0.25"],
+            ["a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"],
+            ["2024-01-02T03:04:05+00:00"],
+            ["1 day, 0:00:00"],
+            [{"base64": "AQI="}],
+            [1.5, "nan", "-inf"],
+            [[1, 2], [3, 4]],
+            [{"a": [1, 2]}],
+        ]
+    ]
 
 
 @pytest.mark.postgres

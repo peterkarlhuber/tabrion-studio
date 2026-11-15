@@ -238,6 +238,17 @@ the server answers `405` and the write code is not even loaded.
       whatever collation the column has. A `json` column is compared as `jsonb`, so a change made meanwhile only to
       the key order, the whitespace or a duplicate key (`jsonb` keeps the last) is not a conflict: the old and the
       new text count as the same value;
+    - every cell has the editor of its column's type (STU-XDE-1): a choice for booleans and enums, a text field
+      for the rest, with the expected format in the column header; bytes and generated columns are read only.
+      Studio checks each changed value for its column (type, length, range, NULL, an enum's labels, a NOT NULL
+      column a new row leaves out) and marks the cell; the preview waits until no issue is left. The server checks
+      every value again before it makes the plan and refuses one that does not fit
+      (`400 studio.data_editor_value_invalid`; the answer names positions, never a value), and the database checks
+      the rest (CHECK constraints, uniqueness, foreign keys). NULL is never the empty text; a `timestamptz` needs an
+      offset (`+02:00` or `Z`) and a `timestamp` takes none, so no value is shifted to another time zone on the way.
+      On SQLite only `STRICT` tables have column types; in an ordinary table any value is taken as SQLite takes it;
+    - before the preview and in the review, the change overview lists every changed row with its columns before
+      and after, the new rows with their values, and the deleted rows by their key;
     - the changes live in the page's memory only: never in the query history, the drafts, browser storage, the logs
       or the audit log (it records the plan hash and row counts).
 

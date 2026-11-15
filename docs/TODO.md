@@ -73,6 +73,25 @@
 > I-1 and I-2 fixed. The page: an "Edit data" tab on a table, shown only when `GET /api/write/areas` answers the flag on (en, de). Pins tabrion
 > 0.3.0.dev0 (`72e2d03`, the merge commit of tabrion #80).
 > Follow-ups: STU-XDE-1 (type editors, validation, paging), STU-XDE-2.
+>
+> STU-XDE-1 (2026-11-15, branch `claude/project-thread-rdo6g3-stuxde1`, draft): **in development, locked by G-S2.**
+> Validation, type editors and the change overview of the Data Editor, behind the same default-off `data_editor`
+> flag; no default changes. The catalog read gives each column's type (`tabrion_studio.write.values`: kind, NULL,
+> optional, read only, length, precision and scale, enum labels, arrays of booleans, numbers, decimals, text, dates,
+> times and UUIDs); the
+> table route sends it, the page picks a cell editor (a choice for boolean and enum, text fields with the format in the
+> header, JSON and arrays as JSON, bytes and generated columns read only) and checks every changed value
+> (`frontend/src/api/cellValues.ts`). The server checks every new value again before the plan
+> (`400 studio.data_editor_value_invalid`, issues `changes.<change>.<column>` with a `value.*` code, no values; threat
+> TX-17, STU-ADR-0006 "Values of the Data Editor"); page and server run the same vectors
+> (`cellValues.vectors.json`). An insert names only the columns the user set (no key fetched ahead from a sequence,
+> which an identity `ALWAYS` refused). The change overview lists each changed row with its columns before and after,
+> the new rows and the deleted rows, before the preview and in the review. Review of #120 (accepted) fixed in the
+> same PR: an integer text of any length is an issue at its cell (L-1); numbers take surrounding whitespace as
+> PostgreSQL does (I-1); SQLite `STRICT` is read from `pragma_table_list`, not the SQL text (I-2); the viewer gives an
+> array of dates, decimals, UUIDs, times, intervals or bytes item by item instead of failing with 500 (I-3); a time
+> may be exactly `24:00`, as in PostgreSQL, checked without `fromisoformat` (whose rules change in Python 3.14).
+> Open: see "STU-XDE-1 open points" in the CR-DBX section.
 
 ## Summary
 
@@ -544,7 +563,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.1 | Plan, preview and confirmation framework (STU-XW-3) | TABRION STU-XW-3 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxw3`): `POST /api/write/plans` (plan and preview), `/confirm` (plan hash and typed text: the write profile's name, for a destructive plan the target's name), `/execute` (once), `DELETE` (drop); the plan hash covers session, connection, unlock, nonce, executor, targets, steps and fingerprint; refusals `studio.plan_*` (400) and the unlock's own (405); drift check inside the transaction (PostgreSQL also after `LOCK TABLE ... IN ROW EXCLUSIVE MODE`), SQLite file identity before each run; the preview names triggers and rules (TX-16); `run.start` carries the plan hash; 405 and no import with every flag off. Open points below |
 | 1.1 | I-109 j confirmation and `require_auth` (STU-XW-4) | TABRION STU-XW-4 | G-S2 | Done, in review (branch `claude/project-thread-rdo6g3-stuxw4`): L-2 of PR #111 closed: every PostgreSQL write and admin connection (the privilege check included) sets libpq `require_auth=!password,!md5` (`scram-sha-256` for a foreign host that gets a password); libpq older than 16 refuses the connection and the unlock before any secret is read (`405 studio.require_auth_unavailable`). I-109 j confirmation (D-15): `POST /api/write/secret-confirmations` (preview of the pair of server and secret reference, read from the user's file, with a session-bound hash), `/confirm` (hash and the typed host), `DELETE` (revoke); the confirmed pair's SHA-256 in `write-secret-confirmations.json` (0600; since the STU-XW hardening in the folder of `write-areas.toml`, before in `<state>/`); an unconfirmed or changed pair refuses the unlock before any secret is resolved (`studio.secret_unconfirmed`), every use of an unlock (the plan confirmation and run of STU-XW-3 included) re-checks it; a foreign host needs `verify-ca` or `verify-full` (`studio.write_tls_required`); audit events `secret.confirm` and `secret.unconfirm`; the D-15 dialog in the write profile section (en, de); 405 and no import with every flag off. Open points below |
 | 1.1 | STU-XW hardening: notes N-1, N-2, N-4 of the PR #116 review, I-1 consistency with tabrion #77 D-2 | TABRION STU-XW-1, STU-XW-2, STU-XW-4 | G-S2 | In review (branch `claude/project-thread-rdo6g3-stuxwh`): N-1 the audit log and `write-secret-confirmations.json` in the folder of `write-areas.toml` (`--config-dir`, `<--state-dir>/config` or the platform's), a state folder from `TABRION_STUDIO_STATE_DIR` neither read nor written (`studio.write_state_ignored`; process test with a planted confirmation and log); N-2 `require_auth=scram-sha-256` for every connection that sends a password (loopback and socket included) and the optional write profile key `requirepeer` (the server's OS user, Unix socket only, part of the confirmed pair, form field en/de); N-4 the guide says every PostgreSQL write profile needs the pair confirmation and a changed pair a new one; I-1 `privilege_findings` checks the OID below 16384 as well as the `pg_` name (unit test with a mocked catalog, PostgreSQL test with a role renamed to `pg_like_*`). Every area stays off |
-| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | STU-026 in development behind the default-off flag (draft PR, tabrion 0.3.0.dev0 pin), locked by G-S2; brings the first plan executor (`data_editor.changeset`, Tabrion's guided write transaction) and the `PlanReview`/`ChangesetReview` UI |
+| 1.1 | Data Editor | TABRION STU-026 (stays locked behind G-S2), STU-XDE-1..STU-XDE-2 | G-S2 | STU-026 in development behind the default-off flag (draft PR, tabrion 0.3.0.dev0 pin), locked by G-S2; brings the first plan executor (`data_editor.changeset`, Tabrion's guided write transaction) and the `PlanReview`/`ChangesetReview` UI; STU-XDE-1 (validation, type editors, change overview) in review (draft PR, branch `claude/project-thread-rdo6g3-stuxde1`), locked by G-S2 |
 | 1.2 | Schema Designer: wizards, designer, plan preview, Alembic revision text, runtime-role wizard, graphical mode, schema comparison | TABRION STU-CR-1..STU-CR-8, STU-XSD-1..STU-XSD-3 | G-S3 | Blocked on STU-XW-5 (STU-CR-1), tabrion 0.3 |
 | 1.3 | Database Manager: profile pairs, create, backup and restore, delete, PostgreSQL roles | TABRION STU-XDM-1..STU-XDM-7 | G-S4 | Blocked on STU-XW-5 (STU-XDM-1), Studio 1.2 |
 
@@ -654,6 +673,22 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     on. The small window after the second comparison and nested function calls stay residual (threat model).
   - **Trigger details on SQLite:** the preview names SQLite triggers without timing and events (parsing the trigger
     text is left out); PostgreSQL reports both.
+- **STU-XDE-1 open points (for STU-XDE-2 and G-S2):**
+  - **Arrays of enums, JSON and bytes** stay `other` in the Data Editor (the driver gives an enum array as array
+    text; JSON and bytes arrays have no editor). Arrays of dates, decimals, UUIDs and times are shown by the viewer
+    item by item (fixed in this PR, review I-3) and checked item by item.
+  - **Bytes.** Bytes stay read only; planning document 15 section 4 asks for "replace by file" (STU-XDE-2 or later).
+  - **Paging.** The editor still loads only the first page of rows (`EDITOR_ROWS`).
+  - **The database's own refusals at the cell.** A CHECK, UNIQUE or foreign-key refusal is a `db.<kind>` problem for
+    the whole changeset; the database does not say which cell, so the page cannot mark one (planning document 15
+    section 4 asks for `constraint.*` at the cell where it is known).
+  - **SQLite `REAL` and NaN.** A `STRICT` `REAL` column refuses `NaN` and the infinities, which the float check lets
+    through; the database refuses them inside the run (nothing is saved).
+  - **Enum labels** are sent to the page (at most 1000; more make the column `other`). They are catalog names, not
+    values; G-S2 confirms this is acceptable.
+  - **A teardown race in `e2e/data-editor-backend.spec.ts`** (seen on master too): the server is stopped while the
+    folder of `write-areas.toml` is removed, so the audit log reports `studio.audit_write_failed` on shutdown; the
+    tests pass.
 - **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion
   TB-148) is decided with STU-CR-6 and the profile import and export of STU-XDM-5.
 

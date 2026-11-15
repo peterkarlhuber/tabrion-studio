@@ -5,14 +5,25 @@
  * every route here while the flag is off.
  *
  * - `GET`, `POST`, `DELETE /api/write/unlocks`: this session's unlocks; unlock with the typed write profile name (D-03).
- * - `POST /api/write/data-editor/table`: the table's columns, primary key, triggers and rules (the server refuses a
- *   view, a partitioned table and a table without a primary key).
+ * - `POST /api/write/data-editor/table`: the table's columns with their types (STU-XDE-1, `cellValues.ts`), primary
+ *   key, triggers and rules (the server refuses a view, a partitioned table and a table without a primary key).
  * - `POST /api/write/plans` with the executor `data_editor.changeset`: the changeset as a plan, answered with its
  *   preview; `.../confirm` with the typed text; `.../execute` runs it once in one transaction.
  *
  * A changeset holds cell values. It lives in this page's memory only: it is never stored in the browser, the query
  * history or the drafts (review N-3 of PR #109). The server's answers never echo a value.
  */
+import {
+  checkValue,
+  fieldText,
+  parseColumnType,
+  resolveText,
+  Typed,
+  untyped,
+  type ColumnType,
+  type IssueCode,
+} from './cellValues';
+import type { ProblemIssue } from './problem';
 import { getJson, send, type Result } from './profiles';
 
 export const EXECUTOR = 'data_editor.changeset';
@@ -91,6 +102,8 @@ export interface EditorTable {
   schema: string;
   table: string;
   columns: string[];
+  /** Each column's type by name (STU-XDE-1); a column the server did not describe is untyped. */
+  columnTypes: Map<string, ColumnType>;
   primaryKey: string[];
   triggers: string[];
   rules: string[];
@@ -117,10 +130,19 @@ export function parseEditorTable(
           return typeof name === 'string' ? [name] : [];
         })
       : [];
+  const described = new Map(
+    (Array.isArray(answer.column_types) ? answer.column_types : []).flatMap((item: unknown) => {
+      const column = parseColumnType(item);
+      return column !== null && columns.includes(column.name)
+        ? [[column.name, column] as const]
+        : [];
+    }),
+  );
   return {
     schema: asked.schema,
     table: asked.table,
     columns,
+    columnTypes: new Map(columns.map((name) => [name, described.get(name) ?? untyped(name)])),
     primaryKey,
     triggers: names(answer.triggers),
     rules: names(answer.rules),
@@ -160,7 +182,11 @@ export type Change =
   | { op: 'insert'; values: Row }
   | { op: 'delete'; key: Row; old: Row };
 
-/** What the user changed on the loaded page: new cell values by row, the rows to delete and the new rows. */
+/**
+ * What the user changed on the loaded page: new cell values by row, the rows to delete and the new rows. A value is
+ * what an editor gave: a choice (`true`, an enum label), `null`, or `Typed` text, which `resolveEdits` turns into the
+ * column's value.
+ */
 export interface Edits {
   /** Row index on the page -> column -> the new value. */
   cells: Map<number, Map<string, unknown>>;
@@ -178,25 +204,77 @@ export function sameValue(first: unknown, second: unknown): boolean {
   return JSON.stringify(first) === JSON.stringify(second);
 }
 
-/**
- * The text the user typed as a value for a cell whose loaded value was `original`: a number stays a number and a
- * boolean a boolean when the text reads as one; anything else is text (the server converts it for the column's type).
- * `null` is SQL NULL, never the empty text. The hook of STU-XDE-1's type editors.
- */
-export function typedValue(original: unknown, text: string): unknown {
-  const trimmed = text.trim();
-  if (typeof original === 'number' && trimmed !== '' && Number.isFinite(Number(trimmed))) {
-    return Number(trimmed);
-  }
-  if (typeof original === 'boolean' && (trimmed === 'true' || trimmed === 'false')) {
-    return trimmed === 'true';
-  }
-  return text;
+/** Where a cell is: a loaded row (`row`, its index on the page) or a new row (`new`, its index among them). */
+export interface CellRef {
+  row: { loaded: number } | { added: number };
+  column: string;
 }
 
-/** Whether the editor's basic text field can edit a loaded value (text, numbers, booleans, NULL). */
-export function editableValue(value: unknown): boolean {
-  return value === null || ['string', 'number', 'boolean'].includes(typeof value);
+/** A value of the changeset that does not fit its column, from the page's checks or the server's refusal. */
+export interface CellIssue extends CellRef {
+  code: IssueCode;
+}
+
+/**
+ * The edits with every value resolved for its column (`Typed` text parsed and checked, a choice checked), and the
+ * cells whose value does not fit: only changed cells of loaded rows are checked (an unchanged value is what the viewer
+ * showed); a new row's set cells are, and a NOT NULL column without a default that it leaves out is `value.required`.
+ * A cell with an issue keeps its loaded value (or is left out of a new row) in the resolved edits.
+ */
+export function resolveEdits(
+  table: Pick<EditorTable, 'columnTypes'>,
+  columns: string[],
+  rows: unknown[][],
+  edits: Edits,
+): { edits: Edits; issues: CellIssue[] } {
+  const issues: CellIssue[] = [];
+  const typeOf = (name: string) => table.columnTypes.get(name) ?? untyped(name);
+  const resolve = (
+    row: CellRef['row'],
+    column: string,
+    original: unknown,
+    entry: unknown,
+  ): { value: unknown } | null => {
+    const type = typeOf(column);
+    const result =
+      entry instanceof Typed
+        ? resolveText(type, original, entry.text)
+        : ((issue) => (issue === null ? { value: entry } : { issue }))(checkValue(type, entry));
+    if ('issue' in result) {
+      issues.push({ row, column, code: result.issue });
+      return null;
+    }
+    return result;
+  };
+  const cells = new Map<number, Map<string, unknown>>();
+  for (const [index, changed] of edits.cells) {
+    if (edits.deleted.has(index)) continue;
+    const resolved = new Map<string, unknown>();
+    for (const [column, entry] of changed) {
+      const at = columns.indexOf(column);
+      const original = at >= 0 ? (rows[index]?.[at] ?? null) : null;
+      // Unchanged (also the loaded text typed again): what the viewer showed, not checked.
+      if (entry instanceof Typed ? entry.text === fieldText(original) : sameValue(entry, original))
+        continue;
+      const result = resolve({ loaded: index }, column, original, entry);
+      if (result !== null) resolved.set(column, result.value);
+    }
+    cells.set(index, resolved);
+  }
+  const inserted = edits.inserted.map((values, index) => {
+    const row: Row = {};
+    for (const [column, entry] of Object.entries(values)) {
+      const result = resolve({ added: index }, column, '', entry);
+      if (result !== null) row[column] = result.value;
+    }
+    for (const type of table.columnTypes.values()) {
+      if (!type.optional && !type.nullable && !(type.name in values)) {
+        issues.push({ row: { added: index }, column: type.name, code: 'value.required' });
+      }
+    }
+    return row;
+  });
+  return { edits: { cells, deleted: edits.deleted, inserted }, issues };
 }
 
 /**
@@ -209,12 +287,23 @@ export function buildChanges(
   rows: unknown[][],
   edits: Edits,
 ): Change[] {
+  return buildChangeset(primaryKey, columns, rows, edits).changes;
+}
+
+/** `buildChanges` with the row of each change (`origins[i]` is where `changes[i]` comes from). */
+export function buildChangeset(
+  primaryKey: string[],
+  columns: string[],
+  rows: unknown[][],
+  edits: Edits,
+): { changes: Change[]; origins: CellRef['row'][] } {
   const rowOf = (index: number): Row => {
     const row = rows[index] ?? [];
     return Object.fromEntries(columns.map((name, at) => [name, row[at] ?? null]));
   };
   const keyOf = (old: Row): Row => Object.fromEntries(primaryKey.map((name) => [name, old[name]]));
   const changes: Change[] = [];
+  const origins: CellRef['row'][] = [];
   for (const [index, cells] of [...edits.cells.entries()].sort((a, b) => a[0] - b[0])) {
     if (edits.deleted.has(index)) continue;
     const old = rowOf(index);
@@ -222,15 +311,41 @@ export function buildChanges(
     for (const [name, value] of cells) {
       if (!sameValue(value, old[name])) next[name] = value;
     }
-    if (Object.keys(next).length > 0)
+    if (Object.keys(next).length > 0) {
       changes.push({ op: 'update', key: keyOf(old), old, new: next });
+      origins.push({ loaded: index });
+    }
   }
-  for (const values of edits.inserted) changes.push({ op: 'insert', values: { ...values } });
+  edits.inserted.forEach((values, index) => {
+    changes.push({ op: 'insert', values: { ...values } });
+    origins.push({ added: index });
+  });
   for (const index of [...edits.deleted].sort((a, b) => a - b)) {
     const old = rowOf(index);
     changes.push({ op: 'delete', key: keyOf(old), old });
+    origins.push({ loaded: index });
   }
-  return changes;
+  return { changes, origins };
+}
+
+/**
+ * The server's issues of a refused changeset (`changes.<change>.<column>`: the change's position in the request and
+ * the column's in the table) as cells of the page; issues it cannot place are left out (the problem text still says
+ * that a value was refused).
+ */
+export function serverIssues(
+  issues: ProblemIssue[] | undefined,
+  origins: CellRef['row'][],
+  tableColumns: string[],
+): CellIssue[] {
+  return (issues ?? []).flatMap((issue) => {
+    const found = /^changes\.(\d+)\.(\d+)$/.exec(issue.pointer);
+    const row = found ? origins[Number(found[1])] : undefined;
+    const column = found ? tableColumns[Number(found[2])] : undefined;
+    return row !== undefined && column !== undefined && issue.code.startsWith('value.')
+      ? [{ row, column, code: issue.code as IssueCode }]
+      : [];
+  });
 }
 
 // --- the plan: preview, confirmation, execution --------------------------------------------------------------------

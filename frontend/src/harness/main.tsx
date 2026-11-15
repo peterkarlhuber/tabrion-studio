@@ -13,7 +13,8 @@
  * `profile` its profile, `maxRows` the row limit setting and `connectDelay` a delay of the connection; explorer: the
  * catalogs and details of STU-010 and the data viewer's pages of STU-013; `er=150` gives the PostgreSQL schema
  * `audit` 150 tables for the ER diagram of STU-023), `path` (/, /connections, /explorer, /sql, /history, /migrations,
- * /diagnostics, /settings). In every scenario the fake answers STU-020's routes
+ * /diagnostics, /settings); data-editor: the Data Editor's grid alone (STU-XDE-1, `dataEditor.ts`: an unlocked typed
+ * table, the plans the page sent in `window.dataEditorLog`). In every scenario the fake answers STU-020's routes
  * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
  * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
  * `theme` (light, dark) and `lang` (en, de). The editor's drafts (TD-033) go to a fake `/api/drafts` (`drafts.ts`) that
@@ -39,6 +40,8 @@ import { initTheme, setThemePreference } from '../theme';
 import type { Workspace } from '../workspace';
 import { explorerAnswer } from './explorer';
 import { createViewer } from './viewer';
+import { createDataEditorServer } from './dataEditor';
+import { DataEditor } from '../views/write/DataEditor';
 import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
 import { codeTrust, migrationStatus } from './migrations';
@@ -522,14 +525,34 @@ function HarnessDialog({ id }: { id: string }) {
 const root = document.getElementById('root');
 if (root === null) throw new Error('#root is missing');
 const session: SessionState = scenario === 'used' ? 'used' : 'ok';
-createRoot(root).render(
-  <StrictMode>
-    <App
-      fetcher={fakeServer}
-      session={session}
-      workspace={WORKSPACES[scenario === 'dialog-d02' ? 'prod' : scenario]}
-      connectionCheckMs={connectionCheckMs}
-    />
-    {scenario.startsWith('dialog-') ? <HarnessDialog id={scenario} /> : null}
-  </StrictMode>,
-);
+if (scenario === 'data-editor') {
+  // STU-XDE-1: the grid with its type editors and change overview, without the shell (the flag is the server's).
+  const dataEditor = createDataEditorServer();
+  (window as unknown as { dataEditorLog: unknown }).dataEditorLog = dataEditor.log;
+  createRoot(root).render(
+    <StrictMode>
+      <main className={styles.page}>
+        <h1>Data Editor</h1>
+        <DataEditor
+          fetcher={dataEditor.fetch}
+          connectionId="c1"
+          profileId="user:parts"
+          schema="app"
+          name="parts"
+        />
+      </main>
+    </StrictMode>,
+  );
+} else {
+  createRoot(root).render(
+    <StrictMode>
+      <App
+        fetcher={fakeServer}
+        session={session}
+        workspace={WORKSPACES[scenario === 'dialog-d02' ? 'prod' : scenario]}
+        connectionCheckMs={connectionCheckMs}
+      />
+      {scenario.startsWith('dialog-') ? <HarnessDialog id={scenario} /> : null}
+    </StrictMode>,
+  );
+}

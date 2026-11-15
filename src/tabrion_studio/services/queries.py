@@ -150,6 +150,10 @@ class State(enum.StrEnum):
     CANCELED = "canceled"
 
 
+#: PostgreSQL's most array dimensions; a list nested deeper is a JSON document's.
+_ARRAY_DIMENSIONS = 6
+
+
 def json_value(value: object, cell_chars: int = CELL_CHARS) -> tuple[Any, int, bool]:
     """A database value as a JSON value for the page, its approximate size in bytes and whether it was cut.
 
@@ -181,11 +185,30 @@ def json_value(value: object, cell_chars: int = CELL_CHARS) -> tuple[Any, int, b
     if isinstance(value, datetime.timedelta):
         return _text(str(value), cell_chars)
     if isinstance(value, dict | list | tuple):
-        text = json.dumps(value, default=str, ensure_ascii=False)
+        value = _json_form(value)
+        text = json.dumps(value, ensure_ascii=False)
         if len(text) > cell_chars:
             return _text(text, cell_chars)
         return value, len(text), False
     return _text(str(value), cell_chars)
+
+
+def _json_form(value: object, depth: int = 0) -> Any:
+    """A decoded array with every item in JSON form, as :func:`json_value` gives a single value: an array of dates,
+    decimals, UUIDs, intervals or bytes holds Python values that have none (which the response could not encode).
+    Integers, booleans and text stay as they are; a non-finite float becomes its text, as alone. A ``json`` or
+    ``jsonb`` document (a dict, or a list below an array's 6 dimensions) is JSON already and is kept."""
+    if value is None or isinstance(value, bool | int | str | dict):
+        return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else str(value)
+    if isinstance(value, list | tuple):
+        return value if depth >= _ARRAY_DIMENSIONS else [_json_form(item, depth + 1) for item in value]
+    if isinstance(value, bytes | bytearray | memoryview):
+        return {"base64": base64.b64encode(bytes(value)).decode("ascii")}
+    if isinstance(value, datetime.date | datetime.time):
+        return value.isoformat()
+    return str(value)
 
 
 def _text(text: str, cell_chars: int) -> tuple[str, int, bool]:

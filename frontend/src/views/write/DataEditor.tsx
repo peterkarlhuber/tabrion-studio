@@ -7,10 +7,14 @@
  * 1. Unlock (D-03): this connection's write profile, its name typed; the server checks it and ends the unlock after
  *    15 minutes without use.
  * 2. Edit: the first page of rows from the viewer (the read connection); a cell's loaded value is the change's `old`
- *    value, every shown column of the row (review L-1 of tabrion #78). Text, numbers, booleans and NULL are editable;
- *    other values (JSON, bytes) and rows the viewer cut are read only (type editors: STU-XDE-1).
- * 3. Preview, confirm, save: the server's plan (no values in it), the text to type (D-09; the table's name when rows
- *    are deleted, D-10), then one run. A conflict or another row count rolls everything back and says so.
+ *    value, every shown column of the row (review L-1 of tabrion #78). Each cell has the editor of its column's type
+ *    (STU-XDE-1, `CellEditor.tsx`), and every changed value is checked for its column on the page (`cellValues.ts`):
+ *    a cell with an issue is marked and named, and the preview waits until none is left. Bytes and rows the viewer
+ *    cut are read only.
+ * 3. Review: the change overview (`ChangeOverview.tsx`) lists every changed row with its columns before and after,
+ *    the new rows and the deleted ones. Preview, confirm, save: the server checks every value again and makes the
+ *    plan (no values in it; a refused value marks its cell), the text to type (D-09; the table's name when rows are
+ *    deleted, D-10), then one run. A conflict or another row count rolls everything back and says so.
  *
  * The changes live in this component's memory only: never in browser storage, the query history or the drafts
  * (review N-3 of PR #109).
@@ -18,26 +22,28 @@
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { typeLabel, untyped, type IssueCode } from '../../api/cellValues';
 import {
-  buildChanges,
+  buildChangeset,
   confirmPlan,
   discardPlan,
-  editableValue,
   emptyEdits,
   executePlan,
   fetchEditorTable,
   fetchUnlocks,
   lockWrite,
   previewChangeset,
+  resolveEdits,
   sameValue,
-  typedValue,
+  serverIssues,
   unlockWrite,
+  type CellIssue,
+  type CellRef,
   type Change,
   type EditorTable,
   type Edits,
   type PlanPreview,
   type PlanResult,
-  type Row,
 } from '../../api/dataEditor';
 import type { Problem } from '../../api/problem';
 import { fetchPage, type ViewerPage } from '../../api/viewer';
@@ -47,9 +53,11 @@ import clsx from '../../lib/clsx';
 import connectionStyles from '../connections/Connections.module.css';
 import { Field } from '../connections/Field';
 import { problemText } from '../connections/messages';
+import { CellEditor } from './CellEditor';
+import { ChangeOverview } from './ChangeOverview';
 import styles from './DataEditor.module.css';
 
-/** The rows the editor loads (the first page of the viewer; paging is STU-XDE-1). */
+/** The rows the editor loads (the first page of the viewer; paging is open, docs/TODO.md "STU-XDE-1 open points"). */
 export const EDITOR_ROWS = 100;
 
 export function DataEditor({
@@ -222,10 +230,10 @@ type Stage =
   | { step: 'preview'; preview: PlanPreview; changes: Change[] }
   | { step: 'confirmed'; preview: PlanPreview; changes: Change[] };
 
-/** The text of a loaded or typed value in a field (NULL is the empty field with the placeholder "NULL"). */
-function fieldText(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  return typeof value === 'string' ? value : JSON.stringify(value);
+function sameRow(first: CellRef['row'], second: CellRef['row']): boolean {
+  return 'loaded' in first
+    ? 'loaded' in second && first.loaded === second.loaded
+    : 'added' in second && first.added === second.added;
 }
 
 function EditorGrid({
@@ -248,6 +256,8 @@ function EditorGrid({
   const [stage, setStage] = useState<Stage>({ step: 'edit' });
   const [typed, setTyped] = useState('');
   const [problem, setProblem] = useState<Problem | null>(null);
+  /** The cells of the server's last refusal (`studio.data_editor_value_invalid`), until the next edit. */
+  const [refused, setRefused] = useState<CellIssue[]>([]);
   const [saved, setSaved] = useState<PlanResult | null>(null);
   const [round, setRound] = useState(0);
 
@@ -285,15 +295,17 @@ function EditorGrid({
     () => new Set(load.status === 'ready' ? load.page.truncatedCells.map(([row]) => row) : []),
     [load],
   );
-  const changes = useMemo(
-    () =>
-      load.status === 'ready'
-        ? buildChanges(load.table.primaryKey, columns, load.page.rows, edits)
-        : [],
-    [load, columns, edits],
-  );
+  const { changes, origins, issues } = useMemo(() => {
+    if (load.status !== 'ready') return { changes: [], origins: [], issues: [] };
+    const resolved = resolveEdits(load.table, columns, load.page.rows, edits);
+    return {
+      ...buildChangeset(load.table.primaryKey, columns, load.page.rows, resolved.edits),
+      issues: resolved.issues,
+    };
+  }, [load, columns, edits]);
 
   const reload = useCallback(() => {
+    setRefused([]);
     setEdits(emptyEdits());
     setStage({ step: 'edit' });
     setTyped('');
@@ -315,8 +327,30 @@ function EditorGrid({
   const keyShown = table.primaryKey.every((key) => columns.includes(key));
   const editing = stage.step === 'edit';
 
-  const setCell = (row: number, column: string, value: unknown) => {
+  const allIssues = [...issues, ...refused];
+  const issueOf = (row: CellRef['row'], column: string): IssueCode | null =>
+    allIssues.find((issue) => issue.column === column && sameRow(issue.row, row))?.code ?? null;
+  const issueId = (row: CellRef['row'], column: string) =>
+    `${id}-issue-${'loaded' in row ? `r${row.loaded}` : `n${row.added}`}-${columns.indexOf(column)}`;
+  const typeOf = (column: string) => table.columnTypes.get(column) ?? untyped(column);
+  const rowLabel = (row: CellRef['row']) =>
+    'loaded' in row
+      ? t('dataEditor.issueRow', { row: row.loaded + 1 })
+      : t('dataEditor.issueNewRow', { row: row.added + 1 });
+  const issueText = (issue: CellIssue) =>
+    t(`dataEditor.issue.${issue.code.slice('value.'.length)}`, {
+      format: t(
+        `dataEditor.format.${typeOf(issue.column).array ? 'array' : typeOf(issue.column).kind}`,
+      ),
+      length: typeOf(issue.column).length ?? 0,
+    });
+
+  const edited = () => {
     setSaved(null);
+    setRefused([]);
+  };
+  const setCell = (row: number, column: string, value: unknown) => {
+    edited();
     setEdits((current) => {
       const cells = new Map(current.cells);
       const rowCells = new Map(cells.get(row) ?? []);
@@ -326,7 +360,7 @@ function EditorGrid({
     });
   };
   const setNew = (index: number, column: string, value: unknown) => {
-    setSaved(null);
+    edited();
     setEdits((current) => ({
       ...current,
       inserted: current.inserted.map((row, at) =>
@@ -334,8 +368,19 @@ function EditorGrid({
       ),
     }));
   };
+  const unsetNew = (index: number, column: string) => {
+    edited();
+    setEdits((current) => ({
+      ...current,
+      inserted: current.inserted.map((row, at) =>
+        at === index
+          ? Object.fromEntries(Object.entries(row).filter(([name]) => name !== column))
+          : row,
+      ),
+    }));
+  };
   const toggleDelete = (row: number) => {
-    setSaved(null);
+    edited();
     setEdits((current) => {
       const deleted = new Set(current.deleted);
       if (deleted.has(row)) deleted.delete(row);
@@ -352,6 +397,7 @@ function EditorGrid({
       setStage({ step: 'preview', preview: result.value, changes });
     } else {
       setProblem(result.problem);
+      setRefused(serverIssues(result.problem.issues, origins, table.columns));
     }
   };
   const back = () => {
@@ -387,52 +433,49 @@ function EditorGrid({
     onLocked();
   };
 
-  const keyText = (key: Row) => table.primaryKey.map((column) => fieldText(key[column])).join(', ');
-  const changeText = (change: Change) => {
-    if (change.op === 'insert') return t('dataEditor.change.insert');
-    if (change.op === 'delete') {
-      return t('dataEditor.change.delete', {
-        key: keyText(change.key),
-        interpolation: { escapeValue: false },
-      });
-    }
-    return t('dataEditor.change.update', {
-      key: keyText(change.key),
-      columns: Object.keys(change.new).join(', '),
-      interpolation: { escapeValue: false },
-    });
-  };
-
-  const cellInput = (
-    label: string,
+  const cell = (
+    row: CellRef['row'],
+    column: string,
     value: unknown,
     original: unknown,
-    readOnly: boolean,
+    locked: boolean,
     onChange: (value: unknown) => void,
-    placeholder: string,
-  ) => (
-    <span className={styles.cell}>
-      <input
-        aria-label={label}
-        value={fieldText(value)}
-        placeholder={placeholder}
-        readOnly={readOnly || !editing}
-        spellCheck={false}
-        autoComplete="off"
-        onChange={(event) => onChange(typedValue(original, event.target.value))}
-      />
-      {!readOnly && editing && value !== null ? (
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label={t('dataEditor.setNull', { label })}
-          onClick={() => onChange(null)}
-        >
-          {t('dataEditor.null')}
-        </Button>
-      ) : null}
-    </span>
-  );
+    added?: { unset: boolean; onUnset: () => void },
+  ) => {
+    const issue = issueOf(row, column);
+    const label =
+      'loaded' in row
+        ? t('dataEditor.cell', {
+            row: row.loaded + 1,
+            column,
+            interpolation: { escapeValue: false },
+          })
+        : t('dataEditor.newCell', {
+            row: row.added + 1,
+            column,
+            interpolation: { escapeValue: false },
+          });
+    return (
+      <>
+        <CellEditor
+          column={typeOf(column)}
+          label={label}
+          value={value}
+          original={original}
+          unset={added?.unset}
+          onUnset={added?.onUnset}
+          disabled={locked || !editing}
+          issueId={issue !== null ? issueId(row, column) : null}
+          onChange={onChange}
+        />
+        {issue !== null ? (
+          <span id={issueId(row, column)} className={styles.issue}>
+            {issueText({ row, column, code: issue })}
+          </span>
+        ) : null}
+      </>
+    );
+  };
 
   return (
     <div className={styles.editor} data-testid="data-editor">
@@ -473,6 +516,9 @@ function EditorGrid({
                 <th key={column} scope="col">
                   {column}
                   {table.primaryKey.includes(column) ? ` (${t('dataEditor.key')})` : ''}
+                  {typeLabel(typeOf(column)) !== '' ? (
+                    <span className={styles.typeLabel}>{typeLabel(typeOf(column))}</span>
+                  ) : null}
                 </th>
               ))}
               <th scope="col">{t('dataEditor.actions')}</th>
@@ -493,23 +539,18 @@ function EditorGrid({
                     const value = edits.cells.get(index)?.has(column)
                       ? edits.cells.get(index)?.get(column)
                       : original;
-                    const readOnly = locked || deleted || !editableValue(original);
                     return (
                       <td
                         key={column}
                         className={clsx(!sameValue(value, original) && styles.changed)}
                       >
-                        {cellInput(
-                          t('dataEditor.cell', {
-                            row: index + 1,
-                            column,
-                            interpolation: { escapeValue: false },
-                          }),
+                        {cell(
+                          { loaded: index },
+                          column,
                           value,
                           original,
-                          readOnly,
+                          locked || deleted,
                           (next) => setCell(index, column, next),
-                          'NULL',
                         )}
                       </td>
                     );
@@ -531,17 +572,14 @@ function EditorGrid({
               <tr key={`new-${index}`} className={styles.added} data-new-row={index}>
                 {columns.map((column) => (
                   <td key={column}>
-                    {cellInput(
-                      t('dataEditor.newCell', {
-                        row: index + 1,
-                        column,
-                        interpolation: { escapeValue: false },
-                      }),
+                    {cell(
+                      { added: index },
+                      column,
                       column in row ? row[column] : null,
                       '',
                       false,
                       (next) => setNew(index, column, next),
-                      column in row ? 'NULL' : t('dataEditor.default'),
+                      { unset: !(column in row), onUnset: () => unsetNew(index, column) },
                     )}
                   </td>
                 ))}
@@ -581,22 +619,41 @@ function EditorGrid({
         </Button>
         <Button
           variant="primary"
-          disabled={!editing || changes.length === 0 || changes.length > table.maxChanges}
+          disabled={
+            !editing ||
+            changes.length === 0 ||
+            changes.length > table.maxChanges ||
+            issues.length > 0
+          }
           onClick={() => void preview()}
         >
           {t('dataEditor.preview')}
         </Button>
       </div>
+      {allIssues.length > 0 && editing ? (
+        // Not a live region: it changes while the user types; each cell names its own issue (aria-describedby).
+        <div className={connectionStyles.problem} data-testid="data-editor-issues">
+          <span>{t('dataEditor.issuesLead', { count: allIssues.length })}</span>
+          <ul className={styles.changes}>
+            {allIssues.map((issue, index) => (
+              <li key={index}>
+                {t('dataEditor.issueAt', {
+                  row: rowLabel(issue.row),
+                  column: issue.column,
+                  issue: issueText(issue),
+                  interpolation: { escapeValue: false },
+                })}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {changes.length > 0 && editing ? (
-        <ol
-          className={styles.changes}
-          aria-label={t('dataEditor.changesLabel')}
-          data-testid="data-editor-changes"
-        >
-          {changes.map((change, index) => (
-            <li key={index}>{changeText(change)}</li>
-          ))}
-        </ol>
+        <ChangeOverview
+          changes={changes}
+          primaryKey={table.primaryKey}
+          testId="data-editor-changes"
+        />
       ) : null}
       {stage.step !== 'edit' ? (
         <form
@@ -606,11 +663,11 @@ function EditorGrid({
           data-testid="data-editor-review"
         >
           <h3 id={`${id}-review`}>{t('dataEditor.review.title')}</h3>
-          <ol className={styles.changes}>
-            {stage.changes.map((change, index) => (
-              <li key={index}>{changeText(change)}</li>
-            ))}
-          </ol>
+          <ChangeOverview
+            changes={stage.changes}
+            primaryKey={table.primaryKey}
+            testId="data-editor-review-changes"
+          />
           <p>{t('dataEditor.review.oneTransaction')}</p>
           {stage.preview.triggers.length > 0 || stage.preview.rules.length > 0 ? (
             <p role="note" className={connectionStyles.warning}>

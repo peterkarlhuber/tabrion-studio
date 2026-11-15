@@ -118,7 +118,9 @@ statement_timeout_ms = 15000
   connection never reads the path as a URL (it opens the resolved file); this aligns the SQLite `path` with
   Tabrion's reader. The PostgreSQL `database` is not aligned (Tabrion's reader also refuses `/?#%@` there; TD-013).
   The check runs after the network-path check.
-- A file nested deeper than the TOML parser can follow is `config.too_deep` (review T-3).
+- A file nested deeper than 64 levels is `config.too_deep` (review T-3), found by a linear scan before the TOML parser
+  runs: arrays and inline tables count, and so do the segments of dotted keys and table headers (a dot in a quoted key
+  does not). The parser itself therefore never recurses to the interpreter's limit.
 - `sslmode` defaults to `prefer` only for a Unix socket folder (`/...`), the literal `localhost` and a loopback IP
   address (`127.0.0.0/8`, `::1`); any DNS name, even `127.evil.example`, gets `verify-full` (review T-4).
 - Unknown keys are warnings (`config.unknown_key`); D-01 lists them.

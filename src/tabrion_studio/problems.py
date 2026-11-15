@@ -7,7 +7,9 @@ problem document with the media type ``application/problem+json``::
      "title": "Not signed in", "detail": "...", "hint": "..."}
 
 plus ``log_id`` for ``studio.internal_error``, ``issues`` for ``studio.profile_invalid`` and ``studio.settings_invalid``
-(``[{"pointer": "profile.host", "code": "config.required"}]``: a fixed key name and a ``config.*`` code) and, from
+(``[{"pointer": "profile.host", "code": "config.required"}]``: a fixed key name and a ``config.*`` code) and for
+``studio.data_editor_value_invalid`` (``[{"pointer": "changes.2.5", "code": "value.too_long"}]``: positions in the
+request and the table, and a ``value.*`` code; STU-XDE-1) and, from
 STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
@@ -57,9 +59,10 @@ DB_KINDS = frozenset(kind.value for kind in Kind)
 _SQLSTATE = re.compile(r"[0-9A-Z]{5}")
 _LOG_ID = re.compile(r"[0-9a-f]{12}")
 _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
-#: An issue of a rejected profile or settings form: a key path of fixed names and a config.* code (STU-008).
-_ISSUE_POINTER = re.compile(r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}")
-_ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}")
+#: An issue of a rejected profile or settings form: a key path of fixed names and a config.* code (STU-008); or of a
+#: refused Data Editor value (STU-XDE-1): the change's and the column's position and a value.* code, never a name.
+_ISSUE_POINTER = re.compile(r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}")
+_ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}|value\.[a-z_]{1,48}")
 MAX_ISSUES = 32
 
 
@@ -651,8 +654,9 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "Value not valid",
-        "A value does not fit its column's type. Nothing was saved: all changes were rolled back.",
-        "Check the values you entered.",
+        "A value does not fit its column (its type, length, range, NULL or allowed values), or a required value is "
+        "missing. Nothing was saved.",
+        "Check the values you entered; the cells in question are marked.",
     ),
     # The I-109 j confirmation and require_auth (STU-XW-4, D-15, TX-07). W-9: 400 or 405, never 403 or 404.
     "studio.secret_unconfirmed": Entry(

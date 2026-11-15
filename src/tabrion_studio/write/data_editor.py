@@ -46,15 +46,19 @@ the count (review I-1 of tabrion #78); the preview names them (TX-16).
 records name codes, counts, the table and the plan hash only. A changeset never reaches the query history or the
 draft queue: nothing here calls the query engine, the history or the drafts.
 
-**Hooks for STU-XDE-1** (validation from the reflection, type editors, the change overview): :func:`bind_value` is
-the one place that turns a page value into a bound value, and :func:`table_info` the one answer the page builds its
-grid from.
+**Values are checked twice (STU-XDE-1).** :func:`table_info` sends each column's type (:mod:`tabrion_studio.write.
+values`: kind, NULL, required, read only, length, precision and scale, enum labels, array), from which the page picks
+a cell editor and checks every value it sends. The page is help only: :meth:`DataEditorExecutor.check` checks every
+new value (an update's ``new``, an insert's ``values``) against the catalog again before the plan is kept, and an
+insert that leaves out a NOT NULL column without a default; a refusal is ``studio.data_editor_value_invalid`` (400)
+whose issues name the change's and the column's position and the check (``value.*``), never a value or a name. The
+database is the last instance (CHECK, UNIQUE, foreign keys, domains, triggers). :func:`bind_value` is the one place
+that turns a page value into a bound value; ``old`` values are not checked (they are what the viewer showed).
 """
 
 from __future__ import annotations
 
 import base64
-import binascii
 from collections import OrderedDict
 from collections.abc import Mapping
 import copy
@@ -75,6 +79,7 @@ from tabrion.errors import RowCountMismatch, UsageError
 from tabrion.rowedit import delete_row, insert_row, update_row
 
 from tabrion_studio.config.write_areas import Area
+from tabrion_studio.problems import MAX_ISSUES
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.plan import (
@@ -88,6 +93,7 @@ from tabrion_studio.write.plan import (
     read_catalog,
 )
 from tabrion_studio.write.unlock import AuditedRun, Unlocks
+from tabrion_studio.write.values import check_value, is_bytes
 
 __all__ = ["EXECUTOR_NAME", "DataEditorExecutor", "bind_value", "table_info"]
 
@@ -119,16 +125,6 @@ def _name(value: object) -> str:
     return value
 
 
-def _is_bytes(value: object) -> bool:
-    if not isinstance(value, Mapping) or set(value) != {"base64"} or not isinstance(value["base64"], str):
-        return False
-    try:
-        base64.b64decode(value["base64"], validate=True)
-    except (binascii.Error, ValueError):
-        return False
-    return True
-
-
 def _value(value: object, engine: str) -> None:
     """A page value: JSON scalars, ``{"base64": ...}``, and on PostgreSQL JSON objects and arrays (JSON, arrays)."""
     if value is None or isinstance(value, bool | int | str):
@@ -137,7 +133,7 @@ def _value(value: object, engine: str) -> None:
         if not math.isfinite(value):
             raise _invalid()
         return
-    if _is_bytes(value):
+    if is_bytes(value):
         return
     if engine == "postgresql" and isinstance(value, Mapping | list):
         return  # nested values are canonical JSON (the framework checked the request)
@@ -222,7 +218,8 @@ class DataEditorExecutor:
 
     def check(self, content: PlanContent, catalogs: tuple[TargetCatalog, ...]) -> None:
         """Every named column is a column of the table, the primary key is shown, and every key is exactly it; no
-        column of the table lacks an equality (the table is refused, see the module text)."""
+        column of the table lacks an equality (the table is refused, see the module text); every new value fits its
+        column, and an insert has every column it needs (STU-XDE-1)."""
         catalog = catalogs[0]
         if catalog.incomparable:
             raise WriteError("studio.data_editor_column_incomparable")
@@ -235,6 +232,10 @@ class DataEditorExecutor:
                 raise _invalid()
             if "key" in data and (set(data["key"]) != primary or not primary <= set(data["old"])):
                 raise _invalid()
+        issues = _value_issues(content, catalog)
+        if issues:
+            logger.info("data editor values refused", extra={"event": "studio.data_editor_value_invalid"})
+            raise WriteError("studio.data_editor_value_invalid", issues)
 
     # --- run ------------------------------------------------------------------------------------------------------
 
@@ -292,7 +293,9 @@ def _bindable(reflected: sqlalchemy.Table, engine: str) -> sqlalchemy.Table:
     columns as reflected (so ``tabrion.rowedit`` compares them under ``BINARY``) and leaves every other column
     untyped, so a value is bound as the driver reads it back (the viewer's value) and the column's affinity applies,
     never a SQLAlchemy conversion (a ``DATE`` column holds text, a ``NUMERIC`` one numbers). Every column is
-    nullable here: the database checks ``NOT NULL`` and defaults; SQLAlchemy only builds the statement.
+    nullable here: the database checks ``NOT NULL`` and defaults; SQLAlchemy only builds the statement. No column
+    autoincrements (STU-XDE-1): an insert names exactly the columns the page set, and SQLAlchemy never fetches a
+    key ahead from a sequence, which an identity ``ALWAYS`` refuses and a plain key does not have.
 
     A text column's own collation is dropped from the bind type (review L-1 of PR #119): PostgreSQL's driver renders a
     bound value's type, collation included, as a cast, and an explicit ``COLLATE "x"`` on the value next to
@@ -305,6 +308,7 @@ def _bindable(reflected: sqlalchemy.Table, engine: str) -> sqlalchemy.Table:
             key=column.key,
             primary_key=column.primary_key,
             nullable=True,
+            autoincrement=False,
         )
         for column in reflected.columns
     ]
@@ -355,7 +359,7 @@ def bind_value(column: sqlalchemy.Column[Any], value: Any, engine: str) -> Any:
     The hook of STU-XDE-1's type editors: the same conversion for ``old`` (as the viewer showed it) and new values."""
     if value is None:
         return None
-    if _is_bytes(value):
+    if is_bytes(value):
         return base64.b64decode(value["base64"], validate=True)
     if engine == "sqlite":
         return value  # untyped: the driver's own value (_bindable)
@@ -405,13 +409,39 @@ def _boolean(value: Any) -> bool:
     return bool(_refuse())
 
 
+def _value_issues(content: PlanContent, catalog: TargetCatalog) -> list[tuple[str, str]]:
+    """The values of ``content`` that do not fit their columns: ``("changes.<step>.<column>", "value.<check>")``, the
+    column by its position in the table, at most :data:`~tabrion_studio.problems.MAX_ISSUES`."""
+    types = {column.name: (index, column) for index, column in enumerate(catalog.column_types)}
+    issues: list[tuple[str, str]] = []
+    for position, step in enumerate(content.steps):
+        values = step.data.get("values", step.data.get("new"))
+        if values is None:
+            continue  # a delete names old values only
+        for name, value in values.items():
+            index, column = types[name]
+            code = check_value(column, value)
+            if code is not None:
+                issues.append((f"changes.{position}.{index}", code))
+        if step.action == "row.insert":
+            issues.extend(
+                (f"changes.{position}.{index}", "value.required")
+                for index, column in enumerate(catalog.column_types)
+                if not column.optional and not column.nullable and column.name not in values
+            )
+        if len(issues) >= MAX_ISSUES:
+            return issues[:MAX_ISSUES]
+    return issues
+
+
 # --- the page's table information --------------------------------------------------------------------------------
 
 
 def table_info(unlocks: Unlocks, session: str, connection_id: object, schema: object, table: object) -> dict[str, Any]:
-    """What the page builds its grid from: the table's columns and primary key, its triggers, rules and row security
-    (TX-16), read on the unlock's write connection. Refuses what the executor refuses (a view, a partitioned table,
-    a table without a primary key) before the user edits anything. Names only, never a value."""
+    """What the page builds its grid from: the table's columns, their types (STU-XDE-1) and primary key, its triggers,
+    rules and row security (TX-16), read on the unlock's write connection. Refuses what the executor refuses (a view,
+    a partitioned table, a table without a primary key) before the user edits anything. Names and enum labels only,
+    never a value."""
     unlock = unlocks.require_unlock(session, connection_id, Area.DATA_EDITOR)
     engine = unlock.connection.engine
     target = Target(_name("main" if schema is None and engine == "sqlite" else schema), _name(table))
@@ -428,6 +458,7 @@ def table_info(unlocks: Unlocks, session: str, connection_id: object, schema: ob
         "schema": target.schema,
         "table": target.table,
         "columns": list(catalog.columns),
+        "column_types": [column.to_dict() for column in catalog.column_types],
         "primary_key": list(catalog.primary_key),
         "triggers": [trigger.to_dict() for trigger in catalog.triggers],
         "rules": [rule.to_dict() for rule in catalog.rules],

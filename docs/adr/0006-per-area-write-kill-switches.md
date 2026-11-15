@@ -149,6 +149,26 @@ After an area's gate, and in tests before it:
 - write and admin secrets are never exported: not in a profile export, a diagnostics report or bundle, or any
   support output (review N-5).
 
+### Values of the Data Editor (STU-XDE-1)
+
+A value a changeset writes is checked twice; the server's check decides (threat TX-17):
+
+- The table route sends each column's type, read from the catalog (kind, NULL, whether an insert may leave it out,
+  whether it takes a value at all, length, precision and scale, an enum's labels, arrays). The page picks a cell
+  editor from it and checks every changed value before the preview. That is help for the user, not a boundary.
+- When a plan is made, the executor checks every new value against the same types read again from the catalog, and
+  that an insert does not leave out a NOT NULL column without a default. A refusal is `400
+  studio.data_editor_value_invalid` (W-9) before a plan exists. Its issues give the change's position in the request,
+  the column's position in the table and a fixed `value.*` code; never a value, a column name or database text.
+- The column types are part of the plan fingerprint, so a schema change between preview and run is drift.
+- The database stays the last instance (CHECK, UNIQUE, foreign keys, domain constraints, triggers).
+- Where a silent conversion would change a value's meaning, the checks refuse instead of converting: a
+  `timestamptz` or `timetz` needs an offset, a `timestamp` or `time` takes none, NULL is never the empty text, and a
+  top-level JSON `null` is not taken for SQL `NULL`.
+- Where PostgreSQL takes a spelling without changing the value, the checks take it too: whitespace around a number,
+  and a time of exactly `24:00`. The checks parse each part themselves and do not depend on the Python version (3.14's
+  `fromisoformat` takes `24:00`, earlier ones do not).
+
 ### Proof required from every kill-switch pull request
 
 Every pull request that adds or changes write or admin code must show, in its tests and description:
