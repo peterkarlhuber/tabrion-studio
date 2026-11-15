@@ -15,7 +15,7 @@
  * `audit` 150 tables for the ER diagram of STU-023), `path` (/, /connections, /explorer, /sql, /history, /migrations,
  * /diagnostics, /settings); data-editor: the Data Editor's grid alone (STU-XDE-1, `dataEditor.ts`: an unlocked typed
  * table, the plans the page sent in `window.dataEditorLog`; STU-XDE-2: `locked=1` or `locked=prod`, `triggers=1`,
- * `refuse=<code>` and `conflict=1`, see `dataEditor.ts`). In every scenario the fake answers STU-020's routes
+ * `refuse=<code>` and `conflict=1`; G-S2 6A: `constraint=1` and `paged=1`, see `dataEditor.ts`). In every scenario the fake answers STU-020's routes
  * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
  * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
  * `theme` (light, dark) and `lang` (en, de). The editor's drafts (TD-033) go to a fake `/api/drafts` (`drafts.ts`) that
@@ -540,6 +540,8 @@ if (scenario === 'data-editor') {
     triggers: params.get('triggers') === '1',
     refuse: params.get('refuse'),
     conflict: params.get('conflict') === '1',
+    constraint: params.get('constraint') === '1',
+    paged: params.get('paged') === '1',
   });
   (window as unknown as { dataEditorLog: unknown }).dataEditorLog = dataEditor.log;
   createRoot(root).render(

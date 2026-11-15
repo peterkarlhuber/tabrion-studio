@@ -8,7 +8,8 @@
  * the database holds exactly the changes. Then a row changed behind the page's back: the run rolls back, says so and
  * names no value. The changes never go to the query history or the drafts (N-3). STU-XDE-2 adds NULL against the
  * empty text in the database, a trigger (a notice, not a block), the refused view and table without a primary key,
- * and PROD (no write profile, no edit tab, no unlock).
+ * and PROD (no write profile, no edit tab, no unlock). G-S2 6A adds a BLOB replaced by a picked file, a UNIQUE refusal
+ * of the run marked at its cell with nothing saved, and an edit of a row beyond the first page.
  *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
@@ -96,6 +97,11 @@ test.beforeAll(async () => {
       "db.execute('create table loose (msg text)')",
       'db.execute("insert into loose values (\'x\')")',
       "db.execute('create view parts_view as select id, name from parts')",
+      // G-S2 6A: bytes, a unique rule, and more rows than one page.
+      "db.execute('create table files (id integer primary key, code text unique, raw blob) strict')",
+      "db.execute(\"insert into files values (1, 'a', x'0102'), (2, 'b', null)\")",
+      "db.execute('create table many (id integer primary key, n integer not null)')",
+      "db.executemany('insert into many values (?, ?)', [(i, i) for i in range(1, 251)])",
       'db.commit()',
     ].join('\n'),
   );
@@ -488,6 +494,112 @@ test('STU-XDE-2: refused targets: a view has no edit tab, a table without a prim
   expect(
     JSON.parse(sqlite("print(json.dumps(db.execute('select * from loose').fetchall()))")),
   ).toEqual([['x']]);
+});
+
+test('G-S2 6A: a picked file replaces a BLOB value; the database holds its bytes', async ({
+  page,
+}) => {
+  const violations = await signIn(page);
+  const sent = writes(page);
+  await openEditor(page, 'files');
+  await unlockEditor(page);
+  const replace = page.getByRole('button', { name: 'Replace Row 1, raw with a file' });
+  await expect(replace).toHaveAccessibleDescription('2 bytes');
+  const content = Buffer.from(`${CANARY}-file`, 'utf-8');
+  const chooser = page.waitForEvent('filechooser');
+  await replace.click();
+  await (
+    await chooser
+  ).setFiles({ name: 'part.bin', mimeType: 'application/octet-stream', buffer: content });
+  await expect(replace).toHaveAccessibleDescription(`${content.length} bytes`);
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-saved')).toContainText('Saved: 1 updated');
+  expect(
+    sqlite("print(db.execute('select hex(raw) from files where id = 1').fetchone()[0])").trim(),
+  ).toBe(content.toString('hex').toUpperCase());
+  // The file went to the plan only, as base64; no answer of the run holds it.
+  expect(
+    sent.filter((request) => request.body.includes(content.toString('base64'))).map((r) => r.path),
+  ).toEqual(['/api/write/plans']);
+  await expectNoViolations(page, violations);
+});
+
+test('G-S2 6A: a unique rule refused at the run is marked at its cell; nothing is saved', async ({
+  page,
+}) => {
+  const violations = await signIn(page);
+  await openEditor(page, 'files');
+  await unlockEditor(page);
+  // Two changes: the first fits, the second breaks the UNIQUE of code. Both roll back.
+  const first = page.getByRole('textbox', { name: 'Row 1, code' });
+  const second = page.getByRole('textbox', { name: 'Row 2, code' });
+  await first.fill('z');
+  await second.fill('z');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  const problem = page.getByTestId('data-editor-error');
+  await expect(problem).toContainText('Nothing was saved: all changes were rolled back.');
+  await expect(problem).not.toContainText('files');
+  await expect(second).toHaveAttribute('aria-invalid', 'true');
+  await expect(second).toHaveAccessibleDescription(/a value that must be unique is already in/);
+  await expect(first).not.toHaveAttribute('aria-invalid', 'true');
+  expect(
+    JSON.parse(sqlite("print(json.dumps(db.execute('select id, code from files').fetchall()))")),
+  ).toEqual([
+    [1, 'a'],
+    [2, 'b'],
+  ]);
+  // Corrected, the same edits save.
+  await second.fill('y');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-saved')).toContainText('Saved: 2 updated');
+  await expectNoViolations(page, violations);
+});
+
+test('G-S2 6A: a row beyond the first page is edited; exactly that row changes', async ({
+  page,
+}) => {
+  await signIn(page);
+  await openEditor(page, 'many');
+  await unlockEditor(page);
+  await expect(page.getByTestId('data-editor-loaded')).toHaveText(
+    '100 rows are loaded; the table has more.',
+  );
+  await page.getByRole('textbox', { name: 'Row 7, n' }).fill('-7');
+  await page.getByRole('button', { name: 'Load 100 more rows' }).click();
+  await page.getByRole('textbox', { name: 'Row 150, n' }).fill('-150');
+  await page.getByRole('button', { name: 'Load 100 more rows' }).click();
+  await expect(page.getByTestId('data-editor-loaded')).toHaveText('All rows are loaded (250).');
+  await expect(page.getByRole('textbox', { name: 'Row 7, n' })).toHaveValue('-7');
+  await page.getByRole('textbox', { name: 'Row 250, n' }).fill('-250');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type e2e-editor-w to confirm').fill('e2e-editor-w');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-saved')).toContainText('Saved: 3 updated');
+  expect(
+    JSON.parse(
+      sqlite(
+        "print(json.dumps(db.execute('select id, n from many where n < 0 order by id').fetchall()))",
+      ),
+    ),
+  ).toEqual([
+    [7, -7],
+    [150, -150],
+    [250, -250],
+  ]);
+  // After the save the editor starts at the first page again.
+  await expect(page.getByTestId('data-editor-loaded')).toHaveText(
+    '100 rows are loaded; the table has more.',
+  );
 });
 
 test('STU-XDE-2: PROD is refused: no write profile, no unlock and no edit tab (E-X7)', async ({

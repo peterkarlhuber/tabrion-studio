@@ -3,7 +3,9 @@
  * fake server (`src/harness/dataEditor.ts`, scenario `data-editor` with its options): the unlock (D-03) and the PROD
  * lock, the refused tables (a column without equality, a partitioned table, no primary key, not a table), the notice
  * for triggers, rules and row security (a notice, not a block: owner decision 2026-11-15), the review before and
- * after the confirmation, and the conflict that rolls everything back. axe finds no serious or critical violation in
+ * after the confirmation, and the conflict that rolls everything back. G-S2 6A: a change the database refuses for a
+ * rule of the table is marked at its cell or row, and the rows load page after page with every edit kept at its row.
+ * axe finds no serious or critical violation in
  * any of these states, in light and dark, English and German; no catalog key shows as raw text. The real server's
  * refusals are covered by tests/security/test_data_editor*.py and e2e/data-editor-backend.spec.ts. Gate G-S2 is not
  * granted; the harness is never built into the wheel.
@@ -202,6 +204,97 @@ test('a conflict at the run: nothing is saved, the message names no value, Reloa
   await expect(page.getByLabel('Row 2, name', { exact: true })).toHaveValue('nut');
   await expect(page.getByTestId('data-editor-pending')).toHaveText('0 changes');
 });
+
+test('G-S2 6A: a rule of the table refused at the run is marked at its cell and its row; nothing is saved', async ({
+  page,
+}) => {
+  await open(page, { constraint: '1' });
+  const name = page.getByLabel('Row 2, name', { exact: true });
+  await name.fill('bolt');
+  await page.getByRole('button', { name: 'Delete row' }).first().click();
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await page.getByLabel('Type parts to confirm').fill('parts');
+  await page.getByRole('button', { name: 'Confirm' }).click();
+  await page.getByTestId('data-editor-execute').click();
+  await expect(page.getByTestId('data-editor-error')).toContainText(
+    text('en', 'problems.data_editor_constraint'),
+  );
+  await expect(name).toHaveAttribute('aria-invalid', 'true');
+  await expect(name).toHaveAccessibleDescription(text('en', 'dataEditor.constraint.unique'));
+  await expect(page.getByRole('button', { name: 'Keep row' })).toHaveAccessibleDescription(
+    text('en', 'dataEditor.constraint.foreign_key'),
+  );
+  await expect(page.getByTestId('data-editor-issues')).toContainText(
+    `Row 2, column name: ${text('en', 'dataEditor.constraint.unique')}`,
+  );
+  await expect(page.getByTestId('data-editor-issues')).toContainText(
+    `Row 1: ${text('en', 'dataEditor.constraint.foreign_key')}`,
+  );
+  await expect(page.getByTestId('data-editor-saved')).toHaveCount(0);
+  expect((await log(page)).executed).toBe(0);
+  // The edits stay for a correction; the next edit clears the marks.
+  await name.fill('nut M5');
+  await expect(name).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByTestId('data-editor-pending')).toHaveText('2 changes');
+});
+
+test('G-S2 6A: the rows load page after page; an edit stays with its row', async ({ page }) => {
+  await open(page, { paged: '1' });
+  await expect(page.getByTestId('data-editor-loaded')).toHaveText(
+    '1 row is loaded; the table has more.',
+  );
+  await page.getByLabel('Row 1, name', { exact: true }).fill('bolt M3');
+  const more = page.getByRole('button', { name: 'Load 100 more rows' });
+  await more.click();
+  await expect(page.getByLabel('Row 2, name', { exact: true })).toHaveValue('nut');
+  await more.click();
+  await expect(page.getByTestId('data-editor-loaded')).toHaveText('All rows are loaded (3).');
+  await expect(more).toHaveCount(0);
+  await expect(page.getByLabel('Row 1, name', { exact: true })).toHaveValue('bolt M3');
+  await page.getByLabel('Row 3, name', { exact: true }).fill('washers');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.getByLabel('Type parts-w to confirm')).toBeVisible();
+  const sent = (await log(page)).plans[0] as {
+    request: { changes: { key: unknown; new: unknown }[] };
+  };
+  expect(sent.request.changes.map((change) => [change.key, change.new])).toEqual([
+    [{ id: 1 }, { name: 'bolt M3' }],
+    [{ id: 3 }, { name: 'washers' }],
+  ]);
+});
+
+for (const theme of ['light', 'dark'] as Theme[]) {
+  for (const lang of ['en', 'de'] as Language[]) {
+    test(`${theme}, ${lang}: more rows and a rule of the table refused at its cell pass axe (G-S2 6A)`, async ({
+      page,
+    }) => {
+      const t = (key: string, values: Record<string, string> = {}) => text(lang, key, values);
+      await open(page, { constraint: '1', paged: '1' }, theme, lang);
+      await page
+        .getByRole('button', { name: t('dataEditor.loadMore_other', { count: '100' }) })
+        .click();
+      const name = page.getByLabel(t('dataEditor.cell', { row: '2', column: 'name' }), {
+        exact: true,
+      });
+      await name.fill('bolt');
+      expect(await seriousViolations(page)).toEqual([]);
+      await expectNoRawKeys(page);
+      await page.getByRole('button', { name: t('dataEditor.preview') }).click();
+      await page
+        .getByTestId('data-editor-review')
+        .getByLabel(t('dataEditor.review.type', { text: 'parts-w' }))
+        .fill('parts-w');
+      await page.getByRole('button', { name: t('dataEditor.review.confirm') }).click();
+      await page.getByTestId('data-editor-execute').click();
+      await expect(name).toHaveAttribute('aria-invalid', 'true');
+      await expect(page.getByTestId('data-editor-error')).toContainText(
+        t('problems.data_editor_constraint'),
+      );
+      expect(await seriousViolations(page)).toEqual([]);
+      await expectNoRawKeys(page);
+    });
+  }
+}
 
 for (const theme of ['light', 'dark'] as Theme[]) {
   for (const lang of ['en', 'de'] as Language[]) {

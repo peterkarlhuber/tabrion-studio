@@ -7,6 +7,7 @@ problem whose issues are positions and ``value.*`` codes only (TX-14).
 
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,9 @@ from tabrion_studio.problems import problem
 from tabrion_studio.write.plan import _sqlite_table_options
 from tabrion_studio.write.values import (
     KINDS,
+    MAX_BYTES_VALUE,
     ColumnType,
+    bytes_size,
     check_compared_value,
     check_value,
     is_hour_24,
@@ -168,6 +171,44 @@ def test_value_issues_are_positions_and_fixed_codes_only() -> None:
     ]:
         with pytest.raises(ValueError, match="malformed issues"):
             problem("studio.data_editor_value_invalid", issues=[(pointer, code)])
+
+
+def test_constraint_issues_are_positions_and_fixed_codes_only() -> None:
+    """G-S2 6A: a constraint refusal names the change, and the column's position where the database named it."""
+    issues = [("changes.3", "constraint.unique"), ("changes.3.1", "constraint.foreign_key")]
+    doc = problem("studio.data_editor_constraint", issues=issues).to_dict()
+    assert doc["status"] == 400 and doc["issues"] == [
+        {"pointer": "changes.3", "code": "constraint.unique"},
+        {"pointer": "changes.3.1", "code": "constraint.foreign_key"},
+    ]
+    for pointer, code in [
+        ("changes.3.qty", "constraint.check"),
+        ("profile.host", "constraint.check"),
+        ("changes.3", "constraint.other"),
+        ("changes.3", "constraint.unique x"),
+        ("changes.12345", "constraint.not_null"),
+    ]:
+        with pytest.raises(ValueError, match="malformed issues"):
+            problem("studio.data_editor_constraint", issues=[(pointer, code)])
+
+
+@pytest.mark.parametrize("kind", ["bytes", "other"])
+def test_a_new_bytes_value_has_at_most_the_limit(kind: str) -> None:
+    """G-S2 6A: a file that replaces a bytes value has at most MAX_BYTES_VALUE bytes, whatever the column's kind; a
+    compared (old) value is what the viewer showed and is not limited here."""
+    column = ColumnType(name="c", kind=kind, nullable=True, optional=True, read_only=False)
+    for size, issue in (
+        (0, None),
+        (1, None),
+        (2, None),
+        (MAX_BYTES_VALUE, None),
+        (MAX_BYTES_VALUE + 1, "value.too_large"),
+    ):
+        value = {"base64": base64.b64encode(b"\x07" * size).decode("ascii")}
+        assert bytes_size(value) == size
+        assert check_value(column, value) == issue, size
+    big = {"base64": base64.b64encode(b"\x07" * (MAX_BYTES_VALUE + 1)).decode("ascii")}
+    assert check_compared_value(column, big) is None
 
 
 # --- G2-02 and G2-03 of the G-S2 gate review ------------------------------------------------------------------------

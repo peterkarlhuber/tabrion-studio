@@ -12,6 +12,7 @@ cell value in any answer, log, audit record, the query history or the drafts. Po
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Iterator
 import io
 import json
@@ -30,6 +31,7 @@ from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tabrion_studio.write.audit import verify_log
 from tabrion_studio.write.connection import defensive_available
+from tabrion_studio.write.values import MAX_BYTES_VALUE
 from tests.support.write import CANARY_SECRET, CANARY_VALUE, DATA_EDITOR, WriteEnv, digest
 
 pytestmark = [
@@ -189,7 +191,8 @@ def test_without_the_data_editor_flag_its_routes_are_refused(
     tmp_path: Path, static_dir: Path, areas: WriteAreas
 ) -> None:
     """Flag off: the table route is 405, and a changeset is refused (405 with every flag off; with another area's
-    flag the executor is not registered); the database does not change."""
+    flag the executor is not registered), also one that replaces a bytes value by a file; the database does not
+    change."""
     env = WriteEnv(tmp_path, static_dir, areas)
     try:
         _make(env.db)
@@ -198,12 +201,17 @@ def test_without_the_data_editor_flag_its_routes_are_refused(
         connection_id = env.open()
         table = env.send("POST", TABLE_ROUTE, {"connection_id": connection_id, "schema": "main", "table": "parts"})
         _refused(table, 405, "studio.method_not_allowed")
-        planned = _plan(env, connection_id, [_update(*STEEL, {"material": CANARY_VALUE})])
-        if areas.enabled:
-            _refused(planned, 400, "studio.plan_executor_unknown")
-            assert EXECUTOR not in env.studio.client.app.state.write_plans.executors  # type: ignore[attr-defined]
-        else:
-            _refused(planned, 405, "studio.method_not_allowed")
+        # G-S2 6A: a changeset with a bytes value replaced by a file of the largest size is refused the same way.
+        for changes in (
+            [_update(*STEEL, {"material": CANARY_VALUE})],
+            [_update(*STEEL, {"note": _file(MAX_BYTES_VALUE)})],
+        ):
+            planned = _plan(env, connection_id, changes)
+            if areas.enabled:
+                _refused(planned, 400, "studio.plan_executor_unknown")
+                assert EXECUTOR not in env.studio.client.app.state.write_plans.executors  # type: ignore[attr-defined]
+            else:
+                _refused(planned, 405, "studio.method_not_allowed")
         assert digest(env.db) == before
     finally:
         env.close()
@@ -442,16 +450,83 @@ def test_a_row_count_other_than_one_rolls_back(env: WriteEnv) -> None:
 
 
 def test_a_constraint_error_rolls_back_without_values(env: WriteEnv) -> None:
+    """G-S2 6A: the refusal names the change and the column the database named (the key, by its position), and
+    the kind; the first change is rolled back too."""
     connection_id = _unlocked(env)
     response = _run(
         env,
         connection_id,
         [_update(*STEEL, {"material": "Iron"}), {"op": "insert", "values": {"id": 2, "material": CANARY_VALUE}}],
     )
-    assert response.status_code in (400, 409), response.text
-    assert response.json()["code"].startswith("db.")
-    assert CANARY_VALUE not in response.text
+    _refused(response, 400, "studio.data_editor_constraint")
+    assert response.json()["issues"] == [{"pointer": "changes.1.0", "code": "constraint.unique"}]
     assert _rows(env.db) == ORIGINAL
+    results = [entry for entry in _audit(env) if entry.get("event") == "run.result"]
+    assert results[-1]["fields"]["result"] == "studio.data_editor_constraint", results
+
+
+CONSTRAINED = (
+    "CREATE TABLE kinds (id INTEGER PRIMARY KEY, code TEXT NOT NULL,"
+    " qty INTEGER CONSTRAINT qty_positive CHECK (qty > 0), pair_a TEXT, pair_b TEXT, UNIQUE (pair_a, pair_b));"
+    "INSERT INTO kinds VALUES (1, 'a', 1, 'x', 'y'), (2, 'b', 2, 'x', 'z');"
+    "CREATE TABLE uses (id INTEGER PRIMARY KEY, kind INTEGER REFERENCES kinds (id));"
+    "INSERT INTO uses VALUES (1, 2);"
+)
+KINDS_COLUMNS = ["id", "code", "qty", "pair_a", "pair_b"]
+KIND_ONE = {"id": 1, "code": "a", "qty": 1, "pair_a": "x", "pair_b": "y"}
+KIND_TWO = {"id": 2, "code": "b", "qty": 2, "pair_a": "x", "pair_b": "z"}
+
+
+@pytest.mark.parametrize(
+    ("change", "issue"),
+    [
+        # NOT NULL is refused before the plan on SQLite (value.not_null); PostgreSQL's domain case is in
+        # test_data_editor_postgres.py. A single-column UNIQUE names its cell (the key, in the test above).
+        # A named CHECK: no column, so the change is named.
+        (
+            {"op": "update", "key": {"id": 1}, "old": KIND_ONE, "new": {"qty": -5}},
+            {"pointer": "changes.1", "code": "constraint.check"},
+        ),
+        # A UNIQUE of two columns: the change, not one of its cells.
+        (
+            {"op": "update", "key": {"id": 1}, "old": KIND_ONE, "new": {"pair_b": "z"}},
+            {"pointer": "changes.1", "code": "constraint.unique"},
+        ),
+        # A row another table references: the change.
+        (
+            {"op": "delete", "key": {"id": 2}, "old": KIND_TWO},
+            {"pointer": "changes.1", "code": "constraint.foreign_key"},
+        ),
+    ],
+    ids=["check", "unique_of_two", "foreign_key"],
+)
+def test_each_constraint_kind_is_named_at_its_change_and_nothing_is_saved(
+    env: WriteEnv, change: dict[str, Any], issue: dict[str, str]
+) -> None:
+    """G-S2 6A: every constraint kind is a refusal at the change (its cell where the database names a single column);
+    the change before it is rolled back with it, and no value is echoed."""
+    _alter(env.db, CONSTRAINED)
+    connection_id = _unlocked(env)
+    request = {"schema": "main", "table": "kinds", "columns": KINDS_COLUMNS}
+    insert = {"op": "insert", "values": {"id": 3, "code": CANARY_VALUE, "qty": 3}}
+    response = _run(env, connection_id, [insert, change], **request)
+    _refused(response, 400, "studio.data_editor_constraint")
+    assert response.json()["issues"] == [issue]
+    assert "kinds" not in response.text and "qty_positive" not in response.text
+    assert _rows(env.db, "kinds") == [(1, "a", 1, "x", "y"), (2, "b", 2, "x", "z")]
+
+
+def test_an_error_that_is_no_constraint_stays_a_database_problem(env: WriteEnv) -> None:
+    """Only the constraint kinds are placed at a change: SQLite's refusal of a value for a STRICT column stays the
+    changeset's ``db.<kind>`` problem (the test above with NaN shows the same for a REAL column)."""
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    request = {"schema": "main", "table": "typed", "columns": TYPED_COLUMNS}
+    response = _run(
+        env, connection_id, [{"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"ratio": "NaN"}}], **request
+    )
+    assert response.json()["code"].startswith("db."), response.text
+    assert "issues" not in response.json()
 
 
 # --- drift, binding and PROD -----------------------------------------------------------------------------------------
@@ -717,6 +792,75 @@ def test_a_sqlite_integer_of_64_bits_still_runs(env: WriteEnv) -> None:
     )
     assert done.status_code == 200, done.text
     assert _rows(env.db)[-1] == (widest, "Titan", str(-(1 << 63)))  # TEXT affinity stores the text
+
+
+# --- G-S2 6A: a bytes value replaced by a file -------------------------------------------------------------------
+
+
+def _file(size: int) -> dict[str, str]:
+    """A bytes value of ``size`` bytes as the page sends a picked file (base64)."""
+    return {"base64": base64.b64encode(bytes(index % 251 for index in range(size))).decode("ascii")}
+
+
+def test_a_bytes_value_of_the_largest_size_is_written(env: WriteEnv) -> None:
+    """The largest file the Data Editor takes replaces a BLOB value: the request is far above the default body cap
+    (16 KiB), so this also shows the plan route's own cap."""
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    request = {"schema": "main", "table": "typed", "columns": TYPED_COLUMNS}
+    value = _file(MAX_BYTES_VALUE)
+    changes = [{"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"data": value}}]
+    done = _run(env, connection_id, changes, **request)
+    assert done.status_code == 200, done.text
+    assert value["base64"] not in done.text
+    assert _rows(env.db, "typed")[0][4] == base64.b64decode(value["base64"])
+
+
+@pytest.mark.parametrize("table", ["typed", "parts"], ids=["strict_blob", "untyped"])
+def test_a_bytes_value_above_the_limit_is_refused_before_the_plan(env: WriteEnv, table: str) -> None:
+    """One byte more is refused for a BLOB column and for an untyped one alike (400 with the position only)."""
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    value = _file(MAX_BYTES_VALUE + 1)
+    if table == "typed":
+        request = {"schema": "main", "table": "typed", "columns": TYPED_COLUMNS}
+        changes = [{"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"data": value}}]
+        pointer = "changes.0.4"
+    else:
+        request = {}
+        changes = [_update(*STEEL, {"note": value})]
+        pointer = "changes.0.2"
+    refused = _plan(env, connection_id, changes, **request)
+    _refused(refused, 400, "studio.data_editor_value_invalid")
+    assert refused.json()["issues"] == [{"pointer": pointer, "code": "value.too_large"}]
+    assert value["base64"][:64] not in refused.text
+    assert not any(entry["event"] == "run.start" for entry in _audit(env))
+
+
+def test_a_bytes_value_never_reaches_the_log_or_the_audit_log(env: WriteEnv, logs: LogSetup) -> None:
+    """A replaced bytes value is written; neither it nor its base64 is in any answer, log record or audit record,
+    also when the run fails."""
+    _alter(env.db, TYPED)
+    connection_id = _unlocked(env)
+    request = {"schema": "main", "table": "typed", "columns": TYPED_COLUMNS}
+    marked = CANARY_VALUE.encode("utf-8") * 8
+    value = {"base64": base64.b64encode(marked).decode("ascii")}
+    done = _run(
+        env, connection_id, [{"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"data": value}}], **request
+    )
+    assert done.status_code == 200, done.text
+    stale = _run(
+        env, connection_id, [{"op": "update", "key": {"id": 1}, "old": TYPED_OLD, "new": {"data": value}}], **request
+    )
+    _refused(stale, 400, "studio.data_editor_conflict")
+    assert _rows(env.db, "typed")[0][4] == marked
+    assert logs.file is not None
+    for text in (done.text, stale.text, logs.file.read_text(encoding="utf-8")):
+        assert value["base64"] not in text
+    for path in env.audit_dir.rglob("*"):
+        if path.is_file():
+            content = path.read_bytes()
+            assert marked not in content and value["base64"].encode() not in content
 
 
 # --- canary: no value outside the database (TX-13, TX-14, N-3) ------------------------------------------------

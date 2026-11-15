@@ -498,3 +498,240 @@ describe('DataEditor type editors (STU-XDE-1)', () => {
     expect(price).not.toHaveAttribute('aria-invalid');
   });
 });
+
+// --- G-S2 6A: bytes replaced by a file, constraint refusals at the cell, more rows ---------------------------------
+
+const FILE_COLUMNS = ['id', 'code', 'raw'];
+
+/**
+ * A table of `id`, a unique `code` and a bytes column `raw` whose rows come in pages of two (`next` is the offset of
+ * the next page). `execute` answers the run.
+ */
+function fileServer(options: { execute?: (body: unknown) => Response; rows?: number } = {}) {
+  const calls: Call[] = [];
+  const all: unknown[][] = Array.from({ length: options.rows ?? 5 }, (_, at) => [
+    at + 1,
+    `c${at + 1}`,
+    at === 0 ? { base64: 'AQI=' } : null,
+  ]);
+  const fetcher = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    const method = init?.method ?? 'GET';
+    const body: unknown = typeof init?.body === 'string' ? JSON.parse(init.body) : null;
+    calls.push({ method, url, body });
+    if (url === '/api/write/unlocks' && method === 'GET') {
+      return json({ unlocks: [{ connection_id: 'c1', write_profile_id: 'write:w' }] });
+    }
+    if (url === '/api/write/data-editor/table') {
+      const type = (name: string, kind: string, extra: Record<string, unknown> = {}) => ({
+        name,
+        kind,
+        nullable: true,
+        optional: true,
+        read_only: false,
+        array: false,
+        ...extra,
+      });
+      return json({
+        connection_id: 'c1',
+        schema: 'app',
+        table: 'files',
+        columns: FILE_COLUMNS,
+        column_types: [
+          type('id', 'int4', { nullable: false }),
+          type('code', 'text'),
+          type('raw', 'bytes'),
+        ],
+        primary_key: ['id'],
+        triggers: [],
+        rules: [],
+        row_security: false,
+        max_changes: 1000,
+      });
+    }
+    if (url.startsWith('/api/connections/c1/rows?')) {
+      const after = Number(new URL(url, 'http://test').searchParams.get('after') ?? '0');
+      const next = after + 2 < all.length ? String(after + 2) : null;
+      return json({
+        ...page(all.slice(after, after + 2)),
+        schema: 'app',
+        name: 'files',
+        columns: FILE_COLUMNS.map((name) => ({ name, type: '' })),
+        next,
+      });
+    }
+    if (url === '/api/write/plans' && method === 'POST') {
+      return json({ plan_hash: HASH, confirm_text: 'w', destructive: false, risks: [], steps: [] });
+    }
+    if (url === '/api/write/plans/confirm') return json({ plan_hash: HASH, confirmed: true });
+    if (url === '/api/write/plans/execute') {
+      return options.execute?.(body) ?? json({ plan_hash: HASH, rows: { updated: 1 } });
+    }
+    return new Response(null, { status: 404 });
+  }) as typeof fetch;
+  return { fetcher, calls };
+}
+
+function showFiles(fetcher: typeof fetch) {
+  render(
+    <DataEditor fetcher={fetcher} connectionId="c1" profileId="user:p" schema="app" name="files" />,
+  );
+}
+
+const sentChanges = (calls: Call[]) =>
+  (
+    calls.filter((c) => c.url === '/api/write/plans' && c.method === 'POST').at(-1)?.body as {
+      request: { changes: unknown[] };
+    }
+  ).request.changes;
+
+async function save(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: 'Preview' }));
+  await user.type(await screen.findByLabelText('Type w to confirm'), 'w');
+  await user.click(screen.getByRole('button', { name: 'Confirm' }));
+  await user.click(await screen.findByTestId('data-editor-execute'));
+}
+
+describe('DataEditor bytes, constraints and more rows (G-S2 6A)', () => {
+  it('replaces a bytes value by the content of a picked file, shown by its size, never typed', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = fileServer();
+    showFiles(fetcher);
+    const replace = await screen.findByRole('button', { name: 'Replace Row 1, raw with a file' });
+    expect(replace).toHaveAccessibleDescription('2 bytes');
+    expect(screen.queryByRole('textbox', { name: 'Row 1, raw' })).toBeNull();
+    const input = screen.getByLabelText<HTMLInputElement>('Row 1, raw');
+    await user.upload(input, new File([new Uint8Array([7, 8, 9])], 'part.bin'));
+    await waitFor(() => expect(replace).toHaveAccessibleDescription('3 bytes'));
+    expect(screen.getByTestId('data-editor-changes')).toHaveTextContent('raw2 bytes3 bytes');
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
+    await screen.findByRole('button', { name: 'Confirm' });
+    expect(sentChanges(calls)).toEqual([
+      {
+        op: 'update',
+        key: { id: 1 },
+        old: { id: 1, code: 'c1', raw: { base64: 'AQI=' } },
+        new: { raw: { base64: 'BwgJ' } },
+      },
+    ]);
+  });
+
+  it('marks a file above the limit at its cell, does not read it and holds the preview', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = fileServer();
+    showFiles(fetcher);
+    await screen.findByTestId('data-editor-grid');
+    const file = new File([new Uint8Array(64 * 1024 + 1)], 'big.bin');
+    const read = vi.spyOn(file, 'arrayBuffer');
+    await user.upload(screen.getByLabelText<HTMLInputElement>('Row 2, raw'), file);
+    const replace = screen.getByRole('button', { name: 'Replace Row 2, raw with a file' });
+    expect(replace).toHaveAttribute('aria-invalid', 'true');
+    expect(replace).toHaveAccessibleDescription(/65537 bytes Too large: at most 64 KiB\./);
+    expect(read).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled();
+    // NULL instead: fine again.
+    await user.click(screen.getByRole('button', { name: 'Set Row 2, raw to NULL' }));
+    expect(replace).not.toHaveAttribute('aria-invalid');
+    expect(calls.some((c) => c.url === '/api/write/plans')).toBe(false);
+  });
+
+  it("places the run's constraint refusal at its cell or row; nothing is saved and the edits stay", async () => {
+    const user = userEvent.setup();
+    const { fetcher } = fileServer({
+      execute: () =>
+        json(
+          {
+            code: 'studio.data_editor_constraint',
+            kind: 'database',
+            status: 400,
+            issues: [
+              { pointer: 'changes.0.1', code: 'constraint.unique' },
+              { pointer: 'changes.1', code: 'constraint.foreign_key' },
+            ],
+          },
+          400,
+        ),
+    });
+    showFiles(fetcher);
+    const code = await screen.findByRole('textbox', { name: 'Row 2, code' });
+    await user.clear(code);
+    await user.type(code, 'c1');
+    const rows = within(screen.getByTestId('data-editor-grid')).getAllByRole('button', {
+      name: 'Delete row',
+    });
+    await user.click(rows[0] as HTMLElement);
+    await save(user);
+    expect(await screen.findByTestId('data-editor-error')).toHaveTextContent(
+      'Nothing was saved: all changes were rolled back.',
+    );
+    expect(code).toHaveAttribute('aria-invalid', 'true');
+    expect(code).toHaveAccessibleDescription(
+      /a value that must be unique is already in another row/,
+    );
+    expect(code).toHaveValue('c1');
+    const keep = screen.getByRole('button', { name: 'Keep row' });
+    expect(keep).toHaveAccessibleDescription(/a reference between rows would break/);
+    const issues = screen.getByTestId('data-editor-issues');
+    expect(issues).toHaveTextContent('2 changes need correcting before the next preview');
+    expect(issues).toHaveTextContent('Row 2, column code: The database refused this change');
+    expect(issues).toHaveTextContent('Row 1: The database refused this change');
+    // The next edit clears the marks.
+    await user.type(code, 'x');
+    expect(code).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByTestId('data-editor-issues')).toBeNull();
+  });
+
+  it('loads more rows after the loaded ones; an edit stays with its row and reaches the right key', async () => {
+    const user = userEvent.setup();
+    const { fetcher, calls } = fileServer();
+    showFiles(fetcher);
+    await screen.findByTestId('data-editor-grid');
+    expect(screen.getByTestId('data-editor-loaded')).toHaveTextContent(
+      '2 rows are loaded; the table has more.',
+    );
+    // An edit on the first page, then the next pages.
+    const first = screen.getByRole('textbox', { name: 'Row 2, code' });
+    await user.type(first, '!');
+    await user.click(screen.getByRole('button', { name: 'Load 100 more rows' }));
+    await screen.findByRole('textbox', { name: 'Row 4, code' });
+    expect(first).toHaveValue('c2!');
+    await user.click(screen.getByRole('button', { name: 'Load 100 more rows' }));
+    const last = await screen.findByRole('textbox', { name: 'Row 5, code' });
+    expect(screen.getByTestId('data-editor-loaded')).toHaveTextContent('All rows are loaded (5).');
+    expect(screen.queryByRole('button', { name: 'Load 100 more rows' })).toBeNull();
+    await user.type(last, '?');
+    expect(screen.getByTestId('data-editor-pending')).toHaveTextContent('2 changes');
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
+    await screen.findByRole('button', { name: 'Confirm' });
+    expect(sentChanges(calls)).toEqual([
+      { op: 'update', key: { id: 2 }, old: { id: 2, code: 'c2', raw: null }, new: { code: 'c2!' } },
+      { op: 'update', key: { id: 5 }, old: { id: 5, code: 'c5', raw: null }, new: { code: 'c5?' } },
+    ]);
+    const asked = calls.filter((c) => c.url.startsWith('/api/connections/c1/rows?'));
+    expect(asked.map((c) => new URL(c.url, 'http://test').searchParams.get('after'))).toEqual([
+      null,
+      '2',
+      '4',
+    ]);
+  });
+
+  it('starts at the first page again after a save, and loads no more while a change is reviewed', async () => {
+    const user = userEvent.setup();
+    const { fetcher } = fileServer();
+    showFiles(fetcher);
+    await screen.findByTestId('data-editor-grid');
+    await user.click(screen.getByRole('button', { name: 'Load 100 more rows' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Row 3, code' }), '!');
+    await user.click(screen.getByRole('button', { name: 'Preview' }));
+    await screen.findByRole('button', { name: 'Confirm' });
+    expect(screen.getByRole('button', { name: 'Load 100 more rows' })).toBeDisabled();
+    await user.type(screen.getByLabelText('Type w to confirm'), 'w');
+    await user.click(screen.getByRole('button', { name: 'Confirm' }));
+    await user.click(await screen.findByTestId('data-editor-execute'));
+    await screen.findByTestId('data-editor-saved');
+    await waitFor(() =>
+      expect(screen.getByTestId('data-editor-loaded')).toHaveTextContent('2 rows are loaded'),
+    );
+    expect(screen.queryByRole('textbox', { name: 'Row 3, code' })).toBeNull();
+  });
+});

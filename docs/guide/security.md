@@ -268,16 +268,26 @@ the server answers `405` and the write code is not even loaded.
       the key order, the whitespace or a duplicate key (`jsonb` keeps the last) is not a conflict: the old and the
       new text count as the same value;
     - every cell has the editor of its column's type (STU-XDE-1): a choice for booleans and enums, a text field
-      for the rest, with the expected format in the column header; bytes and generated columns are read only.
+      for the rest, with the expected format in the column header; generated columns are read only. A bytes value
+      is only replaced by the content of a file the user picks (G-S2 6A), at most 64 KiB (`value.too_large`, checked
+      on the page before the file is read and again by the server); it is shown by its size, never typed or shown,
+      and never reaches a log, the audit log or an answer.
       Studio checks each changed value for its column (type, length, range, NULL, an enum's labels, a NOT NULL
       column a new row leaves out) and marks the cell; the preview waits until no issue is left. The server checks
       every value again before it makes the plan and refuses one that does not fit
       (`400 studio.data_editor_value_invalid`; the answer names positions, never a value), and the database checks
-      the rest (CHECK constraints, uniqueness, foreign keys). NULL is never the empty text; a `timestamptz` needs an
+      the rest (CHECK constraints, uniqueness, foreign keys). A change the database refuses for such a rule rolls back
+      the whole changeset (`400 studio.data_editor_constraint`, G-S2 6A); the answer names the change's position, the
+      column's position where the database named a single column, and the kind of rule (`constraint.unique`,
+      `constraint.foreign_key`, `constraint.not_null`, `constraint.check`, `constraint.exclusion`), never a value,
+      the constraint's name or the database's message. NULL is never the empty text; a `timestamptz` needs an
       offset (`+02:00` or `Z`) and a `timestamp` takes none, so no value is shifted to another time zone on the way.
       On SQLite only `STRICT` tables have column types; in an ordinary table any value is taken as SQLite takes it;
     - before the preview and in the review, the change overview lists every changed row with its columns before
       and after, the new rows with their values, and the deleted rows by their key;
+    - the grid loads up to 1,000 rows, 100 at a time; a page is appended below the rows loaded before, so a
+      pending change stays bound to its row (its old value, every shown column, is what the row had when it was
+      loaded), and a reload drops every pending change;
     - the changes live in the page's memory only: never in the query history, the drafts, browser storage, the logs
       or the audit log (it records the plan hash and row counts).
 - **Creating a database (STU-CR-2, STU-CR-3, in development, locked by G-S3).** Behind `schema_designer`, off by

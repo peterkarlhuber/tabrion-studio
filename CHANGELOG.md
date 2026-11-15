@@ -22,6 +22,17 @@ All notable changes to this project are documented here. The format follows
   `test_schema_designer_draft.py` and `test_schema_designer_draft_postgres.py`, the kill-switch sweep and
   `test_every_route.py` extended; guide page "Schema Designer (in development)".
 
+- G-S2 follow-up 6A for the Data Editor (behind the `data_editor` flag, which stays off by default; no default
+  changes): a bytes value (`bytea`, a SQLite `BLOB`) is replaced by the content of a file the user picks, at most
+  64 KiB (`value.too_large` on the page, before the file is read, and on the server); it is shown by its size and
+  never typed, logged or recorded. A change the database refuses for a constraint (unique or primary key, foreign
+  key, NOT NULL, CHECK, exclusion) rolls back the whole changeset as `400 studio.data_editor_constraint`, whose issue
+  places it at its cell where tabrion's classification names a single column of the table, else at its row
+  (`changes.<change>[.<column>]`, `constraint.<kind>`; positions only, never a value or a constraint name). The grid
+  loads more than the first 100 rows ("Load 100 more rows", up to 1,000): pages are appended, so a pending change
+  stays bound to its row. `POST /api/write/plans` takes a body up to the plan framework's own 256 KiB cap (it was
+  held to the default 16 KiB); with every flag off it still answers 405.
+
 - STU-CR-2 and STU-CR-3 follow-up (review conditions of PR #128, all before G-S3; still in development, locked by
   G-S3, the `schema_designer` flag stays off, no default changes). SQLite creation: the file is created relative to
   the folder Studio checked and holds open (`O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`), and before and after the header is

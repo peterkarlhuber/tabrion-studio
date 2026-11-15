@@ -39,7 +39,7 @@ from fastapi.responses import JSONResponse
 
 from tabrion_studio.api.config import MAX_FORM_BODY, Configuration, FormError
 from tabrion_studio.api.connections import connection_problem
-from tabrion_studio.api.write import WRITE_ROUTES
+from tabrion_studio.api.write import MAX_PLAN_BODY, WRITE_ROUTES
 from tabrion_studio.config.schema import (
     WRITE_PROFILE_KEYS,
     Profile,
@@ -121,7 +121,9 @@ _PAIR_KEYS = frozenset({"write_profile_id"})
 _PAIR_CONFIRM_KEYS = frozenset({"confirmation_hash", "typed"})
 #: The keys of the Data Editor's table route (STU-026).
 _TABLE_KEYS = frozenset({"connection_id", "schema", "table"})
-_MAX_PLAN_BODY = MAX_REQUEST_BYTES + 4096
+_MAX_PLAN_BODY = MAX_PLAN_BODY
+if MAX_PLAN_BODY != MAX_REQUEST_BYTES + 4096:  # pragma: no cover - a coding error
+    raise RuntimeError("MAX_PLAN_BODY does not match the plan's MAX_REQUEST_BYTES")
 #: The keys of the Schema Designer's creation routes (STU-CR-2, STU-CR-3); any other key is refused.
 _CREATE_SQLITE_KEYS = frozenset({"path", "typed"})
 _CREATE_POSTGRES_KEYS = frozenset({"connection_id", "name", "owner", "template", "encoding", "locale", "typed"})

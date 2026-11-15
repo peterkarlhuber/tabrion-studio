@@ -3,8 +3,12 @@
  * tests/security/test_data_editor_values.py), and typed text becomes the value of its column.
  */
 import {
+  bytesSize,
+  bytesValue,
   checkValue,
   editorKind,
+  FileTooLarge,
+  MAX_BYTES_VALUE,
   fieldText,
   parseColumnType,
   resolveText,
@@ -90,13 +94,33 @@ describe('resolveText', () => {
   });
 });
 
+describe('bytes replaced by a file (G-S2 6A)', () => {
+  const base64Of = (size: number) => bytesValue(new Uint8Array(size).fill(7).buffer);
+
+  it('encodes a file as the viewer sends bytes, and counts its size', () => {
+    expect(bytesValue(new Uint8Array([1, 2]).buffer)).toEqual({ base64: 'AQI=' });
+    expect(bytesValue(new ArrayBuffer(0))).toEqual({ base64: '' });
+    for (const size of [0, 1, 2, 3, 100_000]) expect(bytesSize(base64Of(size))).toBe(size);
+  });
+
+  it('takes a file of at most MAX_BYTES_VALUE bytes, for a bytes and an untyped column', () => {
+    for (const type of [column('bytes'), untyped('c')]) {
+      expect(checkValue(type, base64Of(MAX_BYTES_VALUE))).toBeNull();
+      expect(checkValue(type, base64Of(MAX_BYTES_VALUE + 1))).toBe('value.too_large');
+      expect(checkValue(type, new FileTooLarge(10_000_000))).toBe('value.too_large');
+    }
+  });
+});
+
 describe('editors and labels', () => {
   it('chooses the editor by the column', () => {
     expect(editorKind(column('boolean'), true)).toBe('boolean');
     expect(editorKind(column('enum', { values: ['a'] }), 'a')).toBe('enum');
     expect(editorKind(column('json'), { a: 1 })).toBe('text');
     expect(editorKind(column('int4', { array: true }), [1])).toBe('text');
-    expect(editorKind(column('bytes'), { base64: 'AA==' })).toBe('readOnly');
+    expect(editorKind(column('bytes'), { base64: 'AA==' })).toBe('file'); // G-S2 6A: replaced by a file
+    expect(editorKind(column('bytes'), null)).toBe('file');
+    expect(editorKind(column('bytes', { readOnly: true }), null)).toBe('readOnly');
     expect(editorKind(column('int4', { readOnly: true }), 1)).toBe('readOnly');
     expect(editorKind(column('date'), '2024-01-01')).toBe('text');
   });

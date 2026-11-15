@@ -25,6 +25,7 @@ import {
 } from './cellValues';
 import type { ProblemIssue } from './problem';
 import { getJson, send, type Result } from './profiles';
+import type { ViewerPage } from './viewer';
 
 export const EXECUTOR = 'data_editor.changeset';
 
@@ -210,9 +211,44 @@ export interface CellRef {
   column: string;
 }
 
-/** A value of the changeset that does not fit its column, from the page's checks or the server's refusal. */
-export interface CellIssue extends CellRef {
-  code: IssueCode;
+/** A rule of the table the database checks (G-S2 6A): the kind of a refused change. */
+export type ConstraintCode =
+  | 'constraint.unique'
+  | 'constraint.foreign_key'
+  | 'constraint.not_null'
+  | 'constraint.check'
+  | 'constraint.exclusion';
+
+const CONSTRAINT_CODES: readonly string[] = [
+  'constraint.unique',
+  'constraint.foreign_key',
+  'constraint.not_null',
+  'constraint.check',
+  'constraint.exclusion',
+];
+
+/**
+ * A value of the changeset that does not fit its column (the page's checks or the server's refusal before the plan),
+ * or a change the database refused for a rule of the table when it ran (G-S2 6A): at a cell, or at the whole row
+ * (`column` null) where the database named no single column.
+ */
+export interface CellIssue {
+  row: CellRef['row'];
+  column: string | null;
+  code: IssueCode | ConstraintCode;
+}
+
+/** The largest changeset request the server takes (`MAX_REQUEST_BYTES` of the plan framework, its JSON in ASCII). */
+export const MAX_CHANGESET_BYTES = 256 * 1024;
+
+/** The size of a changeset request as the server counts it: its JSON with every non-ASCII character escaped. */
+export function changesetBytes(request: unknown): number {
+  const text = JSON.stringify(request);
+  let size = text.length;
+  for (let at = 0; at < text.length; at += 1) {
+    if (text.charCodeAt(at) > 0x7f) size += 5; // \uXXXX for each UTF-16 unit
+  }
+  return size;
 }
 
 /**
@@ -329,23 +365,88 @@ export function buildChangeset(
 }
 
 /**
- * The server's issues of a refused changeset (`changes.<change>.<column>`: the change's position in the request and
- * the column's in the table) as cells of the page; issues it cannot place are left out (the problem text still says
- * that a value was refused).
+ * The server's issues of a refused changeset as cells or rows of the page: `changes.<change>.<column>` (the change's
+ * position in the request and the column's in the table) with a `value.*` code, or `changes.<change>[.<column>]` with
+ * a `constraint.*` code (G-S2 6A: the run's refusal, at the row where the database named no single column). Issues it
+ * cannot place are left out (the problem text still says what was refused). `origins` are the rows of the changes
+ * exactly as they were sent.
  */
 export function serverIssues(
   issues: ProblemIssue[] | undefined,
   origins: CellRef['row'][],
   tableColumns: string[],
 ): CellIssue[] {
-  return (issues ?? []).flatMap((issue) => {
-    const found = /^changes\.(\d+)\.(\d+)$/.exec(issue.pointer);
+  return (issues ?? []).flatMap((issue): CellIssue[] => {
+    const found = /^changes\.(\d+)(?:\.(\d+))?$/.exec(issue.pointer);
     const row = found ? origins[Number(found[1])] : undefined;
-    const column = found ? tableColumns[Number(found[2])] : undefined;
-    return row !== undefined && column !== undefined && issue.code.startsWith('value.')
-      ? [{ row, column, code: issue.code as IssueCode }]
+    if (found === null || row === undefined) return [];
+    const column = found[2] === undefined ? null : tableColumns[Number(found[2])];
+    if (column === undefined) return [];
+    if (issue.code.startsWith('value.') && column !== null) {
+      return [{ row, column, code: issue.code as IssueCode }];
+    }
+    return CONSTRAINT_CODES.includes(issue.code)
+      ? [{ row, column, code: issue.code as ConstraintCode }]
       : [];
   });
+}
+
+// --- the loaded rows: one page after the other (G-S2 6A) ---------------------------------------------------------
+
+/**
+ * The rows the editor loaded, page after page of the viewer (keyset paging by the primary key). A row keeps its index
+ * for as long as the rows are loaded: the next page is appended, never put in place of the rows before, so an edit
+ * (bound to the index) stays with its row. A reload starts again from the first page and drops every edit.
+ */
+export interface LoadedRows {
+  columns: string[];
+  rows: unknown[][];
+  /** The indexes of rows with a value the viewer cut (read only). */
+  cut: Set<number>;
+  /** The next page's token, or null when every row is loaded. */
+  next: string | null;
+}
+
+export function firstRows(page: ViewerPage): LoadedRows {
+  return {
+    columns: page.columns.map((column) => column.name),
+    rows: page.rows,
+    cut: new Set(page.truncatedCells.map(([row]) => row)),
+    next: page.next,
+  };
+}
+
+/**
+ * `loaded` with `page` (the page after it) appended; null when the page has other columns (the table changed: the
+ * rows must be reloaded). A row whose primary key is already loaded (it changed meanwhile and sorts again) is left
+ * out: the loaded one keeps its index and its edits, and a conflict check finds the change when the row is saved.
+ */
+export function appendRows(
+  loaded: LoadedRows,
+  page: ViewerPage,
+  primaryKey: string[],
+): LoadedRows | null {
+  const columns = page.columns.map((column) => column.name);
+  if (columns.length !== loaded.columns.length || columns.some((n, at) => n !== loaded.columns[at]))
+    return null;
+  const keyAt = primaryKey.map((name) => columns.indexOf(name));
+  const identity = keyAt.every((at) => at >= 0)
+    ? (row: unknown[]) => JSON.stringify(keyAt.map((at) => row[at] ?? null))
+    : null;
+  const seen = new Set(identity === null ? [] : loaded.rows.map(identity));
+  const pageCut = new Set(page.truncatedCells.map(([row]) => row));
+  const rows = [...loaded.rows];
+  const cut = new Set(loaded.cut);
+  page.rows.forEach((row, index) => {
+    const key = identity?.(row);
+    if (key !== undefined) {
+      if (seen.has(key)) return;
+      seen.add(key);
+    }
+    if (pageCut.has(index)) cut.add(rows.length);
+    rows.push(row);
+  });
+  return { columns, rows, cut, next: page.next };
 }
 
 // --- the plan: preview, confirmation, execution --------------------------------------------------------------------

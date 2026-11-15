@@ -32,6 +32,9 @@ nullability, default, identity and generation; SQLite: the table's SQL), so a ch
 outrun by a schema change before the run (``studio.plan_drift``). A label added to an enum afterwards is not drift:
 it only lets the database take a value the check refused.
 
+**Bytes (G-S2 6A).** The page replaces a bytes value by the content of a file the user picks, never by typing; a
+new bytes value of any kind of column has at most :data:`MAX_BYTES_VALUE` bytes (``value.too_large``).
+
 **No values in answers (TX-14).** A refusal is ``studio.data_editor_value_invalid`` (400, W-9) with ``issues``:
 ``{"pointer": "changes.<change>.<column>", "code": "value.<check>"}``, the change's position in the request and the
 column's position in the table. A pointer and a code are numbers and fixed words; no value, no column name and no
@@ -51,8 +54,10 @@ from typing import Any
 
 __all__ = [
     "KINDS",
+    "MAX_BYTES_VALUE",
     "PG_COLUMN_TYPES",
     "ColumnType",
+    "bytes_size",
     "check_compared_value",
     "check_value",
     "is_bytes",
@@ -104,6 +109,10 @@ _ARRAY_KINDS = frozenset(
         "uuid",
     }
 )
+#: A new bytes value (a file that replaces a bytes cell, G-S2 6A) has at most this many bytes. The changeset as a
+#: whole is at most ``plan.MAX_REQUEST_BYTES`` of JSON, in which bytes travel as base64 (4 characters for 3 bytes), so
+#: a replaced value of this size and the old value of its row (the viewer shows at most 32 KiB of bytes) fit.
+MAX_BYTES_VALUE = 64 * 1024
 #: At most this many enum labels are sent and checked (PostgreSQL allows more; beyond it the kind is ``other``).
 MAX_ENUM_VALUES = 1000
 
@@ -279,6 +288,8 @@ def check_value(column: ColumnType, value: Any) -> str | None:
         return None if column.nullable else "value.not_null"
     if column.sqlite and _wider_than_sqlite(value):
         return "value.out_of_range"
+    if is_bytes(value) and bytes_size(value) > MAX_BYTES_VALUE:
+        return "value.too_large"  # whatever the kind: an untyped SQLite column takes bytes too
     if column.array and column.kind in _ARRAY_KINDS:
         return _check_array(column, value, 0)
     return _check_scalar(column, value)
@@ -473,6 +484,12 @@ def is_hour_24(value: object) -> bool:
     on every Python version: ``fromisoformat`` refuses it before Python 3.14 and turns it into the next midnight from
     3.14 on (a ``time`` would become ``00:00``)."""
     return isinstance(value, str) and _HOUR_24.fullmatch(value) is not None
+
+
+def bytes_size(value: Mapping[str, str]) -> int:
+    """The number of bytes of a page's ``{"base64": ...}`` value that :func:`is_bytes` took (without decoding it)."""
+    text = value["base64"]
+    return len(text) // 4 * 3 - text[-2:].count("=")
 
 
 def is_bytes(value: object) -> bool:

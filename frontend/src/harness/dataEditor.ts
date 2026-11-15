@@ -11,6 +11,11 @@
  * `triggers` (the table has a trigger, a rule and row security: a notice, not a block), `refuse` (the table route answers `studio.data_editor_column_incomparable`,
  * `studio.plan_target_partitioned`, `studio.plan_target_no_primary_key` or `studio.plan_target_invalid`) and
  * `conflict` (the run answers `studio.data_editor_conflict`).
+ *
+ * G-S2 6A (e2e/data-editor-types.spec.ts, e2e/data-editor-states.spec.ts): the bytes column `raw` is replaced by a
+ * picked file; `constraint` makes the run answer `studio.data_editor_constraint` (a changed `name` breaks a unique
+ * rule at its cell, a deleted row a reference at its row; positions only, as the server); `paged` serves the rows one
+ * per page, so the page loads more.
  */
 
 const COLUMNS = ['id', 'name', 'ok', 'mood', 'price', 'made', 'seen', 'tag', 'doc', 'nums', 'raw'];
@@ -90,6 +95,10 @@ export interface DataEditorOptions {
   refuse?: string | null;
   /** The run finds a row changed meanwhile. */
   conflict?: boolean;
+  /** The run is refused for a rule of the table: a changed name (unique, at its cell), a delete (a reference). */
+  constraint?: boolean;
+  /** The rows come one per page. */
+  paged?: boolean;
 }
 
 const REFUSALS = new Set([
@@ -154,7 +163,10 @@ export function createDataEditorServer(options: DataEditorOptions = {}): {
       return json({ ...TABLE, triggers, rules, row_security: options.triggers === true });
     }
     if (url.startsWith('/api/connections/c1/rows?')) {
-      const limit = Number(new URL(url, 'http://harness').searchParams.get('limit'));
+      const query = new URL(url, 'http://harness').searchParams;
+      const limit = Number(query.get('limit'));
+      const after = Number(query.get('after') ?? '0');
+      const size = options.paged ? 1 : ROWS.length;
       return json({
         connection_id: 'c1',
         schema: 'app',
@@ -163,10 +175,10 @@ export function createDataEditorServer(options: DataEditorOptions = {}): {
         sort: null,
         desc: false,
         columns: COLUMNS.map((name) => ({ name, type: '' })),
-        rows: ROWS,
+        rows: ROWS.slice(after, after + size),
         truncated_cells: [],
-        page: 'p1',
-        next: null,
+        page: `p${after}`,
+        next: after + size < ROWS.length ? String(after + size) : null,
         paging: 'primary_key',
       });
     }
@@ -211,6 +223,22 @@ export function createDataEditorServer(options: DataEditorOptions = {}): {
     if (url === '/api/write/plans/confirm') return json({ plan_hash: HASH, confirmed: true });
     if (url === '/api/write/plans/execute') {
       if (options.conflict) return problem('data_editor_conflict');
+      if (options.constraint) {
+        type Sent = { op: string; new?: Record<string, unknown> };
+        const last = log.plans.at(-1) as { request: { changes: Sent[] } } | undefined;
+        const changes = last?.request.changes ?? [];
+        const issues = changes.flatMap((change, at) =>
+          change.op === 'delete'
+            ? [{ pointer: `changes.${at}`, code: 'constraint.foreign_key' }]
+            : change.new?.name !== undefined
+              ? [{ pointer: `changes.${at}.1`, code: 'constraint.unique' }]
+              : [],
+        );
+        return json(
+          { code: 'studio.data_editor_constraint', kind: 'database', status: 400, issues },
+          400,
+        );
+      }
       log.executed += 1;
       return json({ plan_hash: HASH, rows: { updated: 1 }, audit_pending: false });
     }
