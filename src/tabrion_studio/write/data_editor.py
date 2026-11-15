@@ -53,7 +53,8 @@ new value (an update's ``new``, an insert's ``values``) against the catalog agai
 insert that leaves out a NOT NULL column without a default; a refusal is ``studio.data_editor_value_invalid`` (400)
 whose issues name the change's and the column's position and the check (``value.*``), never a value or a name. The
 database is the last instance (CHECK, UNIQUE, foreign keys, domains, triggers). :func:`bind_value` is the one place
-that turns a page value into a bound value; ``old`` values are not checked (they are what the viewer showed).
+that turns a page value into a bound value; ``old`` and key values are not checked against the column's kind (they
+are what the viewer showed), only that the driver can bind them (a SQLite integer fits in 64 bits, G2-02).
 """
 
 from __future__ import annotations
@@ -93,7 +94,7 @@ from tabrion_studio.write.plan import (
     read_catalog,
 )
 from tabrion_studio.write.unlock import AuditedRun, Unlocks
-from tabrion_studio.write.values import check_value, is_bytes
+from tabrion_studio.write.values import check_compared_value, check_value, is_bytes, is_hour_24
 
 __all__ = ["EXECUTOR_NAME", "DataEditorExecutor", "bind_value", "table_info"]
 
@@ -276,6 +277,10 @@ class DataEditorExecutor:
             raise WriteError("studio.data_editor_value_invalid") from None
         try:
             transaction.execute_checked(statement, expect_rowcount=1)
+        except OverflowError:
+            # A value the driver cannot bind (the check refuses them before the plan, G2-02): nothing was written;
+            # the run rolls back. The message names no value.
+            raise WriteError("studio.data_editor_value_invalid") from None
         except RowCountMismatch as exc:
             actual = exc.details.get("actual")
             conflict = actual == 0 and step.action != "row.insert"
@@ -376,6 +381,8 @@ def bind_value(column: sqlalchemy.Column[Any], value: Any, engine: str) -> Any:
         if kind is decimal.Decimal:
             return decimal.Decimal(str(value)) if isinstance(value, str | int | float) else _refuse()
         if isinstance(value, str):
+            if kind in (datetime.datetime, datetime.time) and is_hour_24(value):
+                return value  # 24:00: the database reads the text in the column's type (G2-03)
             if kind is datetime.datetime:
                 return datetime.datetime.fromisoformat(value)
             if kind is datetime.date:
@@ -415,6 +422,12 @@ def _value_issues(content: PlanContent, catalog: TargetCatalog) -> list[tuple[st
     types = {column.name: (index, column) for index, column in enumerate(catalog.column_types)}
     issues: list[tuple[str, str]] = []
     for position, step in enumerate(content.steps):
+        compared = {**step.data.get("old", {}), **step.data.get("key", {})}
+        for name, value in compared.items():
+            index, column = types[name]
+            code = check_compared_value(column, value)
+            if code is not None:
+                issues.append((f"changes.{position}.{index}", code))
         values = step.data.get("values", step.data.get("new"))
         if values is None:
             continue  # a delete names old values only
@@ -429,6 +442,7 @@ def _value_issues(content: PlanContent, catalog: TargetCatalog) -> list[tuple[st
                 for index, column in enumerate(catalog.column_types)
                 if not column.optional and not column.nullable and column.name not in values
             )
+        issues = list(dict.fromkeys(issues))  # an old and a new value of one column: one issue
         if len(issues) >= MAX_ISSUES:
             return issues[:MAX_ISSUES]
     return issues

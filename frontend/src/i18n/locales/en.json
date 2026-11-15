@@ -981,6 +981,7 @@
     "migrations_busy": "Studio is already reading the revisions for another migration status. Try again when it has finished.",
     "migrations_failed": "Reading the revisions failed. Run alembic heads in the project to see whether its revision files load.",
     "connection_failed": "Studio could not reach the database. Check the host and the port of the profile, and that the database server is running.",
+    "connection_environment": "A libpq environment variable (such as PGSERVICE) is set that could choose another server than the profile. Start Studio without it.",
     "connection_config": "The driver did not accept the profile's settings. Check the profile under Connections.",
     "connection_tls": "The profile's TLS mode is weaker than the host needs.",
     "connection_limit": "Studio keeps at most 8 connections open. Close one first.",

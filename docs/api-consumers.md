@@ -6,10 +6,10 @@ is used.
 
 | Name | Used in |
 |---|---|
-| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/plan.py`, `src/tabrion_studio/write/unlock.py`, `tests/security/test_connections_api.py`, `tests/security/test_read_only.py`, `tests/security/test_write_require_auth_pg.py`, `tests/security/test_write_secret_confirm.py`, `tests/support/plans.py` |
-| `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_read_only.py`, `tests/security/test_write_secret_confirm.py` |
+| `tabrion` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/plan.py`, `src/tabrion_studio/write/unlock.py`, `tests/security/test_connections_api.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_read_only.py`, `tests/security/test_write_require_auth_pg.py`, `tests/security/test_write_secret_confirm.py`, `tests/support/plans.py` |
+| `tabrion.Database` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_read_only.py`, `tests/security/test_write_secret_confirm.py` |
 | `tabrion.Database.from_engine` | `src/tabrion_studio/write/connection.py` |
-| `tabrion.Database.from_url` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
+| `tabrion.Database.from_url` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `tests/security/test_libpq_environment.py` |
 | `tabrion.Health` | `src/tabrion_studio/services/connections.py`, `tests/security/test_connections_api.py` |
 | `tabrion.Profile` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.TLSMode.AUTO` | `src/tabrion_studio/services/connections.py` |
@@ -34,7 +34,7 @@ is used.
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.Kind.UNKNOWN` | `tests/unit/test_problems.py` |
 | `tabrion.errors.RowCountMismatch` | `src/tabrion_studio/write/data_editor.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |

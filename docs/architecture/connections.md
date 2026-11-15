@@ -154,6 +154,23 @@ path); saving or deleting the profile and trusting the project file again forget
      that cannot exist, and the password is the empty string, so `PGPASSWORD`, `PGPASSFILE`, `~/.pgpass` and a
      service file's password are never sent to the host a (project) profile names (M-1). Use `env:PGPASSWORD` to
      send that variable on purpose.
+   - **The libpq environment chooses nothing** (G2-01 of the G-S2 gate review). libpq reads a `PG*` variable for
+     every option a connection leaves out, so `PGHOSTADDR` (or a service file's `hostaddr`) could turn a socket or
+     `localhost` profile into TCP to another address, and `PGSSLROOTCERT` or `PGSSLMINPROTOCOLVERSION` could change
+     TLS. `pin_libpq_environment(url, connect_args)`, called by `read_only_database` (the registry, the connection
+     test and the migration worker) and by the write package for every write and admin connection, gives every
+     option the URL and the driver options leave out, as far as the loaded libpq knows it (`PQconndefaults`): an
+     empty value where empty means "not set" (`hostaddr`, `sslrootcert`, `sslcert`, `sslkey`, `sslcrl`, `sslcrldir`,
+     `ssl_max_protocol_version`, `gsslib`), otherwise the libpq's compiled-in default (`channel_binding`,
+     `ssl_min_protocol_version`, `gssencmode`, `target_session_attrs`, `load_balance_hosts`, ...). What it cannot pin
+     refuses the connection while its variable is set, before anything connects: `PGSERVICE`, `PGSERVICEFILE` and
+     `PGSYSCONFDIR`; `PGTZ`, `PGDATESTYLE` and `PGGEQO`, which are no connection options but which libpq sends as
+     session settings at startup (`TimeZone` decides how a `timestamptz` without an offset is read; I-1 of the PR
+     #125 review); `PGREQUIREPEER`, `PGREQUIREAUTH`, `PGSSLCERTMODE` and the protocol version variables when Studio
+     does not set that option; `PGHOST`, `PGUSER`, `PGDATABASE`, `PGSSLMODE`, `PGOPTIONS` and `PGAPPNAME` when the
+     profile (or Studio) gives no value (`422 studio.connection_environment`, no variable or value named).
+     `PGCONNECT_TIMEOUT` and `PGCLIENTENCODING` choose neither the server nor the authentication nor TLS and still
+     apply. The migration worker's environment has no `PG*` variable anyway.
    - **A project profile refuses a clear-text password request** (security assessment B-3): its connections, and the
      migration worker's (`worker_target`'s `refuse_cleartext`), get libpq's `require_auth=!password`
      (`driver_options(refuse_cleartext=True)`, decided by `refuses_cleartext(entry)`: every source but `user`). A
@@ -303,9 +320,8 @@ session's path.
   privileges are a hard boundary, so production profiles should use a role without write privileges, without
   `CREATE` on any schema and without `TEMP` on the database. The diagnostics (STU-014) check this (`read_only_role`,
   `STU-DX-003`).
-- libpq still reads other variables of the user's own environment (`PGHOSTADDR`, `PGSERVICE`, `PGSSLROOTCERT`, ...)
-  for what the URL leaves out; its password fallbacks are off (M-1). That is the user's environment, not the project
-  file's. A project file can change only the fingerprinted fields.
+- libpq's environment variables choose neither the server nor the authentication nor TLS (G2-01, above): Studio
+  gives every such option itself or refuses the connection. A project file can change only the fingerprinted fields.
 
 ## Tests
 
@@ -314,6 +330,7 @@ session's path.
 | `tests/security/test_connect_path.py` (PostgreSQL superuser) | TD-039: with `ALTER DATABASE ... SET search_path` putting a schema of another role, holding objects that raise when called, ahead of `pg_catalog`, opening a connection calls none of them; the dialect's default schema is the session's; user SQL sees the database's path on two sessions at once and on later queries, and reaches the planted objects (the control); an `hstore` value comes back as the server's text (L-2) |
 | `tests/security/test_read_only.py` (SQLite, always) | STU-T-010: 15 kinds of write fail in SQLite itself and the file's SHA-256 is unchanged; STU-T-024: ATTACH, VACUUM INTO and `load_extension` refused, no file created; F-2: `fts3_tokenizer` (both forms), `fts5`, `optimize`, `rtreenode`, `rtreedepth` and `sqlite_log` are denied on every pooled session while FTS `MATCH` with its auxiliary functions, JSON, dates, math, window functions, `->>`, a view's functions and `pragma_table_info` still read, and `trusted_schema` is off on every session (set before the authorizer); writes, ATTACH and VACUUM INTO fail on a raw DBAPI connection as well (the guards sit on the connection, not on the handle); the authorizer is an allowlist; the statement check; STU-T-011: every environment gets a read-only profile with Studio's timeouts; STU-T-012: a handle offers no write method; the driver gets only fingerprinted fields; a changed, removed or swapped profile, or a changed environment, closes its connection; several statements fail in sqlite3 past the text check; the driver options turn libpq's password fallbacks off and use prepared statements; a connection test shares the limit; a missing file is never created; reuse and limit |
 | `tests/security/test_read_only.py` (PostgreSQL, `TABRION_STUDIO_TEST_POSTGRES`) | STU-T-010: INSERT, UPDATE, DELETE, CREATE, CREATE TEMP, DROP and TRUNCATE fail in the server as the owner role; STU-T-013: the session and every transaction are read-only, `SET TRANSACTION READ WRITE` in the same transaction is rolled back; H-1: the review's escape text verbatim, after `set_config('standard_conforming_strings','off')`, and several statements past the text check are refused by the server (`42601`), with no row written; M-1: with `PGPASSWORD` and a wildcard `PGPASSFILE` set, a profile without a password does not connect; L-1: the password comes from the entry the URL was built from, and it is registered for redaction; the multi-statement gap is refused by the text check as well; F-1: `EXPLAIN ANALYZE SELECT ... INTO` (plain, `UNLOGGED`, `TEMPORARY`, schema-qualified, under `WITH`) and `SELECT ... INTO` are refused and `pg_class` has no such table afterwards, a writable CTE or `FOR UPDATE` under `EXPLAIN ANALYZE` fails in the server (`read_only`), and a temporary table left on a session (past the check) is gone at check-in, so it cannot shadow `pg_namespace`; F-3: `pg_terminate_backend` and `pg_cancel_backend` on another session of the same role, `pg_logical_emit_message` and the transaction-ID functions are refused, and that session stays alive; a wrong password is `db.connection` without server text; `url` has no password |
+| `tests/security/test_libpq_environment.py` (G2-01; without a server, plus PostgreSQL with `TABRION_STUDIO_TEST_POSTGRES`) | `PGHOSTADDR` no longer sends a read connection, the connection test or a write or admin connection with `requirepeer` to a loopback port (a listener counts nothing); a service variable refuses read, test and write before anything is built; the variables Studio cannot override refuse with `studio.connection_environment` and name nothing; the driver options pin the TLS file options, `hostaddr` and the defaults, only with keywords the loaded libpq knows; against the test server, a profile still connects with overridden variables set, and `PGHOSTADDR` at the server's address does not reach it for a missing socket folder |
 | `tests/security/test_read_only.py` (STU-008) | the connection test's facts on SQLite (WAL, foreign keys, encoding; the file unchanged, nothing left open) and PostgreSQL (role, superuser, bypass RLS and encoding as the catalog says, time zone, TLS); facts that cannot be read leave the answer; only short printable text |
 | `tests/security/test_connections_api.py` | open, reuse, list, test and close through the API; a changed profile and a changed project file close the connection; a project file opens only after trust; refusals as fixed problems; session and CSRF required; D-02 on the server (TD-038); a SQLite file from the read that passed the check, with `profiles.toml` rewritten in between, and a project profile that is no longer the checked read (C-1 of the #48 review); shutdown disposes the engines |
 | `tests/unit/test_problems.py` | `DB_KINDS` is `tabrion.errors.Kind`; a `db.<kind>` problem takes only the kind and the SQLSTATE from the error |

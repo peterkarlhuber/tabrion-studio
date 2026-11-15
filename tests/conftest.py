@@ -22,6 +22,59 @@ def no_real_keyring(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(studio_secrets, "select_backend", lambda: None)
 
 
+#: libpq's environment variables (PostgreSQL 18 names; G2-01 of the G-S2 gate review). Some CI runners set a few
+#: (the Windows images set ``PGUSER`` and ``PGPASSWORD``); Studio refuses or overrides them, so a test that wants one
+#: sets it itself.
+_LIBPQ_VARIABLES = (
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGPORT",
+    "PGDATABASE",
+    "PGUSER",
+    "PGPASSWORD",
+    "PGPASSFILE",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGSYSCONFDIR",
+    "PGOPTIONS",
+    "PGAPPNAME",
+    "PGSSLMODE",
+    "PGREQUIRESSL",
+    "PGSSLCOMPRESSION",
+    "PGSSLCERT",
+    "PGSSLKEY",
+    "PGSSLCERTMODE",
+    "PGSSLROOTCERT",
+    "PGSSLCRL",
+    "PGSSLCRLDIR",
+    "PGSSLSNI",
+    "PGSSLNEGOTIATION",
+    "PGREQUIREPEER",
+    "PGREQUIREAUTH",
+    "PGSSLMINPROTOCOLVERSION",
+    "PGSSLMAXPROTOCOLVERSION",
+    "PGMINPROTOCOLVERSION",
+    "PGMAXPROTOCOLVERSION",
+    "PGGSSENCMODE",
+    "PGKRBSRVNAME",
+    "PGGSSLIB",
+    "PGGSSDELEGATION",
+    "PGCHANNELBINDING",
+    "PGTARGETSESSIONATTRS",
+    "PGLOADBALANCEHOSTS",
+    "PGDATESTYLE",
+    "PGTZ",
+    "PGGEQO",
+)
+
+
+@pytest.fixture(autouse=True)
+def no_libpq_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests never take the developer's or the CI runner's libpq environment variables."""
+    for name in _LIBPQ_VARIABLES:
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture(autouse=True)
 def collect_garbage_after_each_test() -> Iterator[None]:
     """A connection that a test leaks is finalized (and its ResourceWarning raised) in that test's teardown, not

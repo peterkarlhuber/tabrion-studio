@@ -360,6 +360,16 @@ CATALOG: dict[str, Entry] = {
         "Connection settings not valid",
         "The driver did not accept the profile's settings.",
     ),
+    "studio.connection_environment": Entry(
+        422,
+        ProblemKind.DATABASE,
+        "libpq environment variable set",
+        "A libpq environment variable is set (such as PGSERVICE, or PGUSER for a profile without a user) that "
+        "Studio cannot override, and that could choose another server, authentication or TLS than the profile "
+        "names. Studio opens no connection.",
+        "Start Studio without that variable and put the setting into the profile; the connection guide lists the "
+        "variables.",
+    ),
     "studio.database_missing": Entry(
         404,
         ProblemKind.DATABASE,

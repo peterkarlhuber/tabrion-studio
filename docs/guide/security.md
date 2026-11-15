@@ -60,8 +60,12 @@ the server answers `405` and the write code is not even loaded.
 
 - **One source, read once at start.** The areas are read from `write-areas.toml` in Studio's configuration folder,
   the folder that `--config-dir` (or `--state-dir`, then its `config` subfolder) names, otherwise the platform's
-  configuration folder. Nothing else turns an area on: not an environment variable (also not
-  `TABRION_STUDIO_CONFIG_DIR`, which moves Studio's other files but never this one), not a `.env` file (Studio reads
+  configuration folder (`~/.config/tabrion-studio` on Linux, `~/Library/Application Support/tabrion-studio` on
+  macOS, `%LOCALAPPDATA%\tabrion-studio` on Windows), which no environment variable moves: not `XDG_CONFIG_HOME` or
+  `HOME`, whose home folder Studio reads from the system's account database. A user without an entry there (a
+  container started with `--user 1234`) has no such folder: Studio starts read-only with every area off
+  (`studio.write_areas_no_folder` in the start log); name a folder with `--config-dir`. Nothing else turns an area on: not an
+  environment variable (also not `TABRION_STUDIO_CONFIG_DIR`, which moves Studio's other files but never this one), not a `.env` file (Studio reads
   none), not a project file, the settings page or `PUT /api/settings` (a flag key is an unknown key there), a URL,
   a header, a cookie, a profile or the database. A change needs a restart. The start log names each area as on or
   off (`studio.write_area_state`).
@@ -220,6 +224,15 @@ the server answers `405` and the write code is not even loaded.
   Studio opens no write or admin connection and refuses the unlock (`405 studio.require_auth_unavailable`).
   `psycopg[binary]` brings a recent libpq. Read connections are unchanged: project profiles refuse a clear-text
   password (`require_auth=!password`), your own read profiles keep every method.
+- **libpq's environment variables do not choose the server.** libpq, the PostgreSQL client library, reads `PG*`
+  environment variables for what a connection leaves out. Studio gives every such setting itself, so a variable like
+  `PGHOSTADDR` or `PGSSLROOTCERT` (which a per-folder tool could set) changes neither the server, nor the
+  authentication, nor TLS of any read, test, write or admin connection; `requirepeer` and the rules for this
+  computer hold for the server the profile names. Where Studio cannot override a variable (a service with
+  `PGSERVICE`, `PGSERVICEFILE` or `PGSYSCONFDIR`, the session settings `PGTZ`, `PGDATESTYLE` and `PGGEQO`, or for
+  example `PGUSER` for a profile without a user), it opens no connection while it is set
+  (`422 studio.connection_environment`): put the setting into the profile and start Studio without the variable.
+  `PGCONNECT_TIMEOUT` and `PGCLIENTENCODING` still apply.
 - **The Data Editor (STU-026, in development, locked by G-S2).** The Data Editor is not usable or supported: it
   exists only behind `data_editor` in `write-areas.toml`, which is off by default, and stays locked until G-S2 is
   granted. Its steps and limits are in the [Data Editor](data-editor.md) page. What it does when that flag is on in a
