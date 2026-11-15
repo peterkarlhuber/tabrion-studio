@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S2 follow-up 7A: pins tabrion at the merge commit of tabrion #93 (`3520b21`), which makes the names the Data
+  Editor uses stable (`tabrion.rowedit.insert_row`, `update_row`, `delete_row`, `tabrion.errors.RowCountMismatch`,
+  `Transaction.execute_checked`). `update_row` and `delete_row` now take `old` and `new` by keyword only; the Data
+  Editor passes them by keyword. No behavior change; the `data_editor` flag stays off.
+
 - STU-CR-4 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's table view on the Connections page. `POST`/`DELETE
   /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` keep one draft

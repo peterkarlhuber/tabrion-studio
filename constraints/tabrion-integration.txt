@@ -9,4 +9,4 @@
 # (tests/security/test_dependencies.py, docs/TODO.md TS-001).
 # pip constraints take no extras; the extras come from pyproject.toml.
 # Install: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
-tabrion @ git+https://github.com/peterkarlhuber/tabrion@71370a6c706c85eb7635861e8d39c3024a9b0de6
+tabrion @ git+https://github.com/peterkarlhuber/tabrion@3520b21c966cb776b33aaaef82e2c4ac2bae8ca3
