@@ -26,7 +26,7 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # tabrion is not on PyPI: the range is here, the 0.3.0.dev0 commit (merge of tabrion PR #80) is pinned by
+    # tabrion is not on PyPI: the range is here, the 0.3.0.dev0 commit (merge of tabrion PR #90) is pinned by
     # its full SHA in constraints/tabrion-integration.txt (RC-8, ADR 0009 amendment, docs/TODO.md TS-001).
     # 0.3: Transaction.execute_checked and tabrion.rowedit for the Data Editor (STU-026, TAB-XW-6).
     # migrations: Alembic read only, for tabrion.migrations.status (STU-015), run in a worker process.

@@ -1,0 +1,79 @@
+# Database Manager threat model (STU-XDM-1, G-S4)
+
+This page is the threat model of the Database Manager of Studio 1.3 (STU-XDM-2..STU-XDM-7, planning document 15
+sections 4, 7 and 10): backup, restore, deleting a database, PostgreSQL roles and profile pairs. It extends the
+[Write and admin threat model](write-threat-model.md), whose rows marked "shared" (TX-01..TX-16) apply unchanged,
+and it is the threat model that [STU-ADR-0008](../adr/0008-database-manager-backup-restore-roles.md) refers to. The
+gate is defined in [G-S4 definition](security-review-prep.md#g-s4-definition-database-manager).
+
+**State:** proposed with STU-XDM-1; needs the independent review of STU-XDM-1. No code of the area exists. Every
+measure is a requirement for the work package named in its row and is checked by the G-S4 gate review. The
+`database_manager` flag stays off by default; **G-S4 is not granted.**
+
+The repository is public, so this page describes threats and measures, not how to exploit them.
+
+## Scope
+
+- **In scope:** running `pg_dump` and `pg_restore`; SQLite backup and restore through Tabrion; the backup folder and
+  its metadata; restore targets; deleting a SQLite file or a PostgreSQL database; PostgreSQL role management through
+  the admin profile; the consequence of an over-privileged admin profile; profile pairs and their import and export.
+- **Shared:** TX-01..TX-16 (flags, PROD lock, profiles, unlocking, CSRF, I-109 j and `require_auth`, plan binding,
+  audit log, hostile database objects). The backup before a destructive Schema Designer run (STU-ADR-0007 section 7)
+  uses the runner and the rows TX-32..TX-36 of this page.
+- **Out of scope:** creating a database (STU-CR-2, STU-CR-3, G-S3, TX-29); cluster-wide backup (`pg_dumpall`),
+  replication, point-in-time recovery (non-goals of 1.3).
+
+## Assets and attackers
+
+Sharper here: **A3**, the integrity and existence of whole databases; **A7**, the admin secret, which can change
+roles; **A12, the backups**, which hold every row of a database and are the user's way back; **A13, the role graph**
+of a cluster, where one wrong membership can give a role superuser-equivalent rights. Attackers: AT7 (the wrong
+database, the wrong backup, a forced drop); a local process of the same user that plants a tool or a variable
+(within limits: malware running as the user is outside the protection goal); a hostile database whose names,
+messages or archives try to mislead or run code (AT4); another session on the server that changes roles concurrently.
+
+## Threats and measures
+
+| Id | STRIDE | Threat | Measures | Work package, tests |
+|---|---|---|---|---|
+| TX-32 | E/T | **Tool substitution (R-X5):** a `pg_dump` or `pg_restore` from a foreign `PATH`, a link, a file others may write, or an old version runs with the user's rights and the database secret | Absolute paths only from the owner's local configuration folder (the checks of `write-areas.toml`), never from `PATH`, the page, a settings save, a project file, a variable or a profile; regular file, no link, not writable by group or others, owned by the user or root, the folder too; `--version` must name the program; client major at least the server's (and the archive's for `pg_restore`); file name, version and SHA-256 in the metadata | STU-XDM-2: refused for a relative path, `PATH` only, a link, a group-writable file or folder, a foreign owner, a wrong program name, an older major; a project file and a settings save cannot set the path |
+| TX-33 | I | **Secret exposure around the process:** the password in the arguments, the environment (`PGPASSWORD`), the process list, a passfile left behind, `stderr`, the log, the metadata or an answer | `--no-password`; the password only in a temporary passfile (0600, 0700 private folder, one escaped entry), removed in `finally` and at the next start; never `PGPASSWORD`; `stderr` only to the log through the redaction filters; answers are catalog problems; metadata without secrets | STU-XDM-2: canaries (a marked password) absent from `argv`, the child's environment, the log, the metadata, the answer; the passfile gone after success, failure and timeout; a stale passfile removed at start |
+| TX-34 | S | **The tool connects elsewhere or weaker:** inherited `PGHOST`, `PGHOSTADDR`, `PGSERVICE`, a service file, `~/.pgpass` or `PGSSLMODE` redirect the tool or downgrade TLS and authentication (as G2-01 for Studio's own connections) | The child's environment is built from nothing (no inherited `PG*`), `PGSERVICEFILE` and `PGSYSCONFDIR` point at an empty private folder, `PGPASSFILE` at Studio's own; the connection string carries host, port, database, user, `sslmode`, `sslrootcert`, `require_auth`, `requirepeer` from the stored profile with the write and admin rules (`verify-full` remote, SCRAM); a tool whose libpq lacks `require_auth` is refused for a password connection | STU-XDM-2: a planted `PGHOST`, `PGSERVICE` with a service file and `PGSSLMODE=disable` change nothing (a recording fake tool shows the environment and arguments it got) |
+| TX-35 | R/D | **A backup taken for complete:** the user relies on a `pg_dump` archive to rebuild a cluster, but roles, memberships, tablespaces and other cluster objects are not in it; a backup that cannot be restored is found out only when needed | The scope notice in the page, the guide and every backup's metadata (E-X5); automated restore round trips on SQLite and PostgreSQL in CI before G-S4 (backup, restore into a new database, integrity and fingerprint equal) | STU-XDM-2: the notice in the metadata and the page; the round-trip tests; STU-XDM-6: the guide text |
+| TX-36 | I/T | **Backup files exposed or swapped:** a backup readable by others, written through a link, replaced or edited before a restore | The backup folder in Studio's private data folder (0700, no link); files 0600, created exclusively by Studio; SHA-256 and size in the metadata, checked before every restore; Studio never deletes a backup of its own accord | STU-XDM-2: modes, links, an edited backup and an edited metadata file refused at restore |
+| TX-37 | T | **Restore to the wrong database (R-X4) or to PROD:** the user restores over a database that matters, a PROD database, or a target that changed between preview and run | No code path restores to PROD; also refused when any profile in the user's store labels the target `prod`; PostgreSQL restores only into a new database Studio creates; SQLite into a new file or an existing `dev`/`test` file; the target's own backup first; the typed target name (D-12); the target's identity (device and inode, or host, port, name and database OID) checked again before the run | STU-XDM-2: PROD and "PROD by another profile" refused; a target swapped between preview and run refused; the target's backup taken first |
+| TX-38 | E/T | **A hostile or foreign archive:** a custom-format archive holds SQL that runs with the restoring role; a plain SQL dump run through `psql` can carry client meta-commands | Only archives from Studio's own backup folder with matching metadata; only the custom format; `pg_restore` straight to the database with `--single-transaction`, `--exit-on-error`, `--no-owner`, `--no-privileges`; never `psql`, never a script file; the restoring role is the admin profile, which is never superuser (TX-40) | STU-XDM-2: an archive from outside the folder, a plain-format file and an archive with a changed SHA-256 refused; a static check that `psql` is never started |
+| TX-39 | D/T | **Deleting the wrong thing:** the wrong database or file; a forced drop that ends other sessions; Studio's own state, configuration, log or backup files; a side file that is a link to another file | SQLite through `delete_database_file` (side files, links unlinked never followed, exclusive-lock check, owner and mode rules; I-171); Studio's own folders and files a PROD profile names refused by device and inode; PostgreSQL through `drop_database` on another database of the same server (protected: `postgres`, templates, the own database; I-192); session count shown; `force=True` only as an explicit, separately confirmed option, never a default or an automatic retry; a backup and the typed name before every delete | STU-XDM-3: each refusal; `force` absent unless chosen; the backup taken first; Studio's own files refused; the typed name compared exactly |
+| TX-40 | E | **Over-privileged admin profile:** the admin role is or reaches SUPERUSER, BYPASSRLS, REPLICATION or a server-access role, or has CREATEROLE before PostgreSQL 16, so a mistake or a crafted object can reach anything | Fixed by STU-ADR-0008 section 6: these findings **refuse the unlock** of an admin profile (`studio.admin_over_privileged`) for every action of the area; CREATEROLE on 16 and later, CREATEDB, other predefined roles, K-2 grants and ownership are shown, not refused; Tabrion refuses such a session for every role change too (`postgres.caller_unsafe`, I-182); the admin rights are provisioned outside Studio | STU-XDM-4: an admin role with each refusing finding cannot be unlocked; one with CREATEROLE on 16 can and the finding is shown |
+| TX-41 | E | **Role escalation through Studio (E-X6):** a role gets a banned attribute directly or through a membership (INHERIT, SET or ADMIN option), a predefined or server-access role, TRIGGER, EXECUTE on a foreign SECURITY DEFINER function, CREATE on `public` or a foreign schema, a system object, or an object of a superuser owner | Only Tabrion's role DDL (no parameter for the banned attributes, ADMIN or GRANT OPTION; reachability over every membership row; checks before and after the statement in the change's transaction; I-180..I-186); PostgreSQL 16 and later only; the preview shows `role_privileges` of the target (D-14); Studio never changes its own admin role | STU-XDM-4: one refusal test per path (Tabrion's matrix through Studio's routes), with nothing changed and a `studio.dbm_*` problem with the reason |
+| TX-42 | E | **What Tabrion cannot see (P90-04, P90-06, P90-03):** a membership committed by another session between Tabrion's second check and the commit; K-2 grants in another database than the connected one; PUBLIC may execute a SECURITY DEFINER function; CREATE on a database lets the grantee install trusted extensions | Studio reads `role_privileges` again after every commit and shows any difference; before a membership change it checks the K-2 grants in every database the admin profile can connect to, or says which ones it could not; the preview warns about `public_definers` (`superuser_owner` first) and about CREATE on a database | STU-XDM-4: a concurrent membership shown as a difference after the commit; a K-2 grant in a second database found; the warnings present |
+| TX-43 | S | **Misleading names (P90-05):** an existing role or database name with control, format or bidirectional characters looks like another one in a preview, a confirmation, the audit log or the log | Every display escapes Unicode Cc, Cf, Zl and Zp characters as visible code points; a destructive action on such a name is refused in Studio (the guide says to rename it outside); the typed confirmation compares the exact name | STU-XDM-4, STU-XDM-3: names with a right-to-left override, a zero-width space and a line separator shown escaped in the page, the audit log and the log; drop refused |
+| TX-44 | I | **Role passwords leak:** the password of a created or altered role reaches the server log, an error, a log record, the audit log or an answer | The password goes from the request straight into Tabrion's call, which sends only a client-side SCRAM verifier and keeps no frame or `repr` of it (I-183); for a runtime profile into the keyring; never logged, audited or echoed | STU-XDM-4, STU-CR-6: canaries in the log, the audit log, answers and a failing call's problem |
+| TX-45 | S/I | **Profile pairs from outside (STU-XDM-5):** an import couples a write or admin profile to a project profile, points a secret reference at a foreign host, or a multi-host profile is cut short; an export leaks a write or admin secret | Write and admin profiles and couplings only in the user's store (K-1); every imported pair needs the I-109 j confirmation before any secret is read; single-host profiles only (W-10, TB-148); write and admin secrets never exported (N-5) | STU-XDM-5: the K-1 tests for import; an unconfirmed imported pair refuses the unlock; a multi-host import and export refused; a canary secret absent from the export |
+| TX-46 | I | **Server text in answers:** `create_database` and `drop_database` let driver errors through unchanged (I-191 b, I-192 d); a server message can hold names or values | Every error becomes a `db.<kind>` problem from `classify` and `safe_message`, and Tabrion's own errors fixed catalog problems with their codes; never `str()` of an exception or a path from a Tabrion error | STU-XDM-3, STU-XDM-4: a duplicate database, a missing privilege and an object in use answered without server text (a marked name in the server message does not appear) |
+
+## Residual risks
+
+1. **A `pg_dump` archive is not a complete backup** (TX-35). Roles, memberships, tablespaces and other cluster
+   objects must be backed up outside Studio.
+2. **The tool is trusted once checked:** a process of the same user can replace the file between the check and the
+   run; that is malware running as the user, outside the protection goal (03 section 7.3).
+3. **Membership races (P90-06):** a change committed by another session between Tabrion's check and the commit is
+   caught only by Studio's reading after the commit, which shows it but cannot undo it.
+4. **The database role is the boundary:** an admin role can do outside Studio what its rights allow; Studio's
+   checks keep Studio from widening it.
+5. **K-2 grants in a database the admin profile cannot reach** are not checked; the preview says so (P90-04).
+
+## Acceptance (planning document 15 sections 9.4 and 10, G-S4)
+
+| Criterion | Where |
+|---|---|
+| Flag `database_manager` off by default, not switchable from the page; "flag off" test per route (W-9); PROD: backup only | STU-ADR-0006; TX-37, TX-39; STU-ADR-0008 section 2 |
+| `pg_dump` only verified (absolute path, version check, argument list without a shell, temporary 0600 passfile, canary test) | TX-32..TX-34 |
+| Restore tests (round trip SQLite and PostgreSQL with integrity and fingerprint compare) | TX-35 |
+| "No global roles and cluster objects" in the page, the guide and the backup metadata | TX-35 |
+| Restore to the wrong database; `pg_dump` from a foreign `PATH` | TX-37, TX-32 |
+| Attribute ban also indirect; existing rights, memberships and indirect privileges checked and shown before every change; no admin rights set up by Studio | TX-41, TX-42; STU-ADR-0008 section 6 |
+| Consequence of an over-privileged admin profile | TX-40; STU-ADR-0008 section 6 |
+| Deleting with a backup, the typed name and `WITH (FORCE)` only explicit; Studio's own state database locked | TX-39 |
+| Export and import of single-host profiles only (W-10) | TX-45 |

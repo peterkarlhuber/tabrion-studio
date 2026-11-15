@@ -89,6 +89,8 @@ nav:
       - UX acceptance: architecture/ux-acceptance.md
       - Security review preparation: architecture/security-review-prep.md
       - Write and admin threat model: architecture/write-threat-model.md
+      - Schema Designer threat model: architecture/schema-designer-threat-model.md
+      - Database Manager threat model: architecture/database-manager-threat-model.md
   - Development:
       - Building and testing: development/building.md
       - CI and supply chain: development/ci.md
@@ -105,4 +107,6 @@ nav:
       - "0004 Frontend reuse": adr/0004-frontend-reuse.md
       - "0005 CR-DBX write and admin gates": adr/0005-crdbx-write-and-admin-gates.md
       - "0006 Per-area write kill switches": adr/0006-per-area-write-kill-switches.md
+      - "0007 Schema Designer plans and revisions": adr/0007-schema-designer-plans-and-revisions.md
+      - "0008 Database Manager backup, restore, roles": adr/0008-database-manager-backup-restore-roles.md
   - Open work: TODO.md

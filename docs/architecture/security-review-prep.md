@@ -1,4 +1,4 @@
-# Security review preparation (STU-016, G-S1; G-S2 readiness)
+# Security review preparation (STU-016, G-S1; G-S2 readiness; G-S3 and G-S4 definitions)
 
 This page prepares the security gate **G-S1** of the Studio MVP. It is a readiness checklist and the result of an
 internal pre-review pass, **not** the gate: G-S1 is decided by the owner after an independent security review and its
@@ -296,3 +296,122 @@ G-S2, none is implemented ahead of it:
 6. **Tabrion's experimental names:** the Data Editor uses `tabrion.rowedit` and `tabrion.errors.RowCountMismatch`,
    which the tabrion 0.3.0.dev0 surface marks `X` (`check_tabrion_api.py --surface` reports them); a release of
    Studio 1.1 needs them stable (02 section 14 S-2) or an accepted exception.
+
+## G-S3 definition (Schema Designer)
+
+G-S3 is the owner's activation decision for the Schema Designer of Studio 1.2 (STU-CR-2..STU-CR-8,
+STU-XSD-1..STU-XSD-3): the `schema_designer` flag of `write-areas.toml`. This section **defines** the gate (STU-CR-1);
+it is not the gate and not its review. **G-S3 is not granted** and nothing of the area is built: the flag stays off
+by default, nothing turns it on, no default changes. G-S3 would not allow a schema change on PROD (E-X7), a tag or a
+release; the human security review (H-2) and G-R stay mandatory before any publication. The rules are
+[STU-ADR-0007](../adr/0007-schema-designer-plans-and-revisions.md), the threats
+[Schema Designer threat model](schema-designer-threat-model.md) (TX-18..TX-31).
+
+From planning document 15 (section 10: "TM-DB-08, plan binding, drift check, revision only for Alembic, SQLite
+rebuild"; sections 3.1 item 1, 7 and 9.4), doc 07 (gate table; section 6: an independent review agent for every
+package with a write reference and for each gate), tabrion ADR 0015 sections 2 to 4 and 10 (D-5) and tabrion
+contract I-124. Each item names the test that proves it; the gate review re-runs them.
+
+**Preconditions (outside Studio):**
+
+| Id | Precondition | How it is shown |
+|---|---|---|
+| GS3-P1 | The pinned Tabrion has the executor `tabrion.plan.execute_plan` (TAB-XW-5: plan hash and fingerprint, locks then drift check, dry run, `lock_timeout`, SQLite foreign keys off and `foreign_key_check`, K-1 again at execution, `environment` required) | `constraints/tabrion-integration.txt` names a commit that contains TAB-XW-5; its review accepted |
+| GS3-P2 | D-5 implemented, independently reviewed and tested in Tabrion (tabrion ADR 0015 section 10: "G-S3 stays locked until then") | tabrion TB-149 records D-5.1..D-5.4 done with an accepted review |
+| GS3-P3 | The 0.3 G-T2 review (TAB-XW-10), or the owner's accepted exception for the experimental names `tabrion.schema` level 2, `tabrion.ddl`, `tabrion.plan` | tabrion STATUS / TB-149 |
+| GS3-P4 | G-S2 granted (the shared write foundation the area uses) | the owner's G-S2 record |
+
+**Checklist (each item a test or a review finding):**
+
+| Id | Criterion | Evidence to bring | WP |
+|---|---|---|---|
+| GS3-01 | Flag off by default; every Schema Designer route answers 405 with the flag off, imports none of `tabrion.ddl`, `tabrion.plan` or the area's executor, and changes nothing (database bytes or schema, project folder, audit log) | `tests/security/test_write_kill_switch.py` extended to every new route; `CHANGING_ROUTES` | every WP |
+| GS3-02 | The flag cannot be turned on from the page, a project file, a settings save, a query parameter or a header; the `data_editor` and `database_manager` flags do not open the area | `tests/security/test_write_flags.py` cases for `schema_designer` | STU-CR-5 |
+| GS3-03 | PROD: direct execution, database creation and revision output refused for a PROD connection, from the stored environment, with the flag on | a PROD test per route | STU-CR-2..5, STU-XSD-3 |
+| GS3-04 | Direct execution refused for an unset environment, each migration marker (`alembic_version` in any schema, `nodestro_schema_migrations`, `axentra_schema_migrations`, `<prefix>orkexa_schema`, SQLite `user_version` above 0), an Alembic project without a version table, a marker added between preview and run, a non-transactional step | `test_schema_designer_execution.py` (planned) | STU-CR-5 |
+| GS3-05 | `execute_plan` gets `environment` from the stored profile only; a request field cannot set it | a spy on the call; a request with `environment` refused | STU-CR-5 |
+| GS3-06 | No `env.py`, project module, revision module or Alembic command ever runs: planted files that would leave a mark stay untouched, in the server and in the migration worker | `test_schema_designer_revision.py` (planned); static import check of the area's modules | STU-XSD-3 |
+| GS3-07 | Revision file: only in a trusted project, only in its revision folder resolved without links, name `[0-9a-f]{12}_[a-z0-9_]{1,40}.py`, exclusive create, no overwrite; refused with a link as folder or file, an existing name, an untrusted project, several heads | same file | STU-XSD-3 |
+| GS3-08 | Revision text injection: a message and table names with `"""`, `\`, line breaks and NUL give a file whose non-statement parts are literals only (`ast.parse`) | same file, with tabrion K-3 vectors | STU-XSD-3 |
+| GS3-09 | Plans server-side only: a plan or target model in a request is ignored or refused; `from_json` is not called on outside input; a snapshot file cannot become a plan | route tests; static check | STU-CR-4, STU-CR-5, STU-XSD-2 |
+| GS3-10 | Re-plan before the run: a database change after the confirmation that changes the plan refuses the run (`studio.plan_drift`) before any statement; the hash compared is the server's record of the confirmation; the allowed classes are those confirmed and must cover the new plan | drift and swap tests (SQLite and PostgreSQL) | STU-CR-5 |
+| GS3-11 | STU-XW-3 binding for the area: a hash from another session, connection or unlock, and a reused hash, are refused | existing plan tests extended | STU-CR-5 |
+| GS3-12 | D-5 at run time: a trigger, a policy, row security and a referenced function body changed after the preview are drift; partitioned tables, partitions, domain columns, rules, foreign tables, inheritance, event triggers and a C trigger function refuse the plan with the table and feature named, never more | PostgreSQL tests with TAB-XW-5 | STU-CR-5 |
+| GS3-13 | `server_version` passed to every `plan` call (SQLite library version, PostgreSQL `server_version_num`) | a spy on every call | STU-CR-4, STU-CR-5 |
+| GS3-14 | Risk classes: each `destructive` and `rebuild` step needs the typed table names, `data_changing` the named step; a wrong name refuses; the destructive action never has the default focus; `locking` shows the notice | pytest per class; E2E focus and axe | STU-CR-5, STU-CR-7 |
+| GS3-15 | Backup before every `destructive`, `rebuild` or `data_changing` run; a failed backup stops the run; opt-out only on `dev` with a typed confirmation, audited | SQLite and PostgreSQL tests (PostgreSQL with the verified `pg_dump` of STU-ADR-0008) | STU-CR-5 |
+| GS3-16 | Preview warnings: PL/pgSQL references for every `drop_column`, `drop_table` and type change on PostgreSQL (I-124 j 2); `rowid` for a SQLite rebuild without `INTEGER PRIMARY KEY` (j 4); the fingerprint gaps (j 3); the revision's source condition (j 5); function drift (D-5.1) | page tests and E2E | STU-CR-5, STU-XSD-3 |
+| GS3-17 | SQLite rebuild: with foreign keys on refused and no row lost; `foreign_key_check` and `integrity_check` before the commit; a hostile `writable_schema` file refused (K-1); rows, triggers, views and referencing tables kept | SQLite tests through the executor | STU-CR-5 |
+| GS3-18 | PostgreSQL `lock_timeout`: a held lock makes the run fail after the timeout with nothing changed | PostgreSQL test | STU-CR-5 |
+| GS3-19 | Canaries: a marked default text and a marked secret absent from logs, the audit log, the history, diagnostics; the revision holds no connection data or secret | canary tests | STU-CR-5, STU-XSD-3 |
+| GS3-20 | Errors: every Tabrion refusal and driver error is a catalog problem (`studio.plan_*`, `studio.schema_*`, `db.<kind>` from `safe_message`), never the server's text | problem tests | every WP |
+| GS3-21 | Database creation (STU-CR-2, STU-CR-3): SQLite file 0600 and never through a link; PostgreSQL owner checks, PROD refused, a duplicate database without server text | `test_schema_designer_create.py` (planned) | STU-CR-2, STU-CR-3 |
+| GS3-22 | Runtime role and export (STU-CR-6): the role rules GS4-12..GS4-17 that apply; a multi-host export refused; no write or admin secret in an export | role and export tests | STU-CR-6 |
+| GS3-23 | Graphical mode: the canvas uses the same edit routes as the table view; the server refuses each invalid edit from either; table alternative and axe 0 serious or critical | pytest and E2E | STU-XSD-1 |
+| GS3-24 | Docs: the guide states revision only for Alembic projects, the PROD lock, DEV/TEST only for direct execution, the backup rule and the preview warnings (doc 15 section 9.4) | docs checklist | STU-CR-7 |
+| GS3-25 | An independent G-S3 review agent (doc 07 section 6) accepts the area; every High and Medium finding fixed and re-reviewed | `reviews/gs3-gate-review.md` (planning documents) | STU-CR-8 |
+| GS3-26 | The owner's decisions for G-S3 recorded (below) | docs/TODO.md | - |
+
+**Open decisions for the owner at G-S3** (recorded in [docs/TODO.md](../TODO.md#g-s3-and-g-s4-definitions)):
+whether a loaded snapshot may start a draft; whether revision output may be offered for a PROD connection (it writes only the project file); whether drafts may be saved to disk; whether direct execution may ever
+include non-transactional steps; the release exception for Tabrion's experimental names.
+
+## G-S4 definition (Database Manager)
+
+G-S4 is the owner's activation decision for the Database Manager of Studio 1.3 (STU-XDM-2..STU-XDM-7): the
+`database_manager` flag of `write-areas.toml`. This section **defines** the gate (STU-XDM-1); it is not the gate and
+not its review. **G-S4 is not granted** and nothing of the area is built: the flag stays off by default, no default
+changes. G-S4 would not allow restore, delete or role changes on PROD (E-X7: backup only), a tag or a release; H-2
+and G-R stay mandatory before any publication. The rules are
+[STU-ADR-0008](../adr/0008-database-manager-backup-restore-roles.md), the threats
+[Database Manager threat model](database-manager-threat-model.md) (TX-32..TX-46).
+
+From planning document 15 (section 10: "backup, restore (restore tests), delete, role escalation (indirect
+privileges, minimal admin profile)"; sections 3.1 items 2 and 3, 4, 7 and 9.4), doc 07, tabrion ADR 0015 sections 5
+and 6, tabrion contract I-170, I-171, I-180..I-186, I-190..I-193 and the "Open for Studio before G-S4" list of tabrion
+TODO TB-149.
+
+**Preconditions (outside Studio):**
+
+| Id | Precondition | How it is shown |
+|---|---|---|
+| GS4-P1 | The pinned Tabrion has TAB-XW-7, TAB-XW-8 and TAB-XW-9 with their reviews' conditions folded in | in the pin since this branch (tabrion PRs #88 and #90, reviews accepted with conditions) |
+| GS4-P2 | The 0.3 G-T2 review (TAB-XW-10), or the owner's accepted exception for the experimental names used | tabrion STATUS / TB-149 |
+| GS4-P3 | G-S2 granted (G-S3 too where the area shares its backup runner or creation wizards) | the owner's records |
+| GS4-P4 | CI runs `pg_dump` and `pg_restore` of at least the server's major version and a PostgreSQL 16 or later server | the `postgres` job |
+
+**Checklist:**
+
+| Id | Criterion | Evidence to bring | WP |
+|---|---|---|---|
+| GS4-01 | Flag off by default; every Database Manager route answers 405 with the flag off, imports none of the area's modules or Tabrion's role, restore, delete or database functions, starts no process and changes nothing | `tests/security/test_write_kill_switch.py` extended; `CHANGING_ROUTES` | every WP |
+| GS4-02 | The flag cannot be turned on from outside the owner's configuration; the other areas' flags do not open it | `tests/security/test_write_flags.py` cases | STU-XDM-2 |
+| GS4-03 | PROD: backup only (with the read profile); restore, delete and role changes refused, also through a non-PROD profile of a target that a PROD profile names | a PROD test per route | STU-XDM-2..4 |
+| GS4-04 | Tool path only from the owner's configuration folder; refused: relative, `PATH` only, a link, a group- or world-writable file or folder, a foreign owner, a wrong program, an older major than the server (and the archive for `pg_restore`); a project file or settings save cannot set it | `test_dbm_tools.py` (planned) with fake tools | STU-XDM-2 |
+| GS4-05 | Process: argument list, no shell, `--no-password`, timeout, `stdin` closed; the child's environment has no inherited `PG*` variable; planted `PGHOST`, `PGSERVICE` with a service file and `PGSSLMODE=disable` change nothing; `require_auth` SCRAM and `verify-full` for a remote host reach the tool | a recording fake tool; a real `pg_dump` in the `postgres` job | STU-XDM-2 |
+| GS4-06 | Secret: canary password absent from `argv`, the child's environment, the log, the metadata and the answer; the passfile 0600 in a 0700 folder and gone after success, failure and timeout; a stale passfile removed at start | canary tests | STU-XDM-2 |
+| GS4-07 | Backup files: folder 0700, files 0600 created exclusively, never through a link; metadata with SHA-256, size, tool and version, server version, fingerprint and the scope notice; no secret | file tests | STU-XDM-2 |
+| GS4-08 | Restore tests: automated round trips (backup, restore into a new database, integrity and level-2 fingerprint equal) on SQLite and PostgreSQL, in CI | `test_dbm_restore_roundtrip.py` (planned) | STU-XDM-2 |
+| GS4-09 | Restore refusals: PROD, a PROD-labeled target, an archive from outside the backup folder, a plain-format file, an edited archive or metadata, a target swapped between preview and run; the target's backup taken first; `pg_restore` with `--single-transaction --exit-on-error --no-owner --no-privileges`; `psql` never started | restore tests | STU-XDM-2 |
+| GS4-10 | Delete: SQLite through `delete_database_file`, Studio's own files and folders refused by device and inode; PostgreSQL protected names refused; a backup and the exact typed name before every delete; `force=True` only when chosen explicitly with its own confirmation, never a default or automatic retry | `test_dbm_delete.py` (planned), SQLite and PostgreSQL | STU-XDM-3 |
+| GS4-11 | Over-privileged admin profile: SUPERUSER, BYPASSRLS, REPLICATION, a server-access role, CREATEROLE before 16 (on the role or a reachable role) refuse the admin unlock (`studio.admin_over_privileged`); CREATEROLE on 16 and later and the other findings are shown | PostgreSQL tests with prepared roles | STU-XDM-4 |
+| GS4-12 | Role escalation refused through Studio's routes for each path: a banned attribute directly, through INHERIT, SET or ADMIN membership, a predefined role, a server-access role, TRIGGER, EXECUTE on a foreign SECURITY DEFINER function, CREATE on `public` or a foreign schema, a system object, an object of a superuser owner; nothing changed | PostgreSQL tests (Tabrion's matrix through the routes) | STU-XDM-4 |
+| GS4-13 | Studio never changes its own admin role and never sets up admin rights; role DDL refused before PostgreSQL 16 | tests | STU-XDM-4 |
+| GS4-14 | Preview of every role change: `role_privileges` of the target (attributes, memberships, reachable roles, ownership, default privileges, findings); the warnings about `public_definers` (`superuser_owner` first) and CREATE on a database | page tests and E2E | STU-XDM-4 |
+| GS4-15 | After every commit `role_privileges` is read again and a difference is shown (P90-06) | a test with a concurrent membership | STU-XDM-4 |
+| GS4-16 | Before a membership change the K-2 grants are checked in every database the admin profile can connect to, and the preview names those it could not (P90-04) | a test with a K-2 grant in a second database | STU-XDM-4 |
+| GS4-17 | Names with Cc, Cf, Zl or Zp characters are shown escaped in the page, the preview, the audit log and the log; a destructive action on such a name is refused (P90-05) | tests with a right-to-left override, a zero-width space, a line separator | STU-XDM-3, STU-XDM-4 |
+| GS4-18 | Role passwords: canary absent from logs, the audit log, answers and a failing call's problem; only Tabrion sends it (as a verifier) | canary tests | STU-XDM-4 |
+| GS4-19 | Admin profile connection rules at least those of a write profile: SCRAM for a password, `verify-full` for a remote host, the I-109 j confirmation (P90-07) | `test_write_secret_confirm.py` cases for `admin` | STU-XDM-4, STU-XDM-5 |
+| GS4-20 | Driver and Tabrion errors only as catalog problems (`db.<kind>` from `safe_message`, `studio.dbm_*`): a duplicate database, a missing privilege, an object in use answered without server text | problem tests with a marked name in the server message | STU-XDM-3, STU-XDM-4 |
+| GS4-21 | Profile pairs: K-1 on import, the I-109 j confirmation for every imported pair, single-host only for import and export, no write or admin secret exported | `test_dbm_profiles.py` (planned) | STU-XDM-5 |
+| GS4-22 | Audit: every action with `run.start` and `run.result` (backup, restore, delete with `force` as its own field, each role change, an opted-out backup); no value, no password; an unwritable log stops the action | audit tests | STU-XDM-2..5 |
+| GS4-23 | Docs: the guide states that a `pg_dump` archive is not a complete backup, the PROD lock, the role rules and the admin profile's minimal rights provisioned outside Studio (doc 15 section 9.4) | docs checklist | STU-XDM-6 |
+| GS4-24 | E2E in three browsers and axe for the area's dialogs (D-11..D-14) | E2E | STU-XDM-6 |
+| GS4-25 | An independent G-S4 review agent accepts the area; every High and Medium finding fixed and re-reviewed | `reviews/gs4-gate-review.md` (planning documents) | STU-XDM-7 |
+| GS4-26 | The owner's decisions for G-S4 recorded (below) | docs/TODO.md | - |
+
+**Open decisions for the owner at G-S4** (recorded in [docs/TODO.md](../TODO.md#g-s3-and-g-s4-definitions)): the
+admin-profile consequence proposed in STU-ADR-0008 section 6; the tool path from the owner's configuration rather
+than the page's settings; PostgreSQL restore only into a new database in 1.3; backup retention; the release
+exception for Tabrion's experimental names.

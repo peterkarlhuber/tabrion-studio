@@ -7,6 +7,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-1 and STU-XDM-1 (documentation only; G-S3 and G-S4 not granted, the `schema_designer` and
+  `database_manager` flags stay off, no code of either area exists, no default changes):
+  STU-ADR-0007 for the Schema Designer (plans and target models server-side only, a new plan before every run
+  compared with the confirmed hash, risk classes from the new plan, `server_version` always passed, direct DDL only on
+  DEV and TEST databases without migration management, revision text only for Alembic projects and never `env.py`,
+  a backup before destructive runs, the preview warnings tabrion asks for), STU-ADR-0008 for the Database Manager
+  (`pg_dump` and `pg_restore` only from verified absolute paths with a clean environment and a temporary passfile,
+  mandatory restore tests, "not a complete backup" stated, restore and delete only with a backup and the typed name
+  first, `WITH (FORCE)` only explicit, roles only through tabrion's role DDL and a minimal admin profile, an admin
+  profile with SUPERUSER, BYPASSRLS, REPLICATION, a server-access role or CREATEROLE before PostgreSQL 16 refused,
+  the tabrion TB-149 obligations), the Schema Designer threat model (TX-18..TX-31), the Database Manager threat
+  model (TX-32..TX-46), and the G-S3 and G-S4 definitions with testable checklists in the security review
+  preparation.
+
 - G-S2 preparation (G-S2 not granted; no default changes, the `data_editor` flag stays off): the readiness
   checklist for the activation gate of the shared write foundation and the Data Editor in
   `docs/architecture/security-review-prep.md` (what G-S2 asks, the evidence, the owner's open decisions) and the
@@ -1062,6 +1076,11 @@ All notable changes to this project are documented here. The format follows
   the ci-ok run link before every merge (R-1).
 
 ### Changed
+
+- tabrion pin moved to the merge commit of tabrion PR #90 (`28c8839f72a2d7232d973c71f99df1e57001a260`, still
+  0.3.0.dev0; range `>=0.2,<0.4` unchanged). It adds the experimental CR-DBX primitives TAB-XW-2 (schema level 2),
+  TAB-XW-3 (`tabrion.ddl`), TAB-XW-4 (`tabrion.plan`), TAB-XW-7 (SQLite restore and file deletion), TAB-XW-8 (role
+  DDL) and TAB-XW-9 (PostgreSQL create and drop database); Studio uses none of them yet, so nothing else changes.
 
 - STU-XDE-2: a PROD connection has no "Edit data" tab even with the `data_editor` flag on (the server refused its
   unlock before too), and the Data Editor's "no write profile" text points to Settings, where the write and admin

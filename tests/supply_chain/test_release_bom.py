@@ -31,7 +31,7 @@ sys.path.remove(str(SCRIPTS))
 pytestmark = pytest.mark.security
 
 Record = dict[str, object]
-TABRION_COMMIT = "72e2d03fea2b83e159a4ae9df3b7c40246b8a232"
+TABRION_COMMIT = "28c8839f72a2d7232d973c71f99df1e57001a260"
 
 
 def lock_records(*, with_markers: bool = True) -> list[Record]:
@@ -117,7 +117,7 @@ def test_the_sbom_lists_every_pin_and_every_shipped_frontend_package() -> None:
     tabrion = next(c for c in by_purl.values() if c["name"] == "tabrion")
     assert tabrion["version"] == "0.3.0.dev0"
     assert prop(tabrion, "tabrion-studio:vcs") == [
-        "git+https://github.com/peterkarlhuber/tabrion@72e2d03fea2b83e159a4ae9df3b7c40246b8a232"
+        "git+https://github.com/peterkarlhuber/tabrion@28c8839f72a2d7232d973c71f99df1e57001a260"
     ]
     assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.3.0.dev0?vcs_url=git%2Bhttps")
 
