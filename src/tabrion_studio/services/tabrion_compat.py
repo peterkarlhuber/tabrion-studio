@@ -32,6 +32,9 @@ What each part replaces:
 * :func:`pin_catalog_path`: reflection uses tabrion 0.2's ``Database.inspector()`` (STU-010, TD-013), which yields
   a SQLAlchemy ``Inspector`` on the connection of its own ``Database.read()``; on PostgreSQL this pins
   :data:`CATALOG_SEARCH_PATH` on that connection before the first catalog query.
+* :func:`reflect_table` (STU-026): tabrion 0.3's ``tabrion.rowedit`` builds its statements from a SQLAlchemy
+  ``Table`` but offers no reflection inside a ``Transaction``; the Data Editor reflects its target on the run's own
+  connection (``Transaction.connection``), inside the transaction the plan's drift check just ran in.
 * :data:`CATALOG_SEARCH_PATH` (STU-022 review H-1): Studio's own catalog reads on PostgreSQL (``stream(...,
   catalog=True)`` and :func:`pin_catalog_path`) first set a fixed ``search_path`` for their transaction only
   (``set_config(..., true)``), as pg_dump does, so no object in a user's schema takes part in resolving their
@@ -456,3 +459,15 @@ def pin_catalog_path(found: sqlalchemy.Inspector) -> None:
     dbapi: Any = connection.connection.dbapi_connection
     if not isinstance(dbapi, sqlite3.Connection):
         _pin_catalog_path(dbapi)
+
+
+def reflect_table(transaction: tabrion.Transaction, schema: str, table: str) -> sqlalchemy.Table:
+    """The table ``schema.table`` as SQLAlchemy reflects it on the connection of ``transaction`` (the write run's
+    own transaction; foreign keys are not followed). Raises SQLAlchemy's ``NoSuchTableError`` for a missing table."""
+    return sqlalchemy.Table(
+        table,
+        sqlalchemy.MetaData(),
+        schema=schema,
+        autoload_with=transaction.connection,
+        resolve_fks=False,
+    )

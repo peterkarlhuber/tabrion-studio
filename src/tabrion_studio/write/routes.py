@@ -11,7 +11,9 @@ fails afterwards is kept as a pending marker and reported as ``audit_pending``, 
 lists the newest records and verifies the whole log, read only.
 
 The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan.Plans` (``app.state.write_plans``):
-make and preview, confirm with the hash and the typed text, execute once.
+make and preview, confirm with the hash and the typed text, execute once. With the Data Editor flag on, the Data
+Editor's executor (STU-026, :mod:`tabrion_studio.write.data_editor`) is registered there and its table route answers;
+with that flag off neither is imported.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -43,7 +45,7 @@ from tabrion_studio.config.schema import (
     parse_write_profile,
 )
 from tabrion_studio.config.secrets import SecretError
-from tabrion_studio.config.write_areas import WriteAreas
+from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.config.writer import SaveError
 from tabrion_studio.problems import problem_response
 from tabrion_studio.services.connections import ConnectionRegistry
@@ -114,6 +116,8 @@ _DISCARD_KEYS = frozenset({"plan_hash"})
 #: The keys of the secret confirmation routes' bodies (STU-XW-4).
 _PAIR_KEYS = frozenset({"write_profile_id"})
 _PAIR_CONFIRM_KEYS = frozenset({"confirmation_hash", "typed"})
+#: The keys of the Data Editor's table route (STU-026).
+_TABLE_KEYS = frozenset({"connection_id", "schema", "table"})
 _MAX_PLAN_BODY = MAX_REQUEST_BYTES + 4096
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
@@ -458,6 +462,11 @@ def add_enabled_write_routes(
 
     plans = Plans(unlocks)
     app.state.write_plans = plans
+    if areas.on(Area.DATA_EDITOR):
+        # STU-026: imported and registered only with the Data Editor flag on (TX-02); no other area's flag opens it.
+        from tabrion_studio.write.data_editor import DataEditorExecutor
+
+        plans.register(DataEditorExecutor())
 
     async def plan_call(request: Request, keys: frozenset[str], limit: int, call: Callable[..., Any]) -> Response:
         doc = _json(await request.body(), limit)
@@ -501,6 +510,21 @@ def add_enabled_write_routes(
             return JSONResponse(plans.execute(session, doc.get("plan_hash"), doc.get("connection_id")))
 
         return await plan_call(request, _EXECUTE_KEYS, _MAX_BODY, execute)
+
+    # --- the Data Editor's table (STU-026) ----------------------------------------------------------------------
+
+    @route("/api/write/data-editor/table", "POST")
+    async def post_data_editor_table(request: Request) -> Response:
+        if not areas.on(Area.DATA_EDITOR):
+            return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+        from tabrion_studio.write.data_editor import table_info
+
+        def info(session: str, doc: dict[str, Any]) -> Response:
+            return JSONResponse(
+                table_info(unlocks, session, doc.get("connection_id"), doc.get("schema"), doc.get("table"))
+            )
+
+        return await plan_call(request, _TABLE_KEYS, _MAX_BODY, info)
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

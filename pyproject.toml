@@ -26,10 +26,11 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    # tabrion is not on PyPI: the range is here, the 0.2.1 commit is pinned by its full SHA in
-    # constraints/tabrion-integration.txt (RC-8, ADR 0009 amendment, docs/TODO.md TS-001).
+    # tabrion is not on PyPI: the range is here, the 0.3.0.dev0 commit (merge of tabrion PR #80) is pinned by
+    # its full SHA in constraints/tabrion-integration.txt (RC-8, ADR 0009 amendment, docs/TODO.md TS-001).
+    # 0.3: Transaction.execute_checked and tabrion.rowedit for the Data Editor (STU-026, TAB-XW-6).
     # migrations: Alembic read only, for tabrion.migrations.status (STU-015), run in a worker process.
-    "tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3",
+    "tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.4",
     "psycopg[binary]>=3.2,<4",
     "fastapi>=0.115,<1",
     # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).

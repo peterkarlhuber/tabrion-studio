@@ -148,6 +148,8 @@ export interface WriteProfileItem {
   name: string;
   kind: WriteKind;
   engine: string;
+  /** The read profile it is coupled to (`user:<name>`): the Data Editor offers a connection's own write profiles. */
+  readProfileId: string;
   /** STU-XW-4 (I-109 j): null for SQLite (no secret); false until the pair of server and reference is confirmed. */
   confirmed: boolean | null;
   foreign: boolean | null;
@@ -173,6 +175,7 @@ export function parseWriteProfiles(body: unknown): WriteProfileItem[] {
         name: item.name as string,
         kind: item.kind === 'admin' ? 'admin' : 'write',
         engine: text(item.engine) ?? '',
+        readProfileId: text(item.read_profile_id) ?? '',
         confirmed: flag(secret.confirmed),
         foreign: flag(secret.foreign),
       };

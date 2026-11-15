@@ -57,7 +57,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 17
+    assert len(methods) == 18
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -69,6 +69,7 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/secret-confirmations",  # STU-XW-4: the I-109 j confirmation (D-15)
         "POST /api/write/secret-confirmations/confirm",
         "DELETE /api/write/secret-confirmations",
+        "POST /api/write/data-editor/table",  # STU-026: the Data Editor's table (its changesets are plans)
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

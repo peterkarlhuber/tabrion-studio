@@ -38,11 +38,18 @@ nullability, default, identity, generated), its constraints and the foreign keys
 triggers (``pg_get_triggerdef``), rules (``pg_get_ruledef``) and policies. Only the SHA-256 of it is kept; the
 catalog texts (which may hold literals of a default or a ``WHEN`` clause) are never sent, logged or recorded.
 
-**Executors.** Studio builds no write statement of its own (plans come from Tabrion). The executor of the Data Editor
-(STU-026) comes with Tabrion's guided write transaction (TAB-XW-6), which is not in Studio's tabrion pin yet; until
-then no executor is registered and every plan request is ``studio.plan_executor_unknown``. An executor validates its
+**Executors.** Studio builds no write statement of its own (plans come from Tabrion). An executor validates its
 request (:meth:`PlanExecutor.build`) and runs one step at a time in the given transaction
-(:meth:`PlanExecutor.run_step`), schema-qualifying every name and counting rows with :meth:`AuditedRun.count`.
+(:meth:`PlanExecutor.run_step`), schema-qualifying every name and counting rows with :meth:`AuditedRun.count`. The
+one Studio registers is the Data Editor's (STU-026, :mod:`tabrion_studio.write.data_editor`, on Tabrion's guided
+write transaction TAB-XW-6), and only while the Data Editor flag is on; with no executor, every plan request is
+``studio.plan_executor_unknown``.
+
+**Primary keys (STU-026).** The catalog read gives each target's columns and primary key
+(:class:`TargetCatalog`). An executor whose ``requires_primary_key`` is True has every target without a primary key
+refused (``studio.plan_target_no_primary_key``): a row is written by its primary key only, never by ``rowid`` or
+``ctid``. An executor may also check its plan against the catalog (``check``, :class:`CatalogCheck`) before the plan
+is kept; the primary key and the columns are part of the fingerprint, so the run checks them again (drift).
 
 **Refusals** are catalog problems, 400 or 405 (W-9): they name no value, no statement and nothing of the request.
 """
@@ -72,6 +79,7 @@ from tabrion_studio.write.unlock import WRITE_ID_PREFIX, AuditedRun, Unlocks
 __all__ = [
     "MAX_TARGETS",
     "PLAN_TTL_SECONDS",
+    "CatalogCheck",
     "Plan",
     "PlanContent",
     "PlanExecutor",
@@ -149,9 +157,11 @@ class PlanContent:
 
 
 class PlanExecutor(Protocol):
-    """A kind of plan (pluggable; STU-026 registers the Data Editor's when TAB-XW-6 is in the pin).
+    """A kind of plan (pluggable; STU-026 registers the Data Editor's while its flag is on).
 
-    ``name`` is a token (it is the audit record's ``action``); ``area`` is the area whose flag the plan needs."""
+    ``name`` is a token (it is the audit record's ``action``); ``area`` is the area whose flag the plan needs. An
+    executor may also have ``requires_primary_key = True`` (every target needs a primary key) and a ``check``
+    (:class:`CatalogCheck`); see the module text."""
 
     name: str
     area: Area
@@ -198,17 +208,33 @@ class Rule:
 
 @dataclass(frozen=True)
 class TargetCatalog:
-    """What the preview shows of one target's catalog."""
+    """What the preview shows of one target's catalog, and its columns and primary key (STU-026; in table order and
+    in key order, as the database spells them; the preview does not send them)."""
 
     target: Target
     triggers: tuple[Trigger, ...] = ()
     rules: tuple[Rule, ...] = ()
     row_security: bool = False
+    columns: tuple[str, ...] = ()
+    primary_key: tuple[str, ...] = ()
+    #: The columns whose type has no equality for an optimistic comparison (PostgreSQL; see ``_PG_INCOMPARABLE``).
+    incomparable: tuple[str, ...] = ()
+
+
+class CatalogCheck(Protocol):
+    """The optional hook of an executor: check the plan against the targets' catalog before it is kept (STU-026).
+
+    Raise :class:`WriteError` (no value in any message) for a plan the catalog does not allow."""
+
+    def __call__(self, content: PlanContent, catalogs: tuple[TargetCatalog, ...]) -> None: ...
 
 
 Fetch = Callable[[str, dict[str, Any] | None], list[tuple[Any, ...]]]
 
 _SQLITE_SCHEMA = "SELECT type, name, tbl_name, sql FROM main.sqlite_master ORDER BY type, name"
+#: The columns of one table (a generated column has ``hidden`` 2 or 3; 1 is a hidden column of a virtual table) and
+#: their place in the primary key (0: not in it). Covered by the fingerprint: the schema rows hold the table's SQL.
+_SQLITE_COLUMNS = "SELECT name, pk, hidden FROM pragma_table_xinfo(:table, 'main') ORDER BY cid"
 
 _PG_CLASS = (
     "SELECT c.oid::pg_catalog.int8, c.relkind::pg_catalog.text, c.relrowsecurity, c.relforcerowsecurity,"
@@ -297,6 +323,48 @@ _PG_PARTS: tuple[tuple[str, str], ...] = (
         " ))) ORDER BY 1",
     ),
 )
+#: The primary key's columns in key order (covered by the fingerprint's constraints and columns).
+_PG_PRIMARY_KEY = (
+    "SELECT a.attname::pg_catalog.text FROM pg_catalog.pg_index i"
+    " CROSS JOIN LATERAL pg_catalog.unnest(i.indkey::pg_catalog.int2[]) WITH ORDINALITY AS k(attnum, n)"
+    " JOIN pg_catalog.pg_attribute a ON a.attrelid OPERATOR(pg_catalog.=) i.indrelid"
+    " AND a.attnum OPERATOR(pg_catalog.=) k.attnum"
+    " WHERE i.indrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid) AND i.indisprimary ORDER BY k.n"
+)
+#: The columns whose type has no proper equality (STU-026, review I-1 of PR #119): the type, after unwrapping domains
+#: (and an array's element type), has no default btree or hash operator class, directly or through an implicit
+#: binary-coercible cast (``varchar`` to ``text``; ``xml`` to ``text`` is explicit only). Enums, ranges and
+#: multiranges always have one; ``json`` is compared as ``jsonb`` by ``tabrion.rowedit``.
+#: Examples: ``xml``, ``point``, ``box`` (whose ``=`` compares areas), composite types, ``json[]``. A row with such a
+#: column cannot be matched by its old values, so the Data Editor refuses the table.
+_PG_INCOMPARABLE = (
+    "WITH RECURSIVE base(attname, attnum, typ, depth) AS ("
+    " SELECT a.attname, a.attnum, a.atttypid, 0 FROM pg_catalog.pg_attribute a"
+    " WHERE a.attrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid)"
+    " AND a.attnum OPERATOR(pg_catalog.>) 0 AND NOT a.attisdropped"
+    " UNION ALL SELECT b.attname, b.attnum, t.typbasetype, b.depth OPERATOR(pg_catalog.+) 1"
+    " FROM base b JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) b.typ"
+    " WHERE t.typtype OPERATOR(pg_catalog.=) 'd' AND b.depth OPERATOR(pg_catalog.<) 32),"
+    " solved AS (SELECT b.attname, b.attnum, b.typ FROM base b"
+    " JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) b.typ WHERE t.typtype OPERATOR(pg_catalog.<>) 'd'),"
+    " compared AS (SELECT s.attname, s.attnum,"
+    " t.typcategory OPERATOR(pg_catalog.=) 'A' AND t.typelem OPERATOR(pg_catalog.<>) 0 AS is_array,"
+    " CASE WHEN t.typcategory OPERATOR(pg_catalog.=) 'A' AND t.typelem OPERATOR(pg_catalog.<>) 0"
+    " THEN CASE WHEN e.typtype OPERATOR(pg_catalog.=) 'd' THEN e.typbasetype ELSE e.oid END ELSE s.typ END AS typ"
+    " FROM solved s JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) s.typ"
+    " LEFT JOIN pg_catalog.pg_type e ON e.oid OPERATOR(pg_catalog.=) t.typelem)"
+    " SELECT c.attname::pg_catalog.text FROM compared c"
+    " JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) c.typ"
+    " WHERE NOT (t.typtype OPERATOR(pg_catalog.=) ANY (ARRAY['e', 'r', 'm']::pg_catalog.\"char\"[])"
+    " OR (NOT c.is_array AND t.oid OPERATOR(pg_catalog.=) CAST('pg_catalog.json' AS pg_catalog.regtype))"
+    " OR EXISTS (SELECT 1 FROM pg_catalog.pg_opclass o JOIN pg_catalog.pg_am m"
+    " ON m.oid OPERATOR(pg_catalog.=) o.opcmethod WHERE o.opcdefault"
+    " AND m.amname OPERATOR(pg_catalog.=) ANY (ARRAY['btree', 'hash']::pg_catalog.name[])"
+    " AND (o.opcintype OPERATOR(pg_catalog.=) t.oid OR EXISTS (SELECT 1 FROM pg_catalog.pg_cast k"
+    " WHERE k.castsource OPERATOR(pg_catalog.=) t.oid AND k.casttarget OPERATOR(pg_catalog.=) o.opcintype"
+    " AND k.castmethod OPERATOR(pg_catalog.=) 'b' AND k.castcontext OPERATOR(pg_catalog.=) 'i'))))"
+    " ORDER BY c.attnum"
+)
 #: ``pg_rewrite.ev_type``.
 _RULE_EVENTS = {"1": "select", "2": "update", "3": "insert", "4": "delete"}
 #: ``pg_trigger.tgtype`` bits (``TRIGGER_TYPE_*`` of PostgreSQL's ``pg_trigger.h``).
@@ -335,7 +403,11 @@ def _sqlite_catalog(
             for row in rows
             if row[0] == "trigger" and (row[2] or "").lower() == table and row[1]
         )
-        catalogs.append(TargetCatalog(target, triggers=triggers))
+        described = [(str(name), int(pk)) for name, pk, hidden in fetch(_SQLITE_COLUMNS, {"table": target.table})
+                     if hidden != 1]  # fmt: skip
+        columns = tuple(name for name, _pk in described)
+        primary_key = tuple(name for name, pk in sorted((d for d in described if d[1] > 0), key=lambda d: d[1]))
+        catalogs.append(TargetCatalog(target, triggers=triggers, columns=columns, primary_key=primary_key))
     return _digest({"engine": "sqlite", "identity": list(identity), "schema": rows}), tuple(catalogs)
 
 
@@ -376,7 +448,10 @@ def _postgres_catalog(fetch: Fetch, targets: tuple[Target, ...]) -> tuple[str, t
             for name, event, instead, _enabled, _definition in doc["rules"]
             if name != "_RETURN"
         )
-        catalogs.append(TargetCatalog(target, triggers, rules, bool(row_security)))
+        columns = tuple(str(row[1]) for row in doc["columns"])
+        primary_key = tuple(str(row[0]) for row in fetch(_PG_PRIMARY_KEY, {"oid": int(oid)}))
+        incomparable = tuple(str(row[0]) for row in fetch(_PG_INCOMPARABLE, {"oid": int(oid)}))
+        catalogs.append(TargetCatalog(target, triggers, rules, bool(row_security), columns, primary_key, incomparable))
     return _digest({"engine": "postgresql", "targets": docs}), tuple(catalogs)
 
 
@@ -657,6 +732,17 @@ class Plans:
         fingerprint, catalog = read_catalog(
             _connection_fetch(unlock.connection), engine, content.targets, unlock.connection.database_file
         )
+        if getattr(executor, "requires_primary_key", False) is True and any(not c.primary_key for c in catalog):
+            # STU-026 (03 section 2 D): rows are written by their primary key only, never by rowid or ctid.
+            raise WriteError("studio.plan_target_no_primary_key")
+        check: CatalogCheck | None = getattr(executor, "check", None)
+        if check is not None:
+            try:
+                check(content, catalog)
+            except WriteError:
+                raise
+            except (ValueError, TypeError, KeyError, IndexError):
+                raise WriteError("studio.plan_invalid") from None
         now = self.clock()
         plan = Plan(
             nonce=secrets.token_hex(16),

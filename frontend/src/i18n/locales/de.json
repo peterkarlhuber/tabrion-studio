@@ -336,6 +336,7 @@
       "indexes": "Indizes",
       "relationships": "Beziehungen",
       "data": "Daten",
+      "edit": "Daten bearbeiten",
       "sqlite": "SQLite",
       "ddl": "DDL",
       "policies": "Policies"
@@ -1062,7 +1063,12 @@
     "secret_confirmation_not_needed": "Ein SQLite-Schreibprofil hat kein Secret.",
     "secret_confirmation_unavailable": "Studio konnte die Bestätigung nicht in seinem Statusordner ablegen; nichts wurde bestätigt.",
     "write_tls_required": "Studio sendet ein Schreib- oder Admin-Secret an einen Server, der nicht auf diesem Computer läuft, nur mit dem TLS-Modus verify-full oder verify-ca. Ändern Sie den TLS-Modus des gekoppelten Profils.",
-    "require_auth_unavailable": "Schreib- und Admin-Verbindungen brauchen libpq 16 oder neuer (es kann Klartext- und MD5-Passwörter ablehnen). Installieren Sie psycopg[binary] oder eine neuere libpq."
+    "require_auth_unavailable": "Schreib- und Admin-Verbindungen brauchen libpq 16 oder neuer (es kann Klartext- und MD5-Passwörter ablehnen). Installieren Sie psycopg[binary] oder eine neuere libpq.",
+    "plan_target_no_primary_key": "Die Tabelle hat keinen Primärschlüssel, daher kann Studio ihre Zeilen nicht bearbeiten.",
+    "data_editor_conflict": "Eine Zeile wurde seit dem Laden von jemand anderem geändert oder gelöscht. Es wurde nichts gespeichert. Lade die Zeilen neu und versuche es erneut.",
+    "data_editor_rowcount": "Eine Änderung hat nicht genau eine Zeile betroffen. Es wurde nichts gespeichert.",
+    "data_editor_value_invalid": "Ein Wert passt nicht zu seiner Spalte. Es wurde nichts gespeichert.",
+    "data_editor_column_incomparable": "Eine Spalte dieser Tabelle hat einen Typ, der sich nicht vergleichen lässt (zum Beispiel xml oder point), daher ließe sich eine Änderung durch jemand anderen nicht erkennen. Studio bearbeitet diese Tabelle gar nicht, egal welche Spalten angezeigt werden; bearbeite sie mit einem anderen Werkzeug."
   },
   "keyboard": {
     "palette": {
@@ -1620,6 +1626,57 @@
       "typeHost": "Geben Sie zur Bestätigung den Host ein: {{host}}",
       "confirm": "Bestätigen",
       "cancel": "Abbrechen"
+    }
+  },
+  "dataEditor": {
+    "loading": "Die Tabelle wird geladen …",
+    "noProfile": "Mit dem Profil dieser Verbindung ist kein Schreibprofil gekoppelt. Lege eines unter Verbindungen, Schreibprofile an.",
+    "unlocked": "Der Schreibmodus ist für diese Verbindung entsperrt.",
+    "lock": "Sperren",
+    "sideEffects": "Diese Tabelle hat Trigger oder Regeln. Sie laufen bei jeder Änderung mit und können weitere Zeilen ändern; Studio zählt diese nicht.",
+    "keyNotShown": "Eine Spalte des Primärschlüssels wird nicht angezeigt, daher lassen sich diese Zeilen hier nicht bearbeiten.",
+    "firstRows_one": "Zum Bearbeiten wird nur die erste {{count}} Zeile angezeigt.",
+    "firstRows_other": "Zum Bearbeiten werden nur die ersten {{count}} Zeilen angezeigt.",
+    "caption": "Zeilen von {{name}}",
+    "key": "Schlüssel",
+    "actions": "Aktionen",
+    "cell": "Zeile {{row}}, {{column}}",
+    "newCell": "Neue Zeile {{row}}, {{column}}",
+    "default": "Standardwert",
+    "null": "NULL",
+    "setNull": "{{label}} auf NULL setzen",
+    "delete": "Zeile löschen",
+    "undoDelete": "Zeile behalten",
+    "removeNew": "Neue Zeile entfernen",
+    "addRow": "Zeile hinzufügen",
+    "pending_one": "{{count}} Änderung",
+    "pending_other": "{{count}} Änderungen",
+    "discard": "Änderungen verwerfen",
+    "preview": "Vorschau",
+    "changesLabel": "Ausstehende Änderungen",
+    "saved": "Gespeichert: {{updated}} geändert, {{inserted}} eingefügt, {{deleted}} gelöscht.",
+    "auditPending": "Der Audit-Eintrag steht noch aus.",
+    "reload": "Zeilen neu laden",
+    "unlock": {
+      "title": "Schreibmodus entsperren",
+      "lead": "Zum Bearbeiten von Daten braucht diese Verbindung den Schreibmodus. Wähle das Schreibprofil und tippe seinen Namen.",
+      "profile": "Schreibprofil",
+      "type": "Tippe {{name}} zum Entsperren",
+      "submit": "Entsperren"
+    },
+    "change": {
+      "insert": "Eine neue Zeile einfügen",
+      "delete": "Die Zeile {{key}} löschen",
+      "update": "{{columns}} der Zeile {{key}} ändern"
+    },
+    "review": {
+      "title": "Änderungen prüfen",
+      "oneTransaction": "Alle Änderungen laufen in einer Transaktion. Hat jemand eine Zeile inzwischen geändert oder betrifft eine Änderung nicht genau eine Zeile, wird nichts gespeichert.",
+      "sideEffects": "Trigger und Regeln laufen mit: {{names}}.",
+      "type": "Tippe {{text}} zum Bestätigen",
+      "back": "Zurück",
+      "confirm": "Bestätigen",
+      "execute": "Ausführen"
     }
   }
 }

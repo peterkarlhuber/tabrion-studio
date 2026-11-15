@@ -24,6 +24,7 @@ import type { Problem } from '../../api/problem';
 import { capped } from '../../lib/visible';
 import { DataTab } from '../viewer/DataTab';
 import connectionStyles from '../connections/Connections.module.css';
+import { DataEditor } from '../write/DataEditor';
 import { DdlView, PoliciesView, RowCount } from './Definitions';
 import styles from './Explorer.module.css';
 
@@ -428,7 +429,15 @@ function SqliteTab({ name, info }: { name: string; info: SqliteInfo | null }) {
 }
 
 type TabId =
-  'columns' | 'constraints' | 'indexes' | 'relationships' | 'data' | 'sqlite' | 'ddl' | 'policies';
+  | 'columns'
+  | 'constraints'
+  | 'indexes'
+  | 'relationships'
+  | 'data'
+  | 'edit'
+  | 'sqlite'
+  | 'ddl'
+  | 'policies';
 
 /** The kinds whose rows the data viewer reads (STU-013): not sequences, not kinds the page does not know. */
 export const DATA_KINDS: readonly ObjectKind[] = [
@@ -537,6 +546,7 @@ export function TableView({
   fetcher,
   connectionId,
   onGone,
+  editProfileId = null,
 }: {
   detail: TableDetail;
   engine: Engine;
@@ -549,6 +559,11 @@ export function TableView({
   /** The explorer's open connection: the tabs that read (data, DDL, policies) read on it and never open one. */
   connectionId: string;
   onGone: (problem: Problem) => void;
+  /**
+   * The Data Editor (STU-026): the read profile of the open connection when the server answered that the
+   * `data_editor` area is on, else null. The page never decides the flag; with null there is no edit tab.
+   */
+  editProfileId?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   const columns = useMemo(
@@ -574,6 +589,9 @@ export function TableView({
     { id: 'relationships', label: t('explorer.tabs.relationships') },
     ...(DATA_KINDS.includes(detail.kind)
       ? [{ id: 'data' as const, label: t('explorer.tabs.data') }]
+      : []),
+    ...(editProfileId !== null && detail.kind === 'table'
+      ? [{ id: 'edit' as const, label: t('explorer.tabs.edit') }]
       : []),
     ...(engine === 'sqlite' ? [{ id: 'sqlite' as const, label: t('explorer.tabs.sqlite') }] : []),
     { id: 'ddl', label: t('explorer.tabs.ddl') },
@@ -605,6 +623,18 @@ export function TableView({
           name={detail.name}
           columns={columns}
           onGone={onGone}
+        />
+      );
+      break;
+    case 'edit':
+      panel = (
+        <DataEditor
+          key={targetKey}
+          fetcher={fetcher}
+          connectionId={connectionId}
+          profileId={editProfileId ?? ''}
+          schema={detail.schema}
+          name={detail.name}
         />
       );
       break;

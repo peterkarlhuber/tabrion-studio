@@ -17,9 +17,11 @@ from tabrion_studio.config.user import UserConfig
 from tabrion_studio.config.write_areas import ALL_OFF, Area, WriteAreas
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.drafts import Drafts
+from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.history import History
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.state import StateStore
+from tabrion_studio.services.viewer import Viewer
 from tests.support.access import ORIGIN, Studio, make_studio
 from tests.support.fake_keyring import FakeKeyring
 
@@ -66,11 +68,15 @@ class WriteEnv:
         self.registry = ConnectionRegistry(self.config)
         store = StateStore(self.state)
         self.history = History(store, "k1", self.config.limits)
+        # The explorer and the viewer: the Data Editor (STU-026) takes its old values from the viewer's page.
+        explorer = Explorer(self.registry)
         self.studio: Studio = make_studio(
             static_dir,
             config=self.config,
             connections=self.registry,
             queries=QueryEngine(self.registry, self.config.limits, history=self.history),
+            explorer=explorer,
+            viewer=Viewer(explorer, self.config.limits),
             history=None,
             drafts=Drafts(store, "k1", self.config.limits),
             write_areas=areas,

@@ -336,6 +336,7 @@
       "indexes": "Indexes",
       "relationships": "Relationships",
       "data": "Data",
+      "edit": "Edit data",
       "sqlite": "SQLite",
       "ddl": "DDL",
       "policies": "Policies"
@@ -1062,7 +1063,12 @@
     "secret_confirmation_not_needed": "A SQLite write profile has no secret.",
     "secret_confirmation_unavailable": "Studio could not keep the confirmation in its state folder; nothing was confirmed.",
     "write_tls_required": "Studio sends a write or admin secret to a server that is not on this computer only with TLS mode verify-full or verify-ca. Change the TLS mode of the coupled profile.",
-    "require_auth_unavailable": "Write and admin connections need libpq 16 or newer (it can refuse clear-text and MD5 passwords). Install psycopg[binary] or a newer libpq."
+    "require_auth_unavailable": "Write and admin connections need libpq 16 or newer (it can refuse clear-text and MD5 passwords). Install psycopg[binary] or a newer libpq.",
+    "plan_target_no_primary_key": "The table has no primary key, so Studio cannot edit its rows.",
+    "data_editor_conflict": "A row was changed or deleted by someone else since it was loaded. Nothing was saved. Reload the rows and try again.",
+    "data_editor_rowcount": "A change did not affect exactly one row. Nothing was saved.",
+    "data_editor_value_invalid": "A value does not fit its column. Nothing was saved.",
+    "data_editor_column_incomparable": "A column of this table has a type that cannot be compared (for example xml or point), so a change by someone else could not be detected. Studio does not edit this table at all, whichever columns are shown; edit it with another tool."
   },
   "keyboard": {
     "palette": {
@@ -1620,6 +1626,57 @@
       "typeHost": "Type the host to confirm: {{host}}",
       "confirm": "Confirm",
       "cancel": "Cancel"
+    }
+  },
+  "dataEditor": {
+    "loading": "Loading the table …",
+    "noProfile": "No write profile is coupled to this connection's profile. Add one under Connections, Write profiles.",
+    "unlocked": "Write mode is unlocked for this connection.",
+    "lock": "Lock",
+    "sideEffects": "This table has triggers or rules. They run with every change and can change more rows; Studio does not count those.",
+    "keyNotShown": "A column of the primary key is not shown, so these rows cannot be edited here.",
+    "firstRows_one": "Only the first {{count}} row is shown for editing.",
+    "firstRows_other": "Only the first {{count}} rows are shown for editing.",
+    "caption": "Rows of {{name}}",
+    "key": "key",
+    "actions": "Actions",
+    "cell": "Row {{row}}, {{column}}",
+    "newCell": "New row {{row}}, {{column}}",
+    "default": "default",
+    "null": "NULL",
+    "setNull": "Set {{label}} to NULL",
+    "delete": "Delete row",
+    "undoDelete": "Keep row",
+    "removeNew": "Remove new row",
+    "addRow": "Add row",
+    "pending_one": "{{count}} change",
+    "pending_other": "{{count}} changes",
+    "discard": "Discard changes",
+    "preview": "Preview",
+    "changesLabel": "Pending changes",
+    "saved": "Saved: {{updated}} updated, {{inserted}} inserted, {{deleted}} deleted.",
+    "auditPending": "The audit record is still pending.",
+    "reload": "Reload the rows",
+    "unlock": {
+      "title": "Unlock write mode",
+      "lead": "Editing data needs this connection's write mode. Choose the write profile and type its name.",
+      "profile": "Write profile",
+      "type": "Type {{name}} to unlock",
+      "submit": "Unlock"
+    },
+    "change": {
+      "insert": "Insert a new row",
+      "delete": "Delete the row {{key}}",
+      "update": "Change {{columns}} of the row {{key}}"
+    },
+    "review": {
+      "title": "Review the changes",
+      "oneTransaction": "All changes run in one transaction. If a row was changed by someone else in the meantime, or a change affects not exactly one row, nothing is saved.",
+      "sideEffects": "Triggers and rules also run: {{names}}.",
+      "type": "Type {{text}} to confirm",
+      "back": "Back",
+      "confirm": "Confirm",
+      "execute": "Execute"
     }
   }
 }

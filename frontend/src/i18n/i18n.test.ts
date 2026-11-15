@@ -26,6 +26,8 @@ function markers(text: string): string[] {
 
 // Strings that are the same in both languages on purpose: names, environment labels and loan words.
 const SAME_IN_BOTH = new Set([
+  // The SQL keyword NULL (the Data Editor's NULL button, STU-026).
+  'dataEditor.null',
   // Product names and technical terms that German uses as they are (STU-008).
   'connections.engine.sqlite',
   'connections.engine.postgresql',

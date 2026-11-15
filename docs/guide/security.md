@@ -220,6 +220,26 @@ the server answers `405` and the write code is not even loaded.
   Studio opens no write or admin connection and refuses the unlock (`405 studio.require_auth_unavailable`).
   `psycopg[binary]` brings a recent libpq. Read connections are unchanged: project profiles refuse a clear-text
   password (`require_auth=!password`), your own read profiles keep every method.
+- **The Data Editor (STU-026, in development, locked by G-S2).** The Data Editor is not usable or supported: it
+  exists only behind `data_editor` in `write-areas.toml`, which is off by default, and stays locked until G-S2 is
+  granted. What it does when that flag is on in a test setup:
+    - the page shows an "Edit data" tab on a table only when the server says the flag is on; the page never decides
+      it, and with the flag off its routes answer `405` and its code is not loaded;
+    - a changeset (cells changed, rows added and deleted) runs only as a plan (above): preview, the typed
+      confirmation (the table's name when a row is deleted) and one run in one transaction;
+    - every column the page showed is sent as the row's old value and must still match: a row that someone changed
+      or deleted in the meantime (`studio.data_editor_conflict`), or a statement that changed not exactly one row
+      (`studio.data_editor_rowcount`), rolls back the whole changeset, and the message names no value. Rows that
+      triggers or rules change elsewhere are not counted; the preview names those triggers and rules;
+    - tables without a primary key, views, partitioned tables and `PROD` are refused, and so is a PostgreSQL table
+      with a column whose type cannot be compared (`xml`, `point`, `box`, a composite type, `json[]`;
+      `studio.data_editor_column_incomparable`): its value could not be checked, so a change made by someone else
+      could go unnoticed. The whole table is refused, whichever columns the page shows. Text is compared exactly,
+      whatever collation the column has. A `json` column is compared as `jsonb`, so a change made meanwhile only to
+      the key order, the whitespace or a duplicate key (`jsonb` keeps the last) is not a conflict: the old and the
+      new text count as the same value;
+    - the changes live in the page's memory only: never in the query history, the drafts, browser storage, the logs
+      or the audit log (it records the plan hash and row counts).
 
 !!! note "Python 3.11"
     Python's `sqlite3` module can turn on SQLite's defensive mode only from Python 3.12. On Python 3.11 Studio

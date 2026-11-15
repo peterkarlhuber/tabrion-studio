@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-026 (in development, locked by G-S2): the Data Editor behind the `data_editor` flag of `write-areas.toml`,
+  which stays off by default; it is not usable or supported until G-S2 is granted. While the flag is on, the plan
+  executor `data_editor.changeset` turns a changeset (rows changed, added, deleted) into plan steps; preview, typed
+  confirmation and one run go through the audited write transaction, each step a tabrion `rowedit` statement run
+  with `execute_checked(expect_rowcount=1)`. Every shown column is passed as the row's old value, so a row changed
+  elsewhere (`400 studio.data_editor_conflict`) or another row count (`400 studio.data_editor_rowcount`) rolls the
+  whole changeset back without echoing a value. Tables without a primary key (`studio.plan_target_no_primary_key`),
+  views, partitioned tables and PROD are refused, and so is a PostgreSQL table with a column whose type has no
+  proper equality (`xml`, `point`, `box`, a composite type, `json[]`: `400 studio.data_editor_column_incomparable`),
+  because such a value cannot be compared as an old value. Text columns with their own collation are compared
+  binary (review L-1 of PR #119). `POST /api/write/data-editor/table` describes the table; it answers
+  405 and the executor is not loaded while the flag is off. The page shows an "Edit data" tab on a table only when
+  the server answers that the flag is on (English and German); the changes stay in the page's memory and never reach
+  the query history, the drafts or browser storage (N-3).
+
 - STU-XW-4 (CR-DBX): `require_auth` for write and admin connections and the I-109 j confirmation of a write secret
   (D-15), with every write area still off. Every PostgreSQL write and admin connection, and the privilege check on
   it, sets libpq `require_auth=!password,!md5` whatever the profile's owner, so libpq refuses a server that asks for
@@ -980,6 +995,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- STU-026: Studio is built and tested against tabrion 0.3.0.dev0, the merge commit of tabrion PR #80
+  (`72e2d03fea2b83e159a4ae9df3b7c40246b8a232`; untagged, no release; it contains tabrion 0.2.2), pinned by full SHA in
+  `constraints/tabrion-integration.txt`; the range in `pyproject.toml` is `>=0.2,<0.4`.
 - TD-071: Studio is built and tested against tabrion 0.2.1, the untagged merge commit of tabrion PR #71
   (`af0458d54467571abfc1afdd44d76e1f4d727c06`; no tag, no release), pinned by full SHA in
   `constraints/tabrion-integration.txt` (was 0.2.0, `52353da`). The range `>=0.2,<0.3` stays. tabrion 0.2.1 has no
