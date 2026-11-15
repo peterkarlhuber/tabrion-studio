@@ -131,19 +131,21 @@ describe('opening and the tree', () => {
   it('opens the SQLite profile, reads the catalog and the file facts, and shows them as a tree', async () => {
     const { fetcher, calls } = server();
     await openSqlite(fetcher);
-    // Open reads the profile list again before it decides on D-02 (stale-list variant of TD-038).
+    // Open reads the profile list again before it decides on D-02 (stale-list variant of TD-038). The page asks
+    // once whether the Data Editor is on (STU-026; the fake server answers 404, so it is off).
     expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+      'GET /api/write/areas',
       'GET /api/profiles',
       'GET /api/profiles',
       'POST /api/connections',
       `GET ${SQLITE}/catalog`,
       `GET ${SQLITE}/sqlite-info`,
     ]);
-    expect(JSON.parse(calls[2]?.body ?? '')).toEqual({
+    expect(JSON.parse(calls[3]?.body ?? '')).toEqual({
       profile_id: 'project:parts-dev',
       confirmed_environment: 'dev',
     });
-    expect(calls[2]?.headers['Content-Type']).toBe('application/json');
+    expect(calls[3]?.headers['Content-Type']).toBe('application/json');
     // SQLite: the database file instead of schemas, then the groups of `main` (08 section 4.3).
     expect(rows().map((r) => r.getAttribute('aria-level'))).toEqual([
       '1',
@@ -1226,6 +1228,51 @@ describe('no write affordance (STU-026 stays locked)', () => {
     for (const word of [/edit/i, /delete/i, /drop/i, /insert/i, /update(?! to)/i, /save/i]) {
       expect(buttons.filter((label) => word.test(label))).toEqual([]);
     }
+  });
+});
+
+describe('the Data Editor tab (STU-026, behind the server-side flag)', () => {
+  const areas = (dataEditor: boolean) => () =>
+    json({
+      areas: { data_editor: dataEditor, schema_designer: false, database_manager: false },
+    });
+
+  it('the flag off on the server: no edit tab, no write request', async () => {
+    const { fetcher, calls } = server({ 'GET /api/write/areas': areas(false) });
+    const user = await openPg(fetcher);
+    await user.click(row('measurement'));
+    await screen.findAllByTestId('detail-column');
+    expect(screen.queryByRole('tab', { name: 'Edit data' })).toBeNull();
+    expect(calls.filter((c) => c.url.startsWith('/api/write/')).map((c) => c.url)).toEqual([
+      '/api/write/areas',
+    ]);
+  });
+
+  it('the flag on: a table gets the edit tab, which asks for the unlock first', async () => {
+    const { fetcher, calls } = server({
+      'GET /api/write/areas': areas(true),
+      'GET /api/write/unlocks': () => json({ unlocks: [] }),
+      'GET /api/write/profiles': () =>
+        json({
+          write_profiles: [
+            {
+              id: 'write:pg-w',
+              name: 'pg-w',
+              kind: 'write',
+              engine: 'postgresql',
+              read_profile_id: 'user:measure',
+            },
+          ],
+        }),
+    });
+    const user = await openPg(fetcher);
+    await user.click(row('measurement'));
+    await user.click(await screen.findByRole('tab', { name: 'Edit data' }));
+    expect(await screen.findByTestId('data-editor-unlock')).toBeVisible();
+    // Opening the tab only reads; nothing is unlocked or changed until the user types and submits.
+    expect(calls.filter((c) => c.method !== 'GET').map((c) => `${c.method} ${c.url}`)).toEqual([
+      'POST /api/connections',
+    ]);
   });
 });
 

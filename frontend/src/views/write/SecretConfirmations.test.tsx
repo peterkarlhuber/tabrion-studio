@@ -124,7 +124,15 @@ describe('SecretConfirmations (STU-XW-4, D-15)', () => {
         write_profiles: [{ id: 'write:a', name: 'a', kind: 'evil', secret: { confirmed: 'yes' } }],
       }),
     ).toEqual([
-      { id: 'write:a', name: 'a', kind: 'write', engine: '', confirmed: null, foreign: null },
+      {
+        id: 'write:a',
+        name: 'a',
+        kind: 'write',
+        engine: '',
+        confirmed: null,
+        foreign: null,
+        readProfileId: '',
+      },
     ]);
   });
 });

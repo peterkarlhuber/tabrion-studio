@@ -299,7 +299,10 @@ def _bindable(reflected: sqlalchemy.Table, engine: str) -> sqlalchemy.Table:
         )
         for column in reflected.columns
     ]
-    return sqlalchemy.Table(reflected.name, sqlalchemy.MetaData(), *columns, schema=reflected.schema)
+    # No implicit RETURNING of a generated key: one plain statement (a PostgreSQL rule refuses INSERT ... RETURNING).
+    return sqlalchemy.Table(
+        reflected.name, sqlalchemy.MetaData(), *columns, schema=reflected.schema, implicit_returning=False
+    )
 
 
 def _text(kind: sqlalchemy.types.TypeEngine[Any]) -> bool:

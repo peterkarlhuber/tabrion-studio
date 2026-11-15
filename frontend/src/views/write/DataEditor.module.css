@@ -1,0 +1,74 @@
+/* The Data Editor's grid (STU-026, 08 section 4.6): changed cells amber, new rows green, rows to delete red. */
+.editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-3);
+  min-width: 0;
+}
+.scroll {
+  overflow: auto;
+  max-height: 60vh;
+  border: 1px solid var(--tb-color-border);
+  border-radius: var(--tb-radius-md);
+}
+.grid {
+  border-collapse: collapse;
+  font-size: var(--tb-text-sm);
+}
+.grid th,
+.grid td {
+  padding: var(--tb-space-1) var(--tb-space-2);
+  border-bottom: 1px solid var(--tb-color-border);
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.grid th {
+  position: sticky;
+  top: 0;
+  background: var(--tb-color-surface-2);
+  color: var(--tb-color-heading);
+  font-weight: var(--tb-weight-semibold);
+}
+.cell {
+  display: flex;
+  align-items: center;
+  gap: var(--tb-space-1);
+}
+.cell input {
+  min-width: 8rem;
+  height: var(--tb-control-height);
+  padding: 0 var(--tb-space-2);
+  border: 1px solid var(--tb-color-control-border);
+  border-radius: var(--tb-radius-sm);
+  background: var(--tb-color-surface);
+  color: var(--tb-color-text);
+  font: inherit;
+}
+.cell input::placeholder {
+  color: var(--tb-null);
+  font-style: italic;
+}
+.changed input {
+  background: var(--tb-diff-changed);
+}
+.added td {
+  background: var(--tb-diff-added);
+}
+.removed td {
+  background: var(--tb-diff-removed);
+}
+.removed .cell input {
+  text-decoration: line-through;
+}
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tb-space-2);
+}
+.changes {
+  margin: 0;
+  padding-left: var(--tb-space-5);
+  font-size: var(--tb-text-sm);
+}

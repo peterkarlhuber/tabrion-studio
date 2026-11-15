@@ -56,6 +56,7 @@ import { openConnection } from '../../api/migrations';
 import { OFFLINE, type Problem } from '../../api/problem';
 import { PROD_CONFIRMATION_REQUIRED } from '../../api/connections';
 import { fetchProfiles, type ProfileItem } from '../../api/profiles';
+import { fetchWriteAreas } from '../../api/write';
 import { ProdConnectDialog } from '../../components/dialogs/StudioDialogs';
 import { EnvBadge } from '../../components/status/Status';
 import { Button } from '../../components/ui/Button';
@@ -188,6 +189,17 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   };
   const [detail, setDetail] = useState<Detail | null>(null);
   const [tab, setTab] = useState<TabId>('columns');
+  /** The Data Editor's area flag as the server answers it (STU-026); off until it answers, and off on any failure. */
+  const [dataEditor, setDataEditor] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void fetchWriteAreas(fetcher).then((areas) => {
+      if (live) setDataEditor(areas.data_editor);
+    });
+    return () => {
+      live = false;
+    };
+  }, [fetcher]);
   const [focused, setFocused] = useState<string | null>(null);
   const [focusTarget, setFocusTarget] = useState<FocusTarget | null>(null);
   /** The object tree with details, or the ER diagram of a schema (STU-023). */
@@ -676,6 +688,7 @@ export function ExplorerView({ fetcher = fetch }: { fetcher?: typeof fetch }) {
         fetcher={fetcher}
         connectionId={opened?.connectionId ?? ''}
         onGone={dataGone}
+        editProfileId={dataEditor && opened !== null ? opened.profileId : null}
       />
     );
   } else if (detail?.status === 'extensions') {
