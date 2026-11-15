@@ -2,9 +2,10 @@
 
 Review I-1 of PR #111, consistent with tabrion ADR 0015 D-1 and D-2: besides the four attributes, CREATEROLE before
 PostgreSQL 16 is ``dangerous`` (``admin.createrole_pre16``), and membership in a predefined role, held directly or
-through another role, is ``admin.broad:<role>`` (the server-file roles ``dangerous``). A role that is not predefined
-is never named. ``test_write_postgres.py`` proves the same against a server.
-"""
+through another role, is ``admin.broad:<role>`` (the server-file roles ``dangerous``). A role that is not predefined is
+never named. A predefined role is a ``pg_`` name **and** an oid below ``FirstNormalObjectId`` (16384), as tabrion #77
+D-2 counts it: a role a user created under a ``pg_`` name is not one (the rows here are a mocked catalog).
+``test_write_postgres.py`` proves the same against a server."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from tabrion_studio.write.connection import SERVER_FILE_ROLES, privilege_findings
+from tabrion_studio.write.connection import FIRST_NORMAL_OBJECT_ID, SERVER_FILE_ROLES, privilege_findings
 
 pytestmark = pytest.mark.security
 
@@ -24,9 +25,11 @@ def _row(
     createrole: bool = False,
     predefined: str | None = None,
     member: bool = False,
+    oid: object = 6181,
 ) -> tuple[Any, ...]:
-    """One row of the privilege query: own, the four attributes, createdb, owned databases, predefined, member."""
-    return (own, superuser, False, createrole, False, False, 0, predefined, member)
+    """One row of the privilege query: own, the four attributes, createdb, owned databases, predefined, member, oid
+    (by default one below 16384, as every predefined role has)."""
+    return (own, superuser, False, createrole, False, False, 0, predefined, member, oid)
 
 
 def _codes(findings: list[dict[str, str]]) -> dict[str, tuple[str, str]]:
@@ -110,3 +113,23 @@ def test_attributes_and_predefined_roles_together() -> None:
         "admin.broad:pg_read_all_data": ("direct", "warning"),
         "admin.broad:pg_write_server_files": ("inherited", "dangerous"),
     }
+
+
+@pytest.mark.parametrize(
+    "oid", [FIRST_NORMAL_OBJECT_ID, FIRST_NORMAL_OBJECT_ID + 1, 2**31, 0, -1, None, True, "6181", 6181.0]
+)
+def test_a_pg_name_without_a_predefined_oid_is_not_broad(oid: object) -> None:
+    """tabrion #77 D-2 (review I-1): ``pg_like``, a role a user created (a superuser can rename one into the ``pg_``
+    namespace through the catalog), has an oid of 16384 or more: no ``broad`` finding, and its name is never shown.
+    An oid Studio cannot read as a whole number counts as not predefined."""
+    for name in ("pg_like", "pg_write_server_files", "pg_read_all_data"):
+        rows = [_row(own=True), _row(predefined=name, member=True, oid=oid)]
+        assert privilege_findings(rows, 160000)[1] == [], (name, oid)
+
+
+def test_the_oid_boundary_is_first_normal_object_id() -> None:
+    assert FIRST_NORMAL_OBJECT_ID == 16384
+    below = privilege_findings([_row(own=True), _row(predefined="pg_monitor", member=True, oid=16383)], 160000)[1]
+    assert [f["code"] for f in below] == ["admin.broad:pg_monitor"]
+    at = privilege_findings([_row(own=True), _row(predefined="pg_monitor", member=True, oid=16384)], 160000)[1]
+    assert at == []

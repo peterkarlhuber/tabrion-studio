@@ -18,7 +18,8 @@ import sqlalchemy
 
 from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.config.write_areas import Area
-from tabrion_studio.write.connection import WRITE_SEARCH_PATH, open_write_connection
+from tabrion_studio.write import connection as write_connection
+from tabrion_studio.write.connection import WRITE_SEARCH_PATH, open_write_connection, privilege_findings
 from tests.support.plans import RowExecutor
 from tests.support.write import CANARY_SECRET, EVERY_AREA, WriteEnv
 
@@ -181,6 +182,55 @@ def test_createrole_before_16_is_dangerous_and_reported_by_the_server_version(ro
             assert "admin.createrole_pre16" not in found
     finally:
         admin.close()
+
+
+_RENAME = sqlalchemy.text("UPDATE pg_catalog.pg_authid SET rolname = :new WHERE rolname = :old")
+
+
+def test_a_user_role_with_a_pg_name_is_not_reported_broad(roles: dict[str, Any]) -> None:
+    """tabrion #77 D-2 (review I-1): a role counts as predefined only with a ``pg_`` name **and** an oid below
+    ``FirstNormalObjectId`` (16384). ``CREATE ROLE`` refuses ``pg_`` names, but a superuser can rename a role into that
+    namespace through the catalog (``allow_system_table_mods``); a member of such a role gets no ``broad`` finding,
+    from the query or from :func:`privilege_findings` given the role's name."""
+    assert PG_URL is not None and PG_SUPERUSER_URL is not None
+    prefix = roles["prefix"]
+    password = roles["password"]
+    fake = f"pg_like_{secrets.token_hex(4)}"
+    admin = sqlalchemy.create_engine(sqlalchemy.make_url(PG_SUPERUSER_URL).set(drivername="postgresql+psycopg"))
+    database = sqlalchemy.make_url(PG_URL).database
+    with admin.begin() as connection:
+        connection.exec_driver_sql(f"CREATE ROLE {prefix}_like NOLOGIN")
+        connection.exec_driver_sql(f"CREATE ROLE {prefix}_lm LOGIN PASSWORD '{password}' IN ROLE {prefix}_like")
+        connection.exec_driver_sql(f'GRANT CONNECT ON DATABASE "{database}" TO {prefix}_lm')
+        connection.exec_driver_sql("SET LOCAL allow_system_table_mods = on")
+        connection.execute(_RENAME, {"new": fake, "old": f"{prefix}_like"})
+    try:
+        with admin.connect() as connection:
+            oid = connection.execute(
+                sqlalchemy.text("SELECT oid::int8 FROM pg_catalog.pg_roles WHERE rolname = :name"), {"name": fake}
+            )
+            (row,) = oid.fetchall()
+        assert row[0] >= 16384  # a role a user made, under a pg_ name
+        write = open_write_connection("admin", _profile(f"{prefix}_lm"), Settings(), password=password)
+        try:
+            assert write.findings == [], write.findings
+            assert write.facts["reachable_roles"] == 1
+            assert fake not in repr(write.findings)
+            # The query never names it; and given its name, the findings still check the oid.
+            rows = write.fetch(write_connection._PRIVILEGES)
+            assert all(r[7] is None for r in rows)
+            named = [(*r[:7], fake if not r[0] else None, *r[8:]) for r in rows]
+            assert privilege_findings(named, 160000)[1] == []
+        finally:
+            write.close()
+    finally:
+        with admin.begin() as connection:
+            connection.exec_driver_sql("SET LOCAL allow_system_table_mods = on")
+            connection.execute(_RENAME, {"new": f"{prefix}_like", "old": fake})
+            for role in (f"{prefix}_lm", f"{prefix}_like"):
+                connection.exec_driver_sql(f"DROP OWNED BY {role}")
+                connection.exec_driver_sql(f"DROP ROLE IF EXISTS {role}")
+        admin.dispose()
 
 
 def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tmp_path: Path, static_dir: Path) -> None:

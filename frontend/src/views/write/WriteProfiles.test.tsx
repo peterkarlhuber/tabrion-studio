@@ -17,6 +17,22 @@ const LOCAL = {
   secret: { source: null, has_secret: null },
 };
 
+const SOCKET = {
+  id: 'user:parts-socket',
+  source: 'user',
+  name: 'parts-socket',
+  engine: 'postgresql',
+  environment: 'dev',
+  host: '/var/run/postgresql',
+  port: 5432,
+  database: 'parts',
+  user: 'reader',
+  password: null,
+  secret: { source: null, has_secret: null },
+};
+
+const TCP = { ...SOCKET, id: 'user:parts-tcp', name: 'parts-tcp', host: 'localhost' };
+
 function setup(areas: Record<string, unknown>) {
   const posts: unknown[] = [];
   const urls: string[] = [];
@@ -35,7 +51,9 @@ function setup(areas: Record<string, unknown>) {
         }),
       );
     if (url === '/api/profiles')
-      return new Response(JSON.stringify({ ...PROFILES, profiles: [...PROFILES.profiles, LOCAL] }));
+      return new Response(
+        JSON.stringify({ ...PROFILES, profiles: [...PROFILES.profiles, LOCAL, SOCKET, TCP] }),
+      );
     if (url === '/api/write/profiles' && init?.method === 'POST') {
       posts.push(JSON.parse(String(init.body)));
       return new Response(JSON.stringify({ id: 'write:w', digest: 'c'.repeat(64) }), {
@@ -93,5 +111,34 @@ describe('WriteProfilesSection (STU-XW-1)', () => {
       confirm_no_prod_credentials: true,
     });
     expect(section).toBeInTheDocument();
+  });
+
+  it('asks for the server OS user only for a Unix socket and sends it (N-2 of PR #116)', async () => {
+    const user = userEvent.setup();
+    const { posts } = setup({ data_editor: true, schema_designer: false, database_manager: false });
+    await screen.findByTestId('write-profiles');
+    await waitFor(() =>
+      expect(screen.getByRole('option', { name: 'parts-socket' })).toBeInTheDocument(),
+    );
+    const readSelect = screen.getAllByRole('combobox')[1] as HTMLElement;
+    await user.selectOptions(readSelect, 'parts-tcp');
+    expect(screen.queryByLabelText(/operating system user/i)).toBeNull();
+    await user.selectOptions(readSelect, 'parts-socket');
+    await user.type(screen.getAllByRole('textbox')[0] as HTMLElement, 'socket-write');
+    await user.type(screen.getByLabelText(/database role/i), 'writer');
+    await user.type(screen.getByLabelText(/operating system user/i), 'postgres');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: /create/i }));
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({
+      profile: {
+        name: 'socket-write',
+        kind: 'write',
+        read_profile: 'parts-socket',
+        user: 'writer',
+        password: 'keyring:',
+        requirepeer: 'postgres',
+      },
+    });
   });
 });

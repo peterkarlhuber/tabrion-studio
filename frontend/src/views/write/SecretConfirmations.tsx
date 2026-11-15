@@ -116,6 +116,12 @@ export function SecretConfirmations({
               })}
               {pair.reference.target !== '' ? ` ${pair.reference.target}` : ''}
             </dd>
+            {typeof pair.requirepeer === 'string' ? (
+              <>
+                <dt>{t('write.pair.requirepeer')}</dt>
+                <dd>{pair.requirepeer}</dd>
+              </>
+            ) : null}
           </dl>
           {pair.foreign ? (
             <p role="note" className={connectionStyles.warning}>

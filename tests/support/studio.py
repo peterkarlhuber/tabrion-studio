@@ -116,8 +116,13 @@ def run_cli(*args: str, timeout: float = 30.0) -> subprocess.CompletedProcess[st
 
 
 @contextlib.contextmanager
-def start_studio(project: Path, state_dir: Path, *extra: str, log_dir: Path | None = None) -> Iterator[Studio]:
-    """Start ``tabrion-studio PROJECT --no-browser --state-dir STATE``; kill it on exit if it still runs."""
+def start_studio(
+    project: Path, state_dir: Path, *extra: str, log_dir: Path | None = None, state_option: bool = True
+) -> Iterator[Studio]:
+    """Start ``tabrion-studio PROJECT --no-browser --state-dir STATE``; kill it on exit if it still runs.
+
+    ``state_option=False`` leaves ``--state-dir`` out: the caller sets ``TABRION_STUDIO_STATE_DIR`` to ``state_dir``
+    (a state folder chosen by the variable, review N-1 of PR #116)."""
     log_dir = log_dir or state_dir.parent
     log_path = log_dir / f"studio-{time.monotonic_ns()}.log"
     log = log_path.open("wb")
@@ -125,7 +130,8 @@ def start_studio(project: Path, state_dir: Path, *extra: str, log_dir: Path | No
     if sys.platform == "win32":
         kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     env = {**os.environ, "PYTHONUNBUFFERED": "1", **NO_KEYRING}
-    args: Sequence[str] = studio_command(str(project), "--no-browser", "--state-dir", str(state_dir), *extra)
+    state = ("--state-dir", str(state_dir)) if state_option else ()
+    args: Sequence[str] = studio_command(str(project), "--no-browser", *state, *extra)
     started = time.perf_counter()
     process = subprocess.Popen(args, stdout=log, stderr=subprocess.STDOUT, env=env, **kwargs)  # type: ignore[call-overload]
     studio = Studio(process, project, state_dir, log_path, log, started)

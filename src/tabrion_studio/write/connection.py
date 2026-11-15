@@ -36,14 +36,19 @@ The file's identity (device and inode; on Windows the volume serial number and f
 taken at unlock and compared again after the connection opened and before each use (:meth:`WriteConnection.verify`),
 so a file swapped behind the unlock stops it (TX-16; STU-XW-3 calls it again before each run).
 
-**Authentication (STU-XW-4, review L-2 of PR #111, I-109 j, TX-07).** Every PostgreSQL write and admin connection,
-and with it the privilege check that runs on it, sets libpq's ``require_auth``, whatever the profile or its owner:
+**Authentication (STU-XW-4, review L-2 of PR #111, I-109 j, TX-07).** Every PostgreSQL write and admin connection, and
+with it the privilege check that runs on it, sets libpq's ``require_auth``, whatever the profile or its owner:
 ``!password,!md5`` (:data:`REQUIRE_AUTH`), so libpq never answers a server that asks for the password in clear text
-(``password``, and LDAP, PAM, RADIUS and BSD authentication, which use the same exchange) or as an MD5 hash; for a
-foreign host (not loopback) that gets a password it is ``scram-sha-256`` (:data:`REQUIRE_AUTH_FOREIGN`). The option
-exists from libpq 16 on; with an older libpq (``psycopg.pq.version()``) Studio refuses the write connection and the
-unlock before any secret is read (``studio.require_auth_unavailable``, fail closed), where a read connection of a
-project profile only logs a warning.
+(``password``, and LDAP, PAM, RADIUS and BSD authentication, which use the same exchange) or as an MD5 hash; a
+connection that sends a password is ``scram-sha-256`` (:data:`REQUIRE_AUTH_SCRAM`) for every host, a loopback address
+and a socket folder included (review N-2 of PR #116), so a process that took over a local port or socket cannot make
+libpq skip authentication or use another method. A write profile may name the server's operating system user
+(``requirepeer``, PostgreSQL over a Unix socket only): libpq then refuses a socket whose process runs as another user
+before any authentication exchange. SCRAM over loopback TCP without TLS remains open to a process that took over the
+port first: it learns no password, but can try to guess it offline from the exchange (threat model, TX-07 residual
+risk). The option exists from libpq 16 on; with an older libpq (``psycopg.pq.version()``) Studio refuses the write
+connection and the unlock before any secret is read (``studio.require_auth_unavailable``, fail closed), where a read
+connection of a project profile only logs a warning.
 
 **Admin privileges (TX-11, E-X6).** On every connect Studio reads the role's attributes, every role reachable from
 it through membership (``SET ROLE``, inheritance or the ADMIN option: every row of ``pg_auth_members``), the databases
@@ -53,8 +58,9 @@ role:
 * ``admin.superuser``, ``admin.bypassrls``, ``admin.createrole``, ``admin.replication``: the attributes (``warning``);
 * ``admin.createrole_pre16`` (``dangerous``): ``CREATEROLE`` on PostgreSQL before 16, where it can grant membership
   in almost any role that is not a superuser (tabrion ADR 0015 D-1, review I-1 of PR #111);
-* ``admin.broad:<role>``: membership in a predefined role (a ``pg_*`` role with an oid below
-  ``FirstNormalObjectId``), as tabrion's ``role_privileges`` reports ``broad:<role>`` (ADR 0015 D-2).
+* ``admin.broad:<role>``: membership in a predefined role (a ``pg_*`` role **and** an oid below
+  ``FirstNormalObjectId``, both checked by the query and again by :func:`privilege_findings`; a role a user created
+  under a ``pg_`` name is not one), as tabrion's ``role_privileges`` reports ``broad:<role>`` (ADR 0015 D-2).
   ``pg_execute_server_program``, ``pg_read_server_files`` and ``pg_write_server_files`` are superuser-equivalent
   (``dangerous``); every other one, ``pg_read_all_data`` and ``pg_write_all_data`` among them, is a ``warning``.
 
@@ -86,7 +92,7 @@ from tabrion.postgres import SessionSettings
 from tabrion.sqlite import JournalMode, SQLiteProfile
 from tabrion.sqlite import connect as tabrion_sqlite_connect
 
-from tabrion_studio.config.schema import Profile, Settings, is_loopback
+from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.services import tabrion_compat
 from tabrion_studio.services.connections import (
     _TLS,
@@ -103,7 +109,7 @@ from tabrion_studio.services.readonly import ACTING_PRAGMAS, READING_PRAGMAS, SQ
 
 __all__ = [
     "REQUIRE_AUTH",
-    "REQUIRE_AUTH_FOREIGN",
+    "REQUIRE_AUTH_SCRAM",
     "WRITE_SEARCH_PATH",
     "WriteConnection",
     "WriteError",
@@ -122,8 +128,9 @@ __all__ = [
 WRITE_SEARCH_PATH = WRITE_STARTUP_SEARCH_PATH
 #: libpq ``require_auth`` of every write and admin connection (review L-2 of PR #111): no clear-text, no MD5 password.
 REQUIRE_AUTH = "!password,!md5"
-#: libpq ``require_auth`` of a write or admin connection that sends a password to a foreign host (I-109 j).
-REQUIRE_AUTH_FOREIGN = "scram-sha-256"
+#: libpq ``require_auth`` of a write or admin connection that sends a password, to any host (I-109 j; N-2 of PR #116:
+#: also on loopback and over a Unix socket).
+REQUIRE_AUTH_SCRAM = "scram-sha-256"
 #: The journal modes a write connection accepts; it never changes the file's own.
 ACCEPTED_JOURNAL_MODES = frozenset({"wal", "delete", "truncate"})
 #: Schema tables a statement may never write, also not with ``writable_schema`` (defensive mode refuses that too).
@@ -202,11 +209,10 @@ def require_auth_supported() -> None:
         raise WriteError("studio.require_auth_unavailable")
 
 
-def require_auth(host: str | None, password: str | None) -> str:
-    """The ``require_auth`` value of a write or admin connection to ``host`` (see the module text)."""
-    if password is not None and host is not None and not is_loopback(host):
-        return REQUIRE_AUTH_FOREIGN
-    return REQUIRE_AUTH
+def require_auth(password: str | None) -> str:
+    """The ``require_auth`` value of a write or admin connection (see the module text): SCRAM whenever a password is
+    sent, whatever the host (N-2 of PR #116); otherwise no clear-text and no MD5 exchange."""
+    return REQUIRE_AUTH_SCRAM if password is not None else REQUIRE_AUTH
 
 
 def _install_write_guards(dbapi_connection: Any, _record: Any) -> None:
@@ -251,14 +257,21 @@ _PRIVILEGES = (
     # Whether the session's role is a member of it itself (direct) or only through another role (inherited).
     " EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m JOIN pg_catalog.pg_roles s"
     " ON s.oid OPERATOR(pg_catalog.=) m.member"
-    " WHERE m.roleid OPERATOR(pg_catalog.=) r.oid AND s.rolname OPERATOR(pg_catalog.=) pg_catalog.current_user())"
+    " WHERE m.roleid OPERATOR(pg_catalog.=) r.oid AND s.rolname OPERATOR(pg_catalog.=) pg_catalog.current_user()),"
+    # The oid, so the findings check both conditions of a predefined role themselves (tabrion ADR 0015 D-2).
+    " r.oid::pg_catalog.int8"
     " FROM reach JOIN pg_catalog.pg_roles r ON r.oid OPERATOR(pg_catalog.=) reach.oid"
 )
 _SERVER_VERSION = "SELECT pg_catalog.current_setting('server_version_num')"
 
 
-def _predefined(name: object) -> str | None:
-    """``name`` if it is the name of a predefined role as PostgreSQL spells them, else None (never a free name)."""
+def _predefined(name: object, oid: object) -> str | None:
+    """``name`` if it is a predefined role: a ``pg_`` name as PostgreSQL spells them **and** an oid below
+    :data:`FIRST_NORMAL_OBJECT_ID` (tabrion ADR 0015 D-2), else None. A role a user created is never predefined, also
+    when it is called ``pg_something`` (a superuser can rename one so through the catalog), and an unknown oid counts
+    as not predefined (never a free name)."""
+    if type(oid) is not int or not 0 < oid < FIRST_NORMAL_OBJECT_ID:
+        return None
     return name if isinstance(name, str) and _PREDEFINED_NAME.fullmatch(name) else None
 
 
@@ -267,17 +280,17 @@ def privilege_findings(
 ) -> tuple[dict[str, Any], list[dict[str, str]]]:
     """The facts and findings of the privilege check (TX-11) from the rows of :data:`_PRIVILEGES`.
 
-    One row per role reachable from the session's role (itself included, ``own``). A finding names the attribute or
-    the predefined role and whether the role holds it ``direct`` or through a reachable role (``inherited``); never
-    the name of a role that is not predefined. ``server_version`` is ``server_version_num`` (None: not known, then
-    CREATEROLE counts as before 16: fail closed).
+    One row per role reachable from the session's role (itself included, ``own``), its oid last. A finding names the
+    attribute or the predefined role and whether the role holds it ``direct`` or through a reachable role
+    (``inherited``); never the name of a role that is not predefined. ``server_version`` is ``server_version_num``
+    (None: not known, then CREATEROLE counts as before 16: fail closed).
     """
     reachable = 0
     owned = 0
     createdb = False
     held: dict[str, str] = {}
     broad: dict[str, str] = {}
-    for own, superuser, bypassrls, createrole, replication, can_createdb, databases, predefined, member in rows:
+    for own, superuser, bypassrls, createrole, replication, can_createdb, databases, predefined, member, oid in rows:
         reachable += 0 if own else 1
         owned += int(databases or 0)
         createdb = createdb or bool(can_createdb)
@@ -287,7 +300,7 @@ def privilege_findings(
                     held[name] = "direct"
                 else:
                     held.setdefault(name, "inherited")
-        role = None if own else _predefined(predefined)
+        role = None if own else _predefined(predefined, oid)
         if role is not None:
             if member:
                 broad[role] = "direct"
@@ -454,14 +467,24 @@ def _sqlite_database(
 
 
 def _postgres_database(
-    profile: Profile, password: str | None, settings: tabrion.Profile, *, refuse_cleartext: bool
+    profile: Profile,
+    password: str | None,
+    settings: tabrion.Profile,
+    *,
+    refuse_cleartext: bool,
+    requirepeer: str | None = None,
 ) -> tabrion.Database:
     # Before the URL with the password is built: no write connection without require_auth (L-2 of PR #111).
     require_auth_supported()
+    if requirepeer is not None and not (profile.host or "").startswith("/"):
+        # libpq checks the peer only on a Unix socket; never silently drop the check (fail closed, N-2 of PR #116).
+        raise WriteError("studio.write_coupling_invalid")
     url = connection_url(profile, password)
     connect_args = driver_options(password, settings.postgres, refuse_cleartext=refuse_cleartext, write=True)
     # Always, whatever the profile's owner (refuse_cleartext is only the read path's project-profile rule).
-    connect_args["require_auth"] = require_auth(profile.host, password)
+    connect_args["require_auth"] = require_auth(password)
+    if requirepeer is not None:
+        connect_args["requirepeer"] = requirepeer
     options = {"connect_args": connect_args, "use_native_hstore": False}
     db = tabrion.Database.from_url(url, profile=settings, engine_options=options)
     event.listen(db.engine, "checkin", tabrion_compat.reset_session)
@@ -480,12 +503,14 @@ def open_write_connection(
     journal_mode: str | None = None,
     identity: tuple[int, int] | None = None,
     refuse_cleartext: bool = False,
+    requirepeer: str | None = None,
 ) -> WriteConnection:
     """Open and check a write (``kind="write"``) or admin (``"admin"``) connection for ``profile``, the read
     profile's target with the write profile's role and secret (``WriteProfile.connection_profile``).
 
     SQLite needs ``database_file`` (the read connection's real path), its ``identity`` taken at unlock and its current
-    ``journal_mode``. Raises :class:`WriteError`, :class:`RegistryError` or a tabrion error (``db.<kind>``).
+    ``journal_mode``. ``requirepeer`` (PostgreSQL over a Unix socket) is the server's OS user that libpq checks.
+    Raises :class:`WriteError`, :class:`RegistryError` or a tabrion error (``db.<kind>``).
     """
     if profile.environment == "prod":
         raise WriteError("studio.write_prod_locked")  # E-X7: no code path writes to PROD
@@ -500,7 +525,9 @@ def open_write_connection(
                 raise WriteError("studio.write_target_changed")
             db, owned = _sqlite_database(database_file, journal_mode, settings)
         else:
-            db = _postgres_database(profile, password, settings, refuse_cleartext=refuse_cleartext)
+            db = _postgres_database(
+                profile, password, settings, refuse_cleartext=refuse_cleartext, requirepeer=requirepeer
+            )
     connection = WriteConnection(
         kind=kind,
         engine=profile.engine,

@@ -20,7 +20,8 @@ read. A SQLite write profile has no secret and needs no confirmation.
 2. **Confirm** (``POST /api/write/secret-confirmations/confirm`` with ``{"confirmation_hash", "typed"}``): the
    typed text must be the host exactly (the user reads where the secret goes, D-15). The server reads the pair again;
    if it is no longer the one previewed, the confirmation is refused (``studio.secret_confirmation_stale``). The
-   confirmed pair digest is kept in ``<state>/write-secret-confirmations.json`` (0600, written atomically, read without
+   confirmed pair digest is kept in ``write-secret-confirmations.json`` in the folder of ``write-areas.toml``, never in
+   a state folder an environment variable chose (review N-1 of PR #116; 0600, written atomically, read without
    following a link), recorded in the audit log (``secret.confirm``; no host, no reference, only the pair digest).
 3. **Revoke** (``DELETE /api/write/secret-confirmations`` with ``{"write_profile_id"}``): forgets it and ends the
    profile's unlocks.
@@ -34,8 +35,9 @@ is missing, unreadable, malformed, of another version or behind a link confirms 
 **Foreign hosts.** A host that is not loopback (:func:`tabrion_studio.config.schema.is_loopback`: a socket folder,
 ``localhost`` or a loopback address; never a DNS name) is *foreign*. For a foreign host Studio requires the TLS mode
 ``verify-ca`` or ``verify-full`` (``studio.write_tls_required``, at preview, confirmation and unlock), and a write
-connection that sends a password there uses libpq ``require_auth=scram-sha-256`` (I-109 j). Every other write or
-admin connection uses ``require_auth=!password,!md5`` (:mod:`tabrion_studio.write.connection`).
+connection that sends a password uses libpq ``require_auth=scram-sha-256``, there and on loopback alike (I-109 j,
+review N-2 of PR #116). A write or admin connection without a password uses ``require_auth=!password,!md5``
+(:mod:`tabrion_studio.write.connection`). The optional ``requirepeer`` of the write profile is part of the pair.
 """
 
 from __future__ import annotations
@@ -97,6 +99,8 @@ class SecretPair:
     user: str | None
     ref_source: str  # keyring, env, file or none
     ref_target: str  # the variable name or the path as written; "" for keyring and none
+    #: The server's OS user libpq checks on a Unix socket (N-2 of PR #116); None when the profile names none.
+    requirepeer: str | None = None
 
     @property
     def foreign(self) -> bool:
@@ -117,6 +121,9 @@ class SecretPair:
             self.ref_source,
             self.ref_target,
         ]
+        if self.requirepeer is not None:
+            # Only when set, so the digest of a pair without it stays as it was; adding or removing it changes it.
+            doc.append({"requirepeer": self.requirepeer})
         text = json.dumps(doc, ensure_ascii=True, separators=(",", ":"))
         return hashlib.sha256(text.encode("ascii")).hexdigest()
 
@@ -129,6 +136,7 @@ class SecretPair:
             "sslmode": self.sslmode,
             "role": self.user,
             "reference": {"source": self.ref_source, "target": self.ref_target},
+            "requirepeer": self.requirepeer,
             "foreign": self.foreign,
         }
 
@@ -151,6 +159,7 @@ def secret_pair(write: WriteProfile, read: Profile) -> SecretPair | None:
         user=write.user,
         ref_source="none" if ref is None else ref.source,
         ref_target="" if ref is None else ref.target,
+        requirepeer=write.requirepeer,
     )
 
 

@@ -48,6 +48,11 @@ export interface WriteProfileFields {
   user?: string;
   /** The reference as the file writes it (`keyring:`, `env:NAME`, `file:PATH`). */
   password?: string | null;
+  /**
+   * PostgreSQL over a Unix socket only: the operating system user the server must run as (libpq `requirepeer`,
+   * review N-2 of PR #116). Left out when empty.
+   */
+  requirepeer?: string;
 }
 
 /**
@@ -193,6 +198,8 @@ export interface SecretPairPreview {
     sslmode: string | null;
     role: string | null;
     reference: { source: string; target: string };
+    /** The server's OS user libpq checks on a Unix socket; null when the profile names none. */
+    requirepeer?: string | null;
     foreign: boolean;
   };
 }

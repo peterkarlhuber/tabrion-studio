@@ -25,7 +25,7 @@ from typing import Any
 import pytest
 import tabrion
 
-from tabrion_studio.config.schema import Profile, Settings, target_fingerprint
+from tabrion_studio.config.schema import Profile, Settings, is_loopback, target_fingerprint
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
 from tabrion_studio.services import connections as connections_module
@@ -34,7 +34,7 @@ from tabrion_studio.write import connection as write_connection
 from tabrion_studio.write import unlock as unlock_module
 from tabrion_studio.write.connection import (
     REQUIRE_AUTH,
-    REQUIRE_AUTH_FOREIGN,
+    REQUIRE_AUTH_SCRAM,
     WriteError,
     open_write_connection,
     require_auth,
@@ -99,10 +99,14 @@ def _pg(host: str = "localhost", sslmode: str = "prefer", user: str = "app_write
 @pytest.mark.parametrize(
     ("host", "sslmode", "with_password", "expected"),
     [
-        ("localhost", "prefer", True, REQUIRE_AUTH),
-        ("127.0.0.1", "disable", True, REQUIRE_AUTH),
+        # N-2 of PR #116: a password goes only through SCRAM, on loopback and over a socket too.
+        ("localhost", "prefer", True, REQUIRE_AUTH_SCRAM),
+        ("127.0.0.1", "disable", True, REQUIRE_AUTH_SCRAM),
+        ("[::1]", "disable", True, REQUIRE_AUTH_SCRAM),
+        ("/var/run/postgresql", "prefer", True, REQUIRE_AUTH_SCRAM),
         ("/var/run/postgresql", "prefer", False, REQUIRE_AUTH),
-        ("db.example.org", "verify-full", True, REQUIRE_AUTH_FOREIGN),
+        ("localhost", "prefer", False, REQUIRE_AUTH),
+        ("db.example.org", "verify-full", True, REQUIRE_AUTH_SCRAM),
         ("db.example.org", "verify-full", False, REQUIRE_AUTH),
     ],
 )
@@ -110,7 +114,8 @@ def test_every_write_and_admin_connection_sets_require_auth(
     captured: list[dict[str, Any]], kind: str, host: str, sslmode: str, with_password: bool, expected: str
 ) -> None:
     """L-2 of PR #111: the option reaches the driver for ``write`` and ``admin``, whatever the profile's owner
-    (``refuse_cleartext`` False is the user profile's read rule); a foreign host that gets a password gets SCRAM."""
+    (``refuse_cleartext`` False is the user profile's read rule); any host that gets a password gets SCRAM (N-2 of
+    PR #116: also loopback and a socket, so a process on an occupied local port cannot pick another method)."""
     password = CANARY_SECRET if with_password else None
     with pytest.raises(_Stop):
         open_write_connection(kind, _pg(host, sslmode), Settings(), password=password, refuse_cleartext=False)
@@ -135,15 +140,59 @@ def test_a_host_list_never_reaches_the_driver_on_the_write_path(
     assert captured == []
 
 
-def test_a_host_list_is_foreign_and_gets_scram_only() -> None:
-    """Defense in depth (M-1 of the PR #117 review): a list is never loopback, so it would need SCRAM and TLS."""
-    assert require_auth("/var/run/postgresql,db.example.org", CANARY_SECRET) == REQUIRE_AUTH_FOREIGN
-    assert require_auth("/var/run/postgresql", CANARY_SECRET) == REQUIRE_AUTH
+def test_a_host_list_is_never_loopback_and_a_password_gets_scram_only() -> None:
+    """Defense in depth (M-1 of the PR #117 review): a list is never loopback, and any password needs SCRAM."""
+    assert not is_loopback("/var/run/postgresql,db.example.org")
+    assert not is_loopback("localhost,db.example.org")
+    assert require_auth(CANARY_SECRET) == REQUIRE_AUTH_SCRAM
+    assert require_auth(None) == REQUIRE_AUTH
+
+
+@pytest.mark.parametrize("host", ["/var/run/postgresql,127.0.0.1", "/var/run/postgresql,db.example.org"])
+def test_requirepeer_with_a_socket_and_tcp_host_list_is_refused(captured: list[dict[str, Any]], host: str) -> None:
+    """Combination of N-2 of PR #116 and M-1 of the PR #117 review: a refused socket can never fall back to TCP."""
+    with pytest.raises((RegistryError, WriteError)) as refused:
+        open_write_connection("write", _pg(host), Settings(), password=CANARY_SECRET, requirepeer="postgres")
+    assert CANARY_SECRET not in str(refused.value) and host not in str(refused.value)
+    assert captured == []
 
 
 def test_require_auth_is_never_weaker_than_no_cleartext_no_md5() -> None:
     assert set(REQUIRE_AUTH.split(",")) == {"!password", "!md5"}
-    assert REQUIRE_AUTH_FOREIGN == "scram-sha-256"
+    assert REQUIRE_AUTH_SCRAM == "scram-sha-256"
+
+
+# --- N-2 of PR #116: requirepeer on a Unix socket ---------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("kind", ["write", "admin"])
+def test_requirepeer_reaches_libpq_on_a_socket(captured: list[dict[str, Any]], kind: str) -> None:
+    """The server's OS user, when the write profile names it, is checked by libpq before it authenticates."""
+    with pytest.raises(_Stop):
+        open_write_connection(
+            kind, _pg("/var/run/postgresql"), Settings(), password=CANARY_SECRET, requirepeer="postgres"
+        )
+    (options,) = captured
+    assert options["connect_args"]["requirepeer"] == "postgres"
+    assert options["connect_args"]["require_auth"] == REQUIRE_AUTH_SCRAM
+
+
+def test_without_requirepeer_none_is_set(captured: list[dict[str, Any]]) -> None:
+    with pytest.raises(_Stop):
+        open_write_connection("write", _pg("/var/run/postgresql"), Settings(), password=CANARY_SECRET)
+    (options,) = captured
+    assert "requirepeer" not in options["connect_args"]
+
+
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1", "db.example.org"])
+def test_requirepeer_on_a_tcp_host_refuses_the_connection(captured: list[dict[str, Any]], host: str) -> None:
+    """libpq ignores requirepeer over TCP: Studio never drops the check silently (fail closed)."""
+    with pytest.raises(WriteError) as refused:
+        open_write_connection(
+            "write", _pg(host, "verify-full"), Settings(), password=CANARY_SECRET, requirepeer="postgres"
+        )
+    assert refused.value.code == "studio.write_coupling_invalid"
+    assert captured == []
 
 
 def test_a_libpq_older_than_16_refuses_the_write_connection(
@@ -162,7 +211,7 @@ def test_libpq_16_is_enough(captured: list[dict[str, Any]], monkeypatch: pytest.
     monkeypatch.setattr(connections_module, "_libpq_version", lambda: 160000)
     with pytest.raises(_Stop):
         open_write_connection("write", _pg(), Settings(), password=CANARY_SECRET)
-    assert captured[0]["connect_args"]["require_auth"] == REQUIRE_AUTH
+    assert captured[0]["connect_args"]["require_auth"] == REQUIRE_AUTH_SCRAM
 
 
 def test_the_read_path_is_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -189,6 +238,15 @@ def test_the_pair_digest_covers_server_role_and_reference() -> None:
         secret_pair(WriteProfile("w", "write", "pg", user="app_writer", password=SecretRef("file", "A")), read),
         secret_pair(WriteProfile("w", "admin", "pg", user="app_writer", password=SecretRef("env", "A")), read),
         secret_pair(WriteProfile("w", "write", "pg", user="app_writer"), read),
+        # N-2 of PR #116: naming the server's OS user (or another one) is another pair.
+        secret_pair(
+            WriteProfile("w", "write", "pg", user="app_writer", password=SecretRef("env", "A"), requirepeer="postgres"),
+            read,
+        ),
+        secret_pair(
+            WriteProfile("w", "write", "pg", user="app_writer", password=SecretRef("env", "A"), requirepeer="other"),
+            read,
+        ),
     ]
     digests = {base.digest} | {pair.digest for pair in variants if pair is not None}
     assert len(digests) == len(variants) + 1
@@ -349,6 +407,7 @@ def test_the_preview_names_the_pair_and_never_the_secret(env: WriteEnv) -> None:
         "sslmode": "prefer",
         "role": "app_writer",
         "reference": {"source": "env", "target": ENV_NAME},
+        "requirepeer": None,
         "foreign": False,
     }
     assert doc["confirm_text"] == "localhost" and doc["confirmed"] is False
@@ -377,7 +436,96 @@ def test_a_confirmed_pair_unlocks_with_require_auth(
         env.unlocks.unlock(env.session(), connection_id, "write:pg-write", "pg-write")
     assert len(resolved) == 1
     (options,) = captured
-    assert options["connect_args"]["require_auth"] == REQUIRE_AUTH
+    # The pair sends a password to localhost: SCRAM only (N-2 of PR #116).
+    assert options["connect_args"]["require_auth"] == REQUIRE_AUTH_SCRAM
+    assert "requirepeer" not in options["connect_args"]
+
+
+def _move_to_socket(env: WriteEnv, requirepeer: str | None = "postgres") -> Any:
+    """Point ``pg`` at a socket folder and give ``pg-write`` the server's OS user; the answer of the second save."""
+    current = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    socket = {
+        "name": "pg",
+        "engine": "postgresql",
+        "host": "/var/run/postgresql",
+        "port": 5432,
+        "database": "parts",
+        "user": "app_reader",
+        "environment": "dev",
+        "sslmode": "prefer",
+    }
+    moved = env.send("PUT", "/api/profiles", {"id": "user:pg", "profile": socket, "digest": current})
+    assert moved.status_code == 200, moved.text
+    profile: dict[str, Any] = {
+        "name": "pg-write",
+        "kind": "write",
+        "read_profile": "pg",
+        "user": "app_writer",
+        "password": f"env:{ENV_NAME}",
+    }
+    if requirepeer is not None:
+        profile["requirepeer"] = requirepeer
+    current = env.send("GET", "/api/write/profiles").json()["user_file"]["digest"]
+    return env.send("PUT", "/api/write/profiles", {"id": "write:pg-write", "profile": profile, "digest": current})
+
+
+def test_requirepeer_of_the_write_profile_reaches_the_unlock(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, resolved: list[object], captured: list[dict[str, Any]]
+) -> None:
+    """N-2 of PR #116: a socket profile with the server's OS user: the pair shows it, and the unlock gives it to
+    libpq together with SCRAM."""
+    assert _move_to_socket(env).status_code == 200
+    preview = _preview(env)
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["pair"]["requirepeer"] == "postgres"
+    connection_id = _stand_in_connection(env, monkeypatch)
+    assert env.confirm_pair("write:pg-write").status_code == 200
+    with pytest.raises(_Stop):
+        env.unlocks.unlock(env.session(), connection_id, "write:pg-write", "pg-write")
+    (options,) = captured
+    assert options["connect_args"]["requirepeer"] == "postgres"
+    assert options["connect_args"]["require_auth"] == REQUIRE_AUTH_SCRAM
+
+
+def test_changing_requirepeer_needs_a_new_confirmation(env: WriteEnv) -> None:
+    assert _move_to_socket(env).status_code == 200
+    assert env.confirm_pair("write:pg-write").status_code == 200
+    assert _listed(env)["confirmed"] is True
+    assert _move_to_socket(env, None).status_code == 200  # dropping the check is a change of the pair
+    assert _listed(env)["confirmed"] is False
+
+
+def test_requirepeer_needs_a_socket_folder(env: WriteEnv) -> None:
+    """libpq checks the peer only on a Unix socket: on a TCP host the profile is refused, and a coupled socket
+    profile cannot be moved to a TCP host while the write profile names the server's OS user."""
+    refused = env.create_write(
+        name="tcp-write", read="pg", user="app_other", password=f"env:{ENV_NAME}", requirepeer="postgres"
+    )
+    assert refused.status_code == 400, refused.text
+    assert refused.json()["issues"] == [{"pointer": "profile.requirepeer", "code": "config.requirepeer_socket_only"}]
+    assert _move_to_socket(env).status_code == 200
+    current = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    tcp = {
+        "name": "pg",
+        "engine": "postgresql",
+        "host": "localhost",
+        "port": 5432,
+        "database": "parts",
+        "user": "app_reader",
+        "environment": "dev",
+        "sslmode": "prefer",
+    }
+    moved = env.send("PUT", "/api/profiles", {"id": "user:pg", "profile": tcp, "digest": current})
+    assert moved.status_code == 422, moved.text  # the read profile form's answer (studio.profile_invalid)
+    assert {"pointer": "profile.host", "code": "config.requirepeer_socket_only"} in moved.json()["issues"]
+
+
+@pytest.mark.parametrize("name", ["", "post gres", "x;y", "a" * 65, "-postgres", "$", "pg\\x", 5])
+def test_requirepeer_is_a_plain_os_user_name(env: WriteEnv, name: object) -> None:
+    response = _move_to_socket(env, name)  # type: ignore[arg-type]
+    assert response.status_code == 400, response.text
+    codes = {issue["code"] for issue in response.json()["issues"]}
+    assert codes & {"config.os_user_name", "config.length", "config.type"}, codes
 
 
 def test_a_libpq_older_than_16_refuses_the_unlock_before_any_secret_is_read(
@@ -526,7 +674,7 @@ def test_a_foreign_host_with_a_weak_tls_mode_refuses_the_unlock(
     read = next(p for p in env.config.user.profiles().profiles if p.name == "pg")
     pair = secret_pair(write, read)
     assert pair is not None
-    _private(env.state / CONFIRMATION_FILE, {"version": 1, "confirmed": {"pg-write": pair.digest}})
+    _private(env.confirmations_file, {"version": 1, "confirmed": {"pg-write": pair.digest}})
     connection_id = _stand_in_connection(env, monkeypatch)
     assert _code(env.unlock(connection_id, "write:pg-write", "pg-write")) == (400, "studio.write_tls_required")
     assert resolved == [] and captured == []
@@ -534,7 +682,7 @@ def test_a_foreign_host_with_a_weak_tls_mode_refuses_the_unlock(
 
 def test_the_confirmation_record_is_private_and_holds_no_secret(env: WriteEnv) -> None:
     assert env.confirm_pair("write:pg-write").status_code == 200
-    record = env.state / CONFIRMATION_FILE
+    record = env.confirmations_file
     data = record.read_bytes()
     assert CANARY_SECRET.encode() not in data and ENV_NAME.encode() not in data and b"localhost" not in data
     doc = json.loads(data)
@@ -563,7 +711,7 @@ def test_removing_the_write_profile_forgets_its_confirmation(env: WriteEnv) -> N
     current = env.send("GET", "/api/write/profiles").json()["user_file"]["digest"]
     removed = env.send("DELETE", "/api/write/profiles", {"id": "write:pg-write", "digest": current})
     assert removed.status_code == 200, removed.text
-    doc = json.loads((env.state / CONFIRMATION_FILE).read_bytes())
+    doc = json.loads((env.confirmations_file).read_bytes())
     assert doc["confirmed"] == {}
     # The same name with the same pair again: not confirmed (I-109 j: a new profile is a new pair to confirm).
     assert (
@@ -658,7 +806,7 @@ def test_revoking_the_confirmation_ends_the_unlock_and_refuses_a_plan(
     confirmation is gone, before any catalog is read or anything is planned."""
     connection_id, fake = _unlocked(env, monkeypatch)
     assert env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR) is fake
-    record = env.state / CONFIRMATION_FILE
+    record = env.confirmations_file
     _private(record, {"version": 1, "confirmed": {}})  # gone, e.g. revoked by another Studio process
     env.studio.client.app.state.write_plans.register(RowExecutor())  # type: ignore[attr-defined]
     request = {"schema": "public", "table": "parts", "rows": [{"id": 1, "material": "Iron"}]}
@@ -689,7 +837,7 @@ def test_a_tampered_confirmation_does_not_carry_over_to_another_pair(
 ) -> None:
     """The unlock keeps the digest it was confirmed for: a record swapped for another pair's digest ends it."""
     connection_id, fake = _unlocked(env, monkeypatch)
-    _private(env.state / CONFIRMATION_FILE, {"version": 1, "confirmed": {"pg-write": "a" * 64}})
+    _private(env.confirmations_file, {"version": 1, "confirmed": {"pg-write": "a" * 64}})
     with pytest.raises(WriteError) as refused:
         env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR)
     assert refused.value.code == "studio.secret_unconfirmed"

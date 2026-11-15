@@ -95,6 +95,13 @@ the server answers `405` and the write code is not even loaded.
   write and admin profiles are not listed or unlocked and none can be created there
   (`studio.write_profiles_ignored`); the start log says so with the same event. They stay in the file, unchanged.
   Start Studio with `--config-dir` for that folder to use them.
+- **So do the audit log and the secret confirmations.** The audit log (`audit/`) and the confirmed pairs of server
+  and secret reference (`write-secret-confirmations.json`) live in the folder of `write-areas.toml`: the folder
+  `--config-dir` names, else `<--state-dir>/config`, else the platform's configuration folder. They are never in a
+  state folder that `TABRION_STUDIO_STATE_DIR` chose: if the variable moved the state folder, Studio neither reads
+  nor writes an `audit/` folder or a `write-secret-confirmations.json` there, so a file planted in a project folder
+  cannot confirm a pair or stand in for the log. While an area is on, the start log says so
+  (`studio.write_state_ignored`, without the path).
 - **Unlocking.** A write or admin profile is used only after you unlock it for one open connection by typing its
   name. The unlock is kept on the server, for your page session only, and ends after 15 idle minutes, when the
   connection closes, when the profile or its read profile changes, and when Studio stops. There is no code path for
@@ -107,7 +114,8 @@ the server answers `405` and the write code is not even loaded.
   admin profile is checked on connect. Reported as findings, each held directly or through a role it belongs to:
   `SUPERUSER`, `BYPASSRLS`, `CREATEROLE` or `REPLICATION`; `CREATEROLE` on PostgreSQL before 16 once more as
   dangerous (`admin.createrole_pre16`: there it can grant membership in almost any role); and membership in a
-  predefined `pg_*` role (`admin.broad:<role>`), dangerous for `pg_execute_server_program`, `pg_read_server_files`
+  predefined role (`admin.broad:<role>`: a `pg_*` role with an OID below 16384, never a role someone created under
+  a `pg_` name), dangerous for `pg_execute_server_program`, `pg_read_server_files`
   and `pg_write_server_files`, which equal superuser rights, and a warning for the others, such as
   `pg_write_all_data` and `pg_read_all_data`. Use a role without any of these. Which finding blocks an unlock is
   decided before the areas are approved (G-S2 for write profiles, G-S4 for admin profiles); until then they are
@@ -115,8 +123,8 @@ the server answers `405` and the write code is not even loaded.
 - **Refusals echo nothing.** A refused write answers `400` or `405` with a fixed text (`403` only for the write mode
   of a query), never with a value or a secret of the request.
 - **The audit log (STU-XW-2).** While an area is on, Studio records every write and admin action in a local,
-  append-only log in its state folder, `audit/` (the folder `0700`, every file `0600`, never opened through a link,
-  no file kept open between two records):
+  append-only log, `audit/` in the folder of `write-areas.toml` (see above; the folder `0700`, every file `0600`,
+  never opened through a link, no file kept open between two records):
     - what is recorded: unlocking (also a refused unlock of a stored profile) and locking with its reason (you locked
       it, it expired, the connection closed, a profile changed, Studio stopped); creating, changing and removing a
       write or admin profile, with the read profile it is coupled to and the names of the changed keys; storing and
@@ -129,17 +137,18 @@ the server answers `405` and the write code is not even loaded.
     - **tamper evidence:** each record carries its sequence number, the SHA-256 hash of the record before it and its
       own hash, and `head.json` keeps the last one. Studio verifies the whole chain when it starts and whenever the
       log is listed, and finds a changed, removed, inserted, reordered or cut record and a removed anchor. Someone
-      who can write your state folder can still rebuild a whole new chain: that is a program running as you (see
-      below);
+      who can write your configuration folder can still rebuild a whole new chain: that is a program running as you
+      (see below);
     - **no record, no action:** if the record before a write run or an unlock cannot be written, Studio does not do
       it (`405 studio.audit_unavailable`). If the record after a run fails, the write has already happened: Studio
       keeps the record as pending (in memory and in `audit/pending.json`), shows a warning in the write profile
       section and writes it, marked late, as soon as the log is writable again; until then no new write starts;
     - a log that fails verification is never repaired or appended to, so no write runs. Move the `audit` folder out
-      of Studio's state folder, keep it for inspection, and start Studio again; it then begins a new chain;
-    - old `<state>/audit` files are not migrated: when the audit folder moves to another state folder, the old log
-      and its confirmations stay where they were for inspection, and Studio starts a new chain (and asks for new
-      confirmations) in the folder it uses now;
+      of the folder of `write-areas.toml`, keep it for inspection, and start Studio again; it then begins a new
+      chain;
+    - old `<state>/audit` files are not migrated: the audit log and the confirmations now live in the folder of
+      `write-areas.toml`; an older log and its confirmations stay where they were for inspection, and Studio starts a
+      new chain (and asks for new confirmations) in the folder it uses now;
     - several Studio windows for different projects share one log: each record is written under a lock across
       processes (`audit/audit.lock`), after reading the end of the chain again, so their records form one chain;
     - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a
@@ -170,24 +179,44 @@ the server answers `405` and the write code is not even loaded.
 - **Where a write secret goes (STU-XW-4).** A profile file names both the server and where the password comes from,
   and it may not be yours (a copied file, a hand edit, later an imported profile). So Studio reads the password of a
   PostgreSQL write or admin profile only after you confirmed the **pair** (tabrion contract I-109 j, dialog D-15):
-    - in the write profile section, "Review" shows the server (host, port, database, TLS mode), the write role and
-      the secret reference (keyring, `env:NAME`, `file:PATH` or none). You confirm by typing the host. Studio reads
-      the pair from your `profiles.toml` on the server, never from the page, and keeps the confirmed pair's SHA-256
-      in its state folder (`write-secret-confirmations.json`, `0600`);
+    - **every PostgreSQL write or admin profile needs this confirmation once before its first unlock**, also one you
+      wrote yourself, and also when its password is in the keyring or entered for the session only. Until then the
+      write profile section shows it as "not confirmed" and the unlock is refused;
+    - in the write profile section, "Review" shows the server (host, port, database, TLS mode), the write role, the
+      secret reference (keyring, `env:NAME`, `file:PATH` or none) and, if the profile names one, the server's
+      operating system user (`requirepeer`). You confirm by typing the host. Studio reads the pair from your
+      `profiles.toml` on the server, never from the page, and keeps the confirmed pair's SHA-256 in the folder of
+      `write-areas.toml` (`write-secret-confirmations.json`, `0600`; see above);
     - an unlock of an unconfirmed pair is refused before any password is read, also from an environment variable or
-      a file (`400 studio.secret_unconfirmed`). A change of the server, the TLS mode, the role or the reference
-      needs a new confirmation; removing a write profile forgets it. Every later use of an unlock, the plan
+      a file (`400 studio.secret_unconfirmed`). **A changed pair needs a new confirmation:** another host, port,
+      database, TLS mode, write role, secret reference or `requirepeer` is a new pair, also when you change the
+      coupled read profile rather than the write profile, so its old confirmation no longer counts and the next
+      unlock is refused until you confirm again. Removing a write profile forgets its confirmation, and a new profile
+      of the same name needs one of its own. Every later use of an unlock, the plan
       confirmation and run included, checks the confirmation again, so revoking it ends the unlock;
     - a server that is not on this computer (anything but a socket folder, `localhost` or a loopback address) gets a
-      write or admin password only with the TLS mode `verify-ca` or `verify-full` (`400 studio.write_tls_required`)
-      and only through SCRAM (`require_auth=scram-sha-256`);
+      write or admin password only with the TLS mode `verify-ca` or `verify-full` (`400 studio.write_tls_required`);
+    - a write or admin password goes to any server, this computer's included, only through SCRAM
+      (`require_auth=scram-sha-256`). A write role with a password therefore needs `scram-sha-256` in
+      `pg_hba.conf`, also for `localhost` and the socket; a server that offers `trust`, `peer` or another method to a
+      profile with a password is refused. For `peer` or `trust` leave the write profile's password out;
+    - **a local socket (`requirepeer`).** If the read profile's host is a socket folder (for example
+      `/var/run/postgresql`), you can give the write profile the operating system user the server runs as, for
+      example `postgres` (`requirepeer = "postgres"` in `profiles.toml`, or the optional field when you create it).
+      libpq then refuses a socket that a process of another user holds, before any authentication. Studio accepts
+      the key only for a socket folder (`config.requirepeer_socket_only`) and refuses an unlock that would drop it.
+      Over loopback TCP there is no such check: a program that took the server's port before it started could
+      receive the SCRAM exchange, which reveals no password but lets it try to guess a weak one offline. Use a long
+      random password for a write role, and prefer the socket with `requirepeer` or TLS with `verify-full` on this
+      computer too;
     - confirming and revoking are recorded in the audit log, with the pair's hash and the kind of reference, never the
       host, the variable name, the path or the password. SQLite write profiles have no password and need no
       confirmation.
 - **No clear-text or MD5 passwords for writes (STU-XW-4).** Every PostgreSQL write and admin connection, and the
-  privilege check that runs on it, tells libpq `require_auth=!password,!md5`: libpq refuses a server that asks for
-  the password in clear text (the `password` method, and LDAP, PAM, RADIUS and BSD authentication) or as an MD5
-  hash, so the write role needs SCRAM, a certificate or GSSAPI. This needs libpq 16 or newer; with an older libpq
+  privilege check that runs on it, tells libpq `require_auth`: `scram-sha-256` when it sends a password (see above),
+  else `!password,!md5`. libpq refuses a server that asks for the password in clear text (the `password` method,
+  and LDAP, PAM, RADIUS and BSD authentication) or as an MD5 hash, so a write role with a password needs SCRAM, and
+  one without a password a certificate, GSSAPI or `peer`. This needs libpq 16 or newer; with an older libpq
   Studio opens no write or admin connection and refuses the unlock (`405 studio.require_auth_unavailable`).
   `psycopg[binary]` brings a recent libpq. Read connections are unchanged: project profiles refuse a clear-text
   password (`require_auth=!password`), your own read profiles keep every method.

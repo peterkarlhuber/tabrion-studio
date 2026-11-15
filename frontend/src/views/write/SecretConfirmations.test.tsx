@@ -24,7 +24,7 @@ const PREVIEW = {
   },
 };
 
-function setup(confirmAnswer: { status: number; body: unknown }) {
+function setup(confirmAnswer: { status: number; body: unknown }, preview: unknown = PREVIEW) {
   const posts: { url: string; body: unknown }[] = [];
   let confirmed = false;
   const fetcher: typeof fetch = async (input, init) => {
@@ -52,7 +52,7 @@ function setup(confirmAnswer: { status: number; body: unknown }) {
       );
     if (init?.method === 'POST') {
       posts.push({ url, body: JSON.parse(String(init.body)) });
-      if (url === '/api/write/secret-confirmations') return new Response(JSON.stringify(PREVIEW));
+      if (url === '/api/write/secret-confirmations') return new Response(JSON.stringify(preview));
       if (url === '/api/write/secret-confirmations/confirm') {
         if (confirmAnswer.status === 200) confirmed = true;
         return new Response(JSON.stringify(confirmAnswer.body), {
@@ -78,6 +78,7 @@ describe('SecretConfirmations (STU-XW-4, D-15)', () => {
     expect(dialog.textContent).toContain('verify-full');
     expect(dialog.textContent).toContain('PARTS_WRITE_PW');
     expect(screen.getByRole('note').textContent).toMatch(/not on this computer/);
+    expect(dialog.textContent).not.toMatch(/operating system user/);
     expect(posts[0]).toEqual({
       url: '/api/write/secret-confirmations',
       body: { write_profile_id: 'write:pg-write' },
@@ -103,6 +104,25 @@ describe('SecretConfirmations (STU-XW-4, D-15)', () => {
     await waitFor(() =>
       expect(screen.getByRole('listitem').textContent).toMatch(/^pg-write: confirmed/),
     );
+  });
+
+  it("shows the server's OS user when the profile names one (N-2 of PR #116)", async () => {
+    setup(
+      { status: 200, body: { confirmed: true } },
+      {
+        ...PREVIEW,
+        confirm_text: '/var/run/postgresql',
+        pair: {
+          ...PREVIEW.pair,
+          host: '/var/run/postgresql',
+          foreign: false,
+          requirepeer: 'postgres',
+        },
+      },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    const dialog = await screen.findByTestId('secret-pair');
+    expect(dialog.textContent).toContain("Server's operating system userpostgres");
   });
 
   it('shows the server refusal as a problem', async () => {

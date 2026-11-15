@@ -90,8 +90,8 @@ def add_write_routes(
 ) -> Unlocks | None:
     """Register the write foundation's routes; the unlocks when an area is on (closed by the app on shutdown).
 
-    ``audit_dir`` is the audit log's folder (``<state folder>/audit``); without one, every unlock and write is
-    refused (fail closed). It is neither created nor read while every area is off."""
+    ``audit_dir`` is the audit log's folder (``audit`` in the folder of ``write-areas.toml``); without one, every unlock
+    and write is refused (fail closed). It is neither created nor read while every area is off."""
     snapshot = areas.to_dict()
 
     @app.get("/api/write/areas")
