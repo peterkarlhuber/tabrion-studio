@@ -32,7 +32,7 @@ from typing import Any
 import pytest
 
 from tabrion_studio.config.write_areas import Area, WriteAreas
-from tabrion_studio.write.connection import WriteError
+from tabrion_studio.write.connection import WriteError, defensive_available
 from tests.support.write import CANARY_SECRET, CANARY_VALUE, DATA_EDITOR, DATABASE_MANAGER, WriteEnv, digest
 
 pytestmark = pytest.mark.security
@@ -41,6 +41,8 @@ SQLITE_ROUTE = "/api/write/schema-designer/create/sqlite"
 POSTGRES_ROUTE = "/api/write/schema-designer/create/postgresql"
 SCHEMA_DESIGNER = WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))
 POSIX = sys.platform != "win32"
+# Python 3.11 refuses every SQLite write unlock (no defensive mode; test_write_unlock.py proves the refusal).
+needs_defensive = pytest.mark.skipif(not defensive_available(), reason="Python 3.11 refuses a SQLite write connection")
 
 
 def _refused(response: Any, status: int, code: str) -> None:
@@ -110,7 +112,8 @@ def test_flag_off_both_routes_are_405_and_change_nothing(
     try:
         env.create_read()
         connection_id = env.open()
-        if Area.DATA_EDITOR in areas.enabled:
+        # On Python 3.11 no SQLite write unlock exists to try (refused, test_write_unlock.py); the flags still apply.
+        if Area.DATA_EDITOR in areas.enabled and defensive_available():
             assert env.create_write().status_code == 201
             assert env.unlock(connection_id).status_code == 200
         before = _state(env, folder)
@@ -446,6 +449,7 @@ def test_the_postgresql_route_needs_an_unlock(env: WriteEnv) -> None:
     assert _runs(env) == []
 
 
+@needs_defensive
 def test_a_sqlite_connection_cannot_create_a_postgresql_database(env: WriteEnv) -> None:
     env.create_read()
     assert env.create_write().status_code == 201
@@ -479,6 +483,7 @@ def test_a_prod_connection_is_refused(env: WriteEnv) -> None:
     assert (claimed.status_code, claimed.json()["code"]) == (400, "access.bad_request")
 
 
+@needs_defensive
 def test_a_profile_changed_to_prod_after_the_unlock_is_refused(env: WriteEnv) -> None:
     """The environment is read again from the user's file on every use: a hand edit to ``prod`` after the unlock
     refuses the route before anything is recorded or sent."""
