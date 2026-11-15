@@ -119,6 +119,17 @@ const PROBLEMS = new Set([
   'secret_confirmation_unavailable',
   'write_tls_required',
   'require_auth_unavailable',
+  // The Schema Designer's database creation (STU-CR-2, STU-CR-3).
+  'schema_create_invalid',
+  'schema_create_unconfirmed',
+  'schema_create_engine',
+  'schema_file_exists',
+  'schema_folder_unsafe',
+  'schema_folder_reserved',
+  'schema_database_exists',
+  'schema_createdb_required',
+  'schema_owner_missing',
+  'schema_owner_not_allowed',
 ]);
 
 const ISSUES = new Set([
@@ -208,7 +219,29 @@ export function problemText(t: TFunction, problem: Problem): string {
     : t('problems.other', { code: problem.code, interpolation: { escapeValue: false } });
 }
 
+/** The `create.*` codes of a refused database creation (STU-CR-2, STU-CR-3), each with its own text. */
+const CREATE_ISSUES = new Set([
+  'required',
+  'type',
+  'too_long',
+  'control_character',
+  'whitespace',
+  'network_path',
+  'not_absolute',
+  'not_normalized',
+  'no_file_name',
+  'suffix',
+  'choice',
+  'format',
+]);
+
 export function issueText(t: TFunction, issue: ProblemIssue): string {
+  if (issue.code.startsWith('create.')) {
+    const code = issue.code.slice('create.'.length);
+    return CREATE_ISSUES.has(code)
+      ? t(`createDatabase.issues.${code}`)
+      : t('issues.other', { code: issue.code });
+  }
   const name = issue.code.replace(/^config\./, '');
   return ISSUES.has(name) ? t(`issues.${name}`) : t('issues.other', { code: issue.code });
 }

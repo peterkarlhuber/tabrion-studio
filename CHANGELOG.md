@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-2 and STU-CR-3 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off,
+  no default changes): the "New database" wizard on the Connections page. `POST
+  /api/write/schema-designer/create/sqlite` creates a new, empty SQLite file through tabrion's
+  `create_private_file` (mode `0600`, never through a link, never over an existing file or its `-wal`, `-shm` or
+  `-journal` side files, only in a folder of the user's that others cannot write to and that is not Studio's own,
+  with an absolute path ending in `.db`, `.sqlite` or `.sqlite3`; confirmed by the typed file name).
+  `POST /api/write/schema-designer/create/postgresql` creates a database through tabrion's `create_database` on the
+  Schema Designer's unlocked write profile of a `DEV` or `TEST` connection (the stored environment re-checked, PROD
+  refused), with owner, template, encoding and locale, a duplicate check before the statement and the duplicate race
+  mapped, `CREATEDB` and owner refusals as catalog problems with guided steps (no SQL), driver errors only as `db.*`
+  through `safe_message`. Ten new `studio.schema_*` problems in English and German; `run.start` and `run.result`
+  audit records without values or folders. With the flag off both routes answer `405` and import nothing of the
+  area (kill-switch sweep extended). The new profile can be saved from the wizard. New tests: security (flag off,
+  PROD, links, folder modes, canaries), PostgreSQL 16, vitest with axe, and Playwright against a real server in light
+  and dark. User guide page "New database (in development)".
+
 - STU-CR-1 and STU-XDM-1 (documentation only; G-S3 and G-S4 not granted, the `schema_designer` and
   `database_manager` flags stay off, no code of either area exists, no default changes):
   STU-ADR-0007 for the Schema Designer (plans and target models server-side only, a new plan before every run

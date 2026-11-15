@@ -9,7 +9,9 @@ problem document with the media type ``application/problem+json``::
 plus ``log_id`` for ``studio.internal_error``, ``issues`` for ``studio.profile_invalid`` and ``studio.settings_invalid``
 (``[{"pointer": "profile.host", "code": "config.required"}]``: a fixed key name and a ``config.*`` code) and for
 ``studio.data_editor_value_invalid`` (``[{"pointer": "changes.2.5", "code": "value.too_long"}]``: positions in the
-request and the table, and a ``value.*`` code; STU-XDE-1) and, from
+request and the table, and a ``value.*`` code; STU-XDE-1) and for ``studio.schema_create_invalid``
+(``[{"pointer": "create.name", "code": "create.too_long"}]``: a field name and a ``create.*`` code; STU-CR-2,
+STU-CR-3) and, from
 STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
@@ -61,8 +63,12 @@ _LOG_ID = re.compile(r"[0-9a-f]{12}")
 _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: An issue of a rejected profile or settings form: a key path of fixed names and a config.* code (STU-008); or of a
 #: refused Data Editor value (STU-XDE-1): the change's and the column's position and a value.* code, never a name.
-_ISSUE_POINTER = re.compile(r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}")
-_ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}|value\.[a-z_]{1,48}")
+#: Or a field of the Schema Designer's database creation (STU-CR-2, STU-CR-3): ``create.<field>`` and a ``create.*``
+#: code, never the value.
+_ISSUE_POINTER = re.compile(
+    r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|create\.[a-z_]{1,32}"
+)
+_ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}|value\.[a-z_]{1,48}|create\.[a-z_]{1,48}")
 MAX_ISSUES = 32
 
 
@@ -725,6 +731,80 @@ CATALOG: dict[str, Entry] = {
         "Write and admin connections need libpq 16 or newer, which can refuse a server that asks for the password "
         "in clear text or as an MD5 hash. The libpq Studio loaded is older, so no write connection is opened.",
         "Install psycopg with its binary package (psycopg[binary]) or a libpq 16 or newer.",
+    ),
+    # The Schema Designer's database creation (STU-CR-2, STU-CR-3, TX-29, GS3-20, GS3-21). W-9: 400 or 405, never
+    # 403 or 404; no path, name or server text from the request or the database.
+    "studio.schema_create_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Entry not valid",
+        "A field of the new database is missing or not valid. Nothing was created.",
+        "Check the fields in question.",
+    ),
+    "studio.schema_create_unconfirmed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Confirmation does not match",
+        "To create the database, type its name exactly as shown. Nothing was created.",
+    ),
+    "studio.schema_create_engine": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Not a PostgreSQL connection",
+        "A PostgreSQL database is created on an unlocked PostgreSQL connection of the same server.",
+        "Connect to the PostgreSQL server, unlock its write profile and try again.",
+    ),
+    "studio.schema_file_exists": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "File exists",
+        "A file or link with this name, or a side file of it (-wal, -shm, -journal), exists already. Studio never "
+        "overwrites a file; nothing was created.",
+        "Choose another file name.",
+    ),
+    "studio.schema_folder_unsafe": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Folder not usable",
+        "The folder does not exist, is or goes through a link, belongs to another user, or others may write to it. "
+        "Nothing was created.",
+        "Choose a folder of your own that only you may write, by its real path.",
+    ),
+    "studio.schema_folder_reserved": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Studio's own folder",
+        "Studio does not create databases in its own configuration, state or audit folders.",
+        "Choose another folder.",
+    ),
+    "studio.schema_database_exists": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Database exists",
+        "The server has a database with this name already. Nothing was created.",
+        "Choose another name.",
+    ),
+    "studio.schema_createdb_required": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No right to create databases",
+        "The write profile's role has no CREATEDB right on this server. Nothing was created.",
+        "Ask the server's administrator to create the database (or to grant CREATEDB), then add a connection "
+        "profile for it.",
+    ),
+    "studio.schema_owner_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Owner not found",
+        "The server has no role with the owner's name. Nothing was created.",
+    ),
+    "studio.schema_owner_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Owner not allowed",
+        "The write profile's role may not act as the owner role (SET ROLE), so it cannot give it the new database. "
+        "Nothing was created.",
+        "Leave the owner empty (the write profile's role owns the database) or ask the administrator.",
     ),
     # Data viewer (STU-013).
     "studio.viewer_column_unknown": Entry(

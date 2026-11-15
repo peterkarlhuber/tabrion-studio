@@ -50,6 +50,9 @@ for _path, _methods in WRITE_ROUTES:
                     "value": CANARY_VALUE,
                     "confirmation_hash": "0" * 64,
                     "typed": "localhost",
+                    # STU-CR-2, STU-CR-3: the Schema Designer's database creation (G-S3).
+                    "path": "/tmp/kill-switch-canary.db",  # noqa: S108 - never created: the route refuses first
+                    "name": "kill_switch_canary",
                 },
             )
         )
@@ -57,7 +60,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 18
+    assert len(methods) == 20
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -70,6 +73,8 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/secret-confirmations/confirm",
         "DELETE /api/write/secret-confirmations",
         "POST /api/write/data-editor/table",  # STU-026: the Data Editor's table (its changesets are plans)
+        "POST /api/write/schema-designer/create/sqlite",  # STU-CR-2: a new SQLite file (G-S3)
+        "POST /api/write/schema-designer/create/postgresql",  # STU-CR-3: a new PostgreSQL database (G-S3)
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods
