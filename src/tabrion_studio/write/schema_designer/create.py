@@ -158,7 +158,7 @@ def _check_path(raw: object) -> tuple[str, str, str]:
 
 
 def _is_link(info: os.stat_result) -> bool:
-    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & _REPARSE)
+    return stat.S_ISLNK(info.st_mode) or bool((getattr(info, "st_file_attributes", 0) or 0) & _REPARSE)
 
 
 def _identity(info: os.stat_result) -> tuple[int, int]:

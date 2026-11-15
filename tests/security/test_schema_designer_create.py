@@ -202,9 +202,10 @@ def test_flag_off_nothing_of_the_area_is_imported(tmp_path: Path, areas: str) ->
 
 def test_flag_on_the_area_is_loaded(tmp_path: Path) -> None:
     """The counterpart (the test above is not vacuous): the flag loads the area; the SQLite file is created and the
-    PostgreSQL route asks for an unlock."""
+    PostgreSQL route asks for an unlock. On Windows the loaded area refuses SQLite creation for the platform."""
     loaded = _modules(tmp_path, "WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))")
-    assert loaded[0] == "201 None 405 studio.write_locked"
+    sqlite = "201 None" if POSIX else "400 studio.schema_create_platform"
+    assert loaded[0] == f"{sqlite} 405 studio.write_locked"
     assert "tabrion_studio.write.schema_designer.create" in loaded
 
 
