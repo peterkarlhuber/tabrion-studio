@@ -425,7 +425,7 @@ def _pg_profiles_file(folder: Path) -> None:
 
 
 def _every_file(folder: Path) -> dict[str, bytes]:
-    return {str(p.relative_to(folder)): p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
+    return {p.relative_to(folder).as_posix(): p.read_bytes() for p in sorted(folder.rglob("*")) if p.is_file()}
 
 
 @pytest.mark.process
