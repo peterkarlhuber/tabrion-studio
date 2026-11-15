@@ -69,6 +69,7 @@ from tabrion.errors import RowCountMismatch, UsageError
 from tabrion.rowedit import delete_row, insert_row, update_row
 
 from tabrion_studio.config.write_areas import Area
+from tabrion_studio.services import tabrion_compat
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.plan import (
     MAX_NAME,
@@ -235,13 +236,7 @@ class DataEditorExecutor:
         if table is not None:
             return table
         target = plan.content.targets[step.target]
-        reflected = sqlalchemy.Table(
-            target.table,
-            sqlalchemy.MetaData(),
-            schema=target.schema,
-            autoload_with=transaction.connection,
-            resolve_fks=False,
-        )
+        reflected = tabrion_compat.reflect_table(transaction, target.schema, target.table)
         table = _bindable(reflected, plan.engine)
         with self._lock:
             self._tables[key] = table
