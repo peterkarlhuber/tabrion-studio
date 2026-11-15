@@ -32,6 +32,7 @@ from typing import Any
 import pytest
 
 from tabrion_studio.config.write_areas import Area, WriteAreas
+from tabrion_studio.write import audit as audit_module
 from tabrion_studio.write.connection import WriteError, defensive_available
 from tests.support.write import CANARY_SECRET, CANARY_VALUE, DATA_EDITOR, DATABASE_MANAGER, WriteEnv, digest
 
@@ -349,19 +350,22 @@ def test_studios_own_folders_are_refused(env: WriteEnv, which: str) -> None:
     ("path", "code"),
     [
         ("relative/a.db", "create.not_absolute"),
-        ("/tmp/../tmp/a.db", "create.not_normalized"),  # noqa: S108 - never created
-        ("/tmp//a.db", "create.not_normalized"),  # noqa: S108
-        ("/tmp/a.txt", "create.suffix"),  # noqa: S108
-        ("/tmp/a", "create.suffix"),  # noqa: S108
-        ("/tmp/a\x00.db", "create.control_character"),  # noqa: S108
-        ("/tmp/a\n.db", "create.control_character"),  # noqa: S108
+        # {root} is an absolute, normalized folder of this platform and {s} its separator (C:\... on Windows), so each
+        # case reaches its own rule there too; nothing is created.
+        ("{root}{s}..{s}x{s}a.db", "create.not_normalized"),
+        ("{root}{s}{s}a.db", "create.not_normalized"),
+        ("{root}{s}a.txt", "create.suffix"),
+        ("{root}{s}a", "create.suffix"),
+        ("{root}{s}a\x00.db", "create.control_character"),
+        ("{root}{s}a\n.db", "create.control_character"),
         ("//host/share/a.db", "create.network_path"),
         ("/net/host/a.db", "create.network_path"),
         ("", "create.required"),
         ("/" + "a" * 5000 + ".db", "create.too_long"),
     ],
 )
-def test_a_path_that_is_not_valid_is_refused_with_its_field(env: WriteEnv, path: str, code: str) -> None:
+def test_a_path_that_is_not_valid_is_refused_with_its_field(env: WriteEnv, folder: Path, path: str, code: str) -> None:
+    path = path.replace("{root}", str(folder)).replace("{s}", os.sep)
     response = env.send("POST", SQLITE_ROUTE, {"path": path, "typed": Path(path).name if path else "x"})
     _refused(response, 400, "studio.schema_create_invalid")
     assert response.json()["issues"] == [{"pointer": "create.path", "code": code}]
@@ -388,8 +392,22 @@ def test_a_body_with_another_key_is_refused(env: WriteEnv, folder: Path, extra: 
     assert list(folder.iterdir()) == []
 
 
+def test_without_an_audit_record_nothing_is_created(
+    env: WriteEnv, folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GS3-27 on every platform: the run.start record cannot be written, so no file is created (fail closed)."""
+
+    def refuse(path: Path, data: bytes) -> None:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(audit_module, "_append_bytes", refuse)
+    _refused(_create(env, folder / "a.db"), 405, "studio.audit_unavailable")
+    assert list(folder.iterdir()) == []
+
+
+@pytest.mark.skipif(not POSIX, reason="POSIX modes: an audit folder others may write")
 def test_without_an_audit_log_nothing_is_created(tmp_path: Path, static_dir: Path, folder: Path) -> None:
-    """GS3-27: no run.start record, no file (fail closed)."""
+    """GS3-27: an audit folder others may write is refused, so no run.start record and no file (fail closed)."""
     (tmp_path / "config").mkdir(mode=0o700)
     (tmp_path / "config" / "audit").mkdir(mode=0o700)
     (tmp_path / "config" / "audit").chmod(0o777)
