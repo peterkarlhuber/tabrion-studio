@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 import io
+import json
 import logging
 import os
 from pathlib import Path
@@ -24,6 +25,7 @@ import pytest
 from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.logs import LogSetup, configure_logging, forget_secrets
+from tabrion_studio.write.audit import CURRENT
 from tabrion_studio.write.connection import (
     WriteConnection,
     WriteError,
@@ -142,6 +144,90 @@ def test_unlocking_shows_the_write_state_and_changes_nothing(env: WriteEnv) -> N
     # Unlocking opened a write connection and changed nothing: the bytes and the journal mode are as they were.
     assert digest(env.db) == before
     assert _read_only(env.db, "PRAGMA journal_mode") == "delete"
+
+
+def _audit_records(folder: Path) -> list[dict[str, Any]]:
+    """The audit log's records (``event`` and ``fields``), oldest first."""
+    out: list[dict[str, Any]] = []
+    for path in [*sorted(folder.glob("audit-*.jsonl")), folder / CURRENT]:
+        if path.exists():
+            out += [json.loads(line) for line in path.read_bytes().split(b"\n")[:-1]]
+    return [r for r in out if "event" in r]
+
+
+def _findings(monkeypatch: pytest.MonkeyPatch, findings: list[dict[str, str]]) -> list[WriteConnection]:
+    """Make the privilege check report ``findings`` (as on PostgreSQL) and record every connection closed."""
+    closed: list[WriteConnection] = []
+    real_close = WriteConnection.close
+
+    def check(self: WriteConnection) -> None:
+        self.findings = [dict(f) for f in findings]
+
+    def close(self: WriteConnection) -> None:
+        closed.append(self)
+        real_close(self)
+
+    monkeypatch.setattr(WriteConnection, "check_privileges", check)
+    monkeypatch.setattr(WriteConnection, "close", close)
+    return closed
+
+
+@needs_defensive
+@pytest.mark.parametrize(
+    "code",
+    [
+        "admin.superuser",
+        "admin.bypassrls",
+        "admin.replication",
+        "admin.broad:pg_read_server_files",
+        "admin.broad:pg_write_server_files",
+        "admin.broad:pg_execute_server_program",
+    ],
+)
+@pytest.mark.parametrize("via", ["direct", "inherited"])
+def test_an_over_privileged_write_role_is_not_unlocked(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, code: str, via: str
+) -> None:
+    """Owner decision 1A at G-S2: a write role with superuser, BYPASSRLS, REPLICATION or a server-file role refuses
+    the unlock with 405 ``studio.write_role_over_privileged``; the write connection is closed, nothing is unlocked,
+    the database is unchanged, and the refusal is the existing ``unlock`` record with its code (no new event)."""
+    before = digest(env.db)
+    closed = _findings(
+        monkeypatch,
+        [
+            {"code": "admin.createrole", "via": via, "severity": "warning"},
+            {"code": code, "via": via, "severity": "warning"},
+        ],
+    )
+    connection_id = env.open()
+    response = env.unlock(connection_id)
+    assert (response.status_code, response.json()["code"]) == (405, "studio.write_role_over_privileged")
+    assert "admin." not in response.text  # the answer names no finding and no role
+    assert len(closed) == 1
+    assert env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
+    with pytest.raises(WriteError) as caught:
+        env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR)
+    assert caught.value.code == "studio.write_locked"
+    assert digest(env.db) == before
+    unlocks = [r["fields"] for r in _audit_records(env.audit_dir) if r["event"] == "unlock"]
+    assert [u["result"] for u in unlocks] == ["studio.write_role_over_privileged"]
+
+
+@needs_defensive
+@pytest.mark.parametrize(
+    "code", ["admin.createrole", "admin.createrole_pre16", "admin.broad:pg_read_all_data", "admin.broad:pg_monitor"]
+)
+def test_other_findings_of_a_write_role_unlock_with_a_warning(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """Decision 1A: CREATEROLE (also before PostgreSQL 16) and every other predefined role stay warnings."""
+    finding = {"code": code, "via": "inherited", "severity": "warning"}
+    closed = _findings(monkeypatch, [finding])
+    connection_id = env.open()
+    response = env.unlock(connection_id)
+    assert response.status_code == 200, response.text
+    assert response.json()["findings"] == [finding]
+    assert closed == []
 
 
 @needs_defensive

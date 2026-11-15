@@ -126,6 +126,13 @@
 > platform configuration folder and `XDG_CONFIG_HOME`), the Info findings G2-05..G2-07 are recorded under
 > [G-S2 readiness](#g-s2-readiness). Every area stays off; G-S2 is not granted.
 >
+> G-S2 granted (2026-11-15, 14:25 UTC): the owner chose option A for all seven decision points
+> ([G-S2 decisions](#g-s2-decisions-on-2026-11-15)), for local DEV, TEST and STAGE use only; PROD stays locked, every
+> switch stays off by default with no automatic activation; G-S3, G-S4, H-2 and G-R stay open, no tag, no release.
+> Binding: the `data_editor` flag is not switched on before decision 1A (an over-privileged write role refuses the
+> unlock, `405 studio.write_role_over_privileged`) is independently reviewed, merged and green in CI; it is
+> implemented in branch `claude/project-thread-rdo6g3-gs2-1a`.
+>
 > STU-CR-1 and STU-XDM-1 (2026-11-15, branch `claude/project-thread-rdo6g3-crxdm1`, draft): **documentation only;
 > G-S3 and G-S4 are not granted,** the `schema_designer` and `database_manager` flags stay off and no code of either
 > area exists. Pins tabrion 0.3.0.dev0 at the merge commit of tabrion #90 (`28c8839`: TAB-XW-2, -3, -4, -7, -8, -9
@@ -161,7 +168,7 @@
 | STU-006 binding requirement from the review (U-1: trust dialog D-01 must not mislead) | P1 | Done (STU-006 PR; closes with OA-008) |
 | STU-003 binding requirements from the review (F-02, F-05, F-08, F-09) | P0 | Done (PR #4) |
 | TD-001 layer contract for `api`/`services` | P3 | Open |
-| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); the write foundation (STU-XW-1..5, PRs #109..#118) and the Data Editor (STU-026, STU-XDE-1, STU-XDE-2, PRs #119, #120, #122) are merged with accepted reviews; G-S2 readiness prepared, G-S2 not granted ([G-S2 readiness](#g-s2-readiness)); STU-CR-1 and STU-XDM-1 (threat models, ADRs 0007 and 0008, G-S3 and G-S4 definitions) drafted ([G-S3 and G-S4 definitions](#g-s3-and-g-s4-definitions)); each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
+| CR-DBX: Studio 1.1 Data Editor, 1.2 Schema Designer, 1.3 Database Manager (planning document 15) | P3 | In development, locked: G-CX effective (S-1..S-4 proven, 2026-11-14); the write foundation (STU-XW-1..5, PRs #109..#118) and the Data Editor (STU-026, STU-XDE-1, STU-XDE-2, PRs #119, #120, #122) are merged with accepted reviews; G-S2 granted 2026-11-15 with decisions 1A..7A, for local DEV/TEST/STAGE only, flag still off until 1A is reviewed, merged and green ([G-S2 readiness](#g-s2-readiness)); STU-CR-1 and STU-XDM-1 (threat models, ADRs 0007 and 0008, G-S3 and G-S4 definitions) drafted ([G-S3 and G-S4 definitions](#g-s3-and-g-s4-definitions)); each area stays behind its default-off flag until G-S2, G-S3 or G-S4 ([section](#cr-dbx-studio-11-to-13-in-development-locked)) |
 | TD-002 sandboxed browsers cannot open the redirect file (review S-4) | P2 | In progress (hint done; fix open); a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 6) |
 | TD-003 Windows: DACL check inside the profile (review R-6); the check on a real Windows machine of the refused device names and of OneDrive and other reparse-point folders (STU-020 D-4) | P3 | Open; accepted risk until G-R, both a G-R precondition (owner's G-S1 decisions of 2026-11-13, decision 7) |
 | TD-004 fork pull requests in the workflow-change gate (review R-7) | P3 | Open |
@@ -651,13 +658,14 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **Open (STU-XW-5):** planning document 03 section 8 still says "all 403" for PROD writes in the Data Editor row;
   STU-ADR-0006 follows W-9 (400/405, 403 only for the write mode); the planning text needs the correction
   (coordinating thread).
-- **Open G-S2 decision (I-3 of the review of PR #111): which privilege findings block a write unlock.** Today every
-  finding of the privilege check (`admin.superuser`, `admin.bypassrls`, `admin.createrole`,
-  `admin.createrole_pre16`, `admin.replication`, `admin.broad:<pg_* role>`) is only shown in the write state and
-  logged (`studio.write_role_over_privileged`); a SUPERUSER write role can be unlocked. Before G-S2 the owner decides
-  explicitly for `kind = "write"` which findings refuse the unlock (and with which W-9 code), and whether `dangerous`
-  findings (`createrole_pre16`, the server-file roles) always block. For `kind = "admin"` STU-XDM-1 decides it at
-  G-S4. Not decided in the follow-up of PR #111.
+- **Decided at G-S2 (decision 1A, 2026-11-15; I-3 of the review of PR #111): which privilege findings block a write
+  unlock.** For `kind = "write"`, `admin.superuser`, `admin.bypassrls`, `admin.replication` and membership in a
+  server-file role (`admin.broad:pg_read_server_files`, `admin.broad:pg_write_server_files`,
+  `admin.broad:pg_execute_server_program`), held directly or through a reachable role, refuse the unlock with
+  `405 studio.write_role_over_privileged`; `admin.createrole`, `admin.createrole_pre16` and every other
+  `admin.broad:<pg_* role>` stay warnings (shown in the write state and logged). Implemented in branch
+  `claude/project-thread-rdo6g3-gs2-1a` (`WRITE_REFUSING_FINDINGS` in `tabrion_studio.write.connection`). For
+  `kind = "admin"` STU-XDM-1 decides it at G-S4.
 - **Closed in STU-XW-4: binding requirement L-2 of the review of PR #111, `require_auth` for every write and admin
   connection.** Every PostgreSQL write and admin connection sets `require_auth = "!password,!md5"`, always, whatever
   the profile or its owner (`tabrion_studio.write.connection`; the read path's `refuses_cleartext` rule for project
@@ -684,7 +692,9 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   - **Revert of a change:** a confirmation is bound to the pair's digest; changing the server and changing it back
     to the confirmed pair matches again (a write profile's own edit or removal forgets its confirmation; a read
     profile's edit only makes it stale).
-- **G-S2 item (N-2 of the PR #116 review, residual risk 4 of the threat model): loopback TCP without TLS.** SCRAM
+- **G-S2 item, decided 2A on 2026-11-15 (risk accepted for G-S2; recheck before G-R, see
+  [G-S2 readiness](#g-s2-readiness)) (N-2 of the PR #116 review, residual risk 4 of the threat model): loopback TCP
+  without TLS.** SCRAM
   and `requirepeer` are implemented, but `requirepeer` works only on a Unix socket. A process of another local user
   that takes the server's TCP port before the server receives the SCRAM exchange of a write password and can guess a
   weak password offline. Decide at G-S2 whether a write or admin profile on a loopback TCP host must use TLS with
@@ -701,7 +711,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   is read again from disk under it; N-2, rotation moves the segment with a hard link (fails on an existing name)
   under that lock; N-3, a name the log does not take is the catalog problem `studio.audit_record_invalid`, and a
   record error never hides an unlock refusal.
-- **G-S2 items (STU-XW-2, notes of the PR #114 review):**
+- **G-S2 items (STU-XW-2, notes of the PR #114 review; anchor and retention decided 3A, refusals 4A on 2026-11-15,
+  see [G-S2 readiness](#g-s2-readiness)):**
   - **Anchor outside the folder (N-1):** without a key, removing the whole `audit` folder goes unnoticed (Studio
     starts a new chain from GENESIS), and someone who can write its folder can rebuild a consistent chain
     (residual risk 3). Options: keep the last `(seq, hash)` also in the keyring or in a 0600 file outside
@@ -771,8 +782,9 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 
 ### G-S2 readiness
 
-Prepared 2026-11-15 at master `3af4b79` (branch `claude/project-thread-rdo6g3-gs2prep`). **G-S2 is not granted;**
-the `data_editor` flag stays off by default and no default changes. The checklist with the evidence is
+Prepared 2026-11-15 at master `3af4b79` (branch `claude/project-thread-rdo6g3-gs2prep`). **G-S2 was granted by the
+owner on 2026-11-15 (14:25 UTC) with decisions 1A to 7A** (see [G-S2 decisions](#g-s2-decisions-on-2026-11-15)
+below); the `data_editor` flag stays off by default and no default changes. The checklist with the evidence is
 [G-S2 readiness](architecture/security-review-prep.md#g-s2-readiness-data-editor-and-the-shared-write-foundation);
 the decision package for the owner is kept with the planning documents (`g-s2/g-s2-bereitschaft.md`).
 
@@ -790,20 +802,20 @@ Every item that a plan or a review asked for "before G-S2":
 | The E2E teardown race (STU-XDE-1 open point) | docs/TODO.md | Done in this branch |
 | `check_tabrion_api.py --surface` reported `Kind.PERMISSION.value` as missing | carry item | Done in this branch: `str(Kind.PERMISSION)` |
 | STU-ADR-0006 names no flag and source in its own text (STU-XW-1 open point) | docs/TODO.md | Done in this branch ("As built") |
-| I-3 of the PR #111 review: which privilege findings refuse a write unlock | `pr111-stuxw1-review.md`, `pr112-stuxw1b-review.md` | **Open, owner decision** |
-| Loopback TCP without TLS for a write password (residual risk 4) | `pr116-stuxw4-review.md` N-2, `pr117-stuxwh-review.md` | **Open, owner decision** |
-| Audit anchor outside the folder / unkeyed chain (N-1) and retention (N-4) | `pr114-stuxw2-review.md` | **Open, owner decision** (residual risk 3 meanwhile) |
-| Audit of refusals before a run (an unlock of an area that is off, a refused plan) | STU-XW-2, STU-XW-3 open points | **Open, owner decision** |
-| Enum labels reach the page | STU-XDE-1 open points | **Open, owner confirmation** |
-| Partitioned tables stay refused | N-1 of the PR #115 review | **Open, owner confirmation** (built as a refusal) |
-| Bytes "replace by file", constraint refusals at the cell, paging | planning document 15 section 4; STU-XDE-1 open points | **Open, owner decision** (scope of 1.1; not built) |
+| I-3 of the PR #111 review: which privilege findings refuse a write unlock | `pr111-stuxw1-review.md`, `pr112-stuxw1b-review.md` | Decided 1A; implemented in branch `claude/project-thread-rdo6g3-gs2-1a`; **binding before the flag is switched on:** independent review, merge, CI green |
+| Loopback TCP without TLS for a write password (residual risk 4) | `pr116-stuxw4-review.md` N-2, `pr117-stuxwh-review.md` | Decided 2A: risk accepted for G-S2; recheck before G-R (TODO below) |
+| Audit anchor outside the folder / unkeyed chain (N-1) and retention (N-4) | `pr114-stuxw2-review.md` | Decided 3A: anchor before G-R (TODO below); unlimited retention, documented in the security guide |
+| Audit of refusals before a run (an unlock of an area that is off, a refused plan) | STU-XW-2, STU-XW-3 open points | Decided 4A: no change |
+| Enum labels reach the page | STU-XDE-1 open points | Decided 6A: confirmed |
+| Partitioned tables stay refused | N-1 of the PR #115 review | Decided 5A: confirmed (built as a refusal) |
+| Bytes "replace by file", constraint refusals at the cell, paging | planning document 15 section 4; STU-XDE-1 open points | Decided 6A: follow-up before the Studio 1.1 release (TODO below) |
 | The independent G-S2 review agent (doc 07 section 6) | doc 07 | Done: verdict accepted (`reviews/gs2-gate-review.md`); it grants nothing, G-S2 stays the owner's |
 | G2-01 (Medium): libpq environment variables (`PGHOSTADDR`, a service file's `hostaddr`, ...) could send a socket or loopback profile elsewhere, past `requirepeer` and the loopback rules | `gs2-gate-review.md` | Done (branch `claude/project-thread-rdo6g3-gs2fix`): every Studio PostgreSQL connection gives libpq's defaults itself or refuses (`studio.connection_environment`) |
 | G2-02 (Low): a SQLite integer wider than 64 bits failed only at run time (500) | `gs2-gate-review.md` | Done (same branch): refused before the plan, `value.out_of_range` |
 | G2-03 (Low): `24:00` passed the check but failed at run time before Python 3.14 | `gs2-gate-review.md` | Done (same branch): bound as text on every Python version |
 | G2-04 (Low): the platform configuration folder followed `XDG_CONFIG_HOME` | `gs2-gate-review.md` | Done (same branch): no environment variable moves it, as STU-ADR-0006 says; a user without an account entry gets no folder and a read-only start (L-1 of the PR #125 review) |
 | PR #125 review: L-1 (start without an account entry), I-1 (`PGTZ`, `PGDATESTYLE`, `PGGEQO` as session settings) | `pr125-gs2fix-review.md` | Done (same branch): L-1 every area off with `studio.write_areas_no_folder`; I-1 refused like the other variables |
-| G2-08 (Low): bytes "replace by file" and `constraint.*` at the cell (planning document 15 section 4) | `gs2-gate-review.md` | **Open, owner decision** (the row above) |
+| G2-08 (Low): bytes "replace by file" and `constraint.*` at the cell (planning document 15 section 4) | `gs2-gate-review.md` | Decided 6A (the row above): before the Studio 1.1 release |
 
 Info findings of the G-S2 gate review, recorded and not changed (none blocks G-S2):
 
@@ -829,6 +841,49 @@ SQLite trigger details; PostgreSQL in the browser E2E and Firefox/WebKit runs on
 Data Editor (`tabrion.rowedit`, `RowCountMismatch`) need to be stable before a Studio 1.1 release (02 section 14
 S-2); the poison version `0.2.99` of `scripts/check_tabrion_source.py` moves above the new floor (`0.3.99`) in
 the canonical copy (the migration thread's item, see TS-001).
+
+#### G-S2 decisions on 2026-11-15
+
+The owner granted **G-S2 on 2026-11-15 at 14:25 UTC** (15:25 Europe/Vienna), choosing the recommendation, option
+**A**, for all seven decision points of the decision package (`g-s2/g-s2-bereitschaft.md`, planning documents,
+section "Entscheidungspunkte").
+
+**Scope.** Local use on DEV, TEST and STAGE databases only. PROD stays technically write-locked (E-X7). Every write
+area's kill switch (`write-areas.toml`) stays **off by default**; nothing turns one on automatically, and only the
+owner switches the `data_editor` flag on, locally. G-S3, G-S4, H-2 (the human security review) and G-R stay open;
+no tag and no release.
+
+**Binding condition.** Before the `data_editor` flag is switched on anywhere, decision 1A must be implemented,
+independently reviewed, merged and green in CI. State: implemented in branch `claude/project-thread-rdo6g3-gs2-1a`;
+the independent review, the merge and green CI are still open.
+
+| # | Decision point | Decision (A) | Follow-up | Deadline |
+|---|---|---|---|---|
+| 1 | I-3: over-privileged write role | For `kind = "write"`, superuser, BYPASSRLS, REPLICATION and the server-file roles (`pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`), directly or through membership, refuse the unlock with `405 studio.write_role_over_privileged`; CREATEROLE and the other predefined roles stay warnings | Implemented (branch `claude/project-thread-rdo6g3-gs2-1a`); independent review, merge, CI green | Before the flag is first switched on (binding) |
+| 2 | Loopback TCP without TLS (residual risk 4) | Accept the residual risk for G-S2 (non-PROD, local development); the guide asks for a long random write password and recommends a socket with `requirepeer` | Recheck: require `verify-full` (or a socket with `requirepeer`) for loopback TCP with a password | Before G-R |
+| 3 | Audit log anchor and retention | Accept the residual risk; retention unlimited, documented in the security guide (done) | Keep the last `(seq, hash)` also in the keyring and report "log missing or reset" when a new chain starts while an anchor exists | Before G-R |
+| 4 | Refusals before a run in the audit log | No change: refused plans (binding, expiry, confirmation) and unlock attempts with the area off are not recorded; every run, drift refusal and refused unlock of a stored profile with its area on is | Optional: `plan.refused` / `unlock.refused` events, only if the log must serve as evidence for third parties | None (optional) |
+| 5 | Partitioned tables | The refusal is confirmed (as built and documented) | Full support (fingerprint and show every partition) would be its own work package | None |
+| 6 | Data Editor scope of 1.1 | G-S2 with the scope as built; enum labels (catalog names, at most 1000) reaching the page are confirmed | Bytes "replace by file", `constraint.*` errors at the cell, paging beyond the first page | Before the Studio 1.1 release |
+| 7 | Tabrion's experimental names (`tabrion.rowedit.*`, `tabrion.errors.RowCountMismatch`, `X` in 0.3.0.dev0) | Accepted for G-S2 (internal activation) | tabrion stabilizes them to `S` (tabrion 0.3), and Studio takes the new pin | Before the Studio 1.1 release |
+
+Follow-ups as TODO items:
+
+- [ ] **G-S2 1A (binding):** independent review, merge and green CI of the over-privileged write role refusal
+  (branch `claude/project-thread-rdo6g3-gs2-1a`); until then the `data_editor` flag stays off everywhere.
+- [ ] **G-S2 2A, before G-R:** recheck loopback TCP without TLS for a write or admin password: require TLS with
+  `verify-full` or a Unix socket with `requirepeer` (residual risk 4 of the write threat model).
+- [ ] **G-S2 3A, before G-R:** audit-log anchor in the keyring (the last `(seq, hash)`), with a "log missing or
+  reset" notice when a new chain starts while an anchor exists. Unlimited retention is documented in the security
+  guide now (done).
+- [ ] **G-S2 4A (optional, no deadline):** `plan.refused` and `unlock.refused` audit events, only if the audit log
+  must serve as evidence for third parties.
+- [x] **G-S2 5A:** partitioned tables and partitions stay refused (`studio.plan_target_partitioned`); full support
+  only as its own work package.
+- [ ] **G-S2 6A, before the Studio 1.1 release:** bytes "replace by file", `constraint.*` errors at the cell, and
+  paging beyond the first page in the Data Editor (planning document 15 section 4; G2-08). Enum labels confirmed.
+- [ ] **G-S2 7A, before the Studio 1.1 release:** tabrion stabilizes `tabrion.rowedit` and
+  `tabrion.errors.RowCountMismatch` to `S` (tabrion 0.3), and Studio moves its pin (02 section 14 S-2).
 
 ### G-S3 and G-S4 definitions
 

@@ -19,7 +19,7 @@ import sqlalchemy
 from tabrion_studio.config.schema import Profile, Settings
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write import connection as write_connection
-from tabrion_studio.write.connection import WRITE_SEARCH_PATH, open_write_connection, privilege_findings
+from tabrion_studio.write.connection import WRITE_SEARCH_PATH, WriteError, open_write_connection, privilege_findings
 from tests.support.plans import RowExecutor
 from tests.support.write import CANARY_SECRET, EVERY_AREA, WriteEnv
 
@@ -157,6 +157,12 @@ def test_membership_in_a_predefined_role_is_a_finding(
     ``admin.broad:<role>``; the server-file roles are ``dangerous``. The test's own roles are never named."""
     prefix = roles["prefix"]
     for kind in ("write", "admin"):
+        if kind == "write" and suffix == "_files":
+            # Owner decision 1A (G-S2): a server-file role refuses a write connection; the admin one shows it.
+            with pytest.raises(WriteError) as refused:
+                open_write_connection(kind, _profile(f"{prefix}{suffix}"), Settings(), password=roles["password"])
+            assert refused.value.code == "studio.write_role_over_privileged"
+            continue
         connection = open_write_connection(kind, _profile(f"{prefix}{suffix}"), Settings(), password=roles["password"])
         try:
             found = {f["code"]: (f["via"], f["severity"]) for f in connection.findings}
@@ -290,6 +296,169 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
         assert roles["password"].encode() not in audit and CANARY_SECRET.encode() not in audit
         if url.password:
             assert url.password.encode() not in audit
+    finally:
+        env.close()
+
+
+# --- Owner decision 1A at G-S2: an over-privileged write role is never unlocked --------------------------------------
+
+#: The login roles of :func:`privileged`, by suffix: the finding that refuses a write unlock, held directly or through
+#: a group role (``SET ROLE`` or inheritance reaches it), and the roles that unlock with a warning.
+REFUSED = {
+    "_su": "admin.superuser",
+    "_bypass": "admin.bypassrls",
+    "_repl": "admin.replication",
+    "_rfiles": "admin.broad:pg_read_server_files",
+    "_wfiles": "admin.broad:pg_write_server_files",
+    "_exec": "admin.broad:pg_execute_server_program",
+    "_via_su": "admin.superuser",
+    "_via_bypass": "admin.bypassrls",
+    "_via_repl": "admin.replication",
+    "_via_rfiles": "admin.broad:pg_read_server_files",
+    "_via_wfiles": "admin.broad:pg_write_server_files",
+    "_via_exec": "admin.broad:pg_execute_server_program",
+}
+WARNED = {
+    "_cr": "admin.createrole",
+    "_via_cr": "admin.createrole",
+    "_rad": "admin.broad:pg_read_all_data",
+    "_via_rad": "admin.broad:pg_read_all_data",
+}
+
+
+@pytest.fixture
+def privileged() -> Iterator[dict[str, Any]]:
+    """A login role for each entry of :data:`REFUSED` and :data:`WARNED`: ``<p>_su``, ``<p>_bypass``, ``<p>_repl``
+    and ``<p>_cr`` hold the attribute themselves, ``<p>_rfiles``, ``<p>_wfiles``, ``<p>_exec`` and ``<p>_rad`` are
+    members of the predefined role; each ``<p>_via_<x>`` is a member of the NOLOGIN group ``<p>_g_<x>``, which holds
+    the attribute or the membership."""
+    if PG_URL is None or PG_SUPERUSER_URL is None:
+        pytest.skip("TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed")
+    prefix = f"stugs2_{secrets.token_hex(4)}"
+    password = secrets.token_hex(16)
+    admin = sqlalchemy.create_engine(sqlalchemy.make_url(PG_SUPERUSER_URL).set(drivername="postgresql+psycopg"))
+    database = sqlalchemy.make_url(PG_URL).database
+    grants = {
+        "su": "SUPERUSER",
+        "bypass": "BYPASSRLS",
+        "repl": "REPLICATION",
+        "cr": "CREATEROLE",
+        "rfiles": "IN ROLE pg_read_server_files",
+        "wfiles": "IN ROLE pg_write_server_files",
+        "exec": "IN ROLE pg_execute_server_program",
+        "rad": "IN ROLE pg_read_all_data",
+    }
+    setup: list[str] = []
+    logins: list[str] = []
+    groups: list[str] = []
+    for name, grant in grants.items():
+        setup.append(f"CREATE ROLE {prefix}_{name} LOGIN PASSWORD '{password}' {grant}")
+        setup.append(f"CREATE ROLE {prefix}_g_{name} NOLOGIN {grant}")
+        setup.append(f"CREATE ROLE {prefix}_via_{name} LOGIN PASSWORD '{password}' IN ROLE {prefix}_g_{name}")
+        logins += [f"{prefix}_{name}", f"{prefix}_via_{name}"]
+        groups.append(f"{prefix}_g_{name}")
+    setup.append(f'GRANT CONNECT ON DATABASE "{database}" TO {", ".join(logins)}')
+    with admin.begin() as connection:
+        for statement in setup:
+            connection.exec_driver_sql(statement)
+    try:
+        yield {"prefix": prefix, "password": password}
+    finally:
+        with admin.begin() as connection:
+            for role in (*logins, *groups):
+                connection.exec_driver_sql(f"DROP OWNED BY {role}")
+                connection.exec_driver_sql(f"DROP ROLE IF EXISTS {role}")
+        admin.dispose()
+
+
+@pytest.mark.parametrize("suffix", sorted(REFUSED))
+def test_an_over_privileged_write_role_is_refused(privileged: dict[str, Any], suffix: str) -> None:
+    """Superuser, BYPASSRLS, REPLICATION or a server-file role, held directly or through a group role, refuse a
+    ``write`` connection (``studio.write_role_over_privileged``); an ``admin`` connection of the same role still opens
+    and reports the finding (STU-XDM-1 decides it at G-S4)."""
+    prefix = privileged["prefix"]
+    profile = _profile(f"{prefix}{suffix}")
+    with pytest.raises(WriteError) as refused:
+        open_write_connection("write", profile, Settings(), password=privileged["password"])
+    assert refused.value.code == "studio.write_role_over_privileged"
+    assert prefix not in str(refused.value)
+    admin = open_write_connection("admin", profile, Settings(), password=privileged["password"])
+    try:
+        via = "inherited" if suffix.startswith("_via_") else "direct"
+        assert (REFUSED[suffix], via) in [(f["code"], f["via"]) for f in admin.findings], admin.findings
+    finally:
+        admin.close()
+
+
+@pytest.mark.parametrize("suffix", sorted(WARNED))
+def test_createrole_and_pg_read_all_data_stay_warnings(privileged: dict[str, Any], suffix: str) -> None:
+    prefix = privileged["prefix"]
+    write = open_write_connection("write", _profile(f"{prefix}{suffix}"), Settings(), password=privileged["password"])
+    try:
+        assert WARNED[suffix] in [f["code"] for f in write.findings], write.findings
+        assert all(f["code"] not in REFUSED.values() for f in write.findings)
+    finally:
+        write.close()
+
+
+def test_an_over_privileged_write_role_is_not_unlocked_through_the_api(
+    privileged: dict[str, Any], tmp_path: Path, static_dir: Path
+) -> None:
+    """Through the unlock route: every refusing role answers 405 ``studio.write_role_over_privileged`` and nothing is
+    unlocked (no unlock listed, ``require`` refuses, the audit log has the refused ``unlock`` records and no ``ok``);
+    a CREATEROLE and a ``pg_read_all_data`` role unlock and show their warning."""
+    assert PG_URL is not None
+    prefix = privileged["prefix"]
+    url = sqlalchemy.make_url(PG_URL)
+    env = WriteEnv(tmp_path, static_dir, EVERY_AREA)
+    try:
+        read = {
+            "name": "pg",
+            "engine": "postgresql",
+            "host": url.host,
+            "port": url.port,
+            "database": url.database,
+            "user": url.username,
+            "environment": "dev",
+            "sslmode": "prefer",
+        }
+        if url.password:
+            read["password"] = "keyring:"
+        assert env.send("POST", "/api/profiles", {"profile": read, "digest": env.user_digest()}).status_code == 201
+        if url.password:
+            stored = env.send("PUT", "/api/profiles/user:pg/secret", {"secret": url.password, "store": "session"})
+            assert stored.status_code == 204
+        suffixes = sorted({**REFUSED, **WARNED})
+        for suffix in suffixes:
+            name = f"w{suffix.replace('_', '-')}"
+            created = env.create_write(name=name, read="pg", user=f"{prefix}{suffix}", password="keyring:")
+            assert created.status_code == 201, created.text
+            stored = env.send(
+                "PUT",
+                f"/api/write/profiles/write:{name}/secret",
+                {"secret": privileged["password"], "store": "session"},
+            )
+            assert stored.status_code == 204
+            assert env.confirm_pair(f"write:{name}").status_code == 200
+        connection_id = env.open("user:pg")
+        for suffix in sorted(REFUSED):
+            name = f"w{suffix.replace('_', '-')}"
+            refused = env.unlock(connection_id, f"write:{name}", name)
+            assert (refused.status_code, refused.json()["code"]) == (405, "studio.write_role_over_privileged"), suffix
+            assert prefix not in refused.text and privileged["password"] not in refused.text
+            assert env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
+            with pytest.raises(WriteError) as locked:
+                env.unlocks.require(env.session(), connection_id, Area.DATA_EDITOR)
+            assert locked.value.code == "studio.write_locked"
+        for suffix in sorted(WARNED):
+            name = f"w{suffix.replace('_', '-')}"
+            unlocked = env.unlock(connection_id, f"write:{name}", name)
+            assert unlocked.status_code == 200, unlocked.text
+            assert WARNED[suffix] in {f["code"] for f in unlocked.json()["findings"]}
+        audit = b"".join(p.read_bytes() for p in sorted(env.audit_dir.iterdir()) if p.is_file())
+        assert audit.count(b'"result":"studio.write_role_over_privileged"') == len(REFUSED)
+        assert audit.count(b'"event":"unlock"') == len(REFUSED) + len(WARNED)
+        assert privileged["password"].encode() not in audit
     finally:
         env.close()
 

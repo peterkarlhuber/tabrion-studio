@@ -45,7 +45,9 @@ The Data Editor never writes through the read profile you browse with. It needs 
 1. Open **Settings**. While a write area is on, the page has the section **Write and admin profiles**.
 2. Choose the profile to couple (one of your own profiles, not a project profile, and never a `PROD` profile), give
    the write profile a name and, on PostgreSQL, its **own database role** with only the rights it needs (not the role
-   of the read profile).
+   of the read profile). Studio refuses to unlock a role that is a superuser, has `BYPASSRLS` or `REPLICATION`, or
+   belongs, directly or through another role, to `pg_read_server_files`, `pg_write_server_files` or
+   `pg_execute_server_program` (see [Limits](#limits)).
 3. Read the note on production credentials and confirm it: Studio relies on the environment you gave the profile and
    cannot tell whether a database is production. Write credentials for a production database do not belong in Studio.
 4. On PostgreSQL, confirm the pair of server and secret reference in the same section before the first unlock
@@ -133,6 +135,12 @@ These are refused on purpose, by the server, whatever the page shows:
   `PROD`, a `PROD` connection has no **Edit data** tab, and the server unlocks nothing on it
   (`studio.write_prod_locked`); Studio re-checks the stored profile on every use. There is no code path for
   `PROD` (E-X7).
+- **No over-privileged write role (PostgreSQL).** The role of the write profile is checked at every unlock,
+  including every role it can reach through membership. A superuser, `BYPASSRLS`, `REPLICATION` or membership in
+  `pg_read_server_files`, `pg_write_server_files` or `pg_execute_server_program` refuses the unlock
+  (`405 studio.write_role_over_privileged`): the connection is closed and nothing is unlocked. `CREATEROLE` and the
+  other predefined roles, such as `pg_read_all_data`, are shown as warnings in the write state and do not block
+  (owner decision 1A at G-S2).
 - **Only tables with a primary key.** A table without one is refused before you edit anything
   (`studio.plan_target_no_primary_key`); Studio never edits rows by `rowid` or `ctid`. If a column of the primary key
   is not shown, the rows are read only.
@@ -153,7 +161,8 @@ These are refused on purpose, by the server, whatever the page shows:
   writes no Alembic revision, makes no backup and grants nothing to roles. Those belong to the Schema Designer
   (G-S3) and the Database Manager (G-S4), which have their own switches and stay locked too. Granting G-CX turned
   nothing on: each area stays off until its own gate, and a public release needs an independent human security
-  review besides.
+  review besides. The owner granted G-S2 on 2026-11-15 for local use on DEV, TEST and STAGE databases only; the
+  switch still stays off by default, nothing turns it on automatically, and PROD stays locked.
 - **The first 100 rows.** The tab loads the first page of rows (paging is not there yet). A row with a cell the
   viewer cut (longer than 64 KB) is read only. A changeset holds at most 1,000 changes.
 
@@ -163,6 +172,7 @@ These are refused on purpose, by the server, whatever the page shows:
 |---|---|
 | No write profile is coupled to this connection's profile. | Create one under **Settings**, **Write and admin profiles** (above). |
 | Studio never writes to a PROD database. | Use a DEV or TEST profile; PROD is never edited. |
+| The write role is a superuser, has BYPASSRLS or REPLICATION, or is a member of a server-file role … | Give the write profile a role with only the table rights it needs; see [Limits](#limits). |
 | The table has no primary key, so Studio cannot edit its rows. | Add a primary key with your migration tool, or edit the table with another tool. |
 | A column of this table has a type that cannot be compared … | The table is refused as a whole; edit it with another tool. |
 | A value does not fit its column … the cells in question are marked. | Correct the marked cells, then **Preview** again. |

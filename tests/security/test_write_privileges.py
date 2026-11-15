@@ -5,7 +5,10 @@ PostgreSQL 16 is ``dangerous`` (``admin.createrole_pre16``), and membership in a
 through another role, is ``admin.broad:<role>`` (the server-file roles ``dangerous``). A role that is not predefined is
 never named. A predefined role is a ``pg_`` name **and** an oid below ``FirstNormalObjectId`` (16384), as tabrion #77
 D-2 counts it: a role a user created under a ``pg_`` name is not one (the rows here are a mocked catalog).
-``test_write_postgres.py`` proves the same against a server."""
+``test_write_postgres.py`` proves the same against a server.
+
+Owner decision 1A at G-S2: for ``kind="write"`` superuser, BYPASSRLS, REPLICATION and the server-file roles refuse the
+unlock (``studio.write_role_over_privileged``); every other finding stays a warning."""
 
 from __future__ import annotations
 
@@ -13,7 +16,13 @@ from typing import Any
 
 import pytest
 
-from tabrion_studio.write.connection import FIRST_NORMAL_OBJECT_ID, SERVER_FILE_ROLES, privilege_findings
+from tabrion_studio.write.connection import (
+    FIRST_NORMAL_OBJECT_ID,
+    SERVER_FILE_ROLES,
+    WRITE_REFUSING_FINDINGS,
+    privilege_findings,
+    refusing_findings,
+)
 
 pytestmark = pytest.mark.security
 
@@ -133,3 +142,58 @@ def test_the_oid_boundary_is_first_normal_object_id() -> None:
     assert [f["code"] for f in below] == ["admin.broad:pg_monitor"]
     at = privilege_findings([_row(own=True), _row(predefined="pg_monitor", member=True, oid=16384)], 160000)[1]
     assert at == []
+
+
+# --- Owner decision 1A at G-S2 (review I-3 of PR #111): what refuses a write unlock ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("rows", "refused"),
+    [
+        ([_row(own=True, superuser=True)], ["admin.superuser"]),
+        ([_row(own=True), _row(superuser=True)], ["admin.superuser"]),
+        ([_row(own=True), _row(predefined="pg_read_server_files", member=True)], ["admin.broad:pg_read_server_files"]),
+        ([_row(own=True), _row(), _row(predefined="pg_write_server_files")], ["admin.broad:pg_write_server_files"]),
+        (
+            [_row(own=True), _row(predefined="pg_execute_server_program")],
+            ["admin.broad:pg_execute_server_program"],
+        ),
+        # Warnings only: CREATEROLE (also before 16, dangerous) and every other predefined role.
+        ([_row(own=True, createrole=True)], []),
+        ([_row(own=True), _row(predefined="pg_read_all_data", member=True)], []),
+        ([_row(own=True), _row(predefined="pg_write_all_data", member=True)], []),
+        ([_row(own=True), _row(predefined="pg_monitor")], []),
+        ([_row(own=True)], []),
+    ],
+)
+def test_refusing_findings_of_a_write_role(rows: list[tuple[Any, ...]], refused: list[str]) -> None:
+    """Superuser, BYPASSRLS, REPLICATION and the server-file roles refuse, held directly or through a role; nothing
+    else does, also not ``admin.createrole_pre16`` (an unknown server version)."""
+    findings = privilege_findings(rows, None)[1]
+    assert refusing_findings(findings) == refused
+    if not refused:
+        assert all(f["code"] not in WRITE_REFUSING_FINDINGS for f in findings)
+
+
+@pytest.mark.parametrize("index", [1, 2, 4])
+def test_bypassrls_and_replication_refuse(index: int) -> None:
+    """The attributes by their position in a row (superuser, BYPASSRLS, createrole, REPLICATION)."""
+    for own in (True, False):
+        row = list(_row(own=own))
+        row[index] = True
+        rows = [tuple(row)] if own else [_row(own=True), tuple(row)]
+        name = {1: "superuser", 2: "bypassrls", 4: "replication"}[index]
+        assert refusing_findings(privilege_findings(rows, 160000)[1]) == [f"admin.{name}"]
+
+
+def test_the_refusing_set_is_exactly_decision_1a() -> None:
+    assert {
+        "admin.superuser",
+        "admin.bypassrls",
+        "admin.replication",
+        "admin.broad:pg_read_server_files",
+        "admin.broad:pg_write_server_files",
+        "admin.broad:pg_execute_server_program",
+    } == WRITE_REFUSING_FINDINGS
+    assert "admin.createrole" not in WRITE_REFUSING_FINDINGS
+    assert "admin.createrole_pre16" not in WRITE_REFUSING_FINDINGS
