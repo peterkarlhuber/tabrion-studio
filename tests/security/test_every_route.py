@@ -216,6 +216,10 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/secret-confirmations/confirm": "confirms the pair: Studio's state file, audit log (flags)",
     "DELETE /api/write/secret-confirmations": "revokes a pair's confirmation and ends its unlocks (flags)",
     "POST /api/write/data-editor/table": "reads a table's columns and key on the write connection; no write (flags)",
+    # STU-CR-2, STU-CR-3 (G-S3): the Schema Designer's database creation, behind the schema_designer flag only (405
+    # and no import of the area while it is off; tests/security/test_schema_designer_create.py). Never on PROD.
+    "POST /api/write/schema-designer/create/sqlite": "creates a new, empty, private SQLite file (Schema Designer flag)",
+    "POST /api/write/schema-designer/create/postgresql": "CREATE DATABASE on an unlocked DEV/TEST write connection",
 }
 
 

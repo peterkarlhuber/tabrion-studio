@@ -28,6 +28,12 @@ function markers(text: string): string[] {
 const SAME_IN_BOTH = new Set([
   // The SQL keyword NULL (the Data Editor's NULL button, STU-026).
   'dataEditor.null',
+  // STU-CR-3: PostgreSQL's template name, "Locale (optional)" and the environment tags DEV, TEST, PROD (STU-CR-2).
+  'createDatabase.postgres.templates.template0',
+  'createDatabase.postgres.locale',
+  'createDatabase.profile.environments.dev',
+  'createDatabase.profile.environments.test',
+  'createDatabase.profile.environments.prod',
   // Product names and technical terms that German uses as they are (STU-008).
   'connections.engine.sqlite',
   'connections.engine.postgresql',

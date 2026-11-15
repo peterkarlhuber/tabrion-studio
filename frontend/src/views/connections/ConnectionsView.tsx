@@ -57,6 +57,7 @@ import { problemText } from './messages';
 import { takeConnectRequest } from './pending';
 import { useConnect } from './useConnect';
 import { useConnectionSession } from '../../workspace';
+import { CreateDatabaseSection } from '../write/CreateDatabase';
 import styles from './Connections.module.css';
 import viewStyles from '../Views.module.css';
 
@@ -764,6 +765,8 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
           ) : null}
         </div>
       )}
+      {/* STU-CR-2, STU-CR-3: only while the server says the Schema Designer flag is on (G-S3, not granted). */}
+      <CreateDatabaseSection fetcher={fetcher} onSaved={() => void load()} />
       {open.kind === 'wizard' ? (
         <ConnectionWizard
           fetcher={fetcher}

@@ -80,7 +80,7 @@ STU-XDM-1 decides it at G-S4. Studio never grants or widens its own rights.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 import contextlib
 from dataclasses import dataclass, field
 import functools
@@ -129,6 +129,7 @@ __all__ = [
     "open_write_connection",
     "privilege_findings",
     "refusing_findings",
+    "refusing_findings_now",
     "require_auth",
     "require_auth_supported",
     "write_authorizer",
@@ -352,6 +353,15 @@ def refusing_findings(findings: list[dict[str, str]]) -> list[str]:
     return sorted({f["code"] for f in findings if f.get("code") in WRITE_REFUSING_FINDINGS})
 
 
+def refusing_findings_now(fetch: Callable[[str], list[tuple[Any, ...]]]) -> list[str]:
+    """Decision 1A again at the start of a run (review L-1 of PR #127): the privilege check read through ``fetch``,
+    which runs one of Studio's fixed statements on the very session the run uses, and the codes of
+    :data:`WRITE_REFUSING_FINDINGS` among its findings. A role that gained such a right after its unlock is caught
+    before the run's statement."""
+    _, findings = privilege_findings(fetch(_PRIVILEGES), _server_version(fetch(_SERVER_VERSION)))
+    return refusing_findings(findings)
+
+
 def _server_version(rows: list[tuple[Any, ...]]) -> int | None:
     try:
         return int(rows[0][0])
@@ -396,6 +406,39 @@ class WriteConnection:
         self.verify()
         with self._db.transaction(timeout=self.timeout_s) as transaction:
             yield transaction
+
+    @contextlib.contextmanager
+    def idle_autocommit(self) -> Iterator[Any]:
+        """One session of this PostgreSQL write connection as an idle ``psycopg.Connection`` in autocommit mode.
+
+        For the statements that cannot run in a transaction and that tabrion runs only on such a connection
+        (``tabrion.postgres.create_database``, contract section 4.8, I-190; STU-CR-3). An open transaction of the
+        pooled session is rolled back first; afterwards the session is switched back and returned to the pool, where
+        the check-in reset (``RESET ALL``) restores the fixed ``search_path`` (K-2). A session that cannot be switched
+        back is discarded, never reused. Raises :class:`WriteError` (``studio.write_unsupported``) on SQLite."""
+        if self.engine != "postgresql":
+            raise WriteError("studio.write_unsupported")
+        self.verify()
+        import psycopg
+
+        pooled = self._db.engine.raw_connection()
+        try:
+            driver = pooled.driver_connection
+            if not isinstance(driver, psycopg.Connection):  # pragma: no cover - the engine is psycopg's
+                raise WriteError("studio.write_unsupported")
+            if driver.info.transaction_status != psycopg.pq.TransactionStatus.IDLE:
+                driver.rollback()
+            driver.autocommit = True
+            try:
+                yield driver
+            finally:
+                try:
+                    driver.autocommit = False
+                except Exception:
+                    pooled.invalidate()
+                    raise
+        finally:
+            pooled.close()
 
     def check_privileges(self) -> None:
         """Read the role's privileges (TX-11) into :attr:`facts` and :attr:`findings`; nothing on SQLite."""

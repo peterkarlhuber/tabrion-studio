@@ -113,16 +113,22 @@ export function DataEditor({
   );
 }
 
-function UnlockForm({
+/**
+ * Unlock the write mode of a connection with one of its write profiles, its name typed (D-03). Shared with the
+ * Schema Designer's database creation (STU-CR-3), which passes its own `lead`.
+ */
+export function UnlockForm({
   fetcher,
   connectionId,
   profileId,
   onUnlocked,
+  lead,
 }: {
   fetcher: typeof fetch;
   connectionId: string;
   profileId: string;
   onUnlocked: () => void;
+  lead?: string;
 }) {
   const { t } = useTranslation();
   const id = useId();
@@ -171,7 +177,7 @@ function UnlockForm({
       data-testid="data-editor-unlock"
     >
       <h3 id={`${id}-title`}>{t('dataEditor.unlock.title')}</h3>
-      <p className={connectionStyles.hint}>{t('dataEditor.unlock.lead')}</p>
+      <p className={connectionStyles.hint}>{lead ?? t('dataEditor.unlock.lead')}</p>
       {profiles.length > 1 ? (
         <Field label={t('dataEditor.unlock.profile')}>
           {(props) => (
