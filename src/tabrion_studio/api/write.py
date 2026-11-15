@@ -31,6 +31,11 @@
   through the plan routes above; a value that does not fit its column is refused when the plan is made
   (``400 studio.data_editor_value_invalid`` with positions only). Only the Data
   Editor flag opens it and registers the executor; with that flag off it answers 405 like every write route.
+* ``POST /api/write/schema-designer/create/sqlite``: ``{"path", "typed"}``: a new, private SQLite database file
+  (STU-CR-2); ``POST /api/write/schema-designer/create/postgresql``: ``{"connection_id", "name", "owner",
+  "template", "encoding", "locale", "typed"}``: a new PostgreSQL database on this session's unlocked write connection
+  of a DEV or TEST server (STU-CR-3; :mod:`tabrion_studio.write.schema_designer.create`). Only the Schema Designer
+  flag opens them; with it off they answer 405 and the Schema Designer's code is not imported.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -75,6 +80,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/secret-confirmations/confirm", ("POST",)),
     # STU-026: the Data Editor's table (columns, primary key, triggers and rules) for its grid; Data Editor flag only.
     ("/api/write/data-editor/table", ("POST",)),
+    # STU-CR-2, STU-CR-3: the Schema Designer's database creation; Schema Designer flag only (G-S3).
+    ("/api/write/schema-designer/create/sqlite", ("POST",)),
+    ("/api/write/schema-designer/create/postgresql", ("POST",)),
 )
 
 

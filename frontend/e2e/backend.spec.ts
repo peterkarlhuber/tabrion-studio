@@ -204,6 +204,8 @@ test('STU-008: a profile created in the page is written to profiles.toml and del
   await dialog.getByRole('radio', { name: 'DEV' }).check();
   await dialog.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByTestId('connections-status')).toHaveText('e2e-parts saved.');
+  // STU-CR-2, STU-CR-3: every write area is off by default, so the "New database" wizard is not shown (G-S3).
+  await expect(page.getByTestId('create-database')).toHaveCount(0);
   const file = join(root, 'state', 'config', 'profiles.toml');
   expect(readFileSync(file, 'utf-8')).toContain('name = "e2e-parts"');
   if (process.platform !== 'win32') expect(statSync(file).mode & 0o777).toBe(0o600);

@@ -9,7 +9,8 @@ export interface Problem {
   logId: string | null;
   /**
    * The fields of a refused form (STU-008): fixed key names (`profile.host`) and `config.*` codes; or the cells of a
-   * refused Data Editor changeset (STU-XDE-1): `changes.<change>.<column>` positions and `value.*` codes.
+   * refused Data Editor changeset (STU-XDE-1): `changes.<change>.<column>` positions and `value.*` codes; or the
+   * fields of a refused database creation (STU-CR-2, STU-CR-3): `create.<field>` and `create.*` codes.
    */
   issues?: ProblemIssue[];
   /** The SQLSTATE of a `db.<kind>` problem (five characters), when the database gave one. */
@@ -21,8 +22,9 @@ export interface ProblemIssue {
   code: string;
 }
 
-const ISSUE_POINTER = /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4})$/;
-const ISSUE_CODE = /^(?:config|value)\.[a-z_]{1,48}$/;
+const ISSUE_POINTER =
+  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|create\.[a-z_]{1,32})$/;
+const ISSUE_CODE = /^(?:(?:config|value)\.[a-z_]{1,48}|create\.[a-z_]{1,48})$/;
 
 function issues(value: unknown): ProblemIssue[] | undefined {
   if (!Array.isArray(value)) return undefined;

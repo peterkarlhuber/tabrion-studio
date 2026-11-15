@@ -13,7 +13,9 @@ lists the newest records and verifies the whole log, read only.
 The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan.Plans` (``app.state.write_plans``):
 make and preview, confirm with the hash and the typed text, execute once. With the Data Editor flag on, the Data
 Editor's executor (STU-026, :mod:`tabrion_studio.write.data_editor`) is registered there and its table route answers;
-with that flag off neither is imported.
+with that flag off neither is imported. With the Schema Designer flag on, its two database creation routes (STU-CR-2,
+STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`) answer; with that flag off they answer 405 and import
+nothing of the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -47,7 +49,7 @@ from tabrion_studio.config.schema import (
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.config.writer import SaveError
-from tabrion_studio.problems import problem_response
+from tabrion_studio.problems import db_problem_response, problem_response
 from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError
@@ -119,6 +121,10 @@ _PAIR_CONFIRM_KEYS = frozenset({"confirmation_hash", "typed"})
 #: The keys of the Data Editor's table route (STU-026).
 _TABLE_KEYS = frozenset({"connection_id", "schema", "table"})
 _MAX_PLAN_BODY = MAX_REQUEST_BYTES + 4096
+#: The keys of the Schema Designer's creation routes (STU-CR-2, STU-CR-3); any other key is refused.
+_CREATE_SQLITE_KEYS = frozenset({"path", "typed"})
+_CREATE_POSTGRES_KEYS = frozenset({"connection_id", "name", "owner", "template", "encoding", "locale", "typed"})
+_MAX_CREATE_BODY = MAX_FORM_BODY
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -525,6 +531,41 @@ def add_enabled_write_routes(
             )
 
         return await plan_call(request, _TABLE_KEYS, _MAX_BODY, info)
+
+    # --- the Schema Designer's database creation (STU-CR-2, STU-CR-3) ----------------------------------------------
+
+    # Studio's own folders: no database file is created in them (the configuration, the audit log's folder, the state).
+    reserved = [config.user.config_dir, config.project.record.parent]
+    if audit_dir is not None:
+        reserved += [audit_dir, audit_dir.parent]
+
+    @route("/api/write/schema-designer/create/sqlite", "POST")
+    async def post_create_sqlite(request: Request) -> Response:
+        if not areas.on(Area.SCHEMA_DESIGNER):
+            return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+        # Imported only now: with the Schema Designer flag off, none of its code is loaded (GS3-01).
+        from tabrion_studio.write.schema_designer.create import create_sqlite_file
+
+        def create(_session: str, doc: dict[str, Any]) -> Response:
+            created = create_sqlite_file(audit, reserved, doc.get("path"), doc.get("typed"))
+            return JSONResponse(created.to_dict(), status_code=201)
+
+        return await plan_call(request, _CREATE_SQLITE_KEYS, _MAX_CREATE_BODY, create)
+
+    @route("/api/write/schema-designer/create/postgresql", "POST")
+    async def post_create_postgresql(request: Request) -> Response:
+        if not areas.on(Area.SCHEMA_DESIGNER):
+            return problem_response("studio.method_not_allowed")
+        from tabrion_studio.write.schema_designer.create import DriverFailure, create_postgres_database
+
+        def create(session: str, doc: dict[str, Any]) -> Response:
+            try:
+                created = create_postgres_database(unlocks, session, doc)
+            except DriverFailure as exc:
+                return db_problem_response(exc.classification)
+            return JSONResponse(created.to_dict(), status_code=201)
+
+        return await plan_call(request, _CREATE_POSTGRES_KEYS, _MAX_BODY, create)
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

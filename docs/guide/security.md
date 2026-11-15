@@ -278,6 +278,16 @@ the server answers `405` and the write code is not even loaded.
       and after, the new rows with their values, and the deleted rows by their key;
     - the changes live in the page's memory only: never in the query history, the drafts, browser storage, the logs
       or the audit log (it records the plan hash and row counts).
+- **Creating a database (STU-CR-2, STU-CR-3, in development, locked by G-S3).** Behind `schema_designer`, off by
+  default; with the flag off its two routes answer `405` and their code is not loaded. Its steps and limits are in
+  the [New database](new-database.md) page. What it does when that flag is on in a test setup:
+    - a SQLite file is created only as a new file with the mode `0600`, never through a link, never over an existing
+      file or its side files, and only in a folder of yours that others cannot write to and that is not one of
+      Studio's own folders; the typed file name confirms it;
+    - a PostgreSQL database is created only through the Schema Designer's unlocked write profile of a `DEV` or
+      `TEST` connection (the stored environment is checked again), with the typed database name; the owner must be a
+      role the write profile's role is a member of; a database error is shown as its kind, never the server's text;
+    - the audit log records the start and the result with the file or database name, never the folder or a secret.
 
 !!! note "Python 3.11"
     Python's `sqlite3` module can turn on SQLite's defensive mode only from Python 3.12. On Python 3.11 Studio
