@@ -124,7 +124,7 @@ FAKE = {
 }
 
 
-COMMIT = "af0458d54467571abfc1afdd44d76e1f4d727c06"
+COMMIT = "a864d10fc02fc8b2f2b2a0c53105813b2b605b89"
 REPO = "https://github.com/peterkarlhuber/tabrion"
 PIN = f"# a comment\ntabrion @ git+{REPO}@{COMMIT}\n"
 

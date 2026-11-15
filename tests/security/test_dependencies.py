@@ -213,11 +213,15 @@ def test_final_range_passes() -> None:
 CONSTRAINTS = PYPROJECT.parent / "constraints" / "tabrion-integration.txt"
 
 
-def test_the_constraints_file_pins_tabrion_0_2_1() -> None:
-    """RC-8 (ADR 0009 amendment, no PyPI publication): pyproject.toml carries the final range with no direct
-    reference, and the constraints file pins tabrion 0.2.1 (the merge commit of tabrion PR #71, untagged) by its full
-    SHA (TD-013, TD-071)."""
+def test_the_constraints_file_pins_tabrion_0_3_0_dev0() -> None:
+    """RC-8 (ADR 0009 amendment, no PyPI publication): pyproject.toml carries a final range with no direct reference
+    and no pre-release specifier, and the constraints file pins tabrion 0.3.0.dev0 (the head of tabrion draft PR #80,
+    untagged) by its full SHA (TD-013, TD-071, STU-026).
+
+    Temporary (STU-026): the range spans 0.2 and 0.3 because a final-only range cannot name 0.3.0.dev0 (``>=0.3``
+    excludes it and a pre-release specifier is refused above); the pinned commit is the one tested. Once tabrion #80
+    is merged and 0.3 is final, the pin moves to its merge commit and the range to ``>=0.3,<0.4``."""
     lines = [line for line in CONSTRAINTS.read_text(encoding="utf-8").splitlines() if line and not line.startswith("#")]
-    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@af0458d54467571abfc1afdd44d76e1f4d727c06"]
+    assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@a864d10fc02fc8b2f2b2a0c53105813b2b605b89"]
     deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
-    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.3"]
+    assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.4"]
