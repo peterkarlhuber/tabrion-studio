@@ -79,8 +79,11 @@ database's own is never named.
 server-file role (``admin.broad:pg_read_server_files``, ``admin.broad:pg_write_server_files``,
 ``admin.broad:pg_execute_server_program``). The connection is closed before anything is unlocked. Every other finding
 (``admin.createrole``, ``admin.createrole_pre16``, every other ``admin.broad:<role>``, ``pg_read_all_data`` and
-``pg_write_all_data`` among them) stays a warning shown in the write state. For ``admin`` nothing refuses yet:
-STU-XDM-1 decides it at G-S4. Studio never grants or widens its own rights.
+``pg_write_all_data`` among them) stays a warning shown in the write state. For ``admin`` the connection still
+opens and shows its findings (refusing the unlock itself, as STU-ADR-0008 section 6 proposes, is the owner's decision
+at G-S4); every Database Manager action reads the check again on its own session and refuses
+:data:`ADMIN_REFUSING_FINDINGS` with ``405 studio.admin_over_privileged``, which also ends the unlock (STU-XDM-2).
+Studio never grants or widens its own rights.
 """
 
 from __future__ import annotations
@@ -123,21 +126,25 @@ from tabrion_studio.services.connections import (
 from tabrion_studio.services.readonly import ACTING_PRAGMAS, READING_PRAGMAS, SQLITE_FUNCTIONS
 
 __all__ = [
+    "ADMIN_REFUSING_FINDINGS",
     "REQUIRE_AUTH",
     "REQUIRE_AUTH_SCRAM",
     "WRITE_REFUSING_FINDINGS",
     "WRITE_SEARCH_PATH",
     "WriteConnection",
     "WriteError",
+    "admin_refusing_findings",
     "createdb_findings",
     "defensive_available",
     "file_identity",
     "open_write_connection",
     "privilege_findings",
+    "privileges_now",
     "refusing_findings",
     "refusing_findings_now",
     "require_auth",
     "require_auth_supported",
+    "restore_role_refusals",
     "write_authorizer",
 ]
 
@@ -174,6 +181,10 @@ SERVER_FILE_ROLES = frozenset({"pg_execute_server_program", "pg_read_server_file
 WRITE_REFUSING_FINDINGS = frozenset(
     {"admin.superuser", "admin.bypassrls", "admin.replication"} | {f"admin.broad:{role}" for role in SERVER_FILE_ROLES}
 )
+#: The findings that refuse every action of the Database Manager with an admin role (STU-ADR-0008 section 6, proposed
+#: with STU-XDM-1; STU-XDM-4 adds the unlock refusal): 1A's set and CREATEROLE before PostgreSQL 16. Checked again at
+#: the start of every backup and restore on the session that acts.
+ADMIN_REFUSING_FINDINGS = WRITE_REFUSING_FINDINGS | frozenset({"admin.createrole_pre16"})
 #: The environments where the Schema Designer creates databases, so a write role with CREATEDB there is expected.
 CREATEDB_ENVIRONMENTS = frozenset({"dev", "test"})
 #: PostgreSQL ``FirstNormalObjectId``: every predefined role has a smaller oid.
@@ -385,6 +396,29 @@ def refusing_findings_now(fetch: Callable[[str], list[tuple[Any, ...]]]) -> list
     before the run's statement."""
     _, findings = privilege_findings(fetch(_PRIVILEGES), _server_version(fetch(_SERVER_VERSION)))
     return refusing_findings(findings)
+
+
+def privileges_now(fetch: Callable[[str], list[tuple[Any, ...]]]) -> tuple[dict[str, Any], list[dict[str, str]]]:
+    """The privilege check (TX-11) read now through ``fetch`` on the session that is about to act: its facts and
+    findings (the Database Manager checks its admin role at every action and a restore role before every restore)."""
+    return privilege_findings(fetch(_PRIVILEGES), _server_version(fetch(_SERVER_VERSION)))
+
+
+def admin_refusing_findings(findings: list[dict[str, str]]) -> list[str]:
+    """The codes of ``findings`` that refuse every Database Manager action of an admin role
+    (:data:`ADMIN_REFUSING_FINDINGS`, STU-ADR-0008 section 6), sorted."""
+    return sorted({f["code"] for f in findings if f.get("code") in ADMIN_REFUSING_FINDINGS})
+
+
+def restore_role_refusals(facts: dict[str, Any], findings: list[dict[str, str]]) -> list[str]:
+    """Why a role may not run a PostgreSQL restore (review M-1 of STU-XDM-1): an archive's functions run as the
+    restoring role, so it has none of SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE (also not before 16) or CREATEDB
+    and no predefined role (``admin.broad:*``), held directly or through a reachable role. Sorted codes; empty when
+    the role is lean."""
+    codes = {f["code"] for f in findings if isinstance(f.get("code"), str)}
+    if facts.get("createdb"):
+        codes.add("admin.createdb")
+    return sorted(codes)
 
 
 def _server_version(rows: list[tuple[Any, ...]]) -> int | None:

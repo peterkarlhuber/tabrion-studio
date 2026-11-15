@@ -36,8 +36,9 @@ preview, never run; PROD is never unlocked, E-X7); tabrion's ``migration_markers
 ``alembic.ini`` (any such file: stricter than ``script_location``) and the database no Levuvo version table
 (Nodestro, Axentra, ``<prefix>orkexa_schema``); the plan has no non-transactional step; the plan has a step; the
 audit record can name every table (at most 64, the audit log's cap); and on PostgreSQL the plan has no
-``destructive``, ``rebuild`` or ``data_changing`` step, because the verified ``pg_dump`` runner of STU-ADR-0008
-section 3 that its backup needs does not exist yet (fail closed, ``backup_unavailable``; an open point).
+``destructive``, ``rebuild`` or ``data_changing`` step, because its backup through the verified ``pg_dump`` runner
+of STU-ADR-0008 section 3 (:mod:`tabrion_studio.write.pgtools`, STU-XDM-2) is not wired in here yet (fail closed,
+``backup_unavailable``; an open point).
 
 **Decision 1A at each run (GS3-28).** On PostgreSQL, the privilege check of the unlock runs again on the very session
 that runs the plan, after it is checked out and before ``BEGIN``; a role that gained superuser, BYPASSRLS, REPLICATION
@@ -299,7 +300,7 @@ def blocked(unlock: Unlock, change: Any, project: Path | None) -> tuple[str, ...
     if len({step.target for step in change.steps}) > MAX_RUN_TABLES:
         reasons.append("too_many_tables")
     if unlock.connection.engine == "postgresql" and set(change.risks) & BACKUP_CLASSES:
-        # STU-ADR-0008 section 3: the verified pg_dump runner does not exist yet; no backup, no such run.
+        # STU-ADR-0008 section 3: the verified pg_dump runner is not wired in here yet; no backup, no such run.
         reasons.append("backup_unavailable")
     return tuple(reasons)
 

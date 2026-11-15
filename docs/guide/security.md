@@ -131,8 +131,10 @@ the server answers `405` and the write code is not even loaded.
   Editor's switch is on (the same unlock then edits rows), and for any role outside `DEV` and `TEST`; for the Schema
   Designer alone on `DEV` or `TEST`, which needs it, it is a fact only. To see the role and every role it reaches with their attributes, run
   `SELECT r.rolname, r.rolsuper, r.rolbypassrls, r.rolreplication FROM pg_roles r WHERE pg_has_role('<role>', r.oid, 'MEMBER');`.
-  For admin profiles, which finding blocks is decided with the Database Manager (G-S4); until then they are shown
-  and logged.
+  For admin profiles the unlock still shows the findings (which finding blocks the unlock is decided with the
+  Database Manager, G-S4), but every [Database Manager](database-manager.md) action refuses a role that has or
+  reaches superuser, `BYPASSRLS`, `REPLICATION`, a server-file role or `CREATEROLE` before PostgreSQL 16, and ends
+  the unlock.
 - **Refusals echo nothing.** A refused write answers `400` or `405` with a fixed text (`403` only for the write mode
   of a query), never with a value or a secret of the request.
 - **The audit log (STU-XW-2).** While an area is on, Studio records every write and admin action in a local,

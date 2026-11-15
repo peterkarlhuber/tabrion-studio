@@ -46,7 +46,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 import contextlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import hashlib
 import json
 import logging
@@ -58,7 +58,7 @@ from typing import Any
 import tabrion
 
 from tabrion_studio.api.config import Configuration
-from tabrion_studio.config.schema import Profile, WriteProfile, target_fingerprint
+from tabrion_studio.config.schema import Profile, WriteProfile, coupling_issue, target_fingerprint
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.logs import register_secret
@@ -334,23 +334,7 @@ class Unlocks:
                 identity=identity,
             )
         else:
-            # STU-XW-4, before any secret is read: libpq with require_auth, TLS for a foreign host, the confirmed pair.
-            require_auth_supported()
-            pair = secret_pair(write, read)
-            if pair is None:  # pragma: no cover - a PostgreSQL profile always has a pair
-                raise WriteError("studio.write_coupling_invalid")
-            check_transport(pair)
-            self.confirmations.require(pair)
-            pair_digest = pair.digest
-            password: str | None = None
-            try:
-                password = self.config.secrets.resolve(self.config.write_target(write, read))
-            except SecretError as exc:
-                # No reference and nothing entered: certificate, peer or trust authentication of the write role.
-                if write.password is not None or exc.code != "studio.secret_missing":
-                    raise
-            if password is not None:
-                register_secret(password, lasting=True)
+            pair_digest, password = self._secret(write, read)
             entry = self.config.entry(connection.profile_id)
             opened = open_write_connection(
                 write.kind,
@@ -361,6 +345,58 @@ class Unlocks:
                 requirepeer=write.requirepeer,
             )
         return opened, pair_digest
+
+    def _secret(self, write: WriteProfile, read: Profile) -> tuple[str, str | None]:
+        """The confirmed pair's digest and the PostgreSQL write or admin profile's password (None without one)."""
+        # STU-XW-4, before any secret is read: libpq with require_auth, TLS for a foreign host, the confirmed pair.
+        require_auth_supported()
+        pair = secret_pair(write, read)
+        if pair is None:  # pragma: no cover - a PostgreSQL profile always has a pair
+            raise WriteError("studio.write_coupling_invalid")
+        check_transport(pair)
+        self.confirmations.require(pair)
+        password: str | None = None
+        try:
+            password = self.config.secrets.resolve(self.config.write_target(write, read))
+        except SecretError as exc:
+            # No reference and nothing entered: certificate, peer or trust authentication of the write role.
+            if write.password is not None or exc.code != "studio.secret_missing":
+                raise
+        if password is not None:
+            register_secret(password, lasting=True)
+        return pair.digest, password
+
+    def credentials(self, write_name: str) -> tuple[WriteProfile, Profile, str | None]:
+        """A stored PostgreSQL write or admin profile, its read profile and its password, with every check of an
+        unlock before the secret is read (``require_auth``, the transport, the I-109 j confirmation; STU-XW-4).
+
+        For the tools of the Database Manager (STU-XDM-2), which connect on their own: the password goes only into
+        the tool's temporary passfile. Raises :class:`WriteError` (or ``SecretError``)."""
+        write, read = self._stored(write_name)
+        if read is None or read.engine != "postgresql" or coupling_issue(write, read) is not None:
+            raise WriteError("studio.write_coupling_invalid")
+        if read.environment == "prod":
+            raise WriteError("studio.write_prod_locked")
+        _digest, password = self._secret(write, read)
+        return write, read, password
+
+    def open_checked(self, write_name: str, database: str | None = None) -> WriteConnection:
+        """A checked connection (``open_write_connection``) of the stored PostgreSQL write or admin profile
+        ``write_name``, to its read profile's server and ``database`` (default: the read profile's own). Not an
+        unlock: the caller closes it. For the Database Manager's restore role (its findings before a restore, review
+        M-1 of STU-XDM-1) and the fingerprint of a restored database (STU-XDM-2)."""
+        write, read, password = self.credentials(write_name)
+        profile = write.connection_profile(read)
+        if database is not None:
+            profile = replace(profile, database=database)
+        return open_write_connection(
+            write.kind,
+            profile,
+            self.config.limits(),
+            password=password,
+            refuse_cleartext=False,  # a user profile (K-1): the write rules set require_auth anyway
+            requirepeer=write.requirepeer,
+        )
 
     # --- the hook of every write -----------------------------------------------------------------------------------
 

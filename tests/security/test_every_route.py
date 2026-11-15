@@ -88,6 +88,7 @@ FAMILIES = (
     "/api/write/plans",
     "/api/write/secret-confirmations",
     "/api/write/data-editor",
+    "/api/write/database-manager",
 )
 
 
@@ -232,6 +233,11 @@ CHANGING_ROUTES: dict[str, str] = {
     # execute_plan, on DEV or TEST without migration management only (tests/security/test_schema_designer_execution.py).
     "POST /api/write/schema-designer/plan/confirm": "records the confirmed hash and classes in memory (flag)",
     "POST /api/write/schema-designer/plan/run": "backup, then DDL via execute_plan on DEV/TEST (Schema Designer flag)",
+    # STU-XDM-2 (G-S4): the Database Manager's backup and restore, behind the database_manager flag only (405 and no
+    # import of the area while it is off; tests/security/test_dbm_backup_restore.py). Never on PROD.
+    "POST /api/write/database-manager/backup": "verified pg_dump or SQLite backup into Studio's backup folder (flag)",
+    "POST /api/write/database-manager/restore/preview": "checks a backup and lists its archive; writes nothing (flag)",
+    "POST /api/write/database-manager/restore": "restores into a new or DEV/TEST target, backup first (flag)",
 }
 
 

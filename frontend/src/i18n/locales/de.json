@@ -1095,7 +1095,20 @@
     "schema_backup_failed": "Die Sicherung vor dem Ausführen ließ sich nicht anlegen, deshalb wurde nichts ausgeführt. Bitte freien Platz und Sicherungsordner prüfen.",
     "schema_run_check_failed": "Eine Prüfung vor dem Commit ist fehlgeschlagen (siehe unten). Der Lauf wurde zurückgerollt; es wurde nichts geändert.",
     "schema_run_outcome_unknown": "Ob der Lauf festgeschrieben wurde, ist unbekannt (die Verbindung brach beim Commit ab). Bitte zuerst die Datenbank prüfen.",
-    "schema_run_failed": "Der Lauf ist fehlgeschlagen und wurde zurückgerollt; es wurde nichts geändert."
+    "schema_run_failed": "Der Lauf ist fehlgeschlagen und wurde zurückgerollt; es wurde nichts geändert.",
+    "backup_tool_unavailable": "pg_dump oder pg_restore ist nicht nutzbar. Studio startet sie nur über die absoluten Pfade in database-tools.toml neben seinen Schreibeinstellungen: ein Programm mit dem erwarteten Namen, das dir oder root gehört, für andere nicht schreibbar ist, kein Link ist, Version 16 oder neuer und mindestens so neu wie der Server.",
+    "backup_tool_failed": "pg_dump oder pg_restore ist mit einem Fehler beendet worden oder hat zu lange gebraucht. Eine unvollständige Sicherung wurde entfernt; nichts, was davon abhängt, wurde ausgeführt.",
+    "dbm_backup_failed": "Die Sicherung konnte nicht in Studios Sicherungsordner geschrieben werden; nichts, was davon abhängt, wurde ausgeführt. Prüfe den freien Speicher.",
+    "dbm_backup_unknown": "Studio stellt nur Sicherungen aus seinem eigenen Sicherungsordner wieder her. Wähle eine Sicherung aus der Liste.",
+    "dbm_backup_invalid": "Die Sicherung oder ihre Beschreibung passt nicht (geändert, nicht privat, ein Link, ein anderes Format oder eine andere Art von Datenbank). Es wurde nichts wiederhergestellt.",
+    "dbm_restore_not_allowed": "Studio stellt nur in ein DEV- oder TEST-Ziel oder ein neues wieder her, nie in etwas, das ein PROD-Profil nennt, und bei PostgreSQL nur in eine neue Datenbank. Es wurde nichts wiederhergestellt.",
+    "dbm_restore_name_invalid": "Der Name ist leer, zu lang, hat Leerzeichen am Anfang oder Ende oder enthält unsichtbare Zeichen. Eine neue SQLite-Datei endet auf .db, .sqlite oder .sqlite3.",
+    "dbm_restore_name_mismatch": "Der eingegebene Name stimmt nicht genau mit dem Namen des Ziels überein. Es wurde nichts wiederhergestellt.",
+    "dbm_restore_role_unsafe": "Eine PostgreSQL-Wiederherstellung läuft über ein eigenes Wiederherstellungsprofil, dessen Rolle weder SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE noch CREATEDB und keine vordefinierte Rolle hat. Es wurde nichts wiederhergestellt.",
+    "dbm_restore_target_exists": "Eine Datenbank oder Datei mit diesem Namen gibt es schon. Wähle einen neuen Namen. Es wurde nichts wiederhergestellt.",
+    "dbm_restore_target_changed": "Das Ziel ist nicht mehr das geprüfte. Es wurde nichts weiter ausgeführt; sieh dir das Ziel an und beginne neu.",
+    "dbm_restore_failed": "Die Wiederherstellung war nicht möglich. Eine PostgreSQL-Wiederherstellung läuft in einer Transaktion, die neue Datenbank bleibt also leer; sie bleibt zum Prüfen oder Löschen stehen.",
+    "admin_over_privileged": "Die Admin-Rolle hat oder erreicht SUPERUSER, BYPASSRLS, REPLICATION, eine Serverdatei-Rolle oder CREATEROLE vor PostgreSQL 16. Die Entsperrung wurde beendet; nimm eine schlankere Admin-Rolle."
   },
   "keyboard": {
     "palette": {
@@ -2076,6 +2089,94 @@
       "backupSkipped": "Die Sicherung wurde weggelassen.",
       "auditPending": "Der Audit-Eintrag steht noch aus; siehe Audit-Log bei den Schreibprofilen.",
       "draftEnded": "Der Entwurf ist beendet. Für weitere Änderungen bitte neu beginnen."
+    }
+  },
+  "databaseManager": {
+    "title": "Datenbank-Manager: Sichern und Wiederherstellen (in Entwicklung)",
+    "lead": "Sichere eine DEV- oder TEST-Datenbank in Studios Sicherungsordner und stelle eine Sicherung in eine neue Datenbank oder Datei wieder her. Jede Aktion braucht das entsperrte Admin-Profil dieser Verbindung und wird im Audit-Log festgehalten.",
+    "notComplete": "Eine PostgreSQL-Sicherung ist keine vollständige Sicherung: Sie enthält eine Datenbank. Globale Rollen, Rollenmitgliedschaften, Tablespaces und andere Cluster-Objekte fehlen; sichere sie außerhalb von Studio.",
+    "loading": "Wird geladen …",
+    "listFailed": "Die Sicherungen konnten nicht gelesen werden.",
+    "tools": {
+      "title": "Sicherungswerkzeuge",
+      "ok": "{{name}} {{version}}: nutzbar.",
+      "notUsable": "{{name}}: nicht nutzbar, {{reason}}."
+    },
+    "size_one": "{{count}} Sicherung, insgesamt {{size}}. Studio löscht nie Sicherungen; entferne nicht mehr benötigte selbst.",
+    "size_other": "{{count}} Sicherungen, insgesamt {{size}}. Studio löscht nie Sicherungen; entferne nicht mehr benötigte selbst.",
+    "noBackups": "Noch keine Sicherungen dieser Art von Datenbank.",
+    "backupLine": "von {{database}}, {{size}}",
+    "incomplete": "(nicht vollständig: ohne globale Rollen)",
+    "noConnection": "Öffne zuerst eine Verbindung eines deiner eigenen DEV- oder TEST-Profile mit einem Admin-Profil.",
+    "connection": "Verbindung",
+    "on": "Auf der Verbindung von {{name}}.",
+    "unlockLead": "Sichern und Wiederherstellen brauchen das Admin-Profil dieser Verbindung. Wähle es und gib seinen Namen ein; die Entsperrung endet nach 15 Minuten ohne Nutzung.",
+    "noAdminProfile": "Diese Verbindung hat kein Admin-Profil. Lege eines unter Schreibprofile an; seine Rolle wird außerhalb von Studio eingerichtet.",
+    "backup": "Sicherung erstellen",
+    "made": "Sicherung {{file}} erstellt und geprüft.",
+    "auditPending": "Der Audit-Eintrag steht noch aus.",
+    "restore": {
+      "title": "Wiederherstellen",
+      "lead": "Sieh dir eine Sicherung zuerst an; das ändert nichts. Wähle dann das Ziel und gib seinen Namen ein.",
+      "backup": "Sicherung",
+      "preview": "Wiederherstellung ansehen",
+      "extensions_one": "Das Archiv legt {{count}} Erweiterung an.",
+      "extensions_other": "Das Archiv legt {{count}} Erweiterungen an.",
+      "target": "Wiederherstellen in",
+      "new": "Eine neue Datei neben der Datei dieser Verbindung",
+      "existing": "Die Datei {{name}} dieser Verbindung (wird zuerst gesichert)",
+      "onlyNew": "PostgreSQL-Sicherungen werden nur in eine neue Datenbank auf diesem Server wiederhergestellt.",
+      "overwrite": "Die Datei wird zuerst gesichert und dann ersetzt. Offene Verbindungen zu ihr werden geschlossen.",
+      "fileName": "Name der neuen Datei",
+      "databaseName": "Name der neuen Datenbank",
+      "role": "Wiederherstellungsprofil",
+      "roleHint": "Ein weiteres Admin-Profil dieser Verbindung mit schlanker Rolle (ohne CREATEROLE, CREATEDB, SUPERUSER, BYPASSRLS, REPLICATION oder vordefinierte Rolle). Der Code des Archivs läuft als diese Rolle.",
+      "noRole": "Diese Verbindung hat kein zweites Admin-Profil für die Wiederherstellung. Richte außerhalb von Studio eine schlanke Wiederherstellungsrolle ein und lege ein Admin-Profil dafür an.",
+      "type": "Gib {{name}} ein, um wiederherzustellen",
+      "run": "Wiederherstellen",
+      "verified": "In {{target}} wiederhergestellt; das Schema stimmt mit der Sicherung überein.",
+      "done": "In {{target}} wiederhergestellt. Studio konnte nicht bestätigen, dass das Schema mit der Sicherung übereinstimmt; prüfe es.",
+      "preBackup": "Das Ziel wurde zuerst als {{file}} gesichert."
+    },
+    "issues": {
+      "tool": {
+        "not_configured": "nicht in database-tools.toml eingetragen",
+        "relative": "der Pfad ist nicht absolut",
+        "missing": "die Datei gibt es nicht",
+        "link": "der Pfad ist ein Link",
+        "not_a_program": "die Datei ist kein Programm",
+        "writable": "andere dürfen die Datei ändern",
+        "owner": "die Datei gehört einem anderen Benutzer",
+        "folder": "andere dürfen ihren Ordner ändern",
+        "platform": "auf diesem Betriebssystem noch nicht verfügbar",
+        "wrong_program": "die Datei ist nicht das erwartete Programm",
+        "too_old": "die Version ist zu alt für diesen Server oder dieses Archiv",
+        "not_started": "das Programm konnte nicht gestartet werden",
+        "timeout": "es hat zu lange gebraucht und wurde beendet",
+        "auth": "der Server hat die Anmeldung abgelehnt",
+        "connect": "es hat den Server nicht erreicht",
+        "permission": "der Rolle fehlt ein nötiges Recht",
+        "version": "seine Version passt nicht zum Server oder Archiv",
+        "other": "es ist mit einem Fehler beendet worden"
+      },
+      "backup": {
+        "changed": "die Sicherung wurde nach dem Erstellen geändert",
+        "link": "die Sicherung ist ein Link",
+        "metadata_invalid": "die Beschreibung der Sicherung ist nicht lesbar",
+        "missing": "die Sicherungsdatei fehlt",
+        "not_a_file": "die Sicherung ist keine normale Datei",
+        "not_custom_format": "die Sicherung hat nicht das Format, das Studio erstellt"
+      },
+      "restore": {
+        "role_required": "wähle ein Wiederherstellungsprofil",
+        "role_unknown": "das Wiederherstellungsprofil ist kein Admin-Profil dieser Verbindung",
+        "role_is_admin": "das Wiederherstellungsprofil muss eine andere Rolle nutzen als das entsperrte Admin-Profil",
+        "in_use": "die Datei wird gerade benutzt",
+        "integrity": "die wiederhergestellte Datei hat die Integritätsprüfung nicht bestanden",
+        "folder_unsafe": "andere dürfen den Ordner des Ziels oder einen Ordner darüber ändern",
+        "reserved_folder": "der Ordner gehört zu Studio selbst"
+      },
+      "unknown": "Einzelheit: {{code}}"
     }
   }
 }

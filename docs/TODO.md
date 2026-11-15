@@ -164,6 +164,16 @@
 > Studio's own folders (now with the log folder and the project's `.tabrion`) are compared by device and inode, no
 > space other than U+0020 in names, the `admin.createdb` warning, and no SQLite creation on Windows. SQLite creation
 > no longer uses tabrion `create_private_file` (API export updated).
+>
+> STU-XDM-2 (2026-11-15, branch `claude/project-thread-rdo6g3-stuxdm2`, draft): the first Database Manager code,
+> **locked by G-S4, which is not granted;** the `database_manager` flag stays off by default. Backup and restore:
+> the verified `pg_dump`/`pg_restore` runner `tabrion_studio.write.pgtools` (paths only from the owner's
+> `database-tools.toml`, clean environment, temporary passfile, timeouts with the process group ended, the archive
+> kept only after `pg_restore --list`), the backup folder `backups/database-manager` with metadata, restore into a new
+> PostgreSQL database as a separate lean restore profile or into a new or the DEV/TEST SQLite file after its own
+> backup, the routes under `/api/write/database-manager/` (405 and no import with the flag off), audit, and the page
+> section (en, de). The conditions of the STU-XDM-1 review (M-1, L-1..L-3, A-1, I-1..I-4) are folded into STU-ADR-0008,
+> the threat model and the G-S4 definition. Open: see [STU-XDM-2 open points](#stu-xdm-2-open-points).
 
 ## Summary
 
@@ -651,8 +661,8 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.2 | Graphical mode on the ER diagram (xyflow) with the table view as the accessible alternative | TABRION STU-XSD-1 | G-S3 | Open; needs STU-CR-4. Acceptance: GS3-23, TX-31 |
 | 1.2 | Schema comparison against a connection, a snapshot file or the draft (a loaded snapshot is display only) | TABRION STU-XSD-2 | G-S3 | Open; Tabrion part in the pin (TAB-XW-4). Acceptance: GS3-09, TX-28 |
 | 1.2 | Alembic revision written into the trusted project (E-X4): `revision_text`, the name and folder checks, no `env.py` | TABRION STU-XSD-3 | G-S3 | Open; Tabrion part in the pin (TAB-XW-4). Acceptance: GS3-06..08, GS3-16 (j 5), GS3-19 |
-| 1.3 | Database Manager: threat model, G-S4 definition (and ADR) | TABRION STU-XDM-1 | G-S4 | Drafted (branch `claude/project-thread-rdo6g3-crxdm1`, documentation only; needs its independent review): [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md), [Database Manager threat model](architecture/database-manager-threat-model.md) TX-32..TX-46, [G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager) GS4-P1..P4, GS4-01..26; the consequence of an over-privileged admin profile proposed (STU-ADR-0008 section 6) |
-| 1.3 | Backup and restore: verified `pg_dump`/`pg_restore`, the backup folder and metadata, restore into a new or non-PROD target, mandatory restore tests | TABRION STU-XDM-2 | G-S4 | Open; needs STU-XDM-1 accepted; Tabrion part in the pin (TAB-XW-7). Acceptance: GS4-01..09, GS4-22 |
+| 1.3 | Database Manager: threat model, G-S4 definition (and ADR) | TABRION STU-XDM-1 | G-S4 | Review ACCEPTED with conditions (`reviews/stu-xdm1-review.md`, 2026-11-15: M-1 restore role, L-1 PROD aliases, L-2 the shared runner, L-3 incomplete backups, A-1 stale text), folded in with STU-XDM-2; ADR 0008 goes to "accepted" with that merge. Drafted (branch `claude/project-thread-rdo6g3-crxdm1`, documentation only): [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md), [Database Manager threat model](architecture/database-manager-threat-model.md) TX-32..TX-46, [G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager) GS4-P1..P4, GS4-01..26; the consequence of an over-privileged admin profile proposed (STU-ADR-0008 section 6) |
+| 1.3 | Backup and restore: verified `pg_dump`/`pg_restore`, the backup folder and metadata, restore into a new or non-PROD target, mandatory restore tests | TABRION STU-XDM-2 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm2`, draft PR; review pending): the runner `tabrion_studio.write.pgtools` (reusable by the Schema Designer, review L-2 a), `backups/database-manager` (0700, files 0600, metadata with SHA-256, tool, server version, fingerprint, scope notice), the routes `GET /api/write/database-manager/backups`, `POST .../backup`, `.../restore/preview`, `.../restore`, PostgreSQL restore only into a new database as a separate lean restore profile (review M-1), PROD detection by `system_identifier` or normalized addresses (L-1), audit, the page section (en, de). Evidence: GS4-01..09, GS4-11 (per action), GS4-22 in `tests/security/test_dbm_backup_restore.py`, `test_dbm_tools.py`, `test_dbm_restore_roundtrip.py`, `DatabaseManager.test.tsx`, `e2e/database-manager-backend.spec.ts`. Open: [STU-XDM-2 open points](#stu-xdm-2-open-points) |
 | 1.3 | Delete a database: SQLite `delete_database_file`, PostgreSQL `drop_database`, backup and typed name first, `force` only explicit | TABRION STU-XDM-3 | G-S4 | Open; needs STU-XDM-2; Tabrion part in the pin (TAB-XW-7, TAB-XW-9). Acceptance: GS4-03, GS4-10, GS4-17, GS4-20 |
 | 1.3 | PostgreSQL roles through the admin profile (E-X6) with the TB-149 obligations: re-read after commit, per-database K-2 check, `public_definers` and CREATE-on-database warnings, escaped names, admin rules at least those of a write profile | TABRION STU-XDM-4 | G-S4 | Open; needs STU-XDM-1; Tabrion part in the pin (TAB-XW-8). Acceptance: GS4-11..20 |
 | 1.3 | Profile pairs, import and export (I-109 j per imported pair, single-host only) | TABRION STU-XDM-5 | G-S4 | Open; needs STU-XW-4. Acceptance: GS4-19, GS4-21 |
@@ -682,7 +692,8 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   `405 studio.write_role_over_privileged`; `admin.createrole`, `admin.createrole_pre16` and every other
   `admin.broad:<pg_* role>` stay warnings (shown in the write state and logged). Implemented in branch
   `claude/project-thread-rdo6g3-gs2-1a` (`WRITE_REFUSING_FINDINGS` in `tabrion_studio.write.connection`). For
-  `kind = "admin"` STU-XDM-1 decides it at G-S4.
+  `kind = "admin"` the owner decides at G-S4 (STU-ADR-0008 section 6); since STU-XDM-2 every Database Manager action
+  already refuses those findings (`studio.admin_over_privileged`) and ends the unlock.
 - **Closed in STU-XW-4: binding requirement L-2 of the review of PR #111, `require_auth` for every write and admin
   connection.** Every PostgreSQL write and admin connection sets `require_auth = "!password,!md5"`, always, whatever
   the profile or its owner (`tabrion_studio.write.connection`; the read path's `refuses_cleartext` rule for project
@@ -919,7 +930,7 @@ Follow-ups as TODO items:
 ### G-S3 and G-S4 definitions
 
 Drafted 2026-11-15 (branch `claude/project-thread-rdo6g3-crxdm1`, STU-CR-1 and STU-XDM-1). **G-S3 and G-S4 are not
-granted;** the `schema_designer` and `database_manager` flags stay off by default and no code of either area exists. (Since STU-CR-2 and STU-CR-3 the database creation wizard of the Schema Designer exists, locked behind its flag.)
+granted;** the `schema_designer` and `database_manager` flags stay off by default and no code of either area exists. (Since STU-CR-2 and STU-CR-3 the database creation wizard of the Schema Designer exists, locked behind its flag.) (Since STU-XDM-2 the Database Manager's backup and restore exist, locked behind its flag.)
 The checklists are [G-S3 definition](architecture/security-review-prep.md#g-s3-definition-schema-designer) and
 [G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager); the rules
 [STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md) and [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md).
@@ -957,7 +968,11 @@ Open decisions for the owner (none is implemented ahead of its gate):
   BYPASSRLS, REPLICATION, a server-access role or CREATEROLE before 16 refuse the admin unlock; the rest is shown);
   the `pg_dump`/`pg_restore` paths from the owner's local configuration instead of the page's settings (E-X5 says
   "from the settings"); PostgreSQL restore only into a new database in 1.3; backup retention (Studio never deletes a
-  backup today); the release exception for Tabrion's experimental role, restore, delete and database names.
+  backup today); the release exception for Tabrion's experimental role, restore, delete and database names. The
+  STU-XDM-1 review recommends accepting the first three (the restore only into a new database together with its
+  M-1, the separate lean restore role), the CR-5 rule for retention (count and size shown, never deleted
+  automatically), and **no** release exception: instead Tabrion promotes the names Studio uses to stable (`S`)
+  before Studio 1.3, as with 7A (see [STU-XDM-2 open points](#stu-xdm-2-open-points), item 1).
 - **Both:** the independent reviews of STU-CR-1 and STU-XDM-1 (doc 07 section 6) accept or change ADRs 0007 and
   0008 and the two threat models; G-S3 also waits for TAB-XW-5 and D-5 in Tabrion (GS3-P1, GS3-P2).
 
@@ -1080,6 +1095,76 @@ flag stays off by default. Each point needs the independent review or the owner.
 11. **Not in this package:** the revision output for Alembic projects (STU-XSD-3), `CREATE INDEX CONCURRENTLY`
     (always `concurrent_indexes=False`), and the runtime role (STU-CR-6).
 
+Notes of the PR #135 review (STU-CR-5, merged as `314871d`), kept here:
+
+- **I-1:** the SQLite backup before a run is taken before `BEGIN`, so a writer that commits between the backup and
+  the run's transaction is not in the backup.
+- **I-2:** Orkexa's SQLite stores have no version table, so the migration-marker check cannot recognize them as
+  managed; direct execution on such a file is guarded by the other rules only.
+- **I-3:** for backup retention the reviewer recommends a size notice, not automatic deletion (also review I-3 of
+  STU-XDM-1; the Database Manager shows the count and total size since STU-XDM-2).
+
+### STU-XDM-2 open points
+
+Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stuxdm2`). **G-S4 is not granted;** the `database_manager`
+flag stays off by default. Each point needs the independent review or the owner.
+
+1. **Tabrion names (owner, review of STU-XDM-1):** Studio uses the experimental (`X`) names
+   `tabrion.sqlite.backup`, `tabrion.sqlite.restore`, `tabrion.postgres.create_database` and `tabrion.schema`
+   level 2. No release exception: Tabrion promotes them to stable (`S`) before Studio 1.3, as with 7A. (TODO for
+   Tabrion's TB-149.)
+2. **Owner decisions for G-S4 (recorded, not decided):** the admin-profile consequence of STU-ADR-0008 section 6
+   (today every action refuses the findings and ends the unlock; the unlock itself still opens), the tool paths from
+   the owner's `database-tools.toml` rather than the page's settings, PostgreSQL restore only into a new database in
+   1.3, backup retention (count and size shown, never deleted).
+3. **PROD backup with the read profile is not built:** every action needs an admin unlock, and PROD never gets one,
+   so a PROD backup is refused (fail closed). GS4-03 is met for restore only. Building it needs the read profile to
+   follow the write and admin connection rules (review L-2 b).
+4. **The restore role is provisioned outside Studio:** a second admin profile of the same read profile, with a lean
+   login role (no SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE, CREATEDB or predefined role); the admin role must be
+   able to act as it so that the new database can belong to it. The guide describes the setup; Studio shows no SQL.
+5. **Windows:** the runner refuses to run tools on Windows (`tool.platform`), because its owner and mode checks are
+   POSIX checks. SQLite backup and restore work there.
+6. **`stderr` is never logged** (stricter than ADR 0008 section 3): only its class (`auth`, `connect`, `permission`,
+   `version`, `other`) is answered and logged. A user debugging a failing tool runs it outside Studio.
+7. **No opt-out of the target's backup** on DEV (stricter than ADR 0008 section 4): the SQLite file is always backed
+   up before it is replaced.
+8. **No STAGE:** Studio's environments are `dev`, `test` and `prod`; a restore target is DEV or TEST.
+9. **CI tools (GS4-P4):** `tests/security/test_dbm_restore_roundtrip.py` needs `pg_dump` and `pg_restore` of the
+   server's major version or newer (marker `postgres_superuser`) and skips without them; whether the `postgres` job
+   provides them is reported on the PR (no workflow change in this package).
+10. **Unverified restore:** when the source's schema changed during the dump, the backup's fingerprint is left empty
+    and a restore of it answers "not verified" instead of "verified"; the page says to check it.
+11. **The listing** names a backup's source by database name and profile only, never its address; at most 500
+    backups are listed, all are counted.
+
+**Review result (PR #136, `reviews/pr136-stuxdm2-review.md`): ACCEPTED with condition L-1 (Low)** and notes I-1..I-5;
+G-S4, G-S3, H-2 and G-R are not granted by it.
+
+12. [x] **L-1: every folder above the tool** is now checked like STU-CR-2's `ancestor_is_safe` (root or the user, not
+    writable by group or others unless sticky, no link), shared in `tabrion_studio.write.folders`;
+    `test_dbm_tools.py::test_every_folder_above_the_tool_is_checked`. Not done: running the checked file descriptor
+    (`/proc/self/fd/N`, `fexecve`). The tool is started by its path, so a process of the same user could still swap
+    the file between the check and the start; that is outside the protection goal (residual risk 2 of the threat
+    model), and nobody else can since every folder on the way is checked.
+13. [x] **I-1:** the reserved folders for a new SQLite file are compared by device and inode
+    (`reserved_identities`), not by real path.
+14. [x] **I-2:** the folder of a new SQLite file gets STU-CR-2's folder rules (the user's own, not writable by group
+    or others, every folder above safe; a link on the stored path must be root's or the user's), else
+    `restore.folder_unsafe`. **Residual (Info, delta review of PR #136):** on Windows these owner and mode rules do
+    not apply and the folder's access list (ACL) is not checked: a restore into a new file next to the existing
+    profile file stays possible there, with only Studio's own folders refused (by device and inode). Tracked with
+    [TD-003](#td-003-windows-check-the-dacl-inside-the-profile-too-review-r-6) for G-R.
+15. **I-3 (guide):** the restore role should serve only this purpose and own nothing else: it owns each restored
+    database, and the archive's code may create trusted extensions there (their number is shown in the preview).
+    The guide says so.
+16. **I-4:** the tool's connection string carries no `sslrootcert`, `sslcert` or `sslkey`, as Studio's own
+    connections do not either: libpq falls back to `~/.postgresql/` (`root.crt`, and a client certificate there is
+    used silently). A profile with its own CA file fails closed at `verify-full`. Documented in the guide; passing
+    them from the profile waits for profiles that store them.
+17. [x] **I-5:** the redundant second OID read right after `create_database` is removed; the OID is read once after
+    the creation and compared after the restore.
+
 ## Cross-repository checks still to add
 
 | Ref | What | Priority |
@@ -1132,6 +1217,9 @@ flag stays off by default. Each point needs the independent review or the owner.
   G-R precondition (GR-3). So is a check on a real Windows machine (GR-4) of what so far only CI and tests cover: the
   refused device names of script files (for example `CON.sql`) and OneDrive-synced and other reparse-point folders,
   which Studio refuses for scripts (STU-020 D-4, kept for 1.0 by decision 11). TD-008 is done with PR #76.
+- **Also (Info, STU-XDM-2, delta review of PR #136):** on Windows the Database Manager's restore into a new SQLite
+  file does not check the access list of the target folder (the folder of the existing profile file); only Studio's
+  own folders are refused there. The restore into a new file stays possible on Windows (STU-XDM-2 open point 14).
 
 ### TD-004 · Fork pull requests in the workflow-change gate (review R-7)
 

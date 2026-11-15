@@ -65,6 +65,10 @@ for _path, _methods in WRITE_ROUTES:
                     "locking": False,
                     "backup": "skip",
                     "dry_run": False,
+                    # STU-XDM-2: the Database Manager's backup and restore (G-S4).
+                    "backup_id": "20261115T000000Z-00000000.dump",
+                    "target": "new",
+                    "restore_profile_id": "write:parts-write",
                 },
             )
         )
@@ -72,7 +76,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 27
+    assert len(methods) == 31
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -94,6 +98,10 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/schema-designer/draft/preview",
         "POST /api/write/schema-designer/plan/confirm",  # STU-CR-5: confirm and run a previewed plan (G-S3)
         "POST /api/write/schema-designer/plan/run",
+        "GET /api/write/database-manager/backups",  # STU-XDM-2: backup and restore (G-S4)
+        "POST /api/write/database-manager/backup",
+        "POST /api/write/database-manager/restore/preview",
+        "POST /api/write/database-manager/restore",
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

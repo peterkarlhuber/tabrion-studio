@@ -1095,7 +1095,20 @@
     "schema_backup_failed": "The backup before the run could not be made, so nothing was run. Check the free space and the backup folder.",
     "schema_run_check_failed": "A check before the commit failed (see below). The run was rolled back; nothing was changed.",
     "schema_run_outcome_unknown": "It is not known whether the run was committed (the connection broke at the commit). Check the database before anything else.",
-    "schema_run_failed": "The run failed and was rolled back; nothing was changed."
+    "schema_run_failed": "The run failed and was rolled back; nothing was changed.",
+    "backup_tool_unavailable": "pg_dump or pg_restore is not usable. Studio runs them only from the absolute paths in database-tools.toml next to its write settings: a program of the expected name, owned by you or root, not writable by others, not a link, version 16 or newer and at least as new as the server.",
+    "backup_tool_failed": "pg_dump or pg_restore ended with an error or ran out of time. A backup that did not finish was removed, and nothing that depends on it was done.",
+    "dbm_backup_failed": "The backup could not be written to Studio's backup folder, so nothing that depends on it was done. Check the free space.",
+    "dbm_backup_unknown": "Studio restores only backups from its own backup folder. Choose a backup from the list.",
+    "dbm_backup_invalid": "The backup or its description does not match (changed, not private, a link, another format or another kind of database). Nothing was restored.",
+    "dbm_restore_not_allowed": "Studio restores only into a DEV or TEST target or a new one, never into what a PROD profile names, and on PostgreSQL only into a new database. Nothing was restored.",
+    "dbm_restore_name_invalid": "The name is empty, too long, has blanks at either end or holds characters that cannot be seen. A new SQLite file ends in .db, .sqlite or .sqlite3.",
+    "dbm_restore_name_mismatch": "The typed name does not match the target's name exactly. Nothing was restored.",
+    "dbm_restore_role_unsafe": "A PostgreSQL restore runs as a separate restore profile whose role has none of SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE or CREATEDB and no predefined role. Nothing was restored.",
+    "dbm_restore_target_exists": "A database or file of this name exists already. Choose a new name. Nothing was restored.",
+    "dbm_restore_target_changed": "The target is no longer the one that was checked. Nothing more was done; look at the target and start again.",
+    "dbm_restore_failed": "The restore could not be done. A PostgreSQL restore runs in one transaction, so the new database stays empty; it is left for you to inspect or drop.",
+    "admin_over_privileged": "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before PostgreSQL 16. The unlock ended; use a leaner admin role."
   },
   "keyboard": {
     "palette": {
@@ -2076,6 +2089,94 @@
       "backupSkipped": "The backup was left out.",
       "auditPending": "The audit record is still pending; see the audit log under write profiles.",
       "draftEnded": "The draft ended. Start it again to make further changes."
+    }
+  },
+  "databaseManager": {
+    "title": "Database Manager: backup and restore (in development)",
+    "lead": "Back up a DEV or TEST database into Studio's backup folder and restore a backup into a new database or file. Every action needs this connection's admin profile unlocked and is written to the audit log.",
+    "notComplete": "A PostgreSQL backup is not a complete backup: it holds one database. Global roles, role memberships, tablespaces and other cluster objects are not in it; back them up outside Studio.",
+    "loading": "Loading …",
+    "listFailed": "The backups could not be read.",
+    "tools": {
+      "title": "Backup tools",
+      "ok": "{{name}} {{version}}: usable.",
+      "notUsable": "{{name}}: not usable, {{reason}}."
+    },
+    "size_one": "{{count}} backup, {{size}} in all. Studio never deletes backups; remove the ones you no longer need yourself.",
+    "size_other": "{{count}} backups, {{size}} in all. Studio never deletes backups; remove the ones you no longer need yourself.",
+    "noBackups": "No backups of this kind of database yet.",
+    "backupLine": "of {{database}}, {{size}}",
+    "incomplete": "(not complete: no global roles)",
+    "noConnection": "Open a connection of one of your own DEV or TEST profiles with an admin profile first.",
+    "connection": "Connection",
+    "on": "On the connection of {{name}}.",
+    "unlockLead": "Backup and restore need this connection's admin profile. Choose it and type its name; the unlock ends after 15 minutes without use.",
+    "noAdminProfile": "This connection has no admin profile. Add one under write profiles; its role is set up outside Studio.",
+    "backup": "Make a backup",
+    "made": "Backup {{file}} made and checked.",
+    "auditPending": "The audit record is still pending.",
+    "restore": {
+      "title": "Restore",
+      "lead": "Look at a backup first; that changes nothing. Then choose the target and type its name.",
+      "backup": "Backup",
+      "preview": "Look at the restore",
+      "extensions_one": "The archive creates {{count}} extension.",
+      "extensions_other": "The archive creates {{count}} extensions.",
+      "target": "Restore into",
+      "new": "A new file next to this connection's file",
+      "existing": "This connection's file {{name}} (backed up first)",
+      "onlyNew": "PostgreSQL backups are restored only into a new database on this server.",
+      "overwrite": "The file is backed up first, then replaced. Open connections to it are closed.",
+      "fileName": "New file name",
+      "databaseName": "New database name",
+      "role": "Restore profile",
+      "roleHint": "Another admin profile of this connection whose role is lean (no CREATEROLE, CREATEDB, SUPERUSER, BYPASSRLS, REPLICATION or predefined role). The archive's code runs as that role.",
+      "noRole": "This connection has no second admin profile for the restore. Set up a lean restore role outside Studio and add an admin profile for it.",
+      "type": "Type {{name}} to restore",
+      "run": "Restore",
+      "verified": "Restored into {{target}}; its schema matches the backup.",
+      "done": "Restored into {{target}}. Studio could not confirm that its schema matches the backup; check it.",
+      "preBackup": "The target was backed up first as {{file}}."
+    },
+    "issues": {
+      "tool": {
+        "not_configured": "not set in database-tools.toml",
+        "relative": "the path is not absolute",
+        "missing": "the file does not exist",
+        "link": "the path is a link",
+        "not_a_program": "the file is not a program",
+        "writable": "others may change the file",
+        "owner": "the file belongs to another user",
+        "folder": "others may change its folder",
+        "platform": "not available on this operating system yet",
+        "wrong_program": "the file is not the expected program",
+        "too_old": "the version is too old for this server or archive",
+        "not_started": "the program could not be started",
+        "timeout": "it ran out of time and was stopped",
+        "auth": "the server refused the sign-in",
+        "connect": "it could not reach the server",
+        "permission": "the role lacks a right it needs",
+        "version": "its version does not match the server or archive",
+        "other": "it ended with an error"
+      },
+      "backup": {
+        "changed": "the backup was changed after it was made",
+        "link": "the backup is a link",
+        "metadata_invalid": "the backup's description cannot be read",
+        "missing": "the backup file is missing",
+        "not_a_file": "the backup is not a regular file",
+        "not_custom_format": "the backup is not in the format Studio makes"
+      },
+      "restore": {
+        "role_required": "choose a restore profile",
+        "role_unknown": "the restore profile is not an admin profile of this connection",
+        "role_is_admin": "the restore profile must use another role than the unlocked admin profile",
+        "in_use": "the file is in use",
+        "integrity": "the restored file failed the integrity check",
+        "folder_unsafe": "others may write the target's folder or a folder above it",
+        "reserved_folder": "the folder is one of Studio's own"
+      },
+      "unknown": "Detail: {{code}}"
     }
   }
 }

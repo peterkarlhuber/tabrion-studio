@@ -58,6 +58,7 @@ import { takeConnectRequest } from './pending';
 import { useConnect } from './useConnect';
 import { useConnectionSession } from '../../workspace';
 import { CreateDatabaseSection } from '../write/CreateDatabase';
+import { DatabaseManagerSection } from '../write/DatabaseManager';
 import { SchemaDesignerSection } from '../write/SchemaDesigner';
 import styles from './Connections.module.css';
 import viewStyles from '../Views.module.css';
@@ -770,6 +771,11 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       <CreateDatabaseSection fetcher={fetcher} onSaved={() => void load()} />
       {/* STU-CR-4: the designer's table view, behind the same flag; it changes nothing in a database. */}
       <SchemaDesignerSection fetcher={fetcher} />
+      {/* STU-XDM-2: read again when a connection opens or closes, so its admin profile can unlock. */}
+      <DatabaseManagerSection
+        key={opened.map((item) => item.connectionId).join(' ')}
+        fetcher={fetcher}
+      />
       {open.kind === 'wizard' ? (
         <ConnectionWizard
           fetcher={fetcher}
