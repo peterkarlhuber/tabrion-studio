@@ -1,9 +1,12 @@
-# The tabrion commit Studio is built and tested against: tabrion 0.3.0.dev0, the merge commit of tabrion PR #80 (the
-# 0.3 switch with TAB-XW-6 public: Transaction.execute_checked and tabrion.rowedit for STU-026; it contains tabrion
-# 0.2.2); untagged, no release (ADR 0009, amendment of 2026-11-08).
+# The tabrion commit Studio is built and tested against: tabrion 0.3.0.dev0, the merge commit of tabrion PR #90
+# (TAB-XW-8). It holds the 0.3 switch of tabrion PR #80 (TAB-XW-6 public: Transaction.execute_checked and
+# tabrion.rowedit for STU-026; tabrion 0.2.2) and the experimental CR-DBX primitives TAB-XW-2 (schema level 2),
+# TAB-XW-3 (tabrion.ddl), TAB-XW-4 (tabrion.plan), TAB-XW-7 (SQLite restore and file deletion), TAB-XW-8 (role DDL)
+# and TAB-XW-9 (PostgreSQL create and drop database), none of them used by Studio yet; untagged, no release
+# (ADR 0009, amendment of 2026-11-08).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): a constraints file with a full commit SHA is
 # how Studio pins it. pyproject.toml carries the range >=0.2,<0.4 with no direct reference
 # (tests/security/test_dependencies.py, docs/TODO.md TS-001).
 # pip constraints take no extras; the extras come from pyproject.toml.
 # Install: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
-tabrion @ git+https://github.com/peterkarlhuber/tabrion@72e2d03fea2b83e159a4ae9df3b7c40246b8a232
+tabrion @ git+https://github.com/peterkarlhuber/tabrion@28c8839f72a2d7232d973c71f99df1e57001a260
