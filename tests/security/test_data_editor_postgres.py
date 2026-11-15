@@ -9,6 +9,7 @@ The roles and the schema come from ``test_write_postgres.py``'s ``roles`` fixtur
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -578,3 +579,102 @@ def test_a_time_of_24_00_is_written_and_compared_on_every_python_version(pg: Env
     updated = _run_on(pg, "clock", columns, [change])
     assert updated.status_code == 200, updated.text
     assert pg.sql("SELECT t::text, s::text FROM {p}.clock") == [("24:00:00", "2025-01-02 00:00:00")]
+
+
+# --- G-S2 6A: constraint refusals at the cell, bytes replaced by a file ----------------------------------------------
+
+KINDS_COLUMNS = ["id", "code", "qty", "label", "pair_a", "pair_b", "during", "tag"]
+
+
+def _kinds(pg: Env) -> None:
+    pg.sql("CREATE DOMAIN {p}.required AS text NOT NULL")
+    _table(
+        pg,
+        "kinds",
+        "id integer PRIMARY KEY, code text CONSTRAINT kinds_code_unique UNIQUE,"
+        " qty integer CONSTRAINT kinds_qty_positive CHECK (qty > 0), label {p}.required,"
+        " pair_a text, pair_b text, during int4range, tag text NOT NULL DEFAULT nullif('x', 'x'),"
+        " UNIQUE (pair_a, pair_b),"
+        " CONSTRAINT kinds_no_overlap EXCLUDE USING gist (during WITH &&)",
+    )
+    _table(pg, "uses", "id integer PRIMARY KEY, kind integer REFERENCES {p}.kinds (id)")
+    pg.sql("CREATE UNIQUE INDEX kinds_lower_code ON {p}.kinds (lower(code))")
+    pg.sql(
+        "INSERT INTO {p}.kinds VALUES (1, 'a', 1, 'L', 'x', 'y', '[1,5)', 't'),"
+        " (2, 'b', 2, 'L', 'x', 'z', '[10,20)', 't')"
+    )
+    pg.sql("INSERT INTO {p}.uses VALUES (1, 2)")
+
+
+def _kind_row(pg: Env, key: int) -> dict[str, Any]:
+    query = urlencode({"schema": pg.prefix, "name": "kinds", "limit": 10})
+    page = pg.env.send("GET", f"/api/connections/{pg.connection_id}/rows?{query}").json()
+    names = [column["name"] for column in page["columns"]]
+    assert names == KINDS_COLUMNS
+    return next(dict(zip(names, row, strict=True)) for row in page["rows"] if row[0] == key)
+
+
+@pytest.mark.parametrize(
+    ("new", "issue"),
+    [
+        # A named single-column UNIQUE: the database names the constraint, whose only column is the cell.
+        ({"code": "b"}, {"pointer": "changes.1.1", "code": "constraint.unique"}),
+        # A CHECK names no column: the change.
+        ({"qty": -1}, {"pointer": "changes.1", "code": "constraint.check"}),
+        # A domain's NOT NULL names no column (the column itself takes NULL): the change.
+        ({"label": None}, {"pointer": "changes.1", "code": "constraint.not_null"}),
+        # A UNIQUE of two columns: the change.
+        ({"pair_b": "z"}, {"pointer": "changes.1", "code": "constraint.unique"}),
+        # A unique index on an expression: the change, never a guessed cell.
+        ({"code": "B"}, {"pointer": "changes.1", "code": "constraint.unique"}),
+        # An exclusion constraint names no column (SQLAlchemy reflects none for it): the change.
+        ({"during": "[12,14)"}, {"pointer": "changes.1", "code": "constraint.exclusion"}),
+        # A key another table references: the change, never a cell of the other table's names.
+        ({"id": 7, "code": "z"}, {"pointer": "changes.1", "code": "constraint.foreign_key"}),
+    ],
+    ids=["unique", "check", "domain_not_null", "unique_of_two", "unique_expression", "exclusion", "foreign_key"],
+)
+def test_each_constraint_kind_is_named_at_its_change_or_cell(pg: Env, new: dict[str, Any], issue: Any) -> None:
+    """G-S2 6A: the database's refusal is placed by the names tabrion classifies (never its message); the insert
+    before it is rolled back with it, and no value or name is echoed."""
+    _kinds(pg)
+    row = _kind_row(pg, 2 if "id" in new else 1)
+    changes = [
+        {"op": "insert", "values": {"id": 3, "code": CANARY_VALUE, "qty": 3, "label": "L", "tag": "t"}},
+        {"op": "update", "key": {"id": row["id"]}, "old": row, "new": new},
+    ]
+    refused = _run_on(pg, "kinds", KINDS_COLUMNS, changes)
+    assert (refused.status_code, refused.json()["code"]) == (400, "studio.data_editor_constraint"), refused.text
+    assert refused.json()["issues"] == [issue]
+    for name in (CANARY_VALUE, "kinds", "qty_positive", "kinds_code_unique", "uses"):
+        assert name not in refused.text
+    assert pg.sql("SELECT id, code FROM {p}.kinds ORDER BY id") == [(1, "a"), (2, "b")]
+
+
+def test_a_not_null_column_the_database_names_is_the_cell(pg: Env) -> None:
+    """A NOT NULL column whose default is NULL: the page and the server let an insert leave it out (it has a
+    default), the database refuses it and names the column, so the issue is at the new row's cell."""
+    _kinds(pg)
+    changes = [
+        {"op": "insert", "values": {"id": 3, "code": CANARY_VALUE, "qty": 3, "label": "L", "tag": "t"}},
+        {"op": "insert", "values": {"id": 4, "label": "L"}},
+    ]
+    refused = _run_on(pg, "kinds", KINDS_COLUMNS, changes)
+    assert (refused.status_code, refused.json()["code"]) == (400, "studio.data_editor_constraint"), refused.text
+    assert refused.json()["issues"] == [{"pointer": "changes.1.7", "code": "constraint.not_null"}]
+    assert CANARY_VALUE not in refused.text
+    assert pg.sql("SELECT count(*) FROM {p}.kinds") == [(2,)]
+
+
+def test_a_bytea_value_of_the_largest_size_replaces_the_old_one(pg: Env) -> None:
+    """G-S2 6A: a file of the largest size replaces a bytea value; one byte more is refused before the plan."""
+    rows = pg.page()
+    content = bytes(index % 256 for index in range(64 * 1024))
+    value = {"base64": base64.b64encode(content).decode("ascii")}
+    done = pg.run([{"op": "update", "key": {"id": 101}, "old": _old(rows[101]), "new": {"raw": value}}])
+    assert done.status_code == 200, done.text
+    assert pg.sql("SELECT raw FROM {p}.parts WHERE id = 101") == [(content,)]
+    larger = {"base64": base64.b64encode(content + b"\x00").decode("ascii")}
+    refused = pg.plan([{"op": "update", "key": {"id": 102}, "old": _old(rows[102]), "new": {"raw": larger}}])
+    assert (refused.status_code, refused.json()["code"]) == (400, "studio.data_editor_value_invalid"), refused.text
+    assert refused.json()["issues"] == [{"pointer": "changes.0.7", "code": "value.too_large"}]

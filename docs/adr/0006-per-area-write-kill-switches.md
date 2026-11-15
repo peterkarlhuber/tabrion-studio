@@ -195,6 +195,11 @@ A value a changeset writes is checked twice; the server's check decides (threat 
 - Where the driver has a limit of its own, the check refuses before the plan, not the run (G2-02 of the G-S2 gate
   review): on SQLite an integer wider than 64 bits, in any column and also as a key or `old` value, is
   `value.out_of_range`.
+- **As built (G-S2 6A):** a bytes cell changes only by replacing it with a file of at most 64 KiB; a larger value
+  is `value.too_large` before the plan, and no bytes value reaches a log, the audit log or a message. A refusal by
+  a rule of the table (unique, foreign key, NOT NULL, check, exclusion) rolls the whole transaction back and is `400
+  studio.data_editor_constraint`: its one issue gives only the change's position, the column's position where the
+  classification names a column of the target table, and a fixed `constraint.*` code.
 
 ### Proof required from every kill-switch pull request
 

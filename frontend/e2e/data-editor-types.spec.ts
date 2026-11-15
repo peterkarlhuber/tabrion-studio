@@ -5,8 +5,9 @@
  * server's checks and the database are covered by tests/security/test_data_editor*.py; this checks what the page
  * does with the types: the right editor per cell, a value that does not fit marked at its cell and holding the
  * preview, the changes before and after, NULL told apart from the empty text, and the server's refusal placed at its
- * cell. axe finds no serious or critical violation in light and dark, English and German. Gate G-S2 is not granted;
- * the harness is never built into the wheel.
+ * cell. G-S2 6A: a bytes value is replaced by a picked file (never typed), shown by its size, and a file above the
+ * limit is marked at its cell. axe finds no serious or critical violation in light and dark, English and German. The
+ * harness is never built into the wheel.
  */
 import { test, expect, type Page } from '@playwright/test';
 
@@ -46,8 +47,9 @@ test('each column gets its editor, and the changes reach the plan as the column 
   await cell(page, 'Row 2, tag').fill('A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11');
   await cell(page, 'Row 2, doc').fill('{"b": [1, 2]}');
   await cell(page, 'Row 2, nums').fill('[[1, 2], [3, null]]');
-  // Bytes are read only.
-  await expect(cell(page, 'Row 1, raw')).toHaveAttribute('readonly', '');
+  // Bytes are not typed: a file replaces them (G-S2 6A, the test below).
+  await expect(page.getByRole('textbox', { name: 'Row 1, raw' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Replace Row 1, raw with a file' })).toBeVisible();
 
   const overview = page.getByTestId('data-editor-changes');
   await expect(overview).toContainText('Rows: 1 changed, 0 new, 0 deleted');
@@ -187,6 +189,54 @@ test("the server's refusal is placed at its cell", async ({ page }) => {
   await expect(name).toHaveAccessibleDescription('Not one of the allowed values.');
   await name.fill('fine');
   await expect(name).not.toHaveAttribute('aria-invalid', 'true');
+});
+
+test('G-S2 6A: a bytes value is replaced by a picked file; a file above the limit is marked', async ({
+  page,
+}) => {
+  await open(page);
+  const replace = page.getByRole('button', { name: 'Replace Row 1, raw with a file' });
+  await expect(replace).toHaveAccessibleDescription('2 bytes');
+  const chooser = page.waitForEvent('filechooser');
+  await replace.click();
+  await (
+    await chooser
+  ).setFiles({
+    name: 'part.bin',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.from([7, 8, 9]),
+  });
+  await expect(replace).toHaveAccessibleDescription('3 bytes');
+  await expect(page.getByTestId('data-editor-changes').getByRole('row')).toHaveText([
+    'ColumnBeforeAfter',
+    'raw2 bytes3 bytes',
+  ]);
+  // A file of more than 64 KiB is marked at the cell and holds the preview; it is never sent.
+  const empty = page.getByRole('button', { name: 'Replace Row 2, raw with a file' });
+  const big = page.waitForEvent('filechooser');
+  await empty.click();
+  await (
+    await big
+  ).setFiles({
+    name: 'big.bin',
+    mimeType: 'application/octet-stream',
+    buffer: Buffer.alloc(65_537),
+  });
+  await expect(empty).toHaveAttribute('aria-invalid', 'true');
+  await expect(empty).toHaveAccessibleDescription(/Too large: at most 64 KiB\./);
+  await expect(page.getByRole('button', { name: 'Preview' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Set Row 2, raw to NULL' }).click();
+  await expect(empty).not.toHaveAttribute('aria-invalid', 'true');
+  await page.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.getByLabel('Type parts-w to confirm')).toBeVisible();
+  expect((await log(page)).plans[0]?.request.changes).toEqual([
+    {
+      op: 'update',
+      key: { id: 1 },
+      old: expect.objectContaining({ raw: { base64: 'AQI=' } }) as unknown,
+      new: { raw: { base64: 'BwgJ' } },
+    },
+  ]);
 });
 
 for (const theme of ['light', 'dark'] as Theme[]) {

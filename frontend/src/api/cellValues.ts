@@ -109,7 +109,38 @@ export type IssueCode =
   | 'value.too_long'
   | 'value.out_of_range'
   | 'value.not_allowed'
+  | 'value.too_large'
   | 'value.json_null';
+
+/**
+ * G-S2 6A: a file that replaces a bytes value has at most this many bytes (`MAX_BYTES_VALUE` of the server). The
+ * changeset as a whole is at most 256 KiB of JSON, in which bytes travel as base64.
+ */
+export const MAX_BYTES_VALUE = 64 * 1024;
+
+/** The number of bytes of a `{"base64": ...}` value that `isBytes` took. */
+export function bytesSize(value: { base64: string }): number {
+  const text = value.base64;
+  return (text.length / 4) * 3 - (text.endsWith('==') ? 2 : text.endsWith('=') ? 1 : 0);
+}
+
+/** The page's form of bytes for the content of a picked file (base64, as the viewer sends bytes). */
+export function bytesValue(content: ArrayBuffer): { base64: string } {
+  const bytes = new Uint8Array(content);
+  let binary = '';
+  for (let at = 0; at < bytes.length; at += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  }
+  return { base64: btoa(binary) };
+}
+
+/**
+ * A file the user picked for a bytes cell that is larger than `MAX_BYTES_VALUE`: kept as the cell's edit (never
+ * read, never sent), so the cell shows `value.too_large` and the preview waits.
+ */
+export class FileTooLarge {
+  constructor(readonly size: number) {}
+}
 
 const INT_LIMITS: Partial<Record<Kind, bigint>> = {
   int2: 1n << 15n,
@@ -154,6 +185,11 @@ const ARRAY_KINDS: readonly Kind[] = [
 export function checkValue(column: ColumnType, value: unknown): IssueCode | null {
   if (column.readOnly) return 'value.read_only';
   if (value === null) return column.nullable ? null : 'value.not_null';
+  // Whatever the kind (an untyped SQLite column takes bytes too).
+  if (value instanceof FileTooLarge) return 'value.too_large';
+  if (isBytes(value) && bytesSize(value as { base64: string }) > MAX_BYTES_VALUE) {
+    return 'value.too_large';
+  }
   if (column.array && ARRAY_KINDS.includes(column.kind)) return checkArray(column, value, 0);
   return checkScalar(column, value);
 }
@@ -401,11 +437,16 @@ export function untypedValue(original: unknown, text: string): unknown {
   return text;
 }
 
-/** The cell editor for a column: a choice (boolean, enum), a text field, or nothing to edit. */
-export type EditorKind = 'boolean' | 'enum' | 'text' | 'readOnly';
+/**
+ * The cell editor for a column: a choice (boolean, enum), a text field, a file that replaces a bytes value (G-S2 6A;
+ * never typed), or nothing to edit.
+ */
+export type EditorKind = 'boolean' | 'enum' | 'text' | 'file' | 'readOnly';
 
 export function editorKind(column: ColumnType, original: unknown): EditorKind {
-  if (column.readOnly || column.kind === 'bytes') return 'readOnly';
+  if (column.readOnly) return 'readOnly';
+  // Bytes: a bytes column, or an untyped one that holds bytes (SQLite).
+  if (column.kind === 'bytes' || (column.kind === 'other' && isBytes(original))) return 'file';
   if (column.array || column.kind === 'json') return 'text';
   if (column.kind === 'boolean') return 'boolean';
   if (column.kind === 'enum') return 'enum';

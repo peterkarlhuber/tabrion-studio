@@ -138,7 +138,8 @@ def _cases(studio: Studio) -> list[tuple[str, list[tuple[str, str]], BodyLimit]]
 def test_the_caps_are_the_routes_own_caps() -> None:
     """The caps are no looser than the routes' own: 4 KB before a session, 2 MB for a statement, 6 MB plus 8 KB for a
     script save (a 1 MB file as JSON, STU-020), 12 MB plus about 700 KB for the editor's drafts (2 M characters of
-    text as JSON with the tabs' other fields, TD-033), 16 KB for every other route."""
+    text as JSON with the tabs' other fields, TD-033), 256 KB plus 4 KB for a write plan (the plan framework's own
+    request cap, which a Data Editor bytes value replaced by a file needs, G-S2 6A), 16 KB for every other route."""
     assert BODY_LIMITS["/api/session"] == BodyLimit(4096, "access.body_too_large")
     assert BODY_LIMITS["/api/control/launch"].max_bytes == 4096
     assert BODY_LIMITS["/api/queries"] == BodyLimit(2 * 1024 * 1024, "studio.query_too_large")
@@ -147,7 +148,12 @@ def test_the_caps_are_the_routes_own_caps() -> None:
     assert BODY_LIMITS["/api/drafts"] == BodyLimit(
         6 * 2 * 1024 * 1024 + 6 * (32 * 1400 + 1024 * 70), "studio.drafts_too_large"
     )
+    assert BODY_LIMITS["/api/write/plans"] == BodyLimit(256 * 1024 + 4096, "access.body_too_large")
     assert BodyLimit(16 * 1024, "access.body_too_large") == DEFAULT_BODY_LIMIT
+    # The cap is the plan framework's own; the app takes it from api/write.py, so it needs no write code for it.
+    from tabrion_studio.write.plan import MAX_REQUEST_BYTES
+
+    assert BODY_LIMITS["/api/write/plans"].max_bytes == MAX_REQUEST_BYTES + 4096
 
 
 def test_a_content_length_far_over_the_cap_is_refused_before_reading(studio: Studio) -> None:

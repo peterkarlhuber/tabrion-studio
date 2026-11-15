@@ -52,7 +52,7 @@ from tabrion_studio.api.queries import add_query_routes
 from tabrion_studio.api.scripts import MAX_BODY as MAX_SCRIPT_BODY
 from tabrion_studio.api.scripts import add_script_routes
 from tabrion_studio.api.viewer import add_viewer_routes
-from tabrion_studio.api.write import add_write_routes
+from tabrion_studio.api.write import MAX_PLAN_BODY, add_write_routes
 from tabrion_studio.config.write_areas import ALL_OFF, WriteAreas
 from tabrion_studio.idle import IdleMonitor
 from tabrion_studio.instance import NONCE_PATTERN, control_proof
@@ -107,6 +107,9 @@ BODY_LIMITS: dict[str, BodyLimit] = {
     "/api/exports": BodyLimit(MAX_QUERY_BODY, "studio.query_too_large"),
     "/api/scripts/file": BodyLimit(MAX_SCRIPT_BODY, "studio.script_too_large"),
     "/api/drafts": BodyLimit(MAX_DRAFTS_BODY, "studio.drafts_too_large"),
+    # A write plan (G-S2 6A: a Data Editor changeset may carry a bytes value replaced by a file); 405 while every
+    # write area is off, whatever the body.
+    "/api/write/plans": BodyLimit(MAX_PLAN_BODY),
 }
 
 _NOT_BUILT = """<!doctype html>

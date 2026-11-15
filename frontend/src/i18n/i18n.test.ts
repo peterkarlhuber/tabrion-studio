@@ -28,6 +28,8 @@ function markers(text: string): string[] {
 const SAME_IN_BOTH = new Set([
   // The SQL keyword NULL (the Data Editor's NULL button, STU-026).
   'dataEditor.null',
+  // Placeholders only: "{{row}}: {{issue}}" (G-S2 6A).
+  'dataEditor.issueAtRow',
   // STU-CR-3: PostgreSQL's template name, "Locale (optional)" and the environment tags DEV, TEST, PROD (STU-CR-2).
   'createDatabase.postgres.templates.template0',
   'createDatabase.postgres.locale',

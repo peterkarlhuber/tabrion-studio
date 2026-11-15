@@ -28,10 +28,15 @@ is used.
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
-| `tabrion.errors.Kind` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/services/vectors.py`, `tests/security/test_connection_loss.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.Kind` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/services/vectors.py`, `src/tabrion_studio/write/data_editor.py`, `tests/security/test_connection_loss.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.Kind.CHECK` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.Kind.CONNECTION` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/vectors.py`, `tests/security/test_connection_loss.py` |
+| `tabrion.errors.Kind.EXCLUSION` | `src/tabrion_studio/write/data_editor.py` |
+| `tabrion.errors.Kind.FOREIGN_KEY` | `src/tabrion_studio/write/data_editor.py` |
+| `tabrion.errors.Kind.NOT_NULL` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.Kind.PERMISSION` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py` |
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py` |
+| `tabrion.errors.Kind.UNIQUE` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.Kind.UNKNOWN` | `tests/unit/test_problems.py` |
 | `tabrion.errors.PermissionDenied` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.errors.RoleMissing` | `src/tabrion_studio/write/schema_designer/create.py` |
@@ -39,7 +44,7 @@ is used.
 | `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py` |
-| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.safe_message` | `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.postgres` | `src/tabrion_studio/services/tabrion_compat.py` |

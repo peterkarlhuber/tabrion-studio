@@ -86,6 +86,12 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
 )
 
 
+#: The body cap of ``POST /api/write/plans`` (the app's body limit, :data:`tabrion_studio.app.BODY_LIMITS`): a plan's
+#: request of at most ``write.plan.MAX_REQUEST_BYTES`` (256 KiB, which carries a Data Editor bytes value replaced by a
+#: file, G-S2 6A) and the rest of the body. Here, not in the write package, so the app needs no write code for it.
+MAX_PLAN_BODY = 256 * 1024 + 4096
+
+
 async def _refused() -> Response:
     """The handler of every write route while its area is off: 405, nothing read, nothing imported (W-9, TX-02)."""
     return problem_response("studio.method_not_allowed")

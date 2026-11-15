@@ -149,3 +149,7 @@
   display: block;
   color: var(--tb-color-text-muted);
 }
+/* G-S2 6A: a row the database refused for a rule of the table (no single column named). */
+.refused td:first-child {
+  box-shadow: inset 3px 0 0 var(--tb-color-danger);
+}
