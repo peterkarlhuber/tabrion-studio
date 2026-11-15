@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S2 follow-up 6A for the Data Editor (behind the `data_editor` flag, which stays off by default; no default
+  changes): a bytes value (`bytea`, a SQLite `BLOB`) is replaced by the content of a file the user picks, at most
+  64 KiB (`value.too_large` on the page, before the file is read, and on the server); it is shown by its size and
+  never typed, logged or recorded. A change the database refuses for a constraint (unique or primary key, foreign
+  key, NOT NULL, CHECK, exclusion) rolls back the whole changeset as `400 studio.data_editor_constraint`, whose issue
+  places it at its cell where tabrion's classification names a single column of the table, else at its row
+  (`changes.<change>[.<column>]`, `constraint.<kind>`; positions only, never a value or a constraint name). The grid
+  loads more than the first 100 rows ("Load 100 more rows", up to 1,000): pages are appended, so a pending change
+  stays bound to its row. `POST /api/write/plans` takes a body up to the plan framework's own 256 KiB cap (it was
+  held to the default 16 KiB); with every flag off it still answers 405.
+
 - G-S2 granted by the owner on 2026-11-15 with decisions 1A to 7A, for local use on DEV, TEST and STAGE databases
   only: PROD stays technically write-locked, every write area stays off by default and nothing turns one on
   automatically; G-S3, G-S4, H-2 and G-R stay open, nothing is tagged or released. Binding condition: the

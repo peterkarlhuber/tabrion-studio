@@ -4,9 +4,12 @@
  */
 import { editorKind, Typed, untyped, untypedValue, type ColumnType } from './cellValues';
 import {
+  appendRows,
   buildChanges,
   buildChangeset,
+  changesetBytes,
   emptyEdits,
+  firstRows,
   EXECUTOR,
   parseEditorTable,
   parsePreview,
@@ -17,6 +20,7 @@ import {
   serverIssues,
   type EditorTable,
 } from './dataEditor';
+import type { ViewerPage } from './viewer';
 
 const COLUMNS = ['id', 'name', 'qty'];
 const ROWS = [
@@ -87,7 +91,7 @@ describe('values', () => {
     expect(sameValue({ base64: 'AA==' }, { base64: 'AA==' })).toBe(true);
   });
 
-  it('edits text, numbers, booleans and NULL of an untyped column only', () => {
+  it('edits text, numbers, booleans and NULL of an untyped column as text, bytes by a file', () => {
     const column = untyped('x');
     expect([null, 'a', 1, false].map((value) => editorKind(column, value))).toEqual([
       'text',
@@ -95,7 +99,8 @@ describe('values', () => {
       'text',
       'text',
     ]);
-    expect(editorKind(column, { base64: 'AA==' })).toBe('readOnly');
+    // G-S2 6A: an untyped (SQLite) column that holds bytes is replaced by a file, never typed.
+    expect(editorKind(column, { base64: 'AA==' })).toBe('file');
     expect(editorKind(column, [1])).toBe('readOnly');
   });
 });
@@ -183,6 +188,74 @@ describe("the server's issues", () => {
       { row: { added: 0 }, column: 'name', code: 'value.too_long' },
     ]);
     expect(serverIssues(undefined, origins, COLUMNS)).toEqual([]);
+  });
+
+  it("place the run's constraint refusal at its cell, or at its row without a column (G-S2 6A)", () => {
+    const origins = [{ loaded: 1 }, { added: 0 }, { loaded: 2 }];
+    expect(
+      serverIssues(
+        [
+          { pointer: 'changes.1.1', code: 'constraint.unique' },
+          { pointer: 'changes.2', code: 'constraint.foreign_key' },
+          { pointer: 'changes.0', code: 'value.format' }, // a value issue always names its column
+          { pointer: 'changes.0', code: 'constraint.other' },
+          { pointer: 'changes.7', code: 'constraint.check' },
+        ],
+        origins,
+        COLUMNS,
+      ),
+    ).toEqual([
+      { row: { added: 0 }, column: 'name', code: 'constraint.unique' },
+      { row: { loaded: 2 }, column: null, code: 'constraint.foreign_key' },
+    ]);
+  });
+});
+
+describe('loading more rows (G-S2 6A)', () => {
+  const page = (rows: unknown[][], next: string | null, cut: [number, number][] = []) =>
+    ({
+      columns: COLUMNS.map((name) => ({ name, type: '' })),
+      rows,
+      truncatedCells: cut,
+      cutByBytes: false,
+      page: 'p',
+      next,
+      paging: 'primary_key',
+      hint: null,
+    }) as ViewerPage;
+
+  it('appends the next page, so every loaded row keeps its index and its edits', () => {
+    const first = firstRows(page(ROWS.slice(0, 2), 'n1', [[1, 2]]));
+    expect(first.cut).toEqual(new Set([1]));
+    const more = appendRows(first, page([ROWS[2] as unknown[]], null, [[0, 1]]), ['id']);
+    expect(more?.rows).toEqual(ROWS);
+    expect(more?.cut).toEqual(new Set([1, 2]));
+    expect(more?.next).toBeNull();
+    // An edit of row 1 stays with the nut; an edit of the appended row 2 is the washer's.
+    const edits = emptyEdits();
+    edits.cells.set(1, new Map<string, unknown>([['qty', 5]]));
+    edits.deleted.add(2);
+    expect(buildChanges(['id'], COLUMNS, more?.rows ?? [], edits)).toEqual([
+      { op: 'update', key: { id: 2 }, old: { id: 2, name: 'nut', qty: null }, new: { qty: 5 } },
+      { op: 'delete', key: { id: 3 }, old: { id: 3, name: 'washer', qty: 7 } },
+    ]);
+  });
+
+  it('leaves out a row whose key is already loaded, and refuses a page of other columns', () => {
+    const first = firstRows(page(ROWS.slice(0, 2), 'n1'));
+    const moved = appendRows(first, page([[2, 'nut M4', 1], ROWS[2] as unknown[]], null), ['id']);
+    expect(moved?.rows).toEqual(ROWS);
+    const other = page([[4, 'pin', 1]], null);
+    other.columns = [...other.columns, { name: 'extra', type: '' }];
+    expect(appendRows(first, other, ['id'])).toBeNull();
+  });
+});
+
+describe('the size of a changeset', () => {
+  it('counts as the server does: JSON with every non-ASCII character escaped', () => {
+    expect(changesetBytes({ a: 'x' })).toBe('{"a":"x"}'.length);
+    expect(changesetBytes({ a: 'ä' })).toBe('{"a":"\\u00e4"}'.length);
+    expect(changesetBytes({ a: '😀' })).toBe('{"a":"\\ud83d\\ude00"}'.length);
   });
 });
 

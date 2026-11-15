@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Iterator
 import json
 from pathlib import Path
@@ -21,7 +22,7 @@ import sys
 
 import pytest
 
-from tabrion_studio.api.write import WRITE_ROUTES
+from tabrion_studio.api.write import MAX_PLAN_BODY, WRITE_ROUTES
 from tabrion_studio.app import Runtime
 from tabrion_studio.config.write_areas import ALL_OFF, Area, WriteAreas
 from tabrion_studio.server import ServeOptions
@@ -156,6 +157,37 @@ def test_a_query_parameter_or_a_header_never_turns_a_flag_on(env: WriteEnv, quer
     )
     assert (refused.status_code, refused.json()["code"]) == (405, "studio.method_not_allowed")
     assert env.send("GET", "/api/write/areas").json()["areas"] == ALL_OFF.to_dict()
+
+
+@pytest.mark.parametrize("size", [1024, MAX_PLAN_BODY - 1024], ids=["small", "near_the_cap"])
+def test_flag_off_a_changeset_with_a_replaced_file_is_405_and_changes_nothing(env: WriteEnv, size: int) -> None:
+    """G-S2 6A: the plan route takes a larger body (a Data Editor bytes value replaced by a file), and with every flag
+    off it is still the refusing handler: 405, nothing read, written or recorded, and no write code loaded. A body
+    above the cap is refused before the route (413)."""
+    env.create_read()
+    connection_id = env.open()
+    filler = base64.b64encode(CANARY_VALUE.encode("utf-8") * (size // len(CANARY_VALUE) // 2)).decode("ascii")
+    changes = [
+        {"op": "update", "key": {"id": 1}, "old": {"id": 1, "data": None}, "new": {"data": {"base64": filler}}},
+        # A change the database would refuse for a constraint: refused before anything is looked at.
+        {"op": "insert", "values": {"id": 1, "data": None}},
+    ]
+    body = {
+        "connection_id": connection_id,
+        "executor": "data_editor.changeset",
+        "request": {"schema": "main", "table": "parts", "columns": ["id", "data"], "changes": changes},
+    }
+    assert len(json.dumps(body)) < MAX_PLAN_BODY
+    before = _state(env)
+    response = env.send("POST", "/api/write/plans", body)
+    assert (response.status_code, response.json()["code"]) == (405, "studio.method_not_allowed")
+    assert filler[:64] not in response.text and CANARY_VALUE not in response.text
+    too_large = {**body, "padding": "x" * MAX_PLAN_BODY}
+    over = env.send("POST", "/api/write/plans", too_large)
+    assert (over.status_code, over.json()["code"]) == (413, "access.body_too_large")
+    assert _state(env) == before
+    assert not env.audit_dir.exists()
+    assert env.unlocks is None
 
 
 @pytest.mark.parametrize(

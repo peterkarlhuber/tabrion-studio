@@ -758,11 +758,13 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   - **Arrays of enums, JSON and bytes** stay `other` in the Data Editor (the driver gives an enum array as array
     text; JSON and bytes arrays have no editor). Arrays of dates, decimals, UUIDs and times are shown by the viewer
     item by item (fixed in this PR, review I-3) and checked item by item.
-  - **Bytes.** Bytes stay read only; planning document 15 section 4 asks for "replace by file" (STU-XDE-2 or later).
-  - **Paging.** The editor still loads only the first page of rows (`EDITOR_ROWS`).
-  - **The database's own refusals at the cell.** A CHECK, UNIQUE or foreign-key refusal is a `db.<kind>` problem for
-    the whole changeset; the database does not say which cell, so the page cannot mark one (planning document 15
-    section 4 asks for `constraint.*` at the cell where it is known).
+  - **Bytes.** Done in G-S2 6A (branch `claude/project-thread-rdo6g3-gs2-6a`): "replace by file", at most 64 KiB.
+  - **Paging.** Done in G-S2 6A: "Load 100 more rows", up to 1,000 rows, pages appended.
+  - **The database's own refusals at the cell.** Done in G-S2 6A: `studio.data_editor_constraint` with the change
+    and, where tabrion's classification names a single column, the cell. A CHECK and an exclusion constraint name no
+    column (PostgreSQL gives none, SQLAlchemy reflects none for an exclusion constraint), a domain's NOT NULL neither,
+    and a constraint of several columns names none of them: those are marked at the row. A deferred constraint
+    (checked at commit) stays a `db.<kind>` problem of the whole changeset.
   - **SQLite `REAL` and NaN.** A `STRICT` `REAL` column refuses `NaN` and the infinities, which the float check lets
     through; the database refuses them inside the run (nothing is saved).
   - **Enum labels** are sent to the page (at most 1000; more make the column `other`). They are catalog names, not
@@ -808,14 +810,14 @@ Every item that a plan or a review asked for "before G-S2":
 | Audit of refusals before a run (an unlock of an area that is off, a refused plan) | STU-XW-2, STU-XW-3 open points | Decided 4A: no change |
 | Enum labels reach the page | STU-XDE-1 open points | Decided 6A: confirmed |
 | Partitioned tables stay refused | N-1 of the PR #115 review | Decided 5A: confirmed (built as a refusal) |
-| Bytes "replace by file", constraint refusals at the cell, paging | planning document 15 section 4; STU-XDE-1 open points | Decided 6A: follow-up before the Studio 1.1 release (TODO below) |
+| Bytes "replace by file", constraint refusals at the cell, paging | planning document 15 section 4; STU-XDE-1 open points | Decided 6A: follow-up before the Studio 1.1 release; implemented in branch `claude/project-thread-rdo6g3-gs2-6a` (TODO below) |
 | The independent G-S2 review agent (doc 07 section 6) | doc 07 | Done: verdict accepted (`reviews/gs2-gate-review.md`); it grants nothing, G-S2 stays the owner's |
 | G2-01 (Medium): libpq environment variables (`PGHOSTADDR`, a service file's `hostaddr`, ...) could send a socket or loopback profile elsewhere, past `requirepeer` and the loopback rules | `gs2-gate-review.md` | Done (branch `claude/project-thread-rdo6g3-gs2fix`): every Studio PostgreSQL connection gives libpq's defaults itself or refuses (`studio.connection_environment`) |
 | G2-02 (Low): a SQLite integer wider than 64 bits failed only at run time (500) | `gs2-gate-review.md` | Done (same branch): refused before the plan, `value.out_of_range` |
 | G2-03 (Low): `24:00` passed the check but failed at run time before Python 3.14 | `gs2-gate-review.md` | Done (same branch): bound as text on every Python version |
 | G2-04 (Low): the platform configuration folder followed `XDG_CONFIG_HOME` | `gs2-gate-review.md` | Done (same branch): no environment variable moves it, as STU-ADR-0006 says; a user without an account entry gets no folder and a read-only start (L-1 of the PR #125 review) |
 | PR #125 review: L-1 (start without an account entry), I-1 (`PGTZ`, `PGDATESTYLE`, `PGGEQO` as session settings) | `pr125-gs2fix-review.md` | Done (same branch): L-1 every area off with `studio.write_areas_no_folder`; I-1 refused like the other variables |
-| G2-08 (Low): bytes "replace by file" and `constraint.*` at the cell (planning document 15 section 4) | `gs2-gate-review.md` | Decided 6A (the row above): before the Studio 1.1 release |
+| G2-08 (Low): bytes "replace by file" and `constraint.*` at the cell (planning document 15 section 4) | `gs2-gate-review.md` | Decided 6A (the row above); implemented in branch `claude/project-thread-rdo6g3-gs2-6a` |
 
 Info findings of the G-S2 gate review, recorded and not changed (none blocks G-S2):
 
@@ -880,8 +882,15 @@ Follow-ups as TODO items:
   must serve as evidence for third parties.
 - [x] **G-S2 5A:** partitioned tables and partitions stay refused (`studio.plan_target_partitioned`); full support
   only as its own work package.
-- [ ] **G-S2 6A, before the Studio 1.1 release:** bytes "replace by file", `constraint.*` errors at the cell, and
+- [x] **G-S2 6A, before the Studio 1.1 release:** bytes "replace by file", `constraint.*` errors at the cell, and
   paging beyond the first page in the Data Editor (planning document 15 section 4; G2-08). Enum labels confirmed.
+  Implemented in branch `claude/project-thread-rdo6g3-gs2-6a` (the `data_editor` flag stays off, no default changes): a bytes cell is replaced by a
+  picked file of at most 64 KiB (`value.too_large`, page and server; the plan route's body cap is now the plan
+  framework's own 256 KiB instead of the default 16 KiB, so a changeset carries one or two such files); a change the
+  database refuses for a constraint is `400 studio.data_editor_constraint` with `changes.<change>[.<column>]` and
+  `constraint.<kind>`, marked at the cell or the row, the whole changeset rolled back; the grid loads 100 more rows at
+  a time, up to 1,000, with every pending change bound to its row. Open: the independent review and merge; whether
+  64 KiB per file and 1,000 rows are the right limits for Studio 1.1 is the owner's call.
 - [ ] **G-S2 7A, before the Studio 1.1 release:** tabrion stabilizes `tabrion.rowedit` and
   `tabrion.errors.RowCountMismatch` to `S` (tabrion 0.3), and Studio moves its pin (02 section 14 S-2).
 

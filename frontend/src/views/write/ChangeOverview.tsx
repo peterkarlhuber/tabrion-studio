@@ -2,11 +2,13 @@
  * The Data Editor's change overview (STU-XDE-1, 08 section 4.6 `ChangeSetReview`): before the preview and in the
  * review, every change of the changeset by row. A changed row lists its changed columns with the value before and
  * after; a new row the values it sets (the other columns get their defaults); a deleted row its key. NULL and the
- * empty text are told apart. The values are the page's own (the loaded rows and the edits); nothing here is sent.
+ * empty text are told apart; bytes are shown by their size (G-S2 6A). The values are the page's own (the loaded rows and the edits); nothing here is sent.
  */
 import { useTranslation } from 'react-i18next';
 
+import { isBytes } from '../../api/cellValues';
 import { type Change, type Row } from '../../api/dataEditor';
+import { BytesSize } from './CellEditor';
 import styles from './DataEditor.module.css';
 
 /** Longer values are cut in the overview (the cell keeps the whole value). */
@@ -17,6 +19,13 @@ function ShownValue({ value }: { value: unknown }) {
   if (value === null || value === undefined) return <span className={styles.nullValue}>NULL</span>;
   if (value === '')
     return <span className={styles.nullValue}>{t('dataEditor.overview.empty')}</span>;
+  if (isBytes(value)) {
+    return (
+      <span>
+        <BytesSize value={value} />
+      </span>
+    );
+  }
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return <span>{text.length > SHOWN_CHARS ? `${text.slice(0, SHOWN_CHARS)}…` : text}</span>;
 }

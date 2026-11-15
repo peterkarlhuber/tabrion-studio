@@ -42,6 +42,15 @@ included, rolls the **whole changeset** back (03 section 5.2): ``studio.data_edi
 delete) or ``studio.data_editor_rowcount`` (any other count). Rows that triggers or PostgreSQL rules change are not in
 the count (review I-1 of tabrion #78); the preview names them (TX-16).
 
+**Constraint refusals at the change (G-S2 6A).** A step that the database refuses for a constraint (UNIQUE or the
+primary key, a foreign key, NOT NULL, CHECK, an exclusion constraint) rolls the whole changeset back like a conflict:
+``studio.data_editor_constraint`` (400, W-9) with one issue ``{"pointer": "changes.<change>[.<column>]", "code":
+"constraint.<kind>"}``. The kind comes from ``tabrion.errors.classify``; the column only from the names the
+classification gives (the column itself, or a constraint of the target whose only column it is), never from the
+database's message, and it is sent as its position in the table. Without such a name the issue names the change
+only. A constraint the database checks at commit (a deferred one) belongs to no change: it stays a ``db.<kind>``
+problem of the whole changeset.
+
 **No values anywhere but the database (TX-13, TX-14, N-3).** The answers, the problems, the log records and the audit
 records name codes, counts, the table and the plan hash only. A changeset never reaches the query history or the
 draft queue: nothing here calls the query engine, the history or the drafts.
@@ -63,6 +72,7 @@ import base64
 from collections import OrderedDict
 from collections.abc import Mapping
 import copy
+from dataclasses import dataclass
 import datetime
 import decimal
 import json
@@ -76,7 +86,7 @@ import uuid
 import sqlalchemy
 from sqlalchemy.dialects import postgresql
 import tabrion
-from tabrion.errors import RowCountMismatch, UsageError
+from tabrion.errors import Kind, RowCountMismatch, UsageError, classify
 from tabrion.rowedit import delete_row, insert_row, update_row
 
 from tabrion_studio.config.write_areas import Area
@@ -110,6 +120,14 @@ _REQUEST_KEYS = frozenset({"schema", "table", "columns", "changes"})
 _CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]")
 #: Reflected tables of the runs in progress (one per run and target), the oldest dropped first.
 _KEPT_TABLES = 16
+#: The issue code of each constraint kind a step can break (G-S2 6A).
+_CONSTRAINT_CODES = {
+    Kind.UNIQUE: "constraint.unique",
+    Kind.FOREIGN_KEY: "constraint.foreign_key",
+    Kind.NOT_NULL: "constraint.not_null",
+    Kind.CHECK: "constraint.check",
+    Kind.EXCLUSION: "constraint.exclusion",
+}
 
 
 def _invalid() -> WriteError:
@@ -167,7 +185,7 @@ class DataEditorExecutor:
     requires_primary_key = True
 
     def __init__(self) -> None:
-        self._tables: OrderedDict[tuple[str, int], sqlalchemy.Table] = OrderedDict()
+        self._tables: OrderedDict[tuple[str, int], _Reflected] = OrderedDict()
         self._lock = threading.Lock()
 
     # --- build: the request, checked without the database ---------------------------------------------------------
@@ -240,23 +258,24 @@ class DataEditorExecutor:
 
     # --- run ------------------------------------------------------------------------------------------------------
 
-    def _table(self, transaction: tabrion.Transaction, plan: Plan, step: Step, run: AuditedRun) -> sqlalchemy.Table:
+    def _table(self, transaction: tabrion.Transaction, plan: Plan, step: Step, run: AuditedRun) -> _Reflected:
         key = (run.run_id, step.target)
         with self._lock:
-            table = self._tables.get(key)
-        if table is not None:
-            return table
+            found = self._tables.get(key)
+        if found is not None:
+            return found
         target = plan.content.targets[step.target]
         reflected = tabrion_compat.reflect_table(transaction, target.schema, target.table)
-        table = _bindable(reflected, plan.engine)
+        found = _Reflected(_bindable(reflected, plan.engine), _constraint_columns(reflected))
         with self._lock:
-            self._tables[key] = table
+            self._tables[key] = found
             while len(self._tables) > _KEPT_TABLES:
                 self._tables.popitem(last=False)
-        return table
+        return found
 
     def run_step(self, transaction: tabrion.Transaction, plan: Plan, step: Step, run: AuditedRun) -> None:
-        table = self._table(transaction, plan, step, run)
+        reflected = self._table(transaction, plan, step, run)
+        table = reflected.table
         data = step.data
 
         def bound(values: Mapping[str, Any]) -> dict[str, Any]:
@@ -288,7 +307,65 @@ class DataEditorExecutor:
             # The whole changeset rolls back: the transaction is failed, and the error leaves the block (03 5.2).
             logger.warning("data editor changeset rolled back", extra={"event": code})
             raise WriteError(code) from None
+        except Exception as exc:
+            issue = _constraint_issue(exc, plan, step, reflected.constraints)
+            if issue is None:
+                raise
+            # The whole changeset rolls back; the issue names the change and the column by position, never a value.
+            logger.warning(
+                "data editor changeset rolled back",
+                extra={"event": "studio.data_editor_constraint", "code": issue[1]},
+            )
+            raise WriteError("studio.data_editor_constraint", [issue]) from None
         run.count(_COUNTS[step.action], 1)
+
+
+@dataclass(frozen=True)
+class _Reflected:
+    """A target as a run reflected it: the table the statements are built on, and the columns of each named
+    constraint or unique index of plain columns (to place a constraint refusal at its cell, G-S2 6A)."""
+
+    table: sqlalchemy.Table
+    constraints: Mapping[str, tuple[str, ...]]
+
+
+def _constraint_columns(reflected: sqlalchemy.Table) -> dict[str, tuple[str, ...]]:
+    found: dict[str, tuple[str, ...]] = {}
+    for constraint in reflected.constraints:
+        if not isinstance(constraint, sqlalchemy.sql.schema.ColumnCollectionConstraint):
+            continue
+        names = tuple(column.name for column in constraint.columns)
+        if isinstance(constraint.name, str) and names:
+            found[constraint.name] = names
+    for index in reflected.indexes:
+        names = tuple(column.name for column in index.columns)
+        # An index on an expression has fewer plain columns than parts: it names no cell.
+        if index.unique and isinstance(index.name, str) and names and len(names) == len(index.expressions):
+            found.setdefault(index.name, names)
+    return found
+
+
+def _constraint_issue(
+    error: BaseException, plan: Plan, step: Step, constraints: Mapping[str, tuple[str, ...]]
+) -> tuple[str, str] | None:
+    """The issue of a step the database refused for a constraint, or None for any other error (see the module
+    text). Only the classification's names are read (never the message), and only to find a column's position."""
+    classification = classify(error)
+    code = _CONSTRAINT_CODES.get(classification.kind)
+    if code is None:
+        return None
+    position = next(index for index, item in enumerate(plan.content.steps) if item is step)
+    columns = plan.catalog[step.target].columns
+    column = None
+    # A name of another table (the row that references a deleted one) never points into this one.
+    if classification.table in (None, plan.content.targets[step.target].table):
+        column = classification.column
+        if column is None and classification.constraint is not None:
+            named = constraints.get(classification.constraint, ())
+            column = named[0] if len(named) == 1 else None
+    if column is not None and column in columns:
+        return (f"changes.{position}.{columns.index(column)}", code)
+    return (f"changes.{position}", code)
 
 
 def _bindable(reflected: sqlalchemy.Table, engine: str) -> sqlalchemy.Table:

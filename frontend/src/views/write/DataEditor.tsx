@@ -6,15 +6,19 @@
  *
  * 1. Unlock (D-03): this connection's write profile, its name typed; the server checks it and ends the unlock after
  *    15 minutes without use.
- * 2. Edit: the first page of rows from the viewer (the read connection); a cell's loaded value is the change's `old`
- *    value, every shown column of the row (review L-1 of tabrion #78). Each cell has the editor of its column's type
- *    (STU-XDE-1, `CellEditor.tsx`), and every changed value is checked for its column on the page (`cellValues.ts`):
- *    a cell with an issue is marked and named, and the preview waits until none is left. Bytes and rows the viewer
- *    cut are read only.
+ * 2. Edit: the rows from the viewer (the read connection), page after page ("Load more rows", G-S2 6A; at most
+ *    `MAX_EDITOR_ROWS`): a page is appended to the rows loaded before, so every row keeps its index and its edits
+ *    (`appendRows`), and a reload drops every edit and starts at the first page again. A cell's loaded value is the
+ *    change's `old` value, every shown column of the row (review L-1 of tabrion #78). Each cell has the editor of its
+ *    column's type (STU-XDE-1, `CellEditor.tsx`; bytes are replaced by a picked file, G-S2 6A), and every changed
+ *    value is checked for its column on the page (`cellValues.ts`): a cell with an issue is marked and named, and the
+ *    preview waits until none is left. Rows the viewer cut are read only.
  * 3. Review: the change overview (`ChangeOverview.tsx`) lists every changed row with its columns before and after,
  *    the new rows and the deleted ones. Preview, confirm, save: the server checks every value again and makes the
  *    plan (no values in it; a refused value marks its cell), the text to type (D-09; the table's name when rows are
- *    deleted, D-10), then one run. A conflict or another row count rolls everything back and says so.
+ *    deleted, D-10), then one run. A conflict or another row count rolls everything back and says so; a change the
+ *    database refuses for a rule of the table (`studio.data_editor_constraint`, G-S2 6A) rolls everything back too
+ *    and is marked at its cell, or at its row where the database named no single column.
  *
  * The changes live in this component's memory only: never in browser storage, the query history or the drafts
  * (review N-3 of PR #109).
@@ -22,16 +26,20 @@
 import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { typeLabel, untyped, type IssueCode } from '../../api/cellValues';
+import { MAX_BYTES_VALUE, typeLabel, untyped } from '../../api/cellValues';
 import {
+  appendRows,
   buildChangeset,
+  changesetBytes,
   confirmPlan,
   discardPlan,
   emptyEdits,
   executePlan,
   fetchEditorTable,
   fetchUnlocks,
+  firstRows,
   lockWrite,
+  MAX_CHANGESET_BYTES,
   previewChangeset,
   resolveEdits,
   sameValue,
@@ -42,11 +50,12 @@ import {
   type Change,
   type EditorTable,
   type Edits,
+  type LoadedRows,
   type PlanPreview,
   type PlanResult,
 } from '../../api/dataEditor';
 import type { Problem } from '../../api/problem';
-import { fetchPage, type ViewerPage } from '../../api/viewer';
+import { fetchPage } from '../../api/viewer';
 import { fetchWriteProfiles, type WriteProfileItem } from '../../api/write';
 import { Button } from '../../components/ui/Button';
 import clsx from '../../lib/clsx';
@@ -57,8 +66,11 @@ import { CellEditor } from './CellEditor';
 import { ChangeOverview } from './ChangeOverview';
 import styles from './DataEditor.module.css';
 
-/** The rows the editor loads (the first page of the viewer; paging is open, docs/TODO.md "STU-XDE-1 open points"). */
+/** The rows of one page the editor loads ("Load more rows" appends the next, G-S2 6A). */
 export const EDITOR_ROWS = 100;
+/** At most this many rows are loaded for editing (the grid has an editor per cell). */
+export const MAX_EDITOR_ROWS = 1000;
+const MAX_BYTES_KIB = MAX_BYTES_VALUE / 1024;
 
 export function DataEditor({
   fetcher,
@@ -223,12 +235,13 @@ function UnlockForm({
 type Load =
   | { status: 'loading' }
   | { status: 'problem'; problem: Problem }
-  | { status: 'ready'; table: EditorTable; page: ViewerPage };
+  | { status: 'ready'; table: EditorTable; loaded: LoadedRows };
 
+/** The changes under review, with the row each one comes from (to place the run's refusal, G-S2 6A). */
 type Stage =
   | { step: 'edit' }
-  | { step: 'preview'; preview: PlanPreview; changes: Change[] }
-  | { step: 'confirmed'; preview: PlanPreview; changes: Change[] };
+  | { step: 'preview'; preview: PlanPreview; changes: Change[]; origins: CellRef['row'][] }
+  | { step: 'confirmed'; preview: PlanPreview; changes: Change[]; origins: CellRef['row'][] };
 
 function sameRow(first: CellRef['row'], second: CellRef['row']): boolean {
   return 'loaded' in first
@@ -256,8 +269,13 @@ function EditorGrid({
   const [stage, setStage] = useState<Stage>({ step: 'edit' });
   const [typed, setTyped] = useState('');
   const [problem, setProblem] = useState<Problem | null>(null);
-  /** The cells of the server's last refusal (`studio.data_editor_value_invalid`), until the next edit. */
+  /**
+   * The cells and rows of the server's last refusal (`studio.data_editor_value_invalid` before the plan,
+   * `studio.data_editor_constraint` from the run), until the next edit.
+   */
   const [refused, setRefused] = useState<CellIssue[]>([]);
+  /** A next page is being loaded, or its columns were not those of the loaded rows. */
+  const [more, setMore] = useState<'idle' | 'loading' | 'changed'>('idle');
   const [saved, setSaved] = useState<PlanResult | null>(null);
   const [round, setRound] = useState(0);
 
@@ -280,32 +298,38 @@ function EditorGrid({
       });
       if (!alive) return;
       if (!page.ok) setLoad({ status: 'problem', problem: page.problem });
-      else setLoad({ status: 'ready', table: table.value, page: page.value });
+      else setLoad({ status: 'ready', table: table.value, loaded: firstRows(page.value) });
     })();
     return () => {
       alive = false;
     };
   }, [fetcher, connectionId, schema, name, round, onLocked]);
 
-  const columns = useMemo(
-    () => (load.status === 'ready' ? load.page.columns.map((column) => column.name) : []),
-    [load],
-  );
-  const cut = useMemo(
-    () => new Set(load.status === 'ready' ? load.page.truncatedCells.map(([row]) => row) : []),
-    [load],
-  );
+  const columns = useMemo(() => (load.status === 'ready' ? load.loaded.columns : []), [load]);
   const { changes, origins, issues } = useMemo(() => {
     if (load.status !== 'ready') return { changes: [], origins: [], issues: [] };
-    const resolved = resolveEdits(load.table, columns, load.page.rows, edits);
+    const resolved = resolveEdits(load.table, columns, load.loaded.rows, edits);
     return {
-      ...buildChangeset(load.table.primaryKey, columns, load.page.rows, resolved.edits),
+      ...buildChangeset(load.table.primaryKey, columns, load.loaded.rows, resolved.edits),
       issues: resolved.issues,
     };
   }, [load, columns, edits]);
+  const tooLarge = useMemo(
+    () =>
+      load.status === 'ready' &&
+      changes.length > 0 &&
+      changesetBytes({
+        schema: load.table.schema,
+        table: load.table.table,
+        columns,
+        changes,
+      }) > MAX_CHANGESET_BYTES,
+    [load, columns, changes],
+  );
 
   const reload = useCallback(() => {
     setRefused([]);
+    setMore('idle');
     setEdits(emptyEdits());
     setStage({ step: 'edit' });
     setTyped('');
@@ -323,27 +347,32 @@ function EditorGrid({
       </p>
     );
   }
-  const { table, page } = load;
+  const { table, loaded } = load;
+  const { rows, cut } = loaded;
   const keyShown = table.primaryKey.every((key) => columns.includes(key));
   const editing = stage.step === 'edit';
 
   const allIssues = [...issues, ...refused];
-  const issueOf = (row: CellRef['row'], column: string): IssueCode | null =>
+  const issueOf = (row: CellRef['row'], column: string | null): CellIssue['code'] | null =>
     allIssues.find((issue) => issue.column === column && sameRow(issue.row, row))?.code ?? null;
-  const issueId = (row: CellRef['row'], column: string) =>
-    `${id}-issue-${'loaded' in row ? `r${row.loaded}` : `n${row.added}`}-${columns.indexOf(column)}`;
+  const issueId = (row: CellRef['row'], column: string | null) =>
+    `${id}-issue-${'loaded' in row ? `r${row.loaded}` : `n${row.added}`}-${column === null ? 'row' : columns.indexOf(column)}`;
   const typeOf = (column: string) => table.columnTypes.get(column) ?? untyped(column);
   const rowLabel = (row: CellRef['row']) =>
     'loaded' in row
       ? t('dataEditor.issueRow', { row: row.loaded + 1 })
       : t('dataEditor.issueNewRow', { row: row.added + 1 });
-  const issueText = (issue: CellIssue) =>
-    t(`dataEditor.issue.${issue.code.slice('value.'.length)}`, {
-      format: t(
-        `dataEditor.format.${typeOf(issue.column).array ? 'array' : typeOf(issue.column).kind}`,
-      ),
-      length: typeOf(issue.column).length ?? 0,
+  const issueText = (issue: Pick<CellIssue, 'column' | 'code'>) => {
+    if (issue.code.startsWith('constraint.')) {
+      return t(`dataEditor.constraint.${issue.code.slice('constraint.'.length)}`);
+    }
+    const type = typeOf(issue.column ?? '');
+    return t(`dataEditor.issue.${issue.code.slice('value.'.length)}`, {
+      format: t(`dataEditor.format.${type.array ? 'array' : type.kind}`),
+      length: type.length ?? 0,
+      max: MAX_BYTES_KIB,
     });
+  };
 
   const edited = () => {
     setSaved(null);
@@ -394,7 +423,7 @@ function EditorGrid({
     const result = await previewChangeset(fetcher, connectionId, table, columns, changes);
     if (result.ok) {
       setTyped('');
-      setStage({ step: 'preview', preview: result.value, changes });
+      setStage({ step: 'preview', preview: result.value, changes, origins });
     } else {
       setProblem(result.problem);
       setRefused(serverIssues(result.problem.issues, origins, table.columns));
@@ -422,10 +451,39 @@ function EditorGrid({
     if (result.ok) {
       setSaved(result.value);
       setEdits(emptyEdits());
+      setMore('idle');
       setLoad({ status: 'loading' });
       setRound((value) => value + 1);
     } else {
       setProblem(result.problem);
+      // G-S2 6A: a rule of the table, marked at the change's cell or row (the rows of the changes as sent).
+      setRefused(serverIssues(result.problem.issues, stage.origins, table.columns));
+    }
+  };
+  const loadMore = async () => {
+    if (loaded.next === null) return;
+    setMore('loading');
+    const page = await fetchPage(fetcher, connectionId, schema, name, {
+      limit: EDITOR_ROWS,
+      sort: null,
+      desc: false,
+      filters: [],
+      after: loaded.next,
+    });
+    if (!page.ok) {
+      setMore('idle');
+      setProblem(page.problem);
+      return;
+    }
+    const next = appendRows(loaded, page.value, table.primaryKey);
+    setMore(next === null ? 'changed' : 'idle');
+    // Appended only to the rows it continues: a reload meanwhile has other rows (and no edits of these).
+    if (next !== null) {
+      setLoad((current) =>
+        current.status === 'ready' && current.loaded === loaded
+          ? { ...current, loaded: next }
+          : current,
+      );
     }
   };
   const lock = async () => {
@@ -470,7 +528,7 @@ function EditorGrid({
         />
         {issue !== null ? (
           <span id={issueId(row, column)} className={styles.issue}>
-            {issueText({ row, column, code: issue })}
+            {issueText({ column, code: issue })}
           </span>
         ) : null}
       </>
@@ -507,9 +565,13 @@ function EditorGrid({
           {t('dataEditor.keyNotShown')}
         </p>
       ) : null}
-      {page.next !== null ? (
-        <p className={connectionStyles.hint}>{t('dataEditor.firstRows', { count: EDITOR_ROWS })}</p>
-      ) : null}
+      <p className={connectionStyles.hint} data-testid="data-editor-loaded">
+        {loaded.next === null
+          ? t('dataEditor.allRows', { count: rows.length })
+          : rows.length >= MAX_EDITOR_ROWS
+            ? t('dataEditor.rowLimit', { count: rows.length })
+            : t('dataEditor.someRows', { count: rows.length })}
+      </p>
       <div className={styles.scroll}>
         <table
           className={styles.grid}
@@ -537,13 +599,14 @@ function EditorGrid({
             </tr>
           </thead>
           <tbody>
-            {page.rows.map((row, index) => {
+            {rows.map((row, index) => {
               const deleted = edits.deleted.has(index);
               const locked = cut.has(index) || !keyShown;
+              const rowIssue = issueOf({ loaded: index }, null);
               return (
                 <tr
                   key={`row-${index}`}
-                  className={clsx(deleted && styles.removed)}
+                  className={clsx(deleted && styles.removed, rowIssue !== null && styles.refused)}
                   data-row={index}
                 >
                   {columns.map((column, at) => {
@@ -572,54 +635,88 @@ function EditorGrid({
                       size="sm"
                       variant={deleted ? 'secondary' : 'dangerOutline'}
                       disabled={locked || !editing}
+                      aria-describedby={
+                        rowIssue !== null ? issueId({ loaded: index }, null) : undefined
+                      }
                       onClick={() => toggleDelete(index)}
                     >
                       {deleted ? t('dataEditor.undoDelete') : t('dataEditor.delete')}
                     </Button>
+                    {rowIssue !== null ? (
+                      <span id={issueId({ loaded: index }, null)} className={styles.issue}>
+                        {issueText({ column: null, code: rowIssue })}
+                      </span>
+                    ) : null}
                   </td>
                 </tr>
               );
             })}
-            {edits.inserted.map((row, index) => (
-              <tr key={`new-${index}`} className={styles.added} data-new-row={index}>
-                {columns.map((column) => (
-                  <td key={column}>
-                    {cell(
-                      { added: index },
-                      column,
-                      column in row ? row[column] : null,
-                      '',
-                      false,
-                      (next) => setNew(index, column, next),
-                      { unset: !(column in row), onUnset: () => unsetNew(index, column) },
-                    )}
+            {edits.inserted.map((row, index) => {
+              const rowIssue = issueOf({ added: index }, null);
+              return (
+                <tr
+                  key={`new-${index}`}
+                  className={clsx(styles.added, rowIssue !== null && styles.refused)}
+                  data-new-row={index}
+                >
+                  {columns.map((column) => (
+                    <td key={column}>
+                      {cell(
+                        { added: index },
+                        column,
+                        column in row ? row[column] : null,
+                        '',
+                        false,
+                        (next) => setNew(index, column, next),
+                        { unset: !(column in row), onUnset: () => unsetNew(index, column) },
+                      )}
+                    </td>
+                  ))}
+                  <td>
+                    <Button
+                      size="sm"
+                      disabled={!editing}
+                      aria-describedby={
+                        rowIssue !== null ? issueId({ added: index }, null) : undefined
+                      }
+                      onClick={() => {
+                        edited();
+                        setEdits((current) => ({
+                          ...current,
+                          inserted: current.inserted.filter((_, at) => at !== index),
+                        }));
+                      }}
+                    >
+                      {t('dataEditor.removeNew')}
+                    </Button>
+                    {rowIssue !== null ? (
+                      <span id={issueId({ added: index }, null)} className={styles.issue}>
+                        {issueText({ column: null, code: rowIssue })}
+                      </span>
+                    ) : null}
                   </td>
-                ))}
-                <td>
-                  <Button
-                    size="sm"
-                    disabled={!editing}
-                    onClick={() =>
-                      setEdits((current) => ({
-                        ...current,
-                        inserted: current.inserted.filter((_, at) => at !== index),
-                      }))
-                    }
-                  >
-                    {t('dataEditor.removeNew')}
-                  </Button>
-                </td>
-              </tr>
-            ))}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
       <div className={styles.summary}>
+        {loaded.next !== null && rows.length < MAX_EDITOR_ROWS ? (
+          <Button
+            disabled={!editing || more === 'loading'}
+            onClick={() => void loadMore()}
+            data-testid="data-editor-more"
+          >
+            {t('dataEditor.loadMore', { count: EDITOR_ROWS })}
+          </Button>
+        ) : null}
         <Button
           disabled={!editing || !keyShown}
-          onClick={() =>
-            setEdits((current) => ({ ...current, inserted: [...current.inserted, {}] }))
-          }
+          onClick={() => {
+            edited();
+            setEdits((current) => ({ ...current, inserted: [...current.inserted, {}] }));
+          }}
         >
           {t('dataEditor.addRow')}
         </Button>
@@ -635,26 +732,54 @@ function EditorGrid({
             !editing ||
             changes.length === 0 ||
             changes.length > table.maxChanges ||
-            issues.length > 0
+            issues.length > 0 ||
+            tooLarge
           }
           onClick={() => void preview()}
         >
           {t('dataEditor.preview')}
         </Button>
       </div>
+      {more === 'changed' ? (
+        <div
+          role="alert"
+          className={connectionStyles.problem}
+          data-testid="data-editor-more-changed"
+        >
+          <span>{t('dataEditor.columnsChanged')}</span>
+          <Button size="sm" onClick={reload}>
+            {t('dataEditor.reload')}
+          </Button>
+        </div>
+      ) : null}
+      {tooLarge && editing ? (
+        <p role="alert" className={connectionStyles.problem} data-testid="data-editor-too-large">
+          {t('dataEditor.changesetTooLarge', { max: MAX_CHANGESET_BYTES / 1024 })}
+        </p>
+      ) : null}
       {allIssues.length > 0 && editing ? (
         // Not a live region: it changes while the user types; each cell names its own issue (aria-describedby).
         <div className={connectionStyles.problem} data-testid="data-editor-issues">
-          <span>{t('dataEditor.issuesLead', { count: allIssues.length })}</span>
+          <span>
+            {allIssues.every((issue) => issue.code.startsWith('value.'))
+              ? t('dataEditor.issuesLead', { count: allIssues.length })
+              : t('dataEditor.refusedLead', { count: allIssues.length })}
+          </span>
           <ul className={styles.changes}>
             {allIssues.map((issue, index) => (
               <li key={index}>
-                {t('dataEditor.issueAt', {
-                  row: rowLabel(issue.row),
-                  column: issue.column,
-                  issue: issueText(issue),
-                  interpolation: { escapeValue: false },
-                })}
+                {issue.column === null
+                  ? t('dataEditor.issueAtRow', {
+                      row: rowLabel(issue.row),
+                      issue: issueText(issue),
+                      interpolation: { escapeValue: false },
+                    })
+                  : t('dataEditor.issueAt', {
+                      row: rowLabel(issue.row),
+                      column: issue.column,
+                      issue: issueText(issue),
+                      interpolation: { escapeValue: false },
+                    })}
               </li>
             ))}
           </ul>

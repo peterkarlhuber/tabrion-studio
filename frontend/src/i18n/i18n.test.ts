@@ -28,6 +28,8 @@ function markers(text: string): string[] {
 const SAME_IN_BOTH = new Set([
   // The SQL keyword NULL (the Data Editor's NULL button, STU-026).
   'dataEditor.null',
+  // Placeholders only: "{{row}}: {{issue}}" (G-S2 6A).
+  'dataEditor.issueAtRow',
   // Product names and technical terms that German uses as they are (STU-008).
   'connections.engine.sqlite',
   'connections.engine.postgresql',

@@ -9,7 +9,9 @@ problem document with the media type ``application/problem+json``::
 plus ``log_id`` for ``studio.internal_error``, ``issues`` for ``studio.profile_invalid`` and ``studio.settings_invalid``
 (``[{"pointer": "profile.host", "code": "config.required"}]``: a fixed key name and a ``config.*`` code) and for
 ``studio.data_editor_value_invalid`` (``[{"pointer": "changes.2.5", "code": "value.too_long"}]``: positions in the
-request and the table, and a ``value.*`` code; STU-XDE-1) and, from
+request and the table, and a ``value.*`` code; STU-XDE-1) and for ``studio.data_editor_constraint``
+(``[{"pointer": "changes.2", "code": "constraint.unique"}]``, the column's position too where the database named it;
+G-S2 6A) and, from
 STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
@@ -63,6 +65,10 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: refused Data Editor value (STU-XDE-1): the change's and the column's position and a value.* code, never a name.
 _ISSUE_POINTER = re.compile(r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}")
 _ISSUE_CODE = re.compile(r"config\.[a-z_]{1,48}|value\.[a-z_]{1,48}")
+#: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
+#: where the database named it, and a constraint.* code.
+_CONSTRAINT_POINTER = re.compile(r"changes\.\d{1,4}(?:\.\d{1,4})?")
+_CONSTRAINT_CODE = re.compile(r"constraint\.(?:unique|foreign_key|not_null|check|exclusion)")
 MAX_ISSUES = 32
 
 
@@ -669,6 +675,14 @@ CATALOG: dict[str, Entry] = {
         "change made by someone else could not be detected. The Data Editor does not edit this table.",
         "The whole table is refused, whichever columns are shown. Edit it with another tool.",
     ),
+    "studio.data_editor_constraint": Entry(
+        400,
+        ProblemKind.DATABASE,
+        "Rule of the table broken",
+        "The database refused a change because it breaks a rule of the table (a unique value, a reference, NOT NULL "
+        "or a check). Nothing was saved: all changes were rolled back.",
+        "The row in question is marked, and its cell where the database named the column. Fix it and save again.",
+    ),
     "studio.data_editor_value_invalid": Entry(
         400,
         ProblemKind.REQUEST,
@@ -1154,10 +1168,7 @@ def problem(
         raise ValueError("malformed position")
     if issues is not None and (
         len(issues) > MAX_ISSUES
-        or not all(
-            isinstance(p, str) and isinstance(c, str) and _ISSUE_POINTER.fullmatch(p) and _ISSUE_CODE.fullmatch(c)
-            for p, c in issues
-        )
+        or not all(isinstance(p, str) and isinstance(c, str) and _issue_ok(p, c) for p, c in issues)
     ):
         raise ValueError("malformed issues")
     return Problem(
@@ -1172,6 +1183,12 @@ def problem(
         position,
         None if issues is None else tuple(issues),
     )
+
+
+def _issue_ok(pointer: str, code: str) -> bool:
+    if _CONSTRAINT_CODE.fullmatch(code):
+        return _CONSTRAINT_POINTER.fullmatch(pointer) is not None
+    return _ISSUE_POINTER.fullmatch(pointer) is not None and _ISSUE_CODE.fullmatch(code) is not None
 
 
 def is_problem_code(value: object) -> bool:

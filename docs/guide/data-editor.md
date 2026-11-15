@@ -79,6 +79,17 @@ connection closes, when the profile or its read profile changes, and when Studio
 - **Add row** adds an empty row at the end. A column you leave untouched gets its default; set it to give a value.
   A NOT NULL column without a default must be filled. **Remove new row** removes it again.
 - **Delete row** marks a row for deletion; **Keep row** takes that back.
+- **Replace a bytes value by a file.** A bytes cell (`bytea`, a `BLOB` of a `STRICT` table, or an ordinary SQLite
+  column that holds bytes) shows the value's size, never its bytes. **Replace** opens the file chooser; the content of
+  the file you pick becomes the new value, and the change overview shows the size before and after. Bytes are never
+  typed or edited in place. A file may have at most **64 KiB**: a larger one is not read, its cell is marked "Too
+  large", and **Preview** waits until you pick another file or set NULL. The server checks the size again
+  (`value.too_large`). A changeset carries at most 256 KiB in all (bytes travel as base64, a third larger), so save
+  after one or two large files.
+- **Load more rows.** The tab loads 100 rows; **Load 100 more rows** adds the next 100 below them, up to 1,000 rows.
+  Rows already loaded keep their place and their pending changes, so an edit always stays with its row. The line
+  above the grid says how many rows are loaded and whether the table has more. **Discard changes**, a reload and a
+  save start again at the first 100 rows.
 - **Discard changes** drops every pending change and reads the rows again.
 
 Studio checks every changed value for its column while you type: its kind, length, range, NULL, an enum's labels and
@@ -97,7 +108,8 @@ under the grid names every such cell, and **Preview** waits until none is left. 
 | `uuid` | `123e4567-e89b-12d3-a456-426614174000` |
 | `json`, `jsonb` | a JSON value such as `{"a": 1}` |
 | Arrays | a JSON array such as `[1, 2]`; NULL elements are allowed, sub-arrays have the same length |
-| Bytes, generated and identity columns | read only |
+| Bytes | a picked file of at most 64 KiB (**Replace**), or NULL |
+| Generated and identity `ALWAYS` columns | read only |
 
 On SQLite, only `STRICT` tables have column types; in an ordinary table any value is taken as SQLite takes it,
 except a whole number wider than 64 bits, which SQLite cannot store (the server refuses it with the preview). The
@@ -120,7 +132,16 @@ uniqueness, foreign keys, domains, triggers).
 
 **Nothing or everything is saved.** Every column the page showed is part of the row's old value. If a row was changed
 or deleted by someone else since it was loaded, or a change did not affect exactly one row, the whole changeset is
-rolled back and the message names no value: **Reload the rows** and make the changes again. If the table's columns,
+rolled back and the message names no value: **Reload the rows** and make the changes again.
+
+**A rule of the table.** The database is the last instance: a change can break a unique value or the primary key, a
+foreign key (a referenced row that is missing, or rows that still refer to a deleted one), NOT NULL or a CHECK. Then
+the whole changeset is rolled back as well and nothing is saved (`studio.data_editor_constraint`). Your changes stay
+in the grid, and the change the database refused is marked: at its **cell** where the database names a single column
+(a NOT NULL column, a unique or foreign key constraint of one column), else at its **row**, next to its action. The
+list under the grid names it with the kind of rule. Correct it and **Preview** again; the next edit clears the
+marks. The message never names a value, nor the constraint. A constraint that the database checks only at the commit
+(a deferred one) belongs to no single change: it is shown for the whole changeset (`db.foreign_key` and the like). If the table's columns,
 triggers, rules or the database file changed since the preview, nothing runs (`studio.plan_drift`); preview again.
 
 The changes live only in the page's memory: never in the query history, the drafts, the browser's storage or the
@@ -163,8 +184,10 @@ These are refused on purpose, by the server, whatever the page shows:
   nothing on: each area stays off until its own gate, and a public release needs an independent human security
   review besides. The owner granted G-S2 on 2026-11-15 for local use on DEV, TEST and STAGE databases only; the
   switch still stays off by default, nothing turns it on automatically, and PROD stays locked.
-- **The first 100 rows.** The tab loads the first page of rows (paging is not there yet). A row with a cell the
-  viewer cut (longer than 64 KB) is read only. A changeset holds at most 1,000 changes.
+- **Rows, files and changesets have limits.** The tab loads up to 1,000 rows, 100 at a time, in the order of the
+  primary key; it has no filter or sort of its own (use the [data viewer](data-viewer.md) to find rows). A row with a
+  cell the viewer cut (longer than 64 KB of text or 32 KB of bytes) is read only. A file that replaces a bytes value
+  has at most 64 KiB, a changeset at most 1,000 changes and 256 KiB.
 
 ## Messages
 
@@ -176,6 +199,10 @@ These are refused on purpose, by the server, whatever the page shows:
 | The table has no primary key, so Studio cannot edit its rows. | Add a primary key with your migration tool, or edit the table with another tool. |
 | A column of this table has a type that cannot be compared … | The table is refused as a whole; edit it with another tool. |
 | A value does not fit its column … the cells in question are marked. | Correct the marked cells, then **Preview** again. |
+| Too large: at most 64 KiB. | Pick a smaller file for the bytes cell, or set NULL. |
+| These changes are too large to save at once … | Save some of the changes first (for example one replaced file), then the rest. |
+| The database refused a change because it breaks a rule of the table … | The marked cell or row breaks a unique value, a reference, NOT NULL or a check. Correct it and **Preview** again; nothing was saved. |
+| The table's columns changed since the rows were loaded … | **Reload the rows**; your pending changes are discarded. |
 | A row was changed or deleted by someone else since it was loaded. Nothing was saved. | **Reload the rows** and make the changes again. |
 | The target changed since the preview … | The table changed; **Preview** again. |
 | The write mode is locked. Unlock it again. | The unlock ended (15 minutes without use, or the connection closed); unlock again. |
