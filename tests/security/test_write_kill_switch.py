@@ -54,6 +54,10 @@ for _path, _methods in WRITE_ROUTES:
                     # STU-CR-2, STU-CR-3: the Schema Designer's database creation (G-S3).
                     "path": "/tmp/kill-switch-canary.db",  # noqa: S108 - never created: the route refuses first
                     "name": "kill_switch_canary",
+                    # STU-CR-4: the Schema Designer's draft (G-S3).
+                    "schema": "main",
+                    "revision": 0,
+                    "edit": {"op": "drop_table", "table": "parts"},
                 },
             )
         )
@@ -61,7 +65,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 20
+    assert len(methods) == 25
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -76,6 +80,11 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/data-editor/table",  # STU-026: the Data Editor's table (its changesets are plans)
         "POST /api/write/schema-designer/create/sqlite",  # STU-CR-2: a new SQLite file (G-S3)
         "POST /api/write/schema-designer/create/postgresql",  # STU-CR-3: a new PostgreSQL database (G-S3)
+        "POST /api/write/schema-designer/draft",  # STU-CR-4: the server-side draft and its preview (G-S3)
+        "DELETE /api/write/schema-designer/draft",
+        "POST /api/write/schema-designer/draft/view",
+        "POST /api/write/schema-designer/draft/edits",
+        "POST /api/write/schema-designer/draft/preview",
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

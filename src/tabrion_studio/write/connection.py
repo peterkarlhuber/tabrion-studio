@@ -465,6 +465,33 @@ class WriteConnection:
         finally:
             pooled.close()
 
+    def inspect(self, consume: Callable[[sqlalchemy.Inspector], Any]) -> Any:
+        """``consume(inspector)`` with tabrion's ``Database.inspector()`` on this write connection, inside one of its
+        read-only transactions (the Schema Designer's level-2 snapshot, STU-CR-4). The file identity is checked
+        first (TX-16); on PostgreSQL the session's ``search_path`` is already fixed (K-2) and pinned again for the
+        catalog queries, as on a read connection."""
+        self.verify()
+        with self._db.inspector() as found:
+            tabrion_compat.pin_catalog_path(found)
+            return consume(found)
+
+    def engine_version(self) -> tuple[int, ...]:
+        """The engine version a schema change plan is made for (STU-ADR-0007 section 9, I-124 e, GS3-13): on SQLite
+        ``sqlite_version_info`` of the library this connection's engine loaded, on PostgreSQL the server's
+        ``server_version_num`` read on this connection (``160004`` is ``(16, 4)``, ``90624`` is ``(9, 6, 24)``).
+        Never None: an unreadable version raises :class:`WriteError` (``studio.write_unsupported``)."""
+        if self.engine == "sqlite":
+            info = getattr(self._db.engine.dialect.dbapi, "sqlite_version_info", None)
+            if not isinstance(info, tuple) or not info or not all(type(p) is int and p >= 0 for p in info):
+                raise WriteError("studio.write_unsupported")
+            return tuple(info)
+        number = _server_version(self.fetch(_SERVER_VERSION))
+        if number is None or number <= 0:
+            raise WriteError("studio.write_unsupported")
+        if number >= 100000:
+            return (number // 10000, number % 10000)
+        return (number // 10000, number // 100 % 100, number % 100)
+
     def check_privileges(self) -> None:
         """Read the role's privileges (TX-11) into :attr:`facts` and :attr:`findings`; nothing on SQLite."""
         if self.engine != "postgresql":

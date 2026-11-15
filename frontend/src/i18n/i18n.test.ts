@@ -66,6 +66,14 @@ const SAME_IN_BOTH = new Set([
   'explorer.extensions.schema',
   // STU-023: the ER diagram's schema picker, zoom percentage and key lines (names and arrows only).
   'explorer.er.schema',
+  // STU-CR-4: the Schema Designer's technical terms German uses as they are (schema, check, index, plan, SQL, name).
+  'schemaDesigner.schema',
+  'schemaDesigner.element.check',
+  'schemaDesigner.element.index',
+  'schemaDesigner.form.constraintName',
+  'schemaDesigner.kinds.check',
+  'schemaDesigner.previewTitle',
+  'schemaDesigner.step.sql',
   'explorer.er.zoom',
   'explorer.er.list.reference',
   'explorer.er.list.referenced',

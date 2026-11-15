@@ -220,6 +220,14 @@ CHANGING_ROUTES: dict[str, str] = {
     # and no import of the area while it is off; tests/security/test_schema_designer_create.py). Never on PROD.
     "POST /api/write/schema-designer/create/sqlite": "creates a new, empty, private SQLite file (Schema Designer flag)",
     "POST /api/write/schema-designer/create/postgresql": "CREATE DATABASE on an unlocked DEV/TEST write connection",
+    # STU-CR-4 (G-S3): the Schema Designer's server-side draft and the read-only plan preview, behind the
+    # schema_designer flag only (405 and no import of the area while it is off;
+    # tests/security/test_schema_designer_draft.py). None writes to a database, a project or the disk; none runs a plan.
+    "POST /api/write/schema-designer/draft": "starts a draft in server memory from a snapshot; writes nothing (flag)",
+    "DELETE /api/write/schema-designer/draft": "drops this session's draft from server memory (Schema Designer flag)",
+    "POST /api/write/schema-designer/draft/view": "reads this session's draft from server memory (flag)",
+    "POST /api/write/schema-designer/draft/edits": "one edit of the draft in server memory; writes nothing (flag)",
+    "POST /api/write/schema-designer/draft/preview": "plans from a fresh snapshot to the draft; runs nothing (flag)",
 }
 
 
