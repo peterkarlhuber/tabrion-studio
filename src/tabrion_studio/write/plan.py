@@ -217,6 +217,8 @@ class TargetCatalog:
     row_security: bool = False
     columns: tuple[str, ...] = ()
     primary_key: tuple[str, ...] = ()
+    #: The columns whose type has no equality for an optimistic comparison (PostgreSQL; see ``_PG_INCOMPARABLE``).
+    incomparable: tuple[str, ...] = ()
 
 
 class CatalogCheck(Protocol):
@@ -329,6 +331,40 @@ _PG_PRIMARY_KEY = (
     " AND a.attnum OPERATOR(pg_catalog.=) k.attnum"
     " WHERE i.indrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid) AND i.indisprimary ORDER BY k.n"
 )
+#: The columns whose type has no proper equality (STU-026, review I-1 of PR #119): the type, after unwrapping domains
+#: (and an array's element type), has no default btree or hash operator class, directly or through an implicit
+#: binary-coercible cast (``varchar`` to ``text``; ``xml`` to ``text`` is explicit only). Enums, ranges and
+#: multiranges always have one; ``json`` is compared as ``jsonb`` by ``tabrion.rowedit``.
+#: Examples: ``xml``, ``point``, ``box`` (whose ``=`` compares areas), composite types, ``json[]``. A row with such a
+#: column cannot be matched by its old values, so the Data Editor refuses the table.
+_PG_INCOMPARABLE = (
+    "WITH RECURSIVE base(attname, attnum, typ, depth) AS ("
+    " SELECT a.attname, a.attnum, a.atttypid, 0 FROM pg_catalog.pg_attribute a"
+    " WHERE a.attrelid OPERATOR(pg_catalog.=) CAST(:oid AS pg_catalog.oid)"
+    " AND a.attnum OPERATOR(pg_catalog.>) 0 AND NOT a.attisdropped"
+    " UNION ALL SELECT b.attname, b.attnum, t.typbasetype, b.depth OPERATOR(pg_catalog.+) 1"
+    " FROM base b JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) b.typ"
+    " WHERE t.typtype OPERATOR(pg_catalog.=) 'd' AND b.depth OPERATOR(pg_catalog.<) 32),"
+    " solved AS (SELECT b.attname, b.attnum, b.typ FROM base b"
+    " JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) b.typ WHERE t.typtype OPERATOR(pg_catalog.<>) 'd'),"
+    " compared AS (SELECT s.attname, s.attnum,"
+    " t.typcategory OPERATOR(pg_catalog.=) 'A' AND t.typelem OPERATOR(pg_catalog.<>) 0 AS is_array,"
+    " CASE WHEN t.typcategory OPERATOR(pg_catalog.=) 'A' AND t.typelem OPERATOR(pg_catalog.<>) 0"
+    " THEN CASE WHEN e.typtype OPERATOR(pg_catalog.=) 'd' THEN e.typbasetype ELSE e.oid END ELSE s.typ END AS typ"
+    " FROM solved s JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) s.typ"
+    " LEFT JOIN pg_catalog.pg_type e ON e.oid OPERATOR(pg_catalog.=) t.typelem)"
+    " SELECT c.attname::pg_catalog.text FROM compared c"
+    " JOIN pg_catalog.pg_type t ON t.oid OPERATOR(pg_catalog.=) c.typ"
+    " WHERE NOT (t.typtype OPERATOR(pg_catalog.=) ANY (ARRAY['e', 'r', 'm']::pg_catalog.\"char\"[])"
+    " OR (NOT c.is_array AND t.oid OPERATOR(pg_catalog.=) CAST('pg_catalog.json' AS pg_catalog.regtype))"
+    " OR EXISTS (SELECT 1 FROM pg_catalog.pg_opclass o JOIN pg_catalog.pg_am m"
+    " ON m.oid OPERATOR(pg_catalog.=) o.opcmethod WHERE o.opcdefault"
+    " AND m.amname OPERATOR(pg_catalog.=) ANY (ARRAY['btree', 'hash']::pg_catalog.name[])"
+    " AND (o.opcintype OPERATOR(pg_catalog.=) t.oid OR EXISTS (SELECT 1 FROM pg_catalog.pg_cast k"
+    " WHERE k.castsource OPERATOR(pg_catalog.=) t.oid AND k.casttarget OPERATOR(pg_catalog.=) o.opcintype"
+    " AND k.castmethod OPERATOR(pg_catalog.=) 'b' AND k.castcontext OPERATOR(pg_catalog.=) 'i'))))"
+    " ORDER BY c.attnum"
+)
 #: ``pg_rewrite.ev_type``.
 _RULE_EVENTS = {"1": "select", "2": "update", "3": "insert", "4": "delete"}
 #: ``pg_trigger.tgtype`` bits (``TRIGGER_TYPE_*`` of PostgreSQL's ``pg_trigger.h``).
@@ -414,7 +450,8 @@ def _postgres_catalog(fetch: Fetch, targets: tuple[Target, ...]) -> tuple[str, t
         )
         columns = tuple(str(row[1]) for row in doc["columns"])
         primary_key = tuple(str(row[0]) for row in fetch(_PG_PRIMARY_KEY, {"oid": int(oid)}))
-        catalogs.append(TargetCatalog(target, triggers, rules, bool(row_security), columns, primary_key))
+        incomparable = tuple(str(row[0]) for row in fetch(_PG_INCOMPARABLE, {"oid": int(oid)}))
+        catalogs.append(TargetCatalog(target, triggers, rules, bool(row_security), columns, primary_key, incomparable))
     return _digest({"engine": "postgresql", "targets": docs}), tuple(catalogs)
 
 

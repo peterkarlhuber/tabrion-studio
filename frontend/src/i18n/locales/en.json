@@ -1065,7 +1065,8 @@
     "plan_target_no_primary_key": "The table has no primary key, so Studio cannot edit its rows.",
     "data_editor_conflict": "A row was changed or deleted by someone else since it was loaded. Nothing was saved. Reload the rows and try again.",
     "data_editor_rowcount": "A change did not affect exactly one row. Nothing was saved.",
-    "data_editor_value_invalid": "A value does not fit its column. Nothing was saved."
+    "data_editor_value_invalid": "A value does not fit its column. Nothing was saved.",
+    "data_editor_column_incomparable": "A column of this table has a type that cannot be compared (for example xml or point), so a change by someone else could not be detected. Studio does not edit this table."
   },
   "keyboard": {
     "palette": {

@@ -27,7 +27,11 @@ table's name, D-10). Request::
 **Refused targets.** A view, a foreign table, a partitioned table or a partition (the framework's catalog read,
 ``studio.plan_target_invalid``, ``studio.plan_target_partitioned``), a table without a primary key
 (``studio.plan_target_no_primary_key``, :attr:`DataEditorExecutor.requires_primary_key`) and PROD (no unlock of a
-PROD profile exists, E-X7; re-checked from the stored profile on every use).
+PROD profile exists, E-X7; re-checked from the stored profile on every use). A PostgreSQL table with a column whose
+type has no proper equality (``xml``, ``point``, ``box``, a composite type, ``json[]``: no default btree or hash
+operator class, see ``plan._PG_INCOMPARABLE``) is refused too (``studio.data_editor_column_incomparable``, review I-1
+of PR #119): every shown column is part of ``old``, and such a value cannot be compared, so the editor refuses the
+table rather than leave the column out of the conflict check.
 
 **Running.** Inside the run's transaction, after the framework's drift check (the table's catalog, its triggers,
 rules and the functions they call are those of the preview), the table is reflected on the write connection and each
@@ -53,6 +57,7 @@ import base64
 import binascii
 from collections import OrderedDict
 from collections.abc import Mapping
+import copy
 import datetime
 import decimal
 import json
@@ -64,6 +69,7 @@ from typing import Any
 import uuid
 
 import sqlalchemy
+from sqlalchemy.dialects import postgresql
 import tabrion
 from tabrion.errors import RowCountMismatch, UsageError
 from tabrion.rowedit import delete_row, insert_row, update_row
@@ -215,8 +221,11 @@ class DataEditorExecutor:
     # --- check: the request against the table's catalog -----------------------------------------------------------
 
     def check(self, content: PlanContent, catalogs: tuple[TargetCatalog, ...]) -> None:
-        """Every named column is a column of the table, the primary key is shown, and every key is exactly it."""
+        """Every named column is a column of the table, the primary key is shown, and every key is exactly it; no
+        column of the table lacks an equality (the table is refused, see the module text)."""
         catalog = catalogs[0]
+        if catalog.incomparable:
+            raise WriteError("studio.data_editor_column_incomparable")
         known = set(catalog.columns)
         primary = set(catalog.primary_key)
         for step in content.steps:
@@ -283,11 +292,16 @@ def _bindable(reflected: sqlalchemy.Table, engine: str) -> sqlalchemy.Table:
     columns as reflected (so ``tabrion.rowedit`` compares them under ``BINARY``) and leaves every other column
     untyped, so a value is bound as the driver reads it back (the viewer's value) and the column's affinity applies,
     never a SQLAlchemy conversion (a ``DATE`` column holds text, a ``NUMERIC`` one numbers). Every column is
-    nullable here: the database checks ``NOT NULL`` and defaults; SQLAlchemy only builds the statement."""
+    nullable here: the database checks ``NOT NULL`` and defaults; SQLAlchemy only builds the statement.
+
+    A text column's own collation is dropped from the bind type (review L-1 of PR #119): PostgreSQL's driver renders a
+    bound value's type, collation included, as a cast, and an explicit ``COLLATE "x"`` on the value next to
+    ``tabrion.rowedit``'s ``COLLATE "C"`` on the column is an error. The value takes the column's collation when it
+    is stored; the comparison stays binary."""
     columns = [
         sqlalchemy.Column(
             column.name,
-            column.type if engine != "sqlite" or _text(column.type) else sqlalchemy.types.NullType(),
+            _bind_type(column.type, engine),
             key=column.key,
             primary_key=column.primary_key,
             nullable=True,
@@ -298,6 +312,28 @@ def _bindable(reflected: sqlalchemy.Table, engine: str) -> sqlalchemy.Table:
     return sqlalchemy.Table(
         reflected.name, sqlalchemy.MetaData(), *columns, schema=reflected.schema, implicit_returning=False
     )
+
+
+def _bind_type(kind: sqlalchemy.types.TypeEngine[Any], engine: str) -> sqlalchemy.types.TypeEngine[Any]:
+    # A PostgreSQL domain binds as its base type: the column takes it (the domain's checks apply when it is stored),
+    # and SQLAlchemy's DOMAIN type has no comparison of its own.
+    while isinstance(kind, postgresql.DOMAIN):
+        kind = kind.data_type
+    # An array of enums or domains comes from the viewer as PostgreSQL's array text ('{ok,bad}'): bound untyped, the
+    # database reads it as the column's type, in the comparison and in the assignment alike.
+    if isinstance(kind, sqlalchemy.ARRAY) and isinstance(
+        kind.item_type, (postgresql.DOMAIN, sqlalchemy.Enum, sqlalchemy.types.NullType)
+    ):
+        return sqlalchemy.types.NullType()
+    if not _text(kind):
+        return kind if engine != "sqlite" else sqlalchemy.types.NullType()
+    if getattr(kind, "collation", None) is None:
+        return kind
+    plain = copy.copy(kind)
+    plain.collation = None  # type: ignore[attr-defined]
+    if hasattr(plain, "collation_schema"):
+        plain.collation_schema = None
+    return plain
 
 
 def _text(kind: sqlalchemy.types.TypeEngine[Any]) -> bool:
@@ -385,6 +421,8 @@ def table_info(unlocks: Unlocks, session: str, connection_id: object, schema: ob
     catalog = catalogs[0]
     if not catalog.primary_key:
         raise WriteError("studio.plan_target_no_primary_key")
+    if catalog.incomparable:
+        raise WriteError("studio.data_editor_column_incomparable")
     return {
         "connection_id": unlock.connection_id,
         "schema": target.schema,

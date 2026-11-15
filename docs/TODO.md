@@ -60,8 +60,10 @@
 > deleted row is one plan step run with tabrion's `rowedit` statements and `execute_checked(expect_rowcount=1)` in
 > one audited transaction; every shown column is the row's `old` value (L-1 of tabrion #78), so a conflict or any
 > other row count rolls the whole changeset back (`studio.data_editor_conflict`, `studio.data_editor_rowcount`, no
-> values echoed). Tables without a primary key, views, partitioned tables and PROD are refused. The page: an "Edit
-> data" tab on a table, shown only when `GET /api/write/areas` answers the flag on (en, de). Pins tabrion
+> values echoed). Tables without a primary key, views, partitioned tables and PROD are refused, and so are
+> PostgreSQL tables with a column without a proper equality (no default btree or hash operator class: `xml`,
+> `point`, `box`, composites, `json[]`; review I-1 of PR #119). Review of PR #119 accepted; L-1 (explicit collations),
+> I-1 and I-2 fixed. The page: an "Edit data" tab on a table, shown only when `GET /api/write/areas` answers the flag on (en, de). Pins tabrion
 > 0.3.0.dev0 (`a864d10`, draft tabrion #80) for now: the pin moves to the merge commit once tabrion #80 merges.
 > Follow-ups: STU-XDE-1 (type editors, validation, paging), STU-XDE-2.
 

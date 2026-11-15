@@ -202,7 +202,10 @@ the server answers `405` and the write code is not even loaded.
       or deleted in the meantime (`studio.data_editor_conflict`), or a statement that changed not exactly one row
       (`studio.data_editor_rowcount`), rolls back the whole changeset, and the message names no value. Rows that
       triggers or rules change elsewhere are not counted; the preview names those triggers and rules;
-    - tables without a primary key, views, partitioned tables and `PROD` are refused;
+    - tables without a primary key, views, partitioned tables and `PROD` are refused, and so is a PostgreSQL table
+      with a column whose type cannot be compared (`xml`, `point`, `box`, a composite type, `json[]`;
+      `studio.data_editor_column_incomparable`): its value could not be checked, so a change made by someone else
+      could go unnoticed. Text is compared exactly, whatever collation the column has;
     - the changes live in the page's memory only: never in the query history, the drafts, browser storage, the logs
       or the audit log (it records the plan hash and row counts).
 

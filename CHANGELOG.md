@@ -14,7 +14,10 @@ All notable changes to this project are documented here. The format follows
   with `execute_checked(expect_rowcount=1)`. Every shown column is passed as the row's old value, so a row changed
   elsewhere (`400 studio.data_editor_conflict`) or another row count (`400 studio.data_editor_rowcount`) rolls the
   whole changeset back without echoing a value. Tables without a primary key (`studio.plan_target_no_primary_key`),
-  views, partitioned tables and PROD are refused. `POST /api/write/data-editor/table` describes the table; it answers
+  views, partitioned tables and PROD are refused, and so is a PostgreSQL table with a column whose type has no
+  proper equality (`xml`, `point`, `box`, a composite type, `json[]`: `400 studio.data_editor_column_incomparable`),
+  because such a value cannot be compared as an old value. Text columns with their own collation are compared
+  binary (review L-1 of PR #119). `POST /api/write/data-editor/table` describes the table; it answers
   405 and the executor is not loaded while the flag is off. The page shows an "Edit data" tab on a table only when
   the server answers that the flag is on (English and German); the changes stay in the page's memory and never reach
   the query history, the drafts or browser storage (N-3).

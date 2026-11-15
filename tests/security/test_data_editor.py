@@ -221,7 +221,8 @@ def _modules(tmp_path: Path, areas: str) -> list[str]:
         f"r = env.send('POST', {TABLE_ROUTE!r}, {{'connection_id': c, 'table': 'parts'}})\n"
         "p = env.send('POST', '/api/write/plans', {'connection_id': c, 'executor': 'data_editor.changeset',\n"
         "             'request': {'table': 'parts', 'columns': ['id'], 'changes': [{'op': 'insert', 'values': {}}]}})\n"
-        "print(r.status_code, p.status_code)\n"
+        "code = lambda a: a.json().get('code') if a.content else None\n"
+        "print(r.status_code, code(r), p.status_code, code(p))\n"
         "env.close()\n"
         "print(sorted(m for m in sys.modules if m.startswith(('tabrion_studio.write', 'tabrion.rowedit'))))\n"
     )
@@ -241,9 +242,9 @@ def test_flag_off_nothing_of_the_data_editor_is_imported(tmp_path: Path) -> None
     """TX-02: with every flag off neither the write package nor tabrion.rowedit is loaded; with another area's flag
     on the write package is, but not the Data Editor nor tabrion.rowedit."""
     off = _modules(tmp_path / "off", "WriteAreas()")
-    assert off == ["405 405"]
+    assert off == ["405 studio.method_not_allowed 405 studio.method_not_allowed"]
     other = _modules(tmp_path / "other", "WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))")
-    assert other[0] == "405 400"
+    assert other[0] == "405 studio.method_not_allowed 400 studio.plan_executor_unknown"
     assert "tabrion_studio.write.plan" in other
     assert "tabrion_studio.write.data_editor" not in other and "tabrion.rowedit" not in other
 
@@ -251,8 +252,9 @@ def test_flag_off_nothing_of_the_data_editor_is_imported(tmp_path: Path) -> None
 def test_flag_on_the_data_editor_is_loaded(tmp_path: Path) -> None:
     """The counterpart (the tests above are not vacuous): the Data Editor flag loads and registers it."""
     loaded = _modules(tmp_path, "WriteAreas(frozenset({Area.DATA_EDITOR}))")
-    # Not unlocked: the table route and the plan answer "locked" (403, the write mode, W-9), not 405.
-    assert loaded[0] == "405 405"
+    # Not unlocked: the table route and the plan answer "locked" (405 studio.write_locked, W-9), not the route's
+    # absence (405 studio.method_not_allowed) of the flag-off case above.
+    assert loaded[0] == "405 studio.write_locked 405 studio.write_locked"
     assert "tabrion_studio.write.data_editor" in loaded and "tabrion.rowedit" in loaded
 
 

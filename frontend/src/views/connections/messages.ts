@@ -108,6 +108,7 @@ const PROBLEMS = new Set([
   'data_editor_conflict',
   'data_editor_rowcount',
   'data_editor_value_invalid',
+  'data_editor_column_incomparable',
   // The I-109 j confirmation and require_auth (STU-XW-4).
   'secret_unconfirmed',
   'secret_confirmation_unknown',

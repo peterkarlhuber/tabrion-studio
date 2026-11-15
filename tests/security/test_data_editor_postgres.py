@@ -250,3 +250,119 @@ def test_the_table_route_on_postgres(pg: Env) -> None:
     doc = info.json()
     assert doc["columns"] == COLUMNS and doc["primary_key"] == ["id"]
     assert doc["rules"] == [{"name": "parts_skip", "event": "insert", "instead": True}]
+
+
+def _table(pg: Env, name: str, definition: str) -> None:
+    """A table of the test's schema, readable by the read role and writable by the write role."""
+    url = sqlalchemy.make_url(PG_URL or "")
+    pg.sql(f"CREATE TABLE {{p}}.{name} ({definition})")
+    pg.sql(f"GRANT SELECT, INSERT, UPDATE, DELETE ON {{p}}.{name} TO {{p}}_w")
+    pg.sql(f"GRANT SELECT ON {{p}}.{name} TO {url.username}")
+
+
+def _run_on(pg: Env, table: str, columns: list[str], changes: list[dict[str, Any]]) -> Any:
+    preview = pg.plan(changes, table=table, columns=columns)
+    assert preview.status_code == 201, preview.text
+    doc = preview.json()
+    confirm = {"connection_id": pg.connection_id, "plan_hash": doc["plan_hash"], "typed": doc["confirm_text"]}
+    assert pg.env.send("POST", "/api/write/plans/confirm", confirm).status_code == 200
+    return pg.env.send(
+        "POST", "/api/write/plans/execute", {"connection_id": pg.connection_id, "plan_hash": doc["plan_hash"]}
+    )
+
+
+def test_text_columns_with_their_own_collation_are_edited_and_compared_exactly(pg: Env) -> None:
+    """Review L-1 of PR #119: an explicit collation (ICU, POSIX, a nondeterministic ICU one) on a shown text column
+    no longer clashes with ``tabrion.rowedit``'s ``COLLATE "C"``; the comparison stays binary, so a case-only change
+    under the case-insensitive collation is still a conflict."""
+    pg.sql("CREATE COLLATION {p}.ci (provider = icu, locale = 'und-u-ks-level2', deterministic = false)")
+    _table(
+        pg,
+        "coll",
+        'id integer PRIMARY KEY, a text COLLATE "de-x-icu", b varchar(20) COLLATE "POSIX", c text COLLATE {p}.ci',
+    )
+    pg.sql(
+        "INSERT INTO {p}.coll VALUES (1, 'Äpfel', 'x', 'bolt'), (2, 'Birne', 'y', 'nut'), (3, 'Zwetschge', 'z', 'pin')"
+    )
+    columns = ["id", "a", "b", "c"]
+    one = {"id": 1, "a": "Äpfel", "b": "x", "c": "bolt"}
+    two = {"id": 2, "a": "Birne", "b": "y", "c": "nut"}
+    done = _run_on(
+        pg,
+        "coll",
+        columns,
+        [
+            {"op": "update", "key": {"id": 1}, "old": one, "new": {"a": "Äpfelchen", "b": "xx", "c": "Bolt"}},
+            {"op": "delete", "key": {"id": 2}, "old": two},
+        ],
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["rows"] == {"updated": 1, "deleted": 1}
+    assert pg.sql("SELECT id, a, b, c FROM {p}.coll ORDER BY id") == [
+        (1, "Äpfelchen", "xx", "Bolt"),
+        (3, "Zwetschge", "z", "pin"),
+    ]
+    # Someone changes only the case of c, which the column's collation calls equal: still a conflict.
+    pg.sql("UPDATE {p}.coll SET c = 'PIN' WHERE id = 3")
+    three = {"id": 3, "a": "Zwetschge", "b": "z", "c": "pin"}
+    conflict = _run_on(pg, "coll", columns, [{"op": "update", "key": {"id": 3}, "old": three, "new": {"b": "zz"}}])
+    assert (conflict.status_code, conflict.json()["code"]) == (400, "studio.data_editor_conflict"), conflict.text
+    assert pg.sql("SELECT b, c FROM {p}.coll WHERE id = 3") == [("z", "PIN")]
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        "x xml",
+        "x point",
+        "x box",  # its "=" compares areas: not an equality
+        "x json[]",
+        "x {p}.xml_domain",
+        "x {p}.pair",
+    ],
+)
+def test_a_table_with_a_column_without_equality_is_refused(pg: Env, definition: str) -> None:
+    """Review I-1 of PR #119: such a value cannot be part of the old values, so the table is refused up front
+    (400, W-9), at the table route and at the plan, before anything runs."""
+    pg.sql("CREATE DOMAIN {p}.xml_domain AS xml")
+    pg.sql("CREATE TYPE {p}.pair AS (a integer, b integer)")
+    _table(pg, "odd", f"id integer PRIMARY KEY, {definition.format(p='{p}')}")
+    info = pg.env.send(
+        "POST", "/api/write/data-editor/table", {"connection_id": pg.connection_id, "schema": pg.prefix, "table": "odd"}
+    )
+    assert (info.status_code, info.json()["code"]) == (400, "studio.data_editor_column_incomparable"), info.text
+    refused = pg.plan(
+        [{"op": "delete", "key": {"id": 1}, "old": {"id": 1, "x": None}}], table="odd", columns=["id", "x"]
+    )
+    assert (refused.status_code, refused.json()["code"]) == (400, "studio.data_editor_column_incomparable")
+
+
+def test_columns_with_an_equality_are_editable(pg: Env) -> None:
+    """json (compared as jsonb), an enum array, a domain over text, a range, varchar and bpchar (through text) and
+    inet keep the table editable; a delete with every column as old runs, and a change of the enum array meanwhile is
+    a conflict."""
+    pg.sql("CREATE TYPE {p}.mood AS ENUM ('ok', 'bad')")
+    pg.sql("CREATE DOMAIN {p}.label AS text")
+    _table(
+        pg,
+        "fine",
+        "id integer PRIMARY KEY, j json, moods {p}.mood[], l {p}.label, r int4range, v varchar(5), c char(3), i inet",
+    )
+    pg.sql("INSERT INTO {p}.fine VALUES (1, '{{\"a\": 1}}', '{{ok,bad}}', 'L', '[1,5)', 'v', 'c', '10.0.0.1')")
+    info = pg.env.send(
+        "POST",
+        "/api/write/data-editor/table",
+        {"connection_id": pg.connection_id, "schema": pg.prefix, "table": "fine"},
+    )
+    assert info.status_code == 200, info.text
+    query = urlencode({"schema": pg.prefix, "name": "fine", "limit": 10})
+    page = pg.env.send("GET", f"/api/connections/{pg.connection_id}/rows?{query}").json()
+    old = dict(zip([column["name"] for column in page["columns"]], page["rows"][0], strict=True))
+    # The enum array is compared too: changed meanwhile, the delete is a conflict.
+    pg.sql("UPDATE {p}.fine SET moods = '{{bad,ok}}'")
+    stale = _run_on(pg, "fine", list(old), [{"op": "delete", "key": {"id": 1}, "old": old}])
+    assert (stale.status_code, stale.json()["code"]) == (400, "studio.data_editor_conflict"), stale.text
+    pg.sql("UPDATE {p}.fine SET moods = '{{ok,bad}}'")
+    done = _run_on(pg, "fine", list(old), [{"op": "delete", "key": {"id": 1}, "old": old}])
+    assert done.status_code == 200, done.text
+    assert pg.sql("SELECT count(*) FROM {p}.fine") == [(0,)]

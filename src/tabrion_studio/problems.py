@@ -639,6 +639,14 @@ CATALOG: dict[str, Entry] = {
         "A change affected another number of rows than one. Nothing was saved: all changes were rolled back.",
         "Reload the rows and check the table's rules and triggers.",
     ),
+    "studio.data_editor_column_incomparable": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Table not editable",
+        "A column of this table has a type that cannot be compared (for example xml, point or a composite type), so a "
+        "change made by someone else could not be detected. The Data Editor does not edit this table.",
+        "Edit this table with another tool, or leave such columns out of a table you edit here.",
+    ),
     "studio.data_editor_value_invalid": Entry(
         400,
         ProblemKind.REQUEST,
