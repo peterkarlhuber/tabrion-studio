@@ -1024,6 +1024,10 @@ All notable changes to this project are documented here. The format follows
   unlock before too), and the Data Editor's "no write profile" text points to Settings, where the write and admin
   profiles are (it named Connections).
 
+- CI: every leg of `backend test` (Python 3.11 to 3.14 on Linux, macOS, Windows) now runs in the same two shards,
+  `backend test (<leg>, security)` and `backend test (<leg>, other)`: the Linux legs took 17 to 19 minutes, and the
+  master push run of `3af4b79` was cancelled at the 20-minute timeout in `backend test (Python 3.12)` after 98 % of its
+  tests had passed. The timeout is unchanged; `.github/ci-manifest.json` lists all twelve shards (TD-073).
 - CI: the Windows leg of `backend test` runs in two shards, `backend test (windows-latest, security)` (`tests/security`)
   and `backend test (windows-latest, other)` (the rest): the whole suite took 18 to 20 minutes against the job's
   20-minute timeout and was cancelled after all tests had passed. The timeout is unchanged; `.github/ci-manifest.json`

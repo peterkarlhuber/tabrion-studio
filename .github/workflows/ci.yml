@@ -73,12 +73,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { label: Python 3.11, os: ubuntu-latest, python: "3.11" }
-          - { label: Python 3.12, os: ubuntu-latest, python: "3.12" }
-          - { label: Python 3.13, os: ubuntu-latest, python: "3.13" }
-          - { label: Python 3.14, os: ubuntu-latest, python: "3.14" }
-          - { label: macos-latest, os: macos-latest, python: "3.13" }
-          # The Windows leg runs in two shards: the whole suite took 18 to 20 minutes there (timeout 20).
+          # Every leg runs in two shards, tests/security and the rest: the whole suite took 17 to 20 minutes on
+          # Linux and Windows (timeout 20) and was cancelled after its tests had passed.
+          - { label: "Python 3.11, security", os: ubuntu-latest, python: "3.11", tests: tests/security }
+          - { label: "Python 3.11, other", os: ubuntu-latest, python: "3.11", tests: "tests --ignore=tests/security" }
+          - { label: "Python 3.12, security", os: ubuntu-latest, python: "3.12", tests: tests/security }
+          - { label: "Python 3.12, other", os: ubuntu-latest, python: "3.12", tests: "tests --ignore=tests/security" }
+          - { label: "Python 3.13, security", os: ubuntu-latest, python: "3.13", tests: tests/security }
+          - { label: "Python 3.13, other", os: ubuntu-latest, python: "3.13", tests: "tests --ignore=tests/security" }
+          - { label: "Python 3.14, security", os: ubuntu-latest, python: "3.14", tests: tests/security }
+          - { label: "Python 3.14, other", os: ubuntu-latest, python: "3.14", tests: "tests --ignore=tests/security" }
+          - { label: "macos-latest, security", os: macos-latest, python: "3.13", tests: tests/security }
+          - { label: "macos-latest, other", os: macos-latest, python: "3.13", tests: "tests --ignore=tests/security" }
           - { label: "windows-latest, security", os: windows-latest, python: "3.13", tests: tests/security }
           - { label: "windows-latest, other", os: windows-latest, python: "3.13", tests: "tests --ignore=tests/security" }
     steps:
