@@ -3,8 +3,9 @@
 * an additive plan and a plan with a ``locking`` step run through ``tabrion.plan.execute_plan`` with the recorded
   hash, the confirmed source fingerprint, ``dev`` from the stored profile, the server's version and
   ``concurrent_indexes=False`` (GS3-10, GS3-13);
-* a plan with a ``destructive``, ``rebuild`` or ``data_changing`` step is refused (``backup_unavailable``): the
-  verified ``pg_dump`` runner of STU-ADR-0008 does not exist yet, so there is no backup and no such run (fail closed);
+* a plan with a ``destructive``, ``rebuild`` or ``data_changing`` step is refused (``backup_unavailable``) while
+  ``database-tools.toml`` names no ``pg_dump`` and ``pg_restore``: no backup, no such run (fail closed; with the tools
+  the backup is made first, ``test_schema_designer_backup_postgres.py``, STU-CR-5 follow-up);
 * a lock the run cannot get within ``lock_timeout`` stops it and changes nothing (GS3-18);
 * decision 1A again at the start of the run, on the session that runs it: a role made superuser after the unlock is
   refused and the unlock ends (GS3-28);
@@ -242,8 +243,9 @@ def test_a_locking_step_runs_after_its_acknowledgement(pg: Env) -> None:
     ],
     ids=["drop_column", "drop_table", "alter_type"],
 )
-def test_a_plan_that_needs_a_backup_never_runs_on_postgresql(pg: Env, edit: dict[str, Any]) -> None:
-    """STU-ADR-0008: no verified ``pg_dump`` runner, no backup, no destructive, rebuild or data-changing run."""
+def test_a_plan_that_needs_a_backup_never_runs_without_the_tools(pg: Env, edit: dict[str, Any]) -> None:
+    """STU-ADR-0008 section 3 (the STU-CR-5 follow-up): no tools in ``database-tools.toml``, no backup, no
+    destructive, rebuild or data-changing run."""
     pg.start()
     pg.edit(edit)
     plan = pg.preview()

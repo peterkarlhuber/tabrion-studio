@@ -36,9 +36,10 @@ preview, never run; PROD is never unlocked, E-X7); tabrion's ``migration_markers
 ``alembic.ini`` (any such file: stricter than ``script_location``) and the database no Levuvo version table
 (Nodestro, Axentra, ``<prefix>orkexa_schema``); the plan has no non-transactional step; the plan has a step; the
 audit record can name every table (at most 64, the audit log's cap); and on PostgreSQL the plan has no
-``destructive``, ``rebuild`` or ``data_changing`` step, because its backup through the verified ``pg_dump`` runner
-of STU-ADR-0008 section 3 (:mod:`tabrion_studio.write.pgtools`, STU-XDM-2) is not wired in here yet (fail closed,
-``backup_unavailable``; an open point).
+``destructive``, ``rebuild`` or ``data_changing`` step unless both PostgreSQL tools are configured
+(``database-tools.toml``, :func:`backup_possible`) on a POSIX system: its backup goes through the verified
+``pg_dump`` runner of STU-ADR-0008 section 3 (:mod:`tabrion_studio.write.pgtools`, STU-XDM-2; the STU-CR-5
+follow-up), and without the tools there is no backup and no such run (fail closed, ``backup_unavailable``).
 
 **Decision 1A at each run (GS3-28).** On PostgreSQL, the privilege check of the unlock runs again on the very session
 that runs the plan, after it is checked out and before ``BEGIN``; a role that gained superuser, BYPASSRLS, REPLICATION
@@ -63,6 +64,22 @@ environment variable chose): the folders 0700, the file 0600 with a name Studio 
 ``dev`` profile only, the user may leave it out by typing the database file's name; the run's ``run.start`` record
 then says ``backup: opted_out``. Studio never deletes a backup (retention is the user's: an open point).
 
+**PostgreSQL backup (section 7, the STU-CR-5 follow-up, :func:`backup_postgres`).** Before a real run of such a plan on
+DEV or TEST (PROD is never unlocked; the opt-out is SQLite's only), Studio makes a ``pg_dump -Fc`` archive of the
+unlocked database with the runner of STU-XDM-2 and every check of it: the tools only from ``database-tools.toml``, each
+checked again now (path, owner, mode, folders, ``--version``, a major of at least 16 and at least the server's); the
+write profile's credentials read again with every check of an unlock and only while the profiles are the ones the unlock
+checked (:meth:`.Unlocks.unlock_credentials`); the password only in the run's temporary passfile; the environment built
+from nothing; the archive published under its final name only after exit status 0 and a readable table of contents
+(``pg_restore --list``). It goes to ``backups/schema-designer/<time>-<hex>.dump`` with its metadata next to it
+(:func:`tabrion_studio.write.backup_store.metadata`, origin ``schema_designer``: the tool, its SHA-256, the archive's
+size and SHA-256, the scope notice that a ``pg_dump`` archive is not a complete backup). The run goes on only when all
+of that succeeded; anything else refuses it before ``execute_plan``: ``studio.backup_tool_unavailable`` (no tools, an
+unsafe configuration or tool, Windows: ``tool.platform``), ``studio.backup_tool_failed`` (the tool failed, for example a
+role that may not read every table, or ran out of time), ``studio.write_target_changed``,
+``studio.schema_backup_failed`` (the folder or the metadata). The dump is of the whole database as the write role sees
+it, taken before the run's locks: a row written by someone else between the dump and the run is not in it.
+
 **Never a value** (section 11, TX-27). The audit records carry the plan hash (its hex part), the qualified table
 names, the risk classes and the step count; the log carries event names and problem codes. No statement, default,
 check text or value reaches a log, the audit log, the query history or a diagnostics report; the backup's path is in
@@ -81,6 +98,7 @@ from pathlib import Path
 import re
 import secrets
 import sqlite3
+import sys
 from typing import Any, cast
 
 from tabrion.errors import (
@@ -95,16 +113,19 @@ from tabrion.plan import RiskClass, execute_plan, migration_markers
 from tabrion.schema import SchemaSnapshot, TableShape
 from tabrion.sqlite import backup
 
+from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.paths import ensure_private_dir
 from tabrion_studio.services.readonly import SQLITE_FUNCTIONS
 from tabrion_studio.write.audit import AuditError
+from tabrion_studio.write.backup_store import BackupStore, metadata
 from tabrion_studio.write.connection import (
     WriteConnection,
     WriteError,
     refusing_findings_now,
     write_authorizer,
 )
+from tabrion_studio.write.pgtools import Connection, Runner, load_tools, verify_tool
 from tabrion_studio.write.schema_designer.create import DriverFailure
 from tabrion_studio.write.schema_designer.draft import refusal
 from tabrion_studio.write.unlock import Unlock, Unlocks
@@ -139,6 +160,18 @@ ACTION_RUN = "schema_designer.run"
 ACTION_DRY_RUN = "schema_designer.dry_run"
 _HASH_PREFIX = "sha256:"
 _HEX = re.compile(r"[0-9a-f]{64}")
+_POSIX = sys.platform != "win32"
+#: The problems of the PostgreSQL backup that keep their own code (the rest is ``studio.schema_backup_failed``).
+_BACKUP_CODES = frozenset(
+    {
+        "studio.backup_tool_unavailable",
+        "studio.backup_tool_failed",
+        "studio.write_target_changed",
+        "studio.write_prod_locked",
+        "studio.write_coupling_invalid",
+        "studio.schema_backup_failed",
+    }
+)
 
 
 # --- what the preview keeps --------------------------------------------------------------------------------------
@@ -286,9 +319,21 @@ def management(connection: WriteConnection, project: Path | None) -> list[str]:
     return found
 
 
-def blocked(unlock: Unlock, change: Any, project: Path | None) -> tuple[str, ...]:
+def backup_possible(write_state: Path | None) -> bool:
+    """Whether a PostgreSQL backup can be tried at all (the STU-CR-5 follow-up): a POSIX system, the folder of
+    ``write-areas.toml`` and both tools in its ``database-tools.toml`` (read with that file's checks). Every check of
+    the tools runs again at the backup itself (:func:`backup_postgres`); this only keeps a plan that cannot get one from
+    being offered."""
+    if write_state is None or not _POSIX:
+        return False
+    tools = load_tools(write_state)
+    return tools.pg_dump is not None and tools.pg_restore is not None
+
+
+def blocked(unlock: Unlock, change: Any, project: Path | None, write_state: Path | None = None) -> tuple[str, ...]:
     """Why this plan is not run directly (section 5); empty when it may be. Checked at the preview and again right
-    before the run."""
+    before the run. ``write_state`` is the folder of ``write-areas.toml`` (the tools file); None: no PostgreSQL
+    backup, so no such plan runs."""
     reasons: list[str] = []
     if not change.steps:
         reasons.append("nothing_to_run")
@@ -299,8 +344,12 @@ def blocked(unlock: Unlock, change: Any, project: Path | None) -> tuple[str, ...
         reasons.append("non_transactional")
     if len({step.target for step in change.steps}) > MAX_RUN_TABLES:
         reasons.append("too_many_tables")
-    if unlock.connection.engine == "postgresql" and set(change.risks) & BACKUP_CLASSES:
-        # STU-ADR-0008 section 3: the verified pg_dump runner is not wired in here yet; no backup, no such run.
+    if (
+        unlock.connection.engine == "postgresql"
+        and set(change.risks) & BACKUP_CLASSES
+        and not backup_possible(write_state)
+    ):
+        # STU-ADR-0008 section 3 (STU-CR-5 follow-up): no configured pg_dump and pg_restore, no backup, no such run.
         reasons.append("backup_unavailable")
     return tuple(reasons)
 
@@ -601,6 +650,76 @@ def backup_sqlite(
     return BackupMade(path=made.path, size=made.bytes)
 
 
+def _pg_connection(write: Any, read: Any, password: str | None) -> Connection:
+    """The tool's connection: the read profile's server, database and ``sslmode``, the write profile's role and
+    ``requirepeer`` (as the unlock's own connection), the password for the passfile only."""
+    if read.database is None or write.user is None:
+        raise WriteError("studio.write_coupling_invalid")
+    return Connection(
+        host=read.host,
+        port=read.port,
+        dbname=read.database,
+        user=write.user,
+        sslmode=read.sslmode,
+        password=password,
+        requirepeer=write.requirepeer,
+    )
+
+
+def backup_postgres(
+    unlocks: Unlocks, unlock: Unlock, write_state: Path | None, clock: Callable[[], datetime.datetime]
+) -> BackupMade:
+    """The verified ``pg_dump`` archive of the unlocked PostgreSQL database before a run (see the module text). The
+    run goes on only when this returns; every failure raises :class:`WriteError` and nothing that depends on the
+    backup happens. Never a path, a name or server text in a log."""
+    store = BackupStore(write_state, area=BACKUP_FOLDER[1], clock=clock)
+    runner = Runner(write_state)
+    try:
+        server = unlock.connection.engine_version()
+        tools = runner.tools()
+        with runner.private_folder() as (scratch, _passfile):
+            pg_dump = verify_tool("pg_dump", tools, scratch, at_least=server[0])
+            pg_restore = verify_tool("pg_restore", tools, scratch, at_least=server[0])
+        write, read, password = unlocks.unlock_credentials(unlock)
+        target = _pg_connection(write, read, password)
+        folder = store.folder()
+        name = store.new_name("postgresql")
+        archive = runner.dump(pg_dump, pg_restore, target, folder / name)
+        meta = metadata(
+            name=name,
+            created=store.now(),
+            engine="postgresql",
+            origin="schema_designer",
+            size=archive.size,
+            sha256=archive.sha256,
+            source={"database": target.dbname, "profile": unlock.read_name, "environment": unlock.environment},
+            server_version=".".join(str(part) for part in server),
+            system_identifier=None,
+            tool=pg_dump.metadata(),
+            fingerprint=None,
+            extensions=archive.extensions,
+        )
+        try:
+            store.write_metadata(name, meta)
+        except WriteError:
+            store.discard(name)  # a backup without its metadata is never kept
+            raise
+    except WriteError as exc:
+        code = exc.code if exc.code in _BACKUP_CODES else "studio.schema_backup_failed"
+        logger.warning(
+            "schema change not run: the backup failed", extra={"event": "studio.schema_backup_failed", "code": code}
+        )
+        if code == exc.code:
+            raise
+        raise WriteError(code) from None
+    except SecretError:
+        raise  # the profile's secret: its own problem, as at the unlock
+    except Exception:
+        logger.warning("schema change not run: the backup failed", extra={"event": "studio.schema_backup_failed"})
+        raise WriteError("studio.schema_backup_failed") from None
+    return BackupMade(path=archive.path, size=archive.size)
+
+
 def _utc_now() -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC)
 
@@ -725,7 +844,9 @@ def run(
     outcome: RunOutcome | None = None
     try:
         made: BackupMade | None = None
-        if backup_state == "made":
+        if backup_state == "made" and unlock.connection.engine == "postgresql":
+            made = backup_postgres(unlocks, unlock, write_state, clock)
+        elif backup_state == "made":
             made = backup_sqlite(unlock.connection, backup_folder(write_state), clock)
         try:
             found = execute_plan(

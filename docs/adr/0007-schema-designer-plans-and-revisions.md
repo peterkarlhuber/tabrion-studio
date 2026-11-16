@@ -155,6 +155,20 @@ environment, database, table).
   under the rules of [STU-ADR-0008](0008-database-manager-backup-restore-roles.md) section 3 (the same runner,
   whichever work package builds it first). A failed backup stops the run.
 - Leaving the backup out is possible only on a `dev` profile, with a typed confirmation, and is audited.
+- **PostgreSQL (STU-CR-5 follow-up).** STU-CR-5 refused such a PostgreSQL plan (`backup_unavailable`) because the runner did not
+  exist yet. The STU-CR-5 follow-up wires in the runner of STU-XDM-2 (`tabrion_studio.write.pgtools`, imported under the
+  `schema_designer` flag; review L-2 a of STU-XDM-1): before a real run on DEV or TEST, after `run.start` and before
+  `execute_plan`, Studio verifies `pg_dump` and `pg_restore` again (only the paths of `database-tools.toml`, every
+  check of STU-ADR-0008 section 3, a major of at least 16 and at least the server's), reads the write profile's
+  credentials with every check of an unlock and only while the profiles are the ones the unlock checked, and makes a
+  `pg_dump -Fc` archive of the unlocked database into `backups/schema-designer/<time>-<hex>.dump` (0600, with its
+  metadata, origin `schema_designer`), kept only after exit status 0 and a readable `pg_restore --list`. The run
+  continues only when that succeeded; otherwise it is refused before any statement (`studio.backup_tool_unavailable`,
+  `studio.backup_tool_failed`, `studio.write_target_changed` or `studio.schema_backup_failed`) and `run.result`
+  names the code. Without both tools configured, without the folder of `write-areas.toml` and on Windows such a plan
+  is still refused at the preview and again before the run (`backup_unavailable`). There is no opt-out on
+  PostgreSQL. A dry run makes no backup. The plan binding, the confirmation, the drift check after the locks and the
+  limits are unchanged.
 
 ### 8. Preview warnings Tabrion asks for (I-124 e, j)
 

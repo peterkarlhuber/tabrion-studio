@@ -22,7 +22,8 @@ The repository is public, so this page describes threats and measures, not how t
 - **Shared:** TX-01..TX-16 (flags, PROD lock, profiles, unlocking, CSRF, I-109 j and `require_auth`, plan binding,
   audit log, hostile database objects). The backup before a destructive Schema Designer run (STU-ADR-0007 section 7)
   uses the runner (`tabrion_studio.write.pgtools`, importable under the `schema_designer` flag too; review L-2 a) and
-  the rows TX-32..TX-36 of this page; GS4-04..GS4-07 and GS4-22 are then also G-S3 conditions.
+  the rows TX-32..TX-36 of this page; GS4-04..GS4-07 and GS4-22 are then also G-S3 conditions. The STU-CR-5 follow-up does so:
+  the Schema Designer's PostgreSQL backup runs through the same runner with the same checks.
 - **Out of scope:** creating a database (STU-CR-2, STU-CR-3, G-S3, TX-29); cluster-wide backup (`pg_dumpall`),
   replication, point-in-time recovery (non-goals of 1.3).
 

@@ -1399,9 +1399,11 @@ function RunForm({
           </label>
         ) : null}
         <p className={connectionStyles.hint} data-testid="schema-designer-run-backup">
-          {need.backup.required
-            ? t('schemaDesigner.run.backupMade')
-            : t('schemaDesigner.run.backupNotNeeded')}
+          {!need.backup.required
+            ? t('schemaDesigner.run.backupNotNeeded')
+            : need.backup.engine === 'postgresql'
+              ? t('schemaDesigner.run.backupMadePostgres')
+              : t('schemaDesigner.run.backupMade')}
         </p>
         {need.backup.required && need.backup.optOutAllowed && need.backup.optOutText !== null ? (
           <>

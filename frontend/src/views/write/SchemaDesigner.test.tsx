@@ -565,6 +565,33 @@ describe('SchemaDesignerSection (STU-CR-4)', () => {
     expect(screen.queryByTestId('schema-designer-run-skip')).toBeNull();
   });
 
+  it('says that a PostgreSQL run starts only after its pg_dump backup, with no opt-out', async () => {
+    const user = userEvent.setup();
+    setup({
+      preview: {
+        status: 200,
+        body: {
+          ...PREVIEW,
+          confirmation: {
+            ...PREVIEW.confirmation,
+            backup: {
+              required: true,
+              engine: 'postgresql',
+              opt_out_allowed: false,
+              opt_out_text: null,
+            },
+          },
+        },
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    await screen.findByTestId('schema-designer-run');
+    const backup = screen.getByTestId('schema-designer-run-backup');
+    expect(backup).toHaveTextContent('A pg_dump archive of the whole database is made');
+    expect(backup).toHaveTextContent('The run starts only when that backup succeeded.');
+    expect(screen.queryByTestId('schema-designer-run-skip')).toBeNull();
+  });
+
   it('shows a refused run and drops the used-up preview', async () => {
     const user = userEvent.setup();
     setup({

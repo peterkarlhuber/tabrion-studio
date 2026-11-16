@@ -2,9 +2,10 @@
 
 Tabrion has no ``pg_dump`` wrapper (tabrion ADR 0015 section 6): running the PostgreSQL tools is Studio's. This module
 runs them and nothing else; it knows no route, no area and no unlock, so the Database Manager (STU-XDM-2) and, in a
-later work package, the Schema Designer's backup before a destructive PostgreSQL run (STU-CR-5 open point 1; review
-L-2 of STU-XDM-1) use the same code. It is part of the write package and is imported only by code that an area's flag
-opened (``database_manager`` now; ``schema_designer`` later, where GS4-04..07 and GS4-22 are G-S3 conditions too).
+the Schema Designer's backup before a destructive PostgreSQL run (the STU-CR-5 follow-up, which closes its open point 1;
+review L-2 of STU-XDM-1) use the same code. It is part of the write package and is imported only by code that an
+area's flag opened (``database_manager`` and ``schema_designer``, where GS4-04..07 and GS4-22 are G-S3 conditions
+too).
 
 **Which tool (TX-32).** Only the absolute paths of :data:`TOOLS_FILE` (``database-tools.toml``) in the folder of
 ``write-areas.toml``, read with that file's checks (a regular file, no link, owned by the user, 0600, in a folder only
@@ -80,7 +81,7 @@ from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_
 from tabrion_studio.paths import UnsafePathError, check_private_dir, ensure_private_dir
 from tabrion_studio.services.connections import APPLICATION_NAME, RegistryError, pin_libpq_environment
 from tabrion_studio.write.connection import WriteError, require_auth
-from tabrion_studio.write.folders import ancestor_is_safe, folders_up
+from tabrion_studio.write.folders import RUN_FOLDER, ancestor_is_safe, folders_up, remove_stale_runs
 
 __all__ = [
     "MIN_TOOL_MAJOR",
@@ -104,8 +105,6 @@ logger = logging.getLogger("tabrion_studio.write")
 TOOLS_FILE = "database-tools.toml"
 TOOLS_VERSION = 1
 TOOL_NAMES = ("pg_dump", "pg_restore")
-#: The folder of a run's passfile and empty service folder, next to ``write-areas.toml``; emptied when the area starts.
-RUN_FOLDER = "tool-runs"
 #: libpq 16: ``require_auth``, which every write and admin connection sets (STU-XW-4).
 MIN_TOOL_MAJOR = 16
 #: Seconds: ``--version``, ``pg_restore --list`` and a whole dump or restore.
@@ -449,27 +448,9 @@ class Runner:
         return load_tools(self.state)
 
     def remove_stale(self) -> int:
-        """Remove what a crashed run left in :data:`RUN_FOLDER` (passfiles among it); the number removed."""
-        if self.state is None or not _POSIX:
-            return 0
-        folder = self.state / RUN_FOLDER
-        try:
-            check_private_dir(folder)
-            names = os.listdir(folder)
-        except (OSError, UnsafePathError):
-            return 0
-        removed = 0
-        for name in names:
-            path = folder / name
-            with contextlib.suppress(OSError):
-                if os.path.isdir(path) and not os.path.islink(path):
-                    shutil.rmtree(path)
-                else:
-                    os.unlink(path)
-                removed += 1
-        if removed:
-            logger.warning("left-over tool run files removed", extra={"event": "studio.backup_tool_leftovers"})
-        return removed
+        """Remove what a crashed run left in :data:`RUN_FOLDER` (passfiles among it); the number removed
+        (:func:`tabrion_studio.write.folders.remove_stale_runs`)."""
+        return remove_stale_runs(self.state)
 
     @contextlib.contextmanager
     def private_folder(self, connection: Connection | None = None) -> Iterator[tuple[Path, Path | None]]:

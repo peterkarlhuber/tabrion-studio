@@ -380,6 +380,16 @@ class Unlocks:
         _digest, password = self._secret(write, read)
         return write, read, password
 
+    def unlock_credentials(self, record: Unlock) -> tuple[WriteProfile, Profile, str | None]:
+        """:meth:`credentials` of the profiles ``record`` was unlocked with, and only while they are still the ones it
+        checked (their fingerprints): the Schema Designer's backup before a PostgreSQL run (the STU-CR-5 follow-up)
+        dumps the database the run changes, never one a profile edit pointed elsewhere since.
+        ``studio.write_target_changed`` otherwise."""
+        write, read, password = self.credentials(record.write_name)
+        if _write_fingerprint(write) != record.write_fingerprint or _read_fingerprint(read) != record.read_fingerprint:
+            raise WriteError("studio.write_target_changed")
+        return write, read, password
+
     def open_checked(self, write_name: str, database: str | None = None) -> WriteConnection:
         """A checked connection (``open_write_connection``) of the stored PostgreSQL write or admin profile
         ``write_name``, to its read profile's server and ``database`` (default: the read profile's own). Not an

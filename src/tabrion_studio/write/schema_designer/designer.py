@@ -183,7 +183,7 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
         except WriteError as exc:
             logger.info("schema plan refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
             raise
-        reasons = execute.blocked(unlock, change, drafts.project)
+        reasons = execute.blocked(unlock, change, drafts.project, drafts.write_state)
         kept = execute.make_plan(
             unlock,
             schema=draft.schema,
@@ -300,7 +300,7 @@ def run(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> 
         } <= {risk.value for risk in plan.confirmation.classes}:
             logger.warning("schema run refused: the plan changed", extra={"event": "studio.plan_drift"})
             raise WriteError("studio.plan_drift")
-        reasons = execute.blocked(unlock, change, drafts.project)
+        reasons = execute.blocked(unlock, change, drafts.project, drafts.write_state)
         if reasons:
             raise WriteError("studio.schema_run_not_allowed", [("plan.reason", f"plan.{reasons[0]}")])
         outcome = execute.run(unlocks, unlock, plan, dry_run=dry_run, write_state=drafts.write_state)

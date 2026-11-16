@@ -655,6 +655,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.2 | STU-CR-2/3 follow-up: review conditions of PR #128 (all before G-S3) | TABRION STU-CR-2, STU-CR-3 | G-S3 | Done (PR #130; its delta review accepted it with no new finding; info: the SQLite connection opens the file by path, and the second identity check detects a swap): [x] P128-01 (Low) the SQLite file is created with `os.open(..., dir_fd=<held folder>)`, `O_CREAT|O_EXCL|O_NOFOLLOW`, `0600`, and before and after the header the folder's device, inode and real path, the folders above it and the file's device and inode (by the path and in the held folder) are checked again; every folder above the target must belong to root or the user and not be writable by group or others unless sticky (`StrictModes`); [x] P128-02 (Low) Studio's own folders compared by device and inode for the folder and every folder above it, the log folder and the project's `.tabrion` folder added; [x] P128-03 (Info) and open point 7: Unicode `Zs` other than U+0020, `Zl` and `Zp` refused in the file name and in database and owner names (`create.control_character`); [x] open point 1 (a)-(c): the guides recommend a separate CREATEDB role for the Schema Designer on DEV/TEST and an up-to-date server, and the warning `admin.createdb` (never refusing) on a write unlock while the Data Editor's flag is on and on any unlock outside DEV/TEST; [x] open point 5: Windows is excluded, SQLite creation there answers `400 studio.schema_create_platform` (an ACL check of owner and DACL was not small enough for this follow-up; it can replace the exclusion later). Evidence GS3-21, GS3-28 in [security-review-prep](architecture/security-review-prep.md#g-s3-definition-schema-designer). Still open before G-S3: the STU-CR-1 review |
 | 1.2 | Designer for tables, columns, constraints, indexes: the server-side draft and its edit operations on `tabrion.schema` level 2 | TABRION STU-CR-4 | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr4`, draft PR; review pending): the Schema Designer section on the Connections page (table view), routes `POST`/`DELETE /api/write/schema-designer/draft`, `POST .../draft/view`, `.../draft/edits` and `.../draft/preview` (read-only plan preview; no route runs DDL), seven `studio.schema_*` problems, guide page [Schema Designer](guide/schema-designer.md). Evidence: GS3-09 (body-key refusal of a model or plan, static check that `from_json` is never called), GS3-13 (a spy on `tabrion.plan.plan` against the SQLite library version and PostgreSQL `server_version_num`), the kill-switch sweep and import check, in `tests/security/test_schema_designer_draft.py` and `test_schema_designer_draft_postgres.py`. Open: [STU-CR-4 open points](#stu-cr-4-open-points); STU-CR-1 review still open |
 | 1.2 | Plan preview, confirmation per risk class, re-plan and hash compare, direct execution through `execute_plan`, backup before destructive runs, the I-124 preview warnings | TABRION STU-CR-5 | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr5`, draft PR; review pending): the preview keeps the plan on the server (bound to session, connection, unlock, 5 minutes) with its warnings, why it is not run and what its confirmation needs; routes `POST /api/write/schema-designer/plan/confirm` and `.../plan/run` (one attempt per confirmation, a dry run only on request); Studio's re-plan and hash compare before `tabrion.plan.execute_plan` (environment from the stored profile, `server_version`, `concurrent_indexes=False`, `lock_timeout` 5 s); direct execution on DEV and TEST only, never with a migration marker, a Levuvo version table or an `alembic.ini`; decision 1A again on the run's PostgreSQL session; SQLite backup with `tabrion.sqlite.backup` into `backups/schema-designer` (0700/0600), opt-out on DEV only; PostgreSQL plans with a `destructive`, `rebuild` or `data_changing` step refused (no `pg_dump` runner); audit `run.start`/`run.result`; six `studio.schema_run_*`/`schema_backup_*` problems; the page's confirmation, Run and Dry run; guide section "Run a plan". Evidence: GS3-01, 03..05, 10..20, 27..29 in `tests/security/test_schema_designer_execution.py` and `test_schema_designer_execution_postgres.py`, `SchemaDesigner.test.tsx`, `e2e/schema-designer-backend.spec.ts`. Open: [STU-CR-5 open points](#stu-cr-5-open-points) |
+| 1.2 | STU-CR-5 follow-up: the verified `pg_dump` backup before a destructive PostgreSQL run (STU-CR-5 open point 1, review L-2 a of STU-XDM-1) | TABRION STU-CR-5 follow-up | G-S3 | Built, locked by G-S3 (branch `claude/project-thread-rdo6g3-stucr6pg`, draft PR; review pending): `schema_designer.execute.backup_postgres` runs the STU-XDM-2 runner (`tabrion_studio.write.pgtools`) before `execute_plan` on DEV and TEST; the run continues only when the archive was made and checked; no tools, an unsafe configuration or tool, a failing tool, a changed profile or Windows refuse it with nothing changed; archives and metadata in `backups/schema-designer`; stale tool run files removed when the area starts. Evidence: GS3-15, GS3-30 in `tests/security/test_schema_designer_pg_backup.py`, `test_schema_designer_backup_postgres.py`, `test_schema_designer_execution_postgres.py`, `SchemaDesigner.test.tsx`. Open: [STU-CR-5 follow-up open points](#stu-cr-5-follow-up-postgresql-backup-open-points) |
 | 1.2 | Runtime-role wizard and profile export (single-host only, W-10, TB-148) | TABRION STU-CR-6 | G-S3 | Open; needs STU-CR-3, STU-XW-4. Acceptance: GS3-22 (the role rules GS4-12..GS4-19 that apply), TX-30 |
 | 1.2 | i18n, docs, E2E in three browsers and axe | TABRION STU-CR-7 | G-S3 | Open. Acceptance: GS3-14 (focus), GS3-24 (the guide states the limits of doc 15 section 3.1) |
 | 1.2 | G-S3 review and fixes | TABRION STU-CR-8 | G-S3 | Open. Acceptance: GS3-25; the review re-checks the lock until the gate (doc 15 section 9.4) |
@@ -1059,10 +1060,11 @@ flag stays off by default and nothing in STU-CR-4 runs DDL. Each point needs the
 Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stucr5`). **G-S3 is not granted;** the `schema_designer`
 flag stays off by default. Each point needs the independent review or the owner.
 
-1. **PostgreSQL backup (owner, STU-ADR-0008):** the verified `pg_dump` runner does not exist, so a PostgreSQL plan
-   with a `destructive`, `rebuild` or `data_changing` step is refused (`studio.schema_run_not_allowed`, reason
-   `backup_unavailable`), fail closed. Plans that only add, or that only lock, run. The runner is a separate work
-   package; until then such changes go through the user's own tooling.
+1. [x] **PostgreSQL backup (owner, STU-ADR-0008):** closed by the
+   [STU-CR-5 follow-up](#stu-cr-5-follow-up-postgresql-backup-open-points): a destructive, rebuild or data-changing
+   PostgreSQL plan on DEV or TEST now runs after a verified `pg_dump` archive through the STU-XDM-2 runner, and only
+   when that succeeded. Without both tools in `database-tools.toml` (or on Windows) it is still refused
+   (`backup_unavailable`), fail closed.
 2. **Backup retention (owner question):** Studio keeps every backup in `backups/schema-designer` next to
    `write-areas.toml` and never deletes one; the guide tells the user how to remove them. Should Studio offer a
    cleanup, a count or age limit, or a size warning?
@@ -1104,6 +1106,31 @@ Notes of the PR #135 review (STU-CR-5, merged as `314871d`), kept here:
 - **I-3:** for backup retention the reviewer recommends a size notice, not automatic deletion (also review I-3 of
   STU-XDM-1; the Database Manager shows the count and total size since STU-XDM-2).
 
+### STU-CR-5 follow-up (PostgreSQL backup) open points
+
+Built 2026-11-16 (branch `claude/project-thread-rdo6g3-stucr6pg`). **G-S3 is not granted;** the `schema_designer`
+flag stays off by default, PROD stays locked. The plan binding, the confirmation, the drift check after the locks and
+the limits of STU-CR-5 are unchanged. Each point needs the independent review or the owner.
+
+1. **Whole database, as the write role:** the archive is `pg_dump -Fc` of the unlocked database with the write
+   profile's role, so that role must read every table (and no row-security policy may apply to it); otherwise
+   `pg_dump` fails (`tool.permission`) and the run is refused. A dump of the draft's schema only (`--schema`) would
+   put a name of the user into an option of the tool; not done. The owner may decide a different scope.
+2. **Not inside the run's transaction:** the archive is taken after `run.start` and before `execute_plan` takes its
+   locks, as the SQLite backup (PR #135 note I-1): a row someone else commits in between is not in it.
+3. **Not a complete backup:** global roles, memberships and tablespaces are not in the archive; the metadata, the
+   confirmation dialog and the guide say so (TX-35).
+4. **Restore:** the archive and its metadata are in `backups/schema-designer`; the Database Manager lists and restores
+   only `backups/database-manager`, so restoring one is the user's `pg_restore` for now. Whether the Database Manager
+   should list them too is open.
+5. **Windows:** the runner refuses Windows (`tool.platform`, STU-XDM-2 open points); such a plan is
+   `backup_unavailable` there at the preview and before the run.
+6. **Preview check is shallow:** the preview only checks that both tool paths are set in a private
+   `database-tools.toml`; every check of the tools (and the server version) runs again at the backup itself, which
+   refuses the run when one fails.
+7. **Profile binding:** the credentials for the tool are read with every check of an unlock and only while the write
+   and read profile are the ones the unlock checked (`Unlocks.unlock_credentials`, `studio.write_target_changed`).
+
 ### STU-XDM-2 open points
 
 Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stuxdm2`). **G-S4 is not granted;** the `database_manager`
@@ -1124,7 +1151,8 @@ flag stays off by default. Each point needs the independent review or the owner.
    login role (no SUPERUSER, BYPASSRLS, REPLICATION, CREATEROLE, CREATEDB or predefined role); the admin role must be
    able to act as it so that the new database can belong to it. The guide describes the setup; Studio shows no SQL.
 5. **Windows:** the runner refuses to run tools on Windows (`tool.platform`), because its owner and mode checks are
-   POSIX checks. SQLite backup and restore work there.
+   POSIX checks. SQLite backup and restore work there. Since the STU-CR-5 follow-up this also keeps the Schema
+   Designer's destructive PostgreSQL runs refused on Windows (`backup_unavailable`).
 6. **`stderr` is never logged** (stricter than ADR 0008 section 3): only its class (`auth`, `connect`, `permission`,
    `version`, `other`) is answered and logged. A user debugging a failing tool runs it outside Studio.
 7. **No opt-out of the target's backup** on DEV (stricter than ADR 0008 section 4): the SQLite file is always backed
