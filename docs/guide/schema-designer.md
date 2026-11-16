@@ -174,8 +174,16 @@ environment, the write profile's password only in a temporary passfile. The arch
 read it. The run starts only when all of that succeeded; otherwise nothing runs and the page shows why
 (`studio.backup_tool_unavailable`, `studio.backup_tool_failed`, `studio.schema_backup_failed`). Things to know:
 
-- The archive is taken with the **write role**, so that role must be able to read every table of the database. A
-  table it may not read, or one with row security that applies to it, makes `pg_dump` fail, and the run is refused.
+- The archive holds the **whole database**, not only the draft's schema, and it is taken with the **write role**. So
+  that role must be able to read every table of the database. A table it may not read, or one with row security that
+  applies to it, makes `pg_dump` fail, and the run is refused.
+- **Do not give the write role more rights** (read access to other tables, `BYPASSRLS`, a superuser) just to make the
+  backup work: that widens the role Studio changes the schema with. Instead, leave that database without destructive
+  runs from Studio and make such changes with your own migration tooling, or have the database owner set up a
+  dedicated arrangement for it, for example a DEV or TEST database that holds only the tables the write role owns.
+- While the backup runs, the page says that it is making the backup and then running the plan. A large database can
+  take a while; the draft stays locked until the backup and the run have finished, so other edits of the same draft
+  wait.
 - The archive is made just before the run, not inside its transaction: a row someone else writes in between is not
   in it.
 - It is **not a complete backup**: roles, role memberships, tablespaces and other cluster objects are not in it.
