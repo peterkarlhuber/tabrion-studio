@@ -910,7 +910,8 @@ CATALOG: dict[str, Entry] = {
         "Not run directly",
         "Studio runs a schema change directly only on a DEV or TEST database without migration management (no "
         "Alembic project, no Alembic or Levuvo version table, a SQLite user_version of 0), for a plan whose steps all "
-        "run in one transaction and, on PostgreSQL, without a step that needs a backup. Nothing was run.",
+        "run in one transaction and, on PostgreSQL, with a step that needs a backup only when pg_dump and pg_restore "
+        "are set in database-tools.toml. Nothing was run.",
         "Use your own migration tooling for this database, or change the plan.",
     ),
     "studio.schema_backup_required": Entry(

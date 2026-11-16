@@ -97,8 +97,9 @@ an admin unlock, which a PROD connection never gets, so a PROD backup is refused
 - **Who may use the runner (review L-2 a):** the runner (`tabrion_studio.write.pgtools`) is not part of the
   Database Manager's package, so the Schema Designer may import it under its own `schema_designer` flag for the
   backup before a destructive PostgreSQL run (STU-ADR-0007 section 7). GS4-04..GS4-07 and GS4-22 are then also
-  conditions of G-S3. STU-XDM-2 does not change the Schema Designer: its PostgreSQL refusal `backup_unavailable`
-  stays until that work package.
+  conditions of G-S3. STU-XDM-2 did not change the Schema Designer; the STU-CR-5 follow-up wires the runner into its backup
+  before a destructive PostgreSQL run (STU-ADR-0007 section 7), so `backup_unavailable` remains only where the tools
+  are not configured or the system is Windows.
 - **Platforms:** STU-XDM-2 runs the tools on Linux and macOS only; on Windows the checks of owner and mode do not
   apply as written, so the tools are refused (`tool.platform`; an open point).
 - **Archive format:** only the custom format (`-Fc`). A restore runs `pg_restore` directly against the database with

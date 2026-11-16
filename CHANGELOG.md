@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-5 follow-up (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
+  default changes, PROD stays locked): the Schema Designer backs up a PostgreSQL database before a run with a
+  `destructive`, `rebuild` or `data_changing` step on DEV or TEST, through the verified `pg_dump` runner of STU-XDM-2
+  (`tabrion_studio.write.pgtools`: the tools only from `database-tools.toml` and checked again, a clean environment,
+  the password only in a temporary passfile, the archive kept only after `pg_restore --list` reads it). The archive and
+  its description go to `backups/schema-designer` (0700, files 0600); the run continues only when the backup
+  succeeded and is refused otherwise (`studio.backup_tool_unavailable`, `studio.backup_tool_failed`,
+  `studio.write_target_changed`, `studio.schema_backup_failed`), with nothing changed and `run.result` recording the
+  code. The tool's credentials are read only while the profiles are those the unlock checked. Without both tools
+  configured, and on Windows, such a plan stays refused (`backup_unavailable`). No opt-out on PostgreSQL; a dry run
+  makes no backup; the confirmation, the plan binding, the drift check after the locks and the limits are unchanged.
+  The confirmation dialog says so (English and German). New tests `test_schema_designer_pg_backup.py` and
+  `test_schema_designer_backup_postgres.py`.
 - STU-XDM-2 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
   changes): the Database Manager's backup and restore. A verified runner for `pg_dump` and `pg_restore`
   (`tabrion_studio.write.pgtools`, reusable by the Schema Designer later): paths only from the owner's

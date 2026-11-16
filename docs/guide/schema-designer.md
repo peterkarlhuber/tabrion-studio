@@ -135,9 +135,11 @@ right before the run:
   SQLite, no `user_version` above 0;
 - the project folder has no `alembic.ini`;
 - every step runs in a transaction;
-- on **PostgreSQL**, the plan has no `destructive`, `rebuild` or `changes data` step. Studio cannot back up a
-  PostgreSQL database yet, so such a plan is refused (`backup_unavailable`) until it can. Plans that only add, or
-  that lock a table, run.
+- on **PostgreSQL**, a plan with a `destructive`, `rebuild` or `changes data` step runs only when `pg_dump` and
+  `pg_restore` are set in `database-tools.toml` next to the write settings (see the
+  [Database Manager](database-manager.md) guide for the file and its rules) and Studio is not running on Windows.
+  Otherwise such a plan is refused (`backup_unavailable`). Plans that only add, or that lock a table, need no
+  backup and run.
 
 Otherwise the page says why and offers no confirmation; use your own migration tooling for that change.
 
@@ -164,11 +166,27 @@ SQLite's backup function into the `backups/schema-designer` folder next to `writ
 configuration folder. The folder is readable by you only (0700) and so is each file (0600); a file is named by the
 time of the run in UTC and a random part. When the backup fails, nothing runs (`studio.schema_backup_failed`).
 
-On **DEV only** you may leave the backup out: tick **Leave the backup out** and type the database file's name. The
-audit log records that the backup was left out. On TEST the backup cannot be left out.
+Before such a **PostgreSQL** plan, Studio makes a `pg_dump` archive (custom format) of the whole database with the
+`pg_dump` and `pg_restore` set in `database-tools.toml`, with every check the [Database Manager](database-manager.md)
+guide describes: the tool paths, owners and modes, the version (16 or newer and at least the server's), a clean
+environment, the write profile's password only in a temporary passfile. The archive goes into the same folder as
+`<time>-<random>.dump` with a `.json` description next to it, and it is kept only after `pg_restore --list` could
+read it. The run starts only when all of that succeeded; otherwise nothing runs and the page shows why
+(`studio.backup_tool_unavailable`, `studio.backup_tool_failed`, `studio.schema_backup_failed`). Things to know:
+
+- The archive is taken with the **write role**, so that role must be able to read every table of the database. A
+  table it may not read, or one with row security that applies to it, makes `pg_dump` fail, and the run is refused.
+- The archive is made just before the run, not inside its transaction: a row someone else writes in between is not
+  in it.
+- It is **not a complete backup**: roles, role memberships, tablespaces and other cluster objects are not in it.
+- It cannot be left out, on DEV or TEST. A dry run makes no backup.
+- To restore it, use `pg_restore` yourself (the Database Manager lists only its own backups).
+
+On **DEV only** you may leave a SQLite backup out: tick **Leave the backup out** and type the database file's name.
+The audit log records that the backup was left out. On TEST the backup cannot be left out.
 
 Studio never deletes a backup. Remove old ones yourself: delete the files in `backups/schema-designer` that you no
-longer need (each is a plain SQLite file you can open to check it first).
+longer need (a `.sqlite` file is a plain SQLite file you can open to check it first).
 
 ### What is recorded
 
@@ -179,6 +197,6 @@ the audit record cannot be written, nothing runs. No value, default or check tex
 
 ## Not yet
 
-- A backup of a PostgreSQL database (and with it destructive, rebuild and data-changing runs on PostgreSQL).
+- A PostgreSQL backup before a run on Windows (Studio refuses the tools there).
 - The graphical mode (STU-XSD-1), the schema comparison (STU-XSD-2) and the Alembic revision output (STU-XSD-3).
 - Starting a draft from a schema file, and saving a draft.

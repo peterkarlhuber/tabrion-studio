@@ -2060,7 +2060,7 @@
       "alembic_project": "Das Projekt hat eine alembic.ini: Seine Änderungen laufen über Alembic-Revisionen.",
       "non_transactional": "Ein Schritt kann nicht in einer Transaktion laufen.",
       "too_many_tables": "Der Plan ändert mehr Tabellen, als ein Lauf darf.",
-      "backup_unavailable": "Der Plan löscht, baut neu auf oder ändert Daten in PostgreSQL, und Studio kann eine PostgreSQL-Datenbank noch nicht sichern.",
+      "backup_unavailable": "Der Plan löscht, baut neu auf oder ändert Daten in PostgreSQL, und vorher lässt sich keine Sicherung anlegen: pg_dump und pg_restore sind nicht beide in database-tools.toml neben den Schreibeinstellungen eingetragen, oder dieses System ist Windows.",
       "foreign_key_check": "Eine Zeile verletzt einen Fremdschlüssel (foreign_key_check).",
       "integrity_check": "SQLites integrity_check hat ein Problem gefunden.",
       "failed": "Eine Prüfung vor dem Commit ist fehlgeschlagen."
@@ -2073,6 +2073,7 @@
       "acceptStep": "Ich nehme in Kauf, dass Schritt {{number}} Daten ändert oder entfernt.",
       "acceptLocking": "Ich nehme in Kauf, dass der Lauf Tabellen sperrt (er wartet höchstens {{seconds}} s auf eine Sperre).",
       "backupMade": "Vor dem Lauf wird eine Kopie der Datenbankdatei angelegt.",
+      "backupMadePostgres": "Vor dem Lauf wird mit den Programmen aus database-tools.toml ein pg_dump-Archiv der ganzen Datenbank angelegt. Der Lauf beginnt nur, wenn diese Sicherung gelungen ist. Sie ist keine vollständige Sicherung: Rollen, Mitgliedschaften und Tablespaces sind nicht darin.",
       "backupNotNeeded": "Für diesen Plan ist keine Sicherung nötig.",
       "backupSkip": "Sicherung weglassen (nur DEV; wird im Audit-Log vermerkt)",
       "backupSkipTyped": "Zum Weglassen der Sicherung den Dateinamen der Datenbank eintippen: {{name}}",

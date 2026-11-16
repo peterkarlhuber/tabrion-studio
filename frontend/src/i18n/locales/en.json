@@ -2060,7 +2060,7 @@
       "alembic_project": "The project has an alembic.ini: its changes go through Alembic revisions.",
       "non_transactional": "A step cannot run in a transaction.",
       "too_many_tables": "The plan changes more tables than one run may.",
-      "backup_unavailable": "The plan drops, rebuilds or changes data on PostgreSQL, and Studio cannot back up a PostgreSQL database yet.",
+      "backup_unavailable": "The plan drops, rebuilds or changes data on PostgreSQL, and no backup can be made first: pg_dump and pg_restore are not both set in database-tools.toml next to the write settings, or this system is Windows.",
       "foreign_key_check": "A row breaks a foreign key (foreign_key_check).",
       "integrity_check": "SQLite's integrity_check found a problem.",
       "failed": "A check before the commit failed."
@@ -2073,6 +2073,7 @@
       "acceptStep": "I accept that step {{number}} changes or removes data.",
       "acceptLocking": "I accept that the run locks tables (it waits at most {{seconds}} s for a lock).",
       "backupMade": "A copy of the database file is made before the run.",
+      "backupMadePostgres": "A pg_dump archive of the whole database is made with the tools in database-tools.toml before the run. The run starts only when that backup succeeded. It is not a complete backup: roles, memberships and tablespaces are not in it.",
       "backupNotNeeded": "No backup is needed for this plan.",
       "backupSkip": "Leave the backup out (DEV only; recorded in the audit log)",
       "backupSkipTyped": "Type the database file name to leave the backup out: {{name}}",
