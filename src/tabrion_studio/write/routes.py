@@ -603,11 +603,11 @@ def add_enabled_write_routes(
         # The project folder (an alembic.ini there means revisions only) and the folder of write-areas.toml (the
         # backups before a run go below it, STU-CR-5); no such folder: no run that needs it (fail closed).
         drafts = Drafts(config.project.project, None if audit_dir is None else audit_dir.parent)
-        from tabrion_studio.write.pgtools import Runner as ToolRunner
+        from tabrion_studio.write.folders import remove_stale_runs
 
         # The backup before a PostgreSQL run uses the tool runner (STU-CR-5 follow-up): remove a passfile a crashed
-        # run left (GS4-06).
-        ToolRunner(drafts.write_state).remove_stale()
+        # run left (GS4-06). The runner itself is loaded only when a backup is made.
+        remove_stale_runs(drafts.write_state)
         unlocks.end_listeners.append(drafts.unlock_ended)
         app.state.schema_drafts = drafts
         draft_edit_body = MAX_EDIT_BODY

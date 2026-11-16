@@ -52,10 +52,10 @@ is used.
 | `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.safe_message` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
-| `tabrion.plan.RiskClass` | `src/tabrion_studio/write/schema_designer/execute.py` |
+| `tabrion.plan.RiskClass` | `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_schema_designer_pg_backup.py` |
 | `tabrion.plan.RiskClass.DATA_CHANGING` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.plan.RiskClass.DATA_CHANGING.value` | `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.plan.RiskClass.DESTRUCTIVE` | `src/tabrion_studio/write/schema_designer/execute.py` |
+| `tabrion.plan.RiskClass.DESTRUCTIVE` | `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_schema_designer_pg_backup.py` |
 | `tabrion.plan.RiskClass.LOCKING` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.plan.RiskClass.LOCKING.value` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.plan.RiskClass.REBUILD` | `src/tabrion_studio/write/schema_designer/execute.py` |
