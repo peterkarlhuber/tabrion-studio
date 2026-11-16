@@ -371,26 +371,42 @@ def backup(manager: Manager, session: str, doc: dict[str, Any]) -> dict[str, Any
     return _backup_postgres(manager, unlock)
 
 
-def _backup_postgres(manager: Manager, unlock: Unlock) -> dict[str, Any]:
+def _target_fingerprint(manager: Manager, unlock: Unlock, database: str | None) -> str | None:
+    """The level-2 fingerprint of the unlocked database, or of ``database`` on its server read on a checked
+    connection of the admin profile that is closed right after (STU-XDM-3: the database a delete backs up)."""
+    if database is None:
+        return schema_fingerprint(unlock.connection)
+    connection = manager.unlocks.open_checked(unlock.write_name, database)
+    try:
+        return schema_fingerprint(connection)
+    finally:
+        connection.close()
+
+
+def _backup_postgres(
+    manager: Manager, unlock: Unlock, *, database: str | None = None, origin: str = "database_manager"
+) -> dict[str, Any]:
+    """The verified ``pg_dump`` archive of the unlocked database, or of the database ``database`` of the same server
+    (the backup before a delete, STU-XDM-3), as the admin role."""
     _check_admin(manager, unlock)
     server = unlock.connection.engine_version()
     pg_dump, pg_restore = _tools(manager, server[0])
     write, read, password = manager.unlocks.credentials(unlock.write_name)
-    target = _connection(write, read, password)
+    target = _connection(write, read, password, database)
     folder = manager.store.folder()
     name = manager.store.new_name("postgresql")
     version_rows = unlock.connection.fetch(_SERVER_VERSION_TEXT)
     server_version = str(version_rows[0][0]) if version_rows and version_rows[0] else None
     start = {"objects": [target.dbname], "backup_file": name, "tool_version": pg_dump.version}
     with _audited(manager, unlock, ACTION_BACKUP, start) as outcome:
-        before = schema_fingerprint(unlock.connection)
+        before = _target_fingerprint(manager, unlock, database)
         archive = manager.runner.dump(pg_dump, pg_restore, target, folder / name)
-        after = schema_fingerprint(unlock.connection)
+        after = _target_fingerprint(manager, unlock, database)
         meta = metadata(
             name=name,
             created=manager.store.now(),
             engine="postgresql",
-            origin="database_manager",
+            origin=origin,
             size=archive.size,
             sha256=archive.sha256,
             source={**_source(manager, unlock), "database": target.dbname},

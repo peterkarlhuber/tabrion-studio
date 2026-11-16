@@ -238,6 +238,8 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/database-manager/backup": "verified pg_dump or SQLite backup into Studio's backup folder (flag)",
     "POST /api/write/database-manager/restore/preview": "checks a backup and lists its archive; writes nothing (flag)",
     "POST /api/write/database-manager/restore": "restores into a new or DEV/TEST target, backup first (flag)",
+    "POST /api/write/database-manager/delete/preview": "checks a delete target and counts its sessions (flag)",
+    "POST /api/write/database-manager/delete": "deletes a DEV/TEST database after a verified backup (flag)",
 }
 
 

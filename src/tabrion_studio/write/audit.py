@@ -230,6 +230,9 @@ FIELDS: dict[str, Callable[[object], object]] = {
     "restore_profile": _text,  # the admin profile whose lean role ran the restore (review M-1 of STU-XDM-1)
     "pre_backup": _token,  # the file name of the target's own backup taken before the restore
     "verified": _flag,  # whether the restored schema's fingerprint equals the backup's
+    # STU-XDM-3 (STU-ADR-0008 sections 5 and 9): delete a database.
+    "force": _flag,  # PostgreSQL WITH (FORCE) was chosen (its own typed confirmation)
+    "sessions": _count,  # the number of other sessions on the target seen before the delete
 }
 
 

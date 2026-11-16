@@ -162,7 +162,9 @@ def test_with_the_flag_off_no_module_of_the_area_is_imported(tmp_path: Path) -> 
         "c = env.open()\n"
         "for m, p in [('GET', '/api/write/database-manager/backups'), ('POST', '/api/write/database-manager/backup'),\n"
         "             ('POST', '/api/write/database-manager/restore/preview'),\n"
-        "             ('POST', '/api/write/database-manager/restore')]:\n"
+        "             ('POST', '/api/write/database-manager/restore'),\n"
+        "             ('POST', '/api/write/database-manager/delete/preview'),\n"
+        "             ('POST', '/api/write/database-manager/delete')]:\n"
         "    assert env.send(m, p, None if m == 'GET' else {'connection_id': c}).status_code == 405\n"
         "env.close()\n"
         "print(sorted(m for m in sys.modules if m.startswith('tabrion_studio.write')))\n"
@@ -178,6 +180,7 @@ def test_with_the_flag_off_no_module_of_the_area_is_imported(tmp_path: Path) -> 
     for module in (
         "tabrion_studio.write.database_manager",
         "tabrion_studio.write.database_manager.backups",
+        "tabrion_studio.write.database_manager.delete",
         "tabrion_studio.write.pgtools",
         "tabrion_studio.write.backup_store",
     ):

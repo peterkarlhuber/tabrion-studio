@@ -27,7 +27,7 @@ is used.
 | `tabrion.check.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/write/connection.py` |
-| `tabrion.errors.DatabaseInUse` | `src/tabrion_studio/write/database_manager/backups.py` |
+| `tabrion.errors.DatabaseInUse` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
 | `tabrion.errors.Kind` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/services/vectors.py`, `src/tabrion_studio/write/data_editor.py`, `tests/security/test_connection_loss.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.Kind.CHECK` | `src/tabrion_studio/write/data_editor.py` |
@@ -46,11 +46,11 @@ is used.
 | `tabrion.errors.RoleMissing` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py` |
 | `tabrion.errors.RowCountMismatch` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.SchemaDrift` | `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
-| `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/database_manager/backups.py` |
-| `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py`, `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
-| `tabrion.errors.safe_message` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py` |
+| `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py`, `src/tabrion_studio/write/schema_designer/execute.py` |
+| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.safe_message` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.plan.RiskClass` | `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_schema_designer_pg_backup.py` |
 | `tabrion.plan.RiskClass.DATA_CHANGING` | `src/tabrion_studio/write/schema_designer/execute.py` |
@@ -66,6 +66,7 @@ is used.
 | `tabrion.postgres.ExtensionStatus` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.postgres.create_database` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.postgres.drop_database` | `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.postgres.extension_status` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.rowedit.delete_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.insert_row` | `src/tabrion_studio/write/data_editor.py` |
@@ -85,6 +86,7 @@ is used.
 | `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
 | `tabrion.sqlite.backup` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py` |
+| `tabrion.sqlite.delete_database_file` | `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.restore` | `src/tabrion_studio/write/database_manager/backups.py` |
 | `tabrion.sqlite.write_transaction` | `src/tabrion_studio/services/state.py` |
