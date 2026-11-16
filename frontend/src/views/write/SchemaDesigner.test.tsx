@@ -152,6 +152,8 @@ interface Answers {
   edit?: { status: number; body: unknown };
   preview?: { status: number; body: unknown };
   run?: { status: number; body: unknown };
+  /** Holds the run's answer until it resolves (the page's state while a run and its backup are under way). */
+  runGate?: Promise<void>;
 }
 
 const ON = { data_editor: false, schema_designer: true, database_manager: false };
@@ -255,6 +257,7 @@ function setup(answers: Answers = {}) {
         expires_in_s: 280,
       });
     if (url === '/api/write/schema-designer/plan/run') {
+      if (answers.runGate !== undefined) await answers.runGate;
       if (answers.run !== undefined) return json(answers.run.body, answers.run.status);
       return body?.dry_run === true
         ? json({
@@ -563,6 +566,50 @@ describe('SchemaDesignerSection (STU-CR-4)', () => {
     await user.click(await screen.findByRole('button', { name: 'Show plan' }));
     await screen.findByTestId('schema-designer-run');
     expect(screen.queryByTestId('schema-designer-run-skip')).toBeNull();
+  });
+
+  it('says while a PostgreSQL run is under way that it is making the backup first', async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => undefined;
+    const runGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    setup({
+      runGate,
+      preview: {
+        status: 200,
+        body: {
+          ...PREVIEW,
+          confirmation: {
+            ...PREVIEW.confirmation,
+            backup: {
+              required: true,
+              engine: 'postgresql',
+              opt_out_allowed: false,
+              opt_out_text: null,
+            },
+          },
+        },
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const form = await screen.findByTestId('schema-designer-run');
+    await user.type(within(form).getByLabelText('Type the write profile name: parts-w'), 'parts-w');
+    await user.type(within(form).getByLabelText('Type the table name: parts'), 'parts');
+    await user.click(within(form).getByLabelText('I accept that step 1 changes or removes data.'));
+    await user.click(within(form).getByRole('button', { name: 'Confirm' }));
+    await screen.findByTestId('schema-designer-confirmed');
+    expect(screen.queryByTestId('schema-designer-running')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Run the plan' }));
+    const running = await screen.findByTestId('schema-designer-running');
+    expect(running).toHaveAttribute('role', 'status');
+    expect(running).toHaveTextContent('Making the backup of the whole database with pg_dump');
+    expect(form).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByRole('button', { name: 'Run the plan' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Dry run' })).toBeDisabled();
+    release();
+    await screen.findByTestId('schema-designer-outcome');
+    expect(screen.queryByTestId('schema-designer-running')).toBeNull();
   });
 
   it('says that a PostgreSQL run starts only after its pg_dump backup, with no opt-out', async () => {

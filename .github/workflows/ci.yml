@@ -107,9 +107,22 @@ jobs:
       - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing ${{ matrix.tests }}
 
   security:
-    name: security tests
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Two shards (as backend-test, #124): the whole job took about 14 of its 15 minutes. The ignore globs are
+          # complements, so every test marked security runs exactly once: shard 1 is every collected path except the
+          # files tests/security/test_[n-z]*, shard 2 only those files. The first keeps the old check name.
+          - name: security tests
+            shard: 1
+            tests: "tests --ignore-glob='tests/security/test_[n-z]*'"
+          - name: security tests (2 of 2)
+            shard: 2
+            tests: "tests/security --ignore-glob='tests/security/test_[!n-z]*'"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -125,9 +138,10 @@ jobs:
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
-      - run: pytest -m security -v -p no:cacheprovider
-      # ruff's flake8-bandit rules (S) over the package and the scripts.
-      - run: ruff check --select S src scripts hatch_build.py
+      - run: pytest -m security -v -p no:cacheprovider ${{ matrix.tests }}
+      # ruff's flake8-bandit rules (S) over the package and the scripts (once, in the first shard).
+      - if: matrix.shard == 1
+        run: ruff check --select S src scripts hatch_build.py
 
   windows-t2:
     name: T-2 path checks (windows-latest)

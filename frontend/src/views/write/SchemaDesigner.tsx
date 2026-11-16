@@ -1285,6 +1285,8 @@ function RunForm({
   const [confirmed, setConfirmed] = useState<PlanConfirmed | null>(null);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [busy, setBusy] = useState(false);
+  // Review I-2 of PR #137: a run with a backup can take long (pg_dump of the whole database); the page says so.
+  const [running, setRunning] = useState<'run' | 'dry' | null>(null);
 
   const confirm = async (event: FormEvent) => {
     event.preventDefault();
@@ -1307,7 +1309,9 @@ function RunForm({
   const run = async (dryRun: boolean) => {
     setProblem(null);
     setBusy(true);
+    setRunning(dryRun ? 'dry' : 'run');
     const result = await runPlan(fetcher, connectionId, preview.planHash, dryRun);
+    setRunning(null);
     setBusy(false);
     if (result.ok) onRan(result.value);
     else if (LOCKED.has(result.problem.code)) onLocked(result.problem);
@@ -1326,6 +1330,7 @@ function RunForm({
       className={connectionStyles.form}
       onSubmit={(event) => void confirm(event)}
       aria-labelledby={`${id}-title`}
+      aria-busy={running !== null}
       data-testid="schema-designer-run"
     >
       <h4 id={`${id}-title`} className={designer.tableName}>
@@ -1474,6 +1479,19 @@ function RunForm({
               {t('schemaDesigner.run.dryRun')}
             </Button>
           </div>
+          {running !== null ? (
+            <p
+              className={connectionStyles.status}
+              role="status"
+              data-testid="schema-designer-running"
+            >
+              {running === 'run' && need.backup.required
+                ? need.backup.engine === 'postgresql'
+                  ? t('schemaDesigner.run.backupRunningPostgres')
+                  : t('schemaDesigner.run.backupRunning')
+                : t('schemaDesigner.run.running')}
+            </p>
+          ) : null}
         </>
       )}
     </form>

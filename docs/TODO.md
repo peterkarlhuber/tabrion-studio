@@ -1131,6 +1131,20 @@ the limits of STU-CR-5 are unchanged. Each point needs the independent review or
 7. **Profile binding:** the credentials for the tool are read with every check of an unlock and only while the write
    and read profile are the ones the unlock checked (`Unlocks.unlock_credentials`, `studio.write_target_changed`).
 
+Notes of the PR #137 review (merged as `e130a84`, accepted, nothing above Info), handled in the follow-up branch
+`claude/project-thread-rdo6g3-stucr5info`:
+
+- [x] **I-1:** the guide and the confirmation dialog (en, de) say that the backup dumps the whole database, that it
+  fails when the write role cannot read every table, and that the answer is not more rights for that role but no
+  destructive run from Studio on that database, or a dedicated setup by the owner.
+- [x] **I-2:** a long dump holds the draft lock; while a run (and its backup) is under way the run form is
+  `aria-busy`, its buttons are disabled and a status line says that the backup is being made, then the plan run (a
+  page state only, no new endpoint).
+- [x] **CI budget:** the `security tests` job (about 14 of its 15 minutes) runs in two shards with complementary
+  ignore globs (`security tests`: every path except `tests/security/test_[n-z]*`, plus ruff's `S` rules;
+  `security tests (2 of 2)`: only those files), so every test runs once; the timeout is unchanged. The new check is
+  in `.github/ci-manifest.json`.
+
 ### STU-XDM-2 open points
 
 Built 2026-11-15 (branch `claude/project-thread-rdo6g3-stuxdm2`). **G-S4 is not granted;** the `database_manager`

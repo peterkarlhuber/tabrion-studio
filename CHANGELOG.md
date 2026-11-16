@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Review notes of PR #137 (STU-CR-5 follow-up; G-S3 not granted, flags stay off): the Schema Designer guide and the
+  confirmation dialog (English and German) say that the PostgreSQL backup dumps the whole database, that it fails
+  when the write role cannot read every table, and that the role must not get more rights for it (I-1). While a run
+  and its backup are under way, the run form shows a status line, is marked busy and disables its buttons (I-2). CI:
+  the `security tests` job runs in two shards (`security tests`, `security tests (2 of 2)`) with complementary ignore
+  globs, so every test still runs once within the unchanged 15-minute limit; the new check is mandatory in
+  `.github/ci-manifest.json`.
 - STU-CR-5 follow-up (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
   default changes, PROD stays locked): the Schema Designer backs up a PostgreSQL database before a run with a
   `destructive`, `rebuild` or `data_changing` step on DEV or TEST, through the verified `pg_dump` runner of STU-XDM-2
