@@ -16,7 +16,7 @@ granted; GS3-01, GS3-02, GS3-09, GS3-13, GS3-20; TX-21, TX-26, TX-27; STU-ADR-00
    nothing runs, nothing is audited; no SQL, name or default text reaches the log or the audit log (TX-27).
 
 Python 3.11 refuses every SQLite write unlock (no defensive mode), so the tests that need one skip there, as in
-``test_schema_designer_create.py``.
+``test_dbm_create.py``.
 """
 
 from __future__ import annotations

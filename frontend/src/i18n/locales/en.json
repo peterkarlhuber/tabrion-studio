@@ -1038,7 +1038,7 @@
     "write_profiles_ignored": "Write and admin profiles are used only from the configuration folder named on the command line or the platform's folder, not from one an environment variable chose. Start Studio with --config-dir for this folder.",
     "profile_coupled": "A write or admin profile is coupled to this profile. Remove it first.",
     "write_prod_locked": "Studio never writes to a PROD database.",
-    "write_role_over_privileged": "The write role is a superuser, has BYPASSRLS or REPLICATION, or is a member of a server-file role (pg_read_server_files, pg_write_server_files, pg_execute_server_program). Studio does not unlock the write mode with it; use a role with only the table rights it needs.",
+    "write_role_over_privileged": "The write role is a superuser, has BYPASSRLS, REPLICATION or CREATEDB, or is a member of a server-file role (pg_read_server_files, pg_write_server_files, pg_execute_server_program). Studio does not unlock the write mode with it; use a role with only the table rights it needs. Creating databases needs an admin profile in the Database Manager.",
     "write_coupling_invalid": "This write profile is not coupled to the profile of this connection.",
     "write_target_unknown": "There is no open connection with this ID.",
     "unlock_name_mismatch": "Type the name of the write profile exactly to unlock.",
@@ -1080,9 +1080,9 @@
     "schema_folder_reserved": "Studio does not create databases in its own configuration, state, audit or log folders or in the project's .tabrion folder. Choose another folder.",
     "schema_create_platform": "On Windows Studio does not create SQLite files yet. Create the file with another tool and add it as a connection profile.",
     "schema_database_exists": "The server has a database with this name already. Choose another name.",
-    "schema_createdb_required": "The write profile's role may not create databases (CREATEDB) on this server. Nothing was created.",
+    "schema_createdb_required": "The admin profile's role may not create databases (CREATEDB) on this server. Nothing was created.",
     "schema_owner_missing": "The server has no role with the owner's name. Nothing was created.",
-    "schema_owner_not_allowed": "The write profile's role may not act as the owner role, so it cannot give it the database. Leave the owner empty or ask the administrator.",
+    "schema_owner_not_allowed": "The admin profile's role may not act as the owner role, so it cannot give it the database. Leave the owner empty or ask the administrator.",
     "schema_draft_missing": "There is no draft for this connection (not started, discarded, or its unlock ended). Start a draft again.",
     "schema_draft_stale": "The draft changed since this page read it, for example in another tab. The page shows it again; make the edit again.",
     "schema_draft_schema": "This schema cannot be designed: on SQLite only main, on PostgreSQL a schema that exists and is not one of PostgreSQL's own.",
@@ -1808,13 +1808,14 @@
       "done": "Created {{path}}, readable and writable only by you."
     },
     "postgres": {
-      "noConnection": "Connect to a PostgreSQL server first: one of your own DEV or TEST profiles with a write profile whose role may create databases.",
+      "noConnection": "Connect to a PostgreSQL server first: one of your own DEV or TEST profiles with an admin profile whose role may create databases.",
       "connection": "Connection",
       "on": "On the server of {{name}}.",
-      "unlockLead": "Creating a database needs this connection's write mode. Choose the write profile and type its name; the unlock ends after 15 minutes without use.",
+      "unlockLead": "Creating a database needs this connection's admin profile, never its write profile. Choose the admin profile and type its name; the unlock ends after 15 minutes without use.",
+      "noAdminProfile": "This connection has no admin profile. Add one under write profiles; its role is set up outside Studio and may create databases.",
       "name": "Database name",
       "owner": "Owner (optional)",
-      "ownerHint": "A role the write profile's role may act as (SET ROLE). Empty: the write profile's role owns it.",
+      "ownerHint": "A role the admin profile's role may act as (SET ROLE). Empty: the admin profile's role owns it.",
       "template": "Template",
       "templates": {
         "template1": "template1 (default)",
@@ -1828,7 +1829,7 @@
       "create": "Create database",
       "done": "Created the database {{name}}.",
       "guided": {
-        "lead": "This server does not let the write profile's role create databases, as many managed services do. Set the database up this way:",
+        "lead": "This server does not let the admin profile's role create databases, as many managed services do. Set the database up this way:",
         "ask": "Ask the server's administrator, or use your provider's console, to create the database (Studio shows no SQL for it).",
         "profile": "Then add a connection profile for it under Connections and connect to it."
       }

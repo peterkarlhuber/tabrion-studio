@@ -9,7 +9,10 @@
     [STU-ADR-0008](../adr/0008-database-manager-backup-restore-roles.md).
 
 The **Database Manager** section on the **Connections** page backs up a DEV or TEST database into Studio's own backup
-folder and restores a backup into a new database or file. Deleting databases and managing roles are not built yet.
+folder and restores a backup into a new database or file. The **New database** wizard on the same page, which
+creates an empty SQLite file or PostgreSQL database, belongs to the Database Manager too (see
+[New database](new-database.md)): on PostgreSQL it runs on the admin profile, whose role then needs `CREATEDB`.
+Deleting databases and managing roles are not built yet.
 
 !!! warning "A PostgreSQL backup is not a complete backup"
     A `pg_dump` archive holds **one database**. Global roles, role memberships, tablespaces and other cluster objects

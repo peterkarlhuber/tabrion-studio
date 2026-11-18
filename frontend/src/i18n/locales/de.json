@@ -1038,7 +1038,7 @@
     "write_profiles_ignored": "Schreib- und Admin-Profile werden nur aus dem Konfigurationsordner verwendet, den die Kommandozeile nennt, oder aus dem Ordner der Plattform, nicht aus einem, den eine Umgebungsvariable gewählt hat. Starten Sie Studio mit --config-dir für diesen Ordner.",
     "profile_coupled": "An dieses Profil ist ein Schreib- oder Admin-Profil gekoppelt. Entfernen Sie es zuerst.",
     "write_prod_locked": "Studio schreibt nie in eine PROD-Datenbank.",
-    "write_role_over_privileged": "Die Schreibrolle ist Superuser, hat BYPASSRLS oder REPLICATION oder ist Mitglied einer Serverdatei-Rolle (pg_read_server_files, pg_write_server_files, pg_execute_server_program). Studio entsperrt den Schreibmodus mit ihr nicht; verwenden Sie eine Rolle, die nur die nötigen Tabellenrechte hat.",
+    "write_role_over_privileged": "Die Schreibrolle ist Superuser, hat BYPASSRLS, REPLICATION oder CREATEDB oder ist Mitglied einer Serverdatei-Rolle (pg_read_server_files, pg_write_server_files, pg_execute_server_program). Studio entsperrt den Schreibmodus mit ihr nicht; verwenden Sie eine Rolle, die nur die nötigen Tabellenrechte hat. Datenbanken anzulegen braucht ein Admin-Profil im Datenbank-Manager.",
     "write_coupling_invalid": "Dieses Schreibprofil ist nicht an das Profil dieser Verbindung gekoppelt.",
     "write_target_unknown": "Es gibt keine offene Verbindung mit dieser ID.",
     "unlock_name_mismatch": "Tippen Sie zum Entsperren den Namen des Schreibprofils genau ein.",
@@ -1080,9 +1080,9 @@
     "schema_folder_reserved": "Studio legt keine Datenbanken in seinen eigenen Konfigurations-, Zustands-, Audit- oder Log-Ordnern oder im .tabrion-Ordner des Projekts an. Bitte einen anderen Ordner wählen.",
     "schema_create_platform": "Unter Windows legt Studio noch keine SQLite-Dateien an. Bitte die Datei mit einem anderen Werkzeug anlegen und als Verbindungsprofil hinzufügen.",
     "schema_database_exists": "Der Server hat schon eine Datenbank mit diesem Namen. Bitte einen anderen Namen wählen.",
-    "schema_createdb_required": "Die Rolle des Schreibprofils darf auf diesem Server keine Datenbanken anlegen (CREATEDB). Es wurde nichts angelegt.",
+    "schema_createdb_required": "Die Rolle des Admin-Profils darf auf diesem Server keine Datenbanken anlegen (CREATEDB). Es wurde nichts angelegt.",
     "schema_owner_missing": "Der Server hat keine Rolle mit dem Namen des Eigentümers. Es wurde nichts angelegt.",
-    "schema_owner_not_allowed": "Die Rolle des Schreibprofils darf nicht als Eigentümerrolle handeln und ihr die Datenbank deshalb nicht geben. Eigentümer leer lassen oder die Administration fragen.",
+    "schema_owner_not_allowed": "Die Rolle des Admin-Profils darf nicht als Eigentümerrolle handeln und ihr die Datenbank deshalb nicht geben. Eigentümer leer lassen oder die Administration fragen.",
     "schema_draft_missing": "Für diese Verbindung gibt es keinen Entwurf (nicht begonnen, verworfen oder die Freischaltung ist abgelaufen). Bitte einen Entwurf neu beginnen.",
     "schema_draft_stale": "Der Entwurf hat sich geändert, seit diese Seite ihn gelesen hat, etwa in einem anderen Tab. Die Seite zeigt ihn neu; die Änderung bitte noch einmal machen.",
     "schema_draft_schema": "Dieses Schema kann nicht entworfen werden: bei SQLite nur main, bei PostgreSQL ein vorhandenes Schema, das nicht PostgreSQL selbst gehört.",
@@ -1808,13 +1808,14 @@
       "done": "{{path}} angelegt, nur für Sie les- und schreibbar."
     },
     "postgres": {
-      "noConnection": "Zuerst mit einem PostgreSQL-Server verbinden: einem eigenen DEV- oder TEST-Profil mit einem Schreibprofil, dessen Rolle Datenbanken anlegen darf.",
+      "noConnection": "Zuerst mit einem PostgreSQL-Server verbinden: einem eigenen DEV- oder TEST-Profil mit einem Admin-Profil, dessen Rolle Datenbanken anlegen darf.",
       "connection": "Verbindung",
       "on": "Auf dem Server von {{name}}.",
-      "unlockLead": "Zum Anlegen einer Datenbank braucht diese Verbindung den Schreibmodus. Schreibprofil wählen und seinen Namen eintippen; die Entsperrung endet nach 15 Minuten ohne Nutzung.",
+      "unlockLead": "Zum Anlegen einer Datenbank braucht diese Verbindung ihr Admin-Profil, nie ihr Schreibprofil. Admin-Profil wählen und seinen Namen eintippen; die Entsperrung endet nach 15 Minuten ohne Nutzung.",
+      "noAdminProfile": "Diese Verbindung hat kein Admin-Profil. Eines unter Schreibprofile anlegen; seine Rolle wird außerhalb von Studio eingerichtet und darf Datenbanken anlegen.",
       "name": "Datenbankname",
       "owner": "Eigentümer (optional)",
-      "ownerHint": "Eine Rolle, als die die Rolle des Schreibprofils handeln darf (SET ROLE). Leer: Die Rolle des Schreibprofils ist Eigentümer.",
+      "ownerHint": "Eine Rolle, als die die Rolle des Admin-Profils handeln darf (SET ROLE). Leer: Die Rolle des Admin-Profils ist Eigentümer.",
       "template": "Vorlage",
       "templates": {
         "template1": "template1 (Standard)",
@@ -1828,7 +1829,7 @@
       "create": "Datenbank anlegen",
       "done": "Datenbank {{name}} angelegt.",
       "guided": {
-        "lead": "Dieser Server lässt die Rolle des Schreibprofils keine Datenbanken anlegen, wie viele verwaltete Dienste. So richten Sie die Datenbank ein:",
+        "lead": "Dieser Server lässt die Rolle des Admin-Profils keine Datenbanken anlegen, wie viele verwaltete Dienste. So richten Sie die Datenbank ein:",
         "ask": "Die Administration des Servers bitten oder die Konsole des Anbieters nutzen, um die Datenbank anzulegen (Studio zeigt dafür kein SQL).",
         "profile": "Danach unter Verbindungen ein Verbindungsprofil dafür anlegen und verbinden."
       }

@@ -94,6 +94,9 @@ from tabrion_studio.services.connections import ConnectionRegistry, read_only_da
 from tabrion_studio.write.audit import AuditError
 from tabrion_studio.write.backup_store import BackupStore, Loaded, metadata
 from tabrion_studio.write.connection import (
+    DriverFailure as DriverFailure,
+)
+from tabrion_studio.write.connection import (
     WriteConnection,
     WriteError,
     admin_refusing_findings,
@@ -121,14 +124,6 @@ _DATABASE_OID = (
     " WHERE d.datname OPERATOR(pg_catalog.=) CAST(:name AS pg_catalog.name)"
 )
 _SERVER_VERSION_TEXT = "SELECT pg_catalog.current_setting('server_version')"
-
-
-class DriverFailure(Exception):
-    """A driver error of ``CREATE DATABASE`` (tabrion lets it through, I-191 b): answered as ``db.<kind>`` only."""
-
-    def __init__(self, classification: Any) -> None:
-        super().__init__("database error")
-        self.classification = classification
 
 
 @dataclass

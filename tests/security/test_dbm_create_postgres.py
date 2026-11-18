@@ -1,8 +1,10 @@
-"""STU-CR-3 against PostgreSQL: a new database through ``tabrion.postgres.create_database`` on the unlocked write
-connection (GS3-03, GS3-20, GS3-21, GS3-27, TX-29): the owner checks (CREATEDB, an owner the role may and may not
+"""STU-CR-3 against PostgreSQL: a new database through ``tabrion.postgres.create_database`` on the unlocked **admin**
+connection, in the Database Manager's area since the G-S4 grant (STU-CR-ADMIN; GS3-03, GS3-20, GS3-21, GS3-27, GS4-03,
+GS4-11, TX-29): the owner checks (CREATEDB, an owner the role may and may not
 become, a missing owner), a duplicate database without server text (found first, and the server's own refusal when
-the look-up misses it), a driver error as ``db.<kind>`` only, PROD refused, the audit records, and the write session
-left as it was (autocommit off, the fixed ``search_path``).
+the look-up misses it), a driver error as ``db.<kind>`` only, PROD refused, the audit records, the admin session left
+as it was (autocommit off, the fixed ``search_path``), an over-privileged admin role refused at the run (STU-ADR-0008
+section 6), and a write role with CREATEDB refused at its unlock (it no longer needs it).
 
 The roles are made by the test server's superuser and dropped again, with every database a test made (marker
 ``postgres_superuser``, like ``test_write_postgres.py``).
@@ -28,9 +30,9 @@ pytestmark = [pytest.mark.security, pytest.mark.postgres_superuser]
 
 PG_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES")
 PG_SUPERUSER_URL = os.environ.get("TABRION_STUDIO_TEST_POSTGRES_SUPERUSER")
-ROUTE = "/api/write/schema-designer/create/postgresql"
-SCHEMA_DESIGNER = WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))
-WITH_DATA_EDITOR = WriteAreas(frozenset({Area.SCHEMA_DESIGNER, Area.DATA_EDITOR}))
+ROUTE = "/api/write/database-manager/create/postgresql"
+#: The admin area creates databases; the Schema Designer is on too, so a write profile can be tried as well.
+AREAS = WriteAreas(frozenset({Area.DATABASE_MANAGER, Area.SCHEMA_DESIGNER}))
 
 
 class Env:
@@ -38,7 +40,7 @@ class Env:
         self, env: WriteEnv, connection_id: str, admin: sqlalchemy.Engine, prefix: str, unlocked: dict[str, Any]
     ) -> None:
         self.env, self.connection_id, self.admin, self.prefix = env, connection_id, admin, prefix
-        #: The write state the unlock of ``pg-cdb`` answered (its findings and facts).
+        #: The state the admin unlock of ``pg-cdb`` answered (its findings and facts).
         self.unlocked = unlocked
 
     def create(self, name: str, **fields: object) -> Any:
@@ -59,10 +61,10 @@ class Env:
 
 
 @pytest.fixture
-def pg(tmp_path: Path, static_dir: Path, request: pytest.FixtureRequest) -> Iterator[Env]:
+def pg(tmp_path: Path, static_dir: Path) -> Iterator[Env]:
     """``<p>_cdb`` (CREATEDB, member of ``<p>_mine``), ``<p>_plain`` (no CREATEDB), ``<p>_mine`` and ``<p>_other``
-    (NOLOGIN owners); a write profile for each login role coupled to a read profile of the test database. The areas
-    are the Schema Designer's, or the indirect parameter's."""
+    (NOLOGIN owners); an admin profile for each login role and a write profile ``pg-w`` of ``<p>_cdb``, coupled to a
+    read profile of the test database; the admin profile ``pg-cdb`` unlocked."""
     if PG_URL is None or PG_SUPERUSER_URL is None:
         pytest.skip("TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER are needed")
     prefix = f"stucr3_{secrets.token_hex(4)}"
@@ -80,7 +82,7 @@ def pg(tmp_path: Path, static_dir: Path, request: pytest.FixtureRequest) -> Iter
             f'GRANT CONNECT ON DATABASE "{url.database}" TO {prefix}_cdb, {prefix}_plain',
         ):
             connection.exec_driver_sql(statement)
-    env = WriteEnv(tmp_path, static_dir, getattr(request, "param", SCHEMA_DESIGNER))
+    env = WriteEnv(tmp_path, static_dir, AREAS)
     read = {
         "name": "pg",
         "engine": "postgresql",
@@ -97,14 +99,12 @@ def pg(tmp_path: Path, static_dir: Path, request: pytest.FixtureRequest) -> Iter
     if url.password:
         stored = env.send("PUT", "/api/profiles/user:pg/secret", {"secret": url.password, "store": "session"})
         assert stored.status_code == 204
-    for role in ("cdb", "plain"):
-        created = env.create_write(name=f"pg-{role}", read="pg", user=f"{prefix}_{role}", password="keyring:")
+    for name, role, kind in (("pg-cdb", "cdb", "admin"), ("pg-plain", "plain", "admin"), ("pg-w", "cdb", "write")):
+        created = env.create_write(name=name, read="pg", kind=kind, user=f"{prefix}_{role}", password="keyring:")
         assert created.status_code == 201, created.text
-        secret = env.send(
-            "PUT", f"/api/write/profiles/write:pg-{role}/secret", {"secret": password, "store": "session"}
-        )
+        secret = env.send("PUT", f"/api/write/profiles/write:{name}/secret", {"secret": password, "store": "session"})
         assert secret.status_code == 204
-        assert env.confirm_pair(f"write:pg-{role}").status_code == 200
+        assert env.confirm_pair(f"write:{name}").status_code == 200
     connection_id = env.open("user:pg")
     unlocked = env.unlock(connection_id, "write:pg-cdb", "pg-cdb")
     assert unlocked.status_code == 200, unlocked.text
@@ -138,27 +138,27 @@ def test_a_database_is_created_with_an_owner_the_role_may_become(pg: Env) -> Non
     assert pg.database(name) == (f"{pg.prefix}_mine", "UTF8")
     runs = pg.runs()
     start, result = runs[1], runs[0]
-    assert start["action"] == "schema_designer.create_postgresql" and start["objects"] == [name]
+    assert start["action"] == "dbm.create_postgresql" and start["objects"] == [name]
     assert start["profile"] == "pg-cdb" and start["environment"] == "dev" and start["engine"] == "postgresql"
     assert result["result"] == "committed" and result["run"] == start["run"]
     # No owner, locale or statement in the audit log (names, codes and counts only).
     assert f"{pg.prefix}_mine" not in str(runs) and "CREATE" not in str(runs)
 
 
-@pytest.mark.parametrize(
-    ("pg", "warned"),
-    [(SCHEMA_DESIGNER, False), (WITH_DATA_EDITOR, True)],
-    ids=["schema_designer", "data_editor_too"],
-    indirect=["pg"],
-)
-def test_createdb_is_a_warning_where_the_data_editor_may_use_the_role(pg: Env, warned: bool) -> None:
-    """Open point 1 of the PR #128 review (b): a write role with CREATEDB is reported as ``admin.createdb`` (a
-    warning) when the Data Editor's flag is on too, since the same unlock then edits rows; for the Schema Designer
-    alone on DEV it is the fact only. Either way nothing is refused."""
-    assert pg.unlocked["facts"]["createdb"] is True
-    found = [f for f in pg.unlocked["findings"] if f["code"] == "admin.createdb"]
-    assert found == ([{"code": "admin.createdb", "via": "direct", "severity": "warning"}] if warned else [])
-    assert pg.create(f"{pg.prefix}_warned").status_code == 201
+def test_the_admin_role_needs_createdb_and_a_write_role_may_not_hold_it(pg: Env) -> None:
+    """STU-CR-ADMIN: on DEV the admin role's CREATEDB is a fact, not a finding; the same role behind a write profile
+    is refused at its unlock (``admin.createdb`` joins 1A's refusals), and a write profile never reaches the route."""
+    assert pg.unlocked["kind"] == "admin" and pg.unlocked["facts"]["createdb"] is True
+    assert [f for f in pg.unlocked["findings"] if f["code"] == "admin.createdb"] == []
+    assert pg.create(f"{pg.prefix}_ok").status_code == 201
+    pg.env.send("DELETE", "/api/write/unlocks", {"connection_id": pg.connection_id})
+    refused = pg.env.unlock(pg.connection_id, "write:pg-w", "pg-w")
+    assert (refused.status_code, refused.json()["code"]) == (405, "studio.write_role_over_privileged"), refused.text
+    assert pg.env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
+    name = f"{pg.prefix}_by_write"
+    response = pg.create(name)
+    assert (response.status_code, response.json()["code"]) == (405, "studio.write_locked")
+    assert pg.database(name) is None
 
 
 def test_without_an_owner_the_role_owns_it_and_a_name_that_needs_quoting_works(pg: Env) -> None:
@@ -168,11 +168,11 @@ def test_without_an_owner_the_role_owns_it_and_a_name_that_needs_quoting_works(p
     assert pg.database(name) == (f"{pg.prefix}_cdb", "UTF8")
 
 
-def test_the_write_session_is_left_as_it_was(pg: Env) -> None:
+def test_the_admin_session_is_left_as_it_was(pg: Env) -> None:
     """After the autocommit statement the pooled session is back in its normal mode with the pinned search_path."""
     assert pg.create(f"{pg.prefix}_a").status_code == 201
     unlocks = pg.env.unlocks
-    connection = unlocks.require(pg.env.session(), pg.connection_id, Area.SCHEMA_DESIGNER)
+    connection = unlocks.require(pg.env.session(), pg.connection_id, Area.DATABASE_MANAGER)
     assert connection.fetch("SELECT pg_catalog.current_setting('search_path')") == [(WRITE_SEARCH_PATH,)]
     with connection.idle_autocommit() as raw:
         assert raw.autocommit is True
@@ -193,7 +193,7 @@ def test_a_duplicate_database_is_refused_without_server_text(pg: Env) -> None:
 def test_a_duplicate_the_look_up_misses_is_the_same_answer(pg: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     """A database made by someone else between the look-up and the statement: the server's DuplicateDatabase is
     answered with the same fixed problem, no server text."""
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     name = f"{pg.prefix}_race_{CANARY_VALUE[-12:]}".replace("-", "_")
     with pg.admin.connect() as connection:
@@ -267,42 +267,30 @@ def test_a_typed_name_that_does_not_match_creates_nothing(pg: Env) -> None:
     assert pg.database(name) is None
 
 
-# --- decision 1A (G-S2) for the Schema Designer's unlock and runs (GS3-28, review L-1 of PR #127) -------------------
+# --- the admin role (STU-ADR-0008 section 6, GS4-11) at each run (review L-1 of PR #127) -----------------------------
 
 
 @pytest.mark.parametrize(
     "grant",
-    ["ALTER ROLE {p}_cdb BYPASSRLS", "ALTER ROLE {p}_cdb REPLICATION", "GRANT pg_read_server_files TO {p}_mine"],
-)
-def test_the_schema_designer_unlock_refuses_an_over_privileged_role(pg: Env, grant: str) -> None:
-    """1A applies to the Schema Designer's unlock too: the role, directly or through ``<p>_mine``, is refused."""
-    pg.env.send("DELETE", "/api/write/unlocks", {"connection_id": pg.connection_id})
-    with pg.admin.connect() as connection:
-        connection.exec_driver_sql(grant.format(p=pg.prefix))
-    refused = pg.env.unlock(pg.connection_id, "write:pg-cdb", "pg-cdb")
-    assert (refused.status_code, refused.json()["code"]) == (405, "studio.write_role_over_privileged"), refused.text
-    assert pg.env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
-    name = f"{pg.prefix}_never"
-    response = pg.create(name)
-    assert (response.status_code, response.json()["code"]) == (405, "studio.write_locked")
-    assert pg.database(name) is None
-
-
-@pytest.mark.parametrize(
-    "grant",
-    ["ALTER ROLE {p}_cdb BYPASSRLS", "GRANT pg_execute_server_program TO {p}_mine"],
+    [
+        "ALTER ROLE {p}_cdb BYPASSRLS",
+        "ALTER ROLE {p}_cdb REPLICATION",
+        "GRANT pg_read_server_files TO {p}_mine",
+        "GRANT pg_execute_server_program TO {p}_mine",
+    ],
 )
 def test_a_right_gained_after_the_unlock_refuses_the_run_and_ends_the_unlock(pg: Env, grant: str) -> None:
-    """The privilege check runs again at the start of each run, on the session the statement uses: a role that
-    gained a refusing right since its unlock creates nothing, the unlock ends, and ``run.result`` names the code."""
+    """The admin check runs again at the start of each run, on the session the statement uses: a role that gained a
+    refusing right since its unlock (directly or through ``<p>_mine``) creates nothing, the unlock ends, and
+    ``run.result`` names the code."""
     with pg.admin.connect() as connection:
         connection.exec_driver_sql(grant.format(p=pg.prefix))
     name = f"{pg.prefix}_late"
     response = pg.create(name)
-    assert (response.status_code, response.json()["code"]) == (405, "studio.write_role_over_privileged"), response.text
+    assert (response.status_code, response.json()["code"]) == (405, "studio.admin_over_privileged"), response.text
     assert pg.database(name) is None
     assert pg.env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
     runs = pg.runs()
-    assert runs[0]["result"] == "studio.write_role_over_privileged" and runs[0]["run"] == runs[1]["run"]
+    assert runs[0]["result"] == "studio.admin_over_privileged" and runs[0]["run"] == runs[1]["run"]
     again = pg.create(name)
     assert (again.status_code, again.json()["code"]) == (405, "studio.write_locked")

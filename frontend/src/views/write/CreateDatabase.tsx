@@ -1,13 +1,14 @@
 /**
- * The Schema Designer's "New database" wizard (STU-CR-2, STU-CR-3; STU-ADR-0007, gate G-S3, not granted). Rendered
- * only while the server says the `schema_designer` flag is on (`GET /api/write/areas`); the page never decides the
- * flag, and the server refuses both routes while it is off (405).
+ * The Database Manager's "New database" wizard (STU-CR-2, STU-CR-3; STU-ADR-0007 section 1 as amended by
+ * STU-ADR-0008 for gate G-S4). Rendered only while the server says the `database_manager` flag is on
+ * (`GET /api/write/areas`); the page never decides the flag, and the server refuses both routes while it is off
+ * (405), also when only the Schema Designer is on.
  *
  * - **SQLite file:** an absolute path in a folder of the user's own; the file name typed to confirm. The server
  *   checks the folder (no link, only the user may write it, not one of Studio's own folders), never overwrites a
  *   file and creates it `0600`.
- * - **PostgreSQL database:** on an open connection of a DEV or TEST PostgreSQL profile, after unlocking its write
- *   profile (typed name, 15 minutes, as in the Data Editor); the database name typed to confirm. The server checks
+ * - **PostgreSQL database:** on an open connection of a DEV or TEST PostgreSQL profile, after unlocking its
+ *   **admin** profile (typed name, 15 minutes, as in the Database Manager); a write profile never creates a database; the database name typed to confirm. The server checks
  *   CREATEDB and the owner through tabrion and refuses PROD; when the role may not create databases, the page shows
  *   the guided steps (ask the administrator, then add a connection profile).
  *
@@ -61,7 +62,7 @@ export function CreateDatabaseSection({
   useEffect(() => {
     let alive = true;
     void fetchWriteAreas(fetcher).then((areas) => {
-      if (alive) setOn(areas.schema_designer);
+      if (alive) setOn(areas.database_manager);
     });
     return () => {
       alive = false;
@@ -351,7 +352,9 @@ function PostgresWizard({ fetcher, onSaved }: { fetcher: typeof fetch; onSaved?:
             fetcher={fetcher}
             connectionId={target.connection.connectionId}
             profileId={target.profile.id}
+            kind="admin"
             lead={t('createDatabase.postgres.unlockLead')}
+            empty={t('createDatabase.postgres.noAdminProfile')}
             onUnlocked={() => setUnlocked(true)}
           />
         </>
@@ -364,8 +367,8 @@ function PostgresWizard({ fetcher, onSaved }: { fetcher: typeof fetch; onSaved?:
 const LOCKED = new Set([
   'studio.write_locked',
   'studio.write_target_changed',
-  // Decision 1A, checked again at the start of the run: the server ended the unlock.
-  'studio.write_role_over_privileged',
+  // The admin role's privilege check, again at the start of the run: the server ended the unlock.
+  'studio.admin_over_privileged',
 ]);
 
 function PostgresForm({

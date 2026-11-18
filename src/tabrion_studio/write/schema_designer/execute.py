@@ -120,13 +120,13 @@ from tabrion_studio.services.readonly import SQLITE_FUNCTIONS
 from tabrion_studio.write.audit import AuditError
 from tabrion_studio.write.backup_store import BackupStore, metadata
 from tabrion_studio.write.connection import (
+    DriverFailure,
     WriteConnection,
     WriteError,
     refusing_findings_now,
     write_authorizer,
 )
 from tabrion_studio.write.pgtools import Connection, Runner, load_tools, verify_tool
-from tabrion_studio.write.schema_designer.create import DriverFailure
 from tabrion_studio.write.schema_designer.draft import refusal
 from tabrion_studio.write.unlock import Unlock, Unlocks
 

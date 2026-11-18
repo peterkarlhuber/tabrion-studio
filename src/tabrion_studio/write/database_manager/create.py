@@ -1,12 +1,16 @@
 """Creating a database: a SQLite file (STU-CR-2) or a PostgreSQL database (STU-CR-3); threat TX-29, GS3-01..03,
-GS3-20, GS3-21, GS3-27, STU-ADR-0007 sections 1 and 11.
+GS3-20, GS3-21, GS3-27, STU-ADR-0007 sections 1 and 11, and since the G-S4 grant of 2026-11-18 the Database
+Manager's admin area (STU-ADR-0008 section 10; STU-CR-ADMIN).
 
-Imported only by a handler of :mod:`tabrion_studio.write.routes` after it checked that the ``schema_designer`` flag
-is on; with that flag off neither route imports this module (STU-ADR-0006 proof item 2, GS3-01).
+Imported only by a handler of :mod:`tabrion_studio.write.routes` after it checked that the ``database_manager`` flag
+is on; with that flag off neither route imports this module (GS4-01). The Schema Designer's flag no longer opens
+it: database creation and role management belong to the admin area with its own rights (owner, G-S4 grant).
 
-**SQLite** (``POST /api/write/schema-designer/create/sqlite``, ``{"path", "typed"}``). There is no connection to
-unlock for a file that does not exist yet, so the typed confirmation is the new file's name (``typed`` equals the
-last part of ``path``). The rules, each checked before anything is written:
+**SQLite** (``POST /api/write/database-manager/create/sqlite``, ``{"path", "typed"}``). There is no connection to
+unlock for a file that does not exist yet, and so no admin profile either (an admin profile belongs to the read
+profile of an existing database, and a SQLite file has no role): the ``database_manager`` flag and the typed
+confirmation, the new file's name (``typed`` equals the last part of ``path``), are what it needs. The rules, each
+checked before anything is written:
 
 * ``path`` is an absolute, normalized local path (no ``..``, no network, device or drive-relative form, no control
   character and no space other than U+0020), at most :data:`MAX_PATH` characters, whose file name ends in ``.db``,
@@ -32,14 +36,15 @@ folder (only if the name is still that file). ``run.result`` follows (``committe
 is the path and the mode; the page offers to save a connection profile for it (through the normal profile route,
 with the environment the user picks).
 
-**PostgreSQL** (``POST /api/write/schema-designer/create/postgresql``, ``{"connection_id", "name", "owner",
-"template", "encoding", "locale", "typed"}``). It runs on the write connection of this session's unlock of
-``connection_id`` for the Schema Designer (:meth:`Unlocks.require_unlock`: the flag, the unlock and its 15-minute
-expiry, the coupling, the stored environment, never the request's), so PROD is refused (``studio.write_prod_locked``,
+**PostgreSQL** (``POST /api/write/database-manager/create/postgresql``, ``{"connection_id", "name", "owner",
+"template", "encoding", "locale", "typed"}``). It runs on the admin connection of this session's unlock of
+``connection_id`` for the Database Manager (:meth:`Unlocks.require_unlock`: the flag, an **admin** profile
+(``kind="admin"``; a write profile never serves this area), the unlock and its 15-minute expiry, the coupling, the
+stored environment, never the request's), so PROD is refused (``studio.write_prod_locked``,
 E-X7) and so is a connection whose environment is not ``dev`` or ``test``. ``typed`` must equal ``name``. Studio
 checks the fields first (``studio.schema_create_invalid`` with ``create.<field>`` issues), records ``run.start``,
 looks for a database of that name (``studio.schema_database_exists``, no server text) and calls
-``tabrion.postgres.create_database`` on an idle session of the write connection in autocommit mode
+``tabrion.postgres.create_database`` on an idle session of the admin connection in autocommit mode
 (:meth:`WriteConnection.idle_autocommit`). tabrion checks ``CREATEDB``, that the owner exists and that the role may
 ``SET ROLE`` to it (PostgreSQL 16 and later; a member before), and builds the statement with ``psycopg.sql``; Studio
 builds no DDL. Its refusals are fixed problems (``studio.schema_createdb_required``, ``studio.schema_owner_missing``,
@@ -47,14 +52,16 @@ builds no DDL. Its refusals are fixed problems (``studio.schema_createdb_require
 driver error is a ``db.<kind>`` problem from ``tabrion.errors.classify`` (the SQLSTATE only), logged with
 ``safe_message`` only (I-191 b, TX-46). ``run.result`` follows.
 
-**Decision 1A (G-S2, GS3-28).** The unlock the run uses was opened by ``open_write_connection``, which refuses a write
-role that has or reaches superuser, BYPASSRLS, REPLICATION or a server-file role. At the start of each run the same
-privilege check runs again on the session the statement uses (review L-1 of PR #127); a hit refuses the run with
-``405 studio.write_role_over_privileged`` and ends the unlock.
+**The admin role (STU-ADR-0008 section 6).** At the start of each run the privilege check runs again on the session
+the statement uses (review L-1 of PR #127): superuser, BYPASSRLS, REPLICATION, a server-file role or CREATEROLE before
+PostgreSQL 16 refuse the run with ``405 studio.admin_over_privileged`` and end the unlock, as every other action of
+the area does. The admin role needs CREATEDB; a write role may no longer hold it (``open_write_connection`` refuses
+it, :func:`~tabrion_studio.write.connection.write_refusals`).
 
-**Audit (GS3-27).** ``run.start`` and ``run.result`` with the area, the action (``schema_designer.create_sqlite`` or
-``schema_designer.create_postgresql``), the engine and the object's name (the file name, never its folder; the
-database name), plus the profile and environment for PostgreSQL; never an owner, a locale, a path or a secret.
+**Audit (GS3-27, GS4-22).** ``run.start`` and ``run.result`` with the area (``database_manager``), the action
+(``dbm.create_sqlite`` or ``dbm.create_postgresql``), the engine and the object's name (the file name, never its
+folder; the database name), plus the profile and environment for PostgreSQL; never an owner, a locale, a path or a
+secret.
 """
 
 from __future__ import annotations
@@ -72,9 +79,8 @@ import secrets
 import stat
 import sys
 from typing import Any
-import unicodedata
 
-from tabrion.errors import Classification, PermissionDenied, RoleMissing, TabrionError, classify, safe_message
+from tabrion.errors import PermissionDenied, RoleMissing, TabrionError, classify, safe_message
 from tabrion.postgres import create_database
 from tabrion.sqlite import SQLiteProfile
 from tabrion.sqlite import connect as sqlite_connect
@@ -82,7 +88,13 @@ from tabrion.sqlite import connect as sqlite_connect
 from tabrion_studio.config.locations import network_or_device, safe_realpath
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.write.audit import AuditError, AuditLog
-from tabrion_studio.write.connection import WriteError, refusing_findings_now
+from tabrion_studio.write.connection import (
+    DriverFailure,
+    WriteError,
+    admin_refusing_findings,
+    has_hidden_character,
+    privileges_now,
+)
 from tabrion_studio.write.folders import ancestor_is_safe as ancestor_is_safe  # re-exported (tests)
 from tabrion_studio.write.folders import folders_up
 from tabrion_studio.write.folders import reserved_identities as reserved_identities  # re-exported (tests)
@@ -107,31 +119,16 @@ _POSIX = sys.platform != "win32"
 _GROUP_OTHER_WRITE = 0o022
 _REPARSE = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
 
-ACTION_SQLITE = "schema_designer.create_sqlite"
-ACTION_POSTGRES = "schema_designer.create_postgresql"
-
-
-class DriverFailure(Exception):
-    """A driver error of ``CREATE DATABASE`` that is not one of the fixed refusals: answered as ``db.<kind>``."""
-
-    def __init__(self, classification: Classification) -> None:
-        super().__init__("database error")
-        self.classification = classification
+ACTION_SQLITE = "dbm.create_sqlite"
+ACTION_POSTGRES = "dbm.create_postgresql"
+__all__ = ["DriverFailure", "create_postgres_database", "create_sqlite_file"]
 
 
 def _invalid(field: str, code: str) -> WriteError:
     return WriteError("studio.schema_create_invalid", [(f"create.{field}", f"create.{code}")])
 
 
-def _has_control(text: str) -> bool:
-    """A control, format, surrogate, private-use or unassigned character, or a space other than U+0020 (a no-break
-    space and the other ``Zs`` characters, and the line and paragraph separators ``Zl``, ``Zp``), which look like a
-    blank or like nothing (review P128-03)."""
-    return any(
-        unicodedata.category(char) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
-        or (unicodedata.category(char) == "Zs" and char != " ")
-        for char in text
-    )
+_has_control = has_hidden_character
 
 
 # --- SQLite (STU-CR-2) -------------------------------------------------------------------------------------------
@@ -339,7 +336,7 @@ def create_sqlite_file(audit: AuditLog, reserved: Iterable[Path], raw_path: obje
     if _exists(path):
         raise WriteError("studio.schema_file_exists")
     run = secrets.token_hex(8)
-    common: dict[str, object] = {"run": run, "area": Area.SCHEMA_DESIGNER.value, "action": ACTION_SQLITE}
+    common: dict[str, object] = {"run": run, "area": Area.DATABASE_MANAGER.value, "action": ACTION_SQLITE}
     try:
         audit.append("run.start", **common, engine="sqlite", objects=[name])
     except AuditError:
@@ -457,7 +454,7 @@ def _refusal(exc: TabrionError) -> WriteError:
 
 
 def _target(unlocks: Unlocks, session: str, connection_id: object) -> Unlock:
-    unlock = unlocks.require_unlock(session, connection_id, Area.SCHEMA_DESIGNER)
+    unlock = unlocks.require_unlock(session, connection_id, Area.DATABASE_MANAGER)
     # E-X7 again, from the stored profile as the unlock re-read it now: dev or test only, never prod or unset.
     if unlock.environment not in CREATE_ENVIRONMENTS:
         raise WriteError("studio.write_prod_locked")
@@ -467,7 +464,7 @@ def _target(unlocks: Unlocks, session: str, connection_id: object) -> Unlock:
 
 
 def create_postgres_database(unlocks: Unlocks, session: str, doc: dict[str, Any]) -> CreatedDatabase:
-    """Create a PostgreSQL database on the unlocked write connection (see the module text). Raises
+    """Create a PostgreSQL database on the unlocked admin connection (see the module text). Raises
     :class:`WriteError` or :class:`DriverFailure`."""
     request = check_database_request(doc)
     if not isinstance(doc.get("typed"), str) or doc.get("typed") != request.name:
@@ -476,7 +473,7 @@ def create_postgres_database(unlocks: Unlocks, session: str, doc: dict[str, Any]
     run = secrets.token_hex(8)
     common: dict[str, object] = {
         "run": run,
-        "area": Area.SCHEMA_DESIGNER.value,
+        "area": Area.DATABASE_MANAGER.value,
         "action": ACTION_POSTGRES,
         "profile": unlock.write_name,
     }
@@ -508,8 +505,8 @@ def create_postgres_database(unlocks: Unlocks, session: str, doc: dict[str, Any]
         raise
     finally:
         pending = not unlocks.audit.record("run.result", **common, result=result)
-        if result == "studio.write_role_over_privileged":
-            # The unlock ends with the refusal (1A): the role must be fixed and unlocked again, where 1A refuses it.
+        if result == "studio.admin_over_privileged":
+            # The unlock ends with the refusal (section 6): the role must be fixed outside Studio and unlocked again.
             unlocks.lock(session, unlock.connection_id)
     logger.info("PostgreSQL database created", extra={"event": "studio.schema_database_created"})
     return CreatedDatabase(request.name, request.owner, pending)
@@ -527,16 +524,17 @@ def _create(unlock: Unlock, request: DatabaseRequest) -> None:
                     reading.execute(sql)
                     return reading.fetchall()
 
-            # Decision 1A at the start of the run, on the session the statement uses (GS3-28, review L-1 of PR #127):
-            # a role that gained superuser, BYPASSRLS, REPLICATION or a server-file role since its unlock is refused.
-            # CREATE DATABASE cannot run in a transaction; nothing runs between this check and the statement but the
-            # look-up below.
-            if refusing_findings_now(fetch):
+            # STU-ADR-0008 section 6 at the start of the run, on the session the statement uses (review L-1 of PR #127):
+            # an admin role that gained superuser, BYPASSRLS, REPLICATION, a server-file role or (before 16)
+            # CREATEROLE since its unlock is refused. CREATE DATABASE cannot run in a transaction; nothing runs between
+            # this check and the statement but the look-up below.
+            _facts, findings = privileges_now(fetch)
+            if admin_refusing_findings(findings):
                 logger.warning(
-                    "the write role has superuser, BYPASSRLS, REPLICATION or server-file rights; nothing was created",
-                    extra={"event": "studio.write_role_over_privileged", "code": "studio.write_role_over_privileged"},
+                    "the admin role has superuser, BYPASSRLS, REPLICATION, server-file or pre-16 CREATEROLE rights",
+                    extra={"event": "studio.admin_over_privileged", "code": "studio.admin_over_privileged"},
                 )
-                raise WriteError("studio.write_role_over_privileged")
+                raise WriteError("studio.admin_over_privileged")
             with psycopg.Cursor(connection, row_factory=tuple_row) as cursor:
                 cursor.execute(_EXISTS, (request.name,))
                 if cursor.fetchone() is not None:

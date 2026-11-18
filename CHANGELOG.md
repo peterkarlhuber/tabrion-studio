@@ -1247,6 +1247,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Database creation moved to the admin area (G-S4; owner grant of 2026-11-18, which assigns database creation and
+  role management to the admin area with separate permissions; all flags stay off by default). The STU-CR-2 and
+  STU-CR-3 wizards are now `POST /api/write/database-manager/create/sqlite` and `.../create/postgresql`, behind the
+  `database_manager` flag instead of `schema_designer` (405 and nothing of `database_manager.create` imported
+  otherwise, also with `schema_designer` on). A PostgreSQL database needs the connection's admin unlock; a write
+  unlock is refused (`studio.method_not_allowed`), and the admin check runs again before `CREATE DATABASE`
+  (`studio.admin_over_privileged`, which ends the unlock). A SQLite file needs the flag but no unlock, because no
+  role exists to check. The audit actions are `dbm.create_sqlite` and `dbm.create_postgresql` in the area
+  `database_manager`. The folder rules, name rules, Windows refusal, PROD lock and audit are unchanged. The page
+  shows the wizard only while `database_manager` is on and offers the admin profile (en, de).
+- A write role that has or reaches CREATEDB is refused like decision 1A (`studio.write_role_over_privileged`), at
+  the unlock and again at the start of every run (`admin.createdb`, now `dangerous` for write roles); for admin
+  roles CREATEDB is a fact on DEV and TEST and a warning elsewhere. STU-ADR-0007 section 1 and STU-ADR-0008
+  (sections 1, 6, 10 and 11), the threat models (TX-29, TX-40), the G-S3 and G-S4 definitions (GS3-03, GS3-21,
+  GS3-27, GS3-28, new GS4-27), the guides and the problem texts are amended. Tests moved to `test_dbm_create.py`
+  and `test_dbm_create_postgres.py`, with new cases for the `schema_designer` flag alone, a write profile, a write
+  role with CREATEDB and a right gained after the admin unlock.
+- The eight STU-XDM-3 owner points (PR #140) are recorded as decided per G-S3/G-S4 grant 2026-11-18, safest option
+  (STU-ADR-0008 section 11).
+
 - tabrion pin moved to the merge commit of tabrion PR #90 (`28c8839f72a2d7232d973c71f99df1e57001a260`, still
   0.3.0.dev0; range `>=0.2,<0.4` unchanged). It adds the experimental CR-DBX primitives TAB-XW-2 (schema level 2),
   TAB-XW-3 (`tabrion.ddl`), TAB-XW-4 (`tabrion.plan`), TAB-XW-7 (SQLite restore and file deletion), TAB-XW-8 (role

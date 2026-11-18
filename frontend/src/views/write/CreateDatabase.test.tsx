@@ -1,7 +1,7 @@
 /**
- * STU-CR-2, STU-CR-3: the "New database" wizard is hidden while the Schema Designer flag is off (also with another
- * area's flag on), confirms by the typed name, shows the server's refusals by field and code, unlocks before a
- * PostgreSQL database, shows the guided steps without CREATEDB, and saves a connection profile through the normal
+ * STU-CR-2, STU-CR-3 (G-S4: the admin area): the "New database" wizard is hidden while the Database Manager flag is
+ * off (also with the Schema Designer or Data Editor flag on), confirms by the typed name, shows the server's refusals by field and code, unlocks the admin profile
+ * (never a write profile) before a PostgreSQL database, shows the guided steps without CREATEDB, and saves a connection profile through the normal
  * profile route. axe finds no serious or critical violation (jsdom: no colour contrast; the E2E test has it).
  */
 import { render, screen, waitFor } from '@testing-library/react';
@@ -42,7 +42,7 @@ interface Answers {
   opened?: { connection_id: string; profile_id: string; environment: string }[];
 }
 
-const ON = { data_editor: false, schema_designer: true, database_manager: false };
+const ON = { data_editor: false, schema_designer: false, database_manager: true };
 
 function setup(answers: Answers = {}) {
   const calls: Call[] = [];
@@ -78,7 +78,7 @@ function setup(answers: Answers = {}) {
     if (url === '/api/write/unlocks' && method === 'GET')
       return json({
         unlocks: unlocked
-          ? [{ connection_id: 'c_pg', write_profile_id: 'write:shop-w', environment: 'dev' }]
+          ? [{ connection_id: 'c_pg', write_profile_id: 'admin:shop-a', environment: 'dev' }]
           : [],
       });
     if (url === '/api/write/unlocks' && method === 'POST') {
@@ -96,9 +96,17 @@ function setup(answers: Answers = {}) {
             read_profile_id: 'user:shop-dev',
             secret: { confirmed: true, foreign: false },
           },
+          {
+            id: 'admin:shop-a',
+            name: 'shop-a',
+            kind: 'admin',
+            engine: 'postgresql',
+            read_profile_id: 'user:shop-dev',
+            secret: { confirmed: true, foreign: false },
+          },
         ],
       });
-    if (url === '/api/write/schema-designer/create/sqlite') {
+    if (url === '/api/write/database-manager/create/sqlite') {
       const answer = answers.sqlite ?? {
         status: 201,
         body: {
@@ -111,7 +119,7 @@ function setup(answers: Answers = {}) {
       };
       return json(answer.body, answer.status);
     }
-    if (url === '/api/write/schema-designer/create/postgresql') {
+    if (url === '/api/write/database-manager/create/postgresql') {
       const answer = answers.postgres ?? {
         status: 201,
         body: { engine: 'postgresql', database: body?.name, owner: null, audit_pending: false },
@@ -154,12 +162,13 @@ describe('the answers of the creation routes', () => {
 describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
   it.each([
     { data_editor: false, schema_designer: false, database_manager: false },
-    { data_editor: true, schema_designer: false, database_manager: true },
-  ])('renders nothing while the Schema Designer flag is off (%o)', async (areas) => {
+    { data_editor: false, schema_designer: true, database_manager: false },
+    { data_editor: true, schema_designer: true, database_manager: false },
+  ])('renders nothing while the Database Manager flag is off (%o)', async (areas) => {
     const { calls } = setup({ areas });
     await waitFor(() => expect(calls.map((c) => c.url)).toContain('/api/write/areas'));
     expect(screen.queryByTestId('create-database')).toBeNull();
-    expect(calls.some((c) => c.url.includes('schema-designer'))).toBe(false);
+    expect(calls.some((c) => c.url.includes('/create/'))).toBe(false);
   });
 
   it('creates a SQLite file only after its name is typed, then saves a profile', async () => {
@@ -179,7 +188,7 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     expect(await screen.findByTestId('create-database-done')).toHaveTextContent(
       'Created /data/inventory.db',
     );
-    const post = calls.find((c) => c.url === '/api/write/schema-designer/create/sqlite');
+    const post = calls.find((c) => c.url === '/api/write/database-manager/create/sqlite');
     expect(post?.body).toEqual({ path: '/data/inventory.db', typed: 'inventory.db' });
     expect(screen.getByLabelText('Profile name')).toHaveValue('inventory');
     await user.selectOptions(screen.getByLabelText('Environment'), 'test');
@@ -238,7 +247,7 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     expect(document.body.textContent).not.toContain('SERVER-TEXT-CANARY');
   });
 
-  it('offers only non-PROD PostgreSQL connections and unlocks before creating', async () => {
+  it('offers only non-PROD PostgreSQL connections and unlocks the admin profile before creating', async () => {
     const user = userEvent.setup();
     const { calls } = setup();
     await screen.findByTestId('create-database');
@@ -246,7 +255,8 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     expect(await screen.findByTestId('data-editor-unlock')).toBeInTheDocument();
     expect(screen.getByText('On the server of shop-dev.')).toBeInTheDocument();
     expect(screen.queryByText(/shop-prod/)).toBeNull();
-    await user.type(screen.getByLabelText('Type shop-w to unlock'), 'shop-w');
+    expect(screen.queryByText(/shop-w\b/)).toBeNull(); // the write profile is never offered
+    await user.type(screen.getByLabelText('Type shop-a to unlock'), 'shop-a');
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
     await screen.findByTestId('create-postgres');
     await user.type(screen.getByLabelText('Database name'), 'shop_test');
@@ -256,7 +266,7 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     await user.type(screen.getByLabelText('Type shop_test to create the database'), 'shop_test');
     await user.click(create);
     expect(await screen.findByTestId('create-database-done')).toHaveTextContent('shop_test');
-    const post = calls.find((c) => c.url === '/api/write/schema-designer/create/postgresql');
+    const post = calls.find((c) => c.url === '/api/write/database-manager/create/postgresql');
     expect(post?.body).toEqual({
       connection_id: 'c_pg',
       name: 'shop_test',
@@ -345,11 +355,11 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     );
   });
 
-  it('shows why the unlock ended when the role became over-privileged (decision 1A)', async () => {
+  it('shows why the unlock ended when the admin role became over-privileged', async () => {
     const user = userEvent.setup();
     setup({
       unlocked: true,
-      postgres: { status: 405, body: { code: 'studio.write_role_over_privileged' } },
+      postgres: { status: 405, body: { code: 'studio.admin_over_privileged' } },
     });
     await screen.findByTestId('create-database');
     await user.click(screen.getByLabelText('PostgreSQL database'));
@@ -358,7 +368,7 @@ describe('CreateDatabaseSection (STU-CR-2, STU-CR-3)', () => {
     await user.click(screen.getByRole('button', { name: 'Create database' }));
     expect(await screen.findByTestId('data-editor-unlock')).toBeInTheDocument();
     expect(screen.getByTestId('create-database-problem')).toHaveTextContent(
-      'The write role is a superuser',
+      'The admin role has or reaches SUPERUSER',
     );
   });
 

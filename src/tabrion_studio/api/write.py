@@ -31,11 +31,12 @@
   through the plan routes above; a value that does not fit its column is refused when the plan is made
   (``400 studio.data_editor_value_invalid`` with positions only). Only the Data
   Editor flag opens it and registers the executor; with that flag off it answers 405 like every write route.
-* ``POST /api/write/schema-designer/create/sqlite``: ``{"path", "typed"}``: a new, private SQLite database file
-  (STU-CR-2); ``POST /api/write/schema-designer/create/postgresql``: ``{"connection_id", "name", "owner",
-  "template", "encoding", "locale", "typed"}``: a new PostgreSQL database on this session's unlocked write connection
-  of a DEV or TEST server (STU-CR-3; :mod:`tabrion_studio.write.schema_designer.create`). Only the Schema Designer
-  flag opens them; with it off they answer 405 and the Schema Designer's code is not imported.
+* ``POST /api/write/database-manager/create/sqlite``: ``{"path", "typed"}``: a new, private SQLite database file
+  (STU-CR-2); ``POST /api/write/database-manager/create/postgresql``: ``{"connection_id", "name", "owner",
+  "template", "encoding", "locale", "typed"}``: a new PostgreSQL database on this session's unlocked **admin**
+  connection of a DEV or TEST server (STU-CR-3; :mod:`tabrion_studio.write.database_manager.create`). Since the
+  G-S4 grant of 2026-11-18 database creation belongs to the admin area: only the Database Manager flag opens them (the
+  Schema Designer's no longer does); with it off they answer 405 and the area's code is not imported.
 * ``POST /api/write/schema-designer/draft``: ``{"connection_id", "schema"}``: start (or start again) this session's
   draft of the connection from a level-2 snapshot of one schema, read on the unlocked write connection (STU-CR-4,
   :mod:`tabrion_studio.write.schema_designer.designer`); ``DELETE`` with ``{"connection_id"}`` discards it.
@@ -105,9 +106,6 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/secret-confirmations/confirm", ("POST",)),
     # STU-026: the Data Editor's table (columns, primary key, triggers and rules) for its grid; Data Editor flag only.
     ("/api/write/data-editor/table", ("POST",)),
-    # STU-CR-2, STU-CR-3: the Schema Designer's database creation; Schema Designer flag only (G-S3).
-    ("/api/write/schema-designer/create/sqlite", ("POST",)),
-    ("/api/write/schema-designer/create/postgresql", ("POST",)),
     # STU-CR-4: the Schema Designer's server-side draft, its edit operations and the read-only plan preview (G-S3).
     ("/api/write/schema-designer/draft", ("POST", "DELETE")),
     ("/api/write/schema-designer/draft/view", ("POST",)),
@@ -121,6 +119,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/database-manager/backup", ("POST",)),
     ("/api/write/database-manager/restore/preview", ("POST",)),
     ("/api/write/database-manager/restore", ("POST",)),
+    # STU-CR-2, STU-CR-3: database creation, in the Database Manager's admin area since the G-S4 grant (STU-CR-ADMIN).
+    ("/api/write/database-manager/create/sqlite", ("POST",)),
+    ("/api/write/database-manager/create/postgresql", ("POST",)),
 )
 
 
