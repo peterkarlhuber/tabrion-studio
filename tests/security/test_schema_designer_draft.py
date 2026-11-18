@@ -344,10 +344,10 @@ def test_every_plan_call_passes_the_write_connections_sqlite_version(
     seen: list[object] = []
     from tabrion.plan import plan as real
 
-    def spy(current: Any, target: Any, **options: Any) -> Any:
+    def spy(*, current: Any, target: Any, **options: Any) -> Any:
         seen.append(options.get("server_version"))
         assert options.get("concurrent_indexes") is False
-        return real(current, target, **options)
+        return real(current=current, target=target, **options)
 
     monkeypatch.setattr(draft_module, "plan", spy)
     assert designer.start().status_code == 201

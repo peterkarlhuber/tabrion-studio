@@ -13,11 +13,11 @@ was started with (:class:`.draft.Drafts`).
   Starting again replaces the draft.
 * :func:`edit`: one edit operation (:mod:`.draft`), made on the revision the page names. An edit drops the plan of
   the last preview.
-* :func:`preview`: a **fresh** level-2 snapshot on the write connection, then ``tabrion.plan.plan(fresh, draft,
-  server_version=<read now on the write connection>)``: every step with its operation, table, risk classes,
-  transactional flag and exact SQL, both fingerprints and the plan hash, the warnings of section 8, why the plan may
-  not run directly (section 5) and what its confirmation needs (sections 6 and 7). The server keeps that plan with the
-  draft (:class:`.execute.RunPlan`), bound to the session, the connection, the unlock and a short expiry.
+* :func:`preview`: a **fresh** level-2 snapshot on the write connection, then ``tabrion.plan.plan(current=fresh,
+  target=draft, server_version=<read now on the write connection>)``: every step with its operation, table, risk
+  classes, transactional flag and exact SQL, both fingerprints and the plan hash, the warnings of section 8, why the
+  plan may not run directly (section 5) and what its confirmation needs (sections 6 and 7). The server keeps that plan
+  with the draft (:class:`.execute.RunPlan`), bound to the session, the connection, the unlock and a short expiry.
 * :func:`confirm`: the user's confirmation per risk class (:func:`.execute.check_confirmation`).
 * :func:`run`: once per confirmation, the recorded plan is checked again (the unlock, the engine version, the
   migration markers, Studio's re-plan from a fresh snapshot with its hash and classes compared: the pre-check of
