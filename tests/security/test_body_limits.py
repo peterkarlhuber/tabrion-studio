@@ -440,14 +440,18 @@ def test_uvicorn_answers_a_statement_over_the_cap_with_413(studio: Studio) -> No
 
 def test_uvicorn_stops_reading_an_endless_chunked_body(studio: Studio) -> None:
     """A client that never stops sending: after the bounded drain the server answers and closes, so the client's
-    writes fail long before the bound. Without the cap the route would buffer all of it."""
+    writes fail long before the bound. Without the cap the route would buffer all of it.
+
+    How the closed connection reaches the writer depends on the platform and on timing: POSIX gives EPIPE or
+    ECONNRESET; Winsock gives WSAECONNRESET (10054) or, when its stack has already dropped the connection,
+    WSAECONNABORTED (10053, ``ConnectionAbortedError``). Each means the server closed it; a timeout does not count."""
     bound = 64 * 1024 * 1024
     sent = 0
     with _server(studio.client.app) as port, socket.create_connection(("127.0.0.1", port)) as conn:
         conn.settimeout(10)
         conn.sendall(HEAD + b"Transfer-Encoding: chunked\r\n\r\n")
         block = CHUNK * 64
-        with pytest.raises((BrokenPipeError, ConnectionResetError)):
+        with pytest.raises((BrokenPipeError, ConnectionResetError, ConnectionAbortedError)):
             while sent < bound:
                 conn.sendall(block)
                 sent += len(block)

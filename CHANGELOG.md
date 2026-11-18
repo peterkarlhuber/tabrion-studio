@@ -1376,6 +1376,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Fixed
 
+- Test: `test_uvicorn_stops_reading_an_endless_chunked_body` also accepts `ConnectionAbortedError` (Winsock
+  `WSAECONNABORTED`, 10053), which Windows raises instead of `ConnectionResetError` when its stack has already
+  dropped the connection the server closed; the bound and the closed-connection requirement are unchanged.
+
 - `scripts/check_tabrion_api.py --surface` no longer reports `tabrion.errors.Kind.PERMISSION.value` as missing from
   Tabrion's surface: Studio names the `Kind` member (a `StrEnum`) instead of its `.value`. The Data Editor's end-to-end
   teardown waits for the server to stop before it removes the folder of `write-areas.toml`, so the audit log no longer
