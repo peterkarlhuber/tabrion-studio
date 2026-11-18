@@ -804,6 +804,10 @@ def _restore_sqlite(
     file = unlock.connection.database_file
     if file is None:  # pragma: no cover - a SQLite write connection always has its file
         raise WriteError("studio.write_target_changed")
+    # The backup itself first (size and SHA-256 against its description), whatever the target: an edited backup is
+    # answered as such also where the target would be refused (Windows, owner's condition of G-S4).
+    size, digest, _source_identity = _sha256_file(loaded.path)
+    _same_backup(loaded, size, digest)
     if existing:
         target = file
         _typed(doc, file.name)
@@ -820,8 +824,6 @@ def _restore_sqlite(
         _check_new_file_folder(
             target.parent, (*manager.reserved, *([] if manager.store.path is None else [manager.store.path]))
         )
-    size, digest, _source_identity = _sha256_file(loaded.path)
-    _same_backup(loaded, size, digest)
     pre_backup: str | None = None
     if existing:
         # The target's own backup first (section 4): no backup, no restore.
