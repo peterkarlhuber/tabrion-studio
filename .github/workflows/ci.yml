@@ -85,7 +85,12 @@ jobs:
           - { label: "Python 3.14, other", os: ubuntu-latest, python: "3.14", tests: "tests --ignore=tests/security" }
           - { label: "macos-latest, security", os: macos-latest, python: "3.13", tests: tests/security }
           - { label: "macos-latest, other", os: macos-latest, python: "3.13", tests: "tests --ignore=tests/security" }
-          - { label: "windows-latest, security", os: windows-latest, python: "3.13", tests: tests/security }
+          # Windows' security leg runs in two shards too: it took 17 to 20 of its 20 minutes. The ignore globs are
+          # complements (as in the security job, #138), so every test runs exactly once: shard 1 every file but
+          # tests/security/test_[r-z]*, shard 2 only those. Unquoted: pwsh expands no wildcard for a native
+          # command.
+          - { label: "windows-latest, security", os: windows-latest, python: "3.13", tests: "tests/security --ignore-glob=tests/security/test_[r-z]*" }
+          - { label: "windows-latest, security 2 of 2", os: windows-latest, python: "3.13", tests: "tests/security --ignore-glob=tests/security/test_[!r-z]*" }
           - { label: "windows-latest, other", os: windows-latest, python: "3.13", tests: "tests --ignore=tests/security" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

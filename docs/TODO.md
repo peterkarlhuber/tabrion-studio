@@ -1146,6 +1146,10 @@ Notes of the PR #137 review (merged as `e130a84`, accepted, nothing above Info),
   ignore globs (`security tests`: every path except `tests/security/test_[n-z]*`, plus ruff's `S` rules;
   `security tests (2 of 2)`: only those files), so every test runs once; the timeout is unchanged. The new check is
   in `.github/ci-manifest.json`.
+- [x] **CI budget, Windows (2026-11-18, #140 cancelled at 99 %):** the `backend test (windows-latest, security)` leg
+  (17 to 20 of its 20 minutes) runs in two shards with complementary ignore globs (every file but
+  `tests/security/test_[r-z]*`; `backend test (windows-latest, security 2 of 2)`: only those), so every test runs
+  once; the timeout is unchanged and the new check is in `.github/ci-manifest.json`.
 
 ### STU-XDM-2 open points
 
