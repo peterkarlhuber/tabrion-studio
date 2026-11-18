@@ -134,6 +134,19 @@ environment is `prod` (whether to allow it, since it writes only the project fil
   database it was planned for, soon after the preview. It shows the source fingerprint. A plan with
   `CONCURRENTLY` steps is written as a revision of its own, as Tabrion orders them.
 
+**The schema comparison (STU-XSD-2)** is neither output: it reads, compares and shows, and its plan preview is never
+kept or run (no plan hash, no confirmation). Decided per G-S3/G-S4 grant 2026-11-18:
+
+1. A PROD connection may be compared **read-only**, as either side, on its already-open read connection (a read
+   path, as section 1 and Studio 1.0's read-only views).
+2. PROD may be the **expected** side (the reference) of a plan preview whose actual side is a DEV or TEST connection:
+   PROD is only read, and the plan is for the DEV or TEST database and is never kept or run. A preview whose actual
+   side is PROD is refused (`compare.plan_prod`).
+3. A preview for a connection of a **project** profile is refused (`compare.plan_environment`): its environment
+   label comes from the project, which is untrusted (AT3, K-1).
+4. A snapshot export from Studio and the comparison of schemas with different names are follow-ups, not part of
+   STU-XSD-2.
+
 ### 6. Risk classes and confirmations (doc 15 section 4, TM-DB-08)
 
 | Class (I-124 c) | What Studio asks before the run |
