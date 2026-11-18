@@ -77,9 +77,11 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
-    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
+    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
 )
-_ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|compare)\.[a-z_]{1,48}")
+_ISSUE_CODE = re.compile(
+    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare)\.[a-z_]{1,48}"
+)
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
 #: where the database named it, and a constraint.* code.
 _CONSTRAINT_POINTER = re.compile(r"changes\.\d{1,4}(?:\.\d{1,4})?")
@@ -1096,6 +1098,67 @@ CATALOG: dict[str, Entry] = {
         "The restore could not be done. A PostgreSQL restore runs in one transaction, so the new database stays "
         "empty; it is left for you to inspect or drop.",
         "Check the restore role's rights and the target, then try again.",
+    ),
+    # Database Manager: delete a database (STU-XDM-3).
+    "studio.dbm_delete_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Delete not allowed",
+        "Studio deletes only a DEV or TEST database: never a maintenance or template database, never the database "
+        "the admin connection is connected to, never a database or file that a PROD profile names, and a SQLite file "
+        "only in a safe folder of your own and not on Windows. Nothing was deleted.",
+        "Choose another target.",
+    ),
+    "studio.dbm_delete_name_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Name not usable",
+        "The database name is empty, too long, has blanks at either end or holds characters that cannot be seen, or "
+        "the force option is not a plain yes or no. Nothing was deleted.",
+        "Choose the database by its plain name.",
+    ),
+    "studio.dbm_delete_name_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Name not confirmed",
+        "The typed name does not match the target's name exactly. Nothing was deleted.",
+        "Type the target's name exactly as shown.",
+    ),
+    "studio.dbm_delete_target_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Database not found",
+        "No database of this name exists on the server. Nothing was deleted.",
+        "Check the name.",
+    ),
+    "studio.dbm_delete_target_changed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Target changed",
+        "The target is no longer the database or file that was checked and backed up. Nothing was deleted.",
+        "Look at the target, then start the delete again.",
+    ),
+    "studio.dbm_delete_in_use": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Database in use",
+        "Other sessions or programs use the database. Studio did not end them and nothing was deleted.",
+        "Close the other sessions, or on PostgreSQL 13 or later choose to end them and confirm that separately.",
+    ),
+    "studio.dbm_delete_backup_unverified": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Backup not verified",
+        "The backup made before the delete could not be verified (for example, the schema changed while it was made),"
+        " so nothing was deleted.",
+        "Wait until nothing changes the database's schema, then try again.",
+    ),
+    "studio.dbm_delete_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Delete failed",
+        "The database could not be deleted. Its backup from before the delete is kept in the backup folder.",
+        "Check the target and its folder, then try again.",
     ),
     "studio.admin_over_privileged": Entry(
         405,

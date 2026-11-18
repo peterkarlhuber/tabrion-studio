@@ -151,6 +151,8 @@ _PLAN_RUN_KEYS = frozenset({"connection_id", "plan_hash", "dry_run"})
 _DBM_BACKUP_KEYS = frozenset({"connection_id"})
 _DBM_PREVIEW_KEYS = frozenset({"connection_id", "backup_id"})
 _DBM_RESTORE_KEYS = frozenset({"connection_id", "backup_id", "target", "name", "typed", "restore_profile_id"})
+_DBM_DELETE_PREVIEW_KEYS = frozenset({"connection_id", "name"})
+_DBM_DELETE_KEYS = frozenset({"connection_id", "name", "typed", "force", "force_typed"})
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -695,7 +697,12 @@ def add_enabled_write_routes(
 
             def call(session: str, doc: dict[str, Any]) -> Response:
                 try:
-                    answer_doc = getattr(backups, action)(manager, session, doc)
+                    if action.startswith("delete"):  # STU-XDM-3
+                        from tabrion_studio.write.database_manager import delete
+
+                        answer_doc = (delete.delete if action == "delete" else delete.preview)(manager, session, doc)
+                    else:
+                        answer_doc = getattr(backups, action)(manager, session, doc)
                 except backups.DriverFailure as exc:
                     return db_problem_response(exc.classification)
                 return JSONResponse(answer_doc, status_code=201 if action in ("backup", "restore") else 200)
@@ -706,6 +713,8 @@ def add_enabled_write_routes(
     manager_route("/api/write/database-manager/backup", "POST", _DBM_BACKUP_KEYS, "backup")
     manager_route("/api/write/database-manager/restore/preview", "POST", _DBM_PREVIEW_KEYS, "preview")
     manager_route("/api/write/database-manager/restore", "POST", _DBM_RESTORE_KEYS, "restore")
+    manager_route("/api/write/database-manager/delete/preview", "POST", _DBM_DELETE_PREVIEW_KEYS, "delete_preview")
+    manager_route("/api/write/database-manager/delete", "POST", _DBM_DELETE_KEYS, "delete")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

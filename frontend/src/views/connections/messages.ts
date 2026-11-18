@@ -168,6 +168,15 @@ const PROBLEMS = new Set([
   'dbm_restore_target_exists',
   'dbm_restore_target_changed',
   'dbm_restore_failed',
+  // Deleting a database (STU-XDM-3).
+  'dbm_delete_not_allowed',
+  'dbm_delete_name_invalid',
+  'dbm_delete_name_mismatch',
+  'dbm_delete_target_missing',
+  'dbm_delete_target_changed',
+  'dbm_delete_in_use',
+  'dbm_delete_backup_unverified',
+  'dbm_delete_failed',
   'admin_over_privileged',
 ]);
 
