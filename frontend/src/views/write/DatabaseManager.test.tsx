@@ -3,13 +3,21 @@
  * areas' flags on), unlocks with an admin profile (never a write profile), makes a backup, lists the backups with their
  * count and size and says a PostgreSQL backup is not complete, previews a restore (extension count), needs the target's
  * name typed and on PostgreSQL a restore profile, sends only IDs, the name and the typed text, and shows the server's
- * refusals by code and issue. axe finds no serious or critical violation (jsdom: no colour contrast).
+ * refusals by code and issue. STU-XDM-3: the delete previews first, needs the name typed, offers force only when the
+ * server does, never preselected and with its own typed name, and sends no name for SQLite. axe finds no serious or critical violation (jsdom: no colour contrast).
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 
-import { parseBackup, parseListing, parsePreview, parseRestore } from '../../api/databaseManager';
+import {
+  parseBackup,
+  parseDelete,
+  parseDeletePreview,
+  parseListing,
+  parsePreview,
+  parseRestore,
+} from '../../api/databaseManager';
 import i18n from '../../i18n';
 import { DatabaseManagerSection } from './DatabaseManager';
 
@@ -75,6 +83,7 @@ interface Answers {
   engine?: 'postgresql' | 'sqlite';
   backup?: { status: number; body: unknown };
   restore?: { status: number; body: unknown };
+  deletePreview?: { status: number; body: unknown };
   tools?: Record<string, unknown>;
 }
 
@@ -189,6 +198,39 @@ function setup(answers: Answers = {}) {
       };
       return json(answer.body, answer.status);
     }
+    if (url === '/api/write/database-manager/delete/preview') {
+      const answer = answers.deletePreview ?? {
+        status: 200,
+        body:
+          engine === 'postgresql'
+            ? {
+                engine,
+                target: body?.name,
+                environment: 'dev',
+                sessions: 2,
+                force_offered: true,
+                backup_required: true,
+              }
+            : {
+                engine,
+                target: 'notes.db',
+                environment: 'dev',
+                sessions: null,
+                force_offered: false,
+                backup_required: true,
+              },
+      };
+      return json(answer.body, answer.status);
+    }
+    if (url === '/api/write/database-manager/delete')
+      return json({
+        engine,
+        target: body?.name ?? 'notes.db',
+        pre_backup: engine === 'postgresql' ? PG_BACKUP.file : LITE_BACKUP.file,
+        force: body?.force === true,
+        connections_closed: 0,
+        audit_pending: false,
+      });
     return new Response(null, { status: 404 });
   };
   const view = render(<DatabaseManagerSection fetcher={fetcher} />);
@@ -232,6 +274,26 @@ describe('the answers of the Database Manager routes', () => {
       verified: false,
       connectionsClosed: 2,
     });
+  });
+});
+
+describe('the answers of the delete routes', () => {
+  it('parses the delete preview and result defensively', () => {
+    expect(
+      parseDeletePreview({ engine: 'postgresql', target: 'old', sessions: 1, force_offered: true }),
+    ).toEqual({
+      engine: 'postgresql',
+      target: 'old',
+      environment: null,
+      sessions: 1,
+      forceOffered: true,
+    });
+    expect(parseDeletePreview({ engine: 'mysql', target: 'old' })).toBeNull();
+    expect(
+      parseDeletePreview({ engine: 'sqlite', target: 'a.db', force_offered: 'yes' })?.forceOffered,
+    ).toBe(false);
+    expect(parseDelete({ target: 'old' })).toBeNull();
+    expect(parseDelete({ target: 'old', pre_backup: 'b.dump', force: 1 })?.force).toBe(false);
   });
 });
 
@@ -390,6 +452,82 @@ describe('the Database Manager section', () => {
     expect(screen.getByTestId('database-manager-problem')).toHaveTextContent(
       'The admin role has or reaches SUPERUSER',
     );
+  });
+
+  it('deletes a PostgreSQL database by its name, force only with its own typed confirmation', async () => {
+    const user = userEvent.setup();
+    const { calls, view } = setup({ unlocked: true });
+    await user.type(await screen.findByTestId('database-manager-delete-name'), 'shop_old');
+    await user.click(screen.getByTestId('database-manager-delete-preview'));
+    expect(await screen.findByTestId('database-manager-delete-sessions')).toHaveTextContent(
+      '2 other sessions use this database now.',
+    );
+    expect(writes(calls).filter((call) => call.url.endsWith('/delete'))).toEqual([]);
+    const run = screen.getByTestId('database-manager-delete-run');
+    expect(run).toBeDisabled();
+    expect(document.activeElement).not.toBe(run);
+    const force = screen.getByTestId('database-manager-delete-force');
+    expect(force).not.toBeChecked();
+    await user.type(screen.getByLabelText('Type shop_old to delete'), 'shop_old');
+    expect(run).toBeEnabled();
+    await user.click(force);
+    expect(run).toBeDisabled();
+    await user.type(screen.getByTestId('database-manager-delete-force-typed'), 'shop_old');
+    expect(run).toBeEnabled();
+    expect(await serious(view.container)).toEqual([]);
+    await user.click(run);
+    expect(await screen.findByTestId('database-manager-deleted')).toHaveTextContent(
+      `shop_old was deleted. Its backup from before the delete is ${PG_BACKUP.file}.`,
+    );
+    const sent = writes(calls).find((call) => call.url.endsWith('/delete'));
+    expect(sent?.body).toEqual({
+      connection_id: 'c1',
+      name: 'shop_old',
+      typed: 'shop_old',
+      force: true,
+      force_typed: 'shop_old',
+    });
+  });
+
+  it("deletes the SQLite connection's own file without a name or force", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup({ unlocked: true, engine: 'sqlite' });
+    await user.click(await screen.findByTestId('database-manager-delete-preview'));
+    expect(await screen.findByTestId('database-manager-delete-warning')).toHaveTextContent(
+      'The file notes.db and its journal files are deleted for good.',
+    );
+    expect(screen.queryByTestId('database-manager-delete-name')).toBeNull();
+    expect(screen.queryByTestId('database-manager-delete-force')).toBeNull();
+    await user.type(screen.getByLabelText('Type notes.db to delete'), 'notes.db');
+    await user.click(screen.getByTestId('database-manager-delete-run'));
+    await screen.findByTestId('database-manager-deleted');
+    const preview = writes(calls).find((call) => call.url.endsWith('/delete/preview'));
+    expect(preview?.body).toEqual({ connection_id: 'c1' });
+    const sent = writes(calls).find((call) => call.url.endsWith('/delete'));
+    expect(sent?.body).toEqual({ connection_id: 'c1', typed: 'notes.db', force: false });
+  });
+
+  it('shows why a delete is refused', async () => {
+    const user = userEvent.setup();
+    setup({
+      unlocked: true,
+      deletePreview: {
+        status: 400,
+        body: {
+          type: 'about:blank',
+          title: 'x',
+          status: 400,
+          code: 'studio.dbm_delete_not_allowed',
+          issues: [{ pointer: 'delete.target', code: 'delete.connected' }],
+        },
+      },
+    });
+    await user.type(await screen.findByTestId('database-manager-delete-name'), 'shop');
+    await user.click(screen.getByTestId('database-manager-delete-preview'));
+    const problem = await screen.findByTestId('database-manager-problem');
+    expect(problem).toHaveTextContent('Studio deletes only a DEV or TEST database');
+    expect(problem).toHaveTextContent('the database this connection uses is never deleted');
+    expect(screen.queryByTestId('database-manager-delete')).toBeNull();
   });
 
   it('has the German texts', async () => {

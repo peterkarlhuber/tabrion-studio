@@ -276,7 +276,7 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
 
 ## Consequences
 
-- STU-XDM-2 implements sections 2 to 4 for backup and restore; STU-XDM-3..STU-XDM-7 follow, each behind the
+- STU-XDM-2 implements sections 2 to 4 for backup and restore, STU-XDM-3 section 5; STU-XDM-4..STU-XDM-7 follow, each behind the
   `database_manager` flag with the kill-switch proof of STU-ADR-0006.
 - CI needs `pg_dump` and `pg_restore` of the server's major version or newer for the restore tests (the
   `postgres` job already has `pg_dump`).
@@ -298,6 +298,40 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
   `dbm.restore`), the backup file, its SHA-256, the tool version, the target, the restore profile, the
   target's own backup and whether the fingerprint matched; no value, no path, no secret.
 - Stricter than the text above: no opt-out of the target's backup; `stderr` never logged; Windows refused.
+- Owner's condition of G-S4 (2026-11-18): on Windows a SQLite restore into a **new file** is refused
+  (`restore.platform`) until a check of the folder's access list exists and has been reviewed, as STU-CR-2 refuses
+  creating one; a restore over the profile's own file stays possible.
+
+## As built (STU-XDM-3)
+
+- Routes behind `database_manager` (405 and no import with the flag off): `POST /api/write/database-manager/delete/preview`
+  (changes nothing; the name to type, on PostgreSQL the other sessions and whether `force` is offered) and
+  `POST .../delete` (`connection_id`, `name` on PostgreSQL, `typed`, `force`, `force_typed`). Module
+  `tabrion_studio.write.database_manager.delete`.
+- Only an admin unlock whose stored environment is `dev` or `test` (PROD has no unlock, E-X7); a target that any PROD
+  profile names is refused (the checks of STU-XDM-2, review L-1).
+- PostgreSQL: another database of the unlocked server by name, through `drop_database` on the admin session in
+  autocommit. Refused before anything is read: `postgres`, `template0`, `template1`, any template (`datistemplate`),
+  the database the admin connection uses. The OID is read before the backup and again on the dropping session;
+  a different OID refuses (`studio.dbm_delete_target_changed`). Studio closes its own read connections to the target
+  first. Other sessions without `force` refuse before the backup (`studio.dbm_delete_in_use`, 409); `force` is a
+  strict boolean, accepted only while other sessions exist on PostgreSQL 13 or later, needs `force_typed` (the name
+  again), is never retried and is audited as `force` with the session count `sessions`.
+- SQLite: only the connection's own file (no name from the request), its folder checked by the folder rules of
+  STU-CR-2/STU-XDM-2 (not group- or world-writable, every folder above safe, none of Studio's own folders by device
+  and inode); Studio's connections to it and the unlock are closed, then `delete_database_file`. **Refused on
+  Windows**, as STU-CR-2 refuses a new SQLite file there.
+- The backup first, fail closed, **no opt-out** (stricter than section 5): PostgreSQL through the verified runner as
+  the admin role (`pg_restore --list` reads the archive before it is kept), so the admin role must be able to read the
+  whole target database, and the backup must carry the target's level-2 fingerprint, read the same before and after
+  the dump (review L-1 of PR #140: a schema change during the dump or an unreadable fingerprint leaves none and
+  refuses the delete with `studio.dbm_delete_backup_unverified`); SQLite through `tabrion.sqlite.backup`, then the copy's level-2 fingerprint must equal the
+  source's (`studio.dbm_delete_backup_unverified`). Origin `pre_delete` in the metadata; the backup is listed and
+  restorable like any other.
+- The typed name compared byte for byte; a name with a character that cannot be seen is refused (GS4-17).
+- Residual window: writes to the target between its backup and the drop are lost (Studio checks the OID, or device
+  and inode, not the content). Other sessions are refused unless `force` ends them, which narrows it on PostgreSQL;
+  on SQLite tabrion's exclusive-lock check sees a connection that holds a lock, not an idle one.
 
 ## Tests
 

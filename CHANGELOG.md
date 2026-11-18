@@ -7,13 +7,24 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDM-3, delete a database (G-S4 not granted; the `database_manager` flag stays off by default): `POST
+  /api/write/database-manager/delete/preview` and `.../delete` delete another DEV or TEST PostgreSQL database of the
+  unlocked server (`tabrion.postgres.drop_database`) or the connection's own SQLite file
+  (`tabrion.sqlite.delete_database_file`), after a verified backup (origin `pre_delete`, no opt-out) and the exact name
+  typed. Never the maintenance or template databases, the connected database, or a target a PROD profile names;
+  SQLite refused on Windows and in unsafe or Studio's own folders. `force` only while other sessions exist on
+  PostgreSQL 13 or later, with its own typed confirmation. Audit `dbm.delete` with `force` and `sessions`. The page's
+  delete part in English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated.
+  Owner's condition of G-S4: on Windows a SQLite restore into a new file is now refused (`restore.platform`), as
+  STU-CR-2 refuses creating one, until a reviewed check of the folder's access list exists. Review L-1 of PR #140:
+  a PostgreSQL delete also needs the backup's level-2 fingerprint (the same before and after the dump); a schema
+  change during the dump or an unreadable fingerprint refuses it with `studio.dbm_delete_backup_unverified`.
 - Tabrion repin: pins tabrion at the merge commit of tabrion #94 (`bfba25e`), which makes every remaining CR-DBX name
   Studio uses stable (`tabrion.schema`, `tabrion.ddl`, `tabrion.plan` with its errors,
   `tabrion.postgres.create_database` and `drop_database`, `tabrion.sqlite.restore` and `delete_database_file`,
   `tabrion.errors.DatabaseInUse`). `plan` now takes `current` and `target`, and `sqlite.restore` `source` and
   `target`, by keyword only; the Schema Designer and the Database Manager pass them by keyword. No behavior change;
   the flags stay off.
-
 - CI: the Windows security leg of `backend test` runs in two shards with complementary ignore globs
   (`backend test (windows-latest, security)` without `tests/security/test_[r-z]*`, `backend test (windows-latest,
   security 2 of 2)` with only those), because it took 17 to 20 of its 20 minutes; every test still runs exactly once,

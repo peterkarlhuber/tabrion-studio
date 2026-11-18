@@ -664,8 +664,8 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.2 | Alembic revision written into the trusted project (E-X4): `revision_text`, the name and folder checks, no `env.py` | TABRION STU-XSD-3 | G-S3 | Open; Tabrion part in the pin (TAB-XW-4). Acceptance: GS3-06..08, GS3-16 (j 5), GS3-19 |
 | 1.3 | Database Manager: threat model, G-S4 definition (and ADR) | TABRION STU-XDM-1 | G-S4 | Review ACCEPTED with conditions (`reviews/stu-xdm1-review.md`, 2026-11-15: M-1 restore role, L-1 PROD aliases, L-2 the shared runner, L-3 incomplete backups, A-1 stale text), folded in with STU-XDM-2; ADR 0008 goes to "accepted" with that merge. Drafted (branch `claude/project-thread-rdo6g3-crxdm1`, documentation only): [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md), [Database Manager threat model](architecture/database-manager-threat-model.md) TX-32..TX-46, [G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager) GS4-P1..P4, GS4-01..26; the consequence of an over-privileged admin profile proposed (STU-ADR-0008 section 6) |
 | 1.3 | Backup and restore: verified `pg_dump`/`pg_restore`, the backup folder and metadata, restore into a new or non-PROD target, mandatory restore tests | TABRION STU-XDM-2 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm2`, draft PR; review pending): the runner `tabrion_studio.write.pgtools` (reusable by the Schema Designer, review L-2 a), `backups/database-manager` (0700, files 0600, metadata with SHA-256, tool, server version, fingerprint, scope notice), the routes `GET /api/write/database-manager/backups`, `POST .../backup`, `.../restore/preview`, `.../restore`, PostgreSQL restore only into a new database as a separate lean restore profile (review M-1), PROD detection by `system_identifier` or normalized addresses (L-1), audit, the page section (en, de). Evidence: GS4-01..09, GS4-11 (per action), GS4-22 in `tests/security/test_dbm_backup_restore.py`, `test_dbm_tools.py`, `test_dbm_restore_roundtrip.py`, `DatabaseManager.test.tsx`, `e2e/database-manager-backend.spec.ts`. Open: [STU-XDM-2 open points](#stu-xdm-2-open-points) |
+| 1.3 | Delete a database: SQLite `delete_database_file`, PostgreSQL `drop_database`, backup and typed name first, `force` only explicit | TABRION STU-XDM-3 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm3`, draft PR; review pending): `tabrion_studio.write.database_manager.delete`, the routes `POST /api/write/database-manager/delete/preview` and `.../delete`, the audit fields `force` and `sessions`, the page's delete part (en, de). Evidence: GS4-03, GS4-10, GS4-17 (refusal), GS4-20, GS4-22 in `tests/security/test_dbm_delete.py`, `test_dbm_delete_postgres.py`, `DatabaseManager.test.tsx`. Open: [STU-XDM-3 open points](#stu-xdm-3-open-points) |
 | 1.3 | Database creation in the admin area (owner grant of 2026-11-18: database creation and role management belong to G-S4 with separate permissions) | TABRION STU-CR-2, STU-CR-3 (moved) | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stucreateadmin`, draft PR; review pending): `tabrion_studio.write.database_manager.create`, routes `POST /api/write/database-manager/create/sqlite` and `.../create/postgresql` behind `database_manager` (the `schema_designer` flag alone answers 405 and imports nothing), PostgreSQL on the admin unlock with the admin check before `CREATE DATABASE`, SQLite without an unlock (no role exists), a write role with `CREATEDB` refused at the unlock and at each run (`studio.write_role_over_privileged`), audit `dbm.create_*`, the page offers the admin profile (en, de). Evidence: GS4-27, GS3-28 in `tests/security/test_dbm_create.py`, `test_dbm_create_postgres.py`, `test_write_privileges.py`, `CreateDatabase.test.tsx`, `e2e/create-database-backend.spec.ts`. Decided: [Owner points decided per the G-S3/G-S4 grant](#owner-points-decided-per-the-g-s3g-s4-grant) |
-| 1.3 | Delete a database: SQLite `delete_database_file`, PostgreSQL `drop_database`, backup and typed name first, `force` only explicit | TABRION STU-XDM-3 | G-S4 | Open; needs STU-XDM-2; Tabrion part in the pin (TAB-XW-7, TAB-XW-9). Acceptance: GS4-03, GS4-10, GS4-17, GS4-20 |
 | 1.3 | PostgreSQL roles through the admin profile (E-X6) with the TB-149 obligations: re-read after commit, per-database K-2 check, `public_definers` and CREATE-on-database warnings, escaped names, admin rules at least those of a write profile | TABRION STU-XDM-4 | G-S4 | Open; needs STU-XDM-1; Tabrion part in the pin (TAB-XW-8). Acceptance: GS4-11..20 |
 | 1.3 | Profile pairs, import and export (I-109 j per imported pair, single-host only) | TABRION STU-XDM-5 | G-S4 | Open; needs STU-XW-4. Acceptance: GS4-19, GS4-21 |
 | 1.3 | i18n, docs, E2E in three browsers and axe (D-11..D-14) | TABRION STU-XDM-6 | G-S4 | Open; needs STU-XDM-2..5. Acceptance: GS4-23, GS4-24 |
@@ -1213,6 +1213,32 @@ G-S4, G-S3, H-2 and G-R are not granted by it.
     them from the profile waits for profiles that store them.
 17. [x] **I-5:** the redundant second OID read right after `create_database` is removed; the OID is read once after
     the creation and compared after the restore.
+
+### STU-XDM-3 open points
+
+Built 2026-11-18 (branch `claude/project-thread-rdo6g3-stuxdm3`). **G-S4 is not granted;** the `database_manager`
+flag stays off by default. Each point needs the independent review or the owner.
+
+1. [x] **Owner decisions (decided per G-S3/G-S4 grant 2026-11-18, safest option; STU-ADR-0008 section 11):** (a) no opt-out of the backup before a delete, also on DEV
+   (STU-ADR-0008 section 5 would allow one with a typed confirmation); (b) `force` confirmed by typing the name a
+   second time; (c) on SQLite the target is only the connection's own file, and Studio closes its own connections
+   and the unlock to delete it; (d) the PostgreSQL backup before a delete runs as the admin role, so that role must
+   read the whole target database, otherwise the delete is refused (never a broader role); (e) SQLite delete refused
+   on Windows, as STU-CR-2; (f) backups made before a delete stay in the backup folder, are listed and restorable,
+   and are never deleted by Studio.
+2. [x] **Residual window (accepted per G-S3/G-S4 grant 2026-11-18, safest option):** writes to the target between its backup and the drop are lost; Studio re-checks the
+   database's OID (or the file's device and inode), not its content.
+3. [x] **Review L-1 (Low, PR #140 review ACCEPTED):** the PostgreSQL delete went ahead when the backup had no
+   fingerprint (a schema change during the dump, or an unreadable fingerprint). Fixed: no str fingerprint, no drop
+   (`studio.dbm_delete_backup_unverified`); `test_dbm_delete_postgres.py`::`test_a_schema_changed_during_the_dump_stops_the_delete`,
+   `test_an_unreadable_fingerprint_stops_the_delete`.
+4. [x] **Tabrion names:** `tabrion.postgres.drop_database` and `tabrion.sqlite.delete_database_file` are stable
+   since the repin to tabrion #94 (`bfba25e`, Studio #142).
+5. [x] **Windows, owner's condition of G-S4 (2026-11-18; decided per G-S3/G-S4 grant 2026-11-18, safest option):** a SQLite restore into a new file is refused on Windows
+   (`restore.platform`, `test_dbm_backup_restore.py::test_a_new_sqlite_file_is_never_restored_on_windows`) until a
+   check of the folder's access list exists and is reviewed; database creation moved to the admin area (G-S4) on
+   branch `claude/project-thread-rdo6g3-stucreateadmin`.
+6. **No E2E yet** for the delete part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
 
 ## Cross-repository checks still to add
 

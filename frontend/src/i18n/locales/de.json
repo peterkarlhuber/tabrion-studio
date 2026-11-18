@@ -1108,6 +1108,14 @@
     "dbm_restore_target_exists": "Eine Datenbank oder Datei mit diesem Namen gibt es schon. Wähle einen neuen Namen. Es wurde nichts wiederhergestellt.",
     "dbm_restore_target_changed": "Das Ziel ist nicht mehr das geprüfte. Es wurde nichts weiter ausgeführt; sieh dir das Ziel an und beginne neu.",
     "dbm_restore_failed": "Die Wiederherstellung war nicht möglich. Eine PostgreSQL-Wiederherstellung läuft in einer Transaktion, die neue Datenbank bleibt also leer; sie bleibt zum Prüfen oder Löschen stehen.",
+    "dbm_delete_not_allowed": "Studio löscht nur eine DEV- oder TEST-Datenbank: nie eine Wartungs- oder Vorlagendatenbank, nie die, die die Admin-Verbindung nutzt, nie, was ein PROD-Profil nennt, und eine SQLite-Datei nur in einem sicheren eigenen Ordner und nicht unter Windows. Es wurde nichts gelöscht.",
+    "dbm_delete_name_invalid": "Der Datenbankname ist leer, zu lang, hat Leerzeichen am Anfang oder Ende oder enthält Zeichen, die man nicht sieht. Es wurde nichts gelöscht.",
+    "dbm_delete_name_mismatch": "Der eingegebene Name stimmt nicht genau mit dem Namen des Ziels überein. Es wurde nichts gelöscht.",
+    "dbm_delete_target_missing": "Auf dem Server gibt es keine Datenbank mit diesem Namen. Es wurde nichts gelöscht.",
+    "dbm_delete_target_changed": "Das Ziel ist nicht mehr die Datenbank oder Datei, die geprüft und gesichert wurde. Es wurde nichts gelöscht.",
+    "dbm_delete_in_use": "Andere Sitzungen oder Programme nutzen die Datenbank. Studio hat sie nicht beendet, und es wurde nichts gelöscht.",
+    "dbm_delete_backup_unverified": "Die Sicherung vor dem Löschen ließ sich nicht prüfen (zum Beispiel, weil sich das Schema währenddessen geändert hat), daher wurde nichts gelöscht. Erneut versuchen, wenn nichts das Schema ändert.",
+    "dbm_delete_failed": "Die Datenbank ließ sich nicht löschen. Ihre Sicherung von vor dem Löschen bleibt im Sicherungsordner.",
     "admin_over_privileged": "Die Admin-Rolle hat oder erreicht SUPERUSER, BYPASSRLS, REPLICATION, eine Serverdatei-Rolle oder CREATEROLE vor PostgreSQL 16. Die Entsperrung wurde beendet; nimm eine schlankere Admin-Rolle."
   },
   "keyboard": {
@@ -2097,8 +2105,8 @@
     }
   },
   "databaseManager": {
-    "title": "Datenbank-Manager: Sichern und Wiederherstellen (in Entwicklung)",
-    "lead": "Sichere eine DEV- oder TEST-Datenbank in Studios Sicherungsordner und stelle eine Sicherung in eine neue Datenbank oder Datei wieder her. Jede Aktion braucht das entsperrte Admin-Profil dieser Verbindung und wird im Audit-Log festgehalten.",
+    "title": "Datenbank-Manager: Sichern, Wiederherstellen und Löschen (in Entwicklung)",
+    "lead": "Sichere eine DEV- oder TEST-Datenbank in Studios Sicherungsordner, stelle eine Sicherung in eine neue Datenbank oder Datei wieder her und lösche eine DEV- oder TEST-Datenbank nach einer geprüften Sicherung. Jede Aktion braucht das entsperrte Admin-Profil dieser Verbindung und wird im Audit-Log festgehalten.",
     "notComplete": "Eine PostgreSQL-Sicherung ist keine vollständige Sicherung: Sie enthält eine Datenbank. Globale Rollen, Rollenmitgliedschaften, Tablespaces und andere Cluster-Objekte fehlen; sichere sie außerhalb von Studio.",
     "loading": "Wird geladen …",
     "listFailed": "Die Sicherungen konnten nicht gelesen werden.",
@@ -2143,6 +2151,23 @@
       "done": "In {{target}} wiederhergestellt. Studio konnte nicht bestätigen, dass das Schema mit der Sicherung übereinstimmt; prüfe es.",
       "preBackup": "Das Ziel wurde zuerst als {{file}} gesichert."
     },
+    "delete": {
+      "title": "Datenbank löschen",
+      "leadPostgres": "Lösche eine andere DEV- oder TEST-Datenbank dieses Servers über ihren Namen. Nie die Wartungsdatenbanken und nie die Datenbank, die diese Verbindung nutzt. Sieh dir das Löschen zuerst an; das ändert nichts.",
+      "leadSqlite": "Lösche die eigene Datenbankdatei dieser Verbindung. Sieh dir das Löschen zuerst an; das ändert nichts.",
+      "databaseName": "Datenbankname",
+      "preview": "Löschen ansehen",
+      "warningPostgres": "{{name}} wird endgültig gelöscht. Studio legt zuerst eine geprüfte Sicherung an und löscht nichts, wenn das scheitert. Studios eigene Verbindungen zu ihr werden geschlossen.",
+      "warningSqlite": "Die Datei {{name}} und ihre Journal-Dateien werden endgültig gelöscht. Studio legt zuerst eine geprüfte Sicherung an und löscht nichts, wenn das scheitert. Studios Verbindungen zur Datei werden geschlossen und damit auch diese Entsperrung.",
+      "sessions_one": "{{count}} andere Sitzung nutzt diese Datenbank gerade.",
+      "sessions_other": "{{count}} andere Sitzungen nutzen diese Datenbank gerade.",
+      "forceUnavailable": "Andere Sitzungen zu beenden braucht PostgreSQL 13 oder neuer. Schließe sie zuerst außerhalb von Studio.",
+      "type": "Gib {{name}} ein, um zu löschen",
+      "force": "Die anderen Sitzungen auf dieser Datenbank beenden (FORCE)",
+      "forceType": "Gib {{name}} noch einmal ein, um die anderen Sitzungen zu beenden",
+      "run": "Datenbank löschen",
+      "done": "{{target}} wurde gelöscht. Ihre Sicherung von vor dem Löschen ist {{file}}."
+    },
     "issues": {
       "tool": {
         "not_configured": "nicht in database-tools.toml eingetragen",
@@ -2179,7 +2204,24 @@
         "in_use": "die Datei wird gerade benutzt",
         "integrity": "die wiederhergestellte Datei hat die Integritätsprüfung nicht bestanden",
         "folder_unsafe": "andere dürfen den Ordner des Ziels oder einen Ordner darüber ändern",
-        "reserved_folder": "der Ordner gehört zu Studio selbst"
+        "reserved_folder": "der Ordner gehört zu Studio selbst",
+        "platform": "unter Windows wird keine neue Datei angelegt"
+      },
+      "delete": {
+        "environment": "nur DEV- und TEST-Datenbanken werden gelöscht",
+        "maintenance": "eine Wartungs- oder Vorlagendatenbank wird nie gelöscht",
+        "connected": "die Datenbank, die diese Verbindung nutzt, wird nie gelöscht",
+        "prod": "ein PROD-Profil nennt diese Datenbank oder Datei",
+        "platform": "eine SQLite-Datei zu löschen ist unter Windows nicht verfügbar",
+        "folder_unsafe": "andere dürfen den Ordner der Datei oder einen Ordner darüber ändern",
+        "reserved_folder": "der Ordner gehört zu Studio selbst",
+        "force_not_offered": "andere Sitzungen zu beenden wird nur angeboten, solange es welche gibt",
+        "force_unsupported": "andere Sitzungen zu beenden braucht PostgreSQL 13 oder neuer",
+        "force_not_a_flag": "die Wahl, andere Sitzungen zu beenden, ist kein einfaches Ja oder Nein",
+        "target": "beim Löschen unter SQLite geht es immer um die eigene Datei dieser Verbindung",
+        "in_use": "die Datenbank wird gerade benutzt",
+        "refused": "das Löschen wurde abgelehnt",
+        "failed": "das Löschen ist gescheitert"
       },
       "unknown": "Einzelheit: {{code}}"
     }

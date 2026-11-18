@@ -1,10 +1,11 @@
 /**
- * The Database Manager's backup and restore (STU-XDM-2; STU-ADR-0008, gate G-S4, not granted). The routes answer
- * only while the owner of the Studio process turned the `database_manager` flag on in `write-areas.toml`; the page
- * reads that state (`GET /api/write/areas`) and never sets it. The server decides everything that matters: the tools
- * (only from the owner's `database-tools.toml`, never from the page), the admin unlock, the target (never PROD, on
- * PostgreSQL only a new database), the restore role and the checks of the backup. The page sends IDs, the target's
- * name and what the user typed; never a path, a tool or an environment.
+ * The Database Manager's backup, restore and delete (STU-XDM-2, STU-XDM-3; STU-ADR-0008, gate G-S4, not granted).
+ * The routes answer only while the owner of the Studio process turned the `database_manager` flag on in
+ * `write-areas.toml`; the page reads that state (`GET /api/write/areas`) and never sets it. The server decides
+ * everything that matters: the tools (only from the owner's `database-tools.toml`, never from the page), the admin
+ * unlock, the target (never PROD, on PostgreSQL only a new database for a restore, never a maintenance or the connected
+ * database for a delete), the restore role, the checks of the backup and the backup before a delete. The page sends
+ * IDs, the target's name and what the user typed; never a path, a tool or an environment.
  */
 import { getJson, send, type Result } from './profiles';
 
@@ -220,4 +221,104 @@ export async function runRestore(
   if (!result.ok) return result;
   const restored = parseRestore(result.value);
   return restored === null ? UNREADABLE : { ok: true, value: restored };
+}
+
+/** What deleting a database would do (STU-XDM-3): the name to type and, on PostgreSQL, the other sessions. */
+export interface DeletePreview {
+  engine: Engine;
+  /** The database's name (PostgreSQL) or the file's name (SQLite): what the user types to confirm. */
+  target: string;
+  environment: string | null;
+  /** PostgreSQL: the other sessions on the target now (a hint that can change); SQLite: null. */
+  sessions: number | null;
+  /** Whether `force` may be chosen: only with other sessions, on PostgreSQL 13 or later. */
+  forceOffered: boolean;
+}
+
+export interface DeleteResult {
+  target: string;
+  /** The verified backup made right before the delete. */
+  preBackup: string;
+  force: boolean;
+  connectionsClosed: number;
+  auditPending: boolean;
+}
+
+export function parseDeletePreview(body: unknown): DeletePreview | null {
+  const doc = record(body);
+  const target = text(doc?.target);
+  const kind = engine(doc?.engine);
+  if (doc === null || target === null || kind === null) return null;
+  return {
+    engine: kind,
+    target,
+    environment: text(doc.environment),
+    sessions: count(doc.sessions),
+    forceOffered: doc.force_offered === true,
+  };
+}
+
+export function parseDelete(body: unknown): DeleteResult | null {
+  const doc = record(body);
+  const target = text(doc?.target);
+  const preBackup = text(doc?.pre_backup);
+  if (doc === null || target === null || preBackup === null) return null;
+  return {
+    target,
+    preBackup,
+    force: doc.force === true,
+    connectionsClosed: count(doc.connections_closed) ?? 0,
+    auditPending: doc.audit_pending === true,
+  };
+}
+
+/**
+ * `POST /api/write/database-manager/delete/preview`: what deleting would do; changes nothing. `name` is the
+ * PostgreSQL database's name; a SQLite delete is always the connection's own file (no name is sent).
+ */
+export async function previewDelete(
+  fetcher: typeof fetch,
+  connectionId: string,
+  name: string | null,
+): Promise<Result<DeletePreview>> {
+  const body: Record<string, string> = { connection_id: connectionId };
+  if (name !== null) body.name = name;
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/write/database-manager/delete/preview',
+    body,
+  );
+  if (!result.ok) return result;
+  const preview = parseDeletePreview(result.value);
+  return preview === null ? UNREADABLE : { ok: true, value: preview };
+}
+
+export interface DeleteRequest {
+  /** PostgreSQL: the database's name; SQLite: null. */
+  name: string | null;
+  typed: string;
+  /** PostgreSQL 13 or later with other sessions only: end them (`WITH (FORCE)`). Never a default. */
+  force: boolean;
+  /** The name typed once more for `force`. */
+  forceTyped: string;
+}
+
+/** `POST /api/write/database-manager/delete`: a verified backup first, then the delete. */
+export async function runDelete(
+  fetcher: typeof fetch,
+  connectionId: string,
+  request: DeleteRequest,
+): Promise<Result<DeleteResult>> {
+  const body: Record<string, string | boolean> = {
+    connection_id: connectionId,
+    typed: request.typed,
+    force: request.force,
+  };
+  if (request.name !== null) body.name = request.name;
+  if (request.force) body.force_typed = request.forceTyped;
+  const result = await send<unknown>(fetcher, 'POST', '/api/write/database-manager/delete', body);
+  if (!result.ok) return result;
+  const deleted = parseDelete(result.value);
+  return deleted === null ? UNREADABLE : { ok: true, value: deleted };
 }

@@ -124,6 +124,8 @@ _DATABASE_OID = (
     " WHERE d.datname OPERATOR(pg_catalog.=) CAST(:name AS pg_catalog.name)"
 )
 _SERVER_VERSION_TEXT = "SELECT pg_catalog.current_setting('server_version')"
+#: Windows: no new SQLite file (its access lists are not read yet), as STU-CR-2 refuses creating one (owner, G-S4).
+_WINDOWS = os.name != "posix"
 
 
 @dataclass
@@ -366,26 +368,42 @@ def backup(manager: Manager, session: str, doc: dict[str, Any]) -> dict[str, Any
     return _backup_postgres(manager, unlock)
 
 
-def _backup_postgres(manager: Manager, unlock: Unlock) -> dict[str, Any]:
+def _target_fingerprint(manager: Manager, unlock: Unlock, database: str | None) -> str | None:
+    """The level-2 fingerprint of the unlocked database, or of ``database`` on its server read on a checked
+    connection of the admin profile that is closed right after (STU-XDM-3: the database a delete backs up)."""
+    if database is None:
+        return schema_fingerprint(unlock.connection)
+    connection = manager.unlocks.open_checked(unlock.write_name, database)
+    try:
+        return schema_fingerprint(connection)
+    finally:
+        connection.close()
+
+
+def _backup_postgres(
+    manager: Manager, unlock: Unlock, *, database: str | None = None, origin: str = "database_manager"
+) -> dict[str, Any]:
+    """The verified ``pg_dump`` archive of the unlocked database, or of the database ``database`` of the same server
+    (the backup before a delete, STU-XDM-3), as the admin role."""
     _check_admin(manager, unlock)
     server = unlock.connection.engine_version()
     pg_dump, pg_restore = _tools(manager, server[0])
     write, read, password = manager.unlocks.credentials(unlock.write_name)
-    target = _connection(write, read, password)
+    target = _connection(write, read, password, database)
     folder = manager.store.folder()
     name = manager.store.new_name("postgresql")
     version_rows = unlock.connection.fetch(_SERVER_VERSION_TEXT)
     server_version = str(version_rows[0][0]) if version_rows and version_rows[0] else None
     start = {"objects": [target.dbname], "backup_file": name, "tool_version": pg_dump.version}
     with _audited(manager, unlock, ACTION_BACKUP, start) as outcome:
-        before = schema_fingerprint(unlock.connection)
+        before = _target_fingerprint(manager, unlock, database)
         archive = manager.runner.dump(pg_dump, pg_restore, target, folder / name)
-        after = schema_fingerprint(unlock.connection)
+        after = _target_fingerprint(manager, unlock, database)
         meta = metadata(
             name=name,
             created=manager.store.now(),
             engine="postgresql",
-            origin="database_manager",
+            origin=origin,
             size=archive.size,
             sha256=archive.sha256,
             source={**_source(manager, unlock), "database": target.dbname},
@@ -743,7 +761,11 @@ def _check_new_file_folder(folder: Path, reserved: Iterable[Path]) -> None:
     POSIX the rules of the Schema Designer's database creation (STU-CR-2) apply to its real path, so nobody else can
     swap the restored file: the folder belongs to this user and neither group nor others may write it, and every
     folder above it passes :func:`ancestor_is_safe`. A link on the stored path (macOS ``/var``) must belong to root or
-    this user, and the folder holding it is checked as a folder above. Raises ``studio.dbm_restore_not_allowed``."""
+    this user, and the folder holding it is checked as a folder above. On Windows it refuses (``restore.platform``):
+    the folder's access list is not checked, so no new file is put there (owner's condition of G-S4, as STU-CR-2).
+    Raises ``studio.dbm_restore_not_allowed``."""
+    if _WINDOWS:
+        raise _not_allowed("platform")
     ids = reserved_identities(reserved)
     real = Path(os.path.realpath(folder))
     try:
@@ -753,8 +775,6 @@ def _check_new_file_folder(folder: Path, reserved: Iterable[Path]) -> None:
         raise _not_allowed("folder_unsafe") from None
     if any((info.st_dev, info.st_ino) in ids for info in real_chain):
         raise _not_allowed("reserved_folder")
-    if os.name != "posix":
-        return  # Windows: no owner or mode rules (its access lists are not read), as STU-CR-2 notes
     try:
         given_chain = [os.lstat(each) for each in folders_up(str(folder))]
     except OSError:
@@ -779,6 +799,10 @@ def _restore_sqlite(
     file = unlock.connection.database_file
     if file is None:  # pragma: no cover - a SQLite write connection always has its file
         raise WriteError("studio.write_target_changed")
+    # The backup itself first (size and SHA-256 against its description), whatever the target: an edited backup is
+    # answered as such also where the target would be refused (Windows, owner's condition of G-S4).
+    size, digest, _source_identity = _sha256_file(loaded.path)
+    _same_backup(loaded, size, digest)
     if existing:
         target = file
         _typed(doc, file.name)
@@ -795,8 +819,6 @@ def _restore_sqlite(
         _check_new_file_folder(
             target.parent, (*manager.reserved, *([] if manager.store.path is None else [manager.store.path]))
         )
-    size, digest, _source_identity = _sha256_file(loaded.path)
-    _same_backup(loaded, size, digest)
     pre_backup: str | None = None
     if existing:
         # The target's own backup first (section 4): no backup, no restore.
