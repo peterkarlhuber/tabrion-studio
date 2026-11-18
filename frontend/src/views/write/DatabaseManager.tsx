@@ -11,6 +11,11 @@
  *   target (PostgreSQL: only a new database, run as a separate lean restore profile; SQLite: a new file or the
  *   connection's own file, backed up first) and its name typed to confirm. The restore button is never the default
  *   focus.
+ * - **Delete (STU-XDM-3):** a preview first (changes nothing): on PostgreSQL another database of the server by its name
+ *   (never a maintenance database or the connected one) with the number of other sessions on it; on SQLite this
+ *   connection's own file. Then its name typed to confirm. Ending the other sessions (`force`, PostgreSQL 13 or later)
+ *   is offered only while there are some, is never preselected and needs the name typed once more. The server makes
+ *   a verified backup first and refuses the delete if that fails. The delete button is never the default focus.
  *
  * The page sends IDs, the target's name and what the user typed; never a path, a tool or an environment.
  */
@@ -22,10 +27,14 @@ import { fetchUnlocks } from '../../api/dataEditor';
 import {
   fetchBackups,
   makeBackup,
+  previewDelete,
   previewRestore,
+  runDelete,
   runRestore,
   type BackupItem,
   type BackupListing,
+  type DeletePreview,
+  type DeleteResult,
   type RestorePreview,
   type RestoreResult,
   type ToolState,
@@ -96,6 +105,21 @@ const ISSUE_TEXTS = new Set([
   'restore.integrity',
   'restore.folder_unsafe',
   'restore.reserved_folder',
+  'restore.platform',
+  'delete.environment',
+  'delete.maintenance',
+  'delete.connected',
+  'delete.prod',
+  'delete.platform',
+  'delete.folder_unsafe',
+  'delete.reserved_folder',
+  'delete.force_not_offered',
+  'delete.force_unsupported',
+  'delete.force_not_a_flag',
+  'delete.target',
+  'delete.in_use',
+  'delete.refused',
+  'delete.failed',
 ]);
 
 function issueText(t: ReturnType<typeof useTranslation>['t'], code: string): string {
@@ -416,6 +440,13 @@ function Unlocked({
         onChanged={onChanged}
         onRefused={refused}
       />
+      <DeletePart
+        fetcher={fetcher}
+        connectionId={connectionId}
+        profile={profile}
+        onChanged={onChanged}
+        onRefused={refused}
+      />
     </div>
   );
 }
@@ -700,6 +731,240 @@ function RestoreForm({
           }
         >
           {t('databaseManager.restore.run')}
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function DeletePart({
+  fetcher,
+  connectionId,
+  profile,
+  onChanged,
+  onRefused,
+}: {
+  fetcher: typeof fetch;
+  connectionId: string;
+  profile: ProfileItem;
+  onChanged: () => void;
+  onRefused: (why: Problem) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const postgres = profile.engine !== 'sqlite';
+  const [name, setName] = useState('');
+  const [preview, setPreview] = useState<DeletePreview | null>(null);
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const look = async () => {
+    setProblem(null);
+    setPreview(null);
+    setBusy(true);
+    const result = await previewDelete(fetcher, connectionId, postgres ? name : null);
+    setBusy(false);
+    if (result.ok) setPreview(result.value);
+    else if (LOCKED.has(result.problem.code)) onRefused(result.problem);
+    else setProblem(result.problem);
+  };
+
+  return (
+    <section
+      aria-labelledby={`${id}-title`}
+      className={connectionStyles.form}
+      data-testid="database-manager-delete-part"
+    >
+      <h3 id={`${id}-title`}>{t('databaseManager.delete.title')}</h3>
+      <p className={connectionStyles.hint}>
+        {t(postgres ? 'databaseManager.delete.leadPostgres' : 'databaseManager.delete.leadSqlite')}
+      </p>
+      {postgres ? (
+        <Field label={t('databaseManager.delete.databaseName')}>
+          {(props) => (
+            <input
+              {...props}
+              className={connectionStyles.input}
+              value={name}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setName(event.target.value);
+                setPreview(null);
+              }}
+              data-testid="database-manager-delete-name"
+            />
+          )}
+        </Field>
+      ) : null}
+      <div className={connectionStyles.actions}>
+        <Button
+          onClick={() => void look()}
+          disabled={busy || (postgres && name === '')}
+          data-testid="database-manager-delete-preview"
+        >
+          {t('databaseManager.delete.preview')}
+        </Button>
+      </div>
+      <ProblemLine problem={problem} />
+      {preview !== null ? (
+        <DeleteForm
+          key={`${preview.target}:${preview.sessions ?? ''}`}
+          fetcher={fetcher}
+          connectionId={connectionId}
+          preview={preview}
+          onDone={onChanged}
+          onRefused={onRefused}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+function DeleteForm({
+  fetcher,
+  connectionId,
+  preview,
+  onDone,
+  onRefused,
+}: {
+  fetcher: typeof fetch;
+  connectionId: string;
+  preview: DeletePreview;
+  onDone: () => void;
+  onRefused: (why: Problem) => void;
+}) {
+  const { t } = useTranslation();
+  const [typed, setTyped] = useState('');
+  const [force, setForce] = useState(false);
+  const [forceTyped, setForceTyped] = useState('');
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<DeleteResult | null>(null);
+  const expected = preview.target;
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setProblem(null);
+    setBusy(true);
+    const result = await runDelete(fetcher, connectionId, {
+      name: preview.engine === 'postgresql' ? expected : null,
+      typed,
+      force: preview.forceOffered && force,
+      forceTyped,
+    });
+    setBusy(false);
+    if (!result.ok) {
+      if (LOCKED.has(result.problem.code)) onRefused(result.problem);
+      else setProblem(result.problem);
+      return;
+    }
+    setDone(result.value);
+    setTyped('');
+    setForceTyped('');
+    onDone();
+  };
+
+  if (done !== null) {
+    return (
+      <p role="status" className={connectionStyles.status} data-testid="database-manager-deleted">
+        {t('databaseManager.delete.done', {
+          target: done.target,
+          file: done.preBackup,
+          interpolation: { escapeValue: false },
+        })}
+        {done.auditPending ? ` ${t('databaseManager.auditPending')}` : ''}
+      </p>
+    );
+  }
+
+  const ready = typed === expected && (!force || (preview.forceOffered && forceTyped === expected));
+
+  return (
+    <form
+      className={connectionStyles.form}
+      onSubmit={(event) => void submit(event)}
+      data-testid="database-manager-delete"
+    >
+      <p className={connectionStyles.warning} data-testid="database-manager-delete-warning">
+        {t(
+          preview.engine === 'postgresql'
+            ? 'databaseManager.delete.warningPostgres'
+            : 'databaseManager.delete.warningSqlite',
+          { name: expected, interpolation: { escapeValue: false } },
+        )}
+      </p>
+      {preview.sessions !== null ? (
+        <p className={connectionStyles.hint} data-testid="database-manager-delete-sessions">
+          {t('databaseManager.delete.sessions', { count: preview.sessions })}
+        </p>
+      ) : null}
+      {preview.sessions !== null && preview.sessions > 0 && !preview.forceOffered ? (
+        <p className={connectionStyles.hint}>{t('databaseManager.delete.forceUnavailable')}</p>
+      ) : null}
+      <Field
+        label={t('databaseManager.delete.type', {
+          name: expected,
+          interpolation: { escapeValue: false },
+        })}
+      >
+        {(props) => (
+          <input
+            {...props}
+            className={connectionStyles.input}
+            value={typed}
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => setTyped(event.target.value)}
+            data-testid="database-manager-delete-typed"
+          />
+        )}
+      </Field>
+      {preview.forceOffered ? (
+        <>
+          <label className={connectionStyles.check}>
+            <input
+              type="checkbox"
+              checked={force}
+              onChange={(event) => {
+                setForce(event.target.checked);
+                setForceTyped('');
+              }}
+              data-testid="database-manager-delete-force"
+            />
+            {t('databaseManager.delete.force')}
+          </label>
+          {force ? (
+            <Field
+              label={t('databaseManager.delete.forceType', {
+                name: expected,
+                interpolation: { escapeValue: false },
+              })}
+            >
+              {(props) => (
+                <input
+                  {...props}
+                  className={connectionStyles.input}
+                  value={forceTyped}
+                  autoComplete="off"
+                  spellCheck={false}
+                  onChange={(event) => setForceTyped(event.target.value)}
+                  data-testid="database-manager-delete-force-typed"
+                />
+              )}
+            </Field>
+          ) : null}
+        </>
+      ) : null}
+      <ProblemLine problem={problem} />
+      <div className={connectionStyles.actions}>
+        <Button
+          type="submit"
+          variant="danger"
+          disabled={busy || !ready}
+          data-testid="database-manager-delete-run"
+        >
+          {t('databaseManager.delete.run')}
         </Button>
       </div>
     </form>

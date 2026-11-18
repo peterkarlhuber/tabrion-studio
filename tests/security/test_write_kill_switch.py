@@ -76,7 +76,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 31
+    assert len(methods) == 33
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -102,6 +102,8 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/database-manager/backup",
         "POST /api/write/database-manager/restore/preview",
         "POST /api/write/database-manager/restore",
+        "POST /api/write/database-manager/delete/preview",  # STU-XDM-3: delete a database (G-S4)
+        "POST /api/write/database-manager/delete",
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

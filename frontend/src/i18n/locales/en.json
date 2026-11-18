@@ -1108,6 +1108,14 @@
     "dbm_restore_target_exists": "A database or file of this name exists already. Choose a new name. Nothing was restored.",
     "dbm_restore_target_changed": "The target is no longer the one that was checked. Nothing more was done; look at the target and start again.",
     "dbm_restore_failed": "The restore could not be done. A PostgreSQL restore runs in one transaction, so the new database stays empty; it is left for you to inspect or drop.",
+    "dbm_delete_not_allowed": "Studio deletes only a DEV or TEST database: never a maintenance or template database, never the one the admin connection uses, never what a PROD profile names, and a SQLite file only in a safe folder of your own and not on Windows. Nothing was deleted.",
+    "dbm_delete_name_invalid": "The database name is empty, too long, has blanks at either end or holds characters that cannot be seen. Nothing was deleted.",
+    "dbm_delete_name_mismatch": "The typed name does not match the target's name exactly. Nothing was deleted.",
+    "dbm_delete_target_missing": "No database of this name exists on the server. Nothing was deleted.",
+    "dbm_delete_target_changed": "The target is no longer the database or file that was checked and backed up. Nothing was deleted.",
+    "dbm_delete_in_use": "Other sessions or programs use the database. Studio did not end them and nothing was deleted.",
+    "dbm_delete_backup_unverified": "The backup made before the delete could not be verified (for example, the schema changed while it was made), so nothing was deleted. Try again when nothing changes the schema.",
+    "dbm_delete_failed": "The database could not be deleted. Its backup from before the delete is kept in the backup folder.",
     "admin_over_privileged": "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before PostgreSQL 16. The unlock ended; use a leaner admin role."
   },
   "keyboard": {
@@ -2096,8 +2104,8 @@
     }
   },
   "databaseManager": {
-    "title": "Database Manager: backup and restore (in development)",
-    "lead": "Back up a DEV or TEST database into Studio's backup folder and restore a backup into a new database or file. Every action needs this connection's admin profile unlocked and is written to the audit log.",
+    "title": "Database Manager: backup, restore and delete (in development)",
+    "lead": "Back up a DEV or TEST database into Studio's backup folder, restore a backup into a new database or file, and delete a DEV or TEST database after a verified backup. Every action needs this connection's admin profile unlocked and is written to the audit log.",
     "notComplete": "A PostgreSQL backup is not a complete backup: it holds one database. Global roles, role memberships, tablespaces and other cluster objects are not in it; back them up outside Studio.",
     "loading": "Loading …",
     "listFailed": "The backups could not be read.",
@@ -2142,6 +2150,23 @@
       "done": "Restored into {{target}}. Studio could not confirm that its schema matches the backup; check it.",
       "preBackup": "The target was backed up first as {{file}}."
     },
+    "delete": {
+      "title": "Delete a database",
+      "leadPostgres": "Delete another DEV or TEST database of this server by its name. Never the maintenance databases and never the database this connection uses. Look at the delete first; that changes nothing.",
+      "leadSqlite": "Delete this connection's own database file. Look at the delete first; that changes nothing.",
+      "databaseName": "Database name",
+      "preview": "Look at the delete",
+      "warningPostgres": "{{name}} is deleted for good. Studio makes a verified backup first and deletes nothing if that fails. Studio's own connections to it are closed.",
+      "warningSqlite": "The file {{name}} and its journal files are deleted for good. Studio makes a verified backup first and deletes nothing if that fails. Studio's connections to the file are closed, and with them this unlock.",
+      "sessions_one": "{{count}} other session uses this database now.",
+      "sessions_other": "{{count}} other sessions use this database now.",
+      "forceUnavailable": "Ending other sessions needs PostgreSQL 13 or later. Close them outside Studio first.",
+      "type": "Type {{name}} to delete",
+      "force": "End the other sessions on this database (FORCE)",
+      "forceType": "Type {{name}} once more to end the other sessions",
+      "run": "Delete database",
+      "done": "{{target}} was deleted. Its backup from before the delete is {{file}}."
+    },
     "issues": {
       "tool": {
         "not_configured": "not set in database-tools.toml",
@@ -2178,7 +2203,24 @@
         "in_use": "the file is in use",
         "integrity": "the restored file failed the integrity check",
         "folder_unsafe": "others may write the target's folder or a folder above it",
-        "reserved_folder": "the folder is one of Studio's own"
+        "reserved_folder": "the folder is one of Studio's own",
+        "platform": "a new file is not created on Windows"
+      },
+      "delete": {
+        "environment": "only DEV and TEST databases are deleted",
+        "maintenance": "a maintenance or template database is never deleted",
+        "connected": "the database this connection uses is never deleted",
+        "prod": "a PROD profile names this database or file",
+        "platform": "deleting a SQLite file is not available on Windows",
+        "folder_unsafe": "others may write the file's folder or a folder above it",
+        "reserved_folder": "the folder is one of Studio's own",
+        "force_not_offered": "ending other sessions is offered only while there are some",
+        "force_unsupported": "ending other sessions needs PostgreSQL 13 or later",
+        "force_not_a_flag": "the choice to end other sessions is not a plain yes or no",
+        "target": "a SQLite delete is always this connection's own file",
+        "in_use": "the database is in use",
+        "refused": "the delete was refused",
+        "failed": "the delete failed"
       },
       "unknown": "Detail: {{code}}"
     }

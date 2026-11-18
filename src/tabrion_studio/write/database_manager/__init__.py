@@ -8,6 +8,6 @@ contract ``read-paths-never-write``).
 
 Built so far: backup and restore (STU-XDM-2; :mod:`.backups`) with the verified tool runner
 (:mod:`tabrion_studio.write.pgtools`, outside this package so the Schema Designer can use it later) and the backup
-folder (:mod:`tabrion_studio.write.backup_store`). Deleting a database (STU-XDM-3), roles (STU-XDM-4) and profile
-pairs (STU-XDM-5) are open; G-S4 is not granted.
+folder (:mod:`tabrion_studio.write.backup_store`), and deleting a database after a verified backup (STU-XDM-3;
+:mod:`.delete`). Roles (STU-XDM-4) and profile pairs (STU-XDM-5) are open; G-S4 is not granted.
 """

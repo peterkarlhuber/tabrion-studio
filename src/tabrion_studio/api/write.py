@@ -59,8 +59,12 @@
   connection. ``POST /api/write/database-manager/restore/preview``: ``{"connection_id", "backup_id"}``: what a
   restore would do (changes nothing). ``POST /api/write/database-manager/restore``: ``{"connection_id",
   "backup_id", "target", "name", "typed", "restore_profile_id"}``: restore into a new database (PostgreSQL, as the
-  lean restore profile) or a new or the profile's own DEV or TEST SQLite file (its backup first). Database Manager
-  flag only; with it off they answer 405 and nothing of the area is imported.
+  lean restore profile) or a new or the profile's own DEV or TEST SQLite file (its backup first). ``POST
+  /api/write/database-manager/delete/preview``: ``{"connection_id", "name"}``: what deleting a database would do
+  (changes nothing). ``POST /api/write/database-manager/delete``: ``{"connection_id", "name", "typed", "force",
+  "force_typed"}``: delete another DEV or TEST PostgreSQL database of the server or the profile's own SQLite file,
+  after a verified backup (STU-XDM-3, :mod:`tabrion_studio.write.database_manager.delete`). Database Manager flag
+  only; with it off they answer 405 and nothing of the area is imported.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -121,6 +125,8 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/database-manager/backup", ("POST",)),
     ("/api/write/database-manager/restore/preview", ("POST",)),
     ("/api/write/database-manager/restore", ("POST",)),
+    ("/api/write/database-manager/delete/preview", ("POST",)),
+    ("/api/write/database-manager/delete", ("POST",)),
 )
 
 

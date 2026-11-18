@@ -28,9 +28,9 @@ export interface ProblemIssue {
 }
 
 const ISSUE_POINTER =
-  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}(?:\.\d{1,4})?|(?:create|edit|plan)\.[a-z_]{1,32}|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore)\.[a-z_]{1,32})$/;
+  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}(?:\.\d{1,4})?|(?:create|edit|plan)\.[a-z_]{1,32}|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete)\.[a-z_]{1,32})$/;
 const ISSUE_CODE =
-  /^(?:config|value|constraint|create|edit|plan|ddl|schema|tool|backup|restore)\.[a-z_]{1,48}$/;
+  /^(?:config|value|constraint|create|edit|plan|ddl|schema|tool|backup|restore|delete)\.[a-z_]{1,48}$/;
 
 function issues(value: unknown): ProblemIssue[] | undefined {
   if (!Array.isArray(value)) return undefined;
