@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Tabrion repin: pins tabrion at the merge commit of tabrion #94 (`bfba25e`), which makes every remaining CR-DBX name
+  Studio uses stable (`tabrion.schema`, `tabrion.ddl`, `tabrion.plan` with its errors,
+  `tabrion.postgres.create_database` and `drop_database`, `tabrion.sqlite.restore` and `delete_database_file`,
+  `tabrion.errors.DatabaseInUse`). `plan` now takes `current` and `target`, and `sqlite.restore` `source` and
+  `target`, by keyword only; the Schema Designer and the Database Manager pass them by keyword. No behavior change;
+  the flags stay off.
+
 - Review notes of PR #137 (STU-CR-5 follow-up; G-S3 not granted, flags stay off): the Schema Designer guide and the
   confirmation dialog (English and German) say that the PostgreSQL backup dumps the whole database, that it fails
   when the write role cannot read every table, and that the role must not get more rights for it (I-1). While a run
