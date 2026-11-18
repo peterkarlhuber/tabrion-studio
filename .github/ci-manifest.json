@@ -17,6 +17,7 @@
       "backend test (macos-latest, security)",
       "backend test (windows-latest, other)",
       "backend test (windows-latest, security)",
+      "backend test (windows-latest, security 2 of 2)",
       "build and install (macos-latest)",
       "build and install (ubuntu-latest)",
       "build and install (windows-latest)",

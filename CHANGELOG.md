@@ -17,6 +17,10 @@ All notable changes to this project are documented here. The format follows
   delete part in English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated.
   Owner's condition of G-S4: on Windows a SQLite restore into a new file is now refused (`restore.platform`), as
   STU-CR-2 refuses creating one, until a reviewed check of the folder's access list exists.
+- CI: the Windows security leg of `backend test` runs in two shards with complementary ignore globs
+  (`backend test (windows-latest, security)` without `tests/security/test_[r-z]*`, `backend test (windows-latest,
+  security 2 of 2)` with only those), because it took 17 to 20 of its 20 minutes; every test still runs exactly once,
+  the timeouts are unchanged, and the new check is in `.github/ci-manifest.json`.
 - Review notes of PR #137 (STU-CR-5 follow-up; G-S3 not granted, flags stay off): the Schema Designer guide and the
   confirmation dialog (English and German) say that the PostgreSQL backup dumps the whole database, that it fails
   when the write role cannot read every table, and that the role must not get more rights for it (I-1). While a run
