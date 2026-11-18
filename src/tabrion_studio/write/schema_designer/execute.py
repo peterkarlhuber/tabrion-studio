@@ -7,7 +7,7 @@ Imported only by :mod:`.designer`, which :mod:`tabrion_studio.write.routes` impo
 **The flow** (section 4). The preview (:func:`.designer.preview`) plans from a fresh level-2 snapshot on the write
 connection to the draft and keeps a :class:`RunPlan` with the draft: the plan hash, the source fingerprint, the target
 model **as it was previewed** (a later edit drops the plan), the engine version, the risk classes and what the
-confirmation needs (:func:`requirements`). The page shows it with the preview warnings (:func:`warnings`) and the
+confirmation needs (:func:`requirements`). The page shows it with the preview warnings (:func:`.draft.warnings`) and the
 reasons a direct run is not offered (:func:`blocked`).
 
 1. **Confirm** (:func:`confirm`): the plan hash, the write profile's name typed (the STU-XW-3 confirmation) and, per
@@ -110,7 +110,7 @@ from tabrion.errors import (
     UsageError,
 )
 from tabrion.plan import RiskClass, execute_plan, migration_markers
-from tabrion.schema import SchemaSnapshot, TableShape
+from tabrion.schema import SchemaSnapshot
 from tabrion.sqlite import backup
 
 from tabrion_studio.config.secrets import SecretError
@@ -127,7 +127,7 @@ from tabrion_studio.write.connection import (
 )
 from tabrion_studio.write.pgtools import Connection, Runner, load_tools, verify_tool
 from tabrion_studio.write.schema_designer.create import DriverFailure
-from tabrion_studio.write.schema_designer.draft import refusal
+from tabrion_studio.write.schema_designer.draft import LOCK_TIMEOUT_S, refusal
 from tabrion_studio.write.unlock import Unlock, Unlocks
 
 logger = logging.getLogger("tabrion_studio.write")
@@ -141,8 +141,6 @@ BACKUP_OPT_OUT_ENVIRONMENTS = frozenset({"dev"})
 #: The classes that need a backup before a real run (section 7) and those whose tables are typed (D-10).
 BACKUP_CLASSES = frozenset({RiskClass.DESTRUCTIVE, RiskClass.REBUILD, RiskClass.DATA_CHANGING})
 TYPED_TABLE_CLASSES = frozenset({RiskClass.DESTRUCTIVE, RiskClass.REBUILD})
-#: The ``lock_timeout`` of every run (seconds): tabrion's default, shown in the ``locking`` notice.
-LOCK_TIMEOUT_S = 5.0
 #: The most tables one run may change: the audit log takes at most 64 object names in a record (review N-3, #114).
 MAX_RUN_TABLES = 64
 #: The Levuvo version tables of section 5 (``migration_markers`` knows Nodestro and Axentra, not Orkexa's).
@@ -355,53 +353,6 @@ def blocked(unlock: Unlock, change: Any, project: Path | None, write_state: Path
 
 
 # --- section 8: the preview warnings ------------------------------------------------------------------------------
-
-
-def _integer_primary_key(table: TableShape) -> bool:
-    """Whether the SQLite table keeps its ``rowid`` values through a rebuild: a single-column ``INTEGER PRIMARY KEY``
-    (the rowid's alias). Anything else gets the warning (careful: a ``WITHOUT ROWID`` table has none to lose)."""
-    if len(table.primary_key) != 1:
-        return False
-    column = next((c for c in table.columns if c.name == table.primary_key[0]), None)
-    return column is not None and column.type.strip().upper() == "INTEGER"
-
-
-def _type_changes(current: TableShape | None, target: TableShape | None) -> bool:
-    if current is None or target is None:
-        return False
-    before = {c.name: c.type for c in current.columns}
-    return any(c.name in before and before[c.name] != c.type for c in target.columns)
-
-
-def warnings(current: SchemaSnapshot, target: SchemaSnapshot, change: Any, schema: str) -> list[dict[str, Any]]:
-    """The fixed preview warnings (section 8, GS3-16; review I-1 of #132), as codes with the bare table name where one
-    applies: the page has an English and a German text for each. Names go to this page only."""
-    prefix = f"{schema}."
-
-    def bare(name: str) -> str:
-        return name[len(prefix) :] if name.startswith(prefix) else name
-
-    tables = {t.name: t for t in current.tables}
-    wanted = {t.name: t for t in target.tables}
-    found: list[dict[str, Any]] = [{"code": "not_modelled", "table": None}]
-    if change.dialect == "postgresql":
-        named: set[str] = set()
-        for step in change.steps:
-            if step.operation in ("drop_column", "drop_table") or (
-                step.operation == "alter_column" and _type_changes(tables.get(step.target), wanted.get(step.target))
-            ):
-                named.add(step.target)
-        found += [{"code": "pg_dependent_code", "table": bare(name)} for name in sorted(named)]
-        found.append({"code": "function_drift", "table": None})
-    else:
-        for step in change.steps:
-            existing = tables.get(step.target)
-            if step.operation == "rebuild_table" and existing is not None and not _integer_primary_key(existing):
-                found.append({"code": "sqlite_rowid", "table": bare(step.target)})
-    found.append({"code": "fingerprint_gaps", "table": None})
-    if any(RiskClass.LOCKING in step.risks for step in change.steps):
-        found.append({"code": "locking", "table": None, "lock_timeout_s": LOCK_TIMEOUT_S})
-    return found
 
 
 def requirements(plan: RunPlan) -> dict[str, Any]:

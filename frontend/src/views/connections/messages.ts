@@ -148,6 +148,13 @@ const PROBLEMS = new Set([
   'schema_run_check_failed',
   'schema_run_outcome_unknown',
   'schema_run_failed',
+  // The Schema Designer's comparison (STU-XSD-2).
+  'schema_compare_invalid',
+  'schema_compare_schema',
+  'schema_snapshot_invalid',
+  'schema_snapshot_too_large',
+  'schema_compare_mismatch',
+  'schema_compare_plan_not_allowed',
   // The Database Manager's backup and restore (STU-XDM-2).
   'backup_tool_unavailable',
   'backup_tool_failed',
@@ -297,7 +304,30 @@ const EDIT_ISSUES = new Set([
   'too_many',
 ]);
 
+/** The `compare.*` codes of a refused schema comparison or plan preview (STU-XSD-2), each with its own text. */
+const COMPARE_ISSUES = new Set([
+  'required',
+  'type',
+  'choice',
+  'unknown_key',
+  'two_files',
+  'format',
+  'level',
+  'too_large',
+  'dialect',
+  'plan_file',
+  'plan_source',
+  'plan_prod',
+  'plan_environment',
+]);
+
 export function issueText(t: TFunction, issue: ProblemIssue): string {
+  if (issue.code.startsWith('compare.')) {
+    const code = issue.code.slice('compare.'.length);
+    return COMPARE_ISSUES.has(code)
+      ? t(`schemaCompare.issues.${code}`)
+      : t('issues.other', { code: issue.code });
+  }
   if (issue.code.startsWith('edit.')) {
     const code = issue.code.slice('edit.'.length);
     return EDIT_ISSUES.has(code)

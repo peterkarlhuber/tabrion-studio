@@ -54,6 +54,7 @@ from tabrion_studio.write.schema_designer.draft import (
     refusal,
     table_names,
     validate,
+    warnings,
 )
 from tabrion_studio.write.unlock import WRITE_ID_PREFIX, Unlock, Unlocks
 
@@ -223,7 +224,7 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
             "write_profile_id": f"{WRITE_ID_PREFIX}{unlock.write_name}",
             "executable": not reasons,
             "blocked": list(reasons),
-            "warnings": execute.warnings(current, draft.model, change, draft.schema),
+            "warnings": warnings(current, draft.model, change, draft.schema),
             "confirmation": execute.requirements(kept),
             "expires_in_s": execute.RUN_TTL_SECONDS,
         }

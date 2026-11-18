@@ -20,7 +20,8 @@ and an ``edit.*`` code), ``studio.schema_plan_refused`` and ``studio.schema_mode
 ``plan.*``, ``ddl.*`` or ``schema.*``, never a name or a text; from STU-CR-5 on also the table tabrion named, by
 its position on the page only: ``tables.<n>`` or ``dropped.<n>``), ``studio.schema_run_not_allowed``
 (``plan.reason``: why a plan is not run directly), ``studio.schema_run_check_failed`` (``plan.check``: the check
-before the commit that failed) and, from STU-011 on, ``sqlstate`` and ``position`` for database
+before the commit that failed), the schema comparison's problems (STU-XSD-2: ``compare.<side>`` and
+``compare.plan`` with a ``compare.*`` code) and, from STU-011 on, ``sqlstate`` and ``position`` for database
 errors (``db.<kind>``).
 
 **Nothing in a problem comes from an exception or from the request (threat T-05, SQ-04).** ``title``, ``detail`` and
@@ -76,9 +77,9 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
-    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore)\.[a-z_]{1,32}"
+    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
 )
-_ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore)\.[a-z_]{1,48}")
+_ISSUE_CODE = re.compile(r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|compare)\.[a-z_]{1,48}")
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
 #: where the database named it, and a constraint.* code.
 _CONSTRAINT_POINTER = re.compile(r"changes\.\d{1,4}(?:\.\d{1,4})?")
@@ -901,6 +902,57 @@ CATALOG: dict[str, Entry] = {
         "Tabrion cannot make the change as designed, for example for an unknown type, a default or check text that "
         "is not one plain expression, a name that is too long, or a change it does not support.",
         "Check the type, the texts and the names of the change.",
+    ),
+    # The Schema Designer's schema comparison (STU-XSD-2, STU-ADR-0007 sections 1 to 3, TX-28). W-9: 400; issues name
+    # a side or the plan and a fixed reason (``compare.*``), never a name, a text or a part of a snapshot file.
+    "studio.schema_compare_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Comparison not valid",
+        "A side of the comparison is missing or not valid: each side is a schema of an open connection, the draft or "
+        "a snapshot file, and at most one side is a file.",
+        "Check both sides of the comparison.",
+    ),
+    "studio.schema_compare_schema": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Schema not usable",
+        "A comparison reads one schema of a connection: main on SQLite, and on PostgreSQL a schema that exists, that "
+        "the profile can see and that is not one of PostgreSQL's own.",
+        "Check the schema name.",
+    ),
+    "studio.schema_snapshot_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Snapshot file not readable",
+        "The file is not a level-2 schema snapshot that Tabrion can read (SchemaSnapshot.to_json at level 2). Nothing "
+        "of it was used.",
+        "Choose a snapshot file that Tabrion wrote at level 2.",
+    ),
+    "studio.schema_snapshot_too_large": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Schema too large",
+        "A side of the comparison exceeds the Schema Designer's limits (2 MiB of snapshot text, 500 tables, 250 "
+        "columns or 100 constraints and indexes per table). Nothing was compared.",
+        "Compare a smaller schema.",
+    ),
+    "studio.schema_compare_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Schemas not comparable",
+        "The two sides are of different database engines (SQLite and PostgreSQL) or snapshot levels, so they cannot "
+        "be compared.",
+        "Compare two schemas of the same engine.",
+    ),
+    "studio.schema_compare_plan_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No plan preview",
+        "A plan preview is made only from a schema read now on a connection of one of your own DEV or TEST profiles "
+        "to another connection or the draft; never from or to a snapshot file, and never for PROD. The comparison "
+        "itself is shown.",
+        "Compare without the plan preview, or choose a DEV or TEST connection as the compared side.",
     ),
     # Running a Schema Designer plan (STU-CR-5, STU-ADR-0007 sections 4 to 11, GS3-03..05, GS3-10..20). W-9: 400 or
     # 405; no name, statement, default or check text, no server text.
