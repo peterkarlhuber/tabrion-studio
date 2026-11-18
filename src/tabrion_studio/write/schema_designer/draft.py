@@ -200,7 +200,7 @@ def plan_for(
     if not isinstance(server_version, tuple) or not server_version:
         raise WriteError("studio.write_unsupported")  # pragma: no cover - the draft always has one
     try:
-        return plan(current, target, server_version=server_version, concurrent_indexes=False)
+        return plan(current=current, target=target, server_version=server_version, concurrent_indexes=False)
     except (PlanRefused, UsageError) as exc:
         raise refusal(exc, locate) from None
 
