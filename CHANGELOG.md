@@ -15,6 +15,8 @@ All notable changes to this project are documented here. The format follows
   SQLite refused on Windows and in unsafe or Studio's own folders. `force` only while other sessions exist on
   PostgreSQL 13 or later, with its own typed confirmation. Audit `dbm.delete` with `force` and `sessions`. The page's
   delete part in English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated.
+  Owner's condition of G-S4: on Windows a SQLite restore into a new file is now refused (`restore.platform`), as
+  STU-CR-2 refuses creating one, until a reviewed check of the folder's access list exists.
 - Review notes of PR #137 (STU-CR-5 follow-up; G-S3 not granted, flags stay off): the Schema Designer guide and the
   confirmation dialog (English and German) say that the PostgreSQL backup dumps the whole database, that it fails
   when the write role cannot read every table, and that the role must not get more rights for it (I-1). While a run

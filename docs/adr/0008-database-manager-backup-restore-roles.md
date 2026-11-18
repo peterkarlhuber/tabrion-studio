@@ -253,6 +253,9 @@ A record before the run that cannot be written stops the action.
   `dbm.restore`), the backup file, its SHA-256, the tool version, the target, the restore profile, the
   target's own backup and whether the fingerprint matched; no value, no path, no secret.
 - Stricter than the text above: no opt-out of the target's backup; `stderr` never logged; Windows refused.
+- Owner's condition of G-S4 (2026-11-18): on Windows a SQLite restore into a **new file** is refused
+  (`restore.platform`) until a check of the folder's access list exists and has been reviewed, as STU-CR-2 refuses
+  creating one; a restore over the profile's own file stays possible.
 
 ## As built (STU-XDM-3)
 

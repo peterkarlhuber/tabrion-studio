@@ -111,7 +111,8 @@ changed backup, a link or a file from elsewhere is refused.
 
 - **SQLite:** into a **new file** next to the connection's file (a plain name ending in `.db`, `.sqlite` or
   `.sqlite3`; the folder must be yours and writable only by you, every folder above it safe as for
-  [New database](new-database.md), and not one of Studio's own), or over the connection's **own file**. Before the file is replaced Studio backs it up, closes its own
+  [New database](new-database.md), and not one of Studio's own; **not on Windows**, where Studio cannot check the
+  folder's access list yet), or over the connection's **own file**. Before the file is replaced Studio backs it up, closes its own
   connections to it and checks afterwards that it is still the same file. SQLite's `integrity_check` runs on the
   restored file.
 - **PostgreSQL:** only into a **new database** on the same server, which Studio creates. The archive's functions run

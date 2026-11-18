@@ -121,6 +121,8 @@ _DATABASE_OID = (
     " WHERE d.datname OPERATOR(pg_catalog.=) CAST(:name AS pg_catalog.name)"
 )
 _SERVER_VERSION_TEXT = "SELECT pg_catalog.current_setting('server_version')"
+#: Windows: no new SQLite file (its access lists are not read yet), as STU-CR-2 refuses creating one (owner, G-S4).
+_WINDOWS = os.name != "posix"
 
 
 class DriverFailure(Exception):
@@ -764,7 +766,11 @@ def _check_new_file_folder(folder: Path, reserved: Iterable[Path]) -> None:
     POSIX the rules of the Schema Designer's database creation (STU-CR-2) apply to its real path, so nobody else can
     swap the restored file: the folder belongs to this user and neither group nor others may write it, and every
     folder above it passes :func:`ancestor_is_safe`. A link on the stored path (macOS ``/var``) must belong to root or
-    this user, and the folder holding it is checked as a folder above. Raises ``studio.dbm_restore_not_allowed``."""
+    this user, and the folder holding it is checked as a folder above. On Windows it refuses (``restore.platform``):
+    the folder's access list is not checked, so no new file is put there (owner's condition of G-S4, as STU-CR-2).
+    Raises ``studio.dbm_restore_not_allowed``."""
+    if _WINDOWS:
+        raise _not_allowed("platform")
     ids = reserved_identities(reserved)
     real = Path(os.path.realpath(folder))
     try:
@@ -774,8 +780,6 @@ def _check_new_file_folder(folder: Path, reserved: Iterable[Path]) -> None:
         raise _not_allowed("folder_unsafe") from None
     if any((info.st_dev, info.st_ino) in ids for info in real_chain):
         raise _not_allowed("reserved_folder")
-    if os.name != "posix":
-        return  # Windows: no owner or mode rules (its access lists are not read), as STU-CR-2 notes
     try:
         given_chain = [os.lstat(each) for each in folders_up(str(folder))]
     except OSError:

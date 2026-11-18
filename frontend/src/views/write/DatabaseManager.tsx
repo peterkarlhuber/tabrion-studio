@@ -105,6 +105,7 @@ const ISSUE_TEXTS = new Set([
   'restore.integrity',
   'restore.folder_unsafe',
   'restore.reserved_folder',
+  'restore.platform',
   'delete.environment',
   'delete.maintenance',
   'delete.connected',

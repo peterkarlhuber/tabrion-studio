@@ -279,8 +279,29 @@ def test_a_backup_needs_an_admin_unlock(tmp_path: Path, static_dir: Path) -> Non
 # --- 3. restore round trips (GS4-08) ------------------------------------------------------------------------------
 
 
+def test_a_new_sqlite_file_is_never_restored_on_windows(dbm: Dbm, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Owner's condition of G-S4: without a reviewed check of the folder's access list, Windows gets no new SQLite file
+    from a restore (as STU-CR-2 refuses creating one); a restore over the profile's own file stays possible."""
+    from tabrion_studio.write.database_manager import backups
+
+    assert backups._WINDOWS is (sys.platform == "win32")
+    name = dbm.made()
+    monkeypatch.setattr(backups, "_WINDOWS", True)
+    _refused(
+        dbm.restore(name, "new", "copy.db", "copy.db"),
+        400,
+        "studio.dbm_restore_not_allowed",
+        [("restore.target", "restore.platform")],
+    )
+    assert not (dbm.env.db.parent / "copy.db").exists()
+    monkeypatch.setattr(backups, "_WINDOWS", False)
+
+
 def test_a_backup_restores_into_a_new_file(dbm: Dbm) -> None:
     name = dbm.made()
+    if not POSIX:  # the owner's condition of G-S4: no new SQLite file on Windows
+        _refused(dbm.restore(name, "new", "copy.db", "copy.db"), 400, "studio.dbm_restore_not_allowed")
+        return
     preview = dbm.preview(name)
     assert preview.status_code == 200, preview.text
     assert preview.json()["targets"] == ["new", "existing"] and preview.json()["existing_name"] == "parts.db"

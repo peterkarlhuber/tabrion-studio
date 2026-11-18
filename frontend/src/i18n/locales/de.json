@@ -2203,7 +2203,8 @@
         "in_use": "die Datei wird gerade benutzt",
         "integrity": "die wiederhergestellte Datei hat die Integritätsprüfung nicht bestanden",
         "folder_unsafe": "andere dürfen den Ordner des Ziels oder einen Ordner darüber ändern",
-        "reserved_folder": "der Ordner gehört zu Studio selbst"
+        "reserved_folder": "der Ordner gehört zu Studio selbst",
+        "platform": "unter Windows wird keine neue Datei angelegt"
       },
       "delete": {
         "environment": "nur DEV- und TEST-Datenbanken werden gelöscht",

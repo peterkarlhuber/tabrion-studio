@@ -2203,7 +2203,8 @@
         "in_use": "the file is in use",
         "integrity": "the restored file failed the integrity check",
         "folder_unsafe": "others may write the target's folder or a folder above it",
-        "reserved_folder": "the folder is one of Studio's own"
+        "reserved_folder": "the folder is one of Studio's own",
+        "platform": "a new file is not created on Windows"
       },
       "delete": {
         "environment": "only DEV and TEST databases are deleted",

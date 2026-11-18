@@ -1223,7 +1223,11 @@ flag stays off by default. Each point needs the independent review or the owner.
    database's OID (or the file's device and inode), not its content.
 3. **Tabrion names:** `tabrion.postgres.drop_database` and `tabrion.sqlite.delete_database_file` are experimental
    (`X`); like the names of STU-XDM-2 they must become stable before Studio 1.3.
-4. **No E2E yet** for the delete part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
+4. **Windows, owner's condition of G-S4 (2026-11-18):** a SQLite restore into a new file is refused on Windows
+   (`restore.platform`, `test_dbm_backup_restore.py::test_a_new_sqlite_file_is_never_restored_on_windows`) until a
+   check of the folder's access list exists and is reviewed; database creation moves to the admin area (G-S4) as a
+   package of its own after STU-XDM-3.
+5. **No E2E yet** for the delete part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
 
 ## Cross-repository checks still to add
 
