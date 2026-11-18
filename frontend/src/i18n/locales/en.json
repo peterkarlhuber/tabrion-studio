@@ -1114,7 +1114,7 @@
     "dbm_delete_target_missing": "No database of this name exists on the server. Nothing was deleted.",
     "dbm_delete_target_changed": "The target is no longer the database or file that was checked and backed up. Nothing was deleted.",
     "dbm_delete_in_use": "Other sessions or programs use the database. Studio did not end them and nothing was deleted.",
-    "dbm_delete_backup_unverified": "The backup made before the delete could not be verified, so nothing was deleted.",
+    "dbm_delete_backup_unverified": "The backup made before the delete could not be verified (for example, the schema changed while it was made), so nothing was deleted. Try again when nothing changes the schema.",
     "dbm_delete_failed": "The database could not be deleted. Its backup from before the delete is kept in the backup folder.",
     "admin_over_privileged": "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before PostgreSQL 16. The unlock ended; use a leaner admin role."
   },

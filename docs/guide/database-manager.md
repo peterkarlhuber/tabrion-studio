@@ -145,7 +145,8 @@ be written, nothing is done.
    focus by default.
 
 Before anything is deleted Studio makes a **backup** of the target into its backup folder and checks it: a
-PostgreSQL archive must be readable by `pg_restore`, a SQLite copy must have the same schema as the file. If the
+PostgreSQL archive must be readable by `pg_restore`, and the database's schema must be the same before and after
+the dump (if something changes the schema meanwhile, nothing is deleted: try again later), a SQLite copy must have the same schema as the file. If the
 backup fails or cannot be checked, nothing is deleted. There is no way to skip it. The PostgreSQL backup runs as the
 admin role, so that role must be able to read every table of the target; if it cannot, the delete is refused. Do not
 give the role more rights for this: delete such a database outside Studio. The backup stays in the folder and can be

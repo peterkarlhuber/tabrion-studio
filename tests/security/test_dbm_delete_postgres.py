@@ -243,6 +243,38 @@ def test_a_failed_backup_stops_the_delete(pg: Pg) -> None:
     assert victim in pg.databases() and _dumps(pg) == [] and _deletes(pg) == []
 
 
+def test_a_schema_changed_during_the_dump_stops_the_delete(pg: Pg, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-1 of PR #140: a table created in the target while pg_dump runs leaves the backup without a
+    fingerprint (before and after differ), so the archive does not match what is dropped: nothing is deleted."""
+    from tabrion_studio.write import pgtools
+
+    victim = _victim(pg)
+    real = pgtools.Runner.dump
+
+    def changing(self: Any, *args: Any, **kwargs: Any) -> Any:
+        archive = real(self, *args, **kwargs)
+        pg.sql("CREATE TABLE public.late (id integer)", victim)
+        return archive
+
+    monkeypatch.setattr(pgtools.Runner, "dump", changing)
+    _refused(_delete(pg, victim), 400, "studio.dbm_delete_backup_unverified")
+    assert victim in pg.databases() and _deletes(pg) == []
+    (pre,) = _dumps(pg)  # the backup is kept, without a fingerprint
+    folder = pg.env.config_dir / "backups" / "database-manager"
+    assert json.loads((folder / f"{pre}.json").read_text())["fingerprint"] is None
+
+
+def test_an_unreadable_fingerprint_stops_the_delete(pg: Pg, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-1 of PR #140: when the target's fingerprint cannot be read, the backup is not verified and nothing
+    is dropped."""
+    from tabrion_studio.write.database_manager import backups
+
+    victim = _victim(pg)
+    monkeypatch.setattr(backups, "_target_fingerprint", lambda *args, **kwargs: None)
+    _refused(_delete(pg, victim), 400, "studio.dbm_delete_backup_unverified")
+    assert victim in pg.databases() and _deletes(pg) == []
+
+
 def test_a_database_swapped_after_the_backup_is_refused(pg: Pg, monkeypatch: pytest.MonkeyPatch) -> None:
     """TX-37: another database under the same name after the backup (a different OID): nothing is dropped."""
     from tabrion_studio.write.database_manager import backups

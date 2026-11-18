@@ -30,7 +30,8 @@ never retried after ``postgres.database_in_use``, and audited as its own field.
 
 **A verified backup first (fail closed).** Before anything is deleted, :func:`.backups` makes a backup of the target
 into Studio's backup folder (origin ``pre_delete``, its own ``dbm.backup`` records): PostgreSQL through the verified
-``pg_dump`` runner (kept only after ``pg_restore --list`` read it), SQLite through ``tabrion.sqlite.backup`` and then
+``pg_dump`` runner (kept only after ``pg_restore --list`` read it, and only with a level-2 fingerprint that was the
+same before and after the dump), SQLite through ``tabrion.sqlite.backup`` and then
 compared: the level-2 fingerprint of the copy must equal the source's. Any failure stops the delete
 (``studio.dbm_delete_backup_unverified`` or the backup's own problem). There is no opt-out here (an owner decision:
 STU-ADR-0008 section 5 would allow one on DEV).
@@ -273,8 +274,13 @@ def _delete_postgres(manager: Manager, unlock: Unlock, doc: dict[str, Any]) -> d
     if sessions and not force:
         # Fail early, before the backup; tabrion checks again right before the statement.
         raise WriteError("studio.dbm_delete_in_use", [("delete.target", "delete.in_use")])
-    # The verified backup first (fail closed): pg_dump, then pg_restore --list of the archive.
+    # The verified backup first (fail closed): pg_dump, then pg_restore --list of the archive, and a level-2
+    # fingerprint that was the same before and after the dump (review L-1 of PR #140): a schema that changed during
+    # the dump, or a fingerprint that could not be read, leaves none, and nothing is dropped.
     made = backups._backup_postgres(manager, unlock, database=name, origin="pre_delete")["backup"]
+    if not isinstance(made.get("fingerprint"), str):
+        logger.warning("delete refused: the backup could not be verified", extra={"event": "studio.dbm_delete_backup"})
+        raise WriteError("studio.dbm_delete_backup_unverified")
     if _oid(unlock, name) != oid:
         raise WriteError("studio.dbm_delete_target_changed")
     start = {

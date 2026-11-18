@@ -278,7 +278,9 @@ A record before the run that cannot be written stops the action.
   Windows**, as STU-CR-2 refuses a new SQLite file there.
 - The backup first, fail closed, **no opt-out** (stricter than section 5): PostgreSQL through the verified runner as
   the admin role (`pg_restore --list` reads the archive before it is kept), so the admin role must be able to read the
-  whole target database; SQLite through `tabrion.sqlite.backup`, then the copy's level-2 fingerprint must equal the
+  whole target database, and the backup must carry the target's level-2 fingerprint, read the same before and after
+  the dump (review L-1 of PR #140: a schema change during the dump or an unreadable fingerprint leaves none and
+  refuses the delete with `studio.dbm_delete_backup_unverified`); SQLite through `tabrion.sqlite.backup`, then the copy's level-2 fingerprint must equal the
   source's (`studio.dbm_delete_backup_unverified`). Origin `pre_delete` in the metadata; the backup is listed and
   restorable like any other.
 - The typed name compared byte for byte; a name with a character that cannot be seen is refused (GS4-17).

@@ -1095,8 +1095,9 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "Backup not verified",
-        "The backup made before the delete could not be verified, so nothing was deleted.",
-        "Check the backup folder and the database, then try again.",
+        "The backup made before the delete could not be verified (for example, the schema changed while it was made),"
+        " so nothing was deleted.",
+        "Wait until nothing changes the database's schema, then try again.",
     ),
     "studio.dbm_delete_failed": Entry(
         400,

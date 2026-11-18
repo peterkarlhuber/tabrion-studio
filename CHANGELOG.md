@@ -16,7 +16,9 @@ All notable changes to this project are documented here. The format follows
   PostgreSQL 13 or later, with its own typed confirmation. Audit `dbm.delete` with `force` and `sessions`. The page's
   delete part in English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated.
   Owner's condition of G-S4: on Windows a SQLite restore into a new file is now refused (`restore.platform`), as
-  STU-CR-2 refuses creating one, until a reviewed check of the folder's access list exists.
+  STU-CR-2 refuses creating one, until a reviewed check of the folder's access list exists. Review L-1 of PR #140:
+  a PostgreSQL delete also needs the backup's level-2 fingerprint (the same before and after the dump); a schema
+  change during the dump or an unreadable fingerprint refuses it with `studio.dbm_delete_backup_unverified`.
 - Tabrion repin: pins tabrion at the merge commit of tabrion #94 (`bfba25e`), which makes every remaining CR-DBX name
   Studio uses stable (`tabrion.schema`, `tabrion.ddl`, `tabrion.plan` with its errors,
   `tabrion.postgres.create_database` and `drop_database`, `tabrion.sqlite.restore` and `delete_database_file`,

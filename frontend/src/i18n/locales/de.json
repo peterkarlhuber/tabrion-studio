@@ -1114,7 +1114,7 @@
     "dbm_delete_target_missing": "Auf dem Server gibt es keine Datenbank mit diesem Namen. Es wurde nichts gelöscht.",
     "dbm_delete_target_changed": "Das Ziel ist nicht mehr die Datenbank oder Datei, die geprüft und gesichert wurde. Es wurde nichts gelöscht.",
     "dbm_delete_in_use": "Andere Sitzungen oder Programme nutzen die Datenbank. Studio hat sie nicht beendet, und es wurde nichts gelöscht.",
-    "dbm_delete_backup_unverified": "Die Sicherung vor dem Löschen ließ sich nicht prüfen, daher wurde nichts gelöscht.",
+    "dbm_delete_backup_unverified": "Die Sicherung vor dem Löschen ließ sich nicht prüfen (zum Beispiel, weil sich das Schema währenddessen geändert hat), daher wurde nichts gelöscht. Erneut versuchen, wenn nichts das Schema ändert.",
     "dbm_delete_failed": "Die Datenbank ließ sich nicht löschen. Ihre Sicherung von vor dem Löschen bleibt im Sicherungsordner.",
     "admin_over_privileged": "Die Admin-Rolle hat oder erreicht SUPERUSER, BYPASSRLS, REPLICATION, eine Serverdatei-Rolle oder CREATEROLE vor PostgreSQL 16. Die Entsperrung wurde beendet; nimm eine schlankere Admin-Rolle."
   },
