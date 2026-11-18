@@ -877,8 +877,7 @@ function DeleteForm({
     );
   }
 
-  const ready =
-    typed === expected && (!force || (preview.forceOffered && forceTyped === expected));
+  const ready = typed === expected && (!force || (preview.forceOffered && forceTyped === expected));
 
   return (
     <form

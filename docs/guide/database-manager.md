@@ -9,7 +9,8 @@
     [STU-ADR-0008](../adr/0008-database-manager-backup-restore-roles.md).
 
 The **Database Manager** section on the **Connections** page backs up a DEV or TEST database into Studio's own backup
-folder and restores a backup into a new database or file. Deleting databases and managing roles are not built yet.
+folder, restores a backup into a new database or file and deletes a DEV or TEST database after a verified backup.
+Managing roles is not built yet.
 
 !!! warning "A PostgreSQL backup is not a complete backup"
     A `pg_dump` archive holds **one database**. Global roles, role memberships, tablespaces and other cluster objects
@@ -133,3 +134,33 @@ it, and otherwise by its resolved addresses and port.
 
 Every backup and restore is written to the audit log (`run.start` before, `run.result` after); if the audit log cannot
 be written, nothing is done.
+
+## Delete a database
+
+1. **PostgreSQL:** type the name of another database on the same server. **SQLite:** the target is always this
+   connection's own file. Then **Look at the delete**; this changes nothing. For PostgreSQL it shows how many other
+   sessions use the database right now.
+2. Type the name of the database or file. **Delete database** stays disabled until it matches, and it never has the
+   focus by default.
+
+Before anything is deleted Studio makes a **backup** of the target into its backup folder and checks it: a
+PostgreSQL archive must be readable by `pg_restore`, a SQLite copy must have the same schema as the file. If the
+backup fails or cannot be checked, nothing is deleted. There is no way to skip it. The PostgreSQL backup runs as the
+admin role, so that role must be able to read every table of the target; if it cannot, the delete is refused. Do not
+give the role more rights for this: delete such a database outside Studio. The backup stays in the folder and can be
+restored like any other.
+
+Studio never deletes:
+
+- a database or file of a PROD profile, or one that **any** of your profiles marks PROD;
+- PostgreSQL's `postgres`, `template0`, `template1` or any other template database, or the database this connection
+  uses;
+- a SQLite file in a folder that others may write or that is one of Studio's own folders. On Windows Studio does not
+  delete SQLite files at all.
+
+If other sessions use a PostgreSQL database, the delete is refused. On PostgreSQL 13 and later you may choose **End
+the other sessions (FORCE)**; it is never preselected and needs the name typed once more. Studio's own connections
+to the target are closed first, so they never count. A SQLite file that another program holds open is not deleted.
+
+Writes to the database between its backup and the delete are lost. Every delete is written to the audit log
+(`dbm.delete`, with the backup's name and whether FORCE was chosen).

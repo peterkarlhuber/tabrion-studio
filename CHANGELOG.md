@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDM-3, delete a database (G-S4 not granted; the `database_manager` flag stays off by default): `POST
+  /api/write/database-manager/delete/preview` and `.../delete` delete another DEV or TEST PostgreSQL database of the
+  unlocked server (`tabrion.postgres.drop_database`) or the connection's own SQLite file
+  (`tabrion.sqlite.delete_database_file`), after a verified backup (origin `pre_delete`, no opt-out) and the exact name
+  typed. Never the maintenance or template databases, the connected database, or a target a PROD profile names;
+  SQLite refused on Windows and in unsafe or Studio's own folders. `force` only while other sessions exist on
+  PostgreSQL 13 or later, with its own typed confirmation. Audit `dbm.delete` with `force` and `sessions`. The page's
+  delete part in English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated.
 - Review notes of PR #137 (STU-CR-5 follow-up; G-S3 not granted, flags stay off): the Schema Designer guide and the
   confirmation dialog (English and German) say that the PostgreSQL backup dumps the whole database, that it fails
   when the write role cannot read every table, and that the role must not get more rights for it (I-1). While a run
