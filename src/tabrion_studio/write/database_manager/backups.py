@@ -846,7 +846,7 @@ def _restore_sqlite(
             closed = _close_connections_to(manager, identity)
             unlock.connection.close()
         try:
-            sqlite_restore(loaded.path, target, overwrite=existing)
+            sqlite_restore(source=loaded.path, target=target, overwrite=existing)
         except DatabaseInUse:
             raise WriteError("studio.dbm_restore_failed", [("restore.target", "restore.in_use")]) from None
         except (UnsafePath, UsageError, FileExistsError, FileNotFoundError):

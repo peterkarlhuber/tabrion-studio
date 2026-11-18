@@ -17,6 +17,12 @@ All notable changes to this project are documented here. The format follows
   delete part in English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated.
   Owner's condition of G-S4: on Windows a SQLite restore into a new file is now refused (`restore.platform`), as
   STU-CR-2 refuses creating one, until a reviewed check of the folder's access list exists.
+- Tabrion repin: pins tabrion at the merge commit of tabrion #94 (`bfba25e`), which makes every remaining CR-DBX name
+  Studio uses stable (`tabrion.schema`, `tabrion.ddl`, `tabrion.plan` with its errors,
+  `tabrion.postgres.create_database` and `drop_database`, `tabrion.sqlite.restore` and `delete_database_file`,
+  `tabrion.errors.DatabaseInUse`). `plan` now takes `current` and `target`, and `sqlite.restore` `source` and
+  `target`, by keyword only; the Schema Designer and the Database Manager pass them by keyword. No behavior change;
+  the flags stay off.
 - CI: the Windows security leg of `backend test` runs in two shards with complementary ignore globs
   (`backend test (windows-latest, security)` without `tests/security/test_[r-z]*`, `backend test (windows-latest,
   security 2 of 2)` with only those), because it took 17 to 20 of its 20 minutes; every test still runs exactly once,
