@@ -7,6 +7,20 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S2 follow-up 2A (the recheck before G-R; no default changes, the write flags stay off by default):
+  `loopback_tls` in `write-areas.toml`. `"accept"`, the default, keeps the G-S2 decision. `"require"` sends a
+  PostgreSQL write or admin password to a server on this computer only over TLS `verify-full` or a Unix socket with
+  `requirepeer`, and refuses any other unlock before the password is read or sent
+  (`400 studio.write_loopback_tls_required`); an unknown value counts as `"require"`. The D-15 dialog and the unlock
+  state (`local_unverified`) say when nothing checks a local server, and such an unlock is logged
+  (`studio.write_loopback_unverified`). The security guide, the write threat model (residual risk 4) and the TODO
+  are updated; the default at G-R is the owner's choice.
+- PostgreSQL profiles (review L-1 of PR #153): a host that starts with `@` (a Unix socket in the abstract namespace
+  on Linux, which any local program can take and where TLS does not apply) is refused in every profile file and for
+  every profile kind (`config.host_abstract_socket`). Every later path refuses it again on its own: the loopback
+  rule, the write secret's confirmation and transport checks under either `loopback_tls` setting, the last check
+  before every connection, the `pg_dump`/`pg_restore` connection and the profile export
+  (`export.host_abstract_socket`). Tests: `tests/security/test_abstract_socket_host.py`.
 - STU-CR-6 part 2 (in development, locked by G-S3 and G-S4; neither granted, the flags stay off, no default changes):
   the runtime-role wizard. "Runtime role for an application" in the Database Manager creates a login role (or takes
   an existing one again) and grants it the rows of one schema through Tabrion's `create_role` and

@@ -163,6 +163,12 @@ def test_a_plain_password_is_refused_without_echo(env: Env) -> None:
         # M-1 of the PR #117 review: a libpq host list, also one that starts with a socket folder.
         ({**PG, "host": f"/run/pg,{CANARY}.example"}, [{"pointer": "profile.host", "code": "config.host_list"}]),
         ({**PG, "host": f"localhost,{CANARY}.example"}, [{"pointer": "profile.host", "code": "config.host_list"}]),
+        # L-1 of the PR #153 review: an abstract Unix socket, also with verify-full.
+        ({**PG, "host": f"@{CANARY}"}, [{"pointer": "profile.host", "code": "config.host_abstract_socket"}]),
+        (
+            {**PG, "host": f"@{CANARY}", "sslmode": "verify-full"},
+            [{"pointer": "profile.host", "code": "config.host_abstract_socket"}],
+        ),
         ({**PG, f"x-{CANARY}": 1}, [{"pointer": "profile", "code": "config.unknown_key"}]),
         ({**PG, "name": "a\nb"}, [{"pointer": "profile.name", "code": "config.control_character"}]),
         ("not a profile", [{"pointer": "profile", "code": "config.type"}]),

@@ -36,6 +36,10 @@ that libpq has ``require_auth`` (16 or newer; ``studio.require_auth_unavailable`
 secret reference (``studio.secret_unconfirmed``), all before any secret is resolved
 (:mod:`tabrion_studio.write.secret_confirm`). The unlock keeps the confirmed pair's digest; every use re-checks it,
 so a revoked or changed confirmation ends the unlock and refuses a plan's confirmation and run (STU-XW-3).
+With ``loopback_tls = "require"`` in ``write-areas.toml`` (G-S2 decision 2A; ``"accept"`` by default) a password
+never goes to a server on this computer that libpq cannot check (no TLS ``verify-full``, no socket with
+``requirepeer``): ``studio.write_loopback_tls_required``, before a referenced secret is read and before any password
+is sent. With ``"accept"`` such an unlock goes on, its state says ``local_unverified`` and it is logged.
 
 **Audit (STU-XW-2).** Every unlock is recorded before it takes effect (a log that cannot take the record refuses
 the unlock, ``studio.audit_unavailable``); a refused unlock of a stored profile and every lock (with its reason) are
@@ -72,7 +76,12 @@ from tabrion_studio.write.connection import (
     open_write_connection,
     require_auth_supported,
 )
-from tabrion_studio.write.secret_confirm import SecretConfirmations, check_transport, secret_pair
+from tabrion_studio.write.secret_confirm import (
+    SecretConfirmations,
+    check_local_transport,
+    check_transport,
+    secret_pair,
+)
 
 logger = logging.getLogger("tabrion_studio.write")
 
@@ -122,6 +131,9 @@ class Unlock:
     #: This unlock's own ID: a plan (STU-XW-3) is bound to it, so a plan made under an earlier unlock of the same
     #: session and connection never runs under a later one (review N-2). Never sent to the page.
     unlock_id: str = field(default_factory=lambda: secrets.token_hex(16))
+    #: A PostgreSQL server on this computer whose identity libpq does not check (G-S2 decision 2A): no TLS
+    #: ``verify-full`` on a loopback address, no ``requirepeer`` on a socket.
+    local_unverified: bool = False
 
     def to_dict(self, now: float) -> dict[str, Any]:
         """The write state the page shows (08 section 3): profile, kind, role, environment, expiry. No secret."""
@@ -135,6 +147,7 @@ class Unlock:
             "expires_in_s": max(0, round(self.last_used + UNLOCK_IDLE_SECONDS - now)),
             "findings": list(self.connection.findings),
             "facts": dict(self.connection.facts),
+            "local_unverified": self.local_unverified,
         }
 
 
@@ -245,6 +258,8 @@ class Unlocks:
         if not isinstance(typed_name, str) or typed_name != write.name:
             raise WriteError("studio.unlock_name_mismatch")
         opened, pair_digest = self._open(write, read, connection)
+        pair = secret_pair(write, read)  # None for SQLite
+        local_unverified = pair is not None and pair.local_unverified
         # Open point 1 of the PR #128 review (b): CREATEDB where Studio does not need it is a warning, never a refusal.
         opened.findings += createdb_findings(
             opened.facts,
@@ -283,6 +298,7 @@ class Unlocks:
             unlocked_at=now,
             last_used=now,
             pair_digest=pair_digest,
+            local_unverified=local_unverified,
         )
         with self._lock:
             previous = self._unlocks.pop((session, connection.id), None)
@@ -291,6 +307,13 @@ class Unlocks:
             self._close(previous, "replaced")
         profile_id = write_profile_id(write)
         logger.info("write mode unlocked", extra={"event": "studio.write_unlocked", "profile_id": profile_id})
+        if local_unverified:
+            # G-S2 decision 2A: accepted (loopback_tls = "accept"), and said each time.
+            logger.warning(
+                "the write or admin server is on this computer and its identity is not checked "
+                "(no TLS verify-full, no requirepeer)",
+                extra={"event": "studio.write_loopback_unverified", "profile_id": profile_id},
+            )
         if opened.findings:
             logger.warning(
                 "the write or admin role has more rights than Studio needs",
@@ -355,6 +378,10 @@ class Unlocks:
             raise WriteError("studio.write_coupling_invalid")
         check_transport(pair)
         self.confirmations.require(pair)
+        required = self.areas.loopback_tls_required
+        if write.password is not None:
+            # A reference names a password: refused before it is read (G-S2 decision 2A, loopback_tls = "require").
+            check_local_transport(pair, required=required)
         password: str | None = None
         try:
             password = self.config.secrets.resolve(self.config.write_target(write, read))
@@ -364,6 +391,8 @@ class Unlocks:
                 raise
         if password is not None:
             register_secret(password, lasting=True)
+            # A password from the keyring or entered for the session: refused before it is sent.
+            check_local_transport(pair, required=required)
         return pair.digest, password
 
     def credentials(self, write_name: str) -> tuple[WriteProfile, Profile, str | None]:

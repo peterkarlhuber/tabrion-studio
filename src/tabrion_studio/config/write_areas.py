@@ -28,6 +28,20 @@ may write. Anything else (missing, unreadable, unsafe, malformed, a value that i
     schema_designer = false
     database_manager = false
 
+**Loopback transport (G-S2 decision 2A, residual risk 4 of the write threat model).** One more key, outside the
+areas, sets what a PostgreSQL write or admin password may travel over when the server is on this computer:
+
+::
+
+    loopback_tls = "accept"    # the default: as G-S2 accepted it for local DEV, TEST and STAGE
+    loopback_tls = "require"   # only TLS verify-full, or a Unix socket with requirepeer
+
+``"accept"`` (the default, also for a missing or unusable file) keeps the G-S2 rule: a loopback address or
+``localhost`` without TLS ``verify-full``, or a socket without ``requirepeer``, is used, and the unlock and the D-15
+dialog say that the server's identity is not checked. ``"require"`` refuses such an unlock before the password is
+sent (``studio.write_loopback_tls_required``). Any other value is ``"require"`` (fail closed) and logged. Whether
+the default turns to ``"require"`` is the owner's decision at G-R (``g-s2/2a-recheck.md``). The key turns no area on.
+
 A flag is **never** taken from the frontend, the settings file or route, a project file, a URL, a header, a cookie,
 the session, a profile, a database or browser storage: nothing but :func:`load_write_areas` builds a
 :class:`WriteAreas` with an area on, and the server keeps the one it read at start for its whole life. Each area's
@@ -60,6 +74,8 @@ from tabrion_studio.paths import UnsafePathError, check_private_dir
 
 WRITE_AREAS_FILE = "write-areas.toml"
 WRITE_AREAS_VERSION = 1
+#: The values of ``loopback_tls``: the G-S2 default first (decision 2A).
+LOOPBACK_TLS_MODES = ("accept", "require")
 
 logger = logging.getLogger("tabrion_studio.write_areas")
 
@@ -85,6 +101,12 @@ class WriteAreas:
     """The flags as read at start: the areas that are on. Immutable; the default has every area off."""
 
     enabled: frozenset[Area] = frozenset()
+    #: ``"accept"`` or ``"require"``: what a write or admin password may travel over to a server on this computer.
+    loopback_tls: str = "accept"
+
+    @property
+    def loopback_tls_required(self) -> bool:
+        return self.loopback_tls != "accept"
 
     def on(self, area: Area) -> bool:
         return area in self.enabled
@@ -179,9 +201,24 @@ def _areas(doc: dict[str, Any]) -> frozenset[Area]:
         elif value is not False:
             logger.warning("write area flag is not a boolean", extra={"event": "studio.write_areas_invalid"})
     for key in doc:
-        if key not in ("version", "areas"):
+        if key not in ("version", "areas", "loopback_tls"):
             logger.warning("write areas file has an unknown key", extra={"event": "studio.write_areas_unknown"})
     return frozenset(enabled)
+
+
+def _loopback_tls(doc: dict[str, Any]) -> str:
+    """``loopback_tls`` of the file: the default when absent, ``"require"`` for anything it does not know."""
+    if "loopback_tls" not in doc:
+        return LOOPBACK_TLS_MODES[0]
+    value = doc["loopback_tls"]
+    if isinstance(value, str) and value in LOOPBACK_TLS_MODES:
+        return value
+    # Never the value itself: it is text of a file. A stricter rule than asked for is the safe side.
+    logger.warning(
+        "write areas file has an unknown loopback_tls; require is used",
+        extra={"event": "studio.write_areas_invalid"},
+    )
+    return "require"
 
 
 def load_write_areas(folder: Path) -> WriteAreas:
@@ -191,7 +228,8 @@ def load_write_areas(folder: Path) -> WriteAreas:
         data = read_plain_file(folder / WRITE_AREAS_FILE, private=True)
         if data is None:
             return ALL_OFF
-        return WriteAreas(_areas(parse_toml(data)))
+        doc = parse_toml(data)
+        return WriteAreas(_areas(doc), loopback_tls=_loopback_tls(doc))
     except (ConfigFileError, UnsafePathError, OSError) as exc:
         code = exc.code if isinstance(exc, ConfigFileError) else "config.unsafe_file"
         logger.warning(
@@ -215,3 +253,8 @@ def log_write_areas(areas: WriteAreas) -> None:
             state,
             extra={"event": "studio.write_area_state"},
         )
+    logger.info(
+        "loopback transport for write and admin passwords: %s",
+        areas.loopback_tls,
+        extra={"event": "studio.write_loopback_tls"},
+    )
