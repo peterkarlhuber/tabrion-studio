@@ -1,0 +1,32 @@
+/* The Schema Designer's graphical mode (STU-XSD-1): the explorer's ER boxes (ErDiagram.module.css) with each table's
+   status, the chosen table marked, and one dot per listed column on each side to draw a foreign key. */
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--tb-space-2);
+  min-width: 0;
+}
+.chosen {
+  outline: 3px solid var(--tb-color-primary);
+  outline-offset: 0;
+}
+.status {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--tb-font-sans);
+  font-weight: 400;
+}
+/* Two classes: xyflow's own `.react-flow__handle` rule comes from its bundled style sheet. */
+.flow .handle {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+  min-height: 10px;
+  border: 2px solid var(--tb-color-primary);
+  border-radius: 50%;
+  background: var(--tb-color-surface);
+  cursor: crosshair;
+}
+.flow .handle:hover {
+  background: var(--tb-color-primary);
+}

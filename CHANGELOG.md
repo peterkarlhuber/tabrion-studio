@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XSD-1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's graphical mode. "Show the draft as: Diagram" draws the draft as an ER diagram with
+  each table's status (the explorer's layout and @xyflow/react, no new dependency, loaded only when shown); the table
+  view stays the default and the accessible alternative. Choosing a table shows its card from the table view below
+  the diagram (from the keyboard the card takes the focus); a line drawn from a column to a column fills in the
+  table's "New constraint" form, which is sent only when applied. The diagram has no route or form of its own: every
+  edit is the table view's operation on the same route, checked by the server in the same way (GS3-23, TX-31). English
+  and German texts; the guide's "The diagram" section.
 - STU-XSD-3 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer writes a previewed plan as an Alembic revision into the trusted project, `POST
   /api/write/schema-designer/revision` with the plan hash and a message. The server plans again from a fresh snapshot

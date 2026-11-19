@@ -14,6 +14,9 @@
  * again and run it: the column is gone, the backup file is in Studio's backup folder (0600) with the old column, and
  * the audit log holds the dry run and the run. The page sends the recorded hash and what was typed, never a plan.
  *
+ * STU-XSD-1: the diagram of the draft: a table chosen with the keyboard, a foreign key drawn with the pointer and
+ * applied through the table view's form (the same edit to the same route), the plan preview; axe and the CSP.
+ *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
  */
@@ -288,6 +291,139 @@ for (const theme of ['light', 'dark'] as Theme[]) {
     const designerWrites = sent.filter((s) => s.path.startsWith('/api/write/schema-designer/'));
     expect(designerWrites.length).toBeGreaterThan(0);
     for (const write of designerWrites) {
+      const body = JSON.parse(write.body) as Record<string, unknown>;
+      expect(
+        Object.keys(body).every((key) =>
+          ['connection_id', 'schema', 'revision', 'edit'].includes(key),
+        ),
+      ).toBe(true);
+    }
+    await designer.getByRole('button', { name: 'Discard draft' }).click();
+    await expect(designer.getByTestId('schema-designer-start')).toBeVisible();
+    await expectNoViolations(page, violations);
+    expect(foreign).toEqual([]);
+  });
+}
+
+/** The middle of an element on the page (a handle of the diagram is 10 px wide). */
+async function middle(locator: ReturnType<Page['locator']>): Promise<{ x: number; y: number }> {
+  const box = await locator.boundingBox();
+  if (box === null) throw new Error('not on the page');
+  return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+}
+
+// STU-XSD-1 (GS3-23, TX-31): the diagram of the draft. A table chosen with the keyboard shows its card from the table
+// view (the focus moves there); a line drawn from a column to a column fills in that card's "New constraint" form,
+// and only Apply sends it, as the same edit to the same route. Then the plan preview; nothing runs. axe and the CSP in
+// each browser.
+for (const theme of ['light', 'dark'] as Theme[]) {
+  test(`the diagram: choose a table with the keyboard, draw a foreign key, read the plan (${theme})`, async ({
+    page,
+  }) => {
+    const foreign = foreignRequests(page, () => base);
+    const violations = await signIn(page, theme);
+    const sent = writes(page);
+    const designer = await openDesigner(page);
+    const unlock = designer.getByTestId('data-editor-unlock');
+    await unlock.getByLabel('Type e2e-designer-w to unlock').fill('e2e-designer-w');
+    await unlock.getByRole('button', { name: 'Unlock' }).click();
+    await designer.getByRole('button', { name: 'Start draft' }).click();
+    await expect(designer.getByTestId('schema-designer-table')).toHaveCount(1);
+
+    // A second table with a column to refer from, in the table view.
+    await designer.getByRole('button', { name: 'Add table' }).click();
+    let form = designer.getByTestId('schema-designer-form');
+    await form.getByLabel('Table name').fill('bins');
+    await form.getByLabel('First column', { exact: true }).fill('id');
+    await form.getByLabel('Type', { exact: true }).fill('INTEGER');
+    await form.getByRole('button', { name: 'Apply' }).click();
+    const bins = designer.getByTestId('schema-designer-table').filter({ hasText: 'bins' });
+    await bins.getByRole('button', { name: 'Add column' }).click();
+    form = bins.getByTestId('schema-designer-form');
+    await form.getByLabel('Column name').fill('part_id');
+    await form.getByLabel('Type', { exact: true }).fill('INTEGER');
+    await form.getByRole('button', { name: 'Apply' }).click();
+    await expect(bins.getByRole('rowheader', { name: 'part_id' })).toBeVisible();
+
+    // The diagram: both tables, their status, no card until one is chosen.
+    const views = designer.getByRole('group', { name: 'Show the draft as' });
+    await views.getByRole('button', { name: 'Diagram' }).click();
+    const canvas = designer.getByTestId('schema-canvas');
+    await expect(canvas.getByTestId('schema-canvas-box')).toHaveCount(2);
+    await expect(canvas.getByRole('button', { name: 'Edit table bins new' })).toBeVisible();
+    await expect(designer.getByTestId('schema-designer-table')).toHaveCount(0);
+    expect(await seriousViolations(page)).toEqual([]);
+
+    // The keyboard path: Tab reaches each table's name; Enter shows its card and moves the focus there.
+    const partsName = canvas.getByRole('button', { name: 'Edit table parts' });
+    await partsName.focus();
+    await page.keyboard.press('Enter');
+    const card = designer.getByTestId('schema-canvas-card');
+    await expect(card).toBeFocused();
+    await expect(partsName).toHaveAttribute('aria-pressed', 'true');
+    await expect(card.getByRole('heading', { name: 'parts' })).toBeVisible();
+    expect(await seriousViolations(page)).toEqual([]);
+
+    // Draw a line from bins.part_id (the second row) to parts.id (the first row): the form opens filled in.
+    const before = sent.length;
+    const from = canvas.locator('.react-flow__node[data-id="bins"] [data-handleid="from:1"]');
+    const to = canvas.locator('.react-flow__node[data-id="parts"] [data-handleid="to:0"]');
+    // The card took the focus (and the page scrolled to it): the canvas comes back into view for the pointer.
+    await canvas.scrollIntoViewIfNeeded();
+    const start = await middle(from);
+    const end = await middle(to);
+    await page.mouse.move(start.x, start.y);
+    await page.mouse.down();
+    await page.mouse.move((start.x + end.x) / 2, (start.y + end.y) / 2, { steps: 5 });
+    await page.mouse.move(end.x, end.y, { steps: 5 });
+    await page.mouse.up();
+    form = card.getByTestId('schema-designer-form');
+    await expect(form.getByRole('heading', { name: 'New constraint on bins' })).toBeVisible();
+    await expect(form.getByLabel('Kind')).toHaveValue('foreign_key');
+    await expect(form.getByLabel('Columns', { exact: true })).toHaveValue('part_id');
+    await expect(form.getByLabel('Referred table')).toHaveValue('parts');
+    await expect(form.getByLabel('Referred columns')).toHaveValue('id');
+    // Drawing sent nothing.
+    expect(sent.slice(before)).toEqual([]);
+    expect(await seriousViolations(page)).toEqual([]);
+    await form.getByRole('button', { name: 'Apply' }).click();
+    await expect(
+      card.getByRole('listitem').filter({ hasText: 'Foreign key (part_id) → parts (id)' }),
+    ).toBeVisible();
+    await expect(canvas.locator('.react-flow__edge')).toHaveCount(1);
+    const drawn = sent.slice(before);
+    expect(drawn).toHaveLength(1);
+    expect(drawn[0]?.path).toBe('/api/write/schema-designer/draft/edits');
+    expect((JSON.parse(drawn[0]?.body ?? '{}') as { edit: unknown }).edit).toEqual({
+      op: 'add_constraint',
+      table: 'bins',
+      constraint: {
+        kind: 'foreign_key',
+        columns: ['part_id'],
+        referred_table: 'parts',
+        referred_columns: ['id'],
+      },
+    });
+
+    // The plan preview, as from the table view; nothing runs.
+    await designer.getByRole('button', { name: 'Show plan' }).click();
+    const preview = designer.getByTestId('schema-designer-preview');
+    await expect(preview.getByTestId('schema-designer-step').first()).toContainText('CREATE TABLE');
+    await expect(preview).toContainText('REFERENCES');
+    expect(await seriousViolations(page)).toEqual([]);
+    expect(
+      sqlite(
+        'print(json.dumps([r[0] for r in db.execute("select name from sqlite_master where type = \'table\' order by name")]))',
+      ).trim(),
+    ).toBe('["parts"]');
+    // Every request of the designer went to the table view's routes with their keys only.
+    for (const write of sent.filter((s) => s.path.startsWith('/api/write/schema-designer/'))) {
+      expect([
+        '/api/write/schema-designer/draft',
+        '/api/write/schema-designer/draft/view',
+        '/api/write/schema-designer/draft/edits',
+        '/api/write/schema-designer/draft/preview',
+      ]).toContain(write.path);
       const body = JSON.parse(write.body) as Record<string, unknown>;
       expect(
         Object.keys(body).every((key) =>
