@@ -188,6 +188,7 @@ an admin unlock, which a PROD connection never gets, so a PROD backup is refused
   - STU-XDM-2: until the owner decides this section at G-S4, the admin unlock still opens and shows its findings, but
     every Database Manager action reads the check again on its own session and refuses these findings with
     `studio.admin_over_privileged`, which ends the unlock.
+    STU-XDM-4 applies the same check to every role request and once more on the changing session.
 - **Checks around every change (E-X6):** Tabrion checks before and after the statement in the change's transaction
   (I-182). Studio in addition:
   - shows `role_privileges` of the target before the change (attributes, memberships, reachable roles, ownership,
@@ -332,6 +333,91 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
 - Residual window: writes to the target between its backup and the drop are lost (Studio checks the OID, or device
   and inode, not the content). Other sessions are refused unless `force` ends them, which narrows it on PostgreSQL;
   on SQLite tabrion's exclusive-lock check sees a connection that holds a lock, not an idle one.
+
+## As built (STU-XDM-4)
+
+- Routes behind `database_manager` (405 and no import with the flag off, which is the default):
+  `POST /api/write/database-manager/roles` (the server's roles, not the predefined ones, with their attributes,
+  connection limit and expiry, names escaped, Studio's own roles marked), `POST .../roles/preview` (changes nothing)
+  and `POST .../roles/apply`. Module `tabrion_studio.write.database_manager.roles`; every change is one call of
+  Tabrion's stable role DDL (tabrion 0.3.0): `create_role`, `alter_role`, `drop_role`, `grant_membership`,
+  `revoke_membership`, `grant_privileges`, `revoke_privileges`, with `RoleOptions` as the only attributes.
+- **Who and where:** only an admin unlock (the separate minimal admin profile) of a PostgreSQL connection whose
+  stored environment is `dev` or `test`; PostgreSQL 16 or later (`studio.dbm_role_requires_16`); refused
+  (`studio.dbm_role_not_allowed`, `role.prod`) when any PROD profile of the user's store names the **server**
+  (any database: roles are the cluster's) by address and port or, where its connection is open, by
+  `system_identifier`, so `localhost` for `127.0.0.1` does not hide it (the shared server matching of
+  `tabrion_studio.write.prod_targets`, `addresses` and `system_identifier`, without its database-name check). The admin check of section 6 runs on every
+  request and again on the changing session; a refusing finding answers `studio.admin_over_privileged` and ends the
+  unlock (also when Tabrion reports `postgres.caller_unsafe`).
+- **Never granted:** SUPERUSER, BYPASSRLS, CREATEROLE, REPLICATION, an ADMIN or GRANT option (a request that names one
+  is `studio.dbm_role_attribute_banned` before anything runs), TRIGGER (K-2; only revocable).
+- **Checked on every change** (the preview, and again inside apply right before the call): `role_privileges` of the
+  target and of the member; a membership in a predefined role, a server-access role
+  (`pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`) or a group that is or reaches a
+  dangerous attribute (`role.privileged_role`); a member that already reaches one; a group with a K-2 grant
+  (TRIGGER, EXECUTE on a foreign SECURITY DEFINER function, CREATE on a schema) in **any** database the admin role
+  may connect to (at most 64; `role.escalation_grant`; the preview lists the databases checked, not checked and how
+  many the admin role may not connect to); a role that still owns objects or default privileges for a drop
+  (`role.owns_objects`). Tabrion's own refusals (`RoleUnsafe`) arrive as `studio.dbm_role_unsafe` with fixed
+  `role.<reason>` issues.
+- **Studio's own roles** are never changed (`role.own_role`): `CURRENT_USER`, `SESSION_USER` and the user of every
+  profile (the user's store and a trusted project) and write or admin profile (the admin role and the current user's
+  role included), `CURRENT_USER` and `SESSION_USER` of every open read connection, and for a profile without `user`
+  the OS user name libpq takes; when that cannot be known, every role change is refused (`role.own_role_unknown`,
+  review I-2 of #149). **Nor widened or narrowed through a group** (review L-1 of #149): every action but create is
+  refused (`role.own_role_reached`) when one of these roles reaches the role whose rights change (the member of a
+  membership, otherwise the role) through any chain of memberships with INHERIT or SET
+  (`pg_has_role(own, role, 'USAGE')` or `'SET'`), so no privilege or membership is given to a group above Studio's own
+  role, and no such group is changed, revoked from or dropped. A membership with only the ADMIN option, which
+  PostgreSQL 16 gives the creating admin role on every role it creates, passes no rights on and does not count.
+- **Preview, binding and typed confirmation for every change**, not only for drop and revoke: the apply carries the
+  preview's `state` (a SHA-256 over the request, the target's and member's privileges and the K-2 result) and must
+  match a fresh read (`studio.dbm_role_changed`); the typed name is the role whose rights change (the member for a
+  membership), compared byte for byte (`studio.dbm_role_name_mismatch`). The apply button is never the default
+  focus; drop and revoke use the danger style.
+- **Residual window (review I-1 of #149):** the K-2 check of the other databases runs before the change, outside
+  Tabrion's transaction (Tabrion checks only the connected database inside it). A TRIGGER, SECURITY DEFINER or
+  schema CREATE grant made in another database by another privileged session between that check and the commit is
+  not seen; it needs a concurrent privileged change and is not reported afterwards either.
+- **After the commit** `role_privileges` is read again and every field that differs from Tabrion's result is
+  answered and audited as `differences` (P90-06).
+- **Alter sets every option** (Tabrion's `alter_role` sets every field of `RoleOptions`): a request that leaves one
+  out is refused (`role.options_incomplete`), and the page starts from the role's current values, so nothing falls
+  back to a default unseen.
+- **Privileges** only in the connected database (the admin connection's); the objects as Tabrion takes them
+  (`schema.table`, `schema.fn(args)`, plain schema and database names); warnings for CREATE on a database or a
+  schema, `public_definers` (a superuser owner first), CREATEDB, and that a revoke removes only the admin role's own
+  grants.
+- **Names:** every name in an answer, the audit log and the log is escaped (`<U+XXXX>` for Cc, Cf, Cs, Co, Cn, Zl,
+  Zp and every space but U+0020); a name with such a character is refused for every action
+  (`studio.dbm_role_name_invalid`, `role.name_hidden`).
+- **Passwords:** only for create and alter, only in the apply request, handed straight to Tabrion (a client-side
+  SCRAM verifier); the audit record carries `password_set` only. Never in the preview, an answer, the audit log or
+  the log.
+- **Audit:** `run.start`/`run.result` with action `dbm.role.<action>`, the role in `objects`, `member`, the option
+  names in `options_set` (never their values), `on`, `privileges`, `grant_objects`, `password_set`, and `differences`
+  on the result. A start record that cannot be written stops the change.
+- **Errors:** fail closed; Tabrion's refusals as fixed `studio.dbm_role_*` problems; driver errors as `db.<kind>`
+  with only `safe_message` in the log.
+- **Windows:** role management uses no file or tool, so it is not refused on Windows; the rules above apply there
+  unchanged.
+- **Shared with STU-CR-6** (runtime-role wizard, TB-148, ADR 0007 section 12): the wizard is under the same area and
+  gate, so it reuses `server_checks`, `own_roles`, `read_privileges`, `k2_scan`, `display_name` and `refusal` of this
+  module rather than a second copy of the rules.
+- **Owner points, decided with the safest practical option** (STU-XDM-4; the owner may revisit them at G-S4):
+  1. Every role change, not only drop and revoke, needs a preview and the typed name.
+  2. The apply is bound to the preview's `state`; any change in between refuses.
+  3. Studio's own roles are the session's roles, the user of every profile (or the OS user for one without), and the
+     roles of the open connections; a role any of them reaches through INHERIT or SET is refused for every action
+     but create (review L-1 and I-2 of #149).
+  4. A PROD alias refuses on the server level, not only for the connected database.
+  5. A K-2 check that could not reach every database warns and names the gaps; a K-2 grant found refuses.
+  6. Privilege grants only in the connected database.
+  7. PostgreSQL 16 or later only.
+  8. A role whose name holds a hidden character is refused for every action, not only for destructive ones.
+  9. Alter needs every option named (no silent defaults).
+  10. Windows: not refused (no file or tool is involved).
 
 ## Tests
 

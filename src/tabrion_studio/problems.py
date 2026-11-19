@@ -77,10 +77,10 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
-    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
+    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete|role)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
 )
 _ISSUE_CODE = re.compile(
-    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare)\.[a-z_]{1,48}"
+    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare|role)\.[a-z_]{1,48}"
 )
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
 #: where the database named it, and a constraint.* code.
@@ -1208,6 +1208,107 @@ CATALOG: dict[str, Entry] = {
         "Delete failed",
         "The database could not be deleted. Its backup from before the delete is kept in the backup folder.",
         "Check the target and its folder, then try again.",
+    ),
+    # Database Manager: PostgreSQL roles (STU-XDM-4, E-X6). W-9: 400 or 405, never 403; no name, no server text.
+    "studio.dbm_role_not_allowed": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "Role change not allowed",
+        "Studio manages roles only on a DEV or TEST PostgreSQL server that no PROD profile names, through an admin "
+        "profile, and never changes its own roles (the admin role and every role one of your profiles uses). "
+        "Nothing was changed.",
+        "Choose another role or connection.",
+    ),
+    "studio.dbm_role_requires_16": Entry(
+        405,
+        ProblemKind.REQUEST,
+        "PostgreSQL 16 needed",
+        "Studio manages roles only on PostgreSQL 16 or later: before 16 the right to create roles reaches almost every "
+        "other role. Nothing was changed.",
+        "Manage the roles of this server outside Studio.",
+    ),
+    "studio.dbm_role_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role change not valid",
+        "The role action, an option, the privileges, the objects or the password are not valid for this action. "
+        "Nothing was changed.",
+        "Check the marked field.",
+    ),
+    "studio.dbm_role_attribute_banned": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Attribute never granted",
+        "Studio never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, nor the ADMIN or GRANT option. "
+        "Nothing was changed.",
+        "Leave these attributes out.",
+    ),
+    "studio.dbm_role_name_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role name not usable",
+        "The role name is empty, longer than 63 bytes, has blanks at either end or holds characters that cannot be "
+        "seen. Studio does not act on such a role. Nothing was changed.",
+        "Rename the role outside Studio, or choose another one.",
+    ),
+    "studio.dbm_role_name_mismatch": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Name not confirmed",
+        "The typed name does not match the name of the role whose rights change. Nothing was changed.",
+        "Type the role's name exactly as shown.",
+    ),
+    "studio.dbm_role_changed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role changed since the preview",
+        "The role, the member or their rights are no longer what the preview showed. Nothing was changed.",
+        "Show the preview again and check it.",
+    ),
+    "studio.dbm_role_unsafe": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role change refused",
+        "The change would give a role a dangerous right, directly or through a membership (SUPERUSER, BYPASSRLS, "
+        "CREATEROLE, REPLICATION, a server-file or other predefined role, or an escalation grant), or the role owns "
+        "objects. Nothing was changed.",
+        "Check the reasons shown; change the roles outside Studio if this is really needed.",
+    ),
+    "studio.dbm_role_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role not found",
+        "No role of this name exists on the server. Nothing was changed.",
+        "Check the name.",
+    ),
+    "studio.dbm_role_exists": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role exists",
+        "A role of this name exists already. Nothing was changed.",
+        "Choose another name.",
+    ),
+    "studio.dbm_role_object_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Object not found",
+        "One of the objects does not exist in the connected database, or its name is not written as SQL expects "
+        "(schema-qualified for tables, sequences and functions). Nothing was changed.",
+        "Check the object names.",
+    ),
+    "studio.dbm_role_denied": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Privilege not grantable",
+        "The admin role may not grant this privilege on one of the objects. Nothing was changed.",
+        "Ask the objects' owner, or grant it outside Studio.",
+    ),
+    "studio.dbm_role_failed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Role change failed",
+        "The role change could not be made. Nothing was changed.",
+        "Check the role and try again.",
     ),
     "studio.admin_over_privileged": Entry(
         405,

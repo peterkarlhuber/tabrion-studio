@@ -322,3 +322,292 @@ export async function runDelete(
   const deleted = parseDelete(result.value);
   return deleted === null ? UNREADABLE : { ok: true, value: deleted };
 }
+
+// --- Roles (STU-XDM-4) ----------------------------------------------------------------------------------------------
+
+/**
+ * PostgreSQL role management through the admin profile (STU-XDM-4; E-X6). Every change runs through Tabrion's role
+ * DDL on the server, which never grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION; the page sends the action,
+ * the names, the options and, for create and alter only, a password straight to the apply route (never to the
+ * preview, never stored). Names come back escaped: a character that cannot be seen shows as `<U+XXXX>`.
+ */
+export type RoleAction =
+  | 'create'
+  | 'alter'
+  | 'drop'
+  | 'grant_membership'
+  | 'revoke_membership'
+  | 'grant_privileges'
+  | 'revoke_privileges';
+
+export const ROLE_ACTIONS: RoleAction[] = [
+  'create',
+  'alter',
+  'drop',
+  'grant_membership',
+  'revoke_membership',
+  'grant_privileges',
+  'revoke_privileges',
+];
+
+/** The changes the page asks to be read with care: they take rights away or remove the role. */
+export const DESTRUCTIVE_ROLE_ACTIONS = new Set<RoleAction>([
+  'drop',
+  'revoke_membership',
+  'revoke_privileges',
+]);
+
+export type ObjectKind = 'table' | 'sequence' | 'function' | 'schema' | 'database';
+
+export const OBJECT_KINDS: ObjectKind[] = ['table', 'sequence', 'function', 'schema', 'database'];
+
+/** The privileges per object kind. TRIGGER can only be revoked, never granted (K-2). */
+export const KIND_PRIVILEGES: Record<ObjectKind, string[]> = {
+  table: ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'],
+  sequence: ['USAGE', 'SELECT', 'UPDATE'],
+  function: ['EXECUTE'],
+  schema: ['USAGE', 'CREATE'],
+  database: ['CONNECT', 'CREATE'],
+};
+
+export interface RoleItem {
+  name: string;
+  display: string;
+  hidden: boolean;
+  attributes: string[];
+  own: boolean;
+  connectionLimit: number | null;
+  validUntil: string | null;
+}
+
+export interface RoleListing {
+  environment: string | null;
+  roles: RoleItem[];
+  truncated: boolean;
+}
+
+export interface RoleOptionsInput {
+  login: boolean;
+  inherit: boolean;
+  create_db: boolean;
+  connection_limit: number | null;
+  valid_until: string | null;
+}
+
+export interface RoleRequest {
+  action: RoleAction;
+  role: string;
+  member?: string;
+  options?: RoleOptionsInput;
+  on?: ObjectKind;
+  privileges?: string[];
+  objects?: string[];
+}
+
+export interface RolePrivilegesView {
+  role: string;
+  attributes: string[];
+  memberOf: string[];
+  dangerous: string[];
+  broad: string[];
+  publicDefiners: string[];
+  /** Objects the role owns in any database of the cluster (default privileges counted apart). */
+  ownedObjects: number;
+  defaultPrivileges: number;
+  safe: boolean;
+}
+
+export interface EscalationCheck {
+  found: string[];
+  checked: string[];
+  unchecked: string[];
+  noConnect: number;
+}
+
+export interface RolePreview {
+  action: RoleAction;
+  environment: string | null;
+  database: string;
+  target: RolePrivilegesView | null;
+  member: RolePrivilegesView | null;
+  k2: EscalationCheck | null;
+  refusals: string[];
+  warnings: string[];
+  typed: string;
+  state: string;
+}
+
+export interface RoleResult {
+  action: RoleAction;
+  role: string;
+  member: string | null;
+  after: RolePrivilegesView | null;
+  differences: string[];
+  auditPending: boolean;
+}
+
+function texts(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function roleAction(value: unknown): RoleAction | null {
+  return ROLE_ACTIONS.find((item) => item === value) ?? null;
+}
+
+export function parseRoleListing(body: unknown): RoleListing | null {
+  const doc = record(body);
+  if (doc === null || !Array.isArray(doc.roles)) return null;
+  return {
+    environment: text(doc.environment),
+    roles: doc.roles.flatMap((value) => {
+      const item = record(value);
+      const name = text(item?.name);
+      const display = text(item?.display);
+      if (item === null || name === null || display === null) return [];
+      return [
+        {
+          name,
+          display,
+          hidden: item.hidden === true,
+          attributes: texts(item.attributes),
+          own: item.own === true,
+          connectionLimit: count(item.connection_limit),
+          validUntil: text(item.valid_until),
+        },
+      ];
+    }),
+    truncated: doc.truncated === true,
+  };
+}
+
+export function parsePrivileges(value: unknown): RolePrivilegesView | null {
+  const doc = record(value);
+  const role = text(doc?.role);
+  if (doc === null || role === null) return null;
+  return {
+    role,
+    attributes: texts(doc.attributes),
+    memberOf: texts(doc.member_of),
+    dangerous: texts(doc.dangerous),
+    broad: texts(doc.broad),
+    publicDefiners: texts(doc.public_definers),
+    ownedObjects: count(doc.owned_objects) ?? 0,
+    defaultPrivileges: count(doc.default_privileges) ?? 0,
+    safe: doc.safe === true,
+  };
+}
+
+export function parseRolePreview(body: unknown): RolePreview | null {
+  const doc = record(body);
+  const action = roleAction(doc?.action);
+  const typed = text(doc?.typed);
+  const state = text(doc?.state);
+  if (doc === null || action === null || typed === null || state === null) return null;
+  const k2 = record(doc.k2);
+  return {
+    action,
+    environment: text(doc.environment),
+    database: text(doc.database) ?? '',
+    target: parsePrivileges(doc.target),
+    member: parsePrivileges(doc.member),
+    k2:
+      k2 === null
+        ? null
+        : {
+            found: texts(k2.found),
+            checked: texts(k2.checked),
+            unchecked: texts(k2.unchecked),
+            noConnect: count(k2.no_connect) ?? 0,
+          },
+    refusals: texts(doc.refusals),
+    warnings: texts(doc.warnings),
+    typed,
+    state,
+  };
+}
+
+export function parseRoleResult(body: unknown): RoleResult | null {
+  const doc = record(body);
+  const action = roleAction(doc?.action);
+  const role = text(doc?.role);
+  if (doc === null || action === null || role === null) return null;
+  return {
+    action,
+    role,
+    member: text(doc.member),
+    after: parsePrivileges(doc.after),
+    differences: texts(doc.differences),
+    auditPending: doc.audit_pending === true,
+  };
+}
+
+/** `POST /api/write/database-manager/roles`: the server's roles (not the predefined ones), names escaped. */
+export async function fetchRoles(
+  fetcher: typeof fetch,
+  connectionId: string,
+): Promise<Result<RoleListing>> {
+  const result = await send<unknown>(fetcher, 'POST', '/api/write/database-manager/roles', {
+    connection_id: connectionId,
+  });
+  if (!result.ok) return result;
+  const listing = parseRoleListing(result.value);
+  return listing === null ? UNREADABLE : { ok: true, value: listing };
+}
+
+function roleBody(connectionId: string, request: RoleRequest): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    connection_id: connectionId,
+    action: request.action,
+    role: request.role,
+  };
+  if (request.member !== undefined) body.member = request.member;
+  if (request.options !== undefined) body.options = request.options;
+  if (request.on !== undefined) body.on = request.on;
+  if (request.privileges !== undefined) body.privileges = request.privileges;
+  if (request.objects !== undefined) body.objects = request.objects;
+  return body;
+}
+
+/** `POST /api/write/database-manager/roles/preview`: what the change would do and what refuses it; changes nothing. */
+export async function previewRole(
+  fetcher: typeof fetch,
+  connectionId: string,
+  request: RoleRequest,
+): Promise<Result<RolePreview>> {
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/write/database-manager/roles/preview',
+    roleBody(connectionId, request),
+  );
+  if (!result.ok) return result;
+  const preview = parseRolePreview(result.value);
+  return preview === null ? UNREADABLE : { ok: true, value: preview };
+}
+
+/**
+ * `POST /api/write/database-manager/roles/apply`: the change, bound to the preview's `state` and the typed name.
+ * `password` only for create and alter; it goes to the server once and is not kept by the page.
+ */
+export async function applyRole(
+  fetcher: typeof fetch,
+  connectionId: string,
+  request: RoleRequest,
+  confirm: { state: string; typed: string; password: string | null },
+): Promise<Result<RoleResult>> {
+  const body = roleBody(connectionId, request);
+  body.state = confirm.state;
+  body.typed = confirm.typed;
+  if (confirm.password !== null) body.password = confirm.password;
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/write/database-manager/roles/apply',
+    body,
+  );
+  if (!result.ok) return result;
+  const done = parseRoleResult(result.value);
+  return done === null ? UNREADABLE : { ok: true, value: done };
+}
