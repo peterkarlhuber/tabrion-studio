@@ -34,7 +34,7 @@ from tests.support.write import WriteEnv
 pytestmark = pytest.mark.security
 
 FRONTEND = ROOT / "frontend" / "src" / "views" / "write"
-#: The table view's routes (STU-CR-4, STU-CR-5, STU-XSD-2, STU-XSD-3): the only ones of the area.
+#: The area's routes besides the diagram (STU-CR-4, STU-CR-5, STU-CR-6, STU-XSD-2, STU-XSD-3): the only ones.
 TABLE_VIEW_ROUTES = frozenset(
     {
         "/api/write/schema-designer/draft",
@@ -45,6 +45,7 @@ TABLE_VIEW_ROUTES = frozenset(
         "/api/write/schema-designer/plan/run",
         "/api/write/schema-designer/compare",
         "/api/write/schema-designer/revision",
+        "/api/write/schema-designer/profile-export",
     }
 )
 

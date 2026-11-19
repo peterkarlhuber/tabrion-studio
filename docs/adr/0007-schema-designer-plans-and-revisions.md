@@ -261,6 +261,25 @@ chosen; changing this needs the owner.) The profile export
 writes single-host profiles only (W-10, TB-148): a multi-host profile is refused, never cut short. Write and admin
 secrets are never exported (N-5).
 
+**As built (STU-CR-6 part 1, the profile export).** `POST /api/write/schema-designer/profile-export` with the ids
+of read profiles (`user:<name>`, and `project:<name>` while the project file is trusted), an absolute `path` ending in
+`.tabrion-profile.toml` and that file name typed (`typed`); no other key is accepted. The shared module
+`tabrion_studio.write.profile_export` (STU-XDM-5 calls it with its own area and action) builds each profile field by
+field from an allowlist of the read profile (`EXPORTED_FIELDS`: name, engine, path, host, port, database, user,
+sslmode, environment, read_only_role, statement_timeout_ms) with `mode = "read_only"`, and writes it with
+`tabrion.profilefile.dump` (format v1, checked by parsing it back). A write or admin profile has no read-profile id
+and cannot be named; the module never reads write profiles, the keyring, a secret file or a variable's value. The
+password is a reference at most: `env:NAME` is kept, a `keyring:` or `file:` reference becomes `prompt`. A
+PostgreSQL profile without a port is written with `5432` (the port Studio connects to). A host list is refused
+(`studio.profile_export_multi_host`) even though Studio's validator refuses one already. The file follows the rules of
+`write/folders.py` (shared with the database creation of STU-CR-2): an absolute normalized local path; the folder is
+the user's, writable only by them, reached through no link, every folder above it safe, and neither it nor a folder
+above it one of Studio's own (by device and inode); the file is created relative to the held folder with
+`O_CREAT|O_EXCL|O_NOFOLLOW`, mode `0600`, never over a file or a link, and removed again if writing fails. Windows is
+refused (`studio.profile_export_platform`). Audit `run.start` before the file and `run.result` after it, with action
+`schema_designer.profile_export`, the profile names and the file name, never the folder or a reference. The
+runtime-role wizard is part 2, built on the role code of STU-XDM-4 once it is merged.
+
 ## Consequences
 
 - Nothing of the Schema Designer is implemented by this record; STU-CR-2..STU-CR-8 and STU-XSD-1..STU-XSD-3 follow
