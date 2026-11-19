@@ -74,16 +74,25 @@ jobs:
       matrix:
         include:
           # Every leg runs in two shards, tests/security and the rest: the whole suite took 17 to 20 minutes on
-          # Linux and Windows (timeout 20) and was cancelled after its tests had passed.
-          - { label: "Python 3.11, security", os: ubuntu-latest, python: "3.11", tests: tests/security }
+          # Linux and Windows (timeout 20) and was cancelled after its tests had passed. The security leg is split
+          # once more on every system, because it alone reached 19 to 20 of its 20 minutes on Linux (#143 cancelled
+          # at 96 %). The ignore globs are complements (as in the security job, #138, and Windows, #141), so every
+          # test runs exactly once: shard 1 every file but tests/security/test_[r-z]*, shard 2 only those. Quoted
+          # for bash, which runs these legs.
+          - { label: "Python 3.11, security", os: ubuntu-latest, python: "3.11", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
+          - { label: "Python 3.11, security 2 of 2", os: ubuntu-latest, python: "3.11", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
           - { label: "Python 3.11, other", os: ubuntu-latest, python: "3.11", tests: "tests --ignore=tests/security" }
-          - { label: "Python 3.12, security", os: ubuntu-latest, python: "3.12", tests: tests/security }
+          - { label: "Python 3.12, security", os: ubuntu-latest, python: "3.12", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
+          - { label: "Python 3.12, security 2 of 2", os: ubuntu-latest, python: "3.12", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
           - { label: "Python 3.12, other", os: ubuntu-latest, python: "3.12", tests: "tests --ignore=tests/security" }
-          - { label: "Python 3.13, security", os: ubuntu-latest, python: "3.13", tests: tests/security }
+          - { label: "Python 3.13, security", os: ubuntu-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
+          - { label: "Python 3.13, security 2 of 2", os: ubuntu-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
           - { label: "Python 3.13, other", os: ubuntu-latest, python: "3.13", tests: "tests --ignore=tests/security" }
-          - { label: "Python 3.14, security", os: ubuntu-latest, python: "3.14", tests: tests/security }
+          - { label: "Python 3.14, security", os: ubuntu-latest, python: "3.14", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
+          - { label: "Python 3.14, security 2 of 2", os: ubuntu-latest, python: "3.14", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
           - { label: "Python 3.14, other", os: ubuntu-latest, python: "3.14", tests: "tests --ignore=tests/security" }
-          - { label: "macos-latest, security", os: macos-latest, python: "3.13", tests: tests/security }
+          - { label: "macos-latest, security", os: macos-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
+          - { label: "macos-latest, security 2 of 2", os: macos-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
           - { label: "macos-latest, other", os: macos-latest, python: "3.13", tests: "tests --ignore=tests/security" }
           # Windows' security leg runs in two shards too: it took 17 to 20 of its 20 minutes. The ignore globs are
           # complements (as in the security job, #138), so every test runs exactly once: shard 1 every file but

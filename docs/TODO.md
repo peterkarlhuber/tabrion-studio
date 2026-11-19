@@ -1152,6 +1152,10 @@ Notes of the PR #137 review (merged as `e130a84`, accepted, nothing above Info),
   (17 to 20 of its 20 minutes) runs in two shards with complementary ignore globs (every file but
   `tests/security/test_[r-z]*`; `backend test (windows-latest, security 2 of 2)`: only those), so every test runs
   once; the timeout is unchanged and the new check is in `.github/ci-manifest.json`.
+- [x] **CI budget, Linux and macOS (2026-11-19, #143 cancelled at 96 % on Python 3.12):** every other
+  `backend test (<leg>, security)` leg (Python 3.11 to 3.14, macOS) runs in two shards with the Windows globs (every
+  file but `tests/security/test_[r-z]*`; `backend test (<leg>, security 2 of 2)`: only those), so every test runs
+  once; the timeouts are unchanged and the five new checks are in `.github/ci-manifest.json`.
 
 ### STU-XDM-2 open points
 

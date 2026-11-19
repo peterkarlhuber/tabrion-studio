@@ -42,6 +42,11 @@ All notable changes to this project are documented here. The format follows
   `tabrion.errors.DatabaseInUse`). `plan` now takes `current` and `target`, and `sqlite.restore` `source` and
   `target`, by keyword only; the Schema Designer and the Database Manager pass them by keyword. No behavior change;
   the flags stay off.
+- CI: every other security leg of `backend test` (Python 3.11 to 3.14 on Linux, macOS) runs in two shards too, with
+  the same complementary ignore globs as Windows (`backend test (<leg>, security)` without
+  `tests/security/test_[r-z]*`, `backend test (<leg>, security 2 of 2)` with only those), because the Python 3.12 leg
+  reached 19 to 20 of its 20 minutes and was cancelled at 96 % on #143; every test still runs exactly once, the
+  timeouts are unchanged, and the five new checks are in `.github/ci-manifest.json`.
 - CI: the Windows security leg of `backend test` runs in two shards with complementary ignore globs
   (`backend test (windows-latest, security)` without `tests/security/test_[r-z]*`, `backend test (windows-latest,
   security 2 of 2)` with only those), because it took 17 to 20 of its 20 minutes; every test still runs exactly once,
