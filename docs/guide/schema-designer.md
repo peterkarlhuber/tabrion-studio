@@ -52,6 +52,27 @@ A type is written as the database writes it (`INTEGER`, `TEXT`, `VARCHAR(40)`, `
 default, a check and the condition of a partial index are one SQL expression each (`0`, `'new'`, `price > 0`);
 Tabrion refuses a text that could leave its place in the statement (a `;`, a comment, unbalanced brackets).
 
+### The diagram
+
+**Show the draft as: Diagram** draws the same draft as an ER diagram: one box per table with its columns (keys
+marked) and its status (*new* or *changed*), and one line per foreign key between two tables. The layout is automatic
+(dagre); the zoom buttons and **Fit to view** move the view. **Table view** goes back; it stays the default.
+
+- **Edit a table:** choose its name in the diagram (with Tab and Enter, or a click on the box or on one of its
+  lines). Its card from the table view appears below the diagram with every change it offers; chosen with the
+  keyboard, the card takes the focus.
+- **Add a foreign key:** drag with the pointer from the dot on the right of a column to the dot on the left of the
+  column it refers to (in another table or the same one). The table's **New constraint** form opens with the key
+  filled in. Nothing is sent until you **Apply** it; you can still name the key (required on PostgreSQL), set an
+  action on delete, or cancel.
+- **Remove a key:** **Drop** next to it in the table's card.
+
+The diagram is another view of the draft, not another way to change it: every change goes through the same forms to
+the same route as in the table view, the server checks each one in the same way, and the plan, the confirmation, the
+backup and the run are the same. Drawing a key needs a pointer; with the keyboard, use **Add constraint** in the
+table's card or the table view, which offers every change. The diagram shows the first 150 tables of a draft (the
+table view shows all) and the first 20 columns of each box.
+
 !!! warning "A rename is a drop and an add"
     Tabrion matches tables and columns by name. A renamed table or column is therefore planned as dropping the old
     one and adding a new one: **its data is not carried over**. The plan shows this as a `destructive` step.
@@ -250,7 +271,8 @@ The tables, columns and SQL of a comparison are shown to you only; Studio's log 
 ## Not yet
 
 - A PostgreSQL backup before a run on Windows (Studio refuses the tools there).
-- The graphical mode (STU-XSD-1) and the Alembic revision output (STU-XSD-3).
+- The Alembic revision output (STU-XSD-3).
+- Moving the boxes of the diagram by hand, and drawing anything other than a foreign key.
 - Starting a draft from a schema file, and saving a draft.
 - Saving a snapshot file from Studio (use `tabrion.schema.snapshot(..., level=2).to_json()`), and comparing schemas
   with different names.
