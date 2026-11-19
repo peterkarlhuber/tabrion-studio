@@ -11,6 +11,7 @@ from typing import Any
 import uuid
 
 from tabrion_studio.api.config import Configuration
+from tabrion_studio.config.code_trust import CodeTrust
 from tabrion_studio.config.project import ProjectConfig
 from tabrion_studio.config.secrets import KeyringStore, Secrets, SessionSecrets
 from tabrion_studio.config.user import UserConfig
@@ -19,6 +20,7 @@ from tabrion_studio.services.connections import ConnectionRegistry
 from tabrion_studio.services.drafts import Drafts
 from tabrion_studio.services.explorer import Explorer
 from tabrion_studio.services.history import History
+from tabrion_studio.services.migrations import Migrations
 from tabrion_studio.services.queries import QueryEngine
 from tabrion_studio.services.state import StateStore
 from tabrion_studio.services.viewer import Viewer
@@ -70,6 +72,10 @@ class WriteEnv:
         self.registry = ConnectionRegistry(self.config)
         store = StateStore(self.state)
         self.history = History(store, "k1", self.config.limits)
+        #: The migration status and code trust of the project (STU-015); the Schema Designer's revision output reads
+        #: the head through it (STU-XSD-3).
+        self.code = CodeTrust(self.project, self.state, "k1")
+        self.migrations = Migrations(self.registry, self.code)
         # The explorer and the viewer: the Data Editor (STU-026) takes its old values from the viewer's page.
         explorer = Explorer(self.registry)
         self.studio: Studio = make_studio(
@@ -80,6 +86,7 @@ class WriteEnv:
             explorer=explorer,
             viewer=Viewer(explorer, self.config.limits),
             history=None,
+            migrations=self.migrations,
             drafts=Drafts(store, "k1", self.config.limits),
             write_areas=areas,
             audit_dir=self.audit_dir,

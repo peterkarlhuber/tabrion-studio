@@ -19,14 +19,19 @@ was started with (:class:`.draft.Drafts`).
   plan may not run directly (section 5) and what its confirmation needs (sections 6 and 7). The server keeps that plan
   with the draft (:class:`.execute.RunPlan`), bound to the session, the connection, the unlock and a short expiry.
 * :func:`confirm`: the user's confirmation per risk class (:func:`.execute.check_confirmation`).
+* :func:`revision`: once per preview, the recorded plan is checked again like a run's (the unlock, the binding, the
+  engine version, Studio's re-plan from a fresh snapshot with its hash compared), then :mod:`.revision` reads the
+  single head through the migration status and writes ``tabrion.plan.revision_text`` as a new file into the trusted
+  project's revision folder (STU-XSD-3). Nothing runs on the database.
 * :func:`run`: once per confirmation, the recorded plan is checked again (the unlock, the engine version, the
   migration markers, Studio's re-plan from a fresh snapshot with its hash and classes compared: the pre-check of
   section 4), then :func:`.execute.run` makes the backup and calls ``tabrion.plan.execute_plan``, which plans again
   inside its own transaction and is the binding check. A dry run happens only when the request asks for it.
 
 The draft routes write nothing to the database, the project or the disk; a run is audited (section 11) and its backup
-is written to Studio's backup folder. The log gets fixed event names and problem codes only: never a table or column
-name, a type, a default or check text, a statement, a fingerprint or a hash (TX-27).
+is written to Studio's backup folder; a revision is audited and written into the project's revision folder only.
+The log gets fixed event names and problem codes only: never a table or column name, a type, a default or check text,
+a statement, a fingerprint or a hash (TX-27).
 """
 
 from __future__ import annotations
@@ -185,6 +190,9 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
             logger.info("schema plan refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
             raise
         reasons = execute.blocked(unlock, change, drafts.project, drafts.write_state)
+        from tabrion_studio.write.schema_designer import revision as revision_output
+
+        revision_reasons = revision_output.availability(unlock, change, drafts.revision_sources)
         kept = execute.make_plan(
             unlock,
             schema=draft.schema,
@@ -227,6 +235,14 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
             "warnings": warnings(current, draft.model, change, draft.schema),
             "confirmation": execute.requirements(kept),
             "expires_in_s": execute.RUN_TTL_SECONDS,
+            # STU-XSD-3: whether the plan may be written as an Alembic revision instead (section 5). The revision does
+            # not check the source fingerprint when it runs (I-124 j 5): the page says so.
+            "revision_output": {
+                "available": not revision_reasons,
+                "blocked": list(revision_reasons),
+                "checks_source": False,
+                "max_message": revision_output.MAX_MESSAGE,
+            },
         }
 
 
@@ -316,3 +332,69 @@ def run(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> 
                 drafts.discard(session, unlock.connection_id)
                 answer_doc["draft_ended"] = True
         return {**answer_doc, "revision": draft.revision}
+
+
+def revision(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]) -> dict[str, Any]:
+    """Write the previewed plan as an Alembic revision into the trusted project, once (STU-XSD-3; see
+    :mod:`.revision`). Nothing runs on the database, and no project code runs but the migration worker's read of the
+    head."""
+    from tabrion_studio.write.schema_designer import execute
+    from tabrion_studio.write.schema_designer import revision as revision_output
+
+    unlock, draft = _run_draft(unlocks, drafts, session, doc)
+    sources = drafts.revision_sources
+    with draft.lock:
+        plan = execute._own(draft.plan, doc.get("plan_hash"))
+        message = revision_output.check_message(doc.get("message"))  # a wrong message may be typed again
+        draft.plan = None  # one attempt: a replay finds nothing
+        execute._check_binding(plan, unlock, unlocks.clock())
+        # Again right before the file is written: the unlock and the stored environment as they are now ...
+        unlock = _unlock(unlocks, session, unlock.connection_id)
+        if not secrets.compare_digest(unlock.unlock_id, plan.unlock_id):
+            raise WriteError("studio.plan_binding")
+        # ... Studio's re-plan from a fresh snapshot with the same engine version, its hash the recorded one ...
+        version = unlock.connection.engine_version()
+        if version != plan.server_version:
+            raise WriteError("studio.plan_drift")
+        current = _snapshot(unlock.connection, plan.schema)
+        try:
+            change = plan_for(current, plan.target, version, locator(draft.model, draft.base))
+        except WriteError as exc:
+            logger.info("schema revision refused", extra={"event": "studio.schema_plan_refused", "code": exc.code})
+            raise
+        if not secrets.compare_digest(change.plan_hash, plan.plan_hash):
+            logger.warning("schema revision refused: the plan changed", extra={"event": "studio.plan_drift"})
+            raise WriteError("studio.plan_drift")
+        # ... the conditions of section 5 ...
+        reasons = revision_output.availability(unlock, change, sources)
+        if reasons:
+            raise WriteError("studio.schema_revision_not_allowed", [("plan.reason", f"plan.{reasons[0]}")])
+        code = sources.code_state()
+        if code is None or code.state != "trusted" or code.scan is None or sources.project is None:
+            raise WriteError("studio.schema_revision_not_allowed", [("plan.reason", "plan.code_untrusted")])
+        # ... and the single head, read by the migration worker under code trust (the 1.0 rule).
+        head = revision_output.head_of(sources.migrations.status(unlock.connection_id))
+        written = revision_output.write(
+            unlocks,
+            unlock,
+            change=change,
+            tables=plan.tables,
+            project=sources.project,
+            script_location=code.scan.script_location,
+            head=head,
+            message=message,
+        )
+        return {
+            "plan_hash": change.plan_hash,
+            "result": "written",
+            "revision": written.revision,
+            "down_revision": written.down_revision,
+            "path": written.relative,
+            "source_fingerprint": change.source_fingerprint,
+            "checks_source": False,
+            "steps": len(change.steps),
+            # The new file changes the code-trust digest: the migration status asks for trust again.
+            "code_trust_changed": True,
+            "audit_pending": written.audit_pending,
+            "draft_revision": draft.revision,
+        }

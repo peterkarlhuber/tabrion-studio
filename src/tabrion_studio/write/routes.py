@@ -147,6 +147,8 @@ _PLAN_CONFIRM_KEYS = frozenset(
     {"connection_id", "plan_hash", "typed", "tables", "steps", "locking", "backup", "backup_typed"}
 )
 _PLAN_RUN_KEYS = frozenset({"connection_id", "plan_hash", "dry_run"})
+#: STU-XSD-3: write the previewed plan as an Alembic revision into the trusted project.
+_REVISION_KEYS = frozenset({"connection_id", "plan_hash", "message"})
 #: The keys of the Database Manager's routes (STU-XDM-2): never a path, a tool, an environment or a server.
 _DBM_BACKUP_KEYS = frozenset({"connection_id"})
 _DBM_PREVIEW_KEYS = frozenset({"connection_id", "backup_id"})
@@ -175,6 +177,7 @@ def add_enabled_write_routes(
     registry: ConnectionRegistry,
     audit_dir: Path | None = None,
     log_dir: Path | None = None,
+    migrations: Any = None,
 ) -> Unlocks:
     audit = AuditLog(audit_dir)
     # The audit folder is <folder of write-areas.toml>/audit (review N-1 of PR #116); the confirmed pairs live next
@@ -608,7 +611,12 @@ def add_enabled_write_routes(
 
         # The project folder (an alembic.ini there means revisions only) and the folder of write-areas.toml (the
         # backups before a run go below it, STU-CR-5); no such folder: no run that needs it (fail closed).
-        drafts = Drafts(config.project.project, None if audit_dir is None else audit_dir.parent)
+        from tabrion_studio.write.schema_designer.revision import RevisionSources
+
+        # STU-XSD-3: the revision output reads the project's profile trust (D-01) and its migration status (code
+        # trust and the worker that reads the head); without the migration status no revision is written.
+        sources = RevisionSources(config.project.project, config.project, migrations)
+        drafts = Drafts(config.project.project, None if audit_dir is None else audit_dir.parent, sources)
         from tabrion_studio.write.folders import remove_stale_runs
 
         # The backup before a PostgreSQL run uses the tool runner (STU-CR-5 follow-up): remove a passfile a crashed
@@ -636,7 +644,7 @@ def add_enabled_write_routes(
                     answer_doc = getattr(designer, action)(unlocks, drafts, session, doc)
                 except DriverFailure as exc:
                     return db_problem_response(exc.classification)
-                return JSONResponse(answer_doc, status_code=201 if action == "start" else 200)
+                return JSONResponse(answer_doc, status_code=201 if action in ("start", "revision") else 200)
 
             return await plan_call(request, keys, limit, call)
 
@@ -647,6 +655,7 @@ def add_enabled_write_routes(
     designer_route("/api/write/schema-designer/draft/preview", "POST", _DRAFT_KEYS, _MAX_BODY, "preview")
     designer_route("/api/write/schema-designer/plan/confirm", "POST", _PLAN_CONFIRM_KEYS, _MAX_BODY, "confirm")
     designer_route("/api/write/schema-designer/plan/run", "POST", _PLAN_RUN_KEYS, _MAX_BODY, "run")
+    designer_route("/api/write/schema-designer/revision", "POST", _REVISION_KEYS, _MAX_BODY, "revision")
 
     # --- the Schema Designer's comparison (STU-XSD-2) ---------------------------------------------------------------
 

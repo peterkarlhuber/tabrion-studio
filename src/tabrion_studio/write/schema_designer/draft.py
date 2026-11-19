@@ -290,13 +290,23 @@ class Drafts:
     """The drafts of this process, by session and connection; each bound to its unlock. Thread-safe.
 
     ``project`` is the project folder (STU-CR-5: an ``alembic.ini`` there means revisions only) and ``write_state``
-    the folder of ``write-areas.toml`` (the backups go below it); None refuses a run that needs them."""
+    the folder of ``write-areas.toml`` (the backups go below it); None refuses a run that needs them.
+    ``revision_sources`` (STU-XSD-3) holds the project's profile trust and migration status for the revision output;
+    without it no revision is written."""
 
-    def __init__(self, project: Path | None = None, write_state: Path | None = None) -> None:
+    def __init__(
+        self, project: Path | None = None, write_state: Path | None = None, revision_sources: Any = None
+    ) -> None:
+        from tabrion_studio.write.schema_designer.revision import RevisionSources
+
         self._drafts: dict[tuple[str, str], Draft] = {}
         self._lock = threading.Lock()
         self.project = project
         self.write_state = write_state
+        #: STU-XSD-3: the project's profile trust and migration status; without them no revision is written.
+        self.revision_sources: RevisionSources = (
+            revision_sources if revision_sources is not None else RevisionSources(project)
+        )
 
     def put(self, draft: Draft) -> None:
         key = (draft.session, draft.connection_id)

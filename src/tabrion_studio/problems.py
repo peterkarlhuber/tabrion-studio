@@ -968,6 +968,55 @@ CATALOG: dict[str, Entry] = {
         "are set in database-tools.toml. Nothing was run.",
         "Use your own migration tooling for this database, or change the plan.",
     ),
+    # Writing a Schema Designer plan as an Alembic revision (STU-XSD-3, STU-ADR-0007 section 5, GS3-06..08). W-9: 400
+    # or 409; no name, path, message or statement text, no server text.
+    "studio.schema_revision_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No revision written",
+        "Studio writes a plan as an Alembic revision only for a DEV or TEST database, into a project whose "
+        "profiles you trusted and whose Alembic setup (alembic.ini with a script_location) and code you trusted, for "
+        "a plan with a step. Nothing was written.",
+        "Trust the project and its code, or use the plan with your own migration tooling.",
+    ),
+    "studio.schema_revision_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Revision message not valid",
+        "The revision message is a text of 1 to 200 characters on one line, without control characters.",
+        "Enter a short message for the revision.",
+    ),
+    "studio.schema_revision_head_unknown": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Revision head unknown",
+        "The new revision follows the single head of the project's revisions, and Studio could not read exactly one: "
+        "the project has several heads or none, its code is not trusted, or its revisions could not be read. "
+        "Nothing was written.",
+        "Merge the heads or trust the project's code, then preview again.",
+    ),
+    "studio.schema_revision_folder": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Revision folder not usable",
+        "The revision folder (versions under the script_location) must be a folder inside the project, reached "
+        "without a link at any level. Nothing was written.",
+        "Check the project's revision folder.",
+    ),
+    "studio.schema_revision_exists": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Revision file exists",
+        "A file of the new revision's name exists already; Studio never overwrites a file. Nothing was written.",
+        "Preview again to get a new revision id.",
+    ),
+    "studio.schema_revision_failed": Entry(
+        500,
+        ProblemKind.INTERNAL,
+        "Revision not written",
+        "The revision file could not be created or written.",
+        "Check that the revision folder is writable, then preview again.",
+    ),
     "studio.schema_backup_required": Entry(
         400,
         ProblemKind.REQUEST,

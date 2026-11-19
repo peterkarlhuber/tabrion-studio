@@ -1102,6 +1102,12 @@
     "schema_snapshot_too_large": "A side is larger than the comparison's limits (2 MiB of snapshot text, 500 tables, 250 columns or 100 constraints and indexes per table).",
     "schema_compare_mismatch": "The two sides cannot be compared: they are of different database engines or snapshot levels.",
     "schema_compare_plan_not_allowed": "No plan preview for these sides. The comparison is shown.",
+    "schema_revision_not_allowed": "No revision was written (the reason is below). Nothing was changed.",
+    "schema_revision_invalid": "The revision message is 1 to 200 characters on one line, without control characters.",
+    "schema_revision_head_unknown": "Studio could not read exactly one head of the project's revisions (several heads, none, or code that is not trusted). Nothing was written.",
+    "schema_revision_folder": "The revision folder (versions under the script_location) must be a folder inside the project, reached without a link. Nothing was written.",
+    "schema_revision_exists": "A file of the new revision's name exists already; Studio never overwrites a file. Preview again.",
+    "schema_revision_failed": "The revision file could not be written. Check that the revision folder is writable.",
     "backup_tool_unavailable": "pg_dump or pg_restore is not usable. Studio runs them only from the absolute paths in database-tools.toml next to its write settings: a program of the expected name, owned by you or root, not writable by others, not a link, version 16 or newer and at least as new as the server.",
     "backup_tool_failed": "pg_dump or pg_restore ended with an error or ran out of time. A backup that did not finish was removed, and nothing that depends on it was done.",
     "dbm_backup_failed": "The backup could not be written to Studio's backup folder, so nothing that depends on it was done. Check the free space.",
@@ -2107,6 +2113,23 @@
       "backupSkipped": "The backup was left out.",
       "auditPending": "The audit record is still pending; see the audit log under write profiles.",
       "draftEnded": "The draft ended. Start it again to make further changes."
+    },
+    "revision": {
+      "title": "Write as an Alembic revision",
+      "lead": "Studio writes this plan as a new revision file into the project's revision folder, after the single head. Studio never runs the revision, env.py or an Alembic command: apply it with your own tooling.",
+      "sourceNotChecked": "The revision does not check the database it runs on: apply it only to the database it was planned for (source fingerprint {{fingerprint}}), soon after this preview.",
+      "blockedTitle": "No revision can be written:",
+      "message": "Revision message (at most {{count}} characters, one line)",
+      "write": "Write revision",
+      "written": "Revision {{revision}} written to {{path}}, after {{down}}.",
+      "trustAgain": "The new file changes the project's code: trust the code again before Studio reads the revisions.",
+      "reasons": {
+        "nothing_to_run": "The plan has no step.",
+        "environment": "Revisions are written for DEV and TEST connections only, never for PROD.",
+        "project_untrusted": "The project's profiles (.tabrion/studio.toml) are not trusted.",
+        "code_untrusted": "The project's Alembic code is not trusted, or it changed since you trusted it.",
+        "no_alembic_project": "The project has no alembic.ini with a script_location."
+      }
     }
   },
   "schemaCompare": {

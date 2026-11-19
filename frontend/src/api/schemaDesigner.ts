@@ -226,6 +226,15 @@ export interface PlanConfirmationNeeds {
   };
 }
 
+/** Whether the plan may be written as an Alembic revision instead (STU-XSD-3, STU-ADR-0007 section 5). */
+export interface RevisionOutput {
+  available: boolean;
+  blocked: string[];
+  /** Always false: the revision does not check its source fingerprint when it runs (I-124 j 5). */
+  checksSource: boolean;
+  maxMessage: number;
+}
+
 export interface PlanPreview {
   revision: number;
   dialect: string;
@@ -243,6 +252,18 @@ export interface PlanPreview {
   warnings: PlanWarning[];
   confirmation: PlanConfirmationNeeds;
   expiresInS: number;
+  revisionOutput: RevisionOutput;
+}
+
+/** What writing the revision did (STU-XSD-3): the file's path relative to the project and its ids. */
+export interface RevisionWritten {
+  revision: string;
+  downRevision: string;
+  path: string;
+  sourceFingerprint: string;
+  steps: number;
+  codeTrustChanged: boolean;
+  auditPending: boolean;
 }
 
 /** What the user typed and ticked for the plan (the server checks every part against the plan it keeps). */
@@ -473,6 +494,11 @@ export function parsePreview(body: unknown): PlanPreview | null {
       : null,
   );
   const confirmation = parseNeeds(record(doc.confirmation));
+  const output = record(doc.revision_output);
+  const outputBlocked = output === null ? null : strings(output.blocked);
+  if (output === null || outputBlocked === null || typeof output.max_message !== 'number') {
+    return null;
+  }
   if (
     steps === null ||
     risks === null ||
@@ -507,6 +533,36 @@ export function parsePreview(body: unknown): PlanPreview | null {
     warnings,
     confirmation,
     expiresInS: doc.expires_in_s,
+    revisionOutput: {
+      available: output.available === true,
+      blocked: outputBlocked,
+      checksSource: output.checks_source === true,
+      maxMessage: output.max_message,
+    },
+  };
+}
+
+export function parseWritten(body: unknown): RevisionWritten | null {
+  const doc = record(body);
+  if (
+    doc === null ||
+    doc.result !== 'written' ||
+    typeof doc.revision !== 'string' ||
+    typeof doc.down_revision !== 'string' ||
+    typeof doc.path !== 'string' ||
+    typeof doc.source_fingerprint !== 'string' ||
+    typeof doc.steps !== 'number'
+  ) {
+    return null;
+  }
+  return {
+    revision: doc.revision,
+    downRevision: doc.down_revision,
+    path: doc.path,
+    sourceFingerprint: doc.source_fingerprint,
+    steps: doc.steps,
+    codeTrustChanged: doc.code_trust_changed === true,
+    auditPending: doc.audit_pending === true,
   };
 }
 
@@ -679,4 +735,22 @@ export async function runPlan(
   if (!result.ok) return result;
   const outcome = parseOutcome(result.value);
   return outcome === null ? UNREADABLE : { ok: true, value: outcome };
+}
+
+/** `POST /api/write/schema-designer/revision`: write the previewed plan as a new Alembic revision file into the
+ * trusted project, once (the server plans again and reads the single head; nothing runs on the database). */
+export async function writeRevision(
+  fetcher: typeof fetch,
+  connectionId: string,
+  planHash: string,
+  message: string,
+): Promise<Result<RevisionWritten>> {
+  const result = await send<unknown>(fetcher, 'POST', '/api/write/schema-designer/revision', {
+    connection_id: connectionId,
+    plan_hash: planHash,
+    message,
+  });
+  if (!result.ok) return result;
+  const written = parseWritten(result.value);
+  return written === null ? UNREADABLE : { ok: true, value: written };
 }
