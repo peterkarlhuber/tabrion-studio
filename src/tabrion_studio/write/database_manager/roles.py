@@ -60,10 +60,11 @@ server's text.
 ``dbm.role.<action>``, the escaped role and member names, the privileges, object kind and escaped objects, the option
 fields and whether a password was set; never a password.
 
-**Shared with STU-CR-6.** The runtime-role wizard (STU-CR-6, TB-148) runs under the same flag and admin profile
-(STU-ADR-0007 section 12) and is to reuse :func:`display_name`, :func:`server_checks`, :func:`own_roles`,
-:func:`read_privileges`, :func:`k2_scan` and :func:`refusal` of this module for its preview and its checks; only its
-call of ``tabrion.postgres.grant_runtime_role`` is its own.
+**Shared with STU-CR-6.** The runtime-role wizard (STU-CR-6 part 2, TB-148,
+:mod:`tabrion_studio.write.database_manager.runtime_role`) runs under the same flag (and the Schema Designer's) and
+admin profile (STU-ADR-0007 section 12) and reuses :func:`display_name`, :func:`server_checks`, :func:`own_roles`,
+:func:`read_privileges`, :func:`k2_scan`, :func:`refusal` and :func:`admin_session_check` of this module for its
+preview and its checks; only its schema checks and its call of ``tabrion.postgres.grant_runtime_role`` are its own.
 """
 
 from __future__ import annotations
@@ -150,6 +151,9 @@ REASONS = frozenset(
         "privileged_role",
         "escalation_grant",
         "exists",
+        "not_owner",
+        "table_owner",
+        "protected_writable",
     }
 )
 _UNSAFE_KINDS = ("superuser", "bypass_rls", "createrole", "replication", "server_access")
@@ -748,6 +752,23 @@ def _call(request: Request, connection: Any, password: str | None) -> Any:
     return postgres.revoke_privileges(connection, role, privileges=privileges, on=kind, objects=request.objects)
 
 
+def admin_session_check(connection: Any) -> None:
+    """Section 6 once more on the session that is about to change roles, right before Tabrion is called: an admin role
+    that has or reaches what refuses the area is refused (``studio.admin_over_privileged``)."""
+
+    def fetch(sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
+        import psycopg
+        from psycopg.rows import tuple_row
+
+        with psycopg.Cursor(connection, row_factory=tuple_row) as reading:
+            reading.execute(sql, params)
+            return reading.fetchall()
+
+    _facts, findings = privileges_now(fetch)
+    if admin_refusing_findings(findings):
+        raise WriteError("studio.admin_over_privileged")
+
+
 def _escaped(found: Any) -> dict[str, Any] | None:
     if found is None:
         return None
@@ -788,18 +809,7 @@ def apply(manager: Manager, session: str, doc: dict[str, Any]) -> dict[str, Any]
     action = f"dbm.role.{request.action}"
     with backups._audited(manager, unlock, action, start) as outcome:
         with _session(unlock) as connection:
-
-            def fetch(sql: str, params: tuple[Any, ...] = ()) -> list[tuple[Any, ...]]:
-                import psycopg
-                from psycopg.rows import tuple_row
-
-                with psycopg.Cursor(connection, row_factory=tuple_row) as reading:
-                    reading.execute(sql, params)
-                    return reading.fetchall()
-
-            _facts, findings = privileges_now(fetch)
-            if admin_refusing_findings(findings):
-                raise WriteError("studio.admin_over_privileged")
+            admin_session_check(connection)
             try:
                 result = _translate(lambda: _call(request, connection, password))
             finally:

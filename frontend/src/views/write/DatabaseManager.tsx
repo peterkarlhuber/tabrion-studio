@@ -51,6 +51,7 @@ import { problemText } from '../connections/messages';
 import styles from '../Views.module.css';
 import { UnlockForm } from './DataEditor';
 import { RolesPart } from './DatabaseManagerRoles';
+import { RuntimeRolePart } from './DatabaseManagerRuntimeRole';
 
 export function DatabaseManagerSection({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [on, setOn] = useState(false);
@@ -455,6 +456,15 @@ function Unlocked({
           connectionId={connectionId}
           locked={LOCKED}
           onLocked={onLocked}
+        />
+      ) : null}
+      {profile.engine === 'postgresql' ? (
+        <RuntimeRolePart
+          fetcher={fetcher}
+          connectionId={connectionId}
+          onRefused={(why) => {
+            if (LOCKED.has(why.code)) onLocked(why);
+          }}
         />
       ) : null}
     </div>

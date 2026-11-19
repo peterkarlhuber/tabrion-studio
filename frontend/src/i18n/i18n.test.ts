@@ -29,6 +29,8 @@ const SAME_IN_BOTH = new Set([
   // STU-XDM-4: placeholders only ("({{list}})") and "Schema", the same word in German.
   'databaseManager.roles.attributes',
   'databaseManager.roles.kinds.schema',
+  // STU-CR-6 part 2: the runtime-role wizard's "Schema" field, the same word in German.
+  'databaseManager.runtimeRole.schema',
   // The SQL keyword NULL (the Data Editor's NULL button, STU-026).
   'dataEditor.null',
   // Placeholders only: "{{row}}: {{issue}}" (G-S2 6A).

@@ -206,3 +206,31 @@ After every change Studio reads the role again and shows any difference to what 
 have changed it meanwhile). Every change is written to the audit log (`dbm.role.<change>`). The admin role needs
 CREATEROLE on PostgreSQL 16 or later for this; it must not have SUPERUSER, BYPASSRLS, REPLICATION or a server-file
 role, or the unlock ends.
+
+### A runtime role for an application
+
+With both the Schema Designer and the Database Manager turned on, **Runtime role for an application** appears under
+**Roles** on the same admin unlock (the Schema Designer has no admin unlock of its own). It sets up the role an
+application connects as: the role may read and write the rows of one schema (`SELECT`, `INSERT`, `UPDATE`, `DELETE`
+on its tables, `USAGE` and `SELECT` on its sequences, `EXECUTE` on its functions) and connect to the database, but
+never change the schema; the **protected tables** (by default `alembic_version`, the migration bookkeeping) stay
+read-only for it. Tabrion does the work (`create_role` and `grant_runtime_role`).
+
+1. Choose **Create a new login role** or **Grant an existing role again**, the role name, the schema and the
+   protected tables, then **Look at the grants**. This changes nothing.
+2. For a new role you may give a password; it is sent once and never shown or kept. Type the role's name to run.
+
+Studio refuses everything the role rules above refuse (its own roles, a role that reaches a dangerous attribute, a
+role with dangerous grants in any database), and also a system schema, a schema whose owner (or the owner of any
+table, sequence or function in it) the admin role cannot act as, and a schema with a SECURITY DEFINER function.
+Run the wizard with an admin role that owns the schema, usually the role that runs the migrations. Tables a
+migration adds later get the role's rights only when the admin role creates them: run the wizard again after a
+migration. The grant also sets the admin role's default privileges in the schema, so the runtime role can run every
+function the admin role creates there later, also a SECURITY DEFINER function, which then runs with its owner's
+rights: check the new functions after each migration and run the wizard again, or take the default back for
+functions (`ALTER DEFAULT PRIVILEGES IN SCHEMA <schema> REVOKE EXECUTE ON FUNCTIONS FROM <role>`). The wizard looks
+only inside the schema: a SECURITY DEFINER trigger function in another schema, fired by a trigger on one of the
+schema's tables, runs with its owner's rights while the runtime role changes rows, so check the triggers' functions
+too. If Tabrion refuses the grant after a new role was created (for example because every role may still
+write a protected table), Studio drops the new role again. Every run is written to the audit log
+(`dbm.role.runtime`).

@@ -258,6 +258,12 @@ FIELDS: dict[str, Callable[[object], object]] = {
     "privileges": _tokens,  # the privileges a privilege change grants or revokes
     "grant_objects": _texts,  # the objects of a privilege change (escaped)
     "differences": _tokens,  # the role fields that differed between Tabrion's result and the read after the commit
+    # STU-CR-6 part 2: the runtime-role wizard (dbm.role.runtime). Names and flags only; never a password.
+    "schema": _text,  # the schema whose objects the runtime role gets (escaped like every name)
+    "protected": _texts,  # the protected tables the runtime role may only read (escaped)
+    "created": _flag,  # the run creates the role (else it grants an existing one again)
+    "connect": _flag,  # CONNECT on the database was granted or held
+    "undone": _flag,  # the role this run created was dropped again after its grant failed
 }
 
 

@@ -2532,7 +2532,11 @@
         "own_role_unknown": "A PostgreSQL profile has no user and Studio cannot tell which role it uses, so it changes no role. Name the user in every profile.",
         "privileged_role": "The group is a predefined or server-file role or has dangerous rights.",
         "escalation_grant": "The group holds TRIGGER, EXECUTE on a SECURITY DEFINER function or CREATE on a schema in a database of the server.",
-        "exists": "A role of this name exists already."
+        "exists": "A role of this name exists already.",
+        "not_owner": "The admin role cannot act as the owner of the schema or of every table, sequence and function in it, so the grants would fail. Run the wizard with an admin role that owns the schema (or is a member of its owner).",
+        "create_invalid": "Choose whether to create a new role or to grant an existing one again.",
+        "table_owner": "The role owns the schema or tables in it, or can become their owner or the admin role: a runtime role must not.",
+        "protected_writable": "After the grant the role, a group it is in, or every role (PUBLIC) could still write a protected table. Nothing was granted; revoke that write right first."
       },
       "warnings": {
         "create_on_database": "CREATE on a database lets the role make schemas there.",
@@ -2541,8 +2545,35 @@
         "escalation_check_partial": "Not every database could be checked for dangerous grants (see the list).",
         "public_definers": "Every role may run SECURITY DEFINER functions of this database.",
         "public_definers_superuser": "Every role may run SECURITY DEFINER functions of a superuser in this database.",
-        "revoke_grantor": "A revoke removes only what the admin role granted; a grant by another role stays."
+        "revoke_grantor": "A revoke removes only what the admin role granted; a grant by another role stays.",
+        "rerun_after_migration": "Tables a migration adds later get these rights only when the admin role creates them. Run the wizard again after a migration.",
+        "protected_missing": "A protected table does not exist in the schema; it is protected once it exists and the wizard runs again.",
+        "no_tables": "The schema has no tables yet."
       }
+    },
+    "runtimeRole": {
+      "title": "Runtime role for an application",
+      "lead": "Create the role an application connects as, or grant an existing one again: it may read and write the rows of one schema, use its sequences and run its functions, never change its structure. The protected tables (the migration bookkeeping) stay read-only. Uses this admin unlock; needs the Schema Designer and the Database Manager.",
+      "kind": "Role",
+      "create": "Create a new login role",
+      "existing": "Grant an existing role again",
+      "role": "Role name",
+      "schema": "Schema",
+      "protected": "Protected tables",
+      "protectedHint": "One table name per line; the role may only read them.",
+      "preview": "Look at the grants",
+      "schemaLine_one": "Schema: {{count}} table; protected and present: {{found}}; protected but missing: {{missing}}",
+      "schemaLine_other": "Schema: {{count}} tables; protected and present: {{found}}; protected but missing: {{missing}}",
+      "refused": "Studio does not do this:",
+      "passwordHint": "Optional. Sent once with the run, never shown or kept. Without one the role cannot sign in with a password.",
+      "applyCreate": "Create and grant",
+      "applyGrant": "Grant again",
+      "doneCreated_one": "{{role}} was created and granted the rows of {{schema}} ({{count}} table).",
+      "doneCreated_other": "{{role}} was created and granted the rows of {{schema}} ({{count}} tables).",
+      "doneGranted_one": "{{role}} was granted the rows of {{schema}} again ({{count}} table).",
+      "doneGranted_other": "{{role}} was granted the rows of {{schema}} again ({{count}} tables).",
+      "noConnect": "The admin role may not grant CONNECT on this database; the database's owner has to grant it.",
+      "canCreate": "The role may create objects in the schema (granted by someone else): it could plant objects there. Revoke CREATE on the schema."
     },
     "delete": {
       "title": "Delete a database",
