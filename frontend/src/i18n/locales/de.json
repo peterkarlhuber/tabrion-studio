@@ -2536,7 +2536,11 @@
         "own_role_unknown": "Ein PostgreSQL-Profil hat keinen Benutzer, und Studio kann nicht sagen, welche Rolle es nutzt; daher ändert es keine Rolle. Nenne in jedem Profil den Benutzer.",
         "privileged_role": "Die Gruppe ist eine vordefinierte oder Server-Datei-Rolle oder hat gefährliche Rechte.",
         "escalation_grant": "Die Gruppe hat TRIGGER, EXECUTE auf einer SECURITY-DEFINER-Funktion oder CREATE auf einem Schema in einer Datenbank des Servers.",
-        "exists": "Eine Rolle dieses Namens gibt es schon."
+        "exists": "Eine Rolle dieses Namens gibt es schon.",
+        "not_owner": "Die Admin-Rolle kann nicht als Eigentümer des Schemas und aller Tabellen, Sequenzen und Funktionen darin handeln; die Rechte ließen sich nicht vergeben. Starte den Assistenten mit einer Admin-Rolle, der das Schema gehört (oder die Mitglied seines Eigentümers ist).",
+        "create_invalid": "Wähle, ob eine neue Rolle angelegt oder eine vorhandene erneut berechtigt wird.",
+        "table_owner": "Der Rolle gehört das Schema oder Tabellen darin, oder sie kann deren Eigentümer oder die Admin-Rolle werden: Eine Laufzeitrolle darf das nicht.",
+        "protected_writable": "Nach der Vergabe könnten die Rolle, eine ihrer Gruppen oder jede Rolle (PUBLIC) eine geschützte Tabelle noch schreiben. Es wurde nichts vergeben; entziehe zuerst dieses Schreibrecht."
       },
       "warnings": {
         "create_on_database": "CREATE auf einer Datenbank lässt die Rolle dort Schemas anlegen.",
@@ -2545,8 +2549,35 @@
         "escalation_check_partial": "Nicht jede Datenbank ließ sich auf gefährliche Rechte prüfen (siehe die Liste).",
         "public_definers": "Jede Rolle darf SECURITY-DEFINER-Funktionen dieser Datenbank ausführen.",
         "public_definers_superuser": "Jede Rolle darf SECURITY-DEFINER-Funktionen eines Superusers in dieser Datenbank ausführen.",
-        "revoke_grantor": "Ein Entzug nimmt nur, was die Admin-Rolle vergeben hat; was eine andere Rolle vergeben hat, bleibt."
+        "revoke_grantor": "Ein Entzug nimmt nur, was die Admin-Rolle vergeben hat; was eine andere Rolle vergeben hat, bleibt.",
+        "rerun_after_migration": "Tabellen, die eine Migration später anlegt, bekommen diese Rechte nur, wenn die Admin-Rolle sie anlegt. Starte den Assistenten nach einer Migration erneut.",
+        "protected_missing": "Eine geschützte Tabelle gibt es im Schema nicht; sie wird geschützt, sobald es sie gibt und der Assistent erneut läuft.",
+        "no_tables": "Das Schema hat noch keine Tabellen."
       }
+    },
+    "runtimeRole": {
+      "title": "Laufzeitrolle für eine Anwendung",
+      "lead": "Lege die Rolle an, mit der sich eine Anwendung verbindet, oder berechtige eine vorhandene erneut: Sie darf die Zeilen eines Schemas lesen und schreiben, seine Sequenzen nutzen und seine Funktionen ausführen, aber nie seine Struktur ändern. Die geschützten Tabellen (die Buchführung der Migrationen) bleiben nur lesbar. Nutzt diese Admin-Entsperrung; braucht den Schema Designer und den Database Manager.",
+      "kind": "Rolle",
+      "create": "Neue Login-Rolle anlegen",
+      "existing": "Vorhandene Rolle erneut berechtigen",
+      "role": "Rollenname",
+      "schema": "Schema",
+      "protected": "Geschützte Tabellen",
+      "protectedHint": "Ein Tabellenname pro Zeile; die Rolle darf sie nur lesen.",
+      "preview": "Rechte ansehen",
+      "schemaLine_one": "Schema: {{count}} Tabelle; geschützt und vorhanden: {{found}}; geschützt, aber fehlend: {{missing}}",
+      "schemaLine_other": "Schema: {{count}} Tabellen; geschützt und vorhanden: {{found}}; geschützt, aber fehlend: {{missing}}",
+      "refused": "Das macht Studio nicht:",
+      "passwordHint": "Optional. Wird einmal mit dem Lauf gesendet, nie angezeigt oder behalten. Ohne Passwort kann sich die Rolle nicht mit Passwort anmelden.",
+      "applyCreate": "Anlegen und berechtigen",
+      "applyGrant": "Erneut berechtigen",
+      "doneCreated_one": "{{role}} wurde angelegt und für die Zeilen von {{schema}} berechtigt ({{count}} Tabelle).",
+      "doneCreated_other": "{{role}} wurde angelegt und für die Zeilen von {{schema}} berechtigt ({{count}} Tabellen).",
+      "doneGranted_one": "{{role}} wurde erneut für die Zeilen von {{schema}} berechtigt ({{count}} Tabelle).",
+      "doneGranted_other": "{{role}} wurde erneut für die Zeilen von {{schema}} berechtigt ({{count}} Tabellen).",
+      "noConnect": "Die Admin-Rolle darf CONNECT auf diese Datenbank nicht vergeben; das muss der Eigentümer der Datenbank tun.",
+      "canCreate": "Die Rolle darf im Schema Objekte anlegen (von jemand anderem vergeben) und könnte dort Objekte unterschieben. Entziehe CREATE auf dem Schema."
     },
     "delete": {
       "title": "Datenbank löschen",
