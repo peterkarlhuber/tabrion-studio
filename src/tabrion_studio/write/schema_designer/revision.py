@@ -13,11 +13,12 @@ project's code trust and reads the revision graph in its separate worker process
 from ``tabrion.plan.revision_text`` (a string; tabrion reads no project and writes no file). Studio checks that the
 text parses (``ast.parse``), records ``run.start``, creates the file and records ``run.result``.
 
-**Conditions** (section 5, :func:`availability`): the stored environment of the unlock is ``dev`` or ``test``
-(never ``prod``: an open decision of G-S3; PROD is never unlocked anyway, E-X7); the project's profiles are
-trusted (D-01); the project has an Alembic setup (``alembic.ini`` with a ``script_location``) whose code the user
-trusted (the digest of :mod:`tabrion_studio.config.code_trust`); the plan has a step. The revision output does not
-need a direct run to be allowed: it is the only output for an Alembic project.
+**Conditions** (section 5, :func:`availability`): the stored environment of the unlock is ``dev`` or ``test`` (never
+``prod``: an open decision of G-S3; PROD is never unlocked anyway, E-X7) and no PROD profile of the user's store names
+the unlocked database (:func:`names_prod`, the Database Manager's matching; review I-1 of #144); the project's profiles
+are trusted (D-01); the project has an Alembic setup (``alembic.ini`` with a ``script_location``) whose code the user
+trusted (the digest of :mod:`tabrion_studio.config.code_trust`); the plan has a step. The revision output does not need
+a direct run to be allowed: it is the only output for an Alembic project.
 
 **Never run** (GS3-06). Studio never runs ``env.py``, never imports a project module or the revision it writes, runs no
 ``alembic`` command and opens no ``MigrationContext``. The only project code that runs is the 1.0 migration worker's
@@ -59,6 +60,7 @@ from tabrion.errors import UsageError
 from tabrion.plan import revision_text
 
 from tabrion_studio.config.write_areas import Area
+from tabrion_studio.write import prod_targets
 from tabrion_studio.write.audit import AuditError
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.unlock import Unlock, Unlocks
@@ -121,13 +123,24 @@ class RevisionSources:
         return bool(self.project_trust.load().state == "trusted")
 
 
-def availability(unlock: Unlock, change: Any, sources: RevisionSources) -> tuple[str, ...]:
+def names_prod(unlocks: Unlocks, unlock: Unlock) -> bool:
+    """Whether a PROD profile of the user's store names the unlocked database (review I-1 of #144: a DEV profile may
+    be an alias of a PROD server), with the matching of the Database Manager (:mod:`tabrion_studio.write.prod_targets`:
+    the SQLite file by device and inode; on PostgreSQL the database name on the same server by ``system_identifier``
+    or by port and resolved addresses)."""
+    profiles = unlocks.config.user.profiles().profiles
+    read = next((p for p in profiles if p.name == unlock.read_name and p.engine == unlock.connection.engine), None)
+    return prod_targets.names_prod(unlock.connection, read, profiles, unlocks.registry.list())
+
+
+def availability(unlock: Unlock, change: Any, sources: RevisionSources, *, prod_alias: bool = False) -> tuple[str, ...]:
     """Why no revision may be written for this plan (section 5); empty when one may. Runs no project code: the head
-    is read only when the revision is written."""
+    is read only when the revision is written. ``prod_alias``: a PROD profile names the database (:func:`names_prod`),
+    which refuses like a PROD environment."""
     reasons: list[str] = []
     if not change.steps:
         reasons.append("nothing_to_run")
-    if unlock.environment not in REVISION_ENVIRONMENTS:
+    if unlock.environment not in REVISION_ENVIRONMENTS or prod_alias:
         reasons.append("environment")
     if not sources.profiles_trusted():
         reasons.append("project_untrusted")

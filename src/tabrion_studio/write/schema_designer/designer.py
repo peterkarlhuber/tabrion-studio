@@ -192,7 +192,9 @@ def preview(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any])
         reasons = execute.blocked(unlock, change, drafts.project, drafts.write_state)
         from tabrion_studio.write.schema_designer import revision as revision_output
 
-        revision_reasons = revision_output.availability(unlock, change, drafts.revision_sources)
+        revision_reasons = revision_output.availability(
+            unlock, change, drafts.revision_sources, prod_alias=revision_output.names_prod(unlocks, unlock)
+        )
         kept = execute.make_plan(
             unlock,
             schema=draft.schema,
@@ -366,7 +368,9 @@ def revision(unlocks: Unlocks, drafts: Drafts, session: str, doc: dict[str, Any]
             logger.warning("schema revision refused: the plan changed", extra={"event": "studio.plan_drift"})
             raise WriteError("studio.plan_drift")
         # ... the conditions of section 5 ...
-        reasons = revision_output.availability(unlock, change, sources)
+        reasons = revision_output.availability(
+            unlock, change, sources, prod_alias=revision_output.names_prod(unlocks, unlock)
+        )
         if reasons:
             raise WriteError("studio.schema_revision_not_allowed", [("plan.reason", f"plan.{reasons[0]}")])
         code = sources.code_state()

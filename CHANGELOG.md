@@ -13,7 +13,9 @@ All notable changes to this project are documented here. The format follows
   and compares the hash, reads the single head through the migration status (code trust, the 1.0 migration worker),
   gets the text from `tabrion.plan.revision_text`, checks that it parses, and creates
   `<script_location>/versions/<12 hex>_<slug>.py` exclusively, never through a link and never over a file. Only for a
-  DEV or TEST unlock, a project whose profiles (D-01) and Alembic code are trusted, and a plan with a step; `env.py`,
+  DEV or TEST unlock whose database no PROD profile names (review I-1 of #144: the Database Manager's PROD-alias
+  matching, now shared in `tabrion_studio.write.prod_targets`, no behavior change there), a project whose profiles
+  (D-01) and Alembic code are trusted, and a plan with a step; `env.py`,
   a project module, the new revision and Alembic commands never run, and nothing runs on the database. The preview
   says whether a revision may be written and that the revision does not check its source fingerprint (I-124 j 5).
   Audit `run.start`/`run.result` with action `schema_designer.revision`. New problems

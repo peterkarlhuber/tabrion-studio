@@ -275,6 +275,56 @@ def test_only_dev_and_test_get_a_revision() -> None:
     assert availability(SimpleNamespace(environment="dev"), SimpleNamespace(steps=[]), sources)[0] == "nothing_to_run"  # type: ignore[arg-type]
 
 
+def test_a_dev_profile_that_is_an_alias_of_a_prod_database_gets_no_revision(project: Project) -> None:
+    """Review I-1 of #144: a PROD profile of the user's store that names the same SQLite file (by device and inode, the
+    Database Manager's matching) refuses the revision like a PROD environment, at the preview and at the write."""
+    alias = project.env.tmp_path / "alias.db"
+    os.link(project.env.db, alias)
+    project.env.create_read(name="live", environment="prod", path=alias)
+    project.edit(ADD_QTY)
+    plan = project.preview()
+    assert plan["revision_output"]["blocked"] == ["environment"]
+    _refused(project.write(plan), 400, "studio.schema_revision_not_allowed", [("plan.reason", "plan.environment")])
+    assert project.new_files() == [] and project.runs() == []
+
+
+def test_the_postgres_prod_alias_matching_is_the_database_managers() -> None:
+    """Review I-1 of #144 (PostgreSQL, with fakes): the same database name on the same server, by port and resolved
+    addresses or by ``system_identifier`` of an open PROD connection, counts as PROD; another name or server does not;
+    a target whose name or read profile is unknown fails closed."""
+    from types import SimpleNamespace
+
+    from tabrion_studio.write.prod_targets import SYSTEM_IDENTIFIER, names_prod
+
+    def connection(name: str | None, identifier: str | None) -> Any:
+        def fetch(sql: str) -> list[tuple[Any, ...]]:
+            if sql == SYSTEM_IDENTIFIER:
+                if identifier is None:
+                    raise PermissionError("no pg_control_system")
+                return [(identifier,)]
+            if name is None:
+                raise RuntimeError("no name")
+            return [(name,)]
+
+        return SimpleNamespace(engine="postgresql", identity=None, fetch=fetch)
+
+    read = SimpleNamespace(name="dev", engine="postgresql", environment="dev", host="localhost", port=5432)
+    prod = SimpleNamespace(
+        name="live", engine="postgresql", environment="prod", host="127.0.0.1", port=5432, database="shop"
+    )
+    elsewhere = SimpleNamespace(**{**vars(prod), "host": "192.0.2.10"})
+    assert names_prod(connection("shop", None), read, [read, prod], [])
+    assert not names_prod(connection("other", None), read, [read, prod], [])
+    assert not names_prod(connection("shop", None), read, [read, SimpleNamespace(**{**vars(prod), "port": 5433})], [])
+    assert not names_prod(connection("shop", "7"), read, [read, elsewhere], [])
+    opened = SimpleNamespace(profile_id="user:live", fetch=connection("shop", "7").fetch)
+    assert names_prod(connection("shop", "7"), read, [read, elsewhere], [opened])
+    assert not names_prod(connection("shop", "8"), read, [read, elsewhere], [opened])
+    assert names_prod(connection(None, None), read, [read, prod], [])
+    assert names_prod(connection("shop", None), None, [prod], [])
+    assert not names_prod(connection("shop", None), read, [read], [])
+
+
 # --- 3 and 4. never run, the file (GS3-06, GS3-07) --------------------------------------------------------------------
 
 

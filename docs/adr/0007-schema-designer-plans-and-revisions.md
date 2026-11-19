@@ -138,7 +138,10 @@ environment is `prod` (whether to allow it, since it writes only the project fil
   than above, and recorded here: the draft, and so the revision output, needs an unlocked write profile of DEV or TEST
   (the draft is bound to its unlock); the revision output needs both the profile trust (D-01) and the code trust;
   the revision uses the plan of direct execution (`concurrent_indexes=False`), so it has no `CONCURRENTLY` step.
-  Writing the file changes the code-trust digest, so the migration status needs trust again. A revision output
+  Writing the file changes the code-trust digest, so the migration status needs trust again. A database that a PROD
+  profile of the user's store names is refused like PROD (review I-1 of #144), with the Database Manager's matching,
+  now shared in `tabrion_studio.write.prod_targets` (SQLite by device and inode; PostgreSQL by name on the same
+  server, by `system_identifier` or port and resolved addresses). A revision output
   without an unlock and a plan with `CONCURRENTLY` steps are follow-ups.
 
 **The schema comparison (STU-XSD-2)** is neither output: it reads, compares and shows, and its plan preview is never

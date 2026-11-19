@@ -210,7 +210,9 @@ directly: it writes the plan as a new **revision file** instead, which you apply
 has a **Write as an Alembic revision** part. It is offered only when all of these hold, checked when the plan is shown
 and again when the file is written:
 
-- the connection's stored environment is DEV or TEST (never PROD);
+- the connection's stored environment is DEV or TEST (never PROD), and no PROD profile of yours names the same
+  database (the same SQLite file, or on PostgreSQL the same database name on the same server, as the Database Manager
+  matches it);
 - you trusted the project's profiles (`.tabrion/studio.toml`, the trust dialog) **and** its Alembic code (the code
   trust of the migration status), and neither changed since;
 - the plan has a step.
