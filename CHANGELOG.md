@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-6 part 2 (in development, locked by G-S3 and G-S4; neither granted, the flags stay off, no default changes):
+  the runtime-role wizard. "Runtime role for an application" in the Database Manager creates a login role (or takes
+  an existing one again) and grants it the rows of one schema through Tabrion's `create_role` and
+  `grant_runtime_role`; the protected tables (by default `alembic_version`) stay read-only. `POST
+  /api/write/database-manager/runtime-role/preview` and `.../apply` answer 405 and import nothing unless both the
+  `schema_designer` and the `database_manager` flag are on, and use the Database Manager's admin unlock (the Schema
+  Designer gets none of its own, ADR 0007 section 12). The role rules of ADR 0008 section 6 are reused from the role
+  management, not copied; the wizard adds `role.not_owner`, `role.security_definer` and `role.system_object`. Preview,
+  `state` binding, typed name and the audit record `dbm.role.runtime` (no password); a grant Tabrion refuses after the
+  role was created drops the role again. en and de; the Database Manager guide and ADR 0007 are updated.
 - G-S2 follow-up 3A (before G-R; the write flags stay off by default): the audit log's anchor in the OS keyring.
   Studio keeps the last record's number and hash in the keyring (one entry per audit folder, nothing secret) and
   moves it on with every record. A log that no longer reaches it at start (the folder removed or moved aside, cut,

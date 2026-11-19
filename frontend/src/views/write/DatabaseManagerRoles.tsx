@@ -86,6 +86,10 @@ const ROLE_ISSUES = new Set([
   'privileged_role',
   'escalation_grant',
   'exists',
+  'not_owner',
+  'create_invalid',
+  'table_owner',
+  'protected_writable',
 ]);
 
 const ROLE_WARNINGS = new Set([
@@ -96,24 +100,27 @@ const ROLE_WARNINGS = new Set([
   'public_definers',
   'public_definers_superuser',
   'revoke_grantor',
+  'rerun_after_migration',
+  'protected_missing',
+  'no_tables',
 ]);
 
 type T = ReturnType<typeof useTranslation>['t'];
 
-function reasonText(t: T, code: string): string {
+export function reasonText(t: T, code: string): string {
   const name = code.startsWith('role.') ? code.slice('role.'.length) : code;
   return ROLE_ISSUES.has(name)
     ? t(`databaseManager.roles.issues.${name}`)
     : t('databaseManager.issues.unknown', { code, interpolation: { escapeValue: false } });
 }
 
-function warningText(t: T, code: string): string {
+export function warningText(t: T, code: string): string {
   return ROLE_WARNINGS.has(code)
     ? t(`databaseManager.roles.warnings.${code}`)
     : t('databaseManager.issues.unknown', { code, interpolation: { escapeValue: false } });
 }
 
-function RoleProblem({ problem }: { problem: Problem | null }) {
+export function RoleProblem({ problem }: { problem: Problem | null }) {
   const { t } = useTranslation();
   if (problem === null) return null;
   const issues = problem.issues ?? [];
@@ -579,7 +586,7 @@ function RoleChange({
   );
 }
 
-function PrivilegesLine({ label, view }: { label: string; view: RolePrivilegesView }) {
+export function PrivilegesLine({ label, view }: { label: string; view: RolePrivilegesView }) {
   const { t } = useTranslation();
   const none = t('databaseManager.roles.noneListed');
   return (

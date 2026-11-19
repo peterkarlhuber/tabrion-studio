@@ -160,6 +160,9 @@ _DBM_ROLE_PREVIEW_KEYS = frozenset(
     {"connection_id", "action", "role", "member", "options", "on", "privileges", "objects"}
 )
 _DBM_ROLE_APPLY_KEYS = _DBM_ROLE_PREVIEW_KEYS | {"password", "typed", "state"}
+#: STU-CR-6 part 2: the runtime-role wizard (both the Schema Designer and the Database Manager flag).
+_DBM_RUNTIME_PREVIEW_KEYS = frozenset({"connection_id", "role", "schema", "protected_tables", "create"})
+_DBM_RUNTIME_APPLY_KEYS = _DBM_RUNTIME_PREVIEW_KEYS | {"password", "typed", "state"}
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -705,6 +708,9 @@ def add_enabled_write_routes(
         async def handle(request: Request) -> Response:
             if manager is None:
                 return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+            if action.startswith("runtime") and not areas.on(Area.SCHEMA_DESIGNER):
+                # STU-ADR-0007 section 12: the runtime-role wizard needs both flags, on the Database Manager's unlock.
+                return problem_response("studio.method_not_allowed")
             from tabrion_studio.write.database_manager import backups
 
             if method == "GET":
@@ -718,6 +724,11 @@ def add_enabled_write_routes(
                         from tabrion_studio.write.database_manager import delete
 
                         answer_doc = (delete.delete if action == "delete" else delete.preview)(manager, session, doc)
+                    elif action.startswith("runtime"):  # STU-CR-6 part 2
+                        from tabrion_studio.write.database_manager import runtime_role
+
+                        call_runtime = {"runtime_preview": runtime_role.preview, "runtime_apply": runtime_role.apply}
+                        answer_doc = call_runtime[action](manager, session, doc)
                     elif action.startswith("roles"):  # STU-XDM-4
                         from tabrion_studio.write.database_manager import roles
 
@@ -740,6 +751,10 @@ def add_enabled_write_routes(
     manager_route("/api/write/database-manager/roles", "POST", _DBM_ROLES_KEYS, "roles")
     manager_route("/api/write/database-manager/roles/preview", "POST", _DBM_ROLE_PREVIEW_KEYS, "roles_preview")
     manager_route("/api/write/database-manager/roles/apply", "POST", _DBM_ROLE_APPLY_KEYS, "roles_apply")
+    manager_route(
+        "/api/write/database-manager/runtime-role/preview", "POST", _DBM_RUNTIME_PREVIEW_KEYS, "runtime_preview"
+    )
+    manager_route("/api/write/database-manager/runtime-role/apply", "POST", _DBM_RUNTIME_APPLY_KEYS, "runtime_apply")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 
