@@ -15,7 +15,9 @@
  * `audit` 150 tables for the ER diagram of STU-023), `path` (/, /connections, /explorer, /sql, /history, /migrations,
  * /diagnostics, /settings); data-editor: the Data Editor's grid alone (STU-XDE-1, `dataEditor.ts`: an unlocked typed
  * table, the plans the page sent in `window.dataEditorLog`; STU-XDE-2: `locked=1` or `locked=prod`, `triggers=1`,
- * `refuse=<code>` and `conflict=1`; G-S2 6A: `constraint=1` and `paged=1`, see `dataEditor.ts`). In every scenario the fake answers STU-020's routes
+ * `refuse=<code>` and `conflict=1`; G-S2 6A: `constraint=1` and `paged=1`, see `dataEditor.ts`); database-manager: the
+ * Database Manager's section alone (STU-XDM-6, `databaseManager.ts`: `engine=sqlite`, `runtime=0`, `refuse=role`,
+ * `locked=1`; the requests the page sent in `window.databaseManagerLog`). In every scenario the fake answers STU-020's routes
  * (`history.ts`): the query history (`historyOff=1` turns it off), favorites (`favorites`, `recent`: profile ids
  * separated by commas), the project's scripts (`sql/report.sql`, `sql/parts.sql`) and the catalog for completion,
  * `theme` (light, dark) and `lang` (en, de). The editor's drafts (TD-033) go to a fake `/api/drafts` (`drafts.ts`) that
@@ -42,6 +44,8 @@ import type { Workspace } from '../workspace';
 import { explorerAnswer } from './explorer';
 import { createViewer } from './viewer';
 import { createDataEditorServer } from './dataEditor';
+import { createDatabaseManagerServer } from './databaseManager';
+import { DatabaseManagerSection } from '../views/write/DatabaseManager';
 import { DataEditor } from '../views/write/DataEditor';
 import styles from './harness.module.css';
 import { REPORT_FILENAME, REPORT_MARKDOWN, diagnosis } from './diagnostics';
@@ -555,6 +559,24 @@ if (scenario === 'data-editor') {
           schema="app"
           name="parts"
         />
+      </main>
+    </StrictMode>,
+  );
+} else if (scenario === 'database-manager') {
+  // STU-XDM-6: the Database Manager's dialogs (D-11..D-14) without a server; the flags are the fake server's.
+  const engine = params.get('engine') === 'sqlite' ? 'sqlite' : 'postgresql';
+  const databaseManager = createDatabaseManagerServer({
+    engine,
+    runtime: params.get('runtime') !== '0' && engine === 'postgresql',
+    refuse: params.get('refuse'),
+    locked: params.get('locked') === '1',
+  });
+  (window as unknown as { databaseManagerLog: unknown }).databaseManagerLog = databaseManager.log;
+  createRoot(root).render(
+    <StrictMode>
+      <main className={styles.page}>
+        <h1>Database Manager</h1>
+        <DatabaseManagerSection fetcher={databaseManager.fetch} />
       </main>
     </StrictMode>,
   );

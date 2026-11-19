@@ -19,6 +19,30 @@ role then needs `CREATEDB`. It also manages the roles of a PostgreSQL DEV or TES
     are **not** in it. Back them up outside Studio (for example with `pg_dumpall --globals-only`) before you rely on
     a Studio backup to rebuild a server. Every PostgreSQL backup's description says so too.
 
+## Its limits at a glance
+
+These rules hold for every action of the Database Manager; the sections below say how each is checked.
+
+- **`pg_dump` is not a complete backup.** A PostgreSQL backup holds one database, without global roles, role
+  memberships, tablespaces and other cluster objects ([Make a backup](#make-a-backup)). A SQLite backup is a full
+  copy of the file.
+- **PROD is locked.** An admin profile never unlocks on a PROD profile, and Studio never restores into, deletes or
+  changes the roles of a database, file or server that **any** of your profiles marks PROD, also under another host
+  name ([Restore](#restore), [Delete a database](#delete-a-database), [Manage PostgreSQL roles](#manage-postgresql-roles)).
+- **A backup comes first.** Before a delete, and before a SQLite restore over the connection's own file, Studio makes
+  a backup and checks it; when that fails, nothing is changed. There is no way to skip it. Studio never deletes a
+  backup.
+- **Look first, then type the name.** Every restore, delete and role change shows a preview that changes nothing;
+  the action runs only after you type the target's name, and its button never has the focus by default.
+- **Roles only through Tabrion, with the role rules.** Studio never grants `SUPERUSER`, `BYPASSRLS`, `CREATEROLE`,
+  `REPLICATION`, an ADMIN or GRANT option or TRIGGER, never adds a member to a predefined or dangerous role, and
+  never changes its own roles ([Manage PostgreSQL roles](#manage-postgresql-roles)).
+- **The admin rights are yours to set up, outside Studio.** Studio never creates, widens or grants to the admin
+  role; it checks the role's rights before every action and refuses one with too many
+  ([The admin role's rights](#the-admin-roles-rights)).
+- **Not everything on Windows.** The PostgreSQL tools do not run there, and SQLite files are neither restored into a
+  new file nor deleted there.
+
 ## Turn it on for development
 
 The switch is read once, when Studio starts, from `write-areas.toml` in Studio's configuration folder, as for the
@@ -47,6 +71,24 @@ Every action checks the admin role's rights again on its own session first. A ro
 BYPASSRLS, REPLICATION, a server-file role (`pg_read_server_files`, `pg_write_server_files`,
 `pg_execute_server_program`) or CREATEROLE before PostgreSQL 16 is refused (`studio.admin_over_privileged`), and the
 unlock ends.
+
+## The admin role's rights
+
+Give the admin profile's role only what the actions you use need, on DEV and TEST servers only, and set it up with
+your own tools: Studio never does. Every role must be able to log in and connect to the database.
+
+| Action | The admin role needs |
+|---|---|
+| Any action | none of SUPERUSER, BYPASSRLS, REPLICATION, `pg_read_server_files`, `pg_write_server_files`, `pg_execute_server_program`, nor any role that has or reaches one of them; before PostgreSQL 16 also no CREATEROLE (the unlock or the action is refused otherwise) |
+| Make a backup, and the backup before a delete | to read every table and sequence of the database: usually by owning them (or being a member of their owner); row security that applies to the role makes the backup fail ([Row security](#the-postgresql-tools)) |
+| New database | CREATEDB ([New database](new-database.md#the-createdb-right)) |
+| Restore | CREATEDB and membership in the lean restore role (`GRANT <restore role> TO <admin role>`); the restore itself runs as the restore profile ([Restore](#restore)) |
+| Delete a database | to own the database (or be a member of its owner) and to read it for the backup first; for **End the other sessions (FORCE)** also the right to end those sessions, as for `pg_terminate_backend` |
+| Manage roles, runtime role | CREATEROLE on PostgreSQL 16 or later, with `createrole_self_grant` unset; to grant privileges on objects, or to run the runtime-role wizard, to own them (or be a member of their owner) |
+
+A SQLite action needs no database role: the file and its folder must be yours and writable only by you. Studio shows
+the rights it found when you unlock (CREATEROLE as "needed only for role management", CREATEDB, other predefined
+roles), so you can take away what you do not use.
 
 ## The PostgreSQL tools
 

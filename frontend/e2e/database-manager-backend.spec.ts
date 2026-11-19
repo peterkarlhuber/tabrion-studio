@@ -6,7 +6,9 @@
  * On a SQLite DEV connection: unlock its admin profile by the typed name, make a backup (private, in Studio's backup
  * folder, with its description), see it in the list with the size notice, preview a restore and restore it into a new
  * file next to the connection's file, confirmed by the typed name, under the strict Content-Security-Policy. axe in
- * the light and the dark theme. The PostgreSQL backup and restore (pg_dump, pg_restore, the lean restore role) are
+ * the light and the dark theme. STU-XDM-6 (D-11, D-13): at the end, delete the connection's own file by its typed
+ * name; Studio backs it up first, and the backup stays in the backup folder. The dialogs' PostgreSQL parts run against
+ * the harness in e2e/database-manager-dialogs.spec.ts. The PostgreSQL backup and restore (pg_dump, pg_restore, the lean restore role) are
  * proven against a server in tests/security/test_dbm_restore_roundtrip.py.
  *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
@@ -284,4 +286,44 @@ test('the Database Manager flag does not open the write kind', async ({ page }) 
   };
   expect(listed.tools.pg_dump).toEqual({ ok: false, reason: 'tool.not_configured', version: null });
   expect(JSON.stringify(listed)).not.toContain(root);
+});
+
+// Last: it deletes the connection's file (STU-XDM-6, D-11 and D-13; SQLite delete is refused on Windows, and the e2e
+// jobs run on Linux).
+test('delete the connection\u2019s own file, backed up first, by its typed name', async ({
+  page,
+}) => {
+  const foreign = foreignRequests(page, () => base);
+  const violations = await signIn(page);
+  const section = await openManager(page);
+  const unlock = section.getByTestId('data-editor-unlock');
+  await unlock.getByLabel('Type e2e-shop-admin to unlock').fill('e2e-shop-admin');
+  await unlock.getByRole('button', { name: 'Unlock' }).click();
+  await section.getByTestId('database-manager-delete-preview').click();
+  await expect(section.getByTestId('database-manager-delete-warning')).toContainText(
+    'Studio makes a verified backup first',
+  );
+  const run = section.getByTestId('database-manager-delete-run');
+  await expect(run).toBeDisabled();
+  await expect(run).not.toBeFocused();
+  await section.getByTestId('database-manager-delete-typed').fill('shop.db');
+  expect(await seriousViolations(page)).toEqual([]);
+  const folder = join(root, 'state', 'config', 'backups', 'database-manager');
+  const before = new Set(readdirSync(folder));
+  await run.click();
+  const deleted = section.getByTestId('database-manager-deleted');
+  await expect(deleted).toContainText('shop.db was deleted.');
+  const file =
+    /before the delete is (\S+\.sqlite)/.exec((await deleted.textContent()) ?? '')?.[1] ?? '';
+  expect(file).not.toBe('');
+  expect(before.has(file)).toBe(false);
+  expect(existsSync(database)).toBe(false);
+  // The backup from before the delete is private in the backup folder and holds the rows.
+  expect(readdirSync(folder)).toContain(file);
+  if (POSIX) expect(lstatSync(join(folder, file)).mode & 0o777).toBe(0o600);
+  expect(
+    sqlite(join(folder, file), "print(db.execute('select count(*) from parts').fetchone()[0])"),
+  ).toBe('2\n');
+  await expectNoViolations(page, violations);
+  expect(foreign).toEqual([]);
 });
