@@ -258,6 +258,10 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/database-manager/profiles/export": "writes read profiles to a new 0600 file, typed name (flag)",
     "POST /api/write/database-manager/profiles/import/preview": "reads a profile file; changes nothing (flag)",
     "POST /api/write/database-manager/profiles/import": "adds read profiles to the user's store, never over one (flag)",
+    # STU-CR-6 part 2 (G-S3 and G-S4): the runtime-role wizard, both flags, the admin unlock, DEV/TEST, PostgreSQL 16+
+    # (tests/security/test_dbm_runtime_role.py, test_dbm_runtime_role_postgres.py).
+    "POST /api/write/database-manager/runtime-role/preview": "reads a role and a schema; changes nothing (flags)",
+    "POST /api/write/database-manager/runtime-role/apply": "creates or grants a runtime role through tabrion (flags)",
 }
 
 

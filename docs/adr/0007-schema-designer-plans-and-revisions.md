@@ -257,7 +257,19 @@ after, the TB-149 obligations). Role DDL needs an admin profile, and an admin pr
 `database_manager` area. The runtime-role wizard therefore **requires the `database_manager` area and G-S4**: it is
 built with STU-CR-6 but runs only when both flags are on; the Schema Designer adds no admin unlock of its own. (The
 alternative, a separate admin unlock under `schema_designer` with the rules of GS4-11, GS4-12 and GS4-19, is not
-chosen; changing this needs the owner.) The profile export
+chosen; changing this needs the owner.)
+
+**As built (STU-CR-6 part 2, the runtime-role wizard; G-S3 and G-S4 not granted).** `POST
+/api/write/database-manager/runtime-role/preview` and `.../runtime-role/apply` (module
+`tabrion_studio.write.database_manager.runtime_role`) answer 405 and import nothing unless **both** the
+`schema_designer` and the `database_manager` flag are on, and run on the Database Manager's admin unlock. The wizard
+creates a login role (`tabrion.postgres.create_role`, `LOGIN` only, an optional password sent once) or takes an
+existing one again, then calls `tabrion.postgres.grant_runtime_role` for one schema with its protected tables. It
+reuses `server_checks`, `own_roles`, `read_privileges`, `k2_scan` (an existing role), `display_name` and `refusal` of
+`roles` (ADR 0008 section 6) and adds its own checks: no system schema, the admin role acts as the owner of the schema
+and of every object in it (`role.not_owner`), no SECURITY DEFINER function in the schema (`role.security_definer`).
+Preview, `state` binding, typed role name and audit (`dbm.role.runtime`) as for every role change; a grant that
+Tabrion refuses after the role was created drops the role again (`undone`). The profile export
 writes single-host profiles only (W-10, TB-148): a multi-host profile is refused, never cut short. Write and admin
 secrets are never exported (N-5).
 

@@ -64,18 +64,19 @@ is used.
 | `tabrion.plan.migration_markers` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.plan.plan` | `src/tabrion_studio/write/schema_designer/draft.py`, `tests/security/test_schema_designer_compare.py`, `tests/security/test_schema_designer_compare_postgres.py`, `tests/security/test_schema_designer_draft.py`, `tests/security/test_schema_designer_draft_postgres.py` |
 | `tabrion.plan.revision_text` | `src/tabrion_studio/write/schema_designer/revision.py` |
-| `tabrion.postgres` | `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/database_manager/roles.py` |
+| `tabrion.postgres` | `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/database_manager/runtime_role.py` |
 | `tabrion.postgres.ExtensionStatus` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py` |
-| `tabrion.postgres.RoleOptions` | `src/tabrion_studio/write/database_manager/roles.py` |
+| `tabrion.postgres.RoleOptions` | `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/database_manager/runtime_role.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.postgres.alter_role` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.create_database` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py` |
-| `tabrion.postgres.create_role` | `src/tabrion_studio/write/database_manager/roles.py` |
+| `tabrion.postgres.create_role` | `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/database_manager/runtime_role.py` |
 | `tabrion.postgres.drop_database` | `src/tabrion_studio/write/database_manager/delete.py` |
-| `tabrion.postgres.drop_role` | `src/tabrion_studio/write/database_manager/roles.py` |
+| `tabrion.postgres.drop_role` | `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/database_manager/runtime_role.py` |
 | `tabrion.postgres.extension_status` | `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.grant_membership` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.grant_privileges` | `src/tabrion_studio/write/database_manager/roles.py` |
+| `tabrion.postgres.grant_runtime_role` | `src/tabrion_studio/write/database_manager/runtime_role.py` |
 | `tabrion.postgres.revoke_membership` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.revoke_privileges` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.role_privileges` | `src/tabrion_studio/write/database_manager/roles.py` |

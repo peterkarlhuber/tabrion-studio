@@ -23,6 +23,19 @@ All notable changes to this project are documented here. The format follows
   `run.start`/`run.result` with actions `dbm.profile_export` and `dbm.profile_import`, without folder, host or
   reference. New problems `studio.dbm_profile_import_*` with `import.*` field issues; the page's "Profile pairs,
   import and export" part in English and German; the guide's section of the same name.
+- STU-CR-6 part 2 (in development, locked by G-S3 and G-S4; neither granted, the flags stay off, no default changes):
+  the runtime-role wizard. "Runtime role for an application" in the Database Manager creates a login role (or takes
+  an existing one again) and grants it the rows of one schema through Tabrion's `create_role` and
+  `grant_runtime_role`; the protected tables (by default `alembic_version`) stay read-only. `POST
+  /api/write/database-manager/runtime-role/preview` and `.../apply` answer 405 and import nothing unless both the
+  `schema_designer` and the `database_manager` flag are on, and use the Database Manager's admin unlock (the Schema
+  Designer gets none of its own, ADR 0007 section 12). The role rules of ADR 0008 section 6 are reused from the role
+  management, not copied; the wizard adds `role.not_owner`, `role.security_definer` and `role.system_object`. Preview,
+  `state` binding, typed name and the audit record `dbm.role.runtime` (no password); a grant Tabrion refuses after the
+  role was created drops the role again. en and de; the Database Manager guide and ADR 0007 are updated. From the
+  review of #154: the guide says that the grant's default privileges let the runtime role run functions the admin
+  role creates later, SECURITY DEFINER ones included, and how to take that default back (I-1); the Schema Designer
+  threat model names that and SECURITY DEFINER trigger functions outside the schema as residual risk 5 (I-2).
 - STU-CR-7 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's focus, guide and browser tests. After a plan is confirmed the focus moves to the
   confirmation's status, and after a run or dry run to its outcome, never to Run (GS3-14); the guide's "Its limits at
@@ -45,8 +58,7 @@ All notable changes to this project are documented here. The format follows
   `0600`, never over a file); Windows is refused. Audit `run.start`/`run.result` with action
   `schema_designer.profile_export`. New problems `studio.profile_export_invalid`, `_unconfirmed`, `_multi_host`,
   `_folder`, `_reserved`, `_exists`, `_platform` and `_failed`, with `export.*` field issues; the "Export profiles"
-  section in English and German; the guide's "Export profiles" section. The runtime-role wizard (part 2) follows
-  STU-XDM-4.
+  section in English and German; the guide's "Export profiles" section. The runtime-role wizard is part 2 (above).
 - G-S2 follow-up 3A (before G-R; the write flags stay off by default): the audit log's anchor in the OS keyring.
   Studio keeps the last record's number and hash in the keyring (one entry per audit folder, nothing secret) and
   moves it on with every record. A log that no longer reaches it at start (the folder removed or moved aside, cut,

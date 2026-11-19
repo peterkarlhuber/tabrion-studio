@@ -611,3 +611,146 @@ export async function applyRole(
   const done = parseRoleResult(result.value);
   return done === null ? UNREADABLE : { ok: true, value: done };
 }
+
+// --- the runtime-role wizard (STU-CR-6 part 2; both the Schema Designer and the Database Manager flag) ------------
+
+/** A runtime-role wizard run: create the role (or take an existing one again) and grant it one schema's rows. */
+export interface RuntimeRoleRequest {
+  role: string;
+  schema: string;
+  protectedTables: string[];
+  create: boolean;
+}
+
+export interface RuntimeSchemaFacts {
+  tables: number;
+  protectedFound: string[];
+  protectedMissing: string[];
+}
+
+export interface RuntimeRolePreview {
+  environment: string | null;
+  database: string;
+  target: RolePrivilegesView | null;
+  k2: EscalationCheck | null;
+  schema: RuntimeSchemaFacts | null;
+  refusals: string[];
+  warnings: string[];
+  typed: string;
+  state: string;
+}
+
+export interface RuntimeRoleResult {
+  role: string;
+  schema: string;
+  created: boolean;
+  connect: boolean;
+  canCreate: boolean;
+  tables: number;
+  after: RolePrivilegesView | null;
+  auditPending: boolean;
+}
+
+export function parseRuntimeRolePreview(body: unknown): RuntimeRolePreview | null {
+  const doc = record(body);
+  const typed = text(doc?.typed);
+  const state = text(doc?.state);
+  if (doc === null || doc.action !== 'runtime' || typed === null || state === null) return null;
+  const k2 = record(doc.k2);
+  const schema = record(doc.schema);
+  return {
+    environment: text(doc.environment),
+    database: text(doc.database) ?? '',
+    target: parsePrivileges(doc.target),
+    k2:
+      k2 === null
+        ? null
+        : {
+            found: texts(k2.found),
+            checked: texts(k2.checked),
+            unchecked: texts(k2.unchecked),
+            noConnect: count(k2.no_connect) ?? 0,
+          },
+    schema:
+      schema === null
+        ? null
+        : {
+            tables: count(schema.tables) ?? 0,
+            protectedFound: texts(schema.protected_found),
+            protectedMissing: texts(schema.protected_missing),
+          },
+    refusals: texts(doc.refusals),
+    warnings: texts(doc.warnings),
+    typed,
+    state,
+  };
+}
+
+export function parseRuntimeRoleResult(body: unknown): RuntimeRoleResult | null {
+  const doc = record(body);
+  const role = text(doc?.role);
+  const schema = text(doc?.schema);
+  if (doc === null || doc.action !== 'runtime' || role === null || schema === null) return null;
+  return {
+    role,
+    schema,
+    created: doc.created === true,
+    connect: doc.connect === true,
+    canCreate: doc.can_create === true,
+    tables: count(doc.tables) ?? 0,
+    after: parsePrivileges(doc.after),
+    auditPending: doc.audit_pending === true,
+  };
+}
+
+function runtimeBody(connectionId: string, request: RuntimeRoleRequest): Record<string, unknown> {
+  return {
+    connection_id: connectionId,
+    role: request.role,
+    schema: request.schema,
+    protected_tables: request.protectedTables,
+    create: request.create,
+  };
+}
+
+/** `POST /api/write/database-manager/runtime-role/preview`: what the wizard would do; changes nothing. */
+export async function previewRuntimeRole(
+  fetcher: typeof fetch,
+  connectionId: string,
+  request: RuntimeRoleRequest,
+): Promise<Result<RuntimeRolePreview>> {
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/write/database-manager/runtime-role/preview',
+    runtimeBody(connectionId, request),
+  );
+  if (!result.ok) return result;
+  const preview = parseRuntimeRolePreview(result.value);
+  return preview === null ? UNREADABLE : { ok: true, value: preview };
+}
+
+/**
+ * `POST /api/write/database-manager/runtime-role/apply`: bound to the preview's `state` and the typed role name.
+ * `password` only for a new role; it goes to the server once and is not kept by the page.
+ */
+export async function applyRuntimeRole(
+  fetcher: typeof fetch,
+  connectionId: string,
+  request: RuntimeRoleRequest,
+  confirm: { state: string; typed: string; password: string | null },
+): Promise<Result<RuntimeRoleResult>> {
+  const body = runtimeBody(connectionId, request);
+  body.state = confirm.state;
+  body.typed = confirm.typed;
+  if (confirm.password !== null) body.password = confirm.password;
+  const result = await send<unknown>(
+    fetcher,
+    'POST',
+    '/api/write/database-manager/runtime-role/apply',
+    body,
+  );
+  if (!result.ok) return result;
+  const done = parseRuntimeRoleResult(result.value);
+  return done === null ? UNREADABLE : { ok: true, value: done };
+}

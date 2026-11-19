@@ -89,7 +89,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 43
+    assert len(methods) == 45
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -127,6 +127,8 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/database-manager/profiles/export",
         "POST /api/write/database-manager/profiles/import/preview",
         "POST /api/write/database-manager/profiles/import",
+        "POST /api/write/database-manager/runtime-role/preview",  # STU-CR-6 part 2: both flags (G-S3, G-S4)
+        "POST /api/write/database-manager/runtime-role/apply",
     ):
         assert expected in methods
     assert "PUT /api/write/profiles/write:parts-write/secret" in methods

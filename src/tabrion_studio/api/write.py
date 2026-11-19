@@ -98,6 +98,13 @@
   over an existing profile) to the user's store as read profiles (STU-XDM-5,
   :mod:`tabrion_studio.write.database_manager.profiles`). Database Manager flag only; with it off they answer 405 and
   nothing of the area is imported.
+* ``POST /api/write/database-manager/runtime-role/preview``: ``{"connection_id", "role", "schema",
+  "protected_tables", "create"}``: what the runtime-role wizard would do and what refuses it (changes nothing).
+  ``POST /api/write/database-manager/runtime-role/apply``: the same with ``"password"``, ``"typed"`` and the
+  preview's ``"state"``: create the role (``LOGIN`` only) when asked and grant its runtime privileges through
+  ``tabrion.postgres.grant_runtime_role`` (STU-CR-6 part 2, :mod:`tabrion_studio.write.database_manager.runtime_role`),
+  on the Database Manager's admin unlock. Only while **both** the Schema Designer and the Database Manager flag are on
+  (STU-ADR-0007 section 12); otherwise 405 and nothing of it is imported.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -174,6 +181,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/database-manager/profiles/export", ("POST",)),
     ("/api/write/database-manager/profiles/import/preview", ("POST",)),
     ("/api/write/database-manager/profiles/import", ("POST",)),
+    # STU-CR-6 part 2: the runtime-role wizard; both the Schema Designer and the Database Manager flag (G-S3, G-S4).
+    ("/api/write/database-manager/runtime-role/preview", ("POST",)),
+    ("/api/write/database-manager/runtime-role/apply", ("POST",)),
 )
 
 
