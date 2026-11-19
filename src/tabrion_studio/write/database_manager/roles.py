@@ -8,7 +8,8 @@ Imported only by :mod:`tabrion_studio.write.routes` after it checked the ``datab
 role's privileges read again before anything is read or changed (section 6, ``studio.admin_over_privileged``, which
 ends the unlock). Only when the unlock's stored environment is ``dev`` or ``test``, and never on a server that any
 PROD profile of the user's store names (by address and port, or by ``system_identifier`` when that profile is open):
-role changes are cluster-wide, so a PROD alias of the same server is refused too (``role.prod``). PostgreSQL 16 or
+role changes are cluster-wide, so a PROD alias of the same server is refused too (``role.prod``; the server matching of
+:mod:`tabrion_studio.write.prod_targets`, for any database). PostgreSQL 16 or
 later only (``studio.dbm_role_requires_16``; before 16 CREATEROLE is superuser-equivalent, D-1). SQLite has no roles.
 
 **Only through Tabrion.** Every change is one call of tabrion's stable role DDL (``create_role``, ``alter_role``,
@@ -75,6 +76,7 @@ import unicodedata
 from tabrion.errors import PermissionDenied, RoleMissing, RoleUnsafe, TabrionError, UsageError, classify, safe_message
 
 from tabrion_studio.config.schema import Profile
+from tabrion_studio.write import prod_targets
 from tabrion_studio.write.connection import WriteError, admin_refusing_findings, privileges_now
 from tabrion_studio.write.database_manager import backups
 from tabrion_studio.write.database_manager.backups import DriverFailure, Manager
@@ -367,16 +369,19 @@ def _read_profile(manager: Manager, unlock: Unlock) -> Profile:
 
 
 def _prod_server(manager: Manager, unlock: Unlock, read: Profile) -> bool:
-    """Whether a PROD profile of the user's store names this server (any database: roles are the cluster's)."""
-    here = backups._addresses(read.host, read.port)
+    """Whether a PROD profile of the user's store names this server (any database: roles are the cluster's).
+
+    The server matching of :mod:`tabrion_studio.write.prod_targets` (the same port and overlapping addresses, or the
+    same ``system_identifier``), without its database-name check, which :func:`prod_targets.names_prod` adds."""
+    here = prod_targets.addresses(read.host, read.port)
     port = read.port or 5432
-    identifier = backups._system_identifier(unlock.connection.fetch)
+    identifier = prod_targets.system_identifier(unlock.connection.fetch)
     open_ids = {c.profile_id: c for c in manager.registry.list()}
     for profile in backups._prod_profiles(manager, "postgresql"):
-        if (profile.port or 5432) == port and bool(backups._addresses(profile.host, profile.port) & here):
+        if (profile.port or 5432) == port and bool(prod_targets.addresses(profile.host, profile.port) & here):
             return True
         opened = open_ids.get(f"user:{profile.name}")
-        if identifier is not None and opened is not None and backups._system_identifier(opened.fetch) == identifier:
+        if identifier is not None and opened is not None and prod_targets.system_identifier(opened.fetch) == identifier:
             return True
     return False
 

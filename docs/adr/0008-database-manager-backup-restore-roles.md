@@ -346,7 +346,8 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
   stored environment is `dev` or `test`; PostgreSQL 16 or later (`studio.dbm_role_requires_16`); refused
   (`studio.dbm_role_not_allowed`, `role.prod`) when any PROD profile of the user's store names the **server**
   (any database: roles are the cluster's) by address and port or, where its connection is open, by
-  `system_identifier`, so `localhost` for `127.0.0.1` does not hide it. The admin check of section 6 runs on every
+  `system_identifier`, so `localhost` for `127.0.0.1` does not hide it (the shared server matching of
+  `tabrion_studio.write.prod_targets`, `addresses` and `system_identifier`, without its database-name check). The admin check of section 6 runs on every
   request and again on the changing session; a refusing finding answers `studio.admin_over_privileged` and ends the
   unlock (also when Tabrion reports `postgres.caller_unsafe`).
 - **Never granted:** SUPERUSER, BYPASSRLS, CREATEROLE, REPLICATION, an ADMIN or GRANT option (a request that names one
