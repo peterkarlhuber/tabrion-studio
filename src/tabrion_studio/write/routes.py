@@ -58,7 +58,7 @@ from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.config.writer import SaveError
 from tabrion_studio.problems import db_problem_response, problem_response
 from tabrion_studio.services.connections import ConnectionRegistry
-from tabrion_studio.write.audit import AuditError, AuditLog
+from tabrion_studio.write.audit import AuditAnchor, AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.plan import MAX_REQUEST_BYTES, Plans
 from tabrion_studio.write.secret_confirm import CONFIRMATION_FILE, SecretConfirmations, secret_pair
@@ -184,7 +184,8 @@ def add_enabled_write_routes(
     log_dir: Path | None = None,
     migrations: Any = None,
 ) -> Unlocks:
-    audit = AuditLog(audit_dir)
+    # G-S2 3A: the chain's end is also kept in the OS keyring, so a removed or reset log is reported.
+    audit = AuditLog(audit_dir, anchor=None if audit_dir is None else AuditAnchor(config.secrets.keyring, audit_dir))
     # The audit folder is <folder of write-areas.toml>/audit (review N-1 of PR #116); the confirmed pairs live next
     # to it. No folder: nothing confirmed.
     confirmations = SecretConfirmations(None if audit_dir is None else audit_dir.parent / CONFIRMATION_FILE)

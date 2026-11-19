@@ -183,9 +183,18 @@ the server answers `405` and the write code is not even loaded.
     - the log grows by about 4 MB per segment (`audit-<first record>.jsonl`); Studio never deletes or overwrites a
       segment, and keeps every segment without limit (retention is unlimited, decision 3A at G-S2). To archive the
       log, stop Studio and move the whole `audit` folder aside as described above; Studio then begins a new chain.
-      Do not remove single segments: the log would no longer verify. The chain has no key and no anchor outside its
-      folder yet, so removing the whole folder starts a new chain without a warning (residual risk 3; an anchor in
-      the keyring is planned before a public release). `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
+      Do not remove single segments: the log would no longer verify;
+    - **anchor in the keyring (decision 3A at G-S2):** Studio also keeps the last record's number and hash in your OS
+      keyring (one entry per audit folder, nothing secret in it) and moves it on with every record. When Studio starts
+      and the log no longer reaches that anchor (the folder was removed or moved aside, the log was cut, or a whole
+      new chain was put in its place), it writes an `audit.reset` record first, goes on writing, and the write profile
+      section says "found missing or reset" for as long as such records are in the log. Moving the folder aside
+      yourself, as above, gives that notice too. Without a usable keyring the log works as before and the section
+      says that a removed log would go unnoticed. On Linux without a keyring service (a headless server, or a
+      session without the Secret Service, for example GNOME Keyring or KWallet) the anchor is therefore always
+      shown as unavailable (`anchor` `unavailable` in `GET /api/write/audit`); start a keyring service for the
+      session to use it. A program running as you can change the keyring too (residual
+      risk 3). `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
       log, and with every area off it answers `405` like every other write route.
 - **Plans, preview and confirmation (STU-XW-3).** While an area is on, a change runs only as a plan that Studio
   keeps on the server and that you saw and confirmed:

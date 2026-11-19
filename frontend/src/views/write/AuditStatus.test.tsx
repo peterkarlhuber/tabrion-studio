@@ -78,8 +78,56 @@ describe('AuditStatus (STU-XW-2)', () => {
       available: false,
       problem: null,
       pending: 0,
+      anchor: 'none',
+      resets: 0,
       verification: { ok: false, records: 0, problem: null, at: null },
       records: [],
+    });
+  });
+});
+
+describe('AuditStatus: the keyring anchor (G-S2 3A)', () => {
+  const base = {
+    available: true,
+    problem: null,
+    pending: 0,
+    verification: { ok: true, records: 3, problem: null, at: null },
+    records: [],
+  };
+
+  it('reports a log found missing or reset for as long as its reset records are in the chain', async () => {
+    const { fetcher } = fetcherFor({ ...base, anchor: 'ok', resets: 2 });
+    render(<AuditStatus fetcher={fetcher} />);
+    expect((await screen.findByTestId('write-audit-reset')).textContent).toMatch(
+      /found missing or reset 2 times/,
+    );
+  });
+
+  it('reports a reset found at this start', async () => {
+    const { fetcher } = fetcherFor({ ...base, anchor: 'reset', resets: 1 });
+    render(<AuditStatus fetcher={fetcher} />);
+    expect((await screen.findByTestId('write-audit-reset')).textContent).toMatch(/reset once/);
+  });
+
+  it('says when no keyring keeps the anchor, and when it failed', async () => {
+    const first = fetcherFor({ ...base, anchor: 'unavailable', resets: 0 });
+    const view = render(<AuditStatus fetcher={first.fetcher} />);
+    expect((await screen.findByTestId('write-audit-anchor')).textContent).toMatch(
+      /No usable keyring/,
+    );
+    expect(screen.queryByTestId('write-audit-reset')).toBeNull();
+    view.unmount();
+    const second = fetcherFor({ ...base, anchor: 'failed', resets: 0 });
+    render(<AuditStatus fetcher={second.fetcher} />);
+    expect((await screen.findByTestId('write-audit-anchor')).textContent).toMatch(
+      /could not be updated/,
+    );
+  });
+
+  it('parses the anchor defensively', () => {
+    expect(parseAudit({ ...base, anchor: 'whatever', resets: -1 })).toMatchObject({
+      anchor: 'none',
+      resets: 0,
     });
   });
 });
