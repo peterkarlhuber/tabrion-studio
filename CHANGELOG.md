@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDM-6 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
+  changes): the Database Manager's guide and browser tests. The guide's new "Its limits at a glance" (a `pg_dump`
+  archive is not a complete backup, the PROD lock, the backup first, the preview and typed name, the role rules, the
+  admin rights set up outside Studio, the Windows limits) and "The admin role's rights" (what each action needs)
+  (GS4-23). New e2e `database-manager-dialogs.spec.ts` against the harness's fake server (scenario
+  `database-manager`, `src/harness/databaseManager.ts`): the backup before a delete (D-11), the restore (D-12), the
+  delete with FORCE typed again (D-13), the role changes and the runtime-role wizard (D-14), each with the typed name
+  gate, the destructive button never focused, a password sent only with the apply, and axe in light and dark, English
+  and German (GS4-24; three browsers in CI). `database-manager-backend.spec.ts` also deletes the SQLite connection's
+  file against a real server, with the backup kept. No code change outside the harness.
 - STU-CR-6 part 2 (in development, locked by G-S3 and G-S4; neither granted, the flags stay off, no default changes):
   the runtime-role wizard. "Runtime role for an application" in the Database Manager creates a login role (or takes
   an existing one again) and grants it the rows of one schema through Tabrion's `create_role` and

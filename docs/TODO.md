@@ -669,7 +669,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.3 | Database creation in the admin area (owner grant of 2026-11-18: database creation and role management belong to G-S4 with separate permissions) | TABRION STU-CR-2, STU-CR-3 (moved) | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stucreateadmin`, draft PR; review pending): `tabrion_studio.write.database_manager.create`, routes `POST /api/write/database-manager/create/sqlite` and `.../create/postgresql` behind `database_manager` (the `schema_designer` flag alone answers 405 and imports nothing), PostgreSQL on the admin unlock with the admin check before `CREATE DATABASE`, SQLite without an unlock (no role exists), a write role with `CREATEDB` refused at the unlock and at each run (`studio.write_role_over_privileged`), audit `dbm.create_*`, the page offers the admin profile (en, de). Evidence: GS4-27, GS3-28 in `tests/security/test_dbm_create.py`, `test_dbm_create_postgres.py`, `test_write_privileges.py`, `CreateDatabase.test.tsx`, `e2e/create-database-backend.spec.ts`. Decided: [Owner points decided per the G-S3/G-S4 grant](#owner-points-decided-per-the-g-s3g-s4-grant) |
 | 1.3 | PostgreSQL roles through the admin profile (E-X6) with the TB-149 obligations: re-read after commit, per-database K-2 check, `public_definers` and CREATE-on-database warnings, escaped names, admin rules at least those of a write profile | TABRION STU-XDM-4 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm4`, draft PR; review pending): `tabrion_studio.write.database_manager.roles` on tabrion's stable role DDL, the routes `POST /api/write/database-manager/roles`, `.../roles/preview` and `.../roles/apply`, the audit fields `member`, `options_set`, `password_set`, `on`, `privileges`, `grant_objects`, `differences`, the page's role part (en, de). Evidence: GS4-01, GS4-03, GS4-11..18, GS4-20 in `tests/security/test_dbm_roles.py`, `test_dbm_roles_postgres.py`, `DatabaseManager.test.tsx`. Open: [STU-XDM-4 open points](#stu-xdm-4-open-points) |
 | 1.3 | Profile pairs, import and export (I-109 j per imported pair, single-host only) | TABRION STU-XDM-5 | G-S4 | Open; needs STU-XW-4. Acceptance: GS4-19, GS4-21 |
-| 1.3 | i18n, docs, E2E in three browsers and axe (D-11..D-14) | TABRION STU-XDM-6 | G-S4 | Open; needs STU-XDM-2..5. Acceptance: GS4-23, GS4-24 |
+| 1.3 | i18n, docs, E2E in three browsers and axe (D-11..D-14) | TABRION STU-XDM-6 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm6`, draft PR; review pending), on what is on `master` (STU-XDM-2..4, the runtime-role wizard; STU-XDM-5 brings its own i18n and E2E): GS4-23 the guide's "Its limits at a glance" and "The admin role's rights" ([Database Manager](guide/database-manager.md)), docs checklist D-29; GS4-24 `e2e/database-manager-dialogs.spec.ts` against the harness (scenario `database-manager`): D-11 backup before the delete, D-12 restore, D-13 delete and FORCE, D-14 role changes and the runtime-role wizard, typed-name gates, the destructive button never focused, a password only with the apply, axe light and dark, en and de, in Chromium, Firefox and WebKit in CI; `e2e/database-manager-backend.spec.ts` adds the SQLite delete against a real server. i18n: every Database Manager text in en and de (checked, no change needed). Acceptance: GS4-23, GS4-24 |
 | 1.3 | G-S4 review and fixes | TABRION STU-XDM-7 | G-S4 | Open; needs STU-XDM-6. Acceptance: GS4-25 |
 
 Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
@@ -1262,7 +1262,8 @@ flag stays off by default. Each point needs the independent review or the owner.
    (`restore.platform`, `test_dbm_backup_restore.py::test_a_new_sqlite_file_is_never_restored_on_windows`) until a
    check of the folder's access list exists and is reviewed; database creation moved to the admin area (G-S4) on
    branch `claude/project-thread-rdo6g3-stucreateadmin`.
-6. **No E2E yet** for the delete part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
+6. [x] **E2E of the delete part** (STU-XDM-6): `e2e/database-manager-dialogs.spec.ts` (PostgreSQL and SQLite,
+   FORCE, against the harness) and `e2e/database-manager-backend.spec.ts` (SQLite, a real server).
 
 ### STU-XDM-4 open points
 
@@ -1288,7 +1289,8 @@ flag stays off by default. Each point needs the independent review or the owner.
 5. [x] **Review of #149 (ACCEPTED with L-1):** L-1, I-2 and I-1 fixed or documented on the same PR: roles above
    Studio's own roles refused (`own_role_reached`), profiles without a user counted by their OS user or refused
    (`own_role_unknown`), the residual window documented.
-4. **No E2E yet** for the role part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
+4. [x] **E2E of the role part** (STU-XDM-6): `e2e/database-manager-dialogs.spec.ts` against the harness (no
+   PostgreSQL server in the e2e jobs; the real server's role rules are in `test_dbm_roles_postgres.py`).
 
 ## Cross-repository checks still to add
 
