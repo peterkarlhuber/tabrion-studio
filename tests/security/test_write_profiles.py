@@ -311,7 +311,10 @@ def test_a_write_profiles_secret_is_its_own_and_never_listed(env: WriteEnv) -> N
     assert created.status_code == 201, created.text
     stored = env.send("PUT", "/api/write/profiles/write:pg-write/secret", {"secret": CANARY_SECRET, "store": "keyring"})
     assert stored.status_code == 204
-    keys = [key for (_, key) in env.fake.values]
+    # The audit anchor (G-S2 3A) has its own entry, and it never holds a secret.
+    anchors = {k: v for (_, k), v in env.fake.values.items() if k.startswith("audit-anchor:")}
+    assert len(anchors) == 1 and all(CANARY_SECRET not in v for v in anchors.values())
+    keys = [key for (_, key) in env.fake.values if not key.startswith("audit-anchor:")]
     assert len(keys) == 1 and keys[0].startswith("write:write:pg-write:")
     listing = env.send("GET", "/api/write/profiles")
     assert listing.status_code == 200 and CANARY_SECRET not in listing.text
@@ -323,7 +326,7 @@ def test_a_write_profiles_secret_is_its_own_and_never_listed(env: WriteEnv) -> N
     assert {p["id"] for p in profiles.json()["profiles"]} == {"user:parts", "user:pg"}
     # The read profile's own secret entry is not the write profile's.
     assert env.send("DELETE", "/api/write/profiles/write:pg-write/secret", {}).status_code == 204
-    assert env.fake.values == {}
+    assert [key for (_, key) in env.fake.values if not key.startswith("audit-anchor:")] == []
 
 
 def test_editing_and_removing_a_write_profile(env: WriteEnv) -> None:

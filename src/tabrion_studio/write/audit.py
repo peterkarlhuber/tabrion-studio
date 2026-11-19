@@ -36,6 +36,18 @@ folder can rebuild a whole consistent chain; that is malware running as the user
 model, residual risk 3). Studio verifies the log when it opens it and on every listing; a log that fails is not appended
 to, so no write runs until the user has moved the folder aside (it is kept for inspection, never repaired by Studio).
 
+**Anchor outside the folder (G-S2 decision 3A).** With an :class:`AuditAnchor`, Studio also keeps the last
+``(seq, hash)`` of the chain in the OS keyring (service ``tabrion-studio``, one entry per audit folder), updated after
+every record under the folder lock. When Studio opens the log and the chain no longer reaches the anchor (the folder
+was removed or moved aside and a new chain started, the log was cut, or a record at the anchor's position has another
+hash), it writes an ``audit.reset`` record (the anchor's sequence number and hash and how many records it found) as
+the first record of what follows, reports ``anchor: "reset"`` in :meth:`AuditLog.status`, and moves the anchor on. It
+does not stop writes: the reset itself is now part of the chain and every listing counts such records (``resets``),
+so the page shows "log missing or reset" until the user inspects it. Without a usable keyring the anchor is
+``unavailable`` and the log works as before (residual risk 3); a failed keyring write makes it ``failed`` (the anchor
+lags, which only weakens the check). Malware running as the user can change the keyring too: outside the protection
+goal. Retention stays unlimited (documented in the security guide).
+
 **Failure behavior.** :meth:`AuditLog.append` fails closed: it raises :class:`AuditError` and the caller does not do
 the action. It is used for the records before an action (``run.start``, ``unlock``). A record after an action that
 already happened (``run.result``, ``lock``, a saved profile) uses :meth:`AuditLog.record`: if it cannot be written,
@@ -71,6 +83,7 @@ __all__ = [
     "EVENTS",
     "FIELDS",
     "GENESIS",
+    "AuditAnchor",
     "AuditError",
     "AuditLog",
     "Verification",
@@ -110,6 +123,7 @@ EVENTS = frozenset(
         "run.start",
         "run.result",
         "audit.pending_dropped",
+        "audit.reset",  # G-S2 3A: the chain no longer reaches the keyring anchor (log missing or reset)
     }
 )
 
@@ -215,6 +229,9 @@ FIELDS: dict[str, Callable[[object], object]] = {
     "late": _flag,  # written from a pending marker (N-4)
     "occurred": _time,  # when a late record happened
     "dropped": _count,  # pending records that did not fit (MAX_PENDING)
+    "anchor_seq": _count,  # G-S2 3A: the sequence number the keyring anchor named when a reset was found
+    "anchor_hash": _plan_hash,  # G-S2 3A: the hash the keyring anchor named
+    "found": _count,  # G-S2 3A: the records found in the folder when the reset was found
     "source": _token,  # STU-XW-4: the kind of a confirmed secret reference (keyring, env, file, none), never its target
     "foreign": _flag,  # STU-XW-4: whether the confirmed pair's host is foreign (not loopback)
     "pair_hash": _plan_hash,  # STU-XW-4: the digest of the confirmed pair of server and reference
@@ -292,6 +309,10 @@ class _Scan:
     current_first: int | None = None
     current_size: int = 0
     tail: deque[dict[str, Any]] = field(default_factory=deque)
+    #: The number of ``audit.reset`` records in the chain (G-S2 3A).
+    resets: int = 0
+    #: The hash of the record at the sequence number ``_scan`` was asked for (``at``), if the chain has it.
+    hash_at: str | None = None
 
 
 class _Broken(Exception):
@@ -369,8 +390,9 @@ def _head(folder: Path) -> tuple[int, str] | None:
     return doc["seq"], doc["hash"]
 
 
-def _scan(folder: Path, keep: int = 0) -> _Scan:
-    """Read and verify every segment and the head; the last ``keep`` records are kept for a listing."""
+def _scan(folder: Path, keep: int = 0, at: int | None = None) -> _Scan:
+    """Read and verify every segment and the head; the last ``keep`` records are kept for a listing, and the hash of
+    the record ``at`` (the keyring anchor's) is noted."""
     scan = _Scan(Verification(ok=True, records=0), tail=deque(maxlen=keep))
     hashes_at: dict[int, str] = {}
     seq = 0
@@ -391,6 +413,10 @@ def _scan(folder: Path, keep: int = 0) -> _Scan:
                 seq, prev = doc["seq"], doc["hash"]
                 if head is not None and seq == head[0]:
                     hashes_at[seq] = prev
+                if seq == at:
+                    scan.hash_at = prev
+                if doc["event"] == "audit.reset":
+                    scan.resets += 1
                 if keep:
                     scan.tail.append({k: doc[k] for k in ("seq", "time", "event", "fields")})
             if partial:
@@ -540,14 +566,61 @@ def _read_pending(folder: Path) -> tuple[list[dict[str, Any]], int]:
         raise ValueError("not a pending marker") from None
 
 
+class AnchorUnavailable(Exception):
+    """The keyring cannot keep or give the anchor (no usable keyring, a locked or failing one)."""
+
+
+class AuditAnchor:
+    """The last ``(seq, hash)`` of an audit folder's chain, kept in the OS keyring (G-S2 decision 3A).
+
+    ``store`` is the :class:`tabrion_studio.config.secrets.KeyringStore` of the process (never a plain-text fallback).
+    The entry's key names the folder by a hash of its absolute path, so several configuration folders keep their
+    own anchors; the value is ``1:<seq>:<hash>`` and holds nothing secret."""
+
+    def __init__(self, store: Any, folder: Path) -> None:
+        self.store = store
+        path = str(folder.absolute()).encode("utf-8", "surrogatepass")
+        self.key = "audit-anchor:" + hashlib.sha256(path).hexdigest()[:32]
+
+    def read(self) -> tuple[int, str] | None:
+        """The anchor, or None when there is none yet. Raises :class:`AnchorUnavailable`; an entry that is not an
+        anchor counts as "no anchor here" for the comparison, never as a match (it is replaced at the next record)."""
+        try:
+            if not self.store.available:
+                raise AnchorUnavailable()
+            value = self.store.get(self.key)
+        except AnchorUnavailable:
+            raise
+        except Exception:
+            raise AnchorUnavailable() from None
+        if value is None:
+            return None
+        parts = value.split(":") if isinstance(value, str) else []
+        if len(parts) != 3 or parts[0] != "1" or not parts[1].isdigit() or not _HEX.fullmatch(parts[2]):
+            # Not ours: an anchor that cannot be read cannot vouch for the log, so it reads as a reset at position 1.
+            return (1, GENESIS)
+        return int(parts[1]), parts[2]
+
+    def write(self, seq: int, digest: str) -> None:
+        """Keep ``(seq, digest)``. Raises :class:`AnchorUnavailable`."""
+        try:
+            self.store.set(self.key, f"1:{seq}:{digest}")
+        except Exception:
+            raise AnchorUnavailable() from None
+
+
 class AuditLog:
     """The audit log of this Studio process; thread-safe, and safe with other Studio processes on the same folder
     (every change under :func:`_folder_lock`, with the chain's end read again from disk first). ``folder`` None: no
     log, every record is refused."""
 
-    def __init__(self, folder: Path | None, clock: Callable[[], str] = _now) -> None:
+    def __init__(self, folder: Path | None, clock: Callable[[], str] = _now, anchor: AuditAnchor | None = None) -> None:
         self.folder = folder
         self.clock = clock
+        self.anchor = anchor
+        #: ``none`` (no anchor), ``ok``, ``unavailable`` (no keyring), ``failed`` (a keyring write failed) or
+        #: ``reset`` (this process found the chain no longer reaching the anchor and recorded it).
+        self._anchor_state = "none" if anchor is None else "ok"
         self._lock = threading.Lock()
         #: Pending records that not even the pending marker file could take (in memory only, N-4).
         self._pending: list[dict[str, Any]] = []
@@ -569,7 +642,12 @@ class AuditLog:
         try:
             ensure_private_dir(self.folder)
             with _folder_lock(self.folder):
-                self._adopt(_scan(self.folder))
+                anchor = self._read_anchor()
+                scan = _scan(self.folder, at=None if anchor is None else anchor[0])
+                self._adopt(scan)
+                if self._problem is not None:
+                    return
+                self._check_anchor(anchor, scan)
                 if self._problem is not None:
                     return
                 try:
@@ -586,6 +664,53 @@ class AuditLog:
             logger.warning(
                 "audit log folder not usable; writes stay refused", extra={"event": "studio.audit_unavailable"}
             )
+
+    def _read_anchor(self) -> tuple[int, str] | None:
+        """The keyring anchor, or None (none yet, or no usable keyring: then the state says so)."""
+        if self.anchor is None:
+            return None
+        try:
+            return self.anchor.read()
+        except AnchorUnavailable:
+            self._anchor_state = "unavailable"
+            logger.warning(
+                "no keyring anchor for the audit log; a removed log would go unnoticed",
+                extra={"event": "studio.audit_anchor_unavailable"},
+            )
+            return None
+
+    def _check_anchor(self, anchor: tuple[int, str] | None, scan: _Scan) -> None:
+        """Compare the verified chain with the keyring anchor (folder lock held, G-S2 3A). A chain that no longer
+        reaches it is recorded as ``audit.reset``; then, or when there was none, the anchor moves to the chain's end."""
+        if self.anchor is None or self._anchor_state == "unavailable":
+            return
+        if anchor is not None and (scan.last_seq < anchor[0] or scan.hash_at != anchor[1]):
+            logger.warning(
+                "the audit log is missing or was reset: its chain no longer reaches the keyring anchor",
+                extra={"event": "studio.audit_reset"},
+            )
+            self._anchor_state = "reset"
+            try:
+                self._write("audit.reset", {"anchor_seq": anchor[0], "anchor_hash": anchor[1], "found": scan.last_seq})
+            except AuditError:
+                if self._problem is None:
+                    self._problem = "audit.unavailable"
+            return
+        if anchor is None or anchor != (self._seq, self._hash):
+            self._move_anchor()
+
+    def _move_anchor(self) -> None:
+        """Keep the chain's end in the keyring (folder lock held). A failure only weakens the check; it is reported."""
+        if self.anchor is None or self._anchor_state == "unavailable" or self._seq == 0:
+            return
+        try:
+            self.anchor.write(self._seq, self._hash)
+        except AnchorUnavailable:
+            if self._anchor_state != "failed":
+                logger.warning(
+                    "the audit anchor could not be kept in the keyring", extra={"event": "studio.audit_anchor_failed"}
+                )
+            self._anchor_state = "failed"
 
     def _broken(self, problem: str) -> None:
         self._problem = problem
@@ -659,7 +784,12 @@ class AuditLog:
 
     def status(self) -> dict[str, Any]:
         """For the page: whether records can be written, and how many are pending (N-4)."""
-        return {"available": self._problem is None, "problem": self._problem, "pending": self.pending_count}
+        return {
+            "available": self._problem is None,
+            "problem": self._problem,
+            "pending": self.pending_count,
+            "anchor": self._anchor_state,
+        }
 
     @property
     def pending_count(self) -> int:
@@ -808,6 +938,7 @@ class AuditLog:
             # Nothing more is written in this process (fail closed), so the lag never grows.
             self._problem = "audit.head_unwritable"
             logger.warning("audit head not written; writes stay refused", extra={"event": "studio.audit_write_failed"})
+        self._move_anchor()
         return self._seq
 
     def _rotate(self) -> None:
@@ -851,5 +982,6 @@ class AuditLog:
             return {
                 **self.status(),
                 "verification": scan.verification.to_dict(),
+                "resets": scan.resets,
                 "records": list(reversed(scan.tail)),
             }

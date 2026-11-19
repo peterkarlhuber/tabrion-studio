@@ -199,6 +199,9 @@ Studio never:
 - acts on a role whose name holds characters that cannot be seen (shown as `<U+XXXX>`): rename it outside Studio;
 - drops a role that still owns objects: reassign them outside Studio first.
 
+Leave `createrole_self_grant` unset for the admin role: with `set,inherit` it reaches every role it creates, so
+Studio refuses every later change to those roles as one of its own (`own_role_reached`, fail closed).
+
 After every change Studio reads the role again and shows any difference to what Tabrion reported (another session may
 have changed it meanwhile). Every change is written to the audit log (`dbm.role.<change>`). The admin role needs
 CREATEROLE on PostgreSQL 16 or later for this; it must not have SUPERUSER, BYPASSRLS, REPLICATION or a server-file
