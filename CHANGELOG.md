@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDM-7 (G-S4 gate, no default changes; the `database_manager` flag stays off and nothing turns it on): the
+  independent G-S4 gate review accepted the Database Manager on `5a86471` with conditions. B-1: the unlock of an
+  admin profile whose role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role or CREATEROLE before
+  PostgreSQL 16 is now refused (405 `studio.admin_over_privileged`, the connection closed first), as STU-ADR-0008
+  section 6 sets out; every action still checks again on its own session. Tests:
+  `tests/security/test_write_unlock.py` and `tests/security/test_dbm_roles_postgres.py`
+  (`test_an_over_privileged_admin_role_is_not_unlocked`). B-3: the G-S4 owner decisions are recorded as decided per
+  the owner's grant of 2026-11-18 with the safest option (STU-ADR-0008 section 12: tool paths only from the owner's
+  configuration, PostgreSQL restore only into a new database, backups never deleted by Studio, no release
+  exception, no Database Manager action on PROD, the Windows limits); the guide says that backups are sensitive full
+  copies to remove by hand. H-2 and G-R stay mandatory before any publication.
 - STU-XDM-5 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
   changes): profile pairs, import and export in the Database Manager. Four routes, 405 and not even loaded with the
   flag off: `POST /api/write/database-manager/profiles/export/preview` and `.../profiles/export` reuse the shared

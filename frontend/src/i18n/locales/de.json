@@ -1163,7 +1163,7 @@
     "dbm_role_object_missing": "Ein Objekt der Rechteänderung gibt es in der verbundenen Datenbank nicht. Es wurde nichts geändert.",
     "dbm_role_denied": "Die Admin-Rolle darf dieses Recht nicht vergeben (sie besitzt das Objekt nicht und hat das Recht nicht mit GRANT-Option). Es wurde nichts geändert.",
     "dbm_role_failed": "Die Rollenänderung ließ sich nicht ausführen und wurde zurückgerollt. Es wurde nichts geändert.",
-    "admin_over_privileged": "Die Admin-Rolle hat oder erreicht SUPERUSER, BYPASSRLS, REPLICATION, eine Serverdatei-Rolle oder CREATEROLE vor PostgreSQL 16. Die Entsperrung wurde beendet; nimm eine schlankere Admin-Rolle."
+    "admin_over_privileged": "Die Admin-Rolle hat oder erreicht SUPERUSER, BYPASSRLS, REPLICATION, eine Serverdatei-Rolle oder CREATEROLE vor PostgreSQL 16. Studio entsperrt sie nicht oder beendet die Entsperrung; nimm eine schlankere Admin-Rolle."
   },
   "keyboard": {
     "palette": {

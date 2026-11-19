@@ -395,6 +395,37 @@ def test_an_admin_role_with_a_server_access_role_is_refused(pg: Pg) -> None:
 
 
 @pytest.mark.parametrize(
+    ("grant", "refused"),
+    [
+        ("ALTER ROLE {p}_adm SUPERUSER", True),
+        ("CREATE ROLE {p}_grp NOLOGIN BYPASSRLS; GRANT {p}_grp TO {p}_adm", True),
+        ("GRANT pg_read_server_files TO {p}_adm", True),
+        ("SELECT 1", False),  # CREATEROLE on PostgreSQL 16 and later, as the fixture's admin role has, still opens
+    ],
+)
+def test_an_over_privileged_admin_role_is_not_unlocked(pg: Pg, grant: str, refused: bool) -> None:
+    """STU-ADR-0008 section 6, decided at G-S4 (owner grant of 2026-11-18: over-privileged admin profiles are
+    refused): a new unlock of an admin role with SUPERUSER, BYPASSRLS through a group or a server-file role is refused
+    with 405 ``studio.admin_over_privileged``, names no finding and no role, and unlocks nothing."""
+    for statement in grant.format(p=pg.prefix).split("; "):
+        pg.sql(statement)
+    before = pg.env.send("GET", "/api/write/unlocks").json()["unlocks"]
+    try:
+        second = pg.env.open("user:pg")
+        response = pg.env.unlock(second, "write:pg-adm", "pg-adm")
+    finally:
+        pg.sql(f"ALTER ROLE {pg.prefix}_adm NOSUPERUSER")
+        pg.sql(f"REVOKE pg_read_server_files FROM {pg.prefix}_adm")
+    if refused:
+        assert (response.status_code, response.json()["code"]) == (405, "studio.admin_over_privileged")
+        assert "admin." not in response.text and pg.prefix not in response.text
+        assert pg.env.send("GET", "/api/write/unlocks").json()["unlocks"] == before
+    else:
+        assert response.status_code == 200, response.text
+        assert "admin.createrole" in [f["code"] for f in response.json()["findings"]]
+
+
+@pytest.mark.parametrize(
     ("on", "privilege", "target", "reason"),
     [
         ("function", "EXECUTE", "public.definer()", "role.security_definer"),

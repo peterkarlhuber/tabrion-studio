@@ -73,10 +73,10 @@ every route of the area answers `405` and its code is not even loaded.
   is on, and only on a DEV or TEST profile: Studio never unlocks PROD.
 - **For PostgreSQL, the tools** `pg_dump` and `pg_restore` (below), and **a restore profile** (below) to restore.
 
-Every action checks the admin role's rights again on its own session first. A role that has or reaches SUPERUSER,
-BYPASSRLS, REPLICATION, a server-file role (`pg_read_server_files`, `pg_write_server_files`,
-`pg_execute_server_program`) or CREATEROLE before PostgreSQL 16 is refused (`studio.admin_over_privileged`), and the
-unlock ends.
+A role that has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role (`pg_read_server_files`,
+`pg_write_server_files`, `pg_execute_server_program`) or CREATEROLE before PostgreSQL 16 is never unlocked
+(`studio.admin_over_privileged`). Every action also checks the admin role's rights again on its own session first;
+a role that gained such a right since its unlock is refused the same way, and the unlock ends.
 
 ## The admin role's rights
 
@@ -147,7 +147,8 @@ when it was made, the engine, the server and tool versions, its size and SHA-256
 source, the number of extensions, and the scope notice. It holds no password and no data.
 
 The section lists the backups with their count and total size. **Studio never deletes a backup:** remove the ones you
-no longer need yourself.
+no longer need yourself. A backup is a full copy of the database's data, as sensitive as the database itself: keep
+the backup folder private and delete old backups by hand.
 
 ## Restore
 

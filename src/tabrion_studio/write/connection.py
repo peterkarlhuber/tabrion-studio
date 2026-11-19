@@ -80,10 +80,10 @@ server-file role (``admin.broad:pg_read_server_files``, ``admin.broad:pg_write_s
 ``admin.broad:pg_execute_server_program``), or CREATEDB (``admin.createdb``, since database creation moved to the
 admin area; :func:`write_refusals`). The connection is closed before anything is unlocked. Every other finding
 (``admin.createrole``, ``admin.createrole_pre16``, every other ``admin.broad:<role>``, ``pg_read_all_data`` and
-``pg_write_all_data`` among them) stays a warning shown in the write state. For ``admin`` the connection still
-opens and shows its findings (refusing the unlock itself, as STU-ADR-0008 section 6 proposes, is the owner's decision
-at G-S4); every Database Manager action reads the check again on its own session and refuses
-:data:`ADMIN_REFUSING_FINDINGS` with ``405 studio.admin_over_privileged``, which also ends the unlock (STU-XDM-2).
+``pg_write_all_data`` among them) stays a warning shown in the write state. For ``admin``
+:data:`ADMIN_REFUSING_FINDINGS` refuse the unlock itself with ``405 studio.admin_over_privileged`` (STU-ADR-0008
+section 6, decided at G-S4); the connection is closed first. Every Database Manager action reads the check again on
+its own session and refuses the same findings, which also ends the unlock (STU-XDM-2).
 Studio never grants or widens its own rights.
 """
 
@@ -780,6 +780,15 @@ def open_write_connection(
                 extra={"event": "studio.write_role_over_privileged", "code": "studio.write_role_over_privileged"},
             )
             raise WriteError("studio.write_role_over_privileged")
+        if kind == "admin" and admin_refusing_findings(connection.findings):
+            # STU-ADR-0008 section 6, decided at G-S4 (owner grant of 2026-11-18: over-privileged admin profiles are
+            # refused): an admin role with SUPERUSER, BYPASSRLS, REPLICATION, a server-file role or CREATEROLE before
+            # PostgreSQL 16 is never unlocked. Every action still checks again on its own session.
+            logger.warning(
+                "the admin role has superuser, BYPASSRLS, REPLICATION, server-file or old CREATEROLE rights; refused",
+                extra={"event": "studio.admin_over_privileged", "code": "studio.admin_over_privileged"},
+            )
+            raise WriteError("studio.admin_over_privileged")
     except BaseException:
         connection.close()
         raise
