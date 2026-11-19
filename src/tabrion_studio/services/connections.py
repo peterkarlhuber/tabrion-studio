@@ -47,7 +47,7 @@ from tabrion.check import Finding
 from tabrion.errors import ConfigurationError, Kind, UnsafePath
 from tabrion.postgres import ExtensionStatus, SessionSettings
 
-from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, is_host_list, target_fingerprint
+from tabrion_studio.config.schema import TARGET_FIELDS, Profile, Settings, refused_host, target_fingerprint
 from tabrion_studio.config.secrets import SecretError
 from tabrion_studio.logs import register_secret
 from tabrion_studio.services import tabrion_compat
@@ -149,9 +149,10 @@ def connection_url(profile: Profile, password: str | None, database_file: Path |
             raise RegistryError("studio.database_missing")
         return sqlalchemy.URL.create("sqlite", database=str(database_file))
     host, port = target["host"], target["port"]
-    if (isinstance(host, str) and is_host_list(host)) or (port is not None and type(port) is not int):
-        # M-1 of the PR #117 review: a libpq host or port list never reaches the driver, whatever built the profile
-        # (the validator refuses it already; this is the last check before every PostgreSQL connection).
+    if (isinstance(host, str) and refused_host(host) is not None) or (port is not None and type(port) is not int):
+        # M-1 of the PR #117 review: a libpq host or port list never reaches the driver, whatever built the profile;
+        # nor an abstract Unix socket (L-1 of #153). The validator refuses both already; this is the last check before
+        # every PostgreSQL connection.
         raise RegistryError("studio.profile_invalid")
     query = {} if target["sslmode"] is None else {"sslmode": target["sslmode"]}
     return sqlalchemy.URL.create(
