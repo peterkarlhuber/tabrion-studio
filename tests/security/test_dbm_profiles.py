@@ -6,9 +6,10 @@ TX-45; STU-ADR-0008 section 8; W-10, TB-148, K-1, N-5, I-109 j).
 2. **Export (N-5, W-10).** The shared export with the area ``database_manager``: a preview that writes nothing and
    names the coupled write and admin profiles it leaves out, the typed name and the preview's state; canary secrets of
    a read, a write and an admin profile absent from the file, the answers, the audit log and the log.
-3. **Import (K-1, W-10).** Read profiles only, built from the export's allowlist; ``env:`` kept as a reference, any
-   other reference Studio's empty keyring entry; PROD stays PROD; a host list, a plain password, an unknown key, a
-   write or admin mode, a missing environment, a database a PROD profile names: refused, never cut or relabeled.
+3. **Import (K-1, W-10).** Read profiles only, built from the export's allowlist; no reference of the file is kept,
+   ``env:`` included (review M-1 of #155): every one becomes Studio's empty keyring entry; PROD stays PROD; a host
+   list, a plain password, an unknown key, a write or admin mode, a missing environment, a database a PROD profile
+   names: refused, never cut or relabeled.
 4. **The file (write/folders.py).** A link, a linked folder, a folder others may write, Studio's own folders, a hard
    link, a file others may write, a pipe, a folder, a missing, malformed, non-UTF-8 or oversized file: refused.
 5. **Name clashes fail closed.** An existing read, write or admin profile's name is never taken; a new name is chosen
@@ -36,7 +37,7 @@ import pytest
 from tabrion.profilefile import load as load_profile_file
 
 from tabrion_studio.config.schema import Profile, target_fingerprint
-from tabrion_studio.config.secrets import SERVICE, write_keyring_key
+from tabrion_studio.config.secrets import SERVICE, SecretError, write_keyring_key
 from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.services import connections as connections_module
 from tabrion_studio.write.audit import AuditError
@@ -482,13 +483,12 @@ def test_the_import_preview_changes_nothing_and_shows_read_profiles_only(env: Wr
     assert all(p["importable"] for p in profiles.values()), profiles
     # A relative SQLite path is relative to the file's folder (the format's rule), stored as an absolute path.
     assert profiles["local-copy"]["path"] == str(folder / "data" / "copy.db")
-    # An env: reference stays a reference (the variable's name, never its value); any other is an empty keyring entry.
-    assert profiles["warehouse"]["password"] == {"source": "env", "target": ENV_NAME}
-    for name in ("archive-prod", "stats", "asks"):
+    # No reference of the file is kept, env: included (review M-1 of #155): each is an empty keyring entry.
+    for name in ("warehouse", "archive-prod", "stats", "asks"):
         assert profiles[name]["password"] == {"source": "keyring", "target": ""}, name
     assert profiles["archive-prod"]["environment"] == "prod"
     assert profiles["warehouse"]["not_imported"] == ["allow", "application_name", "description"]
-    assert CANARY_SECRET not in preview.text and "/home/someone" not in preview.text
+    assert CANARY_SECRET not in preview.text and "/home/someone" not in preview.text and ENV_NAME not in preview.text
 
 
 def test_imported_profiles_are_read_profiles_without_a_secret(
@@ -518,19 +518,87 @@ def test_imported_profiles_are_read_profiles_without_a_secret(
         "wh_reader",
     )
     assert (warehouse.environment, warehouse.read_only_role, warehouse.statement_timeout_ms) == ("test", True, 4000)
-    assert warehouse.password is not None and warehouse.password.to_dict() == {"source": "env", "target": ENV_NAME}
-    for name in ("archive-prod", "stats", "asks"):
+    for name in ("warehouse", "archive-prod", "stats", "asks"):
         ref = stored[name].password
         assert ref is not None and ref.to_dict() == {"source": "keyring", "target": ""}, name
     assert stored["local-copy"].password is None
     text = _store_bytes(env).decode("utf-8")
-    for absent in (CANARY_SECRET, "svc/user", "/home/someone", "nodestro", "public.items", "prompt", "\nmode ="):
+    for absent in (
+        CANARY_SECRET,
+        ENV_NAME,
+        "svc/user",
+        "/home/someone",
+        "nodestro",
+        "public.items",
+        "prompt",
+        "\nmode =",
+    ):
         assert absent not in text, absent
     for secret in (CANARY_SECRET,):
         assert secret not in response.text and secret not in caplog.text
     # Each imported profile has only the allowlisted fields (and the password reference).
     for profile in (stored[name] for name in ("local-copy", "warehouse")):
         assert set(profile.to_dict()) <= {*EXPORTED_FIELDS, "password"}
+
+
+class _Watched(dict[str, str]):
+    """The process environment as Studio's secret store sees it, recording every variable name it is asked for."""
+
+    def __init__(self, values: dict[str, str]) -> None:
+        super().__init__(values)
+        self.asked: list[str] = []
+
+    def get(self, key: str, default: Any = None) -> Any:
+        self.asked.append(key)
+        return super().get(key, default)
+
+    def __getitem__(self, key: str) -> str:
+        self.asked.append(key)
+        return super().__getitem__(key)
+
+
+def test_an_imported_env_reference_to_a_foreign_host_is_never_kept_or_resolved(
+    env: WriteEnv, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Review M-1 of #155: a file names a foreign server and an ``env:`` reference to a variable of the user; the
+    imported profile keeps no reference, so the variable's value is never read or sent to that server."""
+    variable = "XDM5_FOREIGN_CANARY"
+    monkeypatch.setenv(variable, CANARY_SECRET)
+    watched = _Watched(dict(os.environ))
+    monkeypatch.setattr(env.config.secrets, "_environ", watched)
+    caplog.set_level(logging.DEBUG)
+    text = f"""version = 1
+
+[[profile]]
+name = "foreign"
+engine = "postgresql"
+host = "db.attacker.example"
+database = "app"
+user = "reader"
+password = "env:{variable}"
+sslmode = "verify-full"
+environment = "test"
+"""
+    source = _file(_folder(tmp_path), text)
+    preview = _preview(env, source)
+    assert preview.status_code == 200, preview.text
+    item = preview.json()["profiles"][0]
+    assert item["importable"] is True and item["password"] == {"source": "keyring", "target": ""}
+    response = _import(env, source, [{"name": "foreign"}])
+    assert response.status_code == 201, response.text
+    stored = _user_profiles(env)["foreign"]
+    assert stored.host == "db.attacker.example"
+    assert stored.password is not None and stored.password.to_dict() == {"source": "keyring", "target": ""}
+    # What a test or a connect resolves: Studio's empty entry, never the variable.
+    entry = next(e for e in env.config.entries() if e.profile.name == "foreign")
+    with pytest.raises(SecretError):
+        env.config.secrets.resolve(entry.secret)
+    listed = env.send("GET", "/api/profiles")
+    assert listed.status_code == 200
+    assert variable not in watched.asked
+    store = _store_bytes(env).decode("utf-8")
+    for output in (store, preview.text, response.text, listed.text, json.dumps(_records(env)), caplog.text):
+        assert variable not in output and CANARY_SECRET not in output
 
 
 @pytest.mark.parametrize(

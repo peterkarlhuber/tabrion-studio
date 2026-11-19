@@ -28,9 +28,10 @@ same allowlist as the export (``EXPORTED_FIELDS``) and checked by Studio's own p
 
 * it is always a **read profile** (K-1): a profile whose ``mode`` is not ``read_only`` is not imported
   (``import.mode``), and nothing of the file ever becomes a write or admin profile or a coupling;
-* it never carries a secret: an ``env:NAME`` reference stays a reference; any other reference (``keyring:``,
-  ``file:``, ``prompt``) becomes Studio's own ``keyring:`` entry, which holds nothing until the user enters the
-  password (the prompt);
+* it never carries a secret and keeps **no reference** of the file: every reference (``env:NAME``, ``keyring:``,
+  ``file:``, ``prompt``) becomes Studio's own empty ``keyring:`` entry, which holds nothing until the user enters the
+  password (the prompt). An ``env:`` reference is not kept, since a file from elsewhere could pair a foreign host
+  with any variable of the user's environment (review M-1 of #155);
 * its ``environment`` is required and kept: a PROD profile stays PROD (``import.environment_required``); a profile
   that is not PROD but names the database of a PROD profile (the user's store, a trusted project or the same file)
   is not imported (``import.prod_target``);
@@ -244,12 +245,13 @@ _NOT_IMPORTED = ("allow", "schema_fingerprint", "application_name", "description
 
 
 def _reference(source: ConnectionProfile) -> str | None:
-    """The reference Studio stores: ``env:NAME`` kept, any other reference Studio's empty keyring entry (a prompt)."""
-    ref = source.password
-    if ref is None or source.engine == "sqlite":
+    """The reference Studio stores: none of the file's. Every reference becomes Studio's empty keyring entry (a prompt).
+
+    An ``env:`` reference is not kept either (review M-1 of #155): the file is not trusted, and its host and its
+    variable name together would send that variable's value to its server on the first test or connect.
+    """
+    if source.password is None or source.engine == "sqlite":
         return None  # a SQLite file has no password
-    if ref.kind == "env" and ref.target:
-        return f"env:{ref.target}"
     return "keyring:"
 
 
@@ -352,7 +354,7 @@ def _describe(candidate: _Candidate, taken: set[str]) -> dict[str, object]:
         "user": source.user,
         "sslmode": source.sslmode,
         "mode": source.mode,
-        # Where the password will come from: an env: variable's name, or "keyring" (empty until the user enters it).
+        # Where the password will come from: always "keyring", empty until the user enters it (no reference kept).
         "password": reference,
         "importable": profile is not None,
         "refusals": [{"field": field, "code": code} for field, code in candidate.refusals],

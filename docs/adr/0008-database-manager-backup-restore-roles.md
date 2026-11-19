@@ -452,8 +452,10 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
   `read_only`, when it names no environment, or when it is not PROD but names the database of a PROD profile (in the
   user's store, a trusted project or the same file; PostgreSQL by database, port and overlapping addresses, SQLite by
   device and inode). An imported PROD profile stays PROD.
-- **Secrets:** an imported profile never carries one. An `env:NAME` reference is kept as that reference (the value is
-  not read); any other becomes Studio's empty keyring entry, asked for when used; a SQLite profile has none.
+- **Secrets:** an imported profile never carries one and keeps **no reference** of the file. Every reference,
+  `env:NAME` included, becomes Studio's empty keyring entry, asked for when used; a SQLite profile has none. The file
+  is not trusted: keeping an `env:` reference would let it pair a server of its choice with any variable of the
+  user's environment, whose value would then be sent there on the first test or connect (review M-1 of #155).
 - **Names:** an import never replaces a profile. A name that a read or write profile of the user's store has already
   needs a new name in the request (`as`) or the profile is left out; otherwise `studio.dbm_profile_import_exists`
   (409). The clash is checked again inside the store's save, so a profile saved in between is not replaced. A name
@@ -472,7 +474,8 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
   3. A profile whose `mode` is not `read_only` is not importable (not silently made read only).
   4. A profile without an environment is not importable (no default label).
   5. A non-PROD profile of a PROD database is not importable (no second label for a PROD target).
-  6. Any reference other than `env:` becomes a prompt; nothing is resolved during an import.
+  6. No reference of the file is kept, `env:` included: every password becomes a prompt, and nothing is resolved
+     during or after an import (review M-1 of #155, option a; first built keeping `env:`).
   7. A host list, a password or an unknown key refuses the whole file.
   8. A relative SQLite path is resolved against the file's folder.
   9. The file must be the user's own, private, single-named regular file of at most 256 KiB and 64 profiles.

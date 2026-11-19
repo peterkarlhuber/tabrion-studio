@@ -88,14 +88,14 @@ def _source(**values: object) -> ConnectionProfile:
     ("ref", "expected"),
     [
         (None, None),
-        (SecretRef("env", "PGPASS_X"), "env:PGPASS_X"),
+        (SecretRef("env", "PGPASS_X"), "keyring:"),  # review M-1 of #155: not kept
         (SecretRef("keyring"), "keyring:"),
         (SecretRef("keyring", "svc/user"), "keyring:"),
         (SecretRef("file", "/home/u/secret"), "keyring:"),
         (SecretRef("prompt"), "keyring:"),
     ],
 )
-def test_only_an_env_reference_is_kept(ref: SecretRef | None, expected: str | None) -> None:
+def test_no_reference_of_the_file_is_kept(ref: SecretRef | None, expected: str | None) -> None:
     assert profiles._reference(_source(password=ref)) == expected
 
 
@@ -121,7 +121,7 @@ def test_the_import_uses_the_exports_allowlist_only() -> None:
     )
     raw = profiles._raw(source, "p", "/folder")
     assert set(raw) <= {*EXPORTED_FIELDS, "password"}
-    assert raw["password"] == "env:X" and raw["read_only_role"] is True
+    assert raw["password"] == "keyring:" and raw["read_only_role"] is True
 
 
 def test_a_relative_sqlite_path_is_relative_to_the_files_folder() -> None:

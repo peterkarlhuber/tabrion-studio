@@ -8,7 +8,8 @@
  *   profiles coupled to them are named in the preview and never written.
  * - Import: `POST .../profiles/import/preview` with a file's path (changes nothing), then `.../profiles/import` with
  *   the chosen profiles (each under its own or a new name), the typed file name, the preview's `state` and the user
- *   file's digest. Imported profiles are read profiles only, never over an existing profile, and carry no secret.
+ *   file's digest. Imported profiles are read profiles only, never over an existing profile, and carry no secret and
+ *   no reference of the file (every password is asked for when used).
  *
  * The page sends ids, paths, names and what the user typed; never a profile's fields, a secret, a mode or a coupling.
  */
@@ -164,8 +165,11 @@ export interface ImportPreviewProfile {
   database: string | null;
   user: string | null;
   mode: string;
-  /** Where the password will come from: an `env` variable's name, or `keyring` (empty until entered); null: none. */
-  password: { source: 'env' | 'keyring'; target: string } | null;
+  /**
+   * Where the password will come from: `keyring`, Studio's own entry, empty until entered; null: none. No reference
+   * of the file is ever kept, `env:` included (review M-1 of #155).
+   */
+  password: { source: 'keyring' } | null;
   importable: boolean;
   refusals: ImportRefusal[];
   /** Keys of the file that Studio's profile does not have (never imported). */
@@ -186,7 +190,6 @@ function importProfile(raw: unknown): ImportPreviewProfile | null {
   const name = text(item?.name);
   if (item === null || name === null) return null;
   const password = record(item.password);
-  const source = password?.source;
   return {
     name,
     engine: text(item.engine) ?? '',
@@ -197,10 +200,8 @@ function importProfile(raw: unknown): ImportPreviewProfile | null {
     database: text(item.database),
     user: text(item.user),
     mode: text(item.mode) ?? '',
-    password:
-      password !== null && (source === 'env' || source === 'keyring')
-        ? { source, target: text(password.target) ?? '' }
-        : null,
+    // Anything but a keyring entry is not what the server sends: shown as asked for, never as a reference.
+    password: password === null ? null : { source: 'keyring' },
     importable: item.importable === true,
     refusals: (Array.isArray(item.refusals) ? item.refusals : [])
       .map(record)

@@ -16,8 +16,8 @@ All notable changes to this project are documented here. The format follows
   `.../profiles/import` read a `*.tabrion-profile.toml` with `tabrion.profilefile` through the new
   `tabrion_studio.write.folders.read_user_file` (the user's own regular file with one name, not writable by others,
   at most 256 KiB, no link, not in Studio's folders) and add read profiles only: an allowlist on the way in, the
-  environment required and kept (PROD stays PROD), no second non-PROD label for a PROD database, an `env:` reference
-  kept and any other made a prompt, a host list, a password or an unknown key refusing the whole file (W-10, never
+  environment required and kept (PROD stays PROD), no second non-PROD label for a PROD database, no password
+  reference of the file kept (every one, `env:` included, becomes a prompt; review M-1 of #155), a host list, a password or an unknown key refusing the whole file (W-10, never
   cut), a name clash refused unless a new name is given (checked again inside the save). Pairs stay the
   `[[write_profile]]` coupling with the I-109 j confirmation, which an imported profile needs as well. Audit
   `run.start`/`run.result` with actions `dbm.profile_export` and `dbm.profile_import`, without folder, host or

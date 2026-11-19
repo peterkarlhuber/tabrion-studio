@@ -42,8 +42,12 @@ These rules hold for every action of the Database Manager; the sections below sa
 - **The admin rights are yours to set up, outside Studio.** Studio never creates, widens or grants to the admin
   role; it checks the role's rights before every action and refuses one with too many
   ([The admin role's rights](#the-admin-roles-rights)).
+- **An imported profile is a read profile without a password.** A profile file never adds a write or admin profile,
+  never replaces one of yours, never relabels a PROD database, and keeps no password reference, not even one to an
+  environment variable: you enter the password when you connect
+  ([Import read profiles](#import-read-profiles)).
 - **Not everything on Windows.** The PostgreSQL tools do not run there, and SQLite files are neither restored into a
-  new file nor deleted there.
+  new file nor deleted there; profile files are neither imported nor exported there.
 
 ## Turn it on for development
 
@@ -318,8 +322,10 @@ What an import does and never does:
   profile stays PROD. A profile whose `mode` is not `read_only`, or that names no environment, is not imported. Nor is
   a profile that is not PROD but names the database of one of your PROD profiles (also under another host name such
   as `localhost`).
-- **No secret.** A password from an environment variable keeps that reference (`env:NAME`); any other becomes one you
-  enter when you connect. Studio reads no password during an import.
+- **No secret and no password reference.** Every password of an imported profile is one you enter when you connect,
+  also when the file names an environment variable (`env:NAME`) or a keyring entry: a file from elsewhere decides
+  which server a profile names, so Studio never lets it decide where a password of yours comes from. To use an
+  environment variable, edit the imported profile afterwards. Studio reads no password during an import.
 - **The whole file is refused** when it is not a valid profile file (format version 1), holds a password, a key
   Studio does not know (such as a write or admin key) or a profile with several hosts (`db1,db2`): Studio never
   shortens it to one host and never imports part of such a file. At most 64 profiles per file.

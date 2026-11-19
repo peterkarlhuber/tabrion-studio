@@ -118,7 +118,7 @@ function imported(name: string, extra: Record<string, unknown> = {}) {
     user: 'reader',
     sslmode: 'prefer',
     mode: 'read_only',
-    password: { source: 'env', target: 'WH_PASSWORD' },
+    password: { source: 'keyring', target: '' },
     importable: true,
     refusals: [],
     not_imported: [],
@@ -277,7 +277,12 @@ describe('the answers of the profile routes', () => {
       ['writer', false, false],
       ['shadow', false, false],
     ]);
-    expect(preview?.profiles[0]?.password).toEqual({ source: 'env', target: 'WH_PASSWORD' });
+    expect(preview?.profiles[0]?.password).toEqual({ source: 'keyring' });
+    // A reference the server never sends is not shown as one (review M-1 of #155).
+    const env = { ...IMPORT_PREVIEW.profiles[0], password: { source: 'env', target: 'X' } };
+    expect(
+      parseImportPreview({ ...IMPORT_PREVIEW, profiles: [env] })?.profiles[0]?.password,
+    ).toEqual({ source: 'keyring' });
     expect(parseImportPreview({ ...IMPORT_PREVIEW, user_file: null })).toBeNull();
     expect(parseImportPreview({ ...IMPORT_PREVIEW, profiles: [{}] })).toBeNull();
   });
@@ -388,7 +393,7 @@ describe('profile pairs, import and export (STU-XDM-5)', () => {
     expect(await serious(view.container)).toEqual([]);
     // What each profile becomes: a read profile, its server and where its password comes from.
     expect(within(form).getByTestId('dbm-import-row-0')).toHaveTextContent(
-      'localhost:5434, database warehouse; password from the environment variable WH_PASSWORD',
+      'localhost:5434, database warehouse; password entered when you connect',
     );
     expect(within(form).getByTestId('dbm-import-row-0')).toHaveTextContent(
       "Not imported (Studio's profiles do not have them): allow, description.",

@@ -2431,7 +2431,7 @@
     },
     "import": {
       "title": "Import read profiles",
-      "lead": "Add profiles of a profile file to your own profiles. Each becomes a read profile, keeps its environment (PROD stays PROD) and never replaces a profile you have. A password reference to an environment variable is kept; any other becomes one you enter when you connect.",
+      "lead": "Add profiles of a profile file to your own profiles. Each becomes a read profile, keeps its environment (PROD stays PROD) and never replaces a profile you have. No password reference of the file is kept, not even one to an environment variable: you enter each password when you connect.",
       "path": "Profile file",
       "rules": "The file must be your own, writable only by you, with one name only (no link), at most 256 KiB, in a folder of your own that only you may write; Studio's own folders are not allowed. A file with a profile of several hosts, a password, or a key Studio does not know is refused as a whole.",
       "preview": "Preview the import",
@@ -2441,7 +2441,6 @@
       "server": "{{host}}:{{port}}, database {{database}}",
       "password": {
         "none": "no password",
-        "env": "password from the environment variable {{name}}",
         "keyring": "password entered when you connect"
       },
       "notImported": "Not imported (Studio's profiles do not have them): {{keys}}.",

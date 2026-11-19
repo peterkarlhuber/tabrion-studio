@@ -1319,8 +1319,8 @@ flag stays off by default. Each point needs the independent review or the owner.
    route or store; (b) an import adds read profiles only and never replaces one: a name clash needs a new name or the
    profile is left out, and the clash is checked again inside the save; (c) a profile whose `mode` is not `read_only`,
    or which names no environment, is not importable; (d) a profile that is not PROD but names the database of a PROD
-   profile is not importable; (e) an `env:` reference is kept, any other becomes Studio's empty keyring entry (asked
-   for when used), a SQLite profile gets none; (f) a host list, a password or an unknown key refuses the whole file;
+   profile is not importable; (e) no reference of the file is kept, `env:` included: every one becomes Studio's empty
+   keyring entry (asked for when used), a SQLite profile gets none (review M-1 of #155, option a); (f) a host list, a password or an unknown key refuses the whole file;
    (g) a relative SQLite path is resolved against the file's folder; (h) the file must be the user's own regular file
    with one name, not writable by others, at most 256 KiB and 64 profiles, in a folder that passes the folder rules;
    (i) no admin unlock is needed, since no database is touched; (j) both operations are bound to their preview's
@@ -1332,6 +1332,9 @@ flag stays off by default. Each point needs the independent review or the owner.
 4. **Several Studio processes:** the clash is checked again under the profiles file's lock, so a profile another
    process saved in between is never replaced (fail closed: the import is refused).
 5. **Firefox and WebKit** run in CI only; locally only Chromium was available.
+6. [x] **Review of #155, M-1 (fixed on the same PR):** an import kept a file's `env:` reference, so a file could
+   pair a server of its choice with a variable of the user's environment. Now no reference of the file is kept
+   (option a): every password of an imported profile is asked for when used.
 
 ## Cross-repository checks still to add
 

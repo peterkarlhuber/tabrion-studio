@@ -2431,7 +2431,7 @@
     },
     "import": {
       "title": "Leseprofile importieren",
-      "lead": "Profile einer Profildatei zu Ihren eigenen Profilen hinzufügen. Jedes wird ein Leseprofil, behält seine Umgebung (PROD bleibt PROD) und ersetzt nie ein vorhandenes Profil. Ein Passwortverweis auf eine Umgebungsvariable bleibt; jeder andere wird zu einem Passwort, das Sie beim Verbinden eingeben.",
+      "lead": "Profile einer Profildatei zu Ihren eigenen Profilen hinzufügen. Jedes wird ein Leseprofil, behält seine Umgebung (PROD bleibt PROD) und ersetzt nie ein vorhandenes Profil. Kein Passwortverweis der Datei wird übernommen, auch keiner auf eine Umgebungsvariable: Sie geben jedes Passwort beim Verbinden ein.",
       "path": "Profildatei",
       "rules": "Die Datei muss Ihnen gehören, nur von Ihnen beschreibbar sein, nur einen Namen haben (kein Link), höchstens 256 KiB groß sein und in einem eigenen Ordner liegen, in den nur Sie schreiben dürfen; Studios eigene Ordner sind nicht erlaubt. Eine Datei mit einem Profil mehrerer Hosts, einem Passwort oder einem Schlüssel, den Studio nicht kennt, wird als Ganzes abgelehnt.",
       "preview": "Vorschau des Imports",
@@ -2441,7 +2441,6 @@
       "server": "{{host}}:{{port}}, Datenbank {{database}}",
       "password": {
         "none": "kein Passwort",
-        "env": "Passwort aus der Umgebungsvariable {{name}}",
         "keyring": "Passwort wird beim Verbinden eingegeben"
       },
       "notImported": "Nicht importiert (Studios Profile haben sie nicht): {{keys}}.",

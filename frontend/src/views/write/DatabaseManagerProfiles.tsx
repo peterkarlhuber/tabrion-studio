@@ -367,12 +367,6 @@ function target(t: T, item: ImportPreviewProfile): string {
 
 function passwordText(t: T, item: ImportPreviewProfile): string {
   if (item.password === null) return t('dbmProfiles.import.password.none');
-  if (item.password.source === 'env') {
-    return t('dbmProfiles.import.password.env', {
-      name: visible(item.password.target),
-      interpolation: { escapeValue: false },
-    });
-  }
   return t('dbmProfiles.import.password.keyring');
 }
 
