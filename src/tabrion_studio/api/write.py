@@ -52,6 +52,14 @@
   hash with the confirmed one, make the backup and run the plan once through tabrion's ``execute_plan`` on a DEV or
   TEST database without migration management (:mod:`tabrion_studio.write.schema_designer.execute`). Schema Designer
   flag only, like the creation routes.
+* ``POST /api/write/schema-designer/compare``: ``{"expected", "actual", "plan"}``: the read-only comparison of two
+  schemas (STU-XSD-2, :mod:`tabrion_studio.write.schema_designer.compare`). Each side is a schema read now on an open
+  read-only connection (``{"source": "connection", "connection_id", "schema"}``), this session's draft
+  (``{"source": "draft", "connection_id"}``) or the text of a snapshot file (``{"source": "file", "text"}``, at most
+  one side, shown and compared only). The answer has tabrion's differences, both fingerprints, the feature markers
+  and a fail-closed verdict; with ``"plan": true`` also a plan preview from the actual side to the expected one,
+  which is never kept or run (DEV or TEST of the user's own profiles only, never from or to a file). Schema Designer
+  flag only.
 * ``GET /api/write/database-manager/backups``: the Database Manager's backups (newest first, with their metadata and
   the scope notice), their count and total size, and whether ``pg_dump`` and ``pg_restore`` are configured and pass
   their checks (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`). ``POST
@@ -120,6 +128,8 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # STU-CR-5: confirm the previewed plan per risk class, then run it once (or dry-run it) on DEV or TEST (G-S3).
     ("/api/write/schema-designer/plan/confirm", ("POST",)),
     ("/api/write/schema-designer/plan/run", ("POST",)),
+    # STU-XSD-2: the read-only comparison of two schemas and its plan preview, never kept or run (G-S3).
+    ("/api/write/schema-designer/compare", ("POST",)),
     # STU-XDM-2: the Database Manager's backups, a backup, and the preview and run of a restore (G-S4).
     ("/api/write/database-manager/backups", ("GET",)),
     ("/api/write/database-manager/backup", ("POST",)),
@@ -134,6 +144,10 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: request of at most ``write.plan.MAX_REQUEST_BYTES`` (256 KiB, which carries a Data Editor bytes value replaced by a
 #: file, G-S2 6A) and the rest of the body. Here, not in the write package, so the app needs no write code for it.
 MAX_PLAN_BODY = 256 * 1024 + 4096
+#: The body cap of ``POST /api/write/schema-designer/compare``: one snapshot file's text of at most 2 MiB
+#: (``write.schema_designer.compare.MAX_SNAPSHOT_BYTES``), which JSON escaping may make up to twice as long, and the
+#: rest of the body. Here, not in the write package, so the app needs no write code for it.
+MAX_COMPARE_BODY = 2 * 2 * 1024 * 1024 + 4096
 
 
 async def _refused() -> Response:
