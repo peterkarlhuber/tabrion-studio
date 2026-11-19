@@ -7,6 +7,9 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- Tabrion repin (tabrion G-T2 C-5): pins tabrion 0.3.0 at its release commit `7488c76` (the merge commit of
+  tabrion #95, not tagged yet, no PyPI). It changes only the version from `0.3.0.dev0` to `0.3.0`; the API Studio
+  uses is the one of `bfba25e`. The range `>=0.2,<0.4` stays. No behavior change; the flags stay off.
 - STU-XSD-2 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's read-only schema comparison, `POST /api/write/schema-designer/compare`. Each side is a
   schema read now on an open read-only connection (a PROD connection is compared read-only too), this session's draft,

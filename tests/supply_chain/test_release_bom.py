@@ -31,12 +31,12 @@ sys.path.remove(str(SCRIPTS))
 pytestmark = pytest.mark.security
 
 Record = dict[str, object]
-TABRION_COMMIT = "bfba25eaf21debd43365657933dcec7ac95e2d08"
+TABRION_COMMIT = "7488c764327ae428718ffc9492a6aaed73a06cef"
 
 
 def lock_records(*, with_markers: bool = True) -> list[Record]:
     """One license record per lock pin (MIT; psycopg LGPL-3.0 as declared upstream) and one for tabrion (first-party
-    LicenseRef-Proprietary, as tabrion 0.2.1 and 0.3.0.dev0 declare it)."""
+    LicenseRef-Proprietary, as tabrion 0.2.1 and 0.3.0 declare it)."""
     records: list[Record] = []
     for component in rb.read_lock(LOCK.read_text(encoding="utf-8")):
         if component.marker and not with_markers:
@@ -52,7 +52,7 @@ def lock_records(*, with_markers: bool = True) -> list[Record]:
     records.append(
         {
             "name": "tabrion",
-            "version": "0.3.0.dev0",
+            "version": "0.3.0",
             "license_expression": "LicenseRef-Proprietary",
             "vcs_url": "https://github.com/peterkarlhuber/tabrion",
             "vcs_commit": TABRION_COMMIT,
@@ -115,11 +115,11 @@ def test_the_sbom_lists_every_pin_and_every_shipped_frontend_package() -> None:
     assert any(purl.startswith("pkg:npm/%40xyflow/react@") for purl in by_purl)
 
     tabrion = next(c for c in by_purl.values() if c["name"] == "tabrion")
-    assert tabrion["version"] == "0.3.0.dev0"
+    assert tabrion["version"] == "0.3.0"
     assert prop(tabrion, "tabrion-studio:vcs") == [
-        "git+https://github.com/peterkarlhuber/tabrion@bfba25eaf21debd43365657933dcec7ac95e2d08"
+        "git+https://github.com/peterkarlhuber/tabrion@7488c764327ae428718ffc9492a6aaed73a06cef"
     ]
-    assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.3.0.dev0?vcs_url=git%2Bhttps")
+    assert str(tabrion["purl"]).startswith("pkg:pypi/tabrion@0.3.0?vcs_url=git%2Bhttps")
 
     assert "Policy: **passed**" in report
     assert "## psycopg (LGPL-3.0)" in report and "<https://github.com/psycopg/psycopg>" in report
@@ -369,7 +369,7 @@ def _fastapi_version() -> str:
 def _tabrion(**changes: object) -> Record:
     record: Record = {
         "name": "tabrion",
-        "version": "0.3.0.dev0",
+        "version": "0.3.0",
         "license_expression": "LicenseRef-Proprietary",
         "vcs_url": "https://github.com/peterkarlhuber/tabrion",
         "vcs_commit": TABRION_COMMIT,
