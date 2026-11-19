@@ -1,10 +1,10 @@
 # Database Manager (in development)
 
-!!! danger "In development, locked by G-S4"
-    The Database Manager is **not usable or supported**. It exists only behind the `database_manager` switch in
-    `write-areas.toml`, which is **off by default**, and it stays locked until the security gate G-S4 is granted.
-    G-S4 is not granted: no Studio version turns the switch on, and nothing in this page is a release of the
-    feature. This page describes what backup and restore do when a developer turns the switch on in a test setup, so
+!!! danger "In development, not released"
+    The Database Manager is **not released or supported**. It exists only behind the `database_manager` switch in
+    `write-areas.toml`, which is **off by default**; no Studio version turns it on. Its security gate G-S4 is
+    effective since 2026-11-19 for local DEV, TEST and STAGE only (PROD stays locked); the human security review and
+    the release decision are still open, so nothing in this page is a release of the feature. This page describes what backup and restore do when a developer turns the switch on in a test setup, so
     that their behavior and their limits can be reviewed. The rules are
     [STU-ADR-0008](../adr/0008-database-manager-backup-restore-roles.md).
 

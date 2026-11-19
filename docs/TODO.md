@@ -973,8 +973,10 @@ Follow-ups as TODO items:
 Drafted 2026-11-15 (branch `claude/project-thread-rdo6g3-crxdm1`, STU-CR-1 and STU-XDM-1). **G-S3 is effective**
 since 2026-11-19 by the owner's conditional grant of 2026-11-18 (all conditions proven: STU-CR-8 gate review
 accepted, owner decisions recorded below, green master CI; evidence `g-s3-nachweis.md`), for local DEV, TEST and
-STAGE only; the `schema_designer` flag still stays off by default and nothing turns it on. **G-S4 is not yet
-effective;** before 2026-11-19: the `schema_designer` and `database_manager` flags stay off by default and no code of either area exists. (Since STU-CR-2 and STU-CR-3 the database creation wizard of the Schema Designer exists, locked behind its flag.) (Since STU-XDM-2 the Database Manager's backup and restore exist, locked behind its flag.)
+STAGE only; the `schema_designer` flag still stays off by default and nothing turns it on. **G-S4 is effective**
+since 2026-11-19 in the same way (STU-XDM-7 gate review accepted with conditions, fixed in PR #159; owner decisions
+recorded below; green master CI; evidence `g-s4-nachweis.md`); the `database_manager` flag stays off by default and
+nothing turns it on. H-2 and G-R stay open. Before 2026-11-19: the `schema_designer` and `database_manager` flags stay off by default and no code of either area exists. (Since STU-CR-2 and STU-CR-3 the database creation wizard of the Schema Designer exists, locked behind its flag.) (Since STU-XDM-2 the Database Manager's backup and restore exist, locked behind its flag.)
 The checklists are [G-S3 definition](architecture/security-review-prep.md#g-s3-definition-schema-designer) and
 [G-S4 definition](architecture/security-review-prep.md#g-s4-definition-database-manager); the rules
 [STU-ADR-0007](adr/0007-schema-designer-plans-and-revisions.md) and [STU-ADR-0008](adr/0008-database-manager-backup-restore-roles.md).

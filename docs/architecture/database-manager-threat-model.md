@@ -10,7 +10,8 @@ gate is defined in [G-S4 definition](security-review-prep.md#g-s4-definition-dat
 A-1), which STU-XDM-2 folds in here (TX-34..TX-38 and the residual risks). STU-XDM-2 builds backup and restore
 (TX-32..TX-38) behind the flag, STU-XDM-3 deleting (TX-39), STU-XDM-4 role management (TX-40..TX-44) and STU-XDM-5 profile pairs, import and export (TX-45); the other rows have no code yet. Every measure is a requirement for the work package
 named in its row and is checked by the G-S4 gate review. The `database_manager` flag stays off by default; **G-S4 is
-not granted.**
+effective since 2026-11-19** (local DEV, TEST and STAGE only; gate review `gs4-gate-review.md`, evidence
+`g-s4-nachweis.md`); H-2 and G-R stay open.
 
 The repository is public, so this page describes threats and measures, not how to exploit them.
 

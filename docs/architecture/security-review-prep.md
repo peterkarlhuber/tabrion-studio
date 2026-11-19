@@ -372,7 +372,9 @@ alias; database creation is the admin area's (ADR 0008 section 10); the runtime-
 
 G-S4 is the owner's activation decision for the Database Manager of Studio 1.3 (STU-XDM-2..STU-XDM-7): the
 `database_manager` flag of `write-areas.toml`. This section **defines** the gate (STU-XDM-1); it is not the gate and
-not its review. **G-S4 is not granted:** the flag stays off by default, no default changes. STU-XDM-2 builds backup
+not its review. **G-S4 is effective since 2026-11-19** (the owner's conditional grant of 2026-11-18; gate review
+`gs4-gate-review.md` accepted on `5a86471` with conditions B-1..B-3, fixed in PR #159 `f747de5`), for local DEV, TEST
+and STAGE only: the flag still stays off by default, nothing turns it on, no default changes. STU-XDM-2 builds backup
 and restore behind the flag (the evidence below); the review of STU-XDM-1 accepted the definition with conditions
 (M-1, L-1..L-3, A-1), folded in by STU-XDM-2. G-S4 would not allow restore, delete or role changes on PROD (E-X7: backup only), a tag or a release; H-2
 and G-R stay mandatory before any publication. The rules are

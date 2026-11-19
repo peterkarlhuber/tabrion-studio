@@ -9,7 +9,8 @@ database objects, TX-01..TX-16) apply here unchanged, and it is the threat model
 
 **State:** proposed with STU-CR-1; needs the independent review of STU-CR-1. No code of the area exists. Every
 measure is a requirement for the work package named in its row and is checked by the G-S3 gate review. The
-`schema_designer` flag stays off by default; **G-S3 is not granted.**
+`schema_designer` flag stays off by default; **G-S3 is effective since 2026-11-19** (local DEV, TEST and STAGE only;
+gate review `gs3-gate-review.md`, evidence `g-s3-nachweis.md`); H-2 and G-R stay open.
 
 The repository is public, so this page describes threats and measures, not how to exploit them.
 

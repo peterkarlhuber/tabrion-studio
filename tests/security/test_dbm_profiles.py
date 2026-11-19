@@ -1,5 +1,5 @@
-"""STU-XDM-5: profile pairs, import and export of the Database Manager (G-S4 is not granted; GS4-01, GS4-21, GS4-22;
-TX-45; STU-ADR-0008 section 8; W-10, TB-148, K-1, N-5, I-109 j).
+"""STU-XDM-5: profile pairs, import and export of the Database Manager (G-S4 effective, flag off; GS4-01, GS4-21,
+GS4-22, TX-45; STU-ADR-0008 section 8; W-10, TB-148, K-1, N-5, I-109 j).
 
 1. **Kill switch (GS4-01).** With the ``database_manager`` flag off (every flag off, or only another area's) the four
    routes answer ``405``, read and write nothing, and neither the area's module nor the shared export is loaded.

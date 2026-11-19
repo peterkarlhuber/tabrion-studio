@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S3 and G-S4 status (docs only, no code or default changes): the gate texts in the guides, module docstrings,
+  threat models, the gate definitions, TODO and the ADR index now say that G-S3 and G-S4 are effective since
+  2026-11-19 for local DEV, TEST and STAGE only (evidence `g-s3-nachweis.md`, `g-s4-nachweis.md`), STU-ADR-0008 is
+  accepted, and the `schema_designer` and `database_manager` flags stay off by default with nothing turning them on.
+  Neither feature is released; H-2 and G-R stay mandatory before any publication.
 - STU-XDM-7 (G-S4 gate, no default changes; the `database_manager` flag stays off and nothing turns it on): the
   independent G-S4 gate review accepted the Database Manager on `5a86471` with conditions. B-1: the unlock of an
   admin profile whose role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role or CREATEROLE before

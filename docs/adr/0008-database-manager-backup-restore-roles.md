@@ -1,6 +1,7 @@
 # STU-ADR-0008: Database Manager: verified backup tools, restore and delete with a backup first, roles only through a minimal admin profile
 
-**Status:** proposed (work package STU-XDM-1, change request CR-DBX, Studio 1.3). It records owner decisions that
+**Status:** accepted (work package STU-XDM-1, change request CR-DBX, Studio 1.3; the independent review of STU-XDM-1
+accepted it with conditions, folded in by STU-XDM-2; the G-S4 owner decisions are in section 12). It records owner decisions that
 are already binding (E-X5, E-X6, E-X7, E-X8, E-X9 with their refinements, W-9, W-10) and the conditions tabrion's
 reviews set for Studio (tabrion contract I-170, I-171, I-180..I-186, I-190..I-193; the "Open for Studio before
 G-S4" list of tabrion TODO TB-149), fixes what an over-privileged admin profile leads to (planning document 15
