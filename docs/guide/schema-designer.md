@@ -204,8 +204,53 @@ Each run and dry run writes a `run.start` and a `run.result` record to the audit
 classes, the number of steps, the backup state (`made`, `opted_out`, `not_needed` or `dry_run`) and the result. When
 the audit record cannot be written, nothing runs. No value, default or check text and no SQL is recorded.
 
+## Compare schemas
+
+The **Schema comparison** section (shown with the same switch) compares two schemas **read-only**. Nothing is
+changed, no audit record is written and nothing is kept: neither the comparison nor its plan preview.
+
+Each side is one of:
+
+- **Connection:** one schema of an open connection, read now on its read-only connection (empty means `main` on
+  SQLite and `public` on PostgreSQL). Any open connection can be compared, **PROD included**, because it is only read;
+  a PROD connection is open only after you confirmed its environment when you connected.
+- **Draft:** this tab's draft of a connection in the table designer above (the connection must be unlocked).
+- **Snapshot file:** a level-2 snapshot that Tabrion wrote (`SchemaSnapshot.to_json()` of
+  `tabrion.schema.snapshot(..., level=2)`), at most 2 MiB. At most one side can be a file. A file is **only compared
+  and shown**: Studio reads it with Tabrion's own parser and the draft's limits, and never plans from it or to it.
+
+Choose the **reference** (the schema as it should be) and the **compared** side (the schema you look at), then
+**Compare**. Tables are matched by their schema-qualified name, so compare the same schema name on both sides (for
+example `public` of a DEV and of a TEST database). The result shows:
+
+- the **verdict**: *same*, *different*, or *inconclusive*. *Same* means no difference, equal fingerprints and no table
+  with a feature the snapshot does not describe. *Inconclusive* means nothing differs, but such a feature (for example
+  a domain column, a partitioned table, a rule, an event trigger, a SQLite `WITHOUT ROWID` table) means the schemas
+  may still differ where the snapshot does not look; a feature Studio does not know is shown as unknown and never
+  counts as *same*;
+- every difference with its table, column and constraint or index name, and whether it is **breaking** (an added
+  table, column or index and a changed column order are not);
+- both level-2 fingerprints (they include triggers, row-level security policies and the functions they call
+  directly), the number of tables, triggers and policies of each side, and each side's flagged features.
+
+### Plan preview
+
+Tick **Also preview the plan** to see the plan that would change the compared side to match the reference, with
+every step, its risk classes, its SQL and the warnings of [The plan](#the-plan). It is planned for the version of the
+compared database (SQLite library or PostgreSQL server). It is **never run from here**: it has no plan hash, no
+confirmation and no Run button. To change a database, use the table designer or your own migration tooling.
+
+Studio makes the preview only when the compared side is a connection of one of **your own DEV or TEST profiles** and
+the reference is a connection or the draft. It is refused, while the comparison is still shown, when either side is a
+snapshot file, when the compared side is the draft, and for **PROD** or a project profile. Tabrion's own refusals (a
+change of a table with a feature it does not check) are shown with the feature's kind.
+
+The tables, columns and SQL of a comparison are shown to you only; Studio's log records only that a comparison ran.
+
 ## Not yet
 
 - A PostgreSQL backup before a run on Windows (Studio refuses the tools there).
-- The graphical mode (STU-XSD-1), the schema comparison (STU-XSD-2) and the Alembic revision output (STU-XSD-3).
+- The graphical mode (STU-XSD-1) and the Alembic revision output (STU-XSD-3).
 - Starting a draft from a schema file, and saving a draft.
+- Saving a snapshot file from Studio (use `tabrion.schema.snapshot(..., level=2).to_json()`), and comparing schemas
+  with different names.

@@ -15,13 +15,14 @@ make and preview, confirm with the hash and the typed text, execute once. With t
 Editor's executor (STU-026, :mod:`tabrion_studio.write.data_editor`) is registered there and its table route answers;
 with that flag off neither is imported. With the Schema Designer flag on, its draft and preview routes (STU-CR-4,
 :mod:`tabrion_studio.write.schema_designer.designer`; the drafts in ``app.state.schema_drafts``, ended with their
-unlock) and the confirmation and run of a previewed plan (STU-CR-5,
-:mod:`tabrion_studio.write.schema_designer.execute`) answer; with that flag off they answer 405 and import nothing of
-the area. With the Database Manager flag on, its backup and restore routes (STU-XDM-2,
-:mod:`tabrion_studio.write.database_manager.backups`, with the tool runner :mod:`tabrion_studio.write.pgtools` and the
-backup folder :mod:`tabrion_studio.write.backup_store`) and its two database creation routes (STU-CR-2, STU-CR-3,
-:mod:`tabrion_studio.write.database_manager.create`; the admin area's since the G-S4 grant) answer; with that flag off
-they answer 405 and import nothing of the area.
+unlock), the confirmation and run of a previewed plan (STU-CR-5,
+:mod:`tabrion_studio.write.schema_designer.execute`) and the read-only schema comparison (STU-XSD-2,
+:mod:`tabrion_studio.write.schema_designer.compare`, on the open read-only connections of the registry) answer;
+with that flag off they answer 405 and import nothing of the area. With the Database Manager flag on, its backup and
+restore routes (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`, with the tool runner
+:mod:`tabrion_studio.write.pgtools` and the backup folder :mod:`tabrion_studio.write.backup_store`) and its two database
+creation routes (STU-CR-2, STU-CR-3, :mod:`tabrion_studio.write.database_manager.create`; the admin area's since the
+G-S4 grant) answer; with that flag off they answer 405 and import nothing of the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -44,7 +45,7 @@ from fastapi.responses import JSONResponse
 
 from tabrion_studio.api.config import MAX_FORM_BODY, Configuration, FormError
 from tabrion_studio.api.connections import connection_problem
-from tabrion_studio.api.write import MAX_PLAN_BODY, WRITE_ROUTES
+from tabrion_studio.api.write import MAX_COMPARE_BODY, MAX_PLAN_BODY, WRITE_ROUTES
 from tabrion_studio.config.schema import (
     WRITE_PROFILE_KEYS,
     Profile,
@@ -137,6 +138,9 @@ _MAX_CREATE_BODY = MAX_FORM_BODY
 _DRAFT_START_KEYS = frozenset({"connection_id", "schema"})
 _DRAFT_KEYS = frozenset({"connection_id"})
 _DRAFT_EDIT_KEYS = frozenset({"connection_id", "revision", "edit"})
+#: The keys of the schema comparison (STU-XSD-2): two sides and whether to preview the plan between them; never a
+#: plan, a target or an environment.
+_COMPARE_KEYS = frozenset({"expected", "actual", "plan"})
 #: The keys of the plan confirmation and the run (STU-CR-5): never an environment, a plan, a target or a class list;
 #: the server takes all of them from its own record (GS3-05, GS3-09).
 _PLAN_CONFIRM_KEYS = frozenset(
@@ -645,6 +649,25 @@ def add_enabled_write_routes(
             return JSONResponse(created.to_dict(), status_code=201)
 
         return await plan_call(request, _CREATE_POSTGRES_KEYS, _MAX_BODY, create)
+
+    # --- the Schema Designer's comparison (STU-XSD-2) ---------------------------------------------------------------
+
+    @route("/api/write/schema-designer/compare", "POST")
+    async def post_schema_compare(request: Request) -> Response:
+        if drafts is None:
+            return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+        # Imported only now: with the Schema Designer flag off, none of its code is loaded (GS3-01).
+        from tabrion_studio.write.connection import DriverFailure
+        from tabrion_studio.write.schema_designer.compare import compare_schemas
+
+        def call(session: str, doc: dict[str, Any]) -> Response:
+            try:
+                answer_doc = compare_schemas(registry, unlocks, drafts, session, doc)
+            except DriverFailure as exc:
+                return db_problem_response(exc.classification)
+            return JSONResponse(answer_doc)
+
+        return await plan_call(request, _COMPARE_KEYS, MAX_COMPARE_BODY, call)
 
     # --- the Database Manager's backup and restore (STU-XDM-2) ------------------------------------------------------
 

@@ -10,6 +10,19 @@ All notable changes to this project are documented here. The format follows
 - Tabrion repin (tabrion G-T2 C-5): pins tabrion 0.3.0 at its release commit `7488c76` (the merge commit of
   tabrion #95, not tagged yet, no PyPI). It changes only the version from `0.3.0.dev0` to `0.3.0`; the API Studio
   uses is the one of `bfba25e`. The range `>=0.2,<0.4` stays. No behavior change; the flags stay off.
+- STU-XSD-2 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's read-only schema comparison, `POST /api/write/schema-designer/compare`. Each side is a
+  schema read now on an open read-only connection (a PROD connection is compared read-only too), this session's draft,
+  or the text of a level-2 snapshot file (at most one side, at most 2 MiB, only compared and shown). The answer lists
+  tabrion's differences with their `breaking` flag, both fingerprints (triggers, policies and row security included)
+  and each side's feature markers (domains, partitions, rules, SQLite table options; an unknown one is shown as
+  unknown), with a verdict that fails closed (`inconclusive` when a marker hides part of the schema). On request it
+  previews the plan from the compared side to the reference, never kept or run (no plan hash), only for a DEV or TEST
+  connection of the user's own profiles and never from or to a file or for PROD. New problems
+  `studio.schema_compare_invalid`, `schema_compare_schema`, `schema_snapshot_invalid`, `schema_snapshot_too_large`,
+  `schema_compare_mismatch` and `schema_compare_plan_not_allowed` with `compare.*` issues; the "Schema comparison"
+  section on the Connections page in English and German; the guide's "Compare schemas" section. The preview
+  warnings moved from the executor module to the draft module (no behavior change).
 
 - STU-XDM-3, delete a database (G-S4 not granted; the `database_manager` flag stays off by default): `POST
   /api/write/database-manager/delete/preview` and `.../delete` delete another DEV or TEST PostgreSQL database of the

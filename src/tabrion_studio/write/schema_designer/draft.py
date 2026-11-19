@@ -44,7 +44,7 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from tabrion.errors import PlanRefused, UsageError
-from tabrion.plan import plan
+from tabrion.plan import RiskClass, plan
 from tabrion.schema import (
     CheckShape,
     ColumnShape,
@@ -203,6 +203,59 @@ def plan_for(
         return plan(current=current, target=target, server_version=server_version, concurrent_indexes=False)
     except (PlanRefused, UsageError) as exc:
         raise refusal(exc, locate) from None
+
+
+# --- the preview warnings (section 8) ---------------------------------------------------------------------------------
+
+#: The ``lock_timeout`` of every run (seconds): tabrion's default, shown in the ``locking`` notice.
+LOCK_TIMEOUT_S = 5.0
+
+
+def _integer_primary_key(table: TableShape) -> bool:
+    """Whether the SQLite table keeps its ``rowid`` values through a rebuild: a single-column ``INTEGER PRIMARY KEY``
+    (the rowid's alias). Anything else gets the warning (careful: a ``WITHOUT ROWID`` table has none to lose)."""
+    if len(table.primary_key) != 1:
+        return False
+    column = next((c for c in table.columns if c.name == table.primary_key[0]), None)
+    return column is not None and column.type.strip().upper() == "INTEGER"
+
+
+def _type_changes(current: TableShape | None, target: TableShape | None) -> bool:
+    if current is None or target is None:
+        return False
+    before = {c.name: c.type for c in current.columns}
+    return any(c.name in before and before[c.name] != c.type for c in target.columns)
+
+
+def warnings(current: SchemaSnapshot, target: SchemaSnapshot, change: Any, schema: str) -> list[dict[str, Any]]:
+    """The fixed preview warnings (section 8, GS3-16; review I-1 of #132), as codes with the bare table name where one
+    applies: the page has an English and a German text for each. Names go to this page only."""
+    prefix = f"{schema}."
+
+    def bare(name: str) -> str:
+        return name[len(prefix) :] if name.startswith(prefix) else name
+
+    tables = {t.name: t for t in current.tables}
+    wanted = {t.name: t for t in target.tables}
+    found: list[dict[str, Any]] = [{"code": "not_modelled", "table": None}]
+    if change.dialect == "postgresql":
+        named: set[str] = set()
+        for step in change.steps:
+            if step.operation in ("drop_column", "drop_table") or (
+                step.operation == "alter_column" and _type_changes(tables.get(step.target), wanted.get(step.target))
+            ):
+                named.add(step.target)
+        found += [{"code": "pg_dependent_code", "table": bare(name)} for name in sorted(named)]
+        found.append({"code": "function_drift", "table": None})
+    else:
+        for step in change.steps:
+            existing = tables.get(step.target)
+            if step.operation == "rebuild_table" and existing is not None and not _integer_primary_key(existing):
+                found.append({"code": "sqlite_rowid", "table": bare(step.target)})
+    found.append({"code": "fingerprint_gaps", "table": None})
+    if any(RiskClass.LOCKING in step.risks for step in change.steps):
+        found.append({"code": "locking", "table": None, "lock_timeout_s": LOCK_TIMEOUT_S})
+    return found
 
 
 # --- the draft and its store -----------------------------------------------------------------------------------------

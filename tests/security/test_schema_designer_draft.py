@@ -262,9 +262,14 @@ def _calls(tree: ast.AST, name: str) -> list[ast.Call]:
 
 def test_the_area_never_reads_a_plan_or_a_snapshot_from_json() -> None:
     """GS3-09 (static): no module of the area calls ``from_json`` (``MigrationPlan`` or ``SchemaSnapshot``), so no
-    outside text can become a plan or a model; nor does it write a draft to a file."""
+    outside text can become a plan or a model; nor does it write a draft to a file. The one exception is the schema
+    comparison (STU-XSD-2, TX-28), which reads a snapshot file to show and compare it only; its own static check is in
+    ``test_schema_designer_compare.py``."""
     for path in sorted(AREA.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
+        if path.name == "compare.py":
+            assert [ast.unparse(call.func) for call in _calls(tree, "from_json")] == ["SchemaSnapshot.from_json"]
+            continue
         assert _calls(tree, "from_json") == [], path.name
         names = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
         if path.name in ("draft.py", "designer.py"):

@@ -233,6 +233,9 @@ CHANGING_ROUTES: dict[str, str] = {
     # execute_plan, on DEV or TEST without migration management only (tests/security/test_schema_designer_execution.py).
     "POST /api/write/schema-designer/plan/confirm": "records the confirmed hash and classes in memory (flag)",
     "POST /api/write/schema-designer/plan/run": "backup, then DDL via execute_plan on DEV/TEST (Schema Designer flag)",
+    # STU-XSD-2 (G-S3): the read-only schema comparison and its plan preview, never kept or run, behind the
+    # schema_designer flag only (tests/security/test_schema_designer_compare.py).
+    "POST /api/write/schema-designer/compare": "compares two schemas read-only; previews a plan, never kept (flag)",
     # STU-XDM-2 (G-S4): the Database Manager's backup and restore, behind the database_manager flag only (405 and no
     # import of the area while it is off; tests/security/test_dbm_backup_restore.py). Never on PROD.
     "POST /api/write/database-manager/backup": "verified pg_dump or SQLite backup into Studio's backup folder (flag)",

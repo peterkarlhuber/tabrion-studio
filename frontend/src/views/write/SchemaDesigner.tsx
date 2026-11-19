@@ -42,6 +42,8 @@ import {
   type DraftTable,
   type PlanConfirmed,
   type PlanPreview,
+  type PlanStep,
+  type PlanWarning,
   type RunOutcome,
 } from '../../api/schemaDesigner';
 import { fetchWriteAreas } from '../../api/write';
@@ -996,7 +998,7 @@ const TABLE_POINTER = /^(tables|dropped)\.(\d+)$/;
  * which check failed (`plan.check`), each with its own text. With the draft, the table the refusal is about: the
  * problem names it only by its position (`tables.<n>` or `dropped.<n>`, GS3-12), and the page looks it up.
  */
-function PlanIssues({ problem, draft }: { problem: Problem | null; draft?: Draft }) {
+export function PlanIssues({ problem, draft }: { problem: Problem | null; draft?: Draft }) {
   const { t } = useTranslation();
   const all = problem?.issues ?? [];
   const issues = all.filter((issue) => issue.pointer.startsWith('plan.'));
@@ -1149,53 +1151,8 @@ function PreviewPanel({
         <dt>{t('schemaDesigner.transactional')}</dt>
         <dd>{preview.transactional ? t('schemaDesigner.yes') : t('schemaDesigner.no')}</dd>
       </dl>
-      {preview.steps.length > 0 ? (
-        <div className={designer.scroll}>
-          <table className={designer.grid}>
-            <caption className="tb-sr-only">{t('schemaDesigner.previewTitle')}</caption>
-            <thead>
-              <tr>
-                <th scope="col">{t('schemaDesigner.step.number')}</th>
-                <th scope="col">{t('schemaDesigner.step.operation')}</th>
-                <th scope="col">{t('schemaDesigner.step.risks')}</th>
-                <th scope="col">{t('schemaDesigner.step.transactional')}</th>
-                <th scope="col">{t('schemaDesigner.step.sql')}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {preview.steps.map((step) => (
-                <tr key={step.index} data-testid="schema-designer-step">
-                  <td>{step.index + 1}</td>
-                  <th scope="row">
-                    {t(`schemaDesigner.operations.${step.operation}`, {
-                      defaultValue: step.operation,
-                    })}{' '}
-                    <span className={designer.code}>{visible(step.target)}</span>
-                  </th>
-                  <td>
-                    <span className={designer.risks}>
-                      {step.risks.map((risk) => (
-                        <span key={risk} className={designer.badge}>
-                          {t(`schemaDesigner.risks.${risk}`, { defaultValue: risk })}
-                        </span>
-                      ))}
-                    </span>
-                  </td>
-                  <td>{step.transactional ? t('schemaDesigner.yes') : t('schemaDesigner.no')}</td>
-                  <td>
-                    {step.statements.map((statement, position) => (
-                      <pre key={position} className={designer.sql}>
-                        {sqlText(statement.sql)}
-                      </pre>
-                    ))}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : null}
-      <Warnings preview={preview} />
+      <PlanSteps steps={preview.steps} />
+      <Warnings warnings={preview.warnings} lockTimeoutS={preview.confirmation.lockTimeoutS} />
       {preview.executable ? (
         <RunForm
           preview={preview}
@@ -1222,6 +1179,58 @@ function PreviewPanel({
   );
 }
 
+/** The steps of a plan with their risk classes, transactional flag and exact SQL (STU-CR-4, STU-XSD-2). */
+export function PlanSteps({ steps }: { steps: PlanStep[] }) {
+  const { t } = useTranslation();
+  if (steps.length === 0) return null;
+  return (
+    <div className={designer.scroll}>
+      <table className={designer.grid}>
+        <caption className="tb-sr-only">{t('schemaDesigner.previewTitle')}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{t('schemaDesigner.step.number')}</th>
+            <th scope="col">{t('schemaDesigner.step.operation')}</th>
+            <th scope="col">{t('schemaDesigner.step.risks')}</th>
+            <th scope="col">{t('schemaDesigner.step.transactional')}</th>
+            <th scope="col">{t('schemaDesigner.step.sql')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {steps.map((step) => (
+            <tr key={step.index} data-testid="schema-designer-step">
+              <td>{step.index + 1}</td>
+              <th scope="row">
+                {t(`schemaDesigner.operations.${step.operation}`, {
+                  defaultValue: step.operation,
+                })}{' '}
+                <span className={designer.code}>{visible(step.target)}</span>
+              </th>
+              <td>
+                <span className={designer.risks}>
+                  {step.risks.map((risk) => (
+                    <span key={risk} className={designer.badge}>
+                      {t(`schemaDesigner.risks.${risk}`, { defaultValue: risk })}
+                    </span>
+                  ))}
+                </span>
+              </td>
+              <td>{step.transactional ? t('schemaDesigner.yes') : t('schemaDesigner.no')}</td>
+              <td>
+                {step.statements.map((statement, position) => (
+                  <pre key={position} className={designer.sql}>
+                    {sqlText(statement.sql)}
+                  </pre>
+                ))}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 const WARNINGS = new Set([
   'not_modelled',
   'pg_dependent_code',
@@ -1232,9 +1241,15 @@ const WARNINGS = new Set([
 ]);
 
 /** The fixed warnings of the preview (STU-ADR-0007 section 8), each with its own text. */
-function Warnings({ preview }: { preview: PlanPreview }) {
+export function Warnings({
+  warnings,
+  lockTimeoutS,
+}: {
+  warnings: PlanWarning[];
+  lockTimeoutS: number;
+}) {
   const { t } = useTranslation();
-  const shown = preview.warnings.filter((warning) => WARNINGS.has(warning.code));
+  const shown = warnings.filter((warning) => WARNINGS.has(warning.code));
   if (shown.length === 0) return null;
   return (
     <div data-testid="schema-designer-warnings">
@@ -1244,7 +1259,7 @@ function Warnings({ preview }: { preview: PlanPreview }) {
           <li key={position} data-testid="schema-designer-warning" data-code={warning.code}>
             {t(`schemaDesigner.warnings.${warning.code}`, {
               table: visible(warning.table ?? ''),
-              seconds: warning.lockTimeoutS ?? preview.confirmation.lockTimeoutS,
+              seconds: warning.lockTimeoutS ?? lockTimeoutS,
               interpolation: { escapeValue: false },
             })}
           </li>
