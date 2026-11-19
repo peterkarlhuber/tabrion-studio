@@ -69,6 +69,15 @@ tabrion `71370a6` (merge of tabrion #92), which contains it. The G-T2 review of 
   it is shown and compared, never used as the source or target of a plan that runs or of a revision. Making such a
   snapshot the start of a draft is not part of 1.2 (open point, docs/TODO.md).
 - Drafts are not written to disk in 1.2; they end with the session.
+- **The graphical mode (STU-XSD-1, TX-31), as built:** the page draws the draft the server answers as the explorer's
+  ER diagram (`frontend/src/views/write/SchemaCanvas.tsx`, @xyflow/react and dagre, already dependencies of the
+  explorer; loaded only when the diagram is shown). It has no route, no request and no form of its own: choosing a
+  table shows that table's card from the table view, and a line drawn from a column to a column only fills in the
+  card's "New constraint" form, which the user applies or cancels. Every edit therefore reaches the server as the same
+  operation on the same route (`.../draft/edits`) and is checked the same way; the request has no key that could name
+  the view (exact body keys, refused otherwise). Box positions are the automatic layout and are not kept or sent.
+  Drawing needs a pointer; the table view is the accessible alternative with every edit (08 section 4.7), and a table
+  chosen with the keyboard moves the focus to its card.
 
 ### 4. Re-plan before the run, compare the hash, take the risks from the new plan (I-124 a)
 

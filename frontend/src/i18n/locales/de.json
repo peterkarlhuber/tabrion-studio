@@ -2115,6 +2115,22 @@
       "auditPending": "Der Audit-Eintrag steht noch aus; siehe Audit-Log bei den Schreibprofilen.",
       "draftEnded": "Der Entwurf ist beendet. Für weitere Änderungen bitte neu beginnen."
     },
+    "canvas": {
+      "view": "Entwurf anzeigen als",
+      "tableView": "Tabellenansicht",
+      "diagramView": "Diagramm",
+      "loading": "Das Diagramm wird geladen …",
+      "loadFailed": "Das Diagramm konnte nicht geladen werden. Laden Sie die Seite neu und versuchen Sie es noch einmal, oder nutzen Sie die Tabellenansicht.",
+      "hint": "Wählen Sie den Namen einer Tabelle, um sie unter dem Diagramm zu bearbeiten. Für einen Fremdschlüssel ziehen Sie mit dem Zeiger eine Linie vom Punkt einer Spalte rechts an einem Kasten zum Punkt einer Spalte links an der Tabelle, auf die er verweist: Das Formular „Neuer Constraint“ der Tabelle öffnet sich mit dem Schlüssel, und nichts ändert sich, bevor Sie es anwenden. Die Tabellenansicht zeigt denselben Entwurf und bietet jede Änderung mit der Tastatur.",
+      "capped": "Das Diagramm zeigt die ersten {{max}} von {{total}} Tabellen. Die Tabellenansicht zeigt alle.",
+      "empty": "Der Entwurf hat noch keine Tabellen. Fügen Sie eine mit „Tabelle hinzufügen“ hinzu.",
+      "label_one": "Diagramm des Entwurfs, {{count}} Tabelle",
+      "label_other": "Diagramm des Entwurfs, {{count}} Tabellen",
+      "edit": "Tabelle bearbeiten",
+      "aria": "Eine Tabelle des Entwurfs. Wählen Sie ihren Namen, um sie unter dem Diagramm zu bearbeiten.",
+      "none": "Keine Tabelle gewählt. Wählen Sie den Namen einer Tabelle im Diagramm, um sie hier zu bearbeiten.",
+      "chosen": "Tabelle {{name}} wird bearbeitet. Ihre Änderungen stehen darunter."
+    },
     "revision": {
       "title": "Als Alembic-Revision schreiben",
       "lead": "Studio schreibt diesen Plan als neue Revisionsdatei in den Revisionsordner des Projekts, nach dem einzigen Head. Studio führt die Revision, env.py oder einen Alembic-Befehl nie aus: Wende sie mit deinen eigenen Werkzeugen an.",

@@ -2115,6 +2115,22 @@
       "auditPending": "The audit record is still pending; see the audit log under write profiles.",
       "draftEnded": "The draft ended. Start it again to make further changes."
     },
+    "canvas": {
+      "view": "Show the draft as",
+      "tableView": "Table view",
+      "diagramView": "Diagram",
+      "loading": "Loading the diagram…",
+      "loadFailed": "The diagram could not be loaded. Reload the page and try again, or use the table view.",
+      "hint": "Choose a table's name to edit it below the diagram. To add a foreign key, draw a line with the pointer from a column's dot on the right of a box to a column's dot on the left of the table it refers to: the table's \"New constraint\" form opens with the key filled in, and nothing changes until you apply it. The table view shows the same draft and offers every edit with the keyboard.",
+      "capped": "The diagram shows the first {{max}} of {{total}} tables. The table view shows all of them.",
+      "empty": "The draft has no tables yet. Add one with \"Add table\".",
+      "label_one": "Diagram of the draft, {{count}} table",
+      "label_other": "Diagram of the draft, {{count}} tables",
+      "edit": "Edit table",
+      "aria": "A table of the draft. Choose its name to edit it below the diagram.",
+      "none": "No table chosen. Choose a table's name in the diagram to edit it here.",
+      "chosen": "Editing table {{name}}. Its edits are below."
+    },
     "revision": {
       "title": "Write as an Alembic revision",
       "lead": "Studio writes this plan as a new revision file into the project's revision folder, after the single head. Studio never runs the revision, env.py or an Alembic command: apply it with your own tooling.",

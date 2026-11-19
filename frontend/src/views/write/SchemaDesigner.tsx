@@ -17,10 +17,21 @@
  *   that with the plan hash the server recorded. Then **Run the plan** or a **Dry run** (only on request; rolled
  *   back). The server plans again, compares, makes the backup and runs; no button has the focus by default.
  *
- * The graphical ER mode (STU-XSD-1) will send the same edits to the same routes.
+ * **Diagram (STU-XSD-1, TX-31):** the same draft drawn as an ER diagram (`SchemaCanvas.tsx`, loaded on request). A
+ * table chosen there shows its card from the table view below the canvas; a line drawn from a column to a column opens
+ * that card's "New constraint" form with the foreign key filled in. The diagram has no route and no form of its own:
+ * every edit goes through the same forms to the same route, and the table view stays the accessible alternative.
  */
 import type { TFunction } from 'i18next';
-import { useCallback, useEffect, useId, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { fetchOpenConnections, type OpenedConnection } from '../../api/connections';
@@ -56,7 +67,22 @@ import { Field } from '../connections/Field';
 import { problemText } from '../connections/messages';
 import styles from '../Views.module.css';
 import { UnlockForm } from './DataEditor';
+import type { SchemaCanvas as SchemaCanvasType } from './SchemaCanvas';
+import type { DrawnKey } from './schemaCanvasModel';
 import designer from './SchemaDesigner.module.css';
+
+/**
+ * The diagram (STU-XSD-1): @xyflow/react and dagre load only when it is shown. Not `React.lazy`, for the reason of the
+ * explorer's diagram (`ExplorerView.tsx`, TD-052): a state update after the import renders and commits in one task.
+ */
+type SchemaCanvasView = typeof SchemaCanvasType;
+let schemaCanvasView: SchemaCanvasView | null = null;
+function loadSchemaCanvas(): Promise<SchemaCanvasView> {
+  return import('./SchemaCanvas').then((module) => {
+    schemaCanvasView = module.default;
+    return module.default;
+  });
+}
 
 export function SchemaDesignerSection({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [on, setOn] = useState(false);
@@ -208,13 +234,17 @@ function SchemaDesigner({ fetcher }: { fetcher: typeof fetch }) {
   );
 }
 
-/** The action the user opened on a table or column; one form at a time. */
+/**
+ * The action the user opened on a table or column; one form at a time. A foreign key drawn on the diagram opens
+ * `add_constraint` with `drawn`: the form starts filled in with it, and nothing is sent before the user applies it.
+ */
 type Action =
   | { op: 'add_table' }
   | {
-      op: 'rename_table' | 'drop_table' | 'add_column' | 'add_constraint' | 'add_index';
+      op: 'rename_table' | 'drop_table' | 'add_column' | 'add_index';
       table: string;
     }
+  | { op: 'add_constraint'; table: string; drawn?: DrawnKey }
   | { op: 'rename_column' | 'alter_column'; table: string; column: DraftColumn };
 
 function DraftPanel({
@@ -234,6 +264,49 @@ function DraftPanel({
   const [action, setAction] = useState<Action | null>(null);
   const [preview, setPreview] = useState<PlanPreview | null>(null);
   const [outcome, setOutcome] = useState<RunOutcome | null>(null);
+  /** The table view (the accessible alternative) or the diagram (STU-XSD-1), with the table chosen there. */
+  const [view, setView] = useState<'table' | 'diagram'>('table');
+  const [chosen, setChosen] = useState<string | null>(null);
+  const [SchemaCanvas, setSchemaCanvas] = useState<SchemaCanvasView | null>(() => schemaCanvasView);
+  const [canvasFailed, setCanvasFailed] = useState(false);
+  const chosenCard = useRef<HTMLDivElement>(null);
+  /** A table chosen with the keyboard: its card takes the focus (not 150 boxes to Tab past). */
+  const [focusCard, setFocusCard] = useState(0);
+
+  useEffect(() => {
+    if (view !== 'diagram' || SchemaCanvas !== null) return undefined;
+    let live = true;
+    loadSchemaCanvas().then(
+      (loaded) => {
+        if (live) setSchemaCanvas(() => loaded);
+      },
+      () => {
+        if (live) setCanvasFailed(true);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [view, SchemaCanvas]);
+
+  const choose = useCallback((name: string, keyboard = false) => {
+    setChosen(name);
+    if (keyboard) setFocusCard((count) => count + 1);
+    setAction((current) =>
+      current !== null && 'table' in current && current.table !== name ? null : current,
+    );
+  }, []);
+
+  /** A line drawn on the diagram: the table's "New constraint" form, filled in; the user applies it (or not). */
+  const draw = useCallback((key: DrawnKey) => {
+    setChosen(key.table);
+    setFocusCard((count) => count + 1);
+    setAction({ op: 'add_constraint', table: key.table, drawn: key });
+  }, []);
+
+  useEffect(() => {
+    if (focusCard > 0) chosenCard.current?.focus();
+  }, [focusCard]);
 
   const fail = useCallback(
     (found: Problem) => {
@@ -367,6 +440,9 @@ function DraftPanel({
     );
   }
 
+  // A chosen table that a rename or a drop took away is no longer chosen.
+  const chosenTable =
+    chosen === null ? undefined : draft.tables.find((table) => table.name === chosen);
   return (
     <div className={designer.designer} data-testid="schema-designer-draft">
       <p className={designer.meta}>
@@ -378,6 +454,19 @@ function DraftPanel({
         })}
       </p>
       <p className={connectionStyles.hint}>{t('schemaDesigner.renameNote')}</p>
+      <div
+        className={designer.toolbar}
+        role="group"
+        aria-label={t('schemaDesigner.canvas.view')}
+        data-testid="schema-designer-views"
+      >
+        <Button size="sm" aria-pressed={view === 'table'} onClick={() => setView('table')}>
+          {t('schemaDesigner.canvas.tableView')}
+        </Button>
+        <Button size="sm" aria-pressed={view === 'diagram'} onClick={() => setView('diagram')}>
+          {t('schemaDesigner.canvas.diagramView')}
+        </Button>
+      </div>
       <div className={designer.toolbar}>
         <Button onClick={() => setAction({ op: 'add_table' })}>
           {t('schemaDesigner.addTable')}
@@ -403,18 +492,69 @@ function DraftPanel({
           })}
         </p>
       ) : null}
-      {draft.tables.map((table) => (
-        <TableCard
-          key={table.name}
-          table={table}
-          draft={draft}
-          action={
-            action !== null && 'table' in action && action.table === table.name ? action : null
-          }
-          onAction={setAction}
-          onEdit={edit}
-        />
-      ))}
+      {view === 'table'
+        ? draft.tables.map((table) => (
+            <TableCard
+              key={table.name}
+              table={table}
+              draft={draft}
+              action={
+                action !== null && 'table' in action && action.table === table.name ? action : null
+              }
+              onAction={setAction}
+              onEdit={edit}
+            />
+          ))
+        : null}
+      {view === 'diagram' ? (
+        SchemaCanvas === null ? (
+          canvasFailed ? (
+            <p role="alert" className={connectionStyles.error} data-testid="schema-canvas-failed">
+              {t('schemaDesigner.canvas.loadFailed')}
+            </p>
+          ) : (
+            <p className={connectionStyles.hint}>{t('schemaDesigner.canvas.loading')}</p>
+          )
+        ) : (
+          <>
+            <SchemaCanvas
+              draft={draft}
+              chosen={chosenTable?.name ?? null}
+              onChoose={choose}
+              onDraw={draw}
+            />
+            <p role="status" className={designer.meta} data-testid="schema-canvas-chosen">
+              {chosenTable === undefined
+                ? t('schemaDesigner.canvas.none')
+                : t('schemaDesigner.canvas.chosen', {
+                    name: visible(chosenTable.name),
+                    interpolation: { escapeValue: false },
+                  })}
+            </p>
+            {chosenTable !== undefined ? (
+              <div
+                ref={chosenCard}
+                tabIndex={-1}
+                className={designer.chosenCard}
+                data-testid="schema-canvas-card"
+              >
+                <TableCard
+                  key={chosenTable.name}
+                  table={chosenTable}
+                  draft={draft}
+                  action={
+                    action !== null && 'table' in action && action.table === chosenTable.name
+                      ? action
+                      : null
+                  }
+                  onAction={setAction}
+                  onEdit={edit}
+                />
+              </div>
+            ) : null}
+          </>
+        )
+      ) : null}
       {preview !== null ? (
         <PreviewPanel
           key={preview.planHash}
@@ -549,10 +689,26 @@ function TableCard({
         </Button>
       </div>
       {action !== null ? (
-        <EditForm action={action} draft={draft} onSubmit={onEdit} onCancel={() => onAction(null)} />
+        <EditForm
+          key={formKey(action)}
+          action={action}
+          draft={draft}
+          onSubmit={onEdit}
+          onCancel={() => onAction(null)}
+        />
       ) : null}
     </section>
   );
+}
+
+/** Another action (another column, another line drawn on the diagram) starts its form anew. */
+function formKey(action: Action): string {
+  if ('column' in action) return `${action.op}:${action.column.name}`;
+  if (action.op === 'add_constraint' && action.drawn !== undefined) {
+    const key = action.drawn;
+    return JSON.stringify([action.op, key.column, key.referredTable, key.referredColumn]);
+  }
+  return action.op;
 }
 
 function Elements({ table, onDrop }: { table: DraftTable; onDrop: (edit: DraftEdit) => void }) {
@@ -664,17 +820,18 @@ function EditForm({
   const { t } = useTranslation();
   const id = useId();
   const column = 'column' in action ? action.column : null;
+  const drawn = action.op === 'add_constraint' ? (action.drawn ?? null) : null;
   const [values, setValues] = useState<Record<string, string>>(() => ({
     name: '',
     type: column?.type ?? '',
     default: column?.default ?? '',
-    columns: '',
-    referredTable: draft.tables[0]?.name ?? '',
-    referredColumns: '',
+    columns: drawn?.column ?? '',
+    referredTable: drawn?.referredTable ?? draft.tables[0]?.name ?? '',
+    referredColumns: drawn?.referredColumn ?? '',
     onDelete: '',
     expression: '',
     where: '',
-    kind: 'unique',
+    kind: drawn === null ? 'unique' : 'foreign_key',
   }));
   const [flags, setFlags] = useState({
     nullable: column?.nullable ?? true,

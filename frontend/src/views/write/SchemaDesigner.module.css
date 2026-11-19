@@ -130,3 +130,10 @@
   padding: 0;
   border: 0;
 }
+/* The card of the table chosen on the diagram (STU-XSD-1): it takes the focus when the table was chosen with the
+   keyboard. */
+.chosenCard:focus {
+  outline: 2px solid var(--tb-color-focus);
+  outline-offset: 2px;
+  border-radius: var(--tb-radius-md);
+}
