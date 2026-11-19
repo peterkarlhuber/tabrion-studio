@@ -43,7 +43,7 @@ from typing import Any
 
 from tabrion.profilefile import ConnectionProfile, ProfileFileError, SecretRef, dump
 
-from tabrion_studio.config.schema import Profile, is_host_list
+from tabrion_studio.config.schema import Profile, is_abstract_socket, is_host_list
 from tabrion_studio.write.audit import AuditError, AuditLog
 from tabrion_studio.write.connection import WriteError
 from tabrion_studio.write.folders import (
@@ -170,6 +170,9 @@ def export_profiles(
     for profile in profiles:
         if profile.host is not None and is_host_list(profile.host):
             raise WriteError("studio.profile_export_multi_host", [("export.profiles", "export.host_list")])
+        if profile.host is not None and is_abstract_socket(profile.host):
+            # L-1 of #153: refused by the validator already; never written to a file another program reads.
+            raise WriteError("studio.profile_export_invalid", [("export.profiles", "export.host_abstract_socket")])
     try:
         path, folder, name = check_new_file_path(doc.get("path"), (SUFFIX,))
     except FolderRefused as refused:

@@ -120,6 +120,7 @@ const PROBLEMS = new Set([
   'secret_confirmation_not_needed',
   'secret_confirmation_unavailable',
   'write_tls_required',
+  'write_loopback_tls_required',
   'require_auth_unavailable',
   // The Schema Designer's database creation (STU-CR-2, STU-CR-3).
   'schema_create_invalid',
@@ -220,6 +221,7 @@ const ISSUES = new Set([
   'network_path',
   'url_character',
   'host_list',
+  'host_abstract_socket',
   'not_for_engine',
   'plain_password',
   'rename_unsupported',
@@ -369,6 +371,7 @@ const EXPORT_ISSUES = new Set([
   'unknown',
   'same_name',
   'host_list',
+  'host_abstract_socket',
   'not_storable',
   'too_long',
   'control_character',

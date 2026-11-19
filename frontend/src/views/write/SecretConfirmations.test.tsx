@@ -125,6 +125,49 @@ describe('SecretConfirmations (STU-XW-4, D-15)', () => {
     expect(dialog.textContent).toContain("Server's operating system userpostgres");
   });
 
+  it('says when nothing checks a server on this computer (G-S2 decision 2A)', async () => {
+    setup(
+      { status: 200, body: { confirmed: true } },
+      {
+        ...PREVIEW,
+        confirm_text: '127.0.0.1',
+        pair: {
+          ...PREVIEW.pair,
+          host: '127.0.0.1',
+          sslmode: 'prefer',
+          foreign: false,
+          local_unverified: true,
+        },
+      },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    const note = await screen.findByTestId('secret-pair-local');
+    expect(note.textContent).toMatch(/nothing checks who answers/);
+    expect(note.textContent).toMatch(/verify-full/);
+    expect(screen.getAllByRole('note')).toHaveLength(1);
+  });
+
+  it('says nothing about a checked local server', async () => {
+    setup(
+      { status: 200, body: { confirmed: true } },
+      {
+        ...PREVIEW,
+        confirm_text: '/var/run/postgresql',
+        pair: {
+          ...PREVIEW.pair,
+          host: '/var/run/postgresql',
+          foreign: false,
+          requirepeer: 'postgres',
+          local_unverified: false,
+        },
+      },
+    );
+    await userEvent.click(await screen.findByRole('button', { name: 'Review' }));
+    await screen.findByTestId('secret-pair');
+    expect(screen.queryByTestId('secret-pair-local')).toBeNull();
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
   it('shows the server refusal as a problem', async () => {
     setup({
       status: 400,

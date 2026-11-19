@@ -83,6 +83,24 @@ the server answers `405` and the write code is not even loaded.
 
     The file gets the checks of Studio's own files: it must be a regular file (not a link), readable and writable by
     you only (`0600`), in a folder that only you may write. Otherwise every area is off.
+
+    One more key, outside `[areas]`, sets how a write or admin password may reach a PostgreSQL server on this
+    computer (G-S2 decision 2A; it turns no area on):
+
+    ```toml
+    loopback_tls = "accept"   # the default
+    # loopback_tls = "require"
+    ```
+
+    With `"accept"` Studio connects as G-S2 allowed for local DEV, TEST and STAGE use, and says when nothing checks
+    who answers (see "a local socket" below). With `"require"` it sends such a password only over TLS with the TLS mode
+    `verify-full`, or over a Unix socket with `requirepeer`; any other unlock is refused before the password is sent
+    (`400 studio.write_loopback_tls_required`). An unknown value counts as `"require"`. The owner decides at G-R
+    whether `"require"` becomes the default.
+
+    A PostgreSQL `host` that starts with `@` (on Linux a Unix socket in the abstract namespace) is refused in every
+    profile, read, write or admin: any program on this computer could take such a socket, and neither TLS nor
+    `requirepeer` would apply. Use a socket folder, `localhost` or the server's name instead.
 - **Write and admin profiles.** A write profile (Data Editor, Schema Designer) or an admin profile (Database Manager)
   lives only in your own `profiles.toml` (`[[write_profile]]`), never in a project file: Studio refuses a project
   file that defines one. It is coupled to one of your own read profiles, uses its target and environment, and on
@@ -176,7 +194,10 @@ the server answers `405` and the write code is not even loaded.
       new chain was put in its place), it writes an `audit.reset` record first, goes on writing, and the write profile
       section says "found missing or reset" for as long as such records are in the log. Moving the folder aside
       yourself, as above, gives that notice too. Without a usable keyring the log works as before and the section
-      says that a removed log would go unnoticed. A program running as you can change the keyring too (residual
+      says that a removed log would go unnoticed. On Linux without a keyring service (a headless server, or a
+      session without the Secret Service, for example GNOME Keyring or KWallet) the anchor is therefore always
+      shown as unavailable (`anchor` `unavailable` in `GET /api/write/audit`); start a keyring service for the
+      session to use it. A program running as you can change the keyring too (residual
       risk 3). `GET /api/write/audit` lists the newest records and the verification, read only; no route changes the
       log, and with every area off it answers `405` like every other write route.
 - **Plans, preview and confirmation (STU-XW-3).** While an area is on, a change runs only as a plan that Studio
@@ -233,7 +254,9 @@ the server answers `405` and the write code is not even loaded.
       Over loopback TCP there is no such check: a program that took the server's port before it started could
       receive the SCRAM exchange, which reveals no password but lets it try to guess a weak one offline. Use a long
       random password for a write role, and prefer the socket with `requirepeer` or TLS with `verify-full` on this
-      computer too;
+      computer too. The confirmation dialog says when nothing checks a server on this computer (TCP without
+      `verify-full`, or a socket without `requirepeer`), and so does the unlock state (`local_unverified`); with
+      `loopback_tls = "require"` in `write-areas.toml` such an unlock is refused;
     - confirming and revoking are recorded in the audit log, with the pair's hash and the kind of reference, never the
       host, the variable name, the path or the password. SQLite write profiles have no password and need no
       confirmation.
