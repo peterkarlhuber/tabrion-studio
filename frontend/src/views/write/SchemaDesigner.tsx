@@ -1608,6 +1608,11 @@ function RunForm({
   const [busy, setBusy] = useState(false);
   // Review I-2 of PR #137: a run with a backup can take long (pg_dump of the whole database); the page says so.
   const [running, setRunning] = useState<'run' | 'dry' | null>(null);
+  // GS3-14: once confirmed, the Confirm button is gone; the focus goes to the confirmation's status, never to Run.
+  const confirmedNote = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (confirmed !== null) confirmedNote.current?.focus();
+  }, [confirmed]);
 
   const confirm = async (event: FormEvent) => {
     event.preventDefault();
@@ -1776,6 +1781,8 @@ function RunForm({
       ) : (
         <>
           <p
+            ref={confirmedNote}
+            tabIndex={-1}
             className={connectionStyles.status}
             role="status"
             data-testid="schema-designer-confirmed"
@@ -1822,8 +1829,19 @@ function RunForm({
 /** What a run did: committed or rolled back (a dry run), its steps and the backup. */
 function RunResult({ outcome }: { outcome: RunOutcome }) {
   const { t } = useTranslation();
+  // GS3-14: the run's form and its buttons are gone; the focus goes to what the run did, not to the page's start.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    box.current?.focus();
+  }, [outcome]);
   return (
-    <div className={connectionStyles.status} role="status" data-testid="schema-designer-outcome">
+    <div
+      ref={box}
+      tabIndex={-1}
+      className={connectionStyles.status}
+      role="status"
+      data-testid="schema-designer-outcome"
+    >
       <p>
         {outcome.result === 'committed'
           ? t('schemaDesigner.run.committed', { count: outcome.stepsRun })

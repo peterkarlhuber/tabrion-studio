@@ -21,6 +21,17 @@ All notable changes to this project are documented here. The format follows
   rule, the write secret's confirmation and transport checks under either `loopback_tls` setting, the last check
   before every connection, the `pg_dump`/`pg_restore` connection and the profile export
   (`export.host_abstract_socket`). Tests: `tests/security/test_abstract_socket_host.py`.
+- STU-CR-7 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's focus, guide and browser tests. After a plan is confirmed the focus moves to the
+  confirmation's status, and after a run or dry run to its outcome, never to Run (GS3-14); the guide's "Its limits at
+  a glance" states revision only for Alembic projects, the PROD lock, direct runs only on DEV and TEST without
+  migration management, the backup rule with what `pg_dump` leaves out, the preview warnings and that the designer
+  changes no role (GS3-24, doc 15 section 3.1). New e2e of the read-only comparison in both themes with axe (three
+  browsers in CI). From the review of #148: the diagram's node ids are the boxes' indexes, mapped back to the table
+  names, so a table name with `"` or `\` no longer breaks drawing (I-1), and the diagram draws at most 300 foreign
+  keys as lines with a note when the bound applies (I-2; `buildScene` takes the bound, the explorer is unchanged).
+  From the review of #150: ADR 0007 section 12 says why the profile export needs no unlock (I-1), and the guide asks
+  to share an exported file with care, as it names hosts, users and environments (I-2).
 - STU-CR-6 part 1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
   default changes): the profile export, `POST /api/write/schema-designer/profile-export` with the ids of read
   profiles, the new file's path (`*.tabrion-profile.toml`) and its typed name. The shared module

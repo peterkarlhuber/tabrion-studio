@@ -16,6 +16,28 @@ export interface DrawnKey {
   referredColumn: string;
 }
 
+/**
+ * The most foreign keys the canvas draws as lines (review I-2 of #148): like the explorer's bound on tables, a bound
+ * on what dagre lays out in the page. The keys after it are not drawn; the canvas says so, and the table view lists
+ * every key.
+ */
+export const MAX_DIAGRAM_LINES = 300;
+
+/** The id of the canvas node of the shown table at `index` (review I-1 of #148): never the table's name, which xyflow
+ * puts unescaped into a CSS selector while a line is drawn. */
+export function nodeId(index: number): string {
+  return `t${index}`;
+}
+
+/** The foreign keys among the tables the canvas shows (`diagramTables`): the lines it would draw without the bound. */
+export function lineCount(tables: DiagramTable[]): number {
+  const shown = new Set(tables.map((table) => table.name));
+  return tables.reduce(
+    (sum, table) => sum + table.foreignKeys.filter((key) => shown.has(key.referredTable)).length,
+    0,
+  );
+}
+
 /** The tables the canvas shows: the draft's first `MAX_DIAGRAM_TABLES`, in the draft's order (the table view: all). */
 export function diagramTables(draft: Draft): DiagramTable[] {
   return draft.tables.slice(0, MAX_DIAGRAM_TABLES).map((table) => ({
