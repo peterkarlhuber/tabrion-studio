@@ -17,7 +17,9 @@ All notable changes to this project are documented here. The format follows
   the owner's grant of 2026-11-18 with the safest option (STU-ADR-0008 section 12: tool paths only from the owner's
   configuration, PostgreSQL restore only into a new database, backups never deleted by Studio, no release
   exception, no Database Manager action on PROD, the Windows limits); the guide says that backups are sensitive full
-  copies to remove by hand. H-2 and G-R stay mandatory before any publication.
+  copies to remove by hand. The Connections page shows the profile export once its own profile list is loaded, so
+  that loading it no longer remounts the export and drops the user's picks (a race seen in Firefox e2e on master).
+  H-2 and G-R stay mandatory before any publication.
 - STU-XDM-5 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
   changes): profile pairs, import and export in the Database Manager. Four routes, 405 and not even loaded with the
   flag off: `POST /api/write/database-manager/profiles/export/preview` and `.../profiles/export` reuse the shared

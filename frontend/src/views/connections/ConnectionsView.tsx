@@ -774,8 +774,11 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       {/* STU-CR-4: the designer's table view, behind the same flag; it changes nothing in a database. */}
       <SchemaDesignerSection fetcher={fetcher} />
       <SchemaCompareSection fetcher={fetcher} />
-      {/* STU-CR-6 part 1: read profiles to a new profile file, behind the same flag; never a secret. */}
-      <ProfileExportSection key={profiles.map((item) => item.id).join(' ')} fetcher={fetcher} />
+      {/* STU-CR-6 part 1: read profiles to a new profile file, behind the same flag; never a secret. Shown once the
+          list is loaded, so that loading it does not remount the section and drop the user's picks. */}
+      {list !== null && list !== 'loading' ? (
+        <ProfileExportSection key={profiles.map((item) => item.id).join(' ')} fetcher={fetcher} />
+      ) : null}
       {/* STU-XDM-2: read again when a connection opens or closes, so its admin profile can unlock. */}
       <DatabaseManagerSection
         key={opened.map((item) => item.connectionId).join(' ')}
