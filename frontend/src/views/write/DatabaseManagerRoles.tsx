@@ -81,6 +81,8 @@ const ROLE_ISSUES = new Set([
   'system_object',
   'object_owner',
   'own_role',
+  'own_role_reached',
+  'own_role_unknown',
   'privileged_role',
   'escalation_grant',
   'exists',

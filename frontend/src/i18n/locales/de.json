@@ -2472,6 +2472,8 @@
         "system_object": "Objekte des Systems werden nie vergeben.",
         "object_owner": "Der Eigentümer des Objekts hat gefährliche Rechte.",
         "own_role": "Studios eigene Rollen (die Admin-Rolle, der Benutzer jedes Profils, die Rolle der Sitzung) werden nie geändert.",
+        "own_role_reached": "Eine von Studios eigenen Rollen ist Mitglied dieser Rolle (direkt oder über eine andere Gruppe): Rechte an sie zu vergeben oder sie zu ändern, zu entziehen oder zu löschen, würde ändern, was Studios eigene Rolle darf.",
+        "own_role_unknown": "Ein PostgreSQL-Profil hat keinen Benutzer, und Studio kann nicht sagen, welche Rolle es nutzt; daher ändert es keine Rolle. Nenne in jedem Profil den Benutzer.",
         "privileged_role": "Die Gruppe ist eine vordefinierte oder Server-Datei-Rolle oder hat gefährliche Rechte.",
         "escalation_grant": "Die Gruppe hat TRIGGER, EXECUTE auf einer SECURITY-DEFINER-Funktion oder CREATE auf einem Schema in einer Datenbank des Servers.",
         "exists": "Eine Rolle dieses Namens gibt es schon."

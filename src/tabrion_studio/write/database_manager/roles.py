@@ -21,8 +21,11 @@ statement of its own and never concatenates SQL.
 **Studio's own checks on top (fail closed).**
 
 * **Own roles:** Studio never changes, drops, grants to or revokes from its own roles: the session's ``CURRENT_USER``
-  and ``SESSION_USER`` (the admin role) and every role a profile or write/admin profile of the user's store names
-  (``role.own_role``). Studio never sets up rights for itself (GS4-13).
+  and ``SESSION_USER`` (the admin role), every role a profile or write/admin profile names (for a profile without
+  ``user`` the OS user libpq takes), and the roles of the open read connections (``role.own_role``; when a profile's
+  role cannot be known, every change is refused: ``role.own_role_unknown``, review I-2 of #149). Nor a role one of
+  them reaches through INHERIT or SET (a group above Studio's own role): every action but create is refused
+  (``role.own_role_reached``, review L-1 of #149). Studio never sets up rights for itself (GS4-13).
 * **Privileged roles:** a membership in a predefined role (``pg_*``, among them ``pg_read_server_files``,
   ``pg_write_server_files`` and ``pg_execute_server_program``), or in a role that has or reaches SUPERUSER, BYPASSRLS,
   CREATEROLE, REPLICATION, a server-access role or any predefined role, is refused before Tabrion is called
@@ -30,7 +33,9 @@ statement of its own and never concatenates SQL.
 * **K-2 in every database (P90-04):** before a membership is granted, the granted role's escalation grants (TRIGGER,
   EXECUTE on a SECURITY DEFINER function it does not own, CREATE on ``public`` or a foreign schema) are read in every
   database the admin profile may connect to; any of them refuses (``role.escalation_grant``). Databases it could
-  not connect to are named in the preview: the check covers only the databases listed.
+  not connect to are named in the preview: the check covers only the databases listed. It runs before the change,
+  outside Tabrion's transaction: a K-2 grant made there by a concurrent privileged session in between is not seen
+  (review I-1 of #149).
 * **Names (P90-05):** every name Studio shows or audits is escaped (control, format, separator and other invisible
   characters as ``<U+XXXX>``); an action on a name that holds one is refused, since it cannot be confirmed by typing
   what the user sees (``studio.dbm_role_name_invalid``).
@@ -65,7 +70,9 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 import datetime
+import getpass
 import hashlib
 import json
 import logging
@@ -138,6 +145,8 @@ REASONS = frozenset(
         "system_object",
         "object_owner",
         "own_role",
+        "own_role_reached",
+        "own_role_unknown",
         "privileged_role",
         "escalation_grant",
         "exists",
@@ -169,6 +178,16 @@ _OTHER_DATABASES = (
     " AND NOT pg_catalog.has_database_privilege(d.oid, 'CONNECT')"
 )
 _CURRENT_DATABASE = "SELECT pg_catalog.current_database()::pg_catalog.text"
+#: Whether one of Studio's own roles reaches the target through any chain of memberships that passes its rights on
+#: (INHERIT) or lets it switch to it (SET) (review L-1 of #149). A membership with only the ADMIN option, as
+#: PostgreSQL 16 gives the admin role for every role it creates, passes nothing on.
+_REACHERS = (
+    "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles o, pg_catalog.pg_roles t"
+    " WHERE o.rolname OPERATOR(pg_catalog.=) ANY(CAST(:own AS pg_catalog.text[]))"
+    " AND t.rolname OPERATOR(pg_catalog.=) CAST(:target AS pg_catalog.text)"
+    " AND o.oid OPERATOR(pg_catalog.<>) t.oid"
+    " AND (pg_catalog.pg_has_role(o.oid, t.oid, 'USAGE') OR pg_catalog.pg_has_role(o.oid, t.oid, 'SET')))"
+)
 _ATTRIBUTE_NAMES = ("login", "inherit", "createdb", "createrole", "replication", "superuser", "bypass_rls")
 
 
@@ -403,15 +422,64 @@ def server_checks(manager: Manager, session: str, doc: dict[str, Any]) -> Unlock
     return unlock
 
 
-def own_roles(manager: Manager, unlock: Unlock) -> frozenset[str]:
-    """``CURRENT_USER``, ``SESSION_USER`` and every role a profile or write/admin profile of the user's store names:
-    roles Studio never changes (GS4-13)."""
+@dataclass(frozen=True)
+class OwnRoles:
+    """The roles Studio never changes or widens (GS4-13). ``unknown``: a profile's role could not be known (no user
+    in it, no open connection to ask and no OS user name), so every target could be it: fail closed."""
+
+    names: frozenset[str]
+    unknown: bool = False
+
+    def __contains__(self, name: object) -> bool:
+        return name in self.names
+
+
+def _os_user() -> str | None:
+    """The OS user name libpq takes for a profile without ``user`` (Studio pins libpq's environment, G2-01)."""
+    try:
+        name = getpass.getuser()
+    except Exception:  # no user name the process can find
+        return None
+    return name or None
+
+
+def own_roles(manager: Manager, unlock: Unlock) -> OwnRoles:
+    """``CURRENT_USER`` and ``SESSION_USER`` of the admin session; the role every profile and write/admin profile
+    names, of the user's store and a trusted project; ``CURRENT_USER`` and ``SESSION_USER`` of every open read
+    connection (review I-2 of #149); and, for a profile without ``user``, the OS user name libpq takes. A profile
+    without ``user`` whose role cannot be known makes the result ``unknown``."""
     rows = unlock.connection.fetch(_SESSION_ROLES)
     found = {str(value) for value in (rows[0] if rows else ()) if isinstance(value, str)}
-    store = manager.unlocks.config.user.profiles()
-    found.update(p.user for p in store.profiles if p.user)
+    unknown = False
+    config = manager.unlocks.config
+    store = config.user.profiles()
+    profiles = [entry.profile for entry in config.entries()]
+    found.update(p.user for p in profiles if p.user)
     found.update(w.user for w in store.write_profiles if w.user)
-    return frozenset(found)
+    if any(not p.user for p in profiles if p.engine == "postgresql") or any(not w.user for w in store.write_profiles):
+        user = _os_user()
+        if user is None:
+            unknown = True
+        else:
+            found.add(user)
+    for opened in manager.registry.list():
+        if opened.engine == "sqlite":
+            continue
+        try:
+            session_rows = opened.fetch(_SESSION_ROLES)
+        except Exception:  # busy or gone: its profile's role is counted above (or the OS user's)
+            logger.info("an open connection's role was not read", extra={"event": "studio.dbm_role_own"})
+            continue
+        found.update(str(v) for v in (session_rows[0] if session_rows else ()) if isinstance(v, str))
+    return OwnRoles(frozenset(found), unknown)
+
+
+def _reached_by_own(unlock: Unlock, own: OwnRoles, role: str) -> bool:
+    """Whether a role of ``own`` reaches ``role`` (its rights through INHERIT, or SET ROLE to it), directly or through
+    any chain of memberships (review L-1 of #149): a privilege or membership given to ``role`` would reach Studio's own
+    role."""
+    rows = unlock.connection.fetch(_REACHERS, {"own": sorted(own.names), "target": role})
+    return bool(rows and rows[0] and rows[0][0])
 
 
 @contextmanager
@@ -549,6 +617,8 @@ def _read(manager: Manager, unlock: Unlock, request: Request) -> dict[str, Any]:
     warnings: list[str] = []
     if request.role in own or (request.member is not None and request.member in own):
         refusals.append("own_role")
+    if own.unknown:
+        refusals.append("own_role_unknown")
     if request.role.startswith("pg_") and request.action != "grant_membership":
         refusals.append("predefined_role")
     if request.member is not None and request.member.startswith("pg_"):
@@ -565,6 +635,10 @@ def _read(manager: Manager, unlock: Unlock, request: Request) -> dict[str, Any]:
         raise WriteError("studio.dbm_role_missing")
     if request.member is not None and member is None:
         raise WriteError("studio.dbm_role_missing")
+    if request.action != "create" and _reached_by_own(unlock, own, request.confirm):
+        # A privilege or membership given to it reaches Studio's own role; dropping, changing or revoking it changes
+        # what Studio's own role can do. Refused for every action (review L-1 of #149).
+        refusals.append("own_role_reached")
     k2: dict[str, Any] | None = None
     if request.action == "grant_membership" and target is not None and member is not None:
         if request.role.startswith("pg_") or request.role in SERVER_ACCESS_ROLES or target["broad"]:
@@ -705,7 +779,9 @@ def apply(manager: Manager, session: str, doc: dict[str, Any]) -> dict[str, Any]
         raise WriteError("studio.dbm_role_changed")
     if seen["refusals"]:
         raise WriteError(
-            "studio.dbm_role_not_allowed" if "own_role" in seen["refusals"] else "studio.dbm_role_unsafe",
+            "studio.dbm_role_not_allowed"
+            if {"own_role", "own_role_reached", "own_role_unknown"} & set(seen["refusals"])
+            else "studio.dbm_role_unsafe",
             [("role.target", f"role.{r}" if r in REASONS else "role.refused") for r in seen["refusals"]][:16],
         )
     start = request.audited(password_set=password is not None)

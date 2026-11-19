@@ -192,7 +192,9 @@ Studio never:
 - makes a role a member of a predefined role, of `pg_read_server_files`, `pg_write_server_files` or
   `pg_execute_server_program`, or of a group that has or reaches a dangerous attribute or holds TRIGGER, EXECUTE on
   a foreign SECURITY DEFINER function or CREATE on a schema in **any** database of the server it can reach;
-- changes its own roles: the admin role, the role of the session and the user of any of your profiles;
+- changes its own roles: the admin role, the role of the session, the user of any of your profiles (for a profile
+  without a user, your operating-system user name) and the role of any open connection; nor gives anything to, or
+  changes, a group one of them is a member of;
 - works on a server that **any** of your profiles marks PROD, also under another host name such as `localhost`;
 - acts on a role whose name holds characters that cannot be seen (shown as `<U+XXXX>`): rename it outside Studio;
 - drops a role that still owns objects: reassign them outside Studio first.

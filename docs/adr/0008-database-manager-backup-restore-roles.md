@@ -362,12 +362,24 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
   (`role.owns_objects`). Tabrion's own refusals (`RoleUnsafe`) arrive as `studio.dbm_role_unsafe` with fixed
   `role.<reason>` issues.
 - **Studio's own roles** are never changed (`role.own_role`): `CURRENT_USER`, `SESSION_USER` and the user of every
-  profile and write or admin profile in the user's store (the admin role and the current user's role included).
+  profile (the user's store and a trusted project) and write or admin profile (the admin role and the current user's
+  role included), `CURRENT_USER` and `SESSION_USER` of every open read connection, and for a profile without `user`
+  the OS user name libpq takes; when that cannot be known, every role change is refused (`role.own_role_unknown`,
+  review I-2 of #149). **Nor widened or narrowed through a group** (review L-1 of #149): every action but create is
+  refused (`role.own_role_reached`) when one of these roles reaches the role whose rights change (the member of a
+  membership, otherwise the role) through any chain of memberships with INHERIT or SET
+  (`pg_has_role(own, role, 'USAGE')` or `'SET'`), so no privilege or membership is given to a group above Studio's own
+  role, and no such group is changed, revoked from or dropped. A membership with only the ADMIN option, which
+  PostgreSQL 16 gives the creating admin role on every role it creates, passes no rights on and does not count.
 - **Preview, binding and typed confirmation for every change**, not only for drop and revoke: the apply carries the
   preview's `state` (a SHA-256 over the request, the target's and member's privileges and the K-2 result) and must
   match a fresh read (`studio.dbm_role_changed`); the typed name is the role whose rights change (the member for a
   membership), compared byte for byte (`studio.dbm_role_name_mismatch`). The apply button is never the default
   focus; drop and revoke use the danger style.
+- **Residual window (review I-1 of #149):** the K-2 check of the other databases runs before the change, outside
+  Tabrion's transaction (Tabrion checks only the connected database inside it). A TRIGGER, SECURITY DEFINER or
+  schema CREATE grant made in another database by another privileged session between that check and the commit is
+  not seen; it needs a concurrent privileged change and is not reported afterwards either.
 - **After the commit** `role_privileges` is read again and every field that differs from Tabrion's result is
   answered and audited as `differences` (P90-06).
 - **Alter sets every option** (Tabrion's `alter_role` sets every field of `RoleOptions`): a request that leaves one
@@ -396,7 +408,9 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
 - **Owner points, decided with the safest practical option** (STU-XDM-4; the owner may revisit them at G-S4):
   1. Every role change, not only drop and revoke, needs a preview and the typed name.
   2. The apply is bound to the preview's `state`; any change in between refuses.
-  3. Studio's own roles are the session's roles and the user of every profile of the store.
+  3. Studio's own roles are the session's roles, the user of every profile (or the OS user for one without), and the
+     roles of the open connections; a role any of them reaches through INHERIT or SET is refused for every action
+     but create (review L-1 and I-2 of #149).
   4. A PROD alias refuses on the server level, not only for the connected database.
   5. A K-2 check that could not reach every database warns and names the gaps; a K-2 grant found refuses.
   6. Privilege grants only in the connected database.

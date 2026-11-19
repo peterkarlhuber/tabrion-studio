@@ -440,3 +440,112 @@ def test_a_change_after_tabrions_commit_is_shown_as_a_difference(pg: Pg, monkeyp
     assert response.status_code == 200, response.text
     assert "member_of" in response.json()["differences"]
     assert any(r.get("differences") for r in pg.runs() if r.get("action") == "dbm.role.grant_membership")
+
+
+@pytest.fixture
+def above_reader(pg: Pg) -> tuple[str, str]:
+    """``<p>_grp`` above the read profile's user (made by the superuser) and ``<p>_top`` above ``<p>_grp``, so the
+    profile user reaches both, the second only through the first (review L-1 of #149)."""
+    reader = sqlalchemy.make_url(PG_URL or "").username
+    group, top = pg.name("grp"), pg.name("top")
+    pg.sql(f"CREATE ROLE {group}")
+    pg.sql(f"CREATE ROLE {top}")
+    pg.sql(f'GRANT {group} TO "{reader}"')
+    pg.sql(f"GRANT {top} TO {group}")
+    return group, top
+
+
+@pytest.mark.parametrize("which", ["grp", "top"])
+def test_a_privilege_for_a_group_above_an_own_role_is_refused(
+    pg: Pg, above_reader: tuple[str, str], which: str
+) -> None:
+    """L-1 path 1: a privilege given to a group the profile user is in (directly or through another group)."""
+    group = above_reader[0] if which == "grp" else above_reader[1]
+    fields: dict[str, Any] = {"action": "grant_privileges", "role": group, "on": "table", "privileges": ["SELECT"]}
+    seen = pg.preview(**fields, objects=["public.parts"])
+    assert "own_role_reached" in seen.json()["refusals"], seen.text
+    response = pg.apply(**fields, objects=["public.parts"])
+    assert response.json()["code"] == "studio.dbm_role_not_allowed", response.text
+    assert ("role.target", "role.own_role_reached") in _issues(response)
+    check = "SELECT has_table_privilege(%s, 'public.parts', 'SELECT')"
+    assert pg.sql(check, f"{pg.prefix}_src", (group,)) == [(False,)]
+
+
+def test_a_membership_for_a_group_above_an_own_role_is_refused(pg: Pg, above_reader: tuple[str, str]) -> None:
+    """L-1 path 2: ``GRANT x TO <group>`` would make the profile user reach ``x``."""
+    group, _top = above_reader
+    extra = pg.name("x")
+    assert pg.apply(action="create", role=extra).status_code == 200
+    seen = pg.preview(action="grant_membership", role=extra, member=group)
+    assert "own_role_reached" in seen.json()["refusals"], seen.text
+    response = pg.apply(action="grant_membership", role=extra, member=group)
+    assert response.json()["code"] == "studio.dbm_role_not_allowed"
+    assert extra not in pg.member_of(group)
+    reader = sqlalchemy.make_url(PG_URL or "").username
+    assert pg.sql("SELECT pg_has_role(%s, %s, 'MEMBER')", params=(reader, extra)) == [(False,)]
+
+
+@pytest.mark.parametrize("action", ["drop", "alter", "revoke_privileges", "revoke_membership"])
+def test_changing_a_group_above_an_own_role_is_refused(pg: Pg, above_reader: tuple[str, str], action: str) -> None:
+    """Dropping, changing or revoking from such a group changes what Studio's own role can do: refused too."""
+    group, top = above_reader
+    fields: dict[str, Any] = {"action": action, "role": group}
+    if action == "alter":
+        fields["options"] = {
+            "login": False,
+            "inherit": True,
+            "create_db": False,
+            "connection_limit": None,
+            "valid_until": None,
+        }
+    elif action == "revoke_privileges":
+        fields |= {"on": "table", "privileges": ["SELECT"], "objects": ["public.parts"]}
+    elif action == "revoke_membership":
+        fields = {"action": action, "role": top, "member": group}
+    seen = pg.preview(**fields)
+    assert "own_role_reached" in seen.json()["refusals"], seen.text
+    assert pg.apply(**fields).json()["code"] == "studio.dbm_role_not_allowed"
+    assert pg.exists(group) and top in pg.member_of(group)
+
+
+def test_a_role_the_admin_created_is_not_its_own(pg: Pg) -> None:
+    """PostgreSQL 16 makes the creating admin role a member of a new role with only the ADMIN option (no INHERIT,
+    no SET): that passes no rights on, so the role stays manageable."""
+    app = pg.name("app")
+    assert pg.apply(action="create", role=app).status_code == 200
+    assert pg.sql("SELECT pg_has_role(%s, %s, 'MEMBER')", params=(pg.name("adm"), app)) == [(True,)]
+    seen = pg.preview(action="drop", role=app)
+    assert seen.json()["refusals"] == [], seen.text
+
+
+def test_a_profile_without_a_user_counts_its_os_user(pg: Pg, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review I-2 of #149: libpq takes the OS user for a profile without ``user``; that role is Studio's own, and
+    when the OS user cannot be known, every role change is refused (fail closed)."""
+    from tabrion_studio.write.database_manager import roles
+
+    url = sqlalchemy.make_url(PG_URL or "")
+    osu = pg.name("osu")
+    pg.sql(f"CREATE ROLE {osu}")
+    bare = {
+        "name": "pg-bare",
+        "engine": "postgresql",
+        "host": url.host,
+        "port": url.port,
+        "database": f"{pg.prefix}_src",
+        "environment": "dev",
+        "sslmode": "prefer",
+    }
+    assert pg.env.send("POST", "/api/profiles", {"profile": bare, "digest": pg.env.user_digest()}).status_code == 201
+    monkeypatch.setattr(roles, "_os_user", lambda: osu)
+    seen = pg.preview(action="drop", role=osu)
+    assert "own_role" in seen.json()["refusals"], seen.text
+    listing = pg.env.send("POST", ROLES, pg.body()).json()
+    assert {r["name"] for r in listing["roles"] if r["own"]} >= {osu, pg.name("adm")}
+    monkeypatch.setattr(roles, "_os_user", lambda: None)
+    app = pg.name("app")
+    seen = pg.preview(action="create", role=app)
+    assert "own_role_unknown" in seen.json()["refusals"], seen.text
+    response = pg.apply(action="create", role=app)
+    assert response.json()["code"] == "studio.dbm_role_not_allowed"
+    assert ("role.target", "role.own_role_unknown") in _issues(response)
+    assert not pg.exists(app)

@@ -1252,8 +1252,10 @@ flag stays off by default. Each point needs the independent review or the owner.
 
 1. **Owner points, decided with the safest practical option** (STU-ADR-0008 "As built (STU-XDM-4)"; the owner may
    revisit them at G-S4): (a) every role change, not only drop and revoke, needs a preview and the typed name;
-   (b) the apply is bound to the preview's `state`; (c) Studio's own roles are `CURRENT_USER`, `SESSION_USER` and the
-   user of every profile and write or admin profile of the store; (d) a PROD alias refuses on the server level, since
+   (b) the apply is bound to the preview's `state`; (c) Studio's own roles are `CURRENT_USER`, `SESSION_USER`, the
+   user of every profile and write or admin profile (the OS user for one without), and the roles of the open
+   connections, and a role one of them reaches through INHERIT or SET is refused for every action but create (review
+   L-1 and I-2 of #149); (d) a PROD alias refuses on the server level, since
    roles are the cluster's; (e) a K-2 check that could not reach a database warns and names it, a K-2 grant found
    refuses; (f) privilege grants only in the connected database; (g) PostgreSQL 16 or later only; (h) a role whose
    name holds a hidden character is refused for every action; (i) alter names every option (Tabrion's `alter_role`
@@ -1261,7 +1263,12 @@ flag stays off by default. Each point needs the independent review or the owner.
 2. **Shared with STU-CR-6:** the runtime-role wizard (TB-148) reuses the role checks of
    `tabrion_studio.write.database_manager.roles`; it must not grow a second copy of them.
 3. **Residual (TX-42):** a database the admin role cannot connect to is named in the preview, not checked for K-2
-   grants; more than 64 databases are named, not checked.
+   grants; more than 64 databases are named, not checked. The K-2 check of the other databases runs outside
+   Tabrion's transaction, so a K-2 grant made there by a concurrent privileged session in between is not seen
+   (review I-1 of #149).
+5. [x] **Review of #149 (ACCEPTED with L-1):** L-1, I-2 and I-1 fixed or documented on the same PR: roles above
+   Studio's own roles refused (`own_role_reached`), profiles without a user counted by their OS user or refused
+   (`own_role_unknown`), the residual window documented.
 4. **No E2E yet** for the role part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
 
 ## Cross-repository checks still to add

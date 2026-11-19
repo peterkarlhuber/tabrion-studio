@@ -2472,6 +2472,8 @@
         "system_object": "Objects of the system are never granted.",
         "object_owner": "The object's owner has dangerous rights.",
         "own_role": "Studio's own roles (the admin role, every profile's user, the session's role) are never changed.",
+        "own_role_reached": "One of Studio's own roles is a member of this role (directly or through another group): granting to it, or changing, revoking or dropping it, would change what Studio's own role can do.",
+        "own_role_unknown": "A PostgreSQL profile has no user and Studio cannot tell which role it uses, so it changes no role. Name the user in every profile.",
         "privileged_role": "The group is a predefined or server-file role or has dangerous rights.",
         "escalation_grant": "The group holds TRIGGER, EXECUTE on a SECURITY DEFINER function or CREATE on a schema in a database of the server.",
         "exists": "A role of this name exists already."
