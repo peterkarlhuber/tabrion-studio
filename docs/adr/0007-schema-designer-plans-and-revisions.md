@@ -277,8 +277,9 @@ the user's, writable only by them, reached through no link, every folder above i
 above it one of Studio's own (by device and inode); the file is created relative to the held folder with
 `O_CREAT|O_EXCL|O_NOFOLLOW`, mode `0600`, never over a file or a link, and removed again if writing fails. Windows is
 refused (`studio.profile_export_platform`). Audit `run.start` before the file and `run.result` after it, with action
-`schema_designer.profile_export`, the profile names and the file name, never the folder or a reference. The
-runtime-role wizard is part 2, built on the role code of STU-XDM-4 once it is merged.
+`schema_designer.profile_export`, the profile names and the file name, never the folder or a reference. The export
+needs no unlock (review I-1 of #150): it reads no secret and connects to no database, so the flag, the session and
+the typed file name are its gates. The runtime-role wizard is part 2, built on the role code of STU-XDM-4 once it is merged.
 
 ## Consequences
 
