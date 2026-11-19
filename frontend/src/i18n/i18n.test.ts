@@ -33,6 +33,8 @@ const SAME_IN_BOTH = new Set([
   'dataEditor.null',
   // Placeholders only: "{{row}}: {{issue}}" (G-S2 6A).
   'dataEditor.issueAtRow',
+  // Placeholders only: "{{name}} ({{source}}, {{environment}}; {{password}})" (STU-CR-6).
+  'profileExport.profileLine',
   // STU-CR-3: PostgreSQL's template name, "Locale (optional)" and the environment tags DEV, TEST, PROD (STU-CR-2).
   'createDatabase.postgres.templates.template0',
   'createDatabase.postgres.locale',

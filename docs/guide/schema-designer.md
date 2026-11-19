@@ -328,11 +328,45 @@ change of a table with a feature it does not check) are shown with the feature's
 
 The tables, columns and SQL of a comparison are shown to you only; Studio's log records only that a comparison ran.
 
+## Export profiles
+
+The **Export profiles** section (shown with the same switch) writes read profiles to a new **connection profile
+file** (`*.tabrion-profile.toml`, Tabrion's profile file format v1) that other Tabrion tools can read.
+
+1. Tick the read profiles to export. The list shows your own profiles and, while the project file is trusted, the
+   project's. Each line says what the file will hold for its password.
+2. Enter the full path of the new file, ending in `.tabrion-profile.toml`.
+3. Type the file's name to confirm, then **Export profiles**.
+
+The file holds no secret, but it names hosts, users, databases and environments (PROD too, if you chose such a
+profile): share it only with people who may know your database layout.
+
+What the file holds, and what it never holds:
+
+- **Only the connection fields** of each profile: name, engine, file path or host, port, database, user, TLS mode,
+  environment, `read_only_role` and statement timeout. Each profile is written with `mode = "read_only"`. Studio
+  builds every profile from this fixed list of fields; nothing else of its configuration is copied.
+- **No secret, ever.** Write and admin profiles cannot be chosen and are never read; no password is read from the
+  keyring, a secret file or an environment variable. A profile whose password comes from an environment variable
+  keeps that **reference** (`env:NAME`, the variable's name only); a password kept in the keyring or in a file is
+  written as `prompt`, so the program that reads the file asks for it.
+- **One host per profile.** A profile with several hosts (`db1,db2`) is refused with its own message and never
+  shortened to its first host. (Studio does not save such a profile in the first place.)
+- A PostgreSQL profile without a port is written with port `5432`, the port Studio connects to.
+
+The file follows the same rules as a new SQLite file (see [A SQLite file](new-database.md#a-sqlite-file)): the folder must exist,
+belong to you, be writable only by you and be given by its real path (no link on the way), and it must not be one of
+Studio's own folders. Studio creates the file readable and writable only by you (`0600`) and **never overwrites a
+file or a link**: choose a new name for each export. On Windows Studio does not write exports yet.
+
+The audit log records each export with the profile names and the file name, not the folder.
+
 ## Not yet
 
 - A PostgreSQL backup before a run on Windows (Studio refuses the tools there).
 - Moving the boxes of the diagram by hand, and drawing anything other than a foreign key.
-- The revision output on Windows.
+- The revision output and the profile export on Windows.
+- The runtime-role wizard (STU-CR-6 part 2), and importing a profile file.
 - A revision with `CREATE INDEX CONCURRENTLY` steps (the revision uses the plan of a direct run, without them), and
   a revision output without an unlocked write profile.
 - Starting a draft from a schema file, and saving a draft.

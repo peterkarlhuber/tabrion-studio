@@ -162,6 +162,15 @@ const PROBLEMS = new Set([
   'schema_revision_folder',
   'schema_revision_exists',
   'schema_revision_failed',
+  // The profile export (STU-CR-6 part 1).
+  'profile_export_invalid',
+  'profile_export_unconfirmed',
+  'profile_export_multi_host',
+  'profile_export_folder',
+  'profile_export_reserved',
+  'profile_export_exists',
+  'profile_export_platform',
+  'profile_export_failed',
   // The Database Manager's backup and restore (STU-XDM-2).
   'backup_tool_unavailable',
   'backup_tool_failed',
@@ -351,7 +360,32 @@ const COMPARE_ISSUES = new Set([
   'plan_environment',
 ]);
 
+/** The `export.*` codes of a refused profile export (STU-CR-6 part 1), each with its own text. */
+const EXPORT_ISSUES = new Set([
+  'required',
+  'type',
+  'too_many',
+  'duplicate',
+  'unknown',
+  'same_name',
+  'host_list',
+  'not_storable',
+  'too_long',
+  'control_character',
+  'network_path',
+  'not_absolute',
+  'not_normalized',
+  'no_file_name',
+  'suffix',
+]);
+
 export function issueText(t: TFunction, issue: ProblemIssue): string {
+  if (issue.code.startsWith('export.')) {
+    const code = issue.code.slice('export.'.length);
+    return EXPORT_ISSUES.has(code)
+      ? t(`profileExport.issues.${code}`)
+      : t('issues.other', { code: issue.code });
+  }
   if (issue.code.startsWith('compare.')) {
     const code = issue.code.slice('compare.'.length);
     return COMPARE_ISSUES.has(code)

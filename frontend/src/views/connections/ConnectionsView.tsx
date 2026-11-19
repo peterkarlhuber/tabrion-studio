@@ -59,6 +59,7 @@ import { useConnect } from './useConnect';
 import { useConnectionSession } from '../../workspace';
 import { CreateDatabaseSection } from '../write/CreateDatabase';
 import { DatabaseManagerSection } from '../write/DatabaseManager';
+import { ProfileExportSection } from '../write/ProfileExport';
 import { SchemaCompareSection } from '../write/SchemaCompare';
 import { SchemaDesignerSection } from '../write/SchemaDesigner';
 import styles from './Connections.module.css';
@@ -773,6 +774,8 @@ export function ConnectionsView({ fetcher }: { fetcher: typeof fetch }) {
       {/* STU-CR-4: the designer's table view, behind the same flag; it changes nothing in a database. */}
       <SchemaDesignerSection fetcher={fetcher} />
       <SchemaCompareSection fetcher={fetcher} />
+      {/* STU-CR-6 part 1: read profiles to a new profile file, behind the same flag; never a secret. */}
+      <ProfileExportSection key={profiles.map((item) => item.id).join(' ')} fetcher={fetcher} />
       {/* STU-XDM-2: read again when a connection opens or closes, so its admin profile can unlock. */}
       <DatabaseManagerSection
         key={opened.map((item) => item.connectionId).join(' ')}
