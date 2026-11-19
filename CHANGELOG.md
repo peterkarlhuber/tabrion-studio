@@ -23,6 +23,16 @@ All notable changes to this project are documented here. The format follows
   `run.start`/`run.result` with actions `dbm.profile_export` and `dbm.profile_import`, without folder, host or
   reference. New problems `studio.dbm_profile_import_*` with `import.*` field issues; the page's "Profile pairs,
   import and export" part in English and German; the guide's section of the same name.
+- STU-XDM-6 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
+  changes): the Database Manager's guide and browser tests. The guide's new "Its limits at a glance" (a `pg_dump`
+  archive is not a complete backup, the PROD lock, the backup first, the preview and typed name, the role rules, the
+  admin rights set up outside Studio, the Windows limits) and "The admin role's rights" (what each action needs)
+  (GS4-23). New e2e `database-manager-dialogs.spec.ts` against the harness's fake server (scenario
+  `database-manager`, `src/harness/databaseManager.ts`): the backup before a delete (D-11), the restore (D-12), the
+  delete with FORCE typed again (D-13), the role changes and the runtime-role wizard (D-14), each with the typed name
+  gate, the destructive button never focused, a password sent only with the apply, and axe in light and dark, English
+  and German (GS4-24; three browsers in CI). `database-manager-backend.spec.ts` also deletes the SQLite connection's
+  file against a real server, with the backup kept. No code change outside the harness.
 - G-S2 follow-up 2A (the recheck before G-R; no default changes, the write flags stay off by default):
   `loopback_tls` in `write-areas.toml`. `"accept"`, the default, keeps the G-S2 decision. `"require"` sends a
   PostgreSQL write or admin password to a server on this computer only over TLS `verify-full` or a Unix socket with
