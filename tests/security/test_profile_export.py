@@ -1,4 +1,4 @@
-"""STU-CR-6 part 1: the profile export (G-S3 is not granted; TX-30, GS3-22, W-10, TB-148, N-5; STU-ADR-0007 section
+"""STU-CR-6 part 1: the profile export (G-S3 effective, flag off; TX-30, GS3-22, W-10, TB-148, N-5; STU-ADR-0007 section
 12). ``POST /api/write/schema-designer/profile-export`` writes read profiles as a tabrion connection profile file.
 
 1. **Kill switch (GS3-01).** With the ``schema_designer`` flag off (every flag off, or only another area's) the route

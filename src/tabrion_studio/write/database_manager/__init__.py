@@ -11,5 +11,6 @@ Built so far: backup and restore (STU-XDM-2; :mod:`.backups`) with the verified 
 folder (:mod:`tabrion_studio.write.backup_store`), and deleting a database after a verified backup (STU-XDM-3;
 :mod:`.delete`), PostgreSQL roles (STU-XDM-4; :mod:`.roles`) and the import and export of read profiles next to
 the existing profile pairs (STU-XDM-5; :mod:`.profiles`, the export through
-:mod:`tabrion_studio.write.profile_export`). G-S4 is not granted.
+:mod:`tabrion_studio.write.profile_export`). G-S4 is effective since 2026-11-19 for local DEV, TEST and STAGE only;
+the flag stays off by default and nothing turns it on, and H-2 and G-R stay open.
 """

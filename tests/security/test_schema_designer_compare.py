@@ -1,4 +1,4 @@
-"""STU-XSD-2: the Schema Designer's read-only schema comparison and its plan preview (G-S3 is not granted; GS3-01,
+"""STU-XSD-2: the Schema Designer's read-only schema comparison and its plan preview (G-S3 effective, flag off; GS3-01,
 GS3-03, GS3-09, GS3-12, GS3-13, GS3-16, GS3-20; TX-27, TX-28; STU-ADR-0007 sections 1 to 3, 5, 8, 9 and 11).
 
 1. **Kill switch (GS3-01, GS3-02).** With the ``schema_designer`` flag off (every flag off, or only another area's)

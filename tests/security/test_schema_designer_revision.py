@@ -1,4 +1,4 @@
-"""STU-XSD-3: a Schema Designer plan written as an Alembic revision into the trusted project (G-S3 is not granted;
+"""STU-XSD-3: a Schema Designer plan written as an Alembic revision into the trusted project (G-S3 effective, flag off;
 GS3-01, GS3-06..08, GS3-16 j 5, GS3-19, GS3-27; TX-19, TX-20; STU-ADR-0007 section 5, E-X4).
 
 1. **Kill switch (GS3-01).** With the ``schema_designer`` flag off the revision route answers 405 and nothing of the

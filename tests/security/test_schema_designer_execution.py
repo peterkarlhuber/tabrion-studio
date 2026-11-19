@@ -1,4 +1,4 @@
-"""STU-CR-5: confirming and running a Schema Designer plan on SQLite (G-S3 is not granted; GS3-01, GS3-03..05,
+"""STU-CR-5: confirming and running a Schema Designer plan on SQLite (G-S3 effective, flag off; GS3-01, GS3-03..05,
 GS3-09..11, GS3-13..17, GS3-19, GS3-20, GS3-27, GS3-29; TX-18, TX-21..TX-27; STU-ADR-0007 sections 4 to 11).
 
 1. **Kill switch (GS3-01).** With the ``schema_designer`` flag off the confirmation and run routes answer 405 and

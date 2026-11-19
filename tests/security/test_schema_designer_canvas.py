@@ -1,5 +1,5 @@
 """STU-XSD-1: the Schema Designer's graphical mode has no route of its own and the server checks every edit, whichever
-view sent it (G-S3 is not granted; GS3-23, TX-31; STU-ADR-0007 sections 2 and 3).
+view sent it (G-S3 effective, flag off; GS3-23, TX-31; STU-ADR-0007 sections 2 and 3).
 
 1. **No route of its own.** Every Schema Designer route is one of the table view's (``WRITE_ROUTES``); none names a
    canvas, a diagram, a layout or a position. The page's diagram (``SchemaCanvas.tsx``, ``schemaCanvasModel.ts``)

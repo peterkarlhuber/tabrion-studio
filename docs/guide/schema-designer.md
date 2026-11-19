@@ -1,9 +1,10 @@
 # Schema Designer (in development)
 
-!!! danger "In development, locked by G-S3"
-    The Schema Designer is **not usable or supported**. It exists only behind the `schema_designer` switch in
-    `write-areas.toml`, which is **off by default**, and it stays locked until the security gate G-S3 is granted.
-    G-S3 is not granted: no Studio version turns the switch on, and nothing in this page is a release of the feature.
+!!! danger "In development, not released"
+    The Schema Designer is **not released or supported**. It exists only behind the `schema_designer` switch in
+    `write-areas.toml`, which is **off by default**; no Studio version turns it on. Its security gate G-S3 is
+    effective since 2026-11-19 for local DEV, TEST and STAGE only (PROD stays locked); the human security review and
+    the release decision are still open, so nothing in this page is a release of the feature.
     This page describes what the designer does when a developer turns the switch on in a test setup, so that its
     behavior and its limits can be reviewed.
 
