@@ -541,3 +541,76 @@ test('drop a column: confirm, dry run, then run with its backup (light)', async 
   await expectNoViolations(page, violations);
   expect(foreign).toEqual([]);
 });
+
+for (const theme of ['light', 'dark'] as Theme[]) {
+  test(`export the read profile to a new file; never a secret, never over a file (${theme})`, async ({
+    page,
+  }) => {
+    const foreign = foreignRequests(page, () => base);
+    const violations = await signIn(page, theme);
+    const sent = writes(page);
+    await page.getByRole('link', { name: 'Connections' }).click();
+    const section = page.getByTestId('profile-export');
+    await expect(section).toBeVisible();
+    const folder = join(root, `exports-${theme}`);
+    mkdirSync(folder, { mode: 0o700 });
+    chmodSync(folder, 0o700);
+    const name = `e2e-${theme}.tabrion-profile.toml`;
+    const target = join(folder, name);
+
+    const list = section.getByRole('group', { name: 'Read profiles' });
+    // Only read profiles are offered: the write profile e2e-designer-w is not one.
+    await expect(list.getByRole('checkbox')).toHaveCount(1);
+    await list.getByRole('checkbox', { name: /^e2e-designer \(/ }).check();
+    await section.getByLabel('File path', { exact: true }).fill(target);
+    const submit = section.getByRole('button', { name: 'Export profiles' });
+    await expect(submit).toBeDisabled();
+    await section.getByLabel(`Type ${name} to export`).fill(name);
+    await expect(submit).toBeEnabled();
+    await expect(submit).not.toBeFocused();
+    expect(await seriousViolations(page)).toEqual([]);
+    await submit.click();
+    await expect(section.getByTestId('profile-export-done')).toContainText(
+      `Exported 1 profile to ${target}`,
+    );
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+    const read = execFileSync(
+      python as string,
+      [
+        '-I',
+        '-c',
+        'import json, sys\nfrom tabrion.profilefile import load\nf = load(sys.argv[1])\nprint(json.dumps([[p.name, p.engine, p.mode, p.environment, p.password is None] for p in f.profiles]))',
+        target,
+      ],
+      { encoding: 'utf-8' },
+    ).trim();
+    expect(read).toBe('[["e2e-designer", "sqlite", "read_only", "dev", true]]');
+    expect(await seriousViolations(page)).toEqual([]);
+
+    // Again to the same name: refused, the file is left as it is.
+    const before = statSync(target).mtimeMs;
+    await section.getByRole('button', { name: 'Export again' }).click();
+    await list.getByRole('checkbox', { name: /^e2e-designer \(/ }).check();
+    await section.getByLabel('File path', { exact: true }).fill(target);
+    await section.getByLabel(`Type ${name} to export`).fill(name);
+    await submit.click();
+    await expect(section.getByTestId('profile-export-problem')).toContainText(
+      'Studio never overwrites a file',
+    );
+    expect(statSync(target).mtimeMs).toBe(before);
+    expect(await seriousViolations(page)).toEqual([]);
+
+    // The page sent the ids, the path and the typed name: never a profile, a secret or a mode.
+    const exports = sent.filter((s) => s.path === '/api/write/schema-designer/profile-export');
+    expect(exports).toHaveLength(2);
+    for (const write of exports) {
+      expect(JSON.parse(write.body)).toEqual({
+        profiles: ['user:e2e-designer'],
+        path: target,
+        typed: name,
+      });
+    }
+    await expectNoViolations(page, violations);
+    expect(foreign).toEqual([]);
+  });
+}

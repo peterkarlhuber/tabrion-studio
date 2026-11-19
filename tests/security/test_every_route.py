@@ -239,6 +239,9 @@ CHANGING_ROUTES: dict[str, str] = {
     # STU-XSD-3 (G-S3): writes the previewed plan as a new Alembic revision file into the trusted project, never run,
     # behind the schema_designer flag only (tests/security/test_schema_designer_revision.py).
     "POST /api/write/schema-designer/revision": "creates a revision file in the trusted project, never run (flag)",
+    # STU-CR-6 part 1 (G-S3): writes read profiles to a new file of the user's own folder, never a secret, behind the
+    # schema_designer flag only (tests/security/test_profile_export.py).
+    "POST /api/write/schema-designer/profile-export": "writes read profiles to a new 0600 file, no secret (flag)",
     # STU-XDM-2 (G-S4): the Database Manager's backup and restore, behind the database_manager flag only (405 and no
     # import of the area while it is off; tests/security/test_dbm_backup_restore.py). Never on PROD.
     "POST /api/write/database-manager/backup": "verified pg_dump or SQLite backup into Studio's backup folder (flag)",
