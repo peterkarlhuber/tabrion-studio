@@ -155,6 +155,13 @@ const PROBLEMS = new Set([
   'schema_snapshot_too_large',
   'schema_compare_mismatch',
   'schema_compare_plan_not_allowed',
+  // The Schema Designer's revision output (STU-XSD-3).
+  'schema_revision_not_allowed',
+  'schema_revision_invalid',
+  'schema_revision_head_unknown',
+  'schema_revision_folder',
+  'schema_revision_exists',
+  'schema_revision_failed',
   // The Database Manager's backup and restore (STU-XDM-2).
   'backup_tool_unavailable',
   'backup_tool_failed',

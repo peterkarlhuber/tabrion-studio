@@ -15,6 +15,22 @@ All notable changes to this project are documented here. The format follows
   table's "New constraint" form, which is sent only when applied. The diagram has no route or form of its own: every
   edit is the table view's operation on the same route, checked by the server in the same way (GS3-23, TX-31). English
   and German texts; the guide's "The diagram" section.
+- STU-XSD-3 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer writes a previewed plan as an Alembic revision into the trusted project, `POST
+  /api/write/schema-designer/revision` with the plan hash and a message. The server plans again from a fresh snapshot
+  and compares the hash, reads the single head through the migration status (code trust, the 1.0 migration worker),
+  gets the text from `tabrion.plan.revision_text`, checks that it parses, and creates
+  `<script_location>/versions/<12 hex>_<slug>.py` exclusively, never through a link and never over a file. Only for a
+  DEV or TEST unlock whose database no PROD profile names (review I-1 of #144: the Database Manager's PROD-alias
+  matching, now shared in `tabrion_studio.write.prod_targets`, no behavior change there), a project whose profiles
+  (D-01) and Alembic code are trusted, a plan with a step, and not Windows (review L-1 of #146: without `dir_fd` the
+  folder check and the create could be split by a junction swap; reason `platform`); `env.py`,
+  a project module, the new revision and Alembic commands never run, and nothing runs on the database. The preview
+  says whether a revision may be written and that the revision does not check its source fingerprint (I-124 j 5).
+  Audit `run.start`/`run.result` with action `schema_designer.revision`. New problems
+  `studio.schema_revision_not_allowed`, `schema_revision_invalid`, `schema_revision_head_unknown`,
+  `schema_revision_folder`, `schema_revision_exists` and `schema_revision_failed`; the "Write as an Alembic revision"
+  part of the preview in English and German; the guide's "Write an Alembic revision" section.
 - Tabrion repin (tabrion G-T2 C-5): pins tabrion 0.3.0 at its release commit `7488c76` (the merge commit of
   tabrion #95, not tagged yet, no PyPI). It changes only the version from `0.3.0.dev0` to `0.3.0`; the API Studio
   uses is the one of `bfba25e`. The range `>=0.2,<0.4` stays. No behavior change; the flags stay off.

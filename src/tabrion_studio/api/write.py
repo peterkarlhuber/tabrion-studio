@@ -61,6 +61,11 @@
   and a fail-closed verdict; with ``"plan": true`` also a plan preview from the actual side to the expected one,
   which is never kept or run (DEV or TEST of the user's own profiles only, never from or to a file). Schema Designer
   flag only.
+* ``POST /api/write/schema-designer/revision``: ``{"connection_id", "plan_hash", "message"}``: write the previewed plan
+  as a new Alembic revision file into the trusted project's revision folder (STU-XSD-3,
+  :mod:`tabrion_studio.write.schema_designer.revision`): plan again and compare the hash, read the single head through
+  the migration status (code trust), get the text from ``tabrion.plan.revision_text`` and create the file exclusively.
+  Nothing runs on the database; ``env.py`` and the revision never run. Schema Designer flag only; never for PROD.
 * ``GET /api/write/database-manager/backups``: the Database Manager's backups (newest first, with their metadata and
   the scope notice), their count and total size, and whether ``pg_dump`` and ``pg_restore`` are configured and pass
   their checks (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`). ``POST
@@ -90,7 +95,7 @@ a name from the request, a secret or a database message.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
@@ -128,6 +133,8 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/schema-designer/plan/run", ("POST",)),
     # STU-XSD-2: the read-only comparison of two schemas and its plan preview, never kept or run (G-S3).
     ("/api/write/schema-designer/compare", ("POST",)),
+    # STU-XSD-3: write the previewed plan as an Alembic revision into the trusted project; never run (G-S3).
+    ("/api/write/schema-designer/revision", ("POST",)),
     # STU-XDM-2: the Database Manager's backups, a backup, and the preview and run of a restore (G-S4).
     ("/api/write/database-manager/backups", ("GET",)),
     ("/api/write/database-manager/backup", ("POST",)),
@@ -163,12 +170,15 @@ def add_write_routes(
     registry: ConnectionRegistry | None = None,
     audit_dir: Path | None = None,
     log_dir: Path | None = None,
+    migrations: Any = None,
 ) -> Unlocks | None:
     """Register the write foundation's routes; the unlocks when an area is on (closed by the app on shutdown).
 
     ``audit_dir`` is the audit log's folder (``audit`` in the folder of ``write-areas.toml``); without one, every unlock
     and write is refused (fail closed). It is neither created nor read while every area is off. ``log_dir`` is Studio's
-    log folder, one of the folders the Schema Designer creates no database in."""
+    log folder, one of the folders the Schema Designer creates no database in. ``migrations`` is the migration status
+    (:class:`tabrion_studio.services.migrations.Migrations`): the Schema Designer's revision output reads the project's
+    code trust and the single head through it (STU-XSD-3); without it no revision is written."""
     snapshot = areas.to_dict()
 
     @app.get("/api/write/areas")
@@ -183,4 +193,4 @@ def add_write_routes(
     # Imported only now: with every flag off, no write code is loaded.
     from tabrion_studio.write.routes import add_enabled_write_routes
 
-    return add_enabled_write_routes(app, areas, config, registry, audit_dir, log_dir)
+    return add_enabled_write_routes(app, areas, config, registry, audit_dir, log_dir, migrations)

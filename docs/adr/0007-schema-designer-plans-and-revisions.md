@@ -143,6 +143,19 @@ environment is `prod` (whether to allow it, since it writes only the project fil
 - The preview says that the revision does not check its source fingerprint (I-124 j 5): apply it only to the
   database it was planned for, soon after the preview. It shows the source fingerprint. A plan with
   `CONCURRENTLY` steps is written as a revision of its own, as Tabrion orders them.
+- **As built (STU-XSD-3, G-S3 not granted).** `POST /api/write/schema-designer/revision` writes the plan the
+  preview kept with the draft (one attempt, like a run), after Studio planned again and compared the hash. Stricter
+  than above, and recorded here: the draft, and so the revision output, needs an unlocked write profile of DEV or TEST
+  (the draft is bound to its unlock); the revision output needs both the profile trust (D-01) and the code trust;
+  the revision uses the plan of direct execution (`concurrent_indexes=False`), so it has no `CONCURRENTLY` step.
+  Writing the file changes the code-trust digest, so the migration status needs trust again. A database that a PROD
+  profile of the user's store names is refused like PROD (review I-1 of #144), with the Database Manager's matching,
+  now shared in `tabrion_studio.write.prod_targets` (SQLite by device and inode; PostgreSQL by name on the same
+  server, by `system_identifier` or port and resolved addresses). A revision output
+  without an unlock and a plan with `CONCURRENTLY` steps are follow-ups.
+  Windows is refused (reason `platform`, review L-1 of #146): without `dir_fd` the folder check and the exclusive
+  create are two steps by path, and a junction swapped in between would redirect the file; a final-path check of the
+  created file with a junction test is the follow-up that would lift it.
 
 **The schema comparison (STU-XSD-2)** is neither output: it reads, compares and shows, and its plan preview is never
 kept or run (no plan hash, no confirmation). Decided per G-S3/G-S4 grant 2026-11-18:
