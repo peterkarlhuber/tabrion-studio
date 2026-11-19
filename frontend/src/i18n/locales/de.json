@@ -1118,6 +1118,18 @@
     "profile_export_exists": "Eine Datei oder ein Link mit diesem Namen gibt es schon. Studio überschreibt nie eine Datei; bitte einen anderen Namen wählen.",
     "profile_export_platform": "Unter Windows schreibt Studio noch keine Profil-Exporte: Es kann nicht prüfen, wer in den Ordner schreiben darf. Es wurde nichts geschrieben.",
     "profile_export_failed": "Die Exportdatei konnte nicht geschrieben werden. Bitte freien Platz und Ordner prüfen und es erneut versuchen.",
+    "profile_export_changed": "Die Profile oder die Datei sind nicht mehr die der Vorschau. Bitte die Vorschau erneut zeigen. Es wurde nichts geschrieben.",
+    "dbm_profile_import_invalid": "Pfad, Datei oder die gewählten Profile sind ungültig; der Grund steht darunter. Studio importiert nichts aus dieser Datei.",
+    "dbm_profile_import_multi_host": "Die Datei enthält ein Profil mit mehreren Hosts. Studio kürzt die Liste nie auf einen Host und importiert deshalb nichts aus dieser Datei. Bitte das Profil in ein Profil je Host aufteilen.",
+    "dbm_profile_import_folder": "Studio liest eine Profildatei nur aus einem eigenen Ordner, in den nur Sie schreiben dürfen, mit seinem echten Pfad (kein Link), und nur eine reguläre eigene Datei, in die andere nicht schreiben dürfen und die keinen zweiten Namen hat. Bitte die Datei in einen solchen Ordner kopieren.",
+    "dbm_profile_import_reserved": "Studio importiert keine Profildatei aus seinen eigenen Konfigurations-, Zustands-, Audit- oder Log-Ordnern oder dem .tabrion-Ordner des Projekts. Bitte die Datei in einen anderen Ordner kopieren.",
+    "dbm_profile_import_missing": "In diesem Ordner gibt es keine Datei dieses Namens. Bitte den Pfad prüfen.",
+    "dbm_profile_import_too_large": "Eine Profildatei darf höchstens 256 KiB groß sein. Es wurde nichts importiert.",
+    "dbm_profile_import_platform": "Unter Windows importiert Studio noch keine Profildateien: Es kann nicht prüfen, wer in den Ordner schreiben darf. Es wurde nichts importiert.",
+    "dbm_profile_import_unconfirmed": "Zum Importieren den Namen der Datei genau wie angezeigt eintippen. Es wurde nichts importiert.",
+    "dbm_profile_import_changed": "Die Datei ist nicht mehr die der Vorschau. Bitte die Vorschau erneut zeigen. Es wurde nichts importiert.",
+    "dbm_profile_import_exists": "Ein Profil dieses Namens gibt es schon. Studio ersetzt nie ein Profil durch ein importiertes: Bitte einen anderen Namen geben oder es weglassen. Es wurde nichts importiert.",
+    "dbm_profile_import_refused": "Ein gewähltes Profil kann nicht importiert werden (der Grund steht darunter). Bitte es weglassen. Es wurde nichts importiert.",
     "backup_tool_unavailable": "pg_dump oder pg_restore ist nicht nutzbar. Studio startet sie nur über die absoluten Pfade in database-tools.toml neben seinen Schreibeinstellungen: ein Programm mit dem erwarteten Namen, das dir oder root gehört, für andere nicht schreibbar ist, kein Link ist, Version 16 oder neuer und mindestens so neu wie der Server.",
     "backup_tool_failed": "pg_dump oder pg_restore ist mit einem Fehler beendet worden oder hat zu lange gebraucht. Eine unvollständige Sicherung wurde entfernt; nichts, was davon abhängt, wurde ausgeführt.",
     "dbm_backup_failed": "Die Sicherung konnte nicht in Studios Sicherungsordner geschrieben werden; nichts, was davon abhängt, wurde ausgeführt. Prüfe den freien Speicher.",
@@ -2365,6 +2377,109 @@
       "not_normalized": "Den Pfad ohne '..', '.' oder doppelte Trenner angeben.",
       "no_file_name": "Der Pfad nennt keine Datei.",
       "suffix": "Der Dateiname muss auf .tabrion-profile.toml enden."
+    }
+  },
+  "dbmProfiles": {
+    "title": "Profilpaare, Import und Export",
+    "lead": "Ein Paar ist eines Ihrer Leseprofile mit einem daran gekoppelten Schreib- oder Admin-Profil. Import und Export bewegen nur Leseprofile: nie ein Schreib- oder Admin-Profil, nie ein Geheimnis. Jeder Schritt hat eine Vorschau, die Bestätigung mit dem eingetippten Dateinamen und einen Audit-Eintrag.",
+    "loading": "Profile werden gelesen …",
+    "kinds": {
+      "write": "Schreiben",
+      "admin": "Admin"
+    },
+    "sources": {
+      "user": "Ihr Profil",
+      "project": "Projektprofil"
+    },
+    "pathHint": "Der vollständige Pfad der Datei, endend auf {{suffix}}.",
+    "type": "Zum Bestätigen {{name}} eintippen",
+    "auditPending": "Der Audit-Eintrag steht noch aus.",
+    "pairs": {
+      "title": "Profilpaare",
+      "lead": "Schreib- und Admin-Profile werden unter „Schreib- und Admin-Profile“ an ein Leseprofil gekoppelt. Bevor Studio das Geheimnis eines PostgreSQL-Paars liest, bestätigen Sie einmal das Paar aus Server und Passwortverweis; ein importiertes Profil ist keine Ausnahme.",
+      "none": "Sie haben noch keine eigenen Leseprofile.",
+      "read": "{{name}} ({{environment}}):",
+      "prod": "PROD: nie gepaart; nur Sicherungen.",
+      "unpaired": "kein Schreib- oder Admin-Profil.",
+      "partner": {
+        "confirmed": "{{name}} ({{kind}}, Paar bestätigt).",
+        "unconfirmed": "{{name}} ({{kind}}, Paar noch nicht bestätigt).",
+        "none": "{{name}} ({{kind}}, kein Geheimnis zu bestätigen)."
+      }
+    },
+    "export": {
+      "title": "Leseprofile exportieren",
+      "lead": "Leseprofile in eine neue Profildatei schreiben, die andere Tabrion-Werkzeuge lesen können: nur lesend, allein aus ihren Verbindungsfeldern. Ihre Schreib- und Admin-Profile und jedes Geheimnis bleiben hier.",
+      "none": "Es gibt kein Leseprofil zum Exportieren.",
+      "profiles": "Leseprofile",
+      "profileLine": "{{name}} ({{source}}, {{environment}})",
+      "path": "Neue Datei",
+      "rules": "Der Ordner muss vorhanden sein, Ihnen gehören, nur von Ihnen beschreibbar sein und mit seinem echten Pfad (kein Link) angegeben werden; Studios eigene Ordner sind nicht erlaubt. Studio legt die Datei nur für Sie les- und schreibbar an (0600) und überschreibt nie eine Datei. Ein Profil mit mehreren Hosts wird nicht exportiert.",
+      "preview": "Vorschau des Exports",
+      "written": "Was die Datei enthalten wird",
+      "writtenLine": "{{name}} ({{environment}}), nur lesend; {{password}}",
+      "password": {
+        "none": "kein Passwort",
+        "env": "Passwort aus seiner Umgebungsvariable",
+        "prompt": "Passwort wird bei Gebrauch erfragt"
+      },
+      "leftOut": "Nicht exportiert (sie bleiben in Studio): {{names}}.",
+      "leftOutItem": "{{name}} ({{kind}})",
+      "submit": "Exportieren",
+      "done_one": "{{count}} Profil nach {{file}} exportiert, nur für Sie les- und schreibbar.",
+      "done_other": "{{count}} Profile nach {{file}} exportiert, nur für Sie les- und schreibbar."
+    },
+    "import": {
+      "title": "Leseprofile importieren",
+      "lead": "Profile einer Profildatei zu Ihren eigenen Profilen hinzufügen. Jedes wird ein Leseprofil, behält seine Umgebung (PROD bleibt PROD) und ersetzt nie ein vorhandenes Profil. Kein Passwortverweis der Datei wird übernommen, auch keiner auf eine Umgebungsvariable: Sie geben jedes Passwort beim Verbinden ein.",
+      "path": "Profildatei",
+      "rules": "Die Datei muss Ihnen gehören, nur von Ihnen beschreibbar sein, nur einen Namen haben (kein Link), höchstens 256 KiB groß sein und in einem eigenen Ordner liegen, in den nur Sie schreiben dürfen; Studios eigene Ordner sind nicht erlaubt. Eine Datei mit einem Profil mehrerer Hosts, einem Passwort oder einem Schlüssel, den Studio nicht kennt, wird als Ganzes abgelehnt.",
+      "preview": "Vorschau des Imports",
+      "profiles": "Profile in der Datei",
+      "profileLine": "{{name}} ({{environment}})",
+      "details": "{{target}}; {{password}}",
+      "server": "{{host}}:{{port}}, Datenbank {{database}}",
+      "password": {
+        "none": "kein Passwort",
+        "keyring": "Passwort wird beim Verbinden eingegeben"
+      },
+      "notImported": "Nicht importiert (Studios Profile haben sie nicht): {{keys}}.",
+      "nameTaken": "Sie haben ein Profil dieses Namens: Bitte wählen und ihm einen anderen Namen geben.",
+      "as": "{{name}} importieren als",
+      "overwrite": "Ihre Profildatei wurde von Hand geschrieben: neu schreiben (Kommentare und Formatierung gehen verloren).",
+      "submit": "Importieren",
+      "done_one": "{{count}} Leseprofil importiert: {{names}}. Um es mit einem Admin-Profil zu paaren, eines unter „Schreib- und Admin-Profile“ anlegen und das Paar bestätigen.",
+      "done_other": "{{count}} Leseprofile importiert: {{names}}. Um eines mit einem Admin-Profil zu paaren, eines unter „Schreib- und Admin-Profile“ anlegen und das Paar bestätigen."
+    },
+    "issues": {
+      "required": "Erforderlich.",
+      "type": "Ungültig.",
+      "too_many": "Zu viele Profile: höchstens 64 je Datei.",
+      "duplicate": "Ein Profil oder ein neuer Name ist doppelt gewählt.",
+      "unknown": "Ein gewähltes Profil steht nicht in der Datei. Bitte die Vorschau erneut zeigen.",
+      "too_long": "Zu lang.",
+      "control_character": "Enthält ein Steuerzeichen oder ein besonderes Leerzeichen (etwa ein geschütztes Leerzeichen).",
+      "network_path": "Ein Netzwerk- oder Gerätepfad ist nicht erlaubt.",
+      "not_absolute": "Bitte den vollständigen Pfad ab dem Wurzelverzeichnis angeben.",
+      "not_normalized": "Bitte den Pfad ohne '..', '.' oder doppelte Trenner angeben.",
+      "no_file_name": "Der Pfad nennt keine Datei.",
+      "suffix": "Der Dateiname muss auf .tabrion-profile.toml enden.",
+      "host_list": "Ein Profil nennt mehrere Hosts.",
+      "syntax": "Die Datei ist kein gültiges TOML.",
+      "encoding": "Die Datei ist kein UTF-8-Text.",
+      "version": "Die Datei hat nicht das Profildateiformat Version 1.",
+      "empty": "Die Datei enthält kein Profil.",
+      "value": "Ein Wert der Datei ist ungültig.",
+      "range": "Eine Zahl der Datei liegt außerhalb des Bereichs.",
+      "plain_password": "Die Datei enthält ein Passwort statt eines Verweises darauf. Bitte es aus der Datei entfernen; Studio importiert nie ein Passwort.",
+      "other_engine": "Ein Profil hat einen Schlüssel der anderen Datenbank-Engine.",
+      "unknown_key": "Die Datei hat einen Schlüssel, den Studio nicht kennt (etwa einen Schreib- oder Admin-Schlüssel). Studio importiert nichts Unerwartetes.",
+      "mode": "Ein Schreib- oder Admin-Profil: Studio importiert nur Leseprofile.",
+      "environment_required": "Das Profil nennt keine Umgebung (dev, test oder prod).",
+      "prod_target": "Nicht PROD, nennt aber die Datenbank eines PROD-Profils: Studio importiert nie eine zweite Kennzeichnung einer PROD-Datenbank.",
+      "name_hidden": "Der Name enthält ein unsichtbares Zeichen.",
+      "name_taken": "Ein Profil dieses Namens gibt es schon. Bitte einen anderen Namen geben.",
+      "not_valid": "Studio kann dieses Profil nicht führen."
     }
   },
   "databaseManager": {

@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XDM-5 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
+  changes): profile pairs, import and export in the Database Manager. Four routes, 405 and not even loaded with the
+  flag off: `POST /api/write/database-manager/profiles/export/preview` and `.../profiles/export` reuse the shared
+  `tabrion_studio.write.profile_export` (one allowlist, read only, `env:` kept, every other reference written as
+  `prompt`, no write or admin secret ever; the coupled write and admin profiles named as left out), bound to the
+  preview's `state` and the typed file name (new `studio.profile_export_changed`); `.../profiles/import/preview` and
+  `.../profiles/import` read a `*.tabrion-profile.toml` with `tabrion.profilefile` through the new
+  `tabrion_studio.write.folders.read_user_file` (the user's own regular file with one name, not writable by others,
+  at most 256 KiB, no link, not in Studio's folders) and add read profiles only: an allowlist on the way in, the
+  environment required and kept (PROD stays PROD), no second non-PROD label for a PROD database, no password
+  reference of the file kept (every one, `env:` included, becomes a prompt; review M-1 of #155), a host list, a password or an unknown key refusing the whole file (W-10, never
+  cut), a name clash refused unless a new name is given (checked again inside the save). Pairs stay the
+  `[[write_profile]]` coupling with the I-109 j confirmation, which an imported profile needs as well. Audit
+  `run.start`/`run.result` with actions `dbm.profile_export` and `dbm.profile_import`, without folder, host or
+  reference. New problems `studio.dbm_profile_import_*` with `import.*` field issues; the page's "Profile pairs,
+  import and export" part in English and German; the guide's section of the same name.
 - STU-CR-8 (G-S3 gate): the independent G-S3 gate review accepted the Schema Designer area on `be8e794` with no code
   finding. The owner decisions for G-S3 are recorded as decided per the owner's grant of 2026-11-18 (a snapshot never
   starts a draft, drafts are never saved to disk, no non-transactional steps in a direct run, no revision output for

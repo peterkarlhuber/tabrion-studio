@@ -76,12 +76,13 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: Or a field of the Schema Designer's database creation (STU-CR-2, STU-CR-3): ``create.<field>`` and a ``create.*``
 #: code, never the value. Or the Schema Designer's draft (STU-CR-4): ``edit.<field>`` with an ``edit.*`` code, and
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
+#: Or the profile import (STU-XDM-5): ``import.<field>`` with an ``import.*`` code, never a name, a path or a value.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
-    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete|role|export)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
+    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete|role|export|import)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
 )
 _ISSUE_CODE = re.compile(
-    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare|role|export)\.[a-z_]{1,48}"
+    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare|role|export|import)\.[a-z_]{1,48}"
 )
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
 #: where the database named it, and a constraint.* code.
@@ -1080,6 +1081,13 @@ CATALOG: dict[str, Entry] = {
         "On Windows Studio does not write profile exports yet: it cannot check who may write the folder. Nothing was "
         "written.",
     ),
+    "studio.profile_export_changed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Export changed since the preview",
+        "The profiles or the file are no longer what the preview showed. Nothing was written.",
+        "Show the preview again and check it.",
+    ),
     "studio.profile_export_failed": Entry(
         500,
         ProblemKind.INTERNAL,
@@ -1379,6 +1387,89 @@ CATALOG: dict[str, Entry] = {
         "Role change failed",
         "The role change could not be made. Nothing was changed.",
         "Check the role and try again.",
+    ),
+    # STU-XDM-5: the profile import (read profiles from a *.tabrion-profile.toml; never a secret, never over one).
+    "studio.dbm_profile_import_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Profile file not valid",
+        "The path, the file or the chosen profiles are not valid; the field says what. Studio refuses the whole file "
+        "and imports nothing.",
+        "Check the file and the fields in question.",
+    ),
+    "studio.dbm_profile_import_multi_host": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Profile with several hosts",
+        "The file has a profile that names several hosts. Studio never shortens the list to one host, so it imports "
+        "nothing of this file.",
+        "Split the profile into one profile per host, then import again.",
+    ),
+    "studio.dbm_profile_import_folder": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "File or folder not usable",
+        "Studio reads a profile file only from a folder of your own that only you may write, reached through no "
+        "link, and only a regular file of yours that others may not write and that has no second name. Nothing was "
+        "imported.",
+        "Copy the file into such a folder, by its real path, and import it from there.",
+    ),
+    "studio.dbm_profile_import_reserved": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Studio's own folder",
+        "Studio does not import a profile file from its own configuration, state, audit or log folders, the "
+        "project's .tabrion folder or a folder inside one of them.",
+        "Copy the file to another folder.",
+    ),
+    "studio.dbm_profile_import_missing": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "File not found",
+        "There is no file of this name in the folder. Nothing was imported.",
+        "Check the path.",
+    ),
+    "studio.dbm_profile_import_too_large": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "File too large",
+        "A profile file may be at most 256 KiB. Nothing was imported.",
+    ),
+    "studio.dbm_profile_import_platform": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Not on Windows",
+        "On Windows Studio does not import profile files yet: it cannot check who may write the folder. Nothing was "
+        "imported.",
+    ),
+    "studio.dbm_profile_import_unconfirmed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Confirmation does not match",
+        "To import, type the file's name exactly as shown. Nothing was imported.",
+    ),
+    "studio.dbm_profile_import_changed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "File changed since the preview",
+        "The file is no longer the one the preview showed. Nothing was imported.",
+        "Show the preview again and check it.",
+    ),
+    "studio.dbm_profile_import_exists": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Profile name taken",
+        "A profile of this name exists already. Studio never replaces a profile by an imported one; nothing was "
+        "imported.",
+        "Give the imported profile another name, or leave it out.",
+    ),
+    "studio.dbm_profile_import_refused": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Profile not importable",
+        "A chosen profile cannot be imported (the preview says why: a write or admin mode, no environment, a "
+        "database a PROD profile names, or a field Studio does not accept). Nothing was imported.",
+        "Leave that profile out.",
     ),
     "studio.admin_over_privileged": Entry(
         405,

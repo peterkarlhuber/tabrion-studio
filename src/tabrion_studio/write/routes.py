@@ -22,7 +22,8 @@ with that flag off they answer 405 and import nothing of the area. With the Data
 restore routes (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`, with the tool runner
 :mod:`tabrion_studio.write.pgtools` and the backup folder :mod:`tabrion_studio.write.backup_store`) and its two database
 creation routes (STU-CR-2, STU-CR-3, :mod:`tabrion_studio.write.database_manager.create`; the admin area's since the
-G-S4 grant) answer; with that flag off they answer 405 and import nothing of the area.
+G-S4 grant) and its profile export and import (STU-XDM-5, :mod:`tabrion_studio.write.database_manager.profiles`) answer;
+with that flag off they answer 405 and import nothing of the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -163,6 +164,12 @@ _DBM_ROLE_PREVIEW_KEYS = frozenset(
     {"connection_id", "action", "role", "member", "options", "on", "privileges", "objects"}
 )
 _DBM_ROLE_APPLY_KEYS = _DBM_ROLE_PREVIEW_KEYS | {"password", "typed", "state"}
+#: STU-XDM-5: the profile export and import: ids, a path, the typed name, the preview's state and, for the import, the
+#: chosen profiles and the user file's digest; never a profile's fields, a secret, a mode or a coupling.
+_DBM_EXPORT_PREVIEW_KEYS = frozenset({"profiles", "path"})
+_DBM_EXPORT_KEYS = frozenset({"profiles", "path", "typed", "state"})
+_DBM_IMPORT_PREVIEW_KEYS = frozenset({"path"})
+_DBM_IMPORT_KEYS = frozenset({"path", "typed", "state", "profiles", "digest", "overwrite"})
 #: STU-CR-6 part 2: the runtime-role wizard (both the Schema Designer and the Database Manager flag).
 _DBM_RUNTIME_PREVIEW_KEYS = frozenset({"connection_id", "role", "schema", "protected_tables", "create"})
 _DBM_RUNTIME_APPLY_KEYS = _DBM_RUNTIME_PREVIEW_KEYS | {"password", "typed", "state"}
@@ -780,6 +787,32 @@ def add_enabled_write_routes(
         "/api/write/database-manager/runtime-role/preview", "POST", _DBM_RUNTIME_PREVIEW_KEYS, "runtime_preview"
     )
     manager_route("/api/write/database-manager/runtime-role/apply", "POST", _DBM_RUNTIME_APPLY_KEYS, "runtime_apply")
+
+    # --- the Database Manager's profile export and import (STU-XDM-5) ------------------------------------------------
+
+    def profiles_route(path: str, keys: frozenset[str], action: str) -> None:
+        @route(path, "POST")
+        async def handle(request: Request) -> Response:
+            if not areas.on(Area.DATABASE_MANAGER):
+                return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+            # Imported only now: with the Database Manager flag off neither this nor the shared export is loaded.
+            from tabrion_studio.write.database_manager import profiles
+
+            def call(_session: str, doc: dict[str, Any]) -> Response:
+                if action == "export_preview":
+                    return JSONResponse(profiles.export_preview(config, reserved, doc))
+                if action == "export":
+                    return JSONResponse(profiles.export(config, audit, reserved, doc), status_code=201)
+                if action == "import_preview":
+                    return JSONResponse(profiles.import_preview(config, reserved, doc))
+                return JSONResponse(profiles.import_profiles(config, audit, reserved, doc), status_code=201)
+
+            return await plan_call(request, keys, _MAX_CREATE_BODY, call)
+
+    profiles_route("/api/write/database-manager/profiles/export/preview", _DBM_EXPORT_PREVIEW_KEYS, "export_preview")
+    profiles_route("/api/write/database-manager/profiles/export", _DBM_EXPORT_KEYS, "export")
+    profiles_route("/api/write/database-manager/profiles/import/preview", _DBM_IMPORT_PREVIEW_KEYS, "import_preview")
+    profiles_route("/api/write/database-manager/profiles/import", _DBM_IMPORT_KEYS, "import")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 

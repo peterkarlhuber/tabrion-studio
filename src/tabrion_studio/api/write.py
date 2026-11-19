@@ -88,7 +88,15 @@
   "options", "on", "privileges", "objects"}``: what a role action would change and what refuses it (changes nothing).
   ``POST /api/write/database-manager/roles/apply``: the same with ``"password"``, ``"typed"`` and the preview's
   ``"state"``: the change through tabrion's role DDL on a DEV or TEST PostgreSQL 16+ server (STU-XDM-4,
-  :mod:`tabrion_studio.write.database_manager.roles`). Database Manager flag only; with it off they answer 405 and
+  :mod:`tabrion_studio.write.database_manager.roles`). ``POST
+  /api/write/database-manager/profiles/export/preview``: ``{"profiles", "path"}``: what a profile export writes and
+  the coupled write and admin profiles it leaves out (changes nothing); ``POST .../profiles/export``: the same with
+  ``"typed"`` and the preview's ``"state"``: the shared export (STU-CR-6) as ``dbm.profile_export``. ``POST
+  .../profiles/import/preview``: ``{"path"}``: what a ``*.tabrion-profile.toml`` of the user's own folder holds and
+  which of its profiles Studio would add as read profiles (changes nothing); ``POST .../profiles/import``: ``{"path",
+  "typed", "state", "profiles", "digest", "overwrite"}``: add the chosen ones (each under its name or a new one, never
+  over an existing profile) to the user's store as read profiles (STU-XDM-5,
+  :mod:`tabrion_studio.write.database_manager.profiles`). Database Manager flag only; with it off they answer 405 and
   nothing of the area is imported.
 * ``POST /api/write/database-manager/runtime-role/preview``: ``{"connection_id", "role", "schema",
   "protected_tables", "create"}``: what the runtime-role wizard would do and what refuses it (changes nothing).
@@ -168,6 +176,11 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/database-manager/roles", ("POST",)),
     ("/api/write/database-manager/roles/preview", ("POST",)),
     ("/api/write/database-manager/roles/apply", ("POST",)),
+    # STU-XDM-5: profile export and import (read profiles only, single host, a preview first; G-S4).
+    ("/api/write/database-manager/profiles/export/preview", ("POST",)),
+    ("/api/write/database-manager/profiles/export", ("POST",)),
+    ("/api/write/database-manager/profiles/import/preview", ("POST",)),
+    ("/api/write/database-manager/profiles/import", ("POST",)),
     # STU-CR-6 part 2: the runtime-role wizard; both the Schema Designer and the Database Manager flag (G-S3, G-S4).
     ("/api/write/database-manager/runtime-role/preview", ("POST",)),
     ("/api/write/database-manager/runtime-role/apply", ("POST",)),

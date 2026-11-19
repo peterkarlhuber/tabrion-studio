@@ -1118,6 +1118,18 @@
     "profile_export_exists": "A file or link with this name exists already. Studio never overwrites a file; choose another name.",
     "profile_export_platform": "On Windows Studio does not write profile exports yet: it cannot check who may write the folder. Nothing was written.",
     "profile_export_failed": "The export file could not be written. Check the free space and the folder, then try again.",
+    "profile_export_changed": "The profiles or the file are no longer what the preview showed. Show the preview again. Nothing was written.",
+    "dbm_profile_import_invalid": "The path, the file or the chosen profiles are not valid; the reason is below. Studio imports nothing of this file.",
+    "dbm_profile_import_multi_host": "The file has a profile with several hosts. Studio never shortens the list to one host, so it imports nothing of this file. Split that profile into one profile per host.",
+    "dbm_profile_import_folder": "Studio reads a profile file only from a folder of your own that only you may write, by its real path (no link), and only a regular file of yours that others may not write and that has no second name. Copy the file into such a folder.",
+    "dbm_profile_import_reserved": "Studio does not import a profile file from its own configuration, state, audit or log folders or the project's .tabrion folder. Copy the file to another folder.",
+    "dbm_profile_import_missing": "There is no file of this name in the folder. Check the path.",
+    "dbm_profile_import_too_large": "A profile file may be at most 256 KiB. Nothing was imported.",
+    "dbm_profile_import_platform": "On Windows Studio does not import profile files yet: it cannot check who may write the folder. Nothing was imported.",
+    "dbm_profile_import_unconfirmed": "Type the file's name exactly as shown to import. Nothing was imported.",
+    "dbm_profile_import_changed": "The file is no longer the one the preview showed. Show the preview again. Nothing was imported.",
+    "dbm_profile_import_exists": "A profile of this name exists already. Studio never replaces a profile by an imported one: give it another name or leave it out. Nothing was imported.",
+    "dbm_profile_import_refused": "A chosen profile cannot be imported (the reason is below). Leave it out. Nothing was imported.",
     "backup_tool_unavailable": "pg_dump or pg_restore is not usable. Studio runs them only from the absolute paths in database-tools.toml next to its write settings: a program of the expected name, owned by you or root, not writable by others, not a link, version 16 or newer and at least as new as the server.",
     "backup_tool_failed": "pg_dump or pg_restore ended with an error or ran out of time. A backup that did not finish was removed, and nothing that depends on it was done.",
     "dbm_backup_failed": "The backup could not be written to Studio's backup folder, so nothing that depends on it was done. Check the free space.",
@@ -2365,6 +2377,109 @@
       "not_normalized": "Give the path without '..', '.' or double separators.",
       "no_file_name": "The path names no file.",
       "suffix": "The file name must end in .tabrion-profile.toml."
+    }
+  },
+  "dbmProfiles": {
+    "title": "Profile pairs, import and export",
+    "lead": "A pair is one of your read profiles with a write or admin profile coupled to it. Import and export move read profiles only: never a write or admin profile, never a secret. Each step has a preview, the file name typed to confirm, and an audit record.",
+    "loading": "Reading the profiles …",
+    "kinds": {
+      "write": "write",
+      "admin": "admin"
+    },
+    "sources": {
+      "user": "your profile",
+      "project": "project profile"
+    },
+    "pathHint": "The full path of the file, ending in {{suffix}}.",
+    "type": "Type {{name}} to confirm",
+    "auditPending": "The audit record is still pending.",
+    "pairs": {
+      "title": "Profile pairs",
+      "lead": "Write and admin profiles are coupled to a read profile under \"Write and admin profiles\". Before Studio reads the secret of a PostgreSQL pair, you confirm the pair of server and password reference once; an imported profile is no exception.",
+      "none": "You have no read profiles of your own yet.",
+      "read": "{{name}} ({{environment}}):",
+      "prod": "PROD: never paired; backups only.",
+      "unpaired": "no write or admin profile.",
+      "partner": {
+        "confirmed": "{{name}} ({{kind}}, pair confirmed).",
+        "unconfirmed": "{{name}} ({{kind}}, pair not confirmed yet).",
+        "none": "{{name}} ({{kind}}, no secret to confirm)."
+      }
+    },
+    "export": {
+      "title": "Export read profiles",
+      "lead": "Write read profiles to a new profile file that other Tabrion tools can read: read only, from their connection fields alone. Their write and admin profiles and every secret stay here.",
+      "none": "There is no read profile to export.",
+      "profiles": "Read profiles",
+      "profileLine": "{{name}} ({{source}}, {{environment}})",
+      "path": "New file",
+      "rules": "The folder must exist, belong to you and be writable only by you, and be given by its real path (no link); Studio's own folders are not allowed. Studio creates the file only you may read and write (0600) and never overwrites a file. A profile with several hosts is not exported.",
+      "preview": "Preview the export",
+      "written": "What the file will hold",
+      "writtenLine": "{{name}} ({{environment}}), read only; {{password}}",
+      "password": {
+        "none": "no password",
+        "env": "password from its environment variable",
+        "prompt": "password asked for when used"
+      },
+      "leftOut": "Not exported (they stay in Studio): {{names}}.",
+      "leftOutItem": "{{name}} ({{kind}})",
+      "submit": "Export",
+      "done_one": "Exported {{count}} profile to {{file}}, readable and writable only by you.",
+      "done_other": "Exported {{count}} profiles to {{file}}, readable and writable only by you."
+    },
+    "import": {
+      "title": "Import read profiles",
+      "lead": "Add profiles of a profile file to your own profiles. Each becomes a read profile, keeps its environment (PROD stays PROD) and never replaces a profile you have. No password reference of the file is kept, not even one to an environment variable: you enter each password when you connect.",
+      "path": "Profile file",
+      "rules": "The file must be your own, writable only by you, with one name only (no link), at most 256 KiB, in a folder of your own that only you may write; Studio's own folders are not allowed. A file with a profile of several hosts, a password, or a key Studio does not know is refused as a whole.",
+      "preview": "Preview the import",
+      "profiles": "Profiles in the file",
+      "profileLine": "{{name}} ({{environment}})",
+      "details": "{{target}}; {{password}}",
+      "server": "{{host}}:{{port}}, database {{database}}",
+      "password": {
+        "none": "no password",
+        "keyring": "password entered when you connect"
+      },
+      "notImported": "Not imported (Studio's profiles do not have them): {{keys}}.",
+      "nameTaken": "You have a profile of this name: choose it and give it another name.",
+      "as": "Import {{name}} as",
+      "overwrite": "Your profiles file was written by hand: rewrite it (its comments and formatting are not kept).",
+      "submit": "Import",
+      "done_one": "Imported {{count}} read profile: {{names}}. To pair it with an admin profile, add one under \"Write and admin profiles\" and confirm the pair.",
+      "done_other": "Imported {{count}} read profiles: {{names}}. To pair one with an admin profile, add one under \"Write and admin profiles\" and confirm the pair."
+    },
+    "issues": {
+      "required": "Required.",
+      "type": "Not valid.",
+      "too_many": "Too many profiles: at most 64 per file.",
+      "duplicate": "A profile or a new name is chosen twice.",
+      "unknown": "A chosen profile is not in the file. Show the preview again.",
+      "too_long": "Too long.",
+      "control_character": "Contains a control character or a special space (such as a no-break space).",
+      "network_path": "A network or device path is not allowed.",
+      "not_absolute": "Give the full path, starting at the root.",
+      "not_normalized": "Give the path without '..', '.' or double separators.",
+      "no_file_name": "The path names no file.",
+      "suffix": "The file name must end in .tabrion-profile.toml.",
+      "host_list": "A profile names several hosts.",
+      "syntax": "The file is not valid TOML.",
+      "encoding": "The file is not UTF-8 text.",
+      "version": "The file is not of profile file format version 1.",
+      "empty": "The file holds no profile.",
+      "value": "A value of the file is not valid.",
+      "range": "A number of the file is out of range.",
+      "plain_password": "The file holds a password instead of a reference to one. Remove it from the file; Studio never imports a password.",
+      "other_engine": "A profile has a key of the other database engine.",
+      "unknown_key": "The file has a key Studio does not know (such as a write or admin key). Studio imports nothing it does not expect.",
+      "mode": "A write or admin profile: Studio imports read profiles only.",
+      "environment_required": "The profile names no environment (dev, test or prod).",
+      "prod_target": "Not PROD, but it names the database of a PROD profile: Studio never imports a second label for a PROD database.",
+      "name_hidden": "The name contains a character that cannot be seen.",
+      "name_taken": "A profile of this name exists already. Give it another name.",
+      "not_valid": "Studio cannot hold this profile."
     }
   },
   "databaseManager": {

@@ -1,9 +1,11 @@
 """The profile export (STU-CR-6 part 1; TX-30, GS3-22, W-10, TB-148, N-5; STU-ADR-0007 section 12): read profiles
 written as a tabrion connection profile file (format v1, :func:`tabrion.profilefile.dump`) into a new file the user
-names. Shared: the profile export of STU-XDM-5 calls :func:`export_profiles` with its own area and action.
+names. Shared: the profile export of STU-XDM-5 (the Database Manager) calls :func:`export_profiles` with its own area
+and action, after its preview (:func:`preview_export`) and bound to it (``expected_state``).
 
-Imported only by a route handler after it checked its area's flag (the Schema Designer's ``schema_designer``); with
-the flag off the route answers ``405`` and this module is not loaded (GS3-01).
+Imported only by a route handler after it checked its area's flag (the Schema Designer's ``schema_designer`` or the
+Database Manager's ``database_manager``); with the flag off the route answers ``405`` and this module is not loaded
+(GS3-01, GS4-01).
 
 **What is written: an allowlist, never a copy (N-5, TX-30).** Only **read profiles** (``user:<name>`` and, while
 the project file is trusted, ``project:<name>``, as :meth:`Configuration.entries` lists them) can be named; a write
@@ -26,6 +28,11 @@ folder with ``O_CREAT|O_EXCL|O_NOFOLLOW`` and mode ``0600``: an existing file or
 (``studio.profile_export_exists``). On Windows Studio writes no export (``studio.profile_export_platform``): it does
 not check a folder's access list there and has no ``dir_fd``.
 
+**Preview and binding (STU-XDM-5).** :func:`preview_export` runs every check but the typed name and writes nothing:
+it answers what each profile is written with (engine, environment, the kind of reference, never a secret) and a
+``state``, the SHA-256 of the file's text and path. :func:`export_profiles` given that ``expected_state`` refuses an
+export whose text or path is no longer the one previewed (``studio.profile_export_changed``).
+
 **Audit.** ``run.start`` before the file is created (no record, no file: ``studio.audit_unavailable``) and
 ``run.result`` after it, with the area, the action, the profile names and the file name, never the folder or a
 secret reference.
@@ -35,7 +42,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+import hashlib
 import logging
+import os
 from pathlib import Path
 import secrets
 import sys
@@ -57,7 +66,16 @@ from tabrion_studio.write.folders import (
 
 logger = logging.getLogger("tabrion_studio.write")
 
-__all__ = ["EXPORTED_FIELDS", "MAX_PROFILES", "SUFFIX", "ExportedFile", "export_profiles", "exported_profile"]
+__all__ = [
+    "EXPORTED_FIELDS",
+    "MAX_PROFILES",
+    "SUFFIX",
+    "ExportedFile",
+    "export_profiles",
+    "exported_profile",
+    "preview_export",
+    "reference_kind",
+]
 
 #: The ending of an export's file name (doc 14 section 3.5: ``*.tabrion-profile.toml``).
 SUFFIX = ".tabrion-profile.toml"
@@ -94,6 +112,12 @@ def _reference(profile: Profile) -> SecretRef | None:
     if ref.source == "env":
         return SecretRef("env", ref.target)
     return SecretRef("prompt")
+
+
+def reference_kind(profile: Profile) -> str | None:
+    """What the file says about the password: ``env`` (the variable's name), ``prompt`` or None (no password)."""
+    ref = _reference(profile)
+    return None if ref is None else ref.kind
 
 
 def exported_profile(profile: Profile) -> ConnectionProfile:
@@ -153,19 +177,9 @@ _REFUSALS = {
 }
 
 
-def export_profiles(
-    entries: Sequence[Any],
-    audit: AuditLog,
-    reserved: Iterable[Path],
-    doc: dict[str, Any],
-    *,
-    area: str,
-    action: str,
-) -> ExportedFile:
-    """Write the read profiles ``doc["profiles"]`` names (ids of ``entries``) to the new file ``doc["path"]``.
-
-    ``entries`` are the read profiles the page lists (:meth:`Configuration.entries`); ``area`` and ``action`` name
-    the caller in the audit log. Raises :class:`WriteError` (see the module text)."""
+def _prepared(entries: Sequence[Any], doc: dict[str, Any]) -> tuple[list[Profile], str, str, str, str]:
+    """The chosen profiles, the path, its folder and file name, and the file's text; :class:`WriteError` if the
+    request is not valid (every check that needs no folder)."""
     profiles = _chosen(entries, doc.get("profiles"))
     for profile in profiles:
         if profile.host is not None and is_host_list(profile.host):
@@ -177,15 +191,74 @@ def export_profiles(
         path, folder, name = check_new_file_path(doc.get("path"), (SUFFIX,))
     except FolderRefused as refused:
         raise _invalid("path", refused.code or "required") from None
-    typed = doc.get("typed")
-    if not isinstance(typed, str) or typed != name:
-        raise WriteError("studio.profile_export_unconfirmed")
-    if not _PLATFORM_OK:
-        raise WriteError("studio.profile_export_platform")
     try:
         text = dump(exported_profile(profile) for profile in profiles)
     except ProfileFileError:
         raise _invalid("profiles", "not_storable") from None
+    return profiles, path, folder, name, text
+
+
+def _state(path: str, text: str) -> str:
+    """The binding of a preview: the SHA-256 of the file's path and text (no secret is in either)."""
+    return hashlib.sha256(f"{path}\0{text}".encode()).hexdigest()
+
+
+def preview_export(entries: Sequence[Any], reserved: Iterable[Path], doc: dict[str, Any]) -> dict[str, object]:
+    """What :func:`export_profiles` would write for ``doc`` (``profiles``, ``path``), checked as the export checks it
+    (but for the typed name), writing nothing: the file name, each profile's name, source, engine, environment and
+    kind of reference, and the ``state`` the export must be given. Raises :class:`WriteError` (see the module)."""
+    if not _PLATFORM_OK:
+        raise WriteError("studio.profile_export_platform")
+    profiles, path, folder, name, text = _prepared(entries, doc)
+    try:
+        check_folder(folder, reserved_identities(reserved))
+    except FolderRefused as refused:
+        raise WriteError(_REFUSALS.get(refused.reason, "studio.profile_export_folder")) from None
+    if os.path.lexists(path):
+        raise WriteError("studio.profile_export_exists")  # the export checks it again when it creates the file
+    ids: list[str] = doc["profiles"]  # checked by _chosen: one id of an entry per profile, in this order
+    return {
+        "path": path,
+        "file_name": name,
+        "profiles": [
+            {
+                "id": profile_id,
+                "name": profile.name,
+                "source": profile_id.partition(":")[0],
+                "engine": profile.engine,
+                "environment": profile.environment,
+                "password": reference_kind(profile),
+                "mode": "read_only",
+            }
+            for profile_id, profile in zip(ids, profiles, strict=True)
+        ],
+        "state": _state(path, text),
+    }
+
+
+def export_profiles(
+    entries: Sequence[Any],
+    audit: AuditLog,
+    reserved: Iterable[Path],
+    doc: dict[str, Any],
+    *,
+    area: str,
+    action: str,
+    expected_state: object = None,
+) -> ExportedFile:
+    """Write the read profiles ``doc["profiles"]`` names (ids of ``entries``) to the new file ``doc["path"]``.
+
+    ``entries`` are the read profiles the page lists (:meth:`Configuration.entries`); ``area`` and ``action`` name
+    the caller in the audit log. ``expected_state`` (when not None) is the ``state`` of :func:`preview_export`: a
+    file whose text or path differs is refused. Raises :class:`WriteError` (see the module text)."""
+    profiles, path, folder, name, text = _prepared(entries, doc)
+    typed = doc.get("typed")
+    if not isinstance(typed, str) or typed != name:
+        raise WriteError("studio.profile_export_unconfirmed")
+    if expected_state is not None and expected_state != _state(path, text):
+        raise WriteError("studio.profile_export_changed")
+    if not _PLATFORM_OK:
+        raise WriteError("studio.profile_export_platform")
     try:
         checked = check_folder(folder, reserved_identities(reserved))
     except FolderRefused as refused:

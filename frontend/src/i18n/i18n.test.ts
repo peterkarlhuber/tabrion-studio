@@ -37,6 +37,13 @@ const SAME_IN_BOTH = new Set([
   'dataEditor.issueAtRow',
   // Placeholders only: "{{name}} ({{source}}, {{environment}}; {{password}})" (STU-CR-6).
   'profileExport.profileLine',
+  // Placeholders only (STU-XDM-5): "{{name}} ({{environment}}):", "{{name}} ({{source}}, {{environment}})",
+  // "{{name}} ({{kind}})", "{{name}} ({{environment}})" and "{{target}}; {{password}}".
+  'dbmProfiles.pairs.read',
+  'dbmProfiles.export.profileLine',
+  'dbmProfiles.export.leftOutItem',
+  'dbmProfiles.import.profileLine',
+  'dbmProfiles.import.details',
   // STU-CR-3: PostgreSQL's template name, "Locale (optional)" and the environment tags DEV, TEST, PROD (STU-CR-2).
   'createDatabase.postgres.templates.template0',
   'createDatabase.postgres.locale',
