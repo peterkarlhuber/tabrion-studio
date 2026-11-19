@@ -1014,8 +1014,8 @@ Owner decisions (none is implemented ahead of its gate):
   12; the G-S4 gate review found none a new material risk):** an over-privileged admin profile is refused at the unlock
   (STU-XDM-7) and at every action; the tool paths only from the owner's configuration; PostgreSQL restore only into a
   new database in 1.3; Studio never deletes a backup; no release exception (every name Studio uses is stable since
-  tabrion #94); no Database Manager action on PROD in 1.3; on Windows the tools, the SQLite delete and a restore into
-  a new file are refused, a SQLite backup and a restore over the connection's own file stay allowed under the
+  tabrion #94); no Database Manager action on PROD in 1.3; on Windows the tools, database creation, the SQLite delete, a
+  restore into a new file and the profile import and export are refused, a SQLite backup and a restore over the connection's own file stay allowed under the
   configuration folder's access list; the owner points of STU-XDM-3, STU-XDM-4 and STU-XDM-5 stand as decided.
   Recorded before the gate as open: the consequence of an over-privileged admin profile as proposed in STU-ADR-0008 section 6 (SUPERUSER,
   BYPASSRLS, REPLICATION, a server-access role or CREATEROLE before 16 refuse the admin unlock; the rest is shown);

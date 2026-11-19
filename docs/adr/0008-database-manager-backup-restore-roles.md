@@ -296,7 +296,8 @@ review (STU-XDM-7, `reviews/gs4-gate-review.md`) found none of them a new materi
    0.3.0 release commit Studio pins.
 6. **PROD:** no Database Manager action on PROD in 1.3, the backup with the read profile included (fail closed;
    E-X7 would allow a PROD backup; building it is later work with its own review).
-7. **Windows:** the PostgreSQL tools, the SQLite delete and a SQLite restore into a new file are refused; a SQLite
+7. **Windows:** the PostgreSQL tools, database creation, the SQLite delete, a SQLite restore into a new file and
+   the profile import and export are refused; a SQLite
    backup and a restore over the connection's own file stay allowed, protected by the access list of the
    configuration folder.
 8. The owner points recorded under "As built" for STU-XDM-4 and STU-XDM-5, and section 11 for STU-XDM-3, stand as

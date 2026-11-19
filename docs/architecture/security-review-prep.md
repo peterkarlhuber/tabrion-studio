@@ -431,5 +431,6 @@ TODO TB-149.
 at every action (section 6); the tool paths only from the owner's configuration; PostgreSQL restore only into a new
 database in 1.3; Studio never deletes a backup (count and size shown, removed by hand); no release exception, as
 every Tabrion name Studio uses is stable; no Database Manager action on PROD in 1.3, the PROD backup included; on
-Windows the tools, the SQLite delete and a restore into a new file are refused, while a SQLite backup and a restore
+Windows the tools, database creation, the SQLite delete, a restore into a new file and the profile import and export
+are refused, while a SQLite backup and a restore
 over the connection's own file stay allowed under the configuration folder's access list.
