@@ -1102,6 +1102,12 @@
     "schema_snapshot_too_large": "Eine Seite überschreitet die Grenzen des Vergleichs (2 MiB Snapshot-Text, 500 Tabellen, 250 Spalten oder 100 Constraints und Indizes je Tabelle).",
     "schema_compare_mismatch": "Die beiden Seiten können nicht verglichen werden: Sie gehören zu verschiedenen Datenbank-Engines oder Snapshot-Stufen.",
     "schema_compare_plan_not_allowed": "Für diese Seiten gibt es keine Planvorschau. Der Vergleich wird angezeigt.",
+    "schema_revision_not_allowed": "Es wurde keine Revision geschrieben (Grund siehe unten). Es wurde nichts geändert.",
+    "schema_revision_invalid": "Die Revisionsnachricht hat 1 bis 200 Zeichen in einer Zeile, ohne Steuerzeichen.",
+    "schema_revision_head_unknown": "Studio konnte nicht genau einen Head der Revisionen des Projekts lesen (mehrere Heads, keiner oder Code, dem nicht vertraut wird). Es wurde nichts geschrieben.",
+    "schema_revision_folder": "Der Revisionsordner (versions unter script_location) muss ein Ordner im Projekt sein, ohne Link erreichbar. Es wurde nichts geschrieben.",
+    "schema_revision_exists": "Eine Datei mit dem Namen der neuen Revision gibt es schon; Studio überschreibt nie eine Datei. Erstelle die Vorschau erneut.",
+    "schema_revision_failed": "Die Revisionsdatei konnte nicht geschrieben werden. Prüfe, ob der Revisionsordner beschreibbar ist.",
     "backup_tool_unavailable": "pg_dump oder pg_restore ist nicht nutzbar. Studio startet sie nur über die absoluten Pfade in database-tools.toml neben seinen Schreibeinstellungen: ein Programm mit dem erwarteten Namen, das dir oder root gehört, für andere nicht schreibbar ist, kein Link ist, Version 16 oder neuer und mindestens so neu wie der Server.",
     "backup_tool_failed": "pg_dump oder pg_restore ist mit einem Fehler beendet worden oder hat zu lange gebraucht. Eine unvollständige Sicherung wurde entfernt; nichts, was davon abhängt, wurde ausgeführt.",
     "dbm_backup_failed": "Die Sicherung konnte nicht in Studios Sicherungsordner geschrieben werden; nichts, was davon abhängt, wurde ausgeführt. Prüfe den freien Speicher.",
@@ -2108,6 +2114,24 @@
       "backupSkipped": "Die Sicherung wurde weggelassen.",
       "auditPending": "Der Audit-Eintrag steht noch aus; siehe Audit-Log bei den Schreibprofilen.",
       "draftEnded": "Der Entwurf ist beendet. Für weitere Änderungen bitte neu beginnen."
+    },
+    "revision": {
+      "title": "Als Alembic-Revision schreiben",
+      "lead": "Studio schreibt diesen Plan als neue Revisionsdatei in den Revisionsordner des Projekts, nach dem einzigen Head. Studio führt die Revision, env.py oder einen Alembic-Befehl nie aus: Wende sie mit deinen eigenen Werkzeugen an.",
+      "sourceNotChecked": "Die Revision prüft nicht, auf welcher Datenbank sie läuft: Wende sie nur auf die Datenbank an, für die sie geplant wurde (Quell-Fingerprint {{fingerprint}}), und bald nach dieser Vorschau.",
+      "blockedTitle": "Es kann keine Revision geschrieben werden:",
+      "message": "Revisionsnachricht (höchstens {{count}} Zeichen, eine Zeile)",
+      "write": "Revision schreiben",
+      "written": "Revision {{revision}} nach {{path}} geschrieben, nach {{down}}.",
+      "trustAgain": "Die neue Datei ändert den Code des Projekts: Vertraue dem Code erneut, bevor Studio die Revisionen liest.",
+      "reasons": {
+        "nothing_to_run": "Der Plan hat keinen Schritt.",
+        "environment": "Revisionen werden nur für DEV- und TEST-Verbindungen geschrieben, nie für PROD.",
+        "project_untrusted": "Den Profilen des Projekts (.tabrion/studio.toml) wird nicht vertraut.",
+        "code_untrusted": "Dem Alembic-Code des Projekts wird nicht vertraut, oder er hat sich seitdem geändert.",
+        "no_alembic_project": "Das Projekt hat keine alembic.ini mit script_location.",
+        "platform": "Unter Windows werden noch keine Revisionen geschrieben: Die Datei könnte nicht sicher gegen einen ausgetauschten Ordner angelegt werden."
+      }
     }
   },
   "schemaCompare": {

@@ -346,7 +346,13 @@ def create_app(runtime: Runtime, static_dir: Path = STATIC_DIR) -> FastAPI:
         add_draft_routes(app, runtime.drafts)
     # The write foundation (STU-XW-1): refusing handlers unless an area's flag was on at start (TX-02).
     unlocks = add_write_routes(
-        app, runtime.write_areas, runtime.config, runtime.connections, runtime.audit_dir, runtime.log_dir
+        app,
+        runtime.write_areas,
+        runtime.config,
+        runtime.connections,
+        runtime.audit_dir,
+        runtime.log_dir,
+        runtime.migrations,
     )
     app.state.write_unlocks = unlocks
 

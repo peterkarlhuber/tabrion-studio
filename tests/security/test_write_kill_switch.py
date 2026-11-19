@@ -69,6 +69,8 @@ for _path, _methods in WRITE_ROUTES:
                     "expected": {"source": "connection", "connection_id": "c_x"},
                     "actual": {"source": "connection", "connection_id": "c_x"},
                     "plan": True,
+                    # STU-XSD-3: the revision output (G-S3).
+                    "message": "add qty",
                     # STU-XDM-2: the Database Manager's backup and restore (G-S4).
                     "backup_id": "20261115T000000Z-00000000.dump",
                     "target": "new",
@@ -80,7 +82,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 34
+    assert len(methods) == 35
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -103,6 +105,7 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/schema-designer/plan/confirm",  # STU-CR-5: confirm and run a previewed plan (G-S3)
         "POST /api/write/schema-designer/plan/run",
         "POST /api/write/schema-designer/compare",  # STU-XSD-2: the read-only comparison (G-S3)
+        "POST /api/write/schema-designer/revision",  # STU-XSD-3: the Alembic revision output (G-S3)
         "GET /api/write/database-manager/backups",  # STU-XDM-2: backup and restore (G-S4)
         "POST /api/write/database-manager/backup",
         "POST /api/write/database-manager/restore/preview",
