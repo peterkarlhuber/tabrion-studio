@@ -78,6 +78,7 @@ from typing import IO, Any
 import sqlalchemy
 
 from tabrion_studio.config.files import ConfigFileError, parse_toml, read_plain_file
+from tabrion_studio.config.schema import refused_host
 from tabrion_studio.paths import UnsafePathError, check_private_dir, ensure_private_dir
 from tabrion_studio.services.connections import APPLICATION_NAME, RegistryError, pin_libpq_environment
 from tabrion_studio.write.connection import WriteError, require_auth
@@ -328,6 +329,12 @@ class Connection:
     password: str | None = None
     requirepeer: str | None = None
 
+    def __post_init__(self) -> None:
+        # L-1 of #153: a host list or an abstract Unix socket (a leading "@") never becomes a tool's connection,
+        # whatever built it (the validator refuses both already; conninfo checks again).
+        if self.host is not None and refused_host(self.host) is not None:
+            raise WriteError("studio.write_coupling_invalid")
+
     def __repr__(self) -> str:  # never the password, also not in a traceback's repr
         return f"Connection(host={self.host!r}, port={self.port!r}, dbname={self.dbname!r}, user={self.user!r})"
 
@@ -342,7 +349,12 @@ def _quote(value: str) -> str:
 
 
 def conninfo(connection: Connection) -> str:
-    """The libpq connection string the tool gets as its one ``--dbname=`` argument (keys :data:`CONNINFO_KEYS`)."""
+    """The libpq connection string the tool gets as its one ``--dbname=`` argument (keys :data:`CONNINFO_KEYS`).
+
+    A host list or an abstract Unix socket (a leading ``@``) never reaches the tool (L-1 of #153):
+    ``studio.write_coupling_invalid``."""
+    if connection.host is not None and refused_host(connection.host) is not None:
+        raise WriteError("studio.write_coupling_invalid")
     values: dict[str, str | None] = {
         "host": connection.host,
         "port": None if connection.port is None else str(connection.port),

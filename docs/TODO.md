@@ -915,7 +915,10 @@ Follow-ups as TODO items:
   `claude/project-thread-rdo6g3-gs2-2a`): `loopback_tls = "accept" | "require"` in `write-areas.toml`, `"accept"`
   by default (the G-S2 decision); `"require"` refuses such an unlock (`400 studio.write_loopback_tls_required`);
   `"accept"` shows `local_unverified` in the D-15 dialog and the unlock state. Open: the owner's choice of the
-  default at G-R (recheck note `g-s2/2a-recheck.md` in the planning documents).
+  default at G-R (recheck note `g-s2/2a-recheck.md` in the planning documents). Review L-1 of PR #153 (done in that
+  PR): a host with a leading `@` (abstract Unix socket) is refused in every profile and on every connection path
+  (`config.host_abstract_socket`); STU-XDM-5's profile import must use the same validator (it gets the refusal
+  with it).
 - [x] **G-S2 3A, before G-R:** audit-log anchor in the keyring (the last `(seq, hash)`), with a "log missing or
   reset" notice when a new chain starts while an anchor exists. Unlimited retention is documented in the security
   guide now (done). Built (branch `claude/project-thread-rdo6g3-gs2-3a`, draft PR; review pending):

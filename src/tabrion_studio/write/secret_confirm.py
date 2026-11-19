@@ -62,7 +62,7 @@ import threading
 import time
 from typing import Any
 
-from tabrion_studio.config.schema import Profile, WriteProfile, is_host_list, is_loopback
+from tabrion_studio.config.schema import Profile, WriteProfile, is_loopback, refused_host
 from tabrion_studio.paths import UnsafePathError, read_private_file, write_private_file
 from tabrion_studio.write.connection import WriteError
 
@@ -165,7 +165,7 @@ def secret_pair(write: WriteProfile, read: Profile) -> SecretPair | None:
     """The pair of ``write`` coupled to ``read``; None for SQLite (no secret, nothing to confirm)."""
     if read.engine != "postgresql":
         return None
-    if read.host is None or is_host_list(read.host):
+    if read.host is None or refused_host(read.host) is not None:
         # A PostgreSQL profile always has one host (schema); a libpq host list is refused there too (M-1, PR #117).
         raise WriteError("studio.write_coupling_invalid")
     ref = write.password
@@ -185,6 +185,9 @@ def secret_pair(write: WriteProfile, read: Profile) -> SecretPair | None:
 
 def check_transport(pair: SecretPair) -> None:
     """A foreign host needs ``verify-ca`` or ``verify-full`` (I-109 j, TX-07); ``studio.write_tls_required`` else."""
+    if refused_host(pair.host) is not None:
+        # L-1 of #153: an abstract socket or a host list never gets a secret, whatever its sslmode says.
+        raise WriteError("studio.write_coupling_invalid")
     if pair.foreign and pair.sslmode not in STRICT_SSLMODES:
         raise WriteError("studio.write_tls_required")
 
@@ -193,6 +196,8 @@ def check_local_transport(pair: SecretPair, *, required: bool) -> None:
     """With ``loopback_tls = "require"`` (``required``), a password never goes to a server on this computer whose
     identity libpq does not check (:attr:`SecretPair.local_unverified`): ``studio.write_loopback_tls_required``.
     The caller calls it only for a connection that sends a password (G-S2 decision 2A)."""
+    if refused_host(pair.host) is not None:
+        raise WriteError("studio.write_coupling_invalid")  # L-1 of #153, under either setting
     if required and pair.local_unverified:
         raise WriteError("studio.write_loopback_tls_required")
 

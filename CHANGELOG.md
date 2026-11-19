@@ -15,6 +15,12 @@ All notable changes to this project are documented here. The format follows
   state (`local_unverified`) say when nothing checks a local server, and such an unlock is logged
   (`studio.write_loopback_unverified`). The security guide, the write threat model (residual risk 4) and the TODO
   are updated; the default at G-R is the owner's choice.
+- PostgreSQL profiles (review L-1 of PR #153): a host that starts with `@` (a Unix socket in the abstract namespace
+  on Linux, which any local program can take and where TLS does not apply) is refused in every profile file and for
+  every profile kind (`config.host_abstract_socket`). Every later path refuses it again on its own: the loopback
+  rule, the write secret's confirmation and transport checks under either `loopback_tls` setting, the last check
+  before every connection, the `pg_dump`/`pg_restore` connection and the profile export
+  (`export.host_abstract_socket`). Tests: `tests/security/test_abstract_socket_host.py`.
 - STU-CR-6 part 1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
   default changes): the profile export, `POST /api/write/schema-designer/profile-export` with the ids of read
   profiles, the new file's path (`*.tabrion-profile.toml`) and its typed name. The shared module

@@ -97,6 +97,10 @@ the server answers `405` and the write code is not even loaded.
     `verify-full`, or over a Unix socket with `requirepeer`; any other unlock is refused before the password is sent
     (`400 studio.write_loopback_tls_required`). An unknown value counts as `"require"`. The owner decides at G-R
     whether `"require"` becomes the default.
+
+    A PostgreSQL `host` that starts with `@` (on Linux a Unix socket in the abstract namespace) is refused in every
+    profile, read, write or admin: any program on this computer could take such a socket, and neither TLS nor
+    `requirepeer` would apply. Use a socket folder, `localhost` or the server's name instead.
 - **Write and admin profiles.** A write profile (Data Editor, Schema Designer) or an admin profile (Database Manager)
   lives only in your own `profiles.toml` (`[[write_profile]]`), never in a project file: Studio refuses a project
   file that defines one. It is coupled to one of your own read profiles, uses its target and environment, and on
