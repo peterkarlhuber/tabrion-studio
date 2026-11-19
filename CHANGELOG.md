@@ -55,6 +55,22 @@ All notable changes to this project are documented here. The format follows
   section on the Connections page in English and German; the guide's "Compare schemas" section. The preview
   warnings moved from the executor module to the draft module (no behavior change).
 
+- STU-XDM-4, PostgreSQL role management (G-S4 not granted; the `database_manager` flag stays off by default):
+  `POST /api/write/database-manager/roles`, `.../roles/preview` and `.../roles/apply` create, alter and drop roles,
+  change memberships and grant or revoke privileges through tabrion's stable role DDL, only through the admin profile
+  of a PostgreSQL 16 or later DEV or TEST connection, never on a server a PROD profile names (also under an alias).
+  Never SUPERUSER, BYPASSRLS, CREATEROLE, REPLICATION, an ADMIN or GRANT option or TRIGGER; memberships in predefined,
+  server-file or dangerous roles and groups with K-2 grants in any reachable database refused; Studio's own roles
+  never changed; every change previewed, bound to the preview and confirmed by the typed name; the role read again
+  after the commit and any difference shown; names escaped and hidden-name roles refused; passwords only to Tabrion.
+  Audit `dbm.role.<action>` with the new fields `member`, `options_set`, `password_set`, `on`, `privileges`,
+  `grant_objects` and `differences`. New problems `studio.dbm_role_*` with `role.*` issues. The page's role part in
+  English and German; the guide, ADR 0008, the threat model and the G-S4 evidence updated. The checks are shared
+  with the STU-CR-6 runtime-role wizard. Review of #149: a role that one of Studio's own roles reaches through
+  INHERIT or SET (a group above a profile's user) is refused for every action but create (`role.own_role_reached`,
+  L-1); Studio's own roles include the OS user for a profile without a user and the roles of the open connections,
+  and every role change is refused when that user cannot be known (`role.own_role_unknown`, I-2); the K-2 residual
+  window is documented (I-1).
 - STU-XDM-3, delete a database (G-S4 not granted; the `database_manager` flag stays off by default): `POST
   /api/write/database-manager/delete/preview` and `.../delete` delete another DEV or TEST PostgreSQL database of the
   unlocked server (`tabrion.postgres.drop_database`) or the connection's own SQLite file

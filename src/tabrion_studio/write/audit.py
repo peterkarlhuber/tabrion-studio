@@ -250,6 +250,14 @@ FIELDS: dict[str, Callable[[object], object]] = {
     # STU-XDM-3 (STU-ADR-0008 sections 5 and 9): delete a database.
     "force": _flag,  # PostgreSQL WITH (FORCE) was chosen (its own typed confirmation)
     "sessions": _count,  # the number of other sessions on the target seen before the delete
+    # STU-XDM-4 (STU-ADR-0008 sections 6 and 9): role management. Names, kinds and flags only; never a password.
+    "member": _text,  # the member role of a membership change (escaped like every name)
+    "options_set": _tokens,  # the names of the role options a create or alter sets, never their values
+    "password_set": _flag,  # whether a create or alter set a password (the password itself is never recorded)
+    "on": _token,  # the object kind of a privilege change (table, sequence, function, schema, database)
+    "privileges": _tokens,  # the privileges a privilege change grants or revokes
+    "grant_objects": _texts,  # the objects of a privilege change (escaped)
+    "differences": _tokens,  # the role fields that differed between Tabrion's result and the read after the commit
 }
 
 

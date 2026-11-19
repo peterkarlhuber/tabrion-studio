@@ -155,6 +155,11 @@ _DBM_PREVIEW_KEYS = frozenset({"connection_id", "backup_id"})
 _DBM_RESTORE_KEYS = frozenset({"connection_id", "backup_id", "target", "name", "typed", "restore_profile_id"})
 _DBM_DELETE_PREVIEW_KEYS = frozenset({"connection_id", "name"})
 _DBM_DELETE_KEYS = frozenset({"connection_id", "name", "typed", "force", "force_typed"})
+_DBM_ROLES_KEYS = frozenset({"connection_id"})
+_DBM_ROLE_PREVIEW_KEYS = frozenset(
+    {"connection_id", "action", "role", "member", "options", "on", "privileges", "objects"}
+)
+_DBM_ROLE_APPLY_KEYS = _DBM_ROLE_PREVIEW_KEYS | {"password", "typed", "state"}
 
 #: The listing of ``GET /api/write/audit`` by default and at most.
 AUDIT_LISTING = 200
@@ -713,6 +718,11 @@ def add_enabled_write_routes(
                         from tabrion_studio.write.database_manager import delete
 
                         answer_doc = (delete.delete if action == "delete" else delete.preview)(manager, session, doc)
+                    elif action.startswith("roles"):  # STU-XDM-4
+                        from tabrion_studio.write.database_manager import roles
+
+                        call_role = {"roles": roles.listing, "roles_preview": roles.preview, "roles_apply": roles.apply}
+                        answer_doc = call_role[action](manager, session, doc)
                     else:
                         answer_doc = getattr(backups, action)(manager, session, doc)
                 except backups.DriverFailure as exc:
@@ -727,6 +737,9 @@ def add_enabled_write_routes(
     manager_route("/api/write/database-manager/restore", "POST", _DBM_RESTORE_KEYS, "restore")
     manager_route("/api/write/database-manager/delete/preview", "POST", _DBM_DELETE_PREVIEW_KEYS, "delete_preview")
     manager_route("/api/write/database-manager/delete", "POST", _DBM_DELETE_KEYS, "delete")
+    manager_route("/api/write/database-manager/roles", "POST", _DBM_ROLES_KEYS, "roles")
+    manager_route("/api/write/database-manager/roles/preview", "POST", _DBM_ROLE_PREVIEW_KEYS, "roles_preview")
+    manager_route("/api/write/database-manager/roles/apply", "POST", _DBM_ROLE_APPLY_KEYS, "roles_apply")
 
     # --- the I-109 j confirmation of a secret's pair of server and reference (STU-XW-4, D-15) ----------------------
 
