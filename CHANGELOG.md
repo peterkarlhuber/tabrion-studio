@@ -15,7 +15,8 @@ All notable changes to this project are documented here. The format follows
   `<script_location>/versions/<12 hex>_<slug>.py` exclusively, never through a link and never over a file. Only for a
   DEV or TEST unlock whose database no PROD profile names (review I-1 of #144: the Database Manager's PROD-alias
   matching, now shared in `tabrion_studio.write.prod_targets`, no behavior change there), a project whose profiles
-  (D-01) and Alembic code are trusted, and a plan with a step; `env.py`,
+  (D-01) and Alembic code are trusted, a plan with a step, and not Windows (review L-1 of #146: without `dir_fd` the
+  folder check and the create could be split by a junction swap; reason `platform`); `env.py`,
   a project module, the new revision and Alembic commands never run, and nothing runs on the database. The preview
   says whether a revision may be written and that the revision does not check its source fingerprint (I-124 j 5).
   Audit `run.start`/`run.result` with action `schema_designer.revision`. New problems

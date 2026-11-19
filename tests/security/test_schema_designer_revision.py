@@ -33,6 +33,7 @@ import pytest
 
 from tabrion_studio.config.write_areas import Area, WriteAreas
 from tabrion_studio.write.connection import WriteError, defensive_available
+import tabrion_studio.write.schema_designer.revision as revision_module
 from tests.support.write import CANARY_SECRET, CANARY_VALUE, DATA_EDITOR, WriteEnv, digest
 
 pytestmark = pytest.mark.security
@@ -42,6 +43,13 @@ REVISION = "/api/write/schema-designer/revision"
 SCHEMA_DESIGNER = WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))
 ROOT = Path(__file__).resolve().parents[2]
 POSIX = sys.platform != "win32"
+#: Whether this platform writes a revision at all: not without ``dir_fd`` (Windows, review L-1 of #146).
+DIR_FD = revision_module._DIR_FD
+PLATFORM = [] if DIR_FD else ["platform"]
+WRITES = pytest.mark.skipif(
+    not DIR_FD,
+    reason="no revision is written without dir_fd (Windows); test_without_dir_fd_the_revision_output_is_refused",
+)
 FILE_NAME = re.compile(r"[0-9a-f]{12}_[a-z0-9_]{1,40}\.py")
 ADD_QTY = {"op": "add_column", "table": "parts", "column": {"name": "qty", "type": "INTEGER"}}
 INI = "[alembic]\nscript_location = %(here)s/migrations\n"
@@ -199,7 +207,12 @@ def test_the_preview_offers_the_revision_and_says_it_does_not_check_the_source(p
     project.edit(ADD_QTY)
     plan = project.preview()
     assert plan["executable"] is False and "alembic_project" in plan["blocked"]
-    assert plan["revision_output"] == {"available": True, "blocked": [], "checks_source": False, "max_message": 200}
+    assert plan["revision_output"] == {
+        "available": DIR_FD,
+        "blocked": PLATFORM,
+        "checks_source": False,
+        "max_message": 200,
+    }
     assert plan["source_fingerprint"].startswith("v2:sha256:")
 
 
@@ -223,7 +236,7 @@ def test_untrusted_profiles_untrusted_code_or_no_alembic_project_refuse(
         found.edit(ADD_QTY)
         plan = found.preview()
         assert plan["revision_output"]["available"] is False
-        assert plan["revision_output"]["blocked"] == [reason]
+        assert plan["revision_output"]["blocked"] == [reason, *PLATFORM]
         _refused(found.write(plan), 400, "studio.schema_revision_not_allowed", [("plan.reason", f"plan.{reason}")])
         assert found.new_files() == [] and found.runs() == []
     finally:
@@ -283,7 +296,7 @@ def test_a_dev_profile_that_is_an_alias_of_a_prod_database_gets_no_revision(proj
     project.env.create_read(name="live", environment="prod", path=alias)
     project.edit(ADD_QTY)
     plan = project.preview()
-    assert plan["revision_output"]["blocked"] == ["environment"]
+    assert plan["revision_output"]["blocked"] == ["environment", *PLATFORM]
     _refused(project.write(plan), 400, "studio.schema_revision_not_allowed", [("plan.reason", "plan.environment")])
     assert project.new_files() == [] and project.runs() == []
 
@@ -328,6 +341,23 @@ def test_the_postgres_prod_alias_matching_is_the_database_managers() -> None:
 # --- 3 and 4. never run, the file (GS3-06, GS3-07) --------------------------------------------------------------------
 
 
+def test_without_dir_fd_the_revision_output_is_refused(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review L-1 of #146: without ``dir_fd`` and ``O_NOFOLLOW`` (Windows) the folder check and the create would be two
+    steps by path, and a junction swapped in between would redirect the file. The revision output is refused there:
+    the preview says ``platform``, the write refuses with it and writes nothing, and ``write_file`` itself refuses."""
+    monkeypatch.setattr(revision_module, "_DIR_FD", False)
+    project.edit(ADD_QTY)
+    plan = project.preview()
+    assert plan["revision_output"]["available"] is False and plan["revision_output"]["blocked"] == ["platform"]
+    _refused(project.write(plan), 400, "studio.schema_revision_not_allowed", [("plan.reason", "plan.platform")])
+    assert project.new_files() == [] and project.runs() == []
+    folder, found = revision_module.revision_folder(project.env.project, project.env.project / "migrations")
+    with pytest.raises(WriteError) as caught:
+        revision_module.write_file(folder, found, "0123456789ab_x.py", "x = 1\n")
+    assert caught.value.code == "studio.schema_revision_not_allowed" and project.new_files() == []
+
+
+@WRITES
 def test_the_revision_is_written_and_nothing_runs(project: Project) -> None:
     """GS3-06, GS3-07: the file lands in the revision folder under a checked name, with the umask's mode, follows the
     single head and holds the plan; env.py never runs, the revision never runs (the database is unchanged), and the
@@ -364,6 +394,7 @@ def test_the_revision_is_written_and_nothing_runs(project: Project) -> None:
     assert str(project.env.db) not in text and project.connection_id not in text and CANARY_SECRET not in text
 
 
+@WRITES
 def test_the_write_is_audited(project: Project) -> None:
     """GS3-27: ``run.start`` before the file, ``run.result`` after it, action ``schema_designer.revision``, with the
     hash's hex part, the tables, the classes and the step count; never the message or the path."""
@@ -380,6 +411,7 @@ def test_the_write_is_audited(project: Project) -> None:
     assert "secret message words" not in records and "migrations/versions" not in records
 
 
+@WRITES
 def test_a_replay_a_drift_and_a_wrong_message_are_refused(project: Project) -> None:
     """One attempt per preview; a database change after the preview is ``studio.plan_drift``; a wrong message may be
     typed again (the plan stays)."""
@@ -400,6 +432,7 @@ def test_a_replay_a_drift_and_a_wrong_message_are_refused(project: Project) -> N
     assert len(project.new_files()) == 1
 
 
+@WRITES
 def test_several_heads_refuse(project: Project) -> None:
     """GS3-07: the new revision follows the single head; with two heads nothing is written."""
     (project.versions / "0002_more.py").write_text(_revision("0002", None))
@@ -426,6 +459,7 @@ def test_a_link_as_the_revision_folder_refuses(project: Project, tmp_path: Path)
     assert sorted(p.name for p in elsewhere.iterdir()) == ["0001_init.py"]
 
 
+@WRITES
 def test_an_existing_name_is_never_overwritten(project: Project, monkeypatch: pytest.MonkeyPatch) -> None:
     """GS3-07: created exclusively: a file of the new name (here a trusted revision, the head) stays as it is."""
     monkeypatch.setattr("tabrion_studio.write.schema_designer.revision.secrets.token_hex", lambda n: "ab" * n)
@@ -442,6 +476,7 @@ def test_an_existing_name_is_never_overwritten(project: Project, monkeypatch: py
     ]
 
 
+@WRITES
 @pytest.mark.skipif(not POSIX, reason="POSIX links")
 def test_a_link_of_the_new_name_or_as_the_folder_is_never_followed(tmp_path: Path) -> None:
     """GS3-07: ``write_file`` never follows a link: one of the new name stays and its target is untouched; a folder
@@ -506,6 +541,7 @@ def test_the_name_is_built_from_the_id_and_a_slug() -> None:
 # --- 5. the text (GS3-08) -------------------------------------------------------------------------------------------
 
 
+@WRITES
 def test_quotes_and_backslashes_stay_literals(project: Project) -> None:
     """GS3-08 (tabrion K-3 vectors): a message and a column name with quotes and backslashes give a file whose parts
     are a docstring, imports, assignments of literals and the two functions; the message is a literal."""

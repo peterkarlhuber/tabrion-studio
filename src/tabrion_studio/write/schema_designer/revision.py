@@ -18,7 +18,10 @@ text parses (``ast.parse``), records ``run.start``, creates the file and records
 the unlocked database (:func:`names_prod`, the Database Manager's matching; review I-1 of #144); the project's profiles
 are trusted (D-01); the project has an Alembic setup (``alembic.ini`` with a ``script_location``) whose code the user
 trusted (the digest of :mod:`tabrion_studio.config.code_trust`); the plan has a step. The revision output does not need
-a direct run to be allowed: it is the only output for an Alembic project.
+a direct run to be allowed: it is the only output for an Alembic project. **Windows is refused** (``platform``,
+review L-1 of #146): without ``dir_fd`` and ``O_NOFOLLOW`` the folder check and the create are two steps, and a
+junction swapped in between would redirect the file; the revision output stays locked there until a check of the
+created file's final path is built and reviewed.
 
 **Never run** (GS3-06). Studio never runs ``env.py``, never imports a project module or the revision it writes, runs no
 ``alembic`` command and opens no ``MigrationContext``. The only project code that runs is the 1.0 migration worker's
@@ -29,9 +32,9 @@ be a folder inside the project, reached without a link at any level (each part i
 real path must be the lexical one). The name is ``<revision>_<slug>.py``: the revision id is 12 random hex digits made
 here, the slug at most 40 of ``[a-z0-9_]`` made from the message (:func:`slug`); no path part, no ``..``. The file is
 created exclusively (``O_CREAT | O_EXCL``, ``O_NOFOLLOW``, on POSIX relative to the folder opened with
-``O_NOFOLLOW``), never overwritten, with the mode the user's umask gives a new file (the project's normal mode). The
-page shows its path relative to the project. A new revision file changes the code-trust digest: the migration status
-asks for trust again before it reads the revisions (the answer says so).
+``O_NOFOLLOW``; refused where that is not available), never overwritten, with the mode the user's umask gives a new
+file (the project's normal mode). The page shows its path relative to the project. A new revision file changes the
+code-trust digest: the migration status asks for trust again before it reads the revisions (the answer says so).
 
 **The text** (GS3-08). tabrion writes the revision id, the head, the message, the plan hash, the fingerprints and
 every statement as Python string literals; Studio refuses a message with a control character or longer than
@@ -149,6 +152,8 @@ def availability(unlock: Unlock, change: Any, sources: RevisionSources, *, prod_
         reasons.append("no_alembic_project")
     elif code.state != "trusted" or code.scan is None:
         reasons.append("code_untrusted")
+    if not _DIR_FD:  # Windows (review L-1 of #146), last so that the other reasons keep their order
+        reasons.append("platform")
     return tuple(reasons)
 
 
@@ -235,29 +240,26 @@ def revision_folder(project: Path, script_location: Path) -> tuple[Path, os.stat
 
 
 def write_file(folder: Path, expected: os.stat_result, name: str, text: str) -> Path:
-    """Create ``folder/name`` exclusively with ``text`` (never overwrite, never through a link). On POSIX the folder
-    is opened with ``O_NOFOLLOW`` and must still be the checked one (device and inode), and the file is created
-    relative to it."""
+    """Create ``folder/name`` exclusively with ``text`` (never overwrite, never through a link). The folder is opened
+    with ``O_NOFOLLOW`` and must still be the checked one (device and inode), and the file is created relative to it.
+    Without ``dir_fd`` (Windows) it refuses: a check by path and a create by path could be split by a junction swap
+    (review L-1 of #146)."""
     if not FILE_NAME.fullmatch(name):  # pragma: no cover - file_name made it
         raise WriteError("studio.schema_revision_failed")
+    if not _DIR_FD:
+        raise WriteError("studio.schema_revision_not_allowed", [("plan.reason", "plan.platform")])
     data = text.encode("ascii")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW | _CLOEXEC | _BINARY
     folder_fd: int | None = None
     try:
-        if _DIR_FD:
-            try:
-                folder_fd = os.open(folder, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC)
-            except OSError:  # a link (ELOOP), not a folder any more, or gone
-                raise WriteError("studio.schema_revision_folder") from None
-            opened = os.fstat(folder_fd)
-            if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino) or not stat.S_ISDIR(opened.st_mode):
-                raise WriteError("studio.schema_revision_folder")
-            fd = os.open(name, flags, 0o666, dir_fd=folder_fd)
-        else:
-            now = os.lstat(folder)
-            if stat.S_ISLNK(now.st_mode) or (now.st_dev, now.st_ino) != (expected.st_dev, expected.st_ino):
-                raise WriteError("studio.schema_revision_folder")
-            fd = os.open(folder / name, flags, 0o666)
+        try:
+            folder_fd = os.open(folder, os.O_RDONLY | _DIRECTORY | _NOFOLLOW | _CLOEXEC)
+        except OSError:  # a link (ELOOP), not a folder any more, or gone
+            raise WriteError("studio.schema_revision_folder") from None
+        opened = os.fstat(folder_fd)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino) or not stat.S_ISDIR(opened.st_mode):
+            raise WriteError("studio.schema_revision_folder")
+        fd = os.open(name, flags, 0o666, dir_fd=folder_fd)
     except FileExistsError:
         raise WriteError("studio.schema_revision_exists") from None
     except WriteError:

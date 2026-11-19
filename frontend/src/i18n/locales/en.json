@@ -2128,7 +2128,8 @@
         "environment": "Revisions are written for DEV and TEST connections only, never for PROD.",
         "project_untrusted": "The project's profiles (.tabrion/studio.toml) are not trusted.",
         "code_untrusted": "The project's Alembic code is not trusted, or it changed since you trusted it.",
-        "no_alembic_project": "The project has no alembic.ini with a script_location."
+        "no_alembic_project": "The project has no alembic.ini with a script_location.",
+        "platform": "Revisions are not written on Windows yet: the file could not be created safely against a swapped folder."
       }
     }
   },

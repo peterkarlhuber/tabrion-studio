@@ -1194,6 +1194,7 @@ const REVISION_REASONS = new Set([
   'project_untrusted',
   'code_untrusted',
   'no_alembic_project',
+  'platform',
 ]);
 
 function revisionReasonText(t: TFunction, reason: string): string {

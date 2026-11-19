@@ -143,6 +143,9 @@ environment is `prod` (whether to allow it, since it writes only the project fil
   now shared in `tabrion_studio.write.prod_targets` (SQLite by device and inode; PostgreSQL by name on the same
   server, by `system_identifier` or port and resolved addresses). A revision output
   without an unlock and a plan with `CONCURRENTLY` steps are follow-ups.
+  Windows is refused (reason `platform`, review L-1 of #146): without `dir_fd` the folder check and the exclusive
+  create are two steps by path, and a junction swapped in between would redirect the file; a final-path check of the
+  created file with a junction test is the follow-up that would lift it.
 
 **The schema comparison (STU-XSD-2)** is neither output: it reads, compares and shows, and its plan preview is never
 kept or run (no plan hash, no confirmation). Decided per G-S3/G-S4 grant 2026-11-18:

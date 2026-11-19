@@ -215,7 +215,9 @@ and again when the file is written:
   matches it);
 - you trusted the project's profiles (`.tabrion/studio.toml`, the trust dialog) **and** its Alembic code (the code
   trust of the migration status), and neither changed since;
-- the plan has a step.
+- the plan has a step;
+- Studio is not running on Windows (there the file could not be created safely against a folder swapped for a
+  junction, so the revision output stays locked).
 
 Enter a message (one line, at most 200 characters) and choose **Write revision**. Studio plans again from the
 database as it is now and refuses when the plan changed. It reads the project's single head with the migration
@@ -280,6 +282,7 @@ The tables, columns and SQL of a comparison are shown to you only; Studio's log 
 
 - A PostgreSQL backup before a run on Windows (Studio refuses the tools there).
 - The graphical mode (STU-XSD-1).
+- The revision output on Windows.
 - A revision with `CREATE INDEX CONCURRENTLY` steps (the revision uses the plan of a direct run, without them), and
   a revision output without an unlocked write profile.
 - Starting a draft from a schema file, and saving a draft.
