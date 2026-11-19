@@ -1108,6 +1108,14 @@
     "schema_revision_folder": "The revision folder (versions under the script_location) must be a folder inside the project, reached without a link. Nothing was written.",
     "schema_revision_exists": "A file of the new revision's name exists already; Studio never overwrites a file. Preview again.",
     "schema_revision_failed": "The revision file could not be written. Check that the revision folder is writable.",
+    "profile_export_invalid": "The profiles or the file of the export are missing or not valid; the field says what. Nothing was written.",
+    "profile_export_unconfirmed": "Type the new file's name exactly as shown to export. Nothing was written.",
+    "profile_export_multi_host": "A profile that names several hosts cannot be exported: the profile file holds one host per profile, and Studio never shortens the list. Leave this profile out. Nothing was written.",
+    "profile_export_folder": "Studio does not write the export into this folder: it does not exist, is or goes through a link, belongs to another user, or others may write to it or to a folder above it. Choose a folder of your own by its real path.",
+    "profile_export_reserved": "Studio does not write exports into its own configuration, state, audit or log folders or the project's .tabrion folder. Choose another folder.",
+    "profile_export_exists": "A file or link with this name exists already. Studio never overwrites a file; choose another name.",
+    "profile_export_platform": "On Windows Studio does not write profile exports yet: it cannot check who may write the folder. Nothing was written.",
+    "profile_export_failed": "The export file could not be written. Check the free space and the folder, then try again.",
     "backup_tool_unavailable": "pg_dump or pg_restore is not usable. Studio runs them only from the absolute paths in database-tools.toml next to its write settings: a program of the expected name, owned by you or root, not writable by others, not a link, version 16 or newer and at least as new as the server.",
     "backup_tool_failed": "pg_dump or pg_restore ended with an error or ran out of time. A backup that did not finish was removed, and nothing that depends on it was done.",
     "dbm_backup_failed": "The backup could not be written to Studio's backup folder, so nothing that depends on it was done. Check the free space.",
@@ -2292,6 +2300,49 @@
       "plan_source": "A plan is made only for a database: choose a connection as the compared side.",
       "plan_prod": "No plan is made for a PROD database.",
       "plan_environment": "A plan is made only for a DEV or TEST connection of your own profiles."
+    }
+  },
+  "profileExport": {
+    "title": "Export profiles",
+    "lead": "Write read profiles to a new connection profile file that other Tabrion tools can read. Each profile is written read only, from its connection fields alone: no password, no write or admin profile, and never a secret.",
+    "loading": "Reading the profiles …",
+    "none": "There is no read profile to export.",
+    "profiles": "Read profiles",
+    "profileLine": "{{name}} ({{source}}, {{environment}}; {{password}})",
+    "sources": {
+      "user": "your profile",
+      "project": "project profile"
+    },
+    "password": {
+      "none": "no password",
+      "env": "password from its environment variable",
+      "prompt": "password asked for when used"
+    },
+    "path": "File path",
+    "pathHint": "The full path of the new file, ending in {{suffix}}.",
+    "rules": "The folder must exist, belong to you and be writable only by you, and be given by its real path (no link); Studio's own folders are not allowed. Studio creates the file only you may read and write (0600) and never overwrites a file. A profile with several hosts is not exported.",
+    "type": "Type {{name}} to export",
+    "submit": "Export profiles",
+    "done_one": "Exported {{count}} profile to {{path}}, readable and writable only by you.",
+    "done_other": "Exported {{count}} profiles to {{path}}, readable and writable only by you.",
+    "auditPending": "The audit record is still pending.",
+    "another": "Export again",
+    "issues": {
+      "required": "Required.",
+      "type": "Not valid.",
+      "too_many": "Too many profiles for one file.",
+      "duplicate": "A profile is named twice.",
+      "unknown": "A profile is not (or no longer) a read profile Studio lists. Read the page again.",
+      "same_name": "Two chosen profiles have the same name; the file holds one profile per name. Choose one of them.",
+      "host_list": "A chosen profile names several hosts.",
+      "not_storable": "A chosen profile cannot be written as a profile file.",
+      "too_long": "Too long.",
+      "control_character": "Contains a control character or a special space (such as a no-break space).",
+      "network_path": "A network or device path is not allowed.",
+      "not_absolute": "Give the full path, starting at the root.",
+      "not_normalized": "Give the path without '..', '.' or double separators.",
+      "no_file_name": "The path names no file.",
+      "suffix": "The file name must end in .tabrion-profile.toml."
     }
   },
   "databaseManager": {

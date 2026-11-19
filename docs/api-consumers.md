@@ -69,6 +69,11 @@ is used.
 | `tabrion.postgres.create_database` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py` |
 | `tabrion.postgres.drop_database` | `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.postgres.extension_status` | `src/tabrion_studio/services/tabrion_compat.py` |
+| `tabrion.profilefile.ConnectionProfile` | `src/tabrion_studio/write/profile_export.py` |
+| `tabrion.profilefile.ProfileFileError` | `src/tabrion_studio/write/profile_export.py` |
+| `tabrion.profilefile.SecretRef` | `src/tabrion_studio/write/profile_export.py` |
+| `tabrion.profilefile.dump` | `src/tabrion_studio/write/profile_export.py` |
+| `tabrion.profilefile.load` | `tests/security/test_profile_export.py` |
 | `tabrion.rowedit.delete_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.insert_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.update_row` | `src/tabrion_studio/write/data_editor.py` |

@@ -66,6 +66,11 @@
   :mod:`tabrion_studio.write.schema_designer.revision`): plan again and compare the hash, read the single head through
   the migration status (code trust), get the text from ``tabrion.plan.revision_text`` and create the file exclusively.
   Nothing runs on the database; ``env.py`` and the revision never run. Schema Designer flag only; never for PROD.
+* ``POST /api/write/schema-designer/profile-export``: ``{"profiles", "path", "typed"}``: write the named read
+  profiles as a tabrion connection profile file (format v1) into a new file of the user's own folder (STU-CR-6 part
+  1, :mod:`tabrion_studio.write.profile_export`): read profiles only, an allowlist of fields and an ``env:``
+  reference at most (never a write or admin profile, never a secret), single-host profiles only, never over a file.
+  Schema Designer flag only; no database is touched.
 * ``GET /api/write/database-manager/backups``: the Database Manager's backups (newest first, with their metadata and
   the scope notice), their count and total size, and whether ``pg_dump`` and ``pg_restore`` are configured and pass
   their checks (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`). ``POST
@@ -135,6 +140,8 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/schema-designer/compare", ("POST",)),
     # STU-XSD-3: write the previewed plan as an Alembic revision into the trusted project; never run (G-S3).
     ("/api/write/schema-designer/revision", ("POST",)),
+    # STU-CR-6 part 1: the profile export (read profiles, allowlisted fields, single host, a new file only; G-S3).
+    ("/api/write/schema-designer/profile-export", ("POST",)),
     # STU-XDM-2: the Database Manager's backups, a backup, and the preview and run of a restore (G-S4).
     ("/api/write/database-manager/backups", ("GET",)),
     ("/api/write/database-manager/backup", ("POST",)),

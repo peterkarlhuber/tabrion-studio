@@ -1108,6 +1108,14 @@
     "schema_revision_folder": "Der Revisionsordner (versions unter script_location) muss ein Ordner im Projekt sein, ohne Link erreichbar. Es wurde nichts geschrieben.",
     "schema_revision_exists": "Eine Datei mit dem Namen der neuen Revision gibt es schon; Studio überschreibt nie eine Datei. Erstelle die Vorschau erneut.",
     "schema_revision_failed": "Die Revisionsdatei konnte nicht geschrieben werden. Prüfe, ob der Revisionsordner beschreibbar ist.",
+    "profile_export_invalid": "Die Profile oder die Datei des Exports fehlen oder sind ungültig; das Feld nennt den Grund. Es wurde nichts geschrieben.",
+    "profile_export_unconfirmed": "Zum Exportieren den Namen der neuen Datei genau wie angezeigt eintippen. Es wurde nichts geschrieben.",
+    "profile_export_multi_host": "Ein Profil mit mehreren Hosts kann nicht exportiert werden: Die Profildatei hält einen Host je Profil, und Studio kürzt die Liste nie. Bitte dieses Profil weglassen. Es wurde nichts geschrieben.",
+    "profile_export_folder": "Studio schreibt den Export nicht in diesen Ordner: Er fehlt, ist oder führt über einen Link, gehört einem anderen Benutzer, oder andere dürfen darin oder in einem Ordner darüber schreiben. Bitte einen eigenen Ordner mit seinem echten Pfad wählen.",
+    "profile_export_reserved": "Studio schreibt keine Exporte in seine eigenen Konfigurations-, Zustands-, Audit- oder Log-Ordner oder in den .tabrion-Ordner des Projekts. Bitte einen anderen Ordner wählen.",
+    "profile_export_exists": "Eine Datei oder ein Link mit diesem Namen gibt es schon. Studio überschreibt nie eine Datei; bitte einen anderen Namen wählen.",
+    "profile_export_platform": "Unter Windows schreibt Studio noch keine Profil-Exporte: Es kann nicht prüfen, wer in den Ordner schreiben darf. Es wurde nichts geschrieben.",
+    "profile_export_failed": "Die Exportdatei konnte nicht geschrieben werden. Bitte freien Platz und Ordner prüfen und es erneut versuchen.",
     "backup_tool_unavailable": "pg_dump oder pg_restore ist nicht nutzbar. Studio startet sie nur über die absoluten Pfade in database-tools.toml neben seinen Schreibeinstellungen: ein Programm mit dem erwarteten Namen, das dir oder root gehört, für andere nicht schreibbar ist, kein Link ist, Version 16 oder neuer und mindestens so neu wie der Server.",
     "backup_tool_failed": "pg_dump oder pg_restore ist mit einem Fehler beendet worden oder hat zu lange gebraucht. Eine unvollständige Sicherung wurde entfernt; nichts, was davon abhängt, wurde ausgeführt.",
     "dbm_backup_failed": "Die Sicherung konnte nicht in Studios Sicherungsordner geschrieben werden; nichts, was davon abhängt, wurde ausgeführt. Prüfe den freien Speicher.",
@@ -2292,6 +2300,49 @@
       "plan_source": "Ein Plan wird nur für eine Datenbank erstellt: eine Verbindung als verglichene Seite wählen.",
       "plan_prod": "Für eine PROD-Datenbank wird kein Plan erstellt.",
       "plan_environment": "Ein Plan wird nur für eine DEV- oder TEST-Verbindung eigener Profile erstellt."
+    }
+  },
+  "profileExport": {
+    "title": "Profile exportieren",
+    "lead": "Lese-Profile in eine neue Verbindungsprofil-Datei schreiben, die andere Tabrion-Werkzeuge lesen können. Jedes Profil wird nur lesend und nur mit seinen Verbindungsfeldern geschrieben: kein Passwort, kein Schreib- oder Admin-Profil und nie ein Geheimnis.",
+    "loading": "Profile werden gelesen …",
+    "none": "Es gibt kein Lese-Profil zum Exportieren.",
+    "profiles": "Lese-Profile",
+    "profileLine": "{{name}} ({{source}}, {{environment}}; {{password}})",
+    "sources": {
+      "user": "Ihr Profil",
+      "project": "Projektprofil"
+    },
+    "password": {
+      "none": "kein Passwort",
+      "env": "Passwort aus seiner Umgebungsvariable",
+      "prompt": "Passwort wird bei Gebrauch erfragt"
+    },
+    "path": "Dateipfad",
+    "pathHint": "Der vollständige Pfad der neuen Datei, endend auf {{suffix}}.",
+    "rules": "Der Ordner muss vorhanden sein, Ihnen gehören, nur von Ihnen beschreibbar sein und mit seinem echten Pfad (ohne Link) angegeben werden; Studios eigene Ordner sind nicht erlaubt. Studio legt die Datei nur für Sie les- und schreibbar an (0600) und überschreibt nie eine Datei. Ein Profil mit mehreren Hosts wird nicht exportiert.",
+    "type": "{{name}} eintippen, um zu exportieren",
+    "submit": "Profile exportieren",
+    "done_one": "{{count}} Profil nach {{path}} exportiert, nur für Sie les- und schreibbar.",
+    "done_other": "{{count}} Profile nach {{path}} exportiert, nur für Sie les- und schreibbar.",
+    "auditPending": "Der Audit-Eintrag steht noch aus.",
+    "another": "Erneut exportieren",
+    "issues": {
+      "required": "Pflichtfeld.",
+      "type": "Ungültig.",
+      "too_many": "Zu viele Profile für eine Datei.",
+      "duplicate": "Ein Profil ist doppelt genannt.",
+      "unknown": "Ein Profil ist kein Lese-Profil, das Studio auflistet (oder nicht mehr). Bitte die Seite neu lesen.",
+      "same_name": "Zwei gewählte Profile haben denselben Namen; die Datei hält ein Profil je Name. Bitte eines davon wählen.",
+      "host_list": "Ein gewähltes Profil nennt mehrere Hosts.",
+      "not_storable": "Ein gewähltes Profil lässt sich nicht als Profildatei schreiben.",
+      "too_long": "Zu lang.",
+      "control_character": "Enthält ein Steuerzeichen oder ein besonderes Leerzeichen (etwa ein geschütztes Leerzeichen).",
+      "network_path": "Ein Netzwerk- oder Gerätepfad ist nicht erlaubt.",
+      "not_absolute": "Den vollständigen Pfad ab der Wurzel angeben.",
+      "not_normalized": "Den Pfad ohne '..', '.' oder doppelte Trenner angeben.",
+      "no_file_name": "Der Pfad nennt keine Datei.",
+      "suffix": "Der Dateiname muss auf .tabrion-profile.toml enden."
     }
   },
   "databaseManager": {

@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-6 part 1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
+  default changes): the profile export, `POST /api/write/schema-designer/profile-export` with the ids of read
+  profiles, the new file's path (`*.tabrion-profile.toml`) and its typed name. The shared module
+  `tabrion_studio.write.profile_export` (STU-XDM-5 will call it) writes each profile from an allowlist of its fields
+  with `mode = "read_only"` through `tabrion.profilefile.dump`; write and admin profiles cannot be named and are never
+  read, no secret is resolved, an `env:` reference is kept and any other becomes `prompt` (TX-30, N-5). A profile with
+  a host list is refused, never cut to one host (W-10, TB-148). The file is created with the folder rules now shared in
+  `tabrion_studio.write.folders` (the user's own folder, no link, not one of Studio's folders; `O_EXCL|O_NOFOLLOW`,
+  `0600`, never over a file); Windows is refused. Audit `run.start`/`run.result` with action
+  `schema_designer.profile_export`. New problems `studio.profile_export_invalid`, `_unconfirmed`, `_multi_host`,
+  `_folder`, `_reserved`, `_exists`, `_platform` and `_failed`, with `export.*` field issues; the "Export profiles"
+  section in English and German; the guide's "Export profiles" section. The runtime-role wizard (part 2) follows
+  STU-XDM-4.
 - STU-XSD-1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's graphical mode. "Show the draft as: Diagram" draws the draft as an ER diagram with
   each table's status (the explorer's layout and @xyflow/react, no new dependency, loaded only when shown); the table

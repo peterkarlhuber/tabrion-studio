@@ -21,8 +21,9 @@ and an ``edit.*`` code), ``studio.schema_plan_refused`` and ``studio.schema_mode
 its position on the page only: ``tables.<n>`` or ``dropped.<n>``), ``studio.schema_run_not_allowed``
 (``plan.reason``: why a plan is not run directly), ``studio.schema_run_check_failed`` (``plan.check``: the check
 before the commit that failed), the schema comparison's problems (STU-XSD-2: ``compare.<side>`` and
-``compare.plan`` with a ``compare.*`` code) and, from STU-011 on, ``sqlstate`` and ``position`` for database
-errors (``db.<kind>``).
+``compare.plan`` with a ``compare.*`` code), the profile export's (STU-CR-6: ``export.profiles`` or
+``export.path`` with an ``export.*`` code) and, from STU-011 on, ``sqlstate`` and ``position`` for database errors
+(``db.<kind>``).
 
 **Nothing in a problem comes from an exception or from the request (threat T-05, SQ-04).** ``title``, ``detail`` and
 ``hint`` are fixed English texts of :data:`CATALOG`; the only variable parts are the log ID (random hex), a SQLSTATE
@@ -77,10 +78,10 @@ _CODE = re.compile(r"(?:studio|access|db)\.[a-z][a-z0-9_]*")
 #: ``plan.<part>`` with tabrion's fixed reason or code (``plan.*``, ``ddl.*``, ``schema.*``), never a name or a text.
 _ISSUE_POINTER = re.compile(
     r"(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}\.\d{1,4}|(?:create|edit|plan)\.[a-z_]{1,32}"
-    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
+    r"|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete|export)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2}"
 )
 _ISSUE_CODE = re.compile(
-    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare)\.[a-z_]{1,48}"
+    r"(?:config|value|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare|export)\.[a-z_]{1,48}"
 )
 #: A Data Editor change the database refused for a constraint (G-S2 6A): the change's position, and the column's
 #: where the database named it, and a constraint.* code.
@@ -1016,6 +1017,65 @@ CATALOG: dict[str, Entry] = {
         "Revision not written",
         "The revision file could not be created or written.",
         "Check that the revision folder is writable, then preview again.",
+    ),
+    # STU-CR-6 part 1: the profile export (read profiles to a new file; never a secret, never over a file).
+    "studio.profile_export_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Export not valid",
+        "The profiles or the file of the export are missing or not valid; the field says what. Nothing was written.",
+        "Check the fields in question.",
+    ),
+    "studio.profile_export_unconfirmed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Confirmation does not match",
+        "To export, type the new file's name exactly as shown. Nothing was written.",
+    ),
+    "studio.profile_export_multi_host": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Profile with several hosts",
+        "A profile that names several hosts cannot be exported: the profile file holds one host per profile, and "
+        "Studio never shortens the list. Nothing was written.",
+        "Leave this profile out, or export a profile with one host.",
+    ),
+    "studio.profile_export_folder": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Folder not usable",
+        "The folder does not exist, is or goes through a link, belongs to another user, or others may write to it or "
+        "to a folder above it (unless that folder has the sticky bit, as /tmp has). Nothing was written.",
+        "Choose a folder of your own that only you may write, by its real path.",
+    ),
+    "studio.profile_export_reserved": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Studio's own folder",
+        "Studio does not write exports into its own configuration, state, audit or log folders, the project's "
+        ".tabrion folder or a folder inside one of them.",
+        "Choose another folder.",
+    ),
+    "studio.profile_export_exists": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "File exists",
+        "A file or link with this name exists already. Studio never overwrites a file; nothing was written.",
+        "Choose another file name.",
+    ),
+    "studio.profile_export_platform": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Not on Windows",
+        "On Windows Studio does not write profile exports yet: it cannot check who may write the folder. Nothing was "
+        "written.",
+    ),
+    "studio.profile_export_failed": Entry(
+        500,
+        ProblemKind.INTERNAL,
+        "Export not written",
+        "The export file could not be written.",
+        "Check the free space and the folder, then try again.",
     ),
     "studio.schema_backup_required": Entry(
         400,
