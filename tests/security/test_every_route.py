@@ -243,6 +243,11 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/database-manager/restore": "restores into a new or DEV/TEST target, backup first (flag)",
     "POST /api/write/database-manager/delete/preview": "checks a delete target and counts its sessions (flag)",
     "POST /api/write/database-manager/delete": "deletes a DEV/TEST database after a verified backup (flag)",
+    # STU-XDM-4 (G-S4): PostgreSQL roles through tabrion's role DDL, admin profile, DEV/TEST, PostgreSQL 16+ only
+    # (tests/security/test_dbm_roles.py, test_dbm_roles_postgres.py).
+    "POST /api/write/database-manager/roles": "lists the server's non-predefined roles; changes nothing (flag)",
+    "POST /api/write/database-manager/roles/preview": "reads a role's privileges, the refusals; changes nothing (flag)",
+    "POST /api/write/database-manager/roles/apply": "one role change through tabrion's role DDL, typed name (flag)",
 }
 
 

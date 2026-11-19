@@ -9,8 +9,8 @@
     [STU-ADR-0008](../adr/0008-database-manager-backup-restore-roles.md).
 
 The **Database Manager** section on the **Connections** page backs up a DEV or TEST database into Studio's own backup
-folder, restores a backup into a new database or file and deletes a DEV or TEST database after a verified backup.
-Managing roles is not built yet.
+folder, restores a backup into a new database or file, deletes a DEV or TEST database after a verified backup and
+manages the roles of a PostgreSQL DEV or TEST server.
 
 !!! warning "A PostgreSQL backup is not a complete backup"
     A `pg_dump` archive holds **one database**. Global roles, role memberships, tablespaces and other cluster objects
@@ -166,3 +166,36 @@ to the target are closed first, so they never count. A SQLite file that another 
 
 Writes to the database between its backup and the delete are lost. Every delete is written to the audit log
 (`dbm.delete`, with the backup's name and whether FORCE was chosen).
+
+## Manage PostgreSQL roles
+
+On an unlocked admin connection of a PostgreSQL **16 or later** DEV or TEST profile, **Roles** lists the server's
+roles (not PostgreSQL's predefined `pg_*` roles) and changes them through Tabrion. You can create a role, change its
+options or password, drop it, add a member to a group or remove it, and grant or revoke privileges on tables,
+sequences, functions, schemas and databases of the **connected** database.
+
+1. Choose the change, the role (for a membership the group and the member) and its options or privileges, then
+   **Look at the change**. This changes nothing. It shows the role's current rights, what Studio refuses, warnings,
+   and for a new membership which databases were checked for dangerous grants.
+2. Type the name of the role whose rights change (for a membership: the member). The button stays disabled until it
+   matches and never has the focus by default. If anything changed since you looked, nothing is done: look again.
+
+A password (create and change only) is sent once with the change and is never shown, kept, logged or written to the
+audit log; the audit log records only that one was set. Changing options always sets **every** option; the form
+starts from the role's current values.
+
+Studio never:
+
+- grants SUPERUSER, BYPASSRLS, CREATEROLE or REPLICATION, an ADMIN or GRANT option, or TRIGGER;
+- makes a role a member of a predefined role, of `pg_read_server_files`, `pg_write_server_files` or
+  `pg_execute_server_program`, or of a group that has or reaches a dangerous attribute or holds TRIGGER, EXECUTE on
+  a foreign SECURITY DEFINER function or CREATE on a schema in **any** database of the server it can reach;
+- changes its own roles: the admin role, the role of the session and the user of any of your profiles;
+- works on a server that **any** of your profiles marks PROD, also under another host name such as `localhost`;
+- acts on a role whose name holds characters that cannot be seen (shown as `<U+XXXX>`): rename it outside Studio;
+- drops a role that still owns objects: reassign them outside Studio first.
+
+After every change Studio reads the role again and shows any difference to what Tabrion reported (another session may
+have changed it meanwhile). Every change is written to the audit log (`dbm.role.<change>`). The admin role needs
+CREATEROLE on PostgreSQL 16 or later for this; it must not have SUPERUSER, BYPASSRLS, REPLICATION or a server-file
+role, or the unlock ends.

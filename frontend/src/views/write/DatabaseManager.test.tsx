@@ -17,6 +17,9 @@ import {
   parseListing,
   parsePreview,
   parseRestore,
+  parseRoleListing,
+  parseRolePreview,
+  parseRoleResult,
 } from '../../api/databaseManager';
 import i18n from '../../i18n';
 import { DatabaseManagerSection } from './DatabaseManager';
@@ -85,6 +88,79 @@ interface Answers {
   restore?: { status: number; body: unknown };
   deletePreview?: { status: number; body: unknown };
   tools?: Record<string, unknown>;
+  roles?: { status: number; body: unknown };
+  rolePreview?: { status: number; body: unknown };
+  roleApply?: { status: number; body: unknown };
+}
+
+const ROLES = {
+  environment: 'dev',
+  roles: [
+    {
+      name: 'app',
+      display: 'app',
+      hidden: false,
+      attributes: ['login', 'inherit'],
+      own: false,
+      connection_limit: 5,
+      valid_until: null,
+    },
+    {
+      name: 'shop_admin',
+      display: 'shop_admin',
+      hidden: false,
+      attributes: ['login', 'inherit', 'createrole'],
+      own: true,
+      connection_limit: null,
+      valid_until: null,
+    },
+    {
+      name: 'odd\u200bname',
+      display: 'odd<U+200B>name',
+      hidden: true,
+      attributes: [],
+      own: false,
+      connection_limit: null,
+      valid_until: null,
+    },
+  ],
+  truncated: false,
+};
+
+function privileges(role: string) {
+  return {
+    role,
+    attributes: ['login', 'inherit'],
+    member_of: [],
+    reachable: [],
+    dangerous: [],
+    broad: [],
+    public_definers: [],
+    owned_objects: 0,
+    default_privileges: 0,
+    safe: true,
+  };
+}
+
+function rolePreview(body: Record<string, unknown> | null) {
+  const member = typeof body?.member === 'string' ? body.member : null;
+  const role = String(body?.role ?? '');
+  return {
+    action: body?.action,
+    request: {},
+    environment: 'dev',
+    database: 'shop',
+    target: body?.action === 'create' ? null : privileges(role),
+    member: member === null ? null : privileges(member),
+    k2:
+      body?.action === 'grant_membership'
+        ? { found: [], checked: ['postgres', 'shop'], unchecked: [], no_connect: 1 }
+        : null,
+    refusals: [],
+    warnings: body?.action === 'revoke_membership' ? ['revoke_grantor'] : [],
+    typed: member ?? role,
+    state: 'a'.repeat(64),
+  };
 }
 
 const ON = { data_editor: false, schema_designer: false, database_manager: true };
@@ -219,6 +295,29 @@ function setup(answers: Answers = {}) {
                 force_offered: false,
                 backup_required: true,
               },
+      };
+      return json(answer.body, answer.status);
+    }
+    if (url === '/api/write/database-manager/roles') {
+      const answer = answers.roles ?? { status: 200, body: ROLES };
+      return json(answer.body, answer.status);
+    }
+    if (url === '/api/write/database-manager/roles/preview') {
+      const answer = answers.rolePreview ?? { status: 200, body: rolePreview(body) };
+      return json(answer.body, answer.status);
+    }
+    if (url === '/api/write/database-manager/roles/apply') {
+      const answer = answers.roleApply ?? {
+        status: 200,
+        body: {
+          action: body?.action,
+          role: body?.role,
+          member: body?.member ?? null,
+          after: body?.action === 'drop' ? null : privileges(String(body?.role)),
+          inside: null,
+          differences: [],
+          audit_pending: false,
+        },
       };
       return json(answer.body, answer.status);
     }
@@ -535,6 +634,235 @@ describe('the Database Manager section', () => {
     setup();
     expect(await screen.findByText(/Datenbank-Manager/)).toBeInTheDocument();
     expect(await screen.findByText(/2 Sicherungen, insgesamt/)).toBeInTheDocument();
+    await i18n.changeLanguage('en');
+  });
+});
+
+describe('the answers of the role routes', () => {
+  it('parses the listing, the preview and the result defensively', () => {
+    const listing = parseRoleListing(ROLES);
+    expect(listing?.roles.map((role) => role.display)).toEqual([
+      'app',
+      'shop_admin',
+      'odd<U+200B>name',
+    ]);
+    expect(listing?.roles[0]?.connectionLimit).toBe(5);
+    expect(parseRoleListing({ roles: 'x' })).toBeNull();
+    expect(parseRoleListing({ roles: [{ name: 1 }] })?.roles).toEqual([]);
+    const preview = parseRolePreview(
+      rolePreview({ action: 'grant_membership', role: 'g', member: 'm' }),
+    );
+    expect(preview?.typed).toBe('m');
+    expect(preview?.k2?.noConnect).toBe(1);
+    expect(parseRolePreview({ action: 'superuser', typed: 'x', state: 'y' })).toBeNull();
+    expect(parseRoleResult({ action: 'drop', role: 'app', after: null })?.after).toBeNull();
+    expect(parseRoleResult({ action: 'drop' })).toBeNull();
+  });
+});
+
+describe('the role management of the Database Manager (STU-XDM-4)', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en');
+  });
+
+  it("lists the roles with Studio's own and hidden names marked, only on PostgreSQL", async () => {
+    const { view } = setup({ unlocked: true });
+    const list = await screen.findByTestId('database-manager-roles-list');
+    expect(list).toHaveTextContent(
+      'shop_admin (login, inherit, createrole) — used by Studio, never changed',
+    );
+    expect(list).toHaveTextContent('odd<U+200B>name (no attributes) — its name holds characters');
+    expect(await serious(view.container)).toEqual([]);
+  });
+
+  it('has no roles part on SQLite', async () => {
+    const { calls } = setup({ unlocked: true, engine: 'sqlite' });
+    await screen.findByTestId('database-manager-delete-part');
+    expect(screen.queryByTestId('database-manager-roles')).toBeNull();
+    expect(calls.some((call) => call.url.includes('/roles'))).toBe(false);
+  });
+
+  it('creates a role after a preview and the typed name; the password goes only with the apply', async () => {
+    const user = userEvent.setup();
+    const { calls, view } = setup({ unlocked: true });
+    await user.type(await screen.findByTestId('database-manager-roles-role'), 'reporting');
+    await user.click(screen.getByTestId('database-manager-roles-login'));
+    await user.click(screen.getByTestId('database-manager-roles-preview'));
+    const apply = await screen.findByTestId('database-manager-roles-apply');
+    expect(apply).toBeDisabled();
+    expect(document.activeElement).not.toBe(apply);
+    await user.type(screen.getByTestId('database-manager-roles-password'), 'pw-canary');
+    await user.type(screen.getByLabelText('Type reporting to confirm'), 'reporting');
+    expect(apply).toBeEnabled();
+    expect(await serious(view.container)).toEqual([]);
+    await user.click(apply);
+    expect(await screen.findByTestId('database-manager-roles-done')).toHaveTextContent(
+      'The role reporting was created.',
+    );
+    const preview = writes(calls).find((call) => call.url.endsWith('/roles/preview'));
+    expect(preview?.body).toEqual({
+      connection_id: 'c1',
+      action: 'create',
+      role: 'reporting',
+      options: {
+        login: true,
+        inherit: true,
+        create_db: false,
+        connection_limit: null,
+        valid_until: null,
+      },
+    });
+    const sent = writes(calls).find((call) => call.url.endsWith('/roles/apply'));
+    expect(sent?.body).toEqual({
+      ...preview?.body,
+      state: 'a'.repeat(64),
+      typed: 'reporting',
+      password: 'pw-canary',
+    });
+  });
+
+  it("starts an alter from the role's current options", async () => {
+    const user = userEvent.setup();
+    const { calls } = setup({ unlocked: true });
+    await user.selectOptions(await screen.findByTestId('database-manager-roles-action'), 'alter');
+    await user.type(screen.getByTestId('database-manager-roles-role'), 'app');
+    expect(screen.getByTestId('database-manager-roles-login')).toBeChecked();
+    expect(screen.getByTestId('database-manager-roles-limit')).toHaveValue('5');
+    await user.click(screen.getByTestId('database-manager-roles-preview'));
+    await screen.findByTestId('database-manager-roles-confirm');
+    const preview = writes(calls).find((call) => call.url.endsWith('/roles/preview'));
+    expect(preview?.body?.options).toEqual({
+      login: true,
+      inherit: true,
+      create_db: false,
+      connection_limit: 5,
+      valid_until: null,
+    });
+  });
+
+  it('removes a member with the member typed, as a danger action with its warning', async () => {
+    const user = userEvent.setup();
+    const { calls } = setup({ unlocked: true });
+    await user.selectOptions(
+      await screen.findByTestId('database-manager-roles-action'),
+      'revoke_membership',
+    );
+    await user.type(screen.getByTestId('database-manager-roles-role'), 'readers');
+    await user.type(screen.getByTestId('database-manager-roles-member'), 'app');
+    await user.click(screen.getByTestId('database-manager-roles-preview'));
+    expect(await screen.findByTestId('database-manager-roles-warnings')).toHaveTextContent(
+      'A revoke removes only what the admin role granted',
+    );
+    expect(screen.queryByTestId('database-manager-roles-password')).toBeNull();
+    await user.type(screen.getByLabelText('Type app to confirm'), 'app');
+    await user.click(screen.getByTestId('database-manager-roles-apply'));
+    expect(await screen.findByTestId('database-manager-roles-done')).toHaveTextContent(
+      'app is no longer a member of readers.',
+    );
+    const sent = writes(calls).find((call) => call.url.endsWith('/roles/apply'));
+    expect(sent?.body).toEqual({
+      connection_id: 'c1',
+      action: 'revoke_membership',
+      role: 'readers',
+      member: 'app',
+      state: 'a'.repeat(64),
+      typed: 'app',
+    });
+  });
+
+  it('offers TRIGGER only for a revoke', async () => {
+    const user = userEvent.setup();
+    setup({ unlocked: true });
+    await user.selectOptions(
+      await screen.findByTestId('database-manager-roles-action'),
+      'grant_privileges',
+    );
+    expect(screen.getByTestId('database-manager-roles-privilege-SELECT')).toBeInTheDocument();
+    expect(screen.queryByTestId('database-manager-roles-privilege-TRIGGER')).toBeNull();
+    await user.selectOptions(
+      screen.getByTestId('database-manager-roles-action'),
+      'revoke_privileges',
+    );
+    expect(screen.getByTestId('database-manager-roles-privilege-TRIGGER')).toBeInTheDocument();
+  });
+
+  it('shows the refusals of the preview and offers no apply', async () => {
+    const user = userEvent.setup();
+    setup({
+      unlocked: true,
+      rolePreview: {
+        status: 200,
+        body: {
+          ...rolePreview({
+            action: 'grant_membership',
+            role: 'pg_read_server_files',
+            member: 'app',
+          }),
+          refusals: ['escalation_grant', 'privileged_role'],
+          warnings: ['escalation_check_partial'],
+        },
+      },
+    });
+    await user.selectOptions(
+      await screen.findByTestId('database-manager-roles-action'),
+      'grant_membership',
+    );
+    await user.type(screen.getByTestId('database-manager-roles-role'), 'pg_read_server_files');
+    await user.type(screen.getByTestId('database-manager-roles-member'), 'app');
+    await user.click(screen.getByTestId('database-manager-roles-preview'));
+    const refusals = await screen.findByTestId('database-manager-roles-refusals');
+    expect(refusals).toHaveTextContent('The group is a predefined or server-file role');
+    expect(refusals).toHaveTextContent('The group holds TRIGGER');
+    expect(screen.getByTestId('database-manager-roles-k2')).toHaveTextContent(
+      'checked in: postgres, shop',
+    );
+    expect(screen.queryByTestId('database-manager-roles-apply')).toBeNull();
+  });
+
+  it("shows the server's refusal of a role change by code and issue", async () => {
+    const user = userEvent.setup();
+    setup({
+      unlocked: true,
+      rolePreview: {
+        status: 405,
+        body: {
+          type: 'about:blank',
+          title: 'x',
+          status: 405,
+          code: 'studio.dbm_role_not_allowed',
+          issues: [{ pointer: 'role.target', code: 'role.prod' }],
+        },
+      },
+    });
+    await user.type(await screen.findByTestId('database-manager-roles-role'), 'x');
+    await user.click(screen.getByTestId('database-manager-roles-preview'));
+    const problem = await screen.findByTestId('database-manager-roles-problem');
+    expect(problem).toHaveTextContent('never on a server that a PROD profile names');
+    expect(problem).toHaveTextContent('A PROD profile names this server');
+  });
+
+  it('shows the unlock again when the admin role is over-privileged', async () => {
+    setup({
+      unlocked: true,
+      roles: {
+        status: 405,
+        body: {
+          type: 'about:blank',
+          title: 'x',
+          status: 405,
+          code: 'studio.admin_over_privileged',
+        },
+      },
+    });
+    expect(await screen.findByTestId('data-editor-unlock')).toBeInTheDocument();
+    expect(screen.queryByTestId('database-manager-roles')).toBeNull();
+  });
+
+  it('has the German texts', async () => {
+    await i18n.changeLanguage('de');
+    setup({ unlocked: true });
+    expect(await screen.findByText('Rollen')).toBeInTheDocument();
+    expect(await screen.findByText(/von Studio genutzt, wird nie geändert/)).toBeInTheDocument();
     await i18n.changeLanguage('en');
   });
 });

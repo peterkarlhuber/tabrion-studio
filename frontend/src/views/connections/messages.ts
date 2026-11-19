@@ -177,6 +177,20 @@ const PROBLEMS = new Set([
   'dbm_delete_in_use',
   'dbm_delete_backup_unverified',
   'dbm_delete_failed',
+  // PostgreSQL role management (STU-XDM-4).
+  'dbm_role_not_allowed',
+  'dbm_role_requires_16',
+  'dbm_role_invalid',
+  'dbm_role_attribute_banned',
+  'dbm_role_name_invalid',
+  'dbm_role_name_mismatch',
+  'dbm_role_changed',
+  'dbm_role_unsafe',
+  'dbm_role_missing',
+  'dbm_role_exists',
+  'dbm_role_object_missing',
+  'dbm_role_denied',
+  'dbm_role_failed',
   'admin_over_privileged',
 ]);
 
