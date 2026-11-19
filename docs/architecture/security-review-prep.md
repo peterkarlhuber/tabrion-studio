@@ -306,8 +306,9 @@ merged and green in CI.
 
 G-S3 is the owner's activation decision for the Schema Designer of Studio 1.2 (STU-CR-2..STU-CR-8,
 STU-XSD-1..STU-XSD-3): the `schema_designer` flag of `write-areas.toml`. This section **defines** the gate (STU-CR-1);
-it is not the gate and not its review. **G-S3 is not granted** and nothing of the area is built: the flag stays off
-by default, nothing turns it on, no default changes. G-S3 would not allow a schema change on PROD (E-X7), a tag or a
+it is not the gate and not its review. **G-S3 is effective since 2026-11-19** (the owner's conditional grant of
+2026-11-18; gate review `gs3-gate-review.md` accepted on `be8e794`), for local DEV, TEST and STAGE only: the flag
+still stays off by default, nothing turns it on, no default changes. G-S3 would not allow a schema change on PROD (E-X7), a tag or a
 release; the human security review (H-2) and G-R stay mandatory before any publication. The rules are
 [STU-ADR-0007](../adr/0007-schema-designer-plans-and-revisions.md), the threats
 [Schema Designer threat model](schema-designer-threat-model.md) (TX-18..TX-31).
@@ -361,10 +362,11 @@ contract I-124. Each item names the test that proves it; the gate review re-runs
 | GS3-29 | A dry run (`execute_plan(dry_run=True)`) only on the user's explicit request, never automatic, with the run's confirmations and unlock, a notice of the `ACCESS EXCLUSIVE` locks and of sequence values that stay consumed, audited like a run (ADR 0007 section 4 item 5) | dry-run tests. STU-CR-5: `tests/security/test_schema_designer_execution.py`::`test_a_dry_run_only_on_request_rolls_back_and_is_audited` (`dry_run` must be a boolean; rolled back; audited as `schema_designer.dry_run`; no backup); the page's notice names the locks and the consumed sequence values; E2E dry run then run | STU-CR-5 |
 | GS3-30 | The shared PostgreSQL runner (review L-2 a of STU-XDM-1): when the Schema Designer uses `tabrion_studio.write.pgtools` under its own flag for the backup before a destructive run, GS4-04, GS4-05, GS4-06, GS4-07 and GS4-22 are conditions of G-S3 too; read, write and admin profiles follow the same connection rules (SCRAM, `verify-full` remote) | the GS4 evidence; STU-XDM-2 builds the runner outside the Database Manager's package. STU-CR-5 follow-up uses it from `schema_designer.execute` (no import of the Database Manager's package): the same tool checks (GS4-04), process (GS4-05), passfile (GS4-06; stale run files removed when the area starts) and archive checks with metadata (GS4-07), with `run.start` before and `run.result` after (GS4-22); `test_schema_designer_pg_backup.py`, `test_schema_designer_backup_postgres.py` | STU-CR-5 follow-up |
 
-**Open decisions for the owner at G-S3** (recorded in [docs/TODO.md](../TODO.md#g-s3-and-g-s4-definitions)):
-whether a loaded snapshot may start a draft; whether revision output may be offered for a PROD connection (it writes only the project file); whether drafts may be saved to disk; whether direct execution may ever
-include non-transactional steps; (decided by the grant of 2026-11-18: database creation is the admin area's, ADR 0008 section 10); that the runtime-role wizard needs the `database_manager` area and G-S4 (ADR 0007
-section 12); the release exception for Tabrion's experimental names.
+**Owner decisions for G-S3** (decided per the grant of 2026-11-18, recorded in
+[docs/TODO.md](../TODO.md#g-s3-and-g-s4-definitions)): a loaded snapshot never starts a draft; drafts are never
+saved to disk; direct execution never includes non-transactional steps; no revision output for PROD or a PROD
+alias; database creation is the admin area's (ADR 0008 section 10); the runtime-role wizard needs the
+`database_manager` area and G-S4 (ADR 0007 section 12); no release exception, as Tabrion's names are stable.
 
 ## G-S4 definition (Database Manager)
 

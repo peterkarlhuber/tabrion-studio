@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-8 (G-S3 gate): the independent G-S3 gate review accepted the Schema Designer area on `be8e794` with no code
+  finding. The owner decisions for G-S3 are recorded as decided per the owner's grant of 2026-11-18 (a snapshot never
+  starts a draft, drafts are never saved to disk, no non-transactional steps in a direct run, no revision output for
+  PROD or a PROD alias, no release exception as Tabrion's names are stable), the package rows show their merged PRs,
+  and the docs say that G-S3 is effective for local DEV, TEST and STAGE only. No code or default changes: the
+  `schema_designer` flag stays off and nothing turns it on; H-2 and G-R stay mandatory before any publication.
 - STU-XDM-6 (in development, locked by G-S4; G-S4 not granted, the `database_manager` flag stays off, no default
   changes): the Database Manager's guide and browser tests. The guide's new "Its limits at a glance" (a `pg_dump`
   archive is not a complete backup, the PROD lock, the backup first, the preview and typed name, the role rules, the
