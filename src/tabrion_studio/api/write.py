@@ -82,8 +82,14 @@
   /api/write/database-manager/delete/preview``: ``{"connection_id", "name"}``: what deleting a database would do
   (changes nothing). ``POST /api/write/database-manager/delete``: ``{"connection_id", "name", "typed", "force",
   "force_typed"}``: delete another DEV or TEST PostgreSQL database of the server or the profile's own SQLite file,
-  after a verified backup (STU-XDM-3, :mod:`tabrion_studio.write.database_manager.delete`). Database Manager flag
-  only; with it off they answer 405 and nothing of the area is imported.
+  after a verified backup (STU-XDM-3, :mod:`tabrion_studio.write.database_manager.delete`). ``POST
+  /api/write/database-manager/roles``: ``{"connection_id"}``: the server's roles that are not predefined (names
+  escaped). ``POST /api/write/database-manager/roles/preview``: ``{"connection_id", "action", "role", "member",
+  "options", "on", "privileges", "objects"}``: what a role action would change and what refuses it (changes nothing).
+  ``POST /api/write/database-manager/roles/apply``: the same with ``"password"``, ``"typed"`` and the preview's
+  ``"state"``: the change through tabrion's role DDL on a DEV or TEST PostgreSQL 16+ server (STU-XDM-4,
+  :mod:`tabrion_studio.write.database_manager.roles`). Database Manager flag only; with it off they answer 405 and
+  nothing of the area is imported.
 
 **Kill switch (TX-02).** :data:`WRITE_ROUTES` is the one table of these routes. When no write area is on, each of
 them is a refusing handler that answers ``405 studio.method_not_allowed`` and neither imports, constructs nor calls
@@ -152,6 +158,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     # STU-CR-2, STU-CR-3: database creation, in the Database Manager's admin area since the G-S4 grant (STU-CR-ADMIN).
     ("/api/write/database-manager/create/sqlite", ("POST",)),
     ("/api/write/database-manager/create/postgresql", ("POST",)),
+    ("/api/write/database-manager/roles", ("POST",)),
+    ("/api/write/database-manager/roles/preview", ("POST",)),
+    ("/api/write/database-manager/roles/apply", ("POST",)),
 )
 
 

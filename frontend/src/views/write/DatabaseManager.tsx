@@ -11,6 +11,7 @@
  *   target (PostgreSQL: only a new database, run as a separate lean restore profile; SQLite: a new file or the
  *   connection's own file, backed up first) and its name typed to confirm. The restore button is never the default
  *   focus.
+ * - **Roles (STU-XDM-4, PostgreSQL only):** see `DatabaseManagerRoles.tsx`.
  * - **Delete (STU-XDM-3):** a preview first (changes nothing): on PostgreSQL another database of the server by its name
  *   (never a maintenance database or the connected one) with the number of other sessions on it; on SQLite this
  *   connection's own file. Then its name typed to confirm. Ending the other sessions (`force`, PostgreSQL 13 or later)
@@ -49,6 +50,7 @@ import { Field } from '../connections/Field';
 import { problemText } from '../connections/messages';
 import styles from '../Views.module.css';
 import { UnlockForm } from './DataEditor';
+import { RolesPart } from './DatabaseManagerRoles';
 
 export function DatabaseManagerSection({ fetcher = fetch }: { fetcher?: typeof fetch }) {
   const [on, setOn] = useState(false);
@@ -447,6 +449,14 @@ function Unlocked({
         onChanged={onChanged}
         onRefused={refused}
       />
+      {profile.engine === 'postgresql' ? (
+        <RolesPart
+          fetcher={fetcher}
+          connectionId={connectionId}
+          locked={LOCKED}
+          onLocked={onLocked}
+        />
+      ) : null}
     </div>
   );
 }
