@@ -92,9 +92,18 @@ export interface AuditState {
   available: boolean;
   problem: string | null;
   pending: number;
+  /**
+   * G-S2 3A: the keyring anchor of the log: `ok`, `none` (no anchor kept), `unavailable` (no usable keyring),
+   * `failed` (a keyring write failed) or `reset` (this start found the log missing or reset). Unknown: `none`.
+   */
+  anchor: 'ok' | 'none' | 'unavailable' | 'failed' | 'reset';
+  /** The number of `audit.reset` records in the chain (the log was found missing or reset that often). */
+  resets: number;
   verification: AuditVerification | null;
   records: AuditRecord[];
 }
+
+const ANCHORS = ['ok', 'none', 'unavailable', 'failed', 'reset'] as const;
 
 function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
@@ -116,6 +125,8 @@ export function parseAudit(body: unknown): AuditState | null {
     available: doc.available === true,
     problem: text(doc.problem),
     pending: count(doc.pending),
+    anchor: ANCHORS.find((item) => item === doc.anchor) ?? 'none',
+    resets: count(doc.resets),
     verification:
       raw === null
         ? null
