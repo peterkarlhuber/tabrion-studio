@@ -153,15 +153,23 @@ export function defaultChoice(diagram: Diagram): Set<string> {
   return new Set(diagram.tables.slice(0, MAX_DIAGRAM_TABLES).map((table) => table.name));
 }
 
-/** Lay out `tables` of `diagram`'s schema. Pure and synchronous: the caller measures it. */
-export function buildScene(schema: string, tables: DiagramTable[]): ErScene {
+/**
+ * Lay out `tables` of `diagram`'s schema. Pure and synchronous: the caller measures it. At most `maxLines` keys among
+ * the shown tables become lines, in the tables' order; the others are listed in `outside` like a key to a table that
+ * is not shown (the Schema Designer's canvas bounds them, review I-2 of #148; the explorer draws every one).
+ */
+export function buildScene(
+  schema: string,
+  tables: DiagramTable[],
+  maxLines: number = Number.POSITIVE_INFINITY,
+): ErScene {
   const boxes = tables.slice(0, MAX_DIAGRAM_TABLES).map(box);
   const byId = new Map(boxes.map((item) => [item.id, item]));
   const lines: ErLine[] = [];
   const outside: OutsideKey[] = [];
   for (const table of tables.slice(0, MAX_DIAGRAM_TABLES)) {
     table.foreignKeys.forEach((key, index) => {
-      if (key.referredSchema === schema && byId.has(key.referredTable)) {
+      if (key.referredSchema === schema && byId.has(key.referredTable) && lines.length < maxLines) {
         lines.push({
           id: `${lines.length}:${index}`,
           from: table.name,
