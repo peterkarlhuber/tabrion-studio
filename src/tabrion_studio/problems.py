@@ -532,9 +532,9 @@ CATALOG: dict[str, Entry] = {
         405,
         ProblemKind.REQUEST,
         "Write role has too many rights",
-        "The write profile's role is a superuser, has BYPASSRLS or REPLICATION, or is a member (directly or through "
-        "another role) of pg_read_server_files, pg_write_server_files or pg_execute_server_program. Studio does not "
-        "unlock the write mode with such a role.",
+        "The write profile's role is a superuser, has BYPASSRLS, REPLICATION or CREATEDB, or is a member (directly or "
+        "through another role) of pg_read_server_files, pg_write_server_files or pg_execute_server_program. Studio "
+        "does not unlock the write mode with such a role; creating databases needs an admin profile.",
         "Use a role with only the table rights the Data Editor needs; the security guide shows how to check the role.",
     ),
     "studio.write_coupling_invalid": Entry(
@@ -766,7 +766,7 @@ CATALOG: dict[str, Entry] = {
         "in clear text or as an MD5 hash. The libpq Studio loaded is older, so no write connection is opened.",
         "Install psycopg with its binary package (psycopg[binary]) or a libpq 16 or newer.",
     ),
-    # The Schema Designer's database creation (STU-CR-2, STU-CR-3, TX-29, GS3-20, GS3-21). W-9: 400 or 405, never
+    # The Database Manager's database creation (STU-CR-2, STU-CR-3, TX-29, GS3-21, GS4-27). W-9: 400 or 405, never
     # 403 or 404; no path, name or server text from the request or the database.
     "studio.schema_create_invalid": Entry(
         400,
@@ -786,7 +786,7 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.REQUEST,
         "Not a PostgreSQL connection",
         "A PostgreSQL database is created on an unlocked PostgreSQL connection of the same server.",
-        "Connect to the PostgreSQL server, unlock its write profile and try again.",
+        "Connect to the PostgreSQL server, unlock its admin profile and try again.",
     ),
     "studio.schema_create_platform": Entry(
         400,
@@ -831,7 +831,7 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "No right to create databases",
-        "The write profile's role has no CREATEDB right on this server. Nothing was created.",
+        "The admin profile's role has no CREATEDB right on this server. Nothing was created.",
         "Ask the server's administrator to create the database (or to grant CREATEDB), then add a connection "
         "profile for it.",
     ),
@@ -845,9 +845,9 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "Owner not allowed",
-        "The write profile's role may not act as the owner role (SET ROLE), so it cannot give it the new database. "
+        "The admin profile's role may not act as the owner role (SET ROLE), so it cannot give it the new database. "
         "Nothing was created.",
-        "Leave the owner empty (the write profile's role owns the database) or ask the administrator.",
+        "Leave the owner empty (the admin profile's role owns the database) or ask the administrator.",
     ),
     # The Schema Designer's draft and plan preview (STU-CR-4, STU-ADR-0007 sections 2 and 3, GS3-09, GS3-20). W-9:
     # 400 or 405, never 403 or 404; no name, type, default, check text or statement from the request or tabrion.

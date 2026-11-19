@@ -93,6 +93,9 @@ from tabrion_studio.write import prod_targets
 from tabrion_studio.write.audit import AuditError
 from tabrion_studio.write.backup_store import BackupStore, Loaded, metadata
 from tabrion_studio.write.connection import (
+    DriverFailure as DriverFailure,
+)
+from tabrion_studio.write.connection import (
     WriteConnection,
     WriteError,
     admin_refusing_findings,
@@ -121,14 +124,6 @@ _DATABASE_OID = (
 _SERVER_VERSION_TEXT = "SELECT pg_catalog.current_setting('server_version')"
 #: Windows: no new SQLite file (its access lists are not read yet), as STU-CR-2 refuses creating one (owner, G-S4).
 _WINDOWS = os.name != "posix"
-
-
-class DriverFailure(Exception):
-    """A driver error of ``CREATE DATABASE`` (tabrion lets it through, I-191 b): answered as ``db.<kind>`` only."""
-
-    def __init__(self, classification: Any) -> None:
-        super().__init__("database error")
-        self.classification = classification
 
 
 @dataclass

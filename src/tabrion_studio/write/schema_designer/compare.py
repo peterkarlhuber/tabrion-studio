@@ -59,8 +59,7 @@ from tabrion.schema import SchemaSnapshot, TableShape, compare, fingerprint, sna
 
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.services.connections import ConnectionRegistry, OpenConnection, RegistryError
-from tabrion_studio.write.connection import WriteError
-from tabrion_studio.write.schema_designer.create import DriverFailure
+from tabrion_studio.write.connection import DriverFailure, WriteError
 from tabrion_studio.write.schema_designer.draft import (
     MAX_DRAFT_BYTES,
     Drafts,

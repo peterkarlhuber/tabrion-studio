@@ -1,13 +1,14 @@
 /**
- * STU-CR-2 and STU-CR-3 end to end, with the Schema Designer flag on in a test fixture only: a real `tabrion-studio`
- * process whose `--state-dir` holds `config/write-areas.toml` with `schema_designer = true` (0600 in a 0700 folder,
- * the one source of the flag). Gate G-S3 is not granted; nothing outside this fixture turns the flag on.
+ * STU-CR-2 and STU-CR-3 end to end, in the admin area since G-S4, with the Database Manager flag on in a test
+ * fixture only: a real `tabrion-studio` process whose `--state-dir` holds `config/write-areas.toml` with
+ * `database_manager = true` (0600 in a 0700 folder, the one source of the flag). Every flag stays off by default;
+ * nothing outside this fixture turns the flag on.
  *
  * The "New database" wizard on the Connections page: a SQLite file in a private folder, confirmed by typing its name,
  * created 0600 under the strict Content-Security-Policy, then saved as a connection profile that connects; an existing
  * file refused and left as it was; a folder others may write refused; the PostgreSQL choice without an open
  * PostgreSQL connection says to connect first. axe in the light and the dark theme. The PostgreSQL creation itself is
- * proven against a server in tests/security/test_schema_designer_create_postgres.py.
+ * proven against a server in tests/security/test_dbm_create_postgres.py.
  *
  * Runs only when TABRION_STUDIO_E2E_PYTHON names a Python in which Studio is installed with its built frontend
  * (`python scripts/build_frontend.py` and `pip install -e .`, or the wheel), like e2e/backend.spec.ts.
@@ -77,7 +78,7 @@ test.beforeAll(async () => {
   mkdirSync(config, { mode: 0o700 });
   chmodSync(config, 0o700);
   const flags = join(config, 'write-areas.toml');
-  writeFileSync(flags, 'version = 1\n[areas]\nschema_designer = true\n', { mode: 0o600 });
+  writeFileSync(flags, 'version = 1\n[areas]\ndatabase_manager = true\n', { mode: 0o600 });
   chmodSync(flags, 0o600);
   folder = join(root, 'databases');
   mkdirSync(folder, { mode: 0o700 });
@@ -171,7 +172,7 @@ test('the flag comes from the fixture only, and the wizard is shown', async ({ p
   await signIn(page);
   const areas = await api(page, 'GET', '/api/write/areas');
   expect(areas.body).toEqual({
-    areas: { data_editor: false, schema_designer: true, database_manager: false },
+    areas: { data_editor: false, schema_designer: false, database_manager: true },
   });
   await openWizard(page);
 });
@@ -202,7 +203,7 @@ for (const theme of ['light', 'dark'] as Theme[]) {
     const runs = await runRecords(page);
     expect(runs[0]?.fields).toMatchObject({ result: 'committed' });
     expect(runs[1]?.fields).toMatchObject({
-      action: 'schema_designer.create_sqlite',
+      action: 'dbm.create_sqlite',
       objects: [name],
     });
     // No folder in the audit log, only the file name.
@@ -271,7 +272,7 @@ test('the PostgreSQL choice asks for an open PostgreSQL connection first', async
   await expect(wizard.getByTestId('create-postgres-none')).toBeVisible();
   expect(await seriousViolations(page)).toEqual([]);
   // Without an unlock the server refuses the route itself (W-9), whatever the page shows.
-  const refused = await api(page, 'POST', '/api/write/schema-designer/create/postgresql', {
+  const refused = await api(page, 'POST', '/api/write/database-manager/create/postgresql', {
     connection_id: 'c_none',
     name: 'shop',
     typed: 'shop',

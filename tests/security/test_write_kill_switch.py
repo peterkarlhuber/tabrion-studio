@@ -95,8 +95,8 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/secret-confirmations/confirm",
         "DELETE /api/write/secret-confirmations",
         "POST /api/write/data-editor/table",  # STU-026: the Data Editor's table (its changesets are plans)
-        "POST /api/write/schema-designer/create/sqlite",  # STU-CR-2: a new SQLite file (G-S3)
-        "POST /api/write/schema-designer/create/postgresql",  # STU-CR-3: a new PostgreSQL database (G-S3)
+        "POST /api/write/database-manager/create/sqlite",  # STU-CR-2: a new SQLite file (admin area, G-S4)
+        "POST /api/write/database-manager/create/postgresql",  # STU-CR-3: a new PostgreSQL database (admin area)
         "POST /api/write/schema-designer/draft",  # STU-CR-4: the server-side draft and its preview (G-S3)
         "DELETE /api/write/schema-designer/draft",
         "POST /api/write/schema-designer/draft/view",

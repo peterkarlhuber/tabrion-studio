@@ -1,19 +1,21 @@
-"""STU-CR-2 and STU-CR-3: the Schema Designer's database creation (G-S3 is not granted; GS3-01..03, GS3-20, GS3-21,
-GS3-27, TX-29, STU-ADR-0007 sections 1 and 11).
+"""STU-CR-2 and STU-CR-3: database creation, in the Database Manager's admin area since the G-S4 grant of
+2026-11-18 (STU-CR-ADMIN; GS3-01..03, GS3-20, GS3-21, GS3-27, GS4-01..03, TX-29, STU-ADR-0007 sections 1 and 11 as
+amended, STU-ADR-0008 section 10).
 
-1. **Kill switch (GS3-01, STU-ADR-0006 proof items 1..3).** With the ``schema_designer`` flag off (every flag off,
-   or only another area's) both routes answer ``405 studio.method_not_allowed``, nothing is created (no file, no
-   database, no profile, no audit record) and nothing of the area is imported; a query parameter or a header never
-   opens them. The counterpart shows the flag on loads it.
+1. **Kill switch (GS4-01, STU-ADR-0006 proof items 1..3).** With the ``database_manager`` flag off (every flag off,
+   or only other areas', the Schema Designer's among them) both routes answer ``405 studio.method_not_allowed``,
+   nothing is created (no file, no database, no profile, no audit record) and nothing of the area is imported; a
+   query parameter or a header never opens them. The counterpart shows the flag on loads it.
 2. **SQLite (GS3-21):** the file is created ``0600`` by tabrion's ``create_private_file``, never through a link
    (the name, a side file, the folder or any folder above it), never in a folder others may write or that belongs to
    another user, never in Studio's own folders, never over an existing file, only after the typed file name, with
    ``run.start`` and ``run.result`` (GS3-27) and no path in the audit log.
-3. **PROD (GS3-03):** the PostgreSQL route refuses a connection whose stored environment is ``prod``, also when the
+3. **PROD and the admin profile (GS3-03, GS4-03):** the PostgreSQL route needs an admin unlock (a write profile never
+   serves the area) and refuses a connection whose stored environment is ``prod``, also when the
    profile file is changed by hand after the unlock; the environment never comes from the request.
 4. **Errors (GS3-20):** every refusal is a catalog problem that echoes nothing of the request (canary).
 
-The PostgreSQL cases against a server are in ``test_schema_designer_create_postgres.py``.
+The PostgreSQL cases against a server are in ``test_dbm_create_postgres.py``.
 """
 
 from __future__ import annotations
@@ -38,9 +40,11 @@ from tests.support.write import CANARY_SECRET, CANARY_VALUE, DATA_EDITOR, DATABA
 
 pytestmark = pytest.mark.security
 
-SQLITE_ROUTE = "/api/write/schema-designer/create/sqlite"
-POSTGRES_ROUTE = "/api/write/schema-designer/create/postgresql"
+SQLITE_ROUTE = "/api/write/database-manager/create/sqlite"
+POSTGRES_ROUTE = "/api/write/database-manager/create/postgresql"
 SCHEMA_DESIGNER = WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))
+#: The area that creates databases since the G-S4 grant (STU-CR-ADMIN).
+ADMIN_AREA = DATABASE_MANAGER
 POSIX = sys.platform != "win32"
 # Python 3.11 refuses every SQLite write unlock (no defensive mode; test_write_unlock.py proves the refusal).
 needs_defensive = pytest.mark.skipif(not defensive_available(), reason="Python 3.11 refuses a SQLite write connection")
@@ -67,7 +71,7 @@ def _runs(env: WriteEnv) -> list[dict[str, Any]]:
 
 @pytest.fixture
 def env(tmp_path: Path, static_dir: Path) -> Iterator[WriteEnv]:
-    environment = WriteEnv(tmp_path, static_dir, SCHEMA_DESIGNER)
+    environment = WriteEnv(tmp_path, static_dir, ADMIN_AREA)
     try:
         yield environment
     finally:
@@ -104,20 +108,21 @@ def _state(env: WriteEnv, folder: Path) -> dict[str, object]:
 
 @pytest.mark.parametrize(
     "areas",
-    [WriteAreas(), DATA_EDITOR, DATABASE_MANAGER, WriteAreas(frozenset({Area.DATA_EDITOR, Area.DATABASE_MANAGER}))],
-    ids=["every_flag_off", "data_editor_only", "database_manager_only", "both_other_areas"],
+    [WriteAreas(), DATA_EDITOR, SCHEMA_DESIGNER, WriteAreas(frozenset({Area.DATA_EDITOR, Area.SCHEMA_DESIGNER}))],
+    ids=["every_flag_off", "data_editor_only", "schema_designer_only", "both_other_areas"],
 )
 def test_flag_off_both_routes_are_405_and_change_nothing(
     tmp_path: Path, static_dir: Path, folder: Path, areas: WriteAreas
 ) -> None:
     """Proof item 2 per route: the W-9 answer, no file, no profile, no audit record; another area's flag (also an
-    unlocked write profile of the Data Editor) never opens the Schema Designer (GS3-02)."""
+    unlocked write profile of the Data Editor, and the Schema Designer's flag, which opened these routes before the
+    G-S4 grant) never opens the admin area's database creation (GS4-02)."""
     env = WriteEnv(tmp_path, static_dir, areas)
     try:
         env.create_read()
         connection_id = env.open()
         # On Python 3.11 no SQLite write unlock exists to try (refused, test_write_unlock.py); the flags still apply.
-        if Area.DATA_EDITOR in areas.enabled and defensive_available():
+        if areas.enabled & {Area.DATA_EDITOR, Area.SCHEMA_DESIGNER} and defensive_available():
             assert env.create_write().status_code == 201
             assert env.unlock(connection_id).status_code == 200
         before = _state(env, folder)
@@ -136,24 +141,24 @@ def test_flag_off_both_routes_are_405_and_change_nothing(
         env.close()
 
 
-@pytest.mark.parametrize("query", ["?schema_designer=true", "?areas=schema_designer", "?write=1"])
+@pytest.mark.parametrize("query", ["?database_manager=true", "?areas=database_manager", "?write=1"])
 def test_a_query_parameter_or_a_header_never_opens_the_routes(
     tmp_path: Path, static_dir: Path, folder: Path, query: str
 ) -> None:
-    """Proof item 3: the Data Editor flag is on; a query parameter, a header or a body key never adds the Schema
-    Designer (GS3-02)."""
-    env = WriteEnv(tmp_path, static_dir, DATA_EDITOR)
+    """Proof item 3: the Data Editor and Schema Designer flags are on; a query parameter, a header or a body key
+    never adds the Database Manager (GS4-02)."""
+    env = WriteEnv(tmp_path, static_dir, WriteAreas(frozenset({Area.DATA_EDITOR, Area.SCHEMA_DESIGNER})))
     try:
-        headers = {**env.headers, "X-Tabrion-Write-Areas": "schema_designer", "X-Tabrion-Schema-Designer": "true"}
+        headers = {**env.headers, "X-Tabrion-Write-Areas": "database_manager", "X-Tabrion-Database-Manager": "true"}
         target = folder / "new.db"
         refused = env.studio.client.post(
             f"{SQLITE_ROUTE}{query}",
-            json={"path": str(target), "typed": "new.db", "areas": {"schema_designer": True}},
+            json={"path": str(target), "typed": "new.db", "areas": {"database_manager": True}},
             headers=headers,
         )
         _refused(refused, 405, "studio.method_not_allowed")
         assert not target.exists()
-        assert env.send("GET", "/api/write/areas").json()["areas"]["schema_designer"] is False
+        assert env.send("GET", "/api/write/areas").json()["areas"]["database_manager"] is False
     finally:
         env.close()
 
@@ -174,7 +179,7 @@ def _modules(tmp_path: Path, areas: str) -> list[str]:
         f"p = env.send('POST', {POSTGRES_ROUTE!r}, {{'connection_id': c, 'name': 'x', 'typed': 'x'}})\n"
         "print(s.status_code, s.json().get('code'), p.status_code, p.json().get('code'))\n"
         "env.close()\n"
-        "print(sorted(m for m in sys.modules if m.startswith('tabrion_studio.write.schema_designer')))\n"
+        "print(sorted(m for m in sys.modules if m.startswith('tabrion_studio.write.database_manager')))\n"
     )
     (tmp_path / "static").mkdir(parents=True)
     (tmp_path / "static" / "index.html").write_text("<!doctype html>")
@@ -186,16 +191,22 @@ def _modules(tmp_path: Path, areas: str) -> list[str]:
     assert result.returncode == 0, result.stderr
     lines = result.stdout.strip().splitlines()
     loaded: list[str] = json.loads(lines[-1].replace("'", '"'))
-    assert not target.exists() or areas.startswith("WriteAreas(frozenset({Area.SCHEMA_DESIGNER")
+    assert not target.exists() or areas.startswith("WriteAreas(frozenset({Area.DATABASE_MANAGER")
     return [lines[-2], *loaded]
 
 
 @pytest.mark.parametrize(
     "areas",
-    ["WriteAreas()", "WriteAreas(frozenset({Area.DATA_EDITOR}))", "WriteAreas(frozenset({Area.DATABASE_MANAGER}))"],
+    [
+        "WriteAreas()",
+        "WriteAreas(frozenset({Area.DATA_EDITOR}))",
+        "WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))",
+        "WriteAreas(frozenset({Area.DATA_EDITOR, Area.SCHEMA_DESIGNER}))",
+    ],
 )
 def test_flag_off_nothing_of_the_area_is_imported(tmp_path: Path, areas: str) -> None:
-    """GS3-01: with the Schema Designer flag off (every flag off, or another area's on) its code is not loaded."""
+    """GS4-01: with the Database Manager flag off (every flag off, or other areas' on, the Schema Designer's among
+    them) nothing of the admin area, its database creation included, is loaded."""
     loaded = _modules(tmp_path, areas)
     assert loaded == ["405 studio.method_not_allowed 405 studio.method_not_allowed"]
 
@@ -203,17 +214,17 @@ def test_flag_off_nothing_of_the_area_is_imported(tmp_path: Path, areas: str) ->
 def test_flag_on_the_area_is_loaded(tmp_path: Path) -> None:
     """The counterpart (the test above is not vacuous): the flag loads the area; the SQLite file is created and the
     PostgreSQL route asks for an unlock. On Windows the loaded area refuses SQLite creation for the platform."""
-    loaded = _modules(tmp_path, "WriteAreas(frozenset({Area.SCHEMA_DESIGNER}))")
+    loaded = _modules(tmp_path, "WriteAreas(frozenset({Area.DATABASE_MANAGER}))")
     sqlite = "201 None" if POSIX else "400 studio.schema_create_platform"
     assert loaded[0] == f"{sqlite} 405 studio.write_locked"
-    assert "tabrion_studio.write.schema_designer.create" in loaded
+    assert "tabrion_studio.write.database_manager.create" in loaded
 
 
-def test_the_areas_route_says_the_schema_designer_is_off_by_default(tmp_path: Path, static_dir: Path) -> None:
+def test_the_areas_route_says_the_database_manager_is_off_by_default(tmp_path: Path, static_dir: Path) -> None:
     """Proof item 1 for the area: no flag source, so the page is told it is off (and hides the wizard)."""
     env = WriteEnv(tmp_path, static_dir)
     try:
-        assert env.send("GET", "/api/write/areas").json()["areas"]["schema_designer"] is False
+        assert env.send("GET", "/api/write/areas").json()["areas"]["database_manager"] is False
     finally:
         env.close()
 
@@ -247,7 +258,7 @@ def test_a_new_sqlite_file_is_private_initialized_and_audited(env: WriteEnv, fol
     runs = _runs(env)
     assert [r["event"] for r in runs] == ["run.result", "run.start"]  # newest first
     start, result = runs[1]["fields"], runs[0]["fields"]
-    assert start["action"] == "schema_designer.create_sqlite" and start["area"] == "schema_designer"
+    assert start["action"] == "dbm.create_sqlite" and start["area"] == "database_manager"
     assert start["objects"] == ["inventory.db"] and start["engine"] == "sqlite"
     assert result["result"] == "committed" and result["run"] == start["run"]
     # The folder never reaches the audit log (only the file name).
@@ -375,7 +386,7 @@ def _info(mode: int, uid: int) -> os.stat_result:
     ],
 )
 def test_which_folders_above_are_safe(mode: int, uid: int, safe: bool) -> None:
-    from tabrion_studio.write.schema_designer.create import ancestor_is_safe
+    from tabrion_studio.write.database_manager.create import ancestor_is_safe
 
     assert ancestor_is_safe(_info(mode, uid), 1000) is safe
 
@@ -387,7 +398,7 @@ def test_a_folder_above_replaced_by_a_link_after_the_check_creates_nothing_there
     """Review P128-01: a folder on the path is replaced by a link to another folder after the checks. The file is
     created relative to the folder Studio holds open, the changed path is noticed before the database is opened, and
     the new file is removed again: nothing is left in either folder."""
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     base = tmp_path / "base"
     (base / "mine").mkdir(mode=0o700, parents=True)
@@ -417,7 +428,7 @@ def test_the_file_is_checked_by_identity_before_it_is_opened(
 ) -> None:
     """The name is replaced by another file between the create and the open: refused before SQLite opens it, and
     the other file is neither opened, changed nor removed."""
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     target = folder / "a.db"
     create_in = create_module._create_in
@@ -486,7 +497,7 @@ def test_studios_own_folders_are_refused(env: WriteEnv, which: str, nested: bool
 def test_studios_own_folders_are_compared_by_identity(tmp_path: Path) -> None:
     """Review P128-02: the reserved folders are compared by device and inode, not by their spelling: a reserved folder
     named through a link (another name of the same folder) still covers the folder and everything below it."""
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     own = tmp_path / "own"
     (own / "inner").mkdir(mode=0o700, parents=True)
@@ -596,7 +607,7 @@ def test_without_an_audit_log_nothing_is_created(tmp_path: Path, static_dir: Pat
     (tmp_path / "config").mkdir(mode=0o700)
     (tmp_path / "config" / "audit").mkdir(mode=0o700)
     (tmp_path / "config" / "audit").chmod(0o777)
-    env = WriteEnv(tmp_path, static_dir, SCHEMA_DESIGNER)
+    env = WriteEnv(tmp_path, static_dir, ADMIN_AREA)
     try:
         _refused(_create(env, folder / "a.db"), 405, "studio.audit_unavailable")
         assert list(folder.iterdir()) == []
@@ -611,7 +622,7 @@ def test_a_file_that_appears_meanwhile_is_left_alone(
 ) -> None:
     """An existing name is left unchanged (``O_EXCL``): a file made by someone else between Studio's check and the
     create is refused as existing and neither changed nor removed; the run is recorded as refused."""
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     target = folder / "race.db"
     create_in = create_module._create_in
@@ -632,7 +643,7 @@ def test_a_file_that_appears_meanwhile_is_left_alone(
 def test_a_failure_after_the_create_removes_only_the_new_file(
     env: WriteEnv, folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     def broken(*_args: object, **_kwargs: object) -> None:
         raise sqlite3.OperationalError(f"disk I/O error {CANARY_VALUE}")
@@ -657,28 +668,46 @@ def test_the_postgresql_route_needs_an_unlock(env: WriteEnv) -> None:
 
 
 @needs_defensive
+def test_a_write_profile_never_creates_a_database(tmp_path: Path, static_dir: Path) -> None:
+    """STU-CR-ADMIN: with the Schema Designer and the Database Manager on, a write profile unlocked for the Schema
+    Designer does not serve the admin area (``KIND_AREAS``): the PostgreSQL creation answers 405 and nothing is
+    recorded."""
+    env = WriteEnv(tmp_path, static_dir, WriteAreas(frozenset({Area.SCHEMA_DESIGNER, Area.DATABASE_MANAGER})))
+    try:
+        env.create_read()
+        assert env.create_write().status_code == 201
+        connection_id = env.open()
+        assert env.unlock(connection_id).status_code == 200
+        response = env.send("POST", POSTGRES_ROUTE, {"connection_id": connection_id, "name": "n1", "typed": "n1"})
+        _refused(response, 405, "studio.method_not_allowed")
+        assert [r for r in _runs(env) if r["fields"].get("area") == "database_manager"] == []
+    finally:
+        env.close()
+
+
+@needs_defensive
 def test_a_sqlite_connection_cannot_create_a_postgresql_database(env: WriteEnv) -> None:
     env.create_read()
-    assert env.create_write().status_code == 201
+    assert env.create_write(name="parts-admin", kind="admin").status_code == 201
     connection_id = env.open()
-    assert env.unlock(connection_id).status_code == 200
+    assert env.unlock(connection_id, "write:parts-admin", "parts-admin").status_code == 200
     response = env.send("POST", POSTGRES_ROUTE, {"connection_id": connection_id, "name": "n1", "typed": "n1"})
     _refused(response, 400, "studio.schema_create_engine")
     assert _runs(env) == []
 
 
 def test_a_prod_connection_is_refused(env: WriteEnv) -> None:
-    """PROD from the stored profile: no write profile can be coupled to it, a hand-written coupling is not used, and
+    """PROD from the stored profile: no admin profile can be coupled to it, a hand-written coupling is not used, and
     the route answers locked; an ``environment`` in the request is refused as an unknown key."""
     env.create_read(environment="prod")
-    created = env.create_write()
+    created = env.create_write(name="parts-admin", kind="admin")
     assert (created.status_code, created.json()["issues"][0]["code"]) == (400, "config.coupling_prod")
     env.write_file(
         (env.config_dir / "profiles.toml").read_text(encoding="utf-8")
-        + '\n[[write_profile]]\nname = "parts-write"\nkind = "write"\nread_profile = "parts"\n'
+        + '\n[[write_profile]]\nname = "parts-admin"\nkind = "admin"\nread_profile = "parts"\n'
     )
     connection_id = env.open(environment="prod")
-    unlocked = env.unlock(connection_id)
+    unlocked = env.unlock(connection_id, "write:parts-admin", "parts-admin")
     assert unlocked.status_code in (400, 405) and unlocked.status_code != 200
     response = env.send("POST", POSTGRES_ROUTE, {"connection_id": connection_id, "name": "n1", "typed": "n1"})
     _refused(response, 405, "studio.write_locked")
@@ -695,16 +724,16 @@ def test_a_profile_changed_to_prod_after_the_unlock_is_refused(env: WriteEnv) ->
     """The environment is read again from the user's file on every use: a hand edit to ``prod`` after the unlock
     refuses the route before anything is recorded or sent."""
     env.create_read()
-    assert env.create_write().status_code == 201
+    assert env.create_write(name="parts-admin", kind="admin").status_code == 201
     connection_id = env.open()
-    assert env.unlock(connection_id).status_code == 200
+    assert env.unlock(connection_id, "write:parts-admin", "parts-admin").status_code == 200
     text = (env.config_dir / "profiles.toml").read_text(encoding="utf-8")
     env.write_file(text.replace('environment = "dev"', 'environment = "prod"'))
     response = env.send("POST", POSTGRES_ROUTE, {"connection_id": connection_id, "name": "n1", "typed": "n1"})
     # The profile file no longer couples the write profile (a PROD profile cannot have one): the unlock ends.
     _refused(response, 400, "studio.write_profile_unknown")
     assert env.send("GET", "/api/write/unlocks").json()["unlocks"] == []
-    assert [r for r in _runs(env) if r["fields"].get("area") == "schema_designer"] == []
+    assert [r for r in _runs(env) if r["fields"].get("area") == "database_manager"] == []
 
 
 @pytest.mark.parametrize("environment", ["prod", "staging", None])
@@ -713,7 +742,7 @@ def test_only_dev_and_test_unlocks_reach_the_creation(
 ) -> None:
     """The second lock of the route itself (E-X7): an unlock whose stored environment is not dev or test is refused
     with ``studio.write_prod_locked`` even if the unlock's own checks let it through."""
-    from tabrion_studio.write.schema_designer import create as create_module
+    from tabrion_studio.write.database_manager import create as create_module
 
     class FakeConnection:
         engine = "postgresql"

@@ -19,7 +19,8 @@ the database, and only after Studio made its backup where one is needed.
 ## Turn it on for development
 
 The switch is read once, when Studio starts, from `write-areas.toml` in Studio's configuration folder, as for
-[New database](new-database.md#turn-it-on-for-development):
+the [Data Editor](data-editor.md#turn-it-on-for-development) (creating a database is not part of the Schema
+Designer; it is the Database Manager's, see [New database](new-database.md)):
 
 ```bash
 mkdir -m 700 -p /tmp/studio-dev/state/config
