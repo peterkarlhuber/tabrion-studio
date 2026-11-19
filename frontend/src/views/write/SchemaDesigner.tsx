@@ -33,6 +33,8 @@ import {
   confirmPlan,
   previewDraft,
   runPlan,
+  writeRevision,
+  type RevisionWritten,
   startDraft,
   viewDraft,
   type ConstraintKind,
@@ -1175,7 +1177,154 @@ function PreviewPanel({
           <p>{t('schemaDesigner.blockedLead')}</p>
         </div>
       )}
+      <RevisionForm
+        preview={preview}
+        fetcher={fetcher}
+        connectionId={connectionId}
+        onLocked={onLocked}
+      />
     </section>
+  );
+}
+
+/** Why the server writes no revision for the plan (STU-XSD-3, `plan.reason`). */
+const REVISION_REASONS = new Set([
+  'nothing_to_run',
+  'environment',
+  'project_untrusted',
+  'code_untrusted',
+  'no_alembic_project',
+  'platform',
+]);
+
+function revisionReasonText(t: TFunction, reason: string): string {
+  return REVISION_REASONS.has(reason)
+    ? t(`schemaDesigner.revision.reasons.${reason}`)
+    : t('schemaDesigner.planIssues.other', {
+        code: reason,
+        interpolation: { escapeValue: false },
+      });
+}
+
+/** The previewed plan written as a new Alembic revision file into the trusted project (STU-XSD-3): the server plans
+ * again, reads the single head and creates the file; nothing runs on the database, and the revision never runs. */
+function RevisionForm({
+  preview,
+  fetcher,
+  connectionId,
+  onLocked,
+}: {
+  preview: PlanPreview;
+  fetcher: typeof fetch;
+  connectionId: string;
+  onLocked: (why: Problem) => void;
+}) {
+  const { t } = useTranslation();
+  const id = useId();
+  const output = preview.revisionOutput;
+  const [message, setMessage] = useState('');
+  const [problem, setProblem] = useState<Problem | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [written, setWritten] = useState<RevisionWritten | null>(null);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setProblem(null);
+    setBusy(true);
+    const result = await writeRevision(fetcher, connectionId, preview.planHash, message);
+    setBusy(false);
+    if (result.ok) setWritten(result.value);
+    else if (LOCKED.has(result.problem.code)) onLocked(result.problem);
+    else setProblem(result.problem);
+  };
+
+  const reasons = (problem?.issues ?? [])
+    .filter((issue) => issue.pointer === 'plan.reason')
+    .map((issue) => issue.code.slice('plan.'.length));
+
+  return (
+    <form
+      className={connectionStyles.form}
+      onSubmit={(event) => void submit(event)}
+      aria-labelledby={`${id}-title`}
+      data-testid="schema-designer-revision"
+    >
+      <h4 id={`${id}-title`} className={designer.tableName}>
+        {t('schemaDesigner.revision.title')}
+      </h4>
+      <p className={connectionStyles.hint}>{t('schemaDesigner.revision.lead')}</p>
+      <p className={connectionStyles.warning} data-testid="schema-designer-revision-source">
+        {t('schemaDesigner.revision.sourceNotChecked', {
+          fingerprint: preview.sourceFingerprint,
+          interpolation: { escapeValue: false },
+        })}
+      </p>
+      {!output.available ? (
+        <div className={connectionStyles.warning} data-testid="schema-designer-revision-blocked">
+          <p>
+            <strong>{t('schemaDesigner.revision.blockedTitle')}</strong>
+          </p>
+          <ul className={connectionStyles.issues}>
+            {output.blocked.map((reason) => (
+              <li key={reason}>{revisionReasonText(t, reason)}</li>
+            ))}
+          </ul>
+        </div>
+      ) : written === null ? (
+        <>
+          <fieldset className={designer.confirm} disabled={busy}>
+            <Field label={t('schemaDesigner.revision.message', { count: output.maxMessage })}>
+              {(props) => (
+                <input
+                  {...props}
+                  className={connectionStyles.input}
+                  value={message}
+                  maxLength={output.maxMessage}
+                  autoComplete="off"
+                  onChange={(event) => setMessage(event.target.value)}
+                  data-testid="schema-designer-revision-message"
+                />
+              )}
+            </Field>
+          </fieldset>
+          <ProblemLine problem={problem} />
+          {reasons.length > 0 ? (
+            <ul className={connectionStyles.issues}>
+              {reasons.map((reason) => (
+                <li key={reason}>{revisionReasonText(t, reason)}</li>
+              ))}
+            </ul>
+          ) : null}
+          <div className={connectionStyles.actions}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={busy || message.trim() === ''}
+              data-testid="schema-designer-revision-write"
+            >
+              {t('schemaDesigner.revision.write')}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <div
+          className={connectionStyles.status}
+          role="status"
+          data-testid="schema-designer-revision-written"
+        >
+          <p>
+            {t('schemaDesigner.revision.written', {
+              path: visible(written.path),
+              revision: written.revision,
+              down: visible(written.downRevision),
+              interpolation: { escapeValue: false },
+            })}
+          </p>
+          {written.codeTrustChanged ? <p>{t('schemaDesigner.revision.trustAgain')}</p> : null}
+          {written.auditPending ? <p>{t('schemaDesigner.run.auditPending')}</p> : null}
+        </div>
+      )}
+    </form>
   );
 }
 

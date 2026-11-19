@@ -13,16 +13,16 @@ lists the newest records and verifies the whole log, read only.
 The plan routes (STU-XW-3) keep their plans in :class:`tabrion_studio.write.plan.Plans` (``app.state.write_plans``):
 make and preview, confirm with the hash and the typed text, execute once. With the Data Editor flag on, the Data
 Editor's executor (STU-026, :mod:`tabrion_studio.write.data_editor`) is registered there and its table route answers;
-with that flag off neither is imported. With the Schema Designer flag on, its two database creation routes (STU-CR-2,
-STU-CR-3, :mod:`tabrion_studio.write.schema_designer.create`), its draft and preview routes (STU-CR-4,
+with that flag off neither is imported. With the Schema Designer flag on, its draft and preview routes (STU-CR-4,
 :mod:`tabrion_studio.write.schema_designer.designer`; the drafts in ``app.state.schema_drafts``, ended with their
 unlock), the confirmation and run of a previewed plan (STU-CR-5,
 :mod:`tabrion_studio.write.schema_designer.execute`) and the read-only schema comparison (STU-XSD-2,
 :mod:`tabrion_studio.write.schema_designer.compare`, on the open read-only connections of the registry) answer;
 with that flag off they answer 405 and import nothing of the area. With the Database Manager flag on, its backup and
 restore routes (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`, with the tool runner
-:mod:`tabrion_studio.write.pgtools` and the backup folder :mod:`tabrion_studio.write.backup_store`) answer; with that
-flag off they answer 405 and import nothing of the area.
+:mod:`tabrion_studio.write.pgtools` and the backup folder :mod:`tabrion_studio.write.backup_store`) and its two database
+creation routes (STU-CR-2, STU-CR-3, :mod:`tabrion_studio.write.database_manager.create`; the admin area's since the
+G-S4 grant) answer; with that flag off they answer 405 and import nothing of the area.
 
 The secret confirmation routes (STU-XW-4, I-109 j, D-15) keep the confirmed pairs in
 :class:`tabrion_studio.write.secret_confirm.SecretConfirmations` (``write-secret-confirmations.json`` next to the audit
@@ -130,7 +130,7 @@ _TABLE_KEYS = frozenset({"connection_id", "schema", "table"})
 _MAX_PLAN_BODY = MAX_PLAN_BODY
 if MAX_PLAN_BODY != MAX_REQUEST_BYTES + 4096:  # pragma: no cover - a coding error
     raise RuntimeError("MAX_PLAN_BODY does not match the plan's MAX_REQUEST_BYTES")
-#: The keys of the Schema Designer's creation routes (STU-CR-2, STU-CR-3); any other key is refused.
+#: The keys of the database creation routes (STU-CR-2, STU-CR-3; the admin area's); any other key is refused.
 _CREATE_SQLITE_KEYS = frozenset({"path", "typed"})
 _CREATE_POSTGRES_KEYS = frozenset({"connection_id", "name", "owner", "template", "encoding", "locale", "typed"})
 _MAX_CREATE_BODY = MAX_FORM_BODY
@@ -147,6 +147,8 @@ _PLAN_CONFIRM_KEYS = frozenset(
     {"connection_id", "plan_hash", "typed", "tables", "steps", "locking", "backup", "backup_typed"}
 )
 _PLAN_RUN_KEYS = frozenset({"connection_id", "plan_hash", "dry_run"})
+#: STU-XSD-3: write the previewed plan as an Alembic revision into the trusted project.
+_REVISION_KEYS = frozenset({"connection_id", "plan_hash", "message"})
 #: The keys of the Database Manager's routes (STU-XDM-2): never a path, a tool, an environment or a server.
 _DBM_BACKUP_KEYS = frozenset({"connection_id"})
 _DBM_PREVIEW_KEYS = frozenset({"connection_id", "backup_id"})
@@ -180,6 +182,7 @@ def add_enabled_write_routes(
     registry: ConnectionRegistry,
     audit_dir: Path | None = None,
     log_dir: Path | None = None,
+    migrations: Any = None,
 ) -> Unlocks:
     audit = AuditLog(audit_dir)
     # The audit folder is <folder of write-areas.toml>/audit (review N-1 of PR #116); the confirmed pairs live next
@@ -566,7 +569,7 @@ def add_enabled_write_routes(
 
         return await plan_call(request, _TABLE_KEYS, _MAX_BODY, info)
 
-    # --- the Schema Designer's database creation (STU-CR-2, STU-CR-3) ----------------------------------------------
+    # --- Studio's own folders (database creation, restore and delete) ---------------------------------------------
 
     # Studio's own folders: no database file is created in them or below them (the configuration, the audit log's
     # folder, the state, the log folder, the project's .tabrion folder); compared by device and inode (P128-02).
@@ -575,34 +578,6 @@ def add_enabled_write_routes(
         reserved += [audit_dir, audit_dir.parent]
     if log_dir is not None:
         reserved.append(log_dir)
-
-    @route("/api/write/schema-designer/create/sqlite", "POST")
-    async def post_create_sqlite(request: Request) -> Response:
-        if not areas.on(Area.SCHEMA_DESIGNER):
-            return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
-        # Imported only now: with the Schema Designer flag off, none of its code is loaded (GS3-01).
-        from tabrion_studio.write.schema_designer.create import create_sqlite_file
-
-        def create(_session: str, doc: dict[str, Any]) -> Response:
-            created = create_sqlite_file(audit, reserved, doc.get("path"), doc.get("typed"))
-            return JSONResponse(created.to_dict(), status_code=201)
-
-        return await plan_call(request, _CREATE_SQLITE_KEYS, _MAX_CREATE_BODY, create)
-
-    @route("/api/write/schema-designer/create/postgresql", "POST")
-    async def post_create_postgresql(request: Request) -> Response:
-        if not areas.on(Area.SCHEMA_DESIGNER):
-            return problem_response("studio.method_not_allowed")
-        from tabrion_studio.write.schema_designer.create import DriverFailure, create_postgres_database
-
-        def create(session: str, doc: dict[str, Any]) -> Response:
-            try:
-                created = create_postgres_database(unlocks, session, doc)
-            except DriverFailure as exc:
-                return db_problem_response(exc.classification)
-            return JSONResponse(created.to_dict(), status_code=201)
-
-        return await plan_call(request, _CREATE_POSTGRES_KEYS, _MAX_BODY, create)
 
     # --- the Schema Designer's draft and plan preview (STU-CR-4) ---------------------------------------------------
 
@@ -613,7 +588,12 @@ def add_enabled_write_routes(
 
         # The project folder (an alembic.ini there means revisions only) and the folder of write-areas.toml (the
         # backups before a run go below it, STU-CR-5); no such folder: no run that needs it (fail closed).
-        drafts = Drafts(config.project.project, None if audit_dir is None else audit_dir.parent)
+        from tabrion_studio.write.schema_designer.revision import RevisionSources
+
+        # STU-XSD-3: the revision output reads the project's profile trust (D-01) and its migration status (code
+        # trust and the worker that reads the head); without the migration status no revision is written.
+        sources = RevisionSources(config.project.project, config.project, migrations)
+        drafts = Drafts(config.project.project, None if audit_dir is None else audit_dir.parent, sources)
         from tabrion_studio.write.folders import remove_stale_runs
 
         # The backup before a PostgreSQL run uses the tool runner (STU-CR-5 follow-up): remove a passfile a crashed
@@ -630,8 +610,8 @@ def add_enabled_write_routes(
         async def handle(request: Request) -> Response:
             if drafts is None:
                 return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+            from tabrion_studio.write.connection import DriverFailure
             from tabrion_studio.write.schema_designer import designer
-            from tabrion_studio.write.schema_designer.create import DriverFailure
 
             def call(session: str, doc: dict[str, Any]) -> Response:
                 try:
@@ -641,7 +621,7 @@ def add_enabled_write_routes(
                     answer_doc = getattr(designer, action)(unlocks, drafts, session, doc)
                 except DriverFailure as exc:
                     return db_problem_response(exc.classification)
-                return JSONResponse(answer_doc, status_code=201 if action == "start" else 200)
+                return JSONResponse(answer_doc, status_code=201 if action in ("start", "revision") else 200)
 
             return await plan_call(request, keys, limit, call)
 
@@ -652,6 +632,37 @@ def add_enabled_write_routes(
     designer_route("/api/write/schema-designer/draft/preview", "POST", _DRAFT_KEYS, _MAX_BODY, "preview")
     designer_route("/api/write/schema-designer/plan/confirm", "POST", _PLAN_CONFIRM_KEYS, _MAX_BODY, "confirm")
     designer_route("/api/write/schema-designer/plan/run", "POST", _PLAN_RUN_KEYS, _MAX_BODY, "run")
+    designer_route("/api/write/schema-designer/revision", "POST", _REVISION_KEYS, _MAX_BODY, "revision")
+
+    # --- database creation (STU-CR-2, STU-CR-3), in the Database Manager's admin area (G-S4 grant) ---------------
+
+    @route("/api/write/database-manager/create/sqlite", "POST")
+    async def post_create_sqlite(request: Request) -> Response:
+        if not areas.on(Area.DATABASE_MANAGER):
+            return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+        # Imported only now: with the Database Manager flag off, none of its code is loaded (GS4-01).
+        from tabrion_studio.write.database_manager.create import create_sqlite_file
+
+        def create(_session: str, doc: dict[str, Any]) -> Response:
+            created = create_sqlite_file(audit, reserved, doc.get("path"), doc.get("typed"))
+            return JSONResponse(created.to_dict(), status_code=201)
+
+        return await plan_call(request, _CREATE_SQLITE_KEYS, _MAX_CREATE_BODY, create)
+
+    @route("/api/write/database-manager/create/postgresql", "POST")
+    async def post_create_postgresql(request: Request) -> Response:
+        if not areas.on(Area.DATABASE_MANAGER):
+            return problem_response("studio.method_not_allowed")
+        from tabrion_studio.write.database_manager.create import DriverFailure, create_postgres_database
+
+        def create(session: str, doc: dict[str, Any]) -> Response:
+            try:
+                created = create_postgres_database(unlocks, session, doc)
+            except DriverFailure as exc:
+                return db_problem_response(exc.classification)
+            return JSONResponse(created.to_dict(), status_code=201)
+
+        return await plan_call(request, _CREATE_POSTGRES_KEYS, _MAX_BODY, create)
 
     # --- the Schema Designer's comparison (STU-XSD-2) ---------------------------------------------------------------
 
@@ -660,8 +671,8 @@ def add_enabled_write_routes(
         if drafts is None:
             return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
         # Imported only now: with the Schema Designer flag off, none of its code is loaded (GS3-01).
+        from tabrion_studio.write.connection import DriverFailure
         from tabrion_studio.write.schema_designer.compare import compare_schemas
-        from tabrion_studio.write.schema_designer.create import DriverFailure
 
         def call(session: str, doc: dict[str, Any]) -> Response:
             try:

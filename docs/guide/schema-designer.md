@@ -19,7 +19,8 @@ the database, and only after Studio made its backup where one is needed.
 ## Turn it on for development
 
 The switch is read once, when Studio starts, from `write-areas.toml` in Studio's configuration folder, as for
-[New database](new-database.md#turn-it-on-for-development):
+the [Data Editor](data-editor.md#turn-it-on-for-development) (creating a database is not part of the Schema
+Designer; it is the Database Manager's, see [New database](new-database.md)):
 
 ```bash
 mkdir -m 700 -p /tmp/studio-dev/state/config
@@ -203,6 +204,38 @@ Each run and dry run writes a `run.start` and a `run.result` record to the audit
 classes, the number of steps, the backup state (`made`, `opted_out`, `not_needed` or `dry_run`) and the result. When
 the audit record cannot be written, nothing runs. No value, default or check text and no SQL is recorded.
 
+## Write an Alembic revision
+
+When the project has an Alembic setup (an `alembic.ini` with a `script_location`), Studio never runs a plan
+directly: it writes the plan as a new **revision file** instead, which you apply with your own tooling. The preview
+has a **Write as an Alembic revision** part. It is offered only when all of these hold, checked when the plan is shown
+and again when the file is written:
+
+- the connection's stored environment is DEV or TEST (never PROD), and no PROD profile of yours names the same
+  database (the same SQLite file, or on PostgreSQL the same database name on the same server, as the Database Manager
+  matches it);
+- you trusted the project's profiles (`.tabrion/studio.toml`, the trust dialog) **and** its Alembic code (the code
+  trust of the migration status), and neither changed since;
+- the plan has a step;
+- Studio is not running on Windows (there the file could not be created safely against a folder swapped for a
+  junction, so the revision output stays locked).
+
+Enter a message (one line, at most 200 characters) and choose **Write revision**. Studio plans again from the
+database as it is now and refuses when the plan changed. It reads the project's single head with the migration
+status (in its separate process, under the code trust): with several heads, none, or revisions it cannot read, it
+writes nothing. The file goes to `versions` under the `script_location`, named `<revision id>_<message>.py` (12
+random hex digits, then the message in lower case letters, digits and `_`, at most 40). Studio never overwrites a file
+and never writes through a link; the page shows the file's path.
+
+Studio never runs the revision, `env.py`, a project module or an Alembic command, and changes nothing in the
+database. The revision **does not check the database it runs on**: apply it only to the database it was planned for
+(the preview shows its source fingerprint), soon after the preview. Its `downgrade()` raises an error (a plan has no
+reverse steps). The new file changes the project's code, so the migration status asks you to trust the code again.
+
+Each written revision is recorded in the audit log with a `run.start` and a `run.result` record (action
+`schema_designer.revision`, the tables, the plan hash, the risk classes, the number of steps and the result); the
+message and the path are not recorded.
+
 ## Compare schemas
 
 The **Schema comparison** section (shown with the same switch) compares two schemas **read-only**. Nothing is
@@ -249,7 +282,10 @@ The tables, columns and SQL of a comparison are shown to you only; Studio's log 
 ## Not yet
 
 - A PostgreSQL backup before a run on Windows (Studio refuses the tools there).
-- The graphical mode (STU-XSD-1) and the Alembic revision output (STU-XSD-3).
+- The graphical mode (STU-XSD-1).
+- The revision output on Windows.
+- A revision with `CREATE INDEX CONCURRENTLY` steps (the revision uses the plan of a direct run, without them), and
+  a revision output without an unlocked write profile.
 - Starting a draft from a schema file, and saving a draft.
 - Saving a snapshot file from Studio (use `tabrion.schema.snapshot(..., level=2).to_json()`), and comparing schemas
   with different names.

@@ -33,21 +33,22 @@ tabrion `71370a6` (merge of tabrion #92), which contains it. The G-T2 review of 
   of `write-areas.toml` (STU-ADR-0006, "As built") and the gate **G-S3**. With the flag off each such route is a
   refusing handler (405 `studio.method_not_allowed`, W-9) that does not import `tabrion.ddl`, `tabrion.plan` or the
   area's executor, and nothing changes (database, project folder, audit log).
-- The area covers STU-CR-2..STU-CR-6 and STU-XSD-1..STU-XSD-3 (STU-ADR-0006 table): creating a SQLite file or a
-  PostgreSQL database (STU-CR-2, STU-CR-3; tabrion `create_private_file`, `create_database`), the designer and its
-  plans, the runtime-role wizard and the profile export (STU-CR-6), the graphical mode, the schema comparison and the
+- The area covers STU-CR-4..STU-CR-6 and STU-XSD-1..STU-XSD-3 (STU-ADR-0006 table): the designer and its plans, the runtime-role wizard and the profile export (STU-CR-6), the graphical mode, the schema comparison and the
   revision output. Reading and showing a level-2 snapshot of a connected database is a read path and may exist with
   the flag off (it runs on the read profile's connection, TX-03).
 - G-S3 cannot be granted before the pinned Tabrion has the executor of TAB-XW-5 with the D-5 parts that need a
   connection (D-5.4), independently reviewed (tabrion ADR 0015 section 10: "G-S3 stays locked until the
   implementation is in place, independently reviewed and tested"). Tabrion #91 (`7c0da1a`) delivers it and was
   accepted; Studio pins a commit that contains it (GS3-P1).
-- Creating a PostgreSQL database (STU-CR-3) runs on the Schema Designer's unlocked **write profile**, whose role needs
-  `CREATEDB`; there is no admin connection in this area (admin profiles unlock only under `database_manager`,
-  STU-ADR-0008). Such a role can create databases it owns and install trusted extensions in them; it gains nothing
-  in existing databases. Conditions (review of #128): a separate role with `CREATEDB` used only for DEV and TEST
-  and the Schema Designer, a `CREATEDB` warning when another area's write profile or a profile on PROD or STAGE has
-  it, and the advice to keep the server up to date. The owner confirms this at G-S3 (GS3-26).
+- **Amended 2026-11-18 (G-S4, owner grant of 2026-11-18):** creating a SQLite file or a PostgreSQL database
+  (STU-CR-2, STU-CR-3; tabrion `create_private_file`, `create_database`) is no longer part of this area. The owner
+  decided that database creation and role management belong to the admin area G-S4 with separate permissions; the
+  wizards are behind the `database_manager` flag and, for PostgreSQL, the admin profile
+  ([STU-ADR-0008 section 10](0008-database-manager-backup-restore-roles.md#10-creating-a-database-stu-cr-2-stu-cr-3)).
+  The `schema_designer` flag alone never creates a database. A write profile never needs `CREATEDB` any more: a
+  write role that has or reaches it is refused like the roles of decision 1A (`studio.write_role_over_privileged`).
+  The former text (the write profile with `CREATEDB`, the warning conditions of the review of #128, GS3-26) is
+  superseded.
 
 ### 2. Studio builds no DDL and no plan text of its own (E-X3)
 
@@ -133,6 +134,19 @@ environment is `prod` (whether to allow it, since it writes only the project fil
 - The preview says that the revision does not check its source fingerprint (I-124 j 5): apply it only to the
   database it was planned for, soon after the preview. It shows the source fingerprint. A plan with
   `CONCURRENTLY` steps is written as a revision of its own, as Tabrion orders them.
+- **As built (STU-XSD-3, G-S3 not granted).** `POST /api/write/schema-designer/revision` writes the plan the
+  preview kept with the draft (one attempt, like a run), after Studio planned again and compared the hash. Stricter
+  than above, and recorded here: the draft, and so the revision output, needs an unlocked write profile of DEV or TEST
+  (the draft is bound to its unlock); the revision output needs both the profile trust (D-01) and the code trust;
+  the revision uses the plan of direct execution (`concurrent_indexes=False`), so it has no `CONCURRENTLY` step.
+  Writing the file changes the code-trust digest, so the migration status needs trust again. A database that a PROD
+  profile of the user's store names is refused like PROD (review I-1 of #144), with the Database Manager's matching,
+  now shared in `tabrion_studio.write.prod_targets` (SQLite by device and inode; PostgreSQL by name on the same
+  server, by `system_identifier` or port and resolved addresses). A revision output
+  without an unlock and a plan with `CONCURRENTLY` steps are follow-ups.
+  Windows is refused (reason `platform`, review L-1 of #146): without `dir_fd` the folder check and the exclusive
+  create are two steps by path, and a junction swapped in between would redirect the file; a final-path check of the
+  created file with a junction test is the follow-up that would lift it.
 
 **The schema comparison (STU-XSD-2)** is neither output: it reads, compares and shows, and its plan preview is never
 kept or run (no plan hash, no confirmation). Decided per G-S3/G-S4 grant 2026-11-18:

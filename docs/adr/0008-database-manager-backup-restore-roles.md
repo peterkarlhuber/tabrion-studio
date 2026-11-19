@@ -32,8 +32,8 @@ tools is Studio's.
   is behind the `database_manager` key of `write-areas.toml` (STU-ADR-0006, "As built") and the gate **G-S4**. With
   the flag off such a route answers 405 `studio.method_not_allowed` (W-9), does not import the area's modules or
   Tabrion's role, restore or delete functions, starts no process and changes nothing.
-- Creating a database belongs to the Schema Designer (STU-CR-2, STU-CR-3, G-S3); its rules for names, owners and
-  driver errors are the same as here (section 5).
+- Creating a database (STU-CR-2, STU-CR-3) belongs to this area since the owner's grant of 2026-11-18 (section 10);
+  before, it was the Schema Designer's (STU-ADR-0007 section 1, amended).
 
 ### 2. PROD (E-X7)
 
@@ -183,7 +183,8 @@ an admin unlock, which a PROD connection never gets, so a PROD backup is refused
     "needed only for role management"), CREATEDB, memberships in other predefined roles (`broad:*`), the K-2 grants
     of the role, `owned_objects`.
   - For `kind = "write"` the owner decided at G-S2 (decision 1A, PR #127): `studio.write_role_over_privileged`,
-    GS3-28.
+    GS3-28. Since section 10 a write role that has or reaches CREATEDB is refused the same way (`admin.createdb`,
+    `dangerous`), at the unlock and again at the start of every run: no write area creates databases.
   - STU-XDM-2: until the owner decides this section at G-S4, the admin unlock still opens and shows its findings, but
     every Database Manager action reads the check again on its own session and refuses these findings with
     `studio.admin_over_privileged`, which ends the unlock.
@@ -229,6 +230,50 @@ Every action writes `run.start` and `run.result` (STU-XW-2): backup (`dbm.backup
 version), restore (`dbm.restore`, backup and target), delete (`dbm.delete`, with `force` as its own field), each role
 change (`dbm.role.*`, role names escaped, privileges and object names, never a password) and an opted-out backup.
 A record before the run that cannot be written stops the action.
+
+### 10. Creating a database (STU-CR-2, STU-CR-3)
+
+Owner grant of 2026-11-18 (G-S3 and G-S4, conditional): "database creation and role management belong to the admin
+area G-S4 with separate permissions". It amends STU-ADR-0007 section 1.
+
+- Both wizards are routes of this area: `POST /api/write/database-manager/create/sqlite` and
+  `.../create/postgresql`, behind the `database_manager` flag (405 `studio.method_not_allowed` and no import of
+  `tabrion_studio.write.database_manager.create` with the flag off, also when the `schema_designer` or
+  `data_editor` flag is on). The flag stays off by default.
+- **PostgreSQL** needs the connection's **admin** unlock (`kind = "admin"`); a write unlock is refused with 405
+  `studio.method_not_allowed` (the write kind does not serve this area). The admin check of section 6 runs again on
+  the run's own session before `CREATE DATABASE` and refuses its findings with `studio.admin_over_privileged`,
+  which ends the unlock. The admin role needs CREATEDB on DEV and TEST (a fact there, a warning elsewhere).
+- **SQLite** needs the flag but no admin unlock: a new file has no role, no server and no connection to unlock, so
+  there is no admin profile to check. This is the safest practical option, not an exception: every other safeguard
+  of STU-CR-2 stays (the folder rules, the reserved folders, `0600`, never a link or an overwrite, the typed file
+  name, the Windows refusal `studio.schema_create_platform`, the audit record that fails closed).
+- **Write roles never need CREATEDB.** A `kind = "write"` role that has or reaches CREATEDB is refused at the unlock
+  and at each run (`studio.write_role_over_privileged`), consistent with section 6: an admin role is refused only for
+  what no admin action needs, and CREATEDB is what creation needs, so it stays a fact for the admin kind.
+- Kept unchanged: the name, owner, template, encoding and locale rules, PROD refused (also through a non-PROD
+  profile), driver errors only as `db.<kind>` with the safe message, the audit (`run.start` fails closed, then
+  `run.result`), now with the actions `dbm.create_sqlite` and `dbm.create_postgresql` and the area
+  `database_manager`.
+
+### 11. Owner points of STU-XDM-3: decided per G-S3/G-S4 grant 2026-11-18, safest option
+
+The owner's grant asks to close the open architecture decisions by the safest practical option. The eight points
+recorded for STU-XDM-3 (PR #140) were each already built as the safest practical option and are **decided per
+G-S3/G-S4 grant 2026-11-18, safest option**:
+
+1. No opt-out of the backup before a delete, also on DEV (section 5 would allow one).
+2. `force` is confirmed by typing the name a second time, as its own confirmation.
+3. On SQLite the delete target is only the connection's own file; Studio closes its own connections and ends the
+   unlock to delete it.
+4. The PostgreSQL backup before a delete runs as the admin role; a role that cannot read the whole target database
+   makes the delete refused, never a broader role.
+5. SQLite delete is refused on Windows, as STU-CR-2 refuses create.
+6. Backups made before a delete stay in the backup folder, are listed and restorable, and Studio never deletes them.
+7. The residual window is accepted: writes between the backup and the drop are lost; Studio re-checks the OID (or
+   the file's device and inode), not the content.
+8. A SQLite restore into a new file is refused on Windows (`restore.platform`) until a reviewed check of the
+   folder's ACL exists (the grant's Windows condition).
 
 ## Consequences
 

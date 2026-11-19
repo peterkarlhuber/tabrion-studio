@@ -25,7 +25,7 @@ is used.
 | `tabrion.check.Severity.INFO` | `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.Severity.WARNING` | `tests/security/test_diagnose_cli.py`, `tests/security/test_diagnosis_report.py`, `tests/security/test_diagnostics.py` |
 | `tabrion.check.check` | `src/tabrion_studio/services/tabrion_compat.py`, `tests/security/test_diagnostics.py` |
-| `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_levuvo_migrations.py` |
+| `tabrion.errors.Classification` | `src/tabrion_studio/problems.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.ConfigurationError` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.errors.DatabaseInUse` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.errors.DbErrorRedactionFilter` | `src/tabrion_studio/logs.py` |
@@ -39,19 +39,19 @@ is used.
 | `tabrion.errors.Kind.TIMEOUT` | `src/tabrion_studio/api/explorer.py`, `src/tabrion_studio/api/viewer.py`, `src/tabrion_studio/services/queries.py`, `tests/security/test_connections_api.py`, `tests/security/test_levuvo_migrations.py` |
 | `tabrion.errors.Kind.UNIQUE` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.Kind.UNKNOWN` | `tests/unit/test_problems.py` |
-| `tabrion.errors.PermissionDenied` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.errors.PermissionDenied` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py`, `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.errors.PlanFailed` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.errors.PlanMismatch` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.errors.PlanRefused` | `src/tabrion_studio/write/schema_designer/draft.py`, `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.errors.RoleMissing` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.errors.RoleMissing` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py`, `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.errors.RoleUnsafe` | `src/tabrion_studio/write/database_manager/roles.py`, `tests/security/test_dbm_roles.py` |
 | `tabrion.errors.RowCountMismatch` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.errors.SchemaDrift` | `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.TabrionError` | `src/tabrion_studio/api/connections.py`, `src/tabrion_studio/api/exports.py`, `src/tabrion_studio/diagnose_cli.py`, `src/tabrion_studio/problems.py`, `src/tabrion_studio/services/levuvo_migrations.py`, `src/tabrion_studio/services/migration_worker.py`, `src/tabrion_studio/services/queries.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_connection_loss.py`, `tests/security/test_levuvo_migrations.py`, `tests/security/test_libpq_environment.py`, `tests/security/test_queries.py`, `tests/security/test_read_only.py`, `tests/unit/test_problems.py` |
 | `tabrion.errors.UnsafePath` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py` |
-| `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py`, `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
-| `tabrion.errors.safe_message` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/create.py`, `src/tabrion_studio/write/schema_designer/designer.py` |
+| `tabrion.errors.UsageError` | `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `src/tabrion_studio/write/schema_designer/draft.py`, `src/tabrion_studio/write/schema_designer/execute.py`, `src/tabrion_studio/write/schema_designer/revision.py` |
+| `tabrion.errors.classify` | `src/tabrion_studio/problems.py`, `src/tabrion_studio/write/data_editor.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_connections_api.py`, `tests/unit/test_problems.py` |
+| `tabrion.errors.safe_message` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py`, `src/tabrion_studio/write/database_manager/delete.py`, `src/tabrion_studio/write/database_manager/roles.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/designer.py` |
 | `tabrion.migrations.status` | `src/tabrion_studio/services/migration_worker.py` |
 | `tabrion.plan.RiskClass` | `src/tabrion_studio/write/schema_designer/draft.py`, `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_schema_designer_pg_backup.py` |
 | `tabrion.plan.RiskClass.DATA_CHANGING` | `src/tabrion_studio/write/schema_designer/execute.py` |
@@ -63,12 +63,13 @@ is used.
 | `tabrion.plan.execute_plan` | `src/tabrion_studio/write/schema_designer/execute.py`, `tests/security/test_schema_designer_execution.py`, `tests/security/test_schema_designer_execution_postgres.py` |
 | `tabrion.plan.migration_markers` | `src/tabrion_studio/write/schema_designer/execute.py` |
 | `tabrion.plan.plan` | `src/tabrion_studio/write/schema_designer/draft.py`, `tests/security/test_schema_designer_compare.py`, `tests/security/test_schema_designer_compare_postgres.py`, `tests/security/test_schema_designer_draft.py`, `tests/security/test_schema_designer_draft_postgres.py` |
+| `tabrion.plan.revision_text` | `src/tabrion_studio/write/schema_designer/revision.py` |
 | `tabrion.postgres` | `src/tabrion_studio/services/tabrion_compat.py`, `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.ExtensionStatus` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/services/tabrion_compat.py` |
 | `tabrion.postgres.RoleOptions` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.SessionSettings` | `src/tabrion_studio/services/connections.py`, `src/tabrion_studio/write/connection.py` |
 | `tabrion.postgres.alter_role` | `src/tabrion_studio/write/database_manager/roles.py` |
-| `tabrion.postgres.create_database` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/create.py` |
+| `tabrion.postgres.create_database` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/database_manager/create.py` |
 | `tabrion.postgres.create_role` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.drop_database` | `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.postgres.drop_role` | `src/tabrion_studio/write/database_manager/roles.py` |
@@ -95,9 +96,9 @@ is used.
 | `tabrion.schema.snapshot` | `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/compare.py`, `src/tabrion_studio/write/schema_designer/designer.py`, `tests/security/test_schema_designer_compare.py`, `tests/security/test_schema_designer_compare_postgres.py` |
 | `tabrion.sql.split_statements` | `src/tabrion_studio/services/readonly.py`, `tests/security/test_definitions.py`, `tests/security/test_read_only.py` |
 | `tabrion.sqlite.JournalMode` | `src/tabrion_studio/write/connection.py` |
-| `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
+| `tabrion.sqlite.SQLiteProfile` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/database_manager/create.py`, `tests/security/test_drafts.py`, `tests/security/test_write_unlock.py` |
 | `tabrion.sqlite.backup` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/database_manager/backups.py`, `src/tabrion_studio/write/schema_designer/execute.py` |
-| `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/schema_designer/create.py`, `tests/security/test_drafts.py` |
+| `tabrion.sqlite.connect` | `src/tabrion_studio/services/state.py`, `src/tabrion_studio/write/connection.py`, `src/tabrion_studio/write/database_manager/create.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.delete_database_file` | `src/tabrion_studio/write/database_manager/delete.py` |
 | `tabrion.sqlite.migrate` | `src/tabrion_studio/services/state.py`, `tests/security/test_drafts.py` |
 | `tabrion.sqlite.restore` | `src/tabrion_studio/write/database_manager/backups.py` |

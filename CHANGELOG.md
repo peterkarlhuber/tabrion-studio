@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-XSD-3 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer writes a previewed plan as an Alembic revision into the trusted project, `POST
+  /api/write/schema-designer/revision` with the plan hash and a message. The server plans again from a fresh snapshot
+  and compares the hash, reads the single head through the migration status (code trust, the 1.0 migration worker),
+  gets the text from `tabrion.plan.revision_text`, checks that it parses, and creates
+  `<script_location>/versions/<12 hex>_<slug>.py` exclusively, never through a link and never over a file. Only for a
+  DEV or TEST unlock whose database no PROD profile names (review I-1 of #144: the Database Manager's PROD-alias
+  matching, now shared in `tabrion_studio.write.prod_targets`, no behavior change there), a project whose profiles
+  (D-01) and Alembic code are trusted, a plan with a step, and not Windows (review L-1 of #146: without `dir_fd` the
+  folder check and the create could be split by a junction swap; reason `platform`); `env.py`,
+  a project module, the new revision and Alembic commands never run, and nothing runs on the database. The preview
+  says whether a revision may be written and that the revision does not check its source fingerprint (I-124 j 5).
+  Audit `run.start`/`run.result` with action `schema_designer.revision`. New problems
+  `studio.schema_revision_not_allowed`, `schema_revision_invalid`, `schema_revision_head_unknown`,
+  `schema_revision_folder`, `schema_revision_exists` and `schema_revision_failed`; the "Write as an Alembic revision"
+  part of the preview in English and German; the guide's "Write an Alembic revision" section.
 - Tabrion repin (tabrion G-T2 C-5): pins tabrion 0.3.0 at its release commit `7488c76` (the merge commit of
   tabrion #95, not tagged yet, no PyPI). It changes only the version from `0.3.0.dev0` to `0.3.0`; the API Studio
   uses is the one of `bfba25e`. The range `>=0.2,<0.4` stays. No behavior change; the flags stay off.
@@ -1292,6 +1308,26 @@ All notable changes to this project are documented here. The format follows
 
 ### Changed
 
+- Database creation moved to the admin area (G-S4; owner grant of 2026-11-18, which assigns database creation and
+  role management to the admin area with separate permissions; all flags stay off by default). The STU-CR-2 and
+  STU-CR-3 wizards are now `POST /api/write/database-manager/create/sqlite` and `.../create/postgresql`, behind the
+  `database_manager` flag instead of `schema_designer` (405 and nothing of `database_manager.create` imported
+  otherwise, also with `schema_designer` on). A PostgreSQL database needs the connection's admin unlock; a write
+  unlock is refused (`studio.method_not_allowed`), and the admin check runs again before `CREATE DATABASE`
+  (`studio.admin_over_privileged`, which ends the unlock). A SQLite file needs the flag but no unlock, because no
+  role exists to check. The audit actions are `dbm.create_sqlite` and `dbm.create_postgresql` in the area
+  `database_manager`. The folder rules, name rules, Windows refusal, PROD lock and audit are unchanged. The page
+  shows the wizard only while `database_manager` is on and offers the admin profile (en, de).
+- A write role that has or reaches CREATEDB is refused like decision 1A (`studio.write_role_over_privileged`), at
+  the unlock and again at the start of every run (`admin.createdb`, now `dangerous` for write roles); for admin
+  roles CREATEDB is a fact on DEV and TEST and a warning elsewhere. STU-ADR-0007 section 1 and STU-ADR-0008
+  (sections 1, 6, 10 and 11), the threat models (TX-29, TX-40), the G-S3 and G-S4 definitions (GS3-03, GS3-21,
+  GS3-27, GS3-28, new GS4-27), the guides and the problem texts are amended. Tests moved to `test_dbm_create.py`
+  and `test_dbm_create_postgres.py`, with new cases for the `schema_designer` flag alone, a write profile, a write
+  role with CREATEDB and a right gained after the admin unlock.
+- The eight STU-XDM-3 owner points (PR #140) are recorded as decided per G-S3/G-S4 grant 2026-11-18, safest option
+  (STU-ADR-0008 section 11).
+
 - tabrion pin moved to the merge commit of tabrion PR #90 (`28c8839f72a2d7232d973c71f99df1e57001a260`, still
   0.3.0.dev0; range `>=0.2,<0.4` unchanged). It adds the experimental CR-DBX primitives TAB-XW-2 (schema level 2),
   TAB-XW-3 (`tabrion.ddl`), TAB-XW-4 (`tabrion.plan`), TAB-XW-7 (SQLite restore and file deletion), TAB-XW-8 (role
@@ -1389,6 +1425,10 @@ All notable changes to this project are documented here. The format follows
   backend's own Host and Origin.
 
 ### Fixed
+
+- Test: `test_uvicorn_stops_reading_an_endless_chunked_body` also accepts `ConnectionAbortedError` (Winsock
+  `WSAECONNABORTED`, 10053), which Windows raises instead of `ConnectionResetError` when its stack has already
+  dropped the connection the server closed; the bound and the closed-connection requirement are unchanged.
 
 - `scripts/check_tabrion_api.py --surface` no longer reports `tabrion.errors.Kind.PERMISSION.value` as missing from
   Tabrion's surface: Studio names the `Kind` member (a `StrEnum`) instead of its `.value`. The Data Editor's end-to-end

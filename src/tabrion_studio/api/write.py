@@ -31,11 +31,12 @@
   through the plan routes above; a value that does not fit its column is refused when the plan is made
   (``400 studio.data_editor_value_invalid`` with positions only). Only the Data
   Editor flag opens it and registers the executor; with that flag off it answers 405 like every write route.
-* ``POST /api/write/schema-designer/create/sqlite``: ``{"path", "typed"}``: a new, private SQLite database file
-  (STU-CR-2); ``POST /api/write/schema-designer/create/postgresql``: ``{"connection_id", "name", "owner",
-  "template", "encoding", "locale", "typed"}``: a new PostgreSQL database on this session's unlocked write connection
-  of a DEV or TEST server (STU-CR-3; :mod:`tabrion_studio.write.schema_designer.create`). Only the Schema Designer
-  flag opens them; with it off they answer 405 and the Schema Designer's code is not imported.
+* ``POST /api/write/database-manager/create/sqlite``: ``{"path", "typed"}``: a new, private SQLite database file
+  (STU-CR-2); ``POST /api/write/database-manager/create/postgresql``: ``{"connection_id", "name", "owner",
+  "template", "encoding", "locale", "typed"}``: a new PostgreSQL database on this session's unlocked **admin**
+  connection of a DEV or TEST server (STU-CR-3; :mod:`tabrion_studio.write.database_manager.create`). Since the
+  G-S4 grant of 2026-11-18 database creation belongs to the admin area: only the Database Manager flag opens them (the
+  Schema Designer's no longer does); with it off they answer 405 and the area's code is not imported.
 * ``POST /api/write/schema-designer/draft``: ``{"connection_id", "schema"}``: start (or start again) this session's
   draft of the connection from a level-2 snapshot of one schema, read on the unlocked write connection (STU-CR-4,
   :mod:`tabrion_studio.write.schema_designer.designer`); ``DELETE`` with ``{"connection_id"}`` discards it.
@@ -60,6 +61,11 @@
   and a fail-closed verdict; with ``"plan": true`` also a plan preview from the actual side to the expected one,
   which is never kept or run (DEV or TEST of the user's own profiles only, never from or to a file). Schema Designer
   flag only.
+* ``POST /api/write/schema-designer/revision``: ``{"connection_id", "plan_hash", "message"}``: write the previewed plan
+  as a new Alembic revision file into the trusted project's revision folder (STU-XSD-3,
+  :mod:`tabrion_studio.write.schema_designer.revision`): plan again and compare the hash, read the single head through
+  the migration status (code trust), get the text from ``tabrion.plan.revision_text`` and create the file exclusively.
+  Nothing runs on the database; ``env.py`` and the revision never run. Schema Designer flag only; never for PROD.
 * ``GET /api/write/database-manager/backups``: the Database Manager's backups (newest first, with their metadata and
   the scope notice), their count and total size, and whether ``pg_dump`` and ``pg_restore`` are configured and pass
   their checks (STU-XDM-2, :mod:`tabrion_studio.write.database_manager.backups`). ``POST
@@ -95,7 +101,7 @@ a name from the request, a secret or a database message.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, Response
 from fastapi.responses import JSONResponse
@@ -123,9 +129,6 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/secret-confirmations/confirm", ("POST",)),
     # STU-026: the Data Editor's table (columns, primary key, triggers and rules) for its grid; Data Editor flag only.
     ("/api/write/data-editor/table", ("POST",)),
-    # STU-CR-2, STU-CR-3: the Schema Designer's database creation; Schema Designer flag only (G-S3).
-    ("/api/write/schema-designer/create/sqlite", ("POST",)),
-    ("/api/write/schema-designer/create/postgresql", ("POST",)),
     # STU-CR-4: the Schema Designer's server-side draft, its edit operations and the read-only plan preview (G-S3).
     ("/api/write/schema-designer/draft", ("POST", "DELETE")),
     ("/api/write/schema-designer/draft/view", ("POST",)),
@@ -136,6 +139,8 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/schema-designer/plan/run", ("POST",)),
     # STU-XSD-2: the read-only comparison of two schemas and its plan preview, never kept or run (G-S3).
     ("/api/write/schema-designer/compare", ("POST",)),
+    # STU-XSD-3: write the previewed plan as an Alembic revision into the trusted project; never run (G-S3).
+    ("/api/write/schema-designer/revision", ("POST",)),
     # STU-XDM-2: the Database Manager's backups, a backup, and the preview and run of a restore (G-S4).
     ("/api/write/database-manager/backups", ("GET",)),
     ("/api/write/database-manager/backup", ("POST",)),
@@ -143,6 +148,9 @@ WRITE_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("/api/write/database-manager/restore", ("POST",)),
     ("/api/write/database-manager/delete/preview", ("POST",)),
     ("/api/write/database-manager/delete", ("POST",)),
+    # STU-CR-2, STU-CR-3: database creation, in the Database Manager's admin area since the G-S4 grant (STU-CR-ADMIN).
+    ("/api/write/database-manager/create/sqlite", ("POST",)),
+    ("/api/write/database-manager/create/postgresql", ("POST",)),
     ("/api/write/database-manager/roles", ("POST",)),
     ("/api/write/database-manager/roles/preview", ("POST",)),
     ("/api/write/database-manager/roles/apply", ("POST",)),
@@ -171,12 +179,15 @@ def add_write_routes(
     registry: ConnectionRegistry | None = None,
     audit_dir: Path | None = None,
     log_dir: Path | None = None,
+    migrations: Any = None,
 ) -> Unlocks | None:
     """Register the write foundation's routes; the unlocks when an area is on (closed by the app on shutdown).
 
     ``audit_dir`` is the audit log's folder (``audit`` in the folder of ``write-areas.toml``); without one, every unlock
     and write is refused (fail closed). It is neither created nor read while every area is off. ``log_dir`` is Studio's
-    log folder, one of the folders the Schema Designer creates no database in."""
+    log folder, one of the folders the Schema Designer creates no database in. ``migrations`` is the migration status
+    (:class:`tabrion_studio.services.migrations.Migrations`): the Schema Designer's revision output reads the project's
+    code trust and the single head through it (STU-XSD-3); without it no revision is written."""
     snapshot = areas.to_dict()
 
     @app.get("/api/write/areas")
@@ -191,4 +202,4 @@ def add_write_routes(
     # Imported only now: with every flag off, no write code is loaded.
     from tabrion_studio.write.routes import add_enabled_write_routes
 
-    return add_enabled_write_routes(app, areas, config, registry, audit_dir, log_dir)
+    return add_enabled_write_routes(app, areas, config, registry, audit_dir, log_dir, migrations)

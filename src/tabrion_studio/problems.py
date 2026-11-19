@@ -532,9 +532,9 @@ CATALOG: dict[str, Entry] = {
         405,
         ProblemKind.REQUEST,
         "Write role has too many rights",
-        "The write profile's role is a superuser, has BYPASSRLS or REPLICATION, or is a member (directly or through "
-        "another role) of pg_read_server_files, pg_write_server_files or pg_execute_server_program. Studio does not "
-        "unlock the write mode with such a role.",
+        "The write profile's role is a superuser, has BYPASSRLS, REPLICATION or CREATEDB, or is a member (directly or "
+        "through another role) of pg_read_server_files, pg_write_server_files or pg_execute_server_program. Studio "
+        "does not unlock the write mode with such a role; creating databases needs an admin profile.",
         "Use a role with only the table rights the Data Editor needs; the security guide shows how to check the role.",
     ),
     "studio.write_coupling_invalid": Entry(
@@ -766,7 +766,7 @@ CATALOG: dict[str, Entry] = {
         "in clear text or as an MD5 hash. The libpq Studio loaded is older, so no write connection is opened.",
         "Install psycopg with its binary package (psycopg[binary]) or a libpq 16 or newer.",
     ),
-    # The Schema Designer's database creation (STU-CR-2, STU-CR-3, TX-29, GS3-20, GS3-21). W-9: 400 or 405, never
+    # The Database Manager's database creation (STU-CR-2, STU-CR-3, TX-29, GS3-21, GS4-27). W-9: 400 or 405, never
     # 403 or 404; no path, name or server text from the request or the database.
     "studio.schema_create_invalid": Entry(
         400,
@@ -786,7 +786,7 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.REQUEST,
         "Not a PostgreSQL connection",
         "A PostgreSQL database is created on an unlocked PostgreSQL connection of the same server.",
-        "Connect to the PostgreSQL server, unlock its write profile and try again.",
+        "Connect to the PostgreSQL server, unlock its admin profile and try again.",
     ),
     "studio.schema_create_platform": Entry(
         400,
@@ -831,7 +831,7 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "No right to create databases",
-        "The write profile's role has no CREATEDB right on this server. Nothing was created.",
+        "The admin profile's role has no CREATEDB right on this server. Nothing was created.",
         "Ask the server's administrator to create the database (or to grant CREATEDB), then add a connection "
         "profile for it.",
     ),
@@ -845,9 +845,9 @@ CATALOG: dict[str, Entry] = {
         400,
         ProblemKind.REQUEST,
         "Owner not allowed",
-        "The write profile's role may not act as the owner role (SET ROLE), so it cannot give it the new database. "
+        "The admin profile's role may not act as the owner role (SET ROLE), so it cannot give it the new database. "
         "Nothing was created.",
-        "Leave the owner empty (the write profile's role owns the database) or ask the administrator.",
+        "Leave the owner empty (the admin profile's role owns the database) or ask the administrator.",
     ),
     # The Schema Designer's draft and plan preview (STU-CR-4, STU-ADR-0007 sections 2 and 3, GS3-09, GS3-20). W-9:
     # 400 or 405, never 403 or 404; no name, type, default, check text or statement from the request or tabrion.
@@ -967,6 +967,55 @@ CATALOG: dict[str, Entry] = {
         "run in one transaction and, on PostgreSQL, with a step that needs a backup only when pg_dump and pg_restore "
         "are set in database-tools.toml. Nothing was run.",
         "Use your own migration tooling for this database, or change the plan.",
+    ),
+    # Writing a Schema Designer plan as an Alembic revision (STU-XSD-3, STU-ADR-0007 section 5, GS3-06..08). W-9: 400
+    # or 409; no name, path, message or statement text, no server text.
+    "studio.schema_revision_not_allowed": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "No revision written",
+        "Studio writes a plan as an Alembic revision only for a DEV or TEST database, into a project whose "
+        "profiles you trusted and whose Alembic setup (alembic.ini with a script_location) and code you trusted, for "
+        "a plan with a step. Nothing was written.",
+        "Trust the project and its code, or use the plan with your own migration tooling.",
+    ),
+    "studio.schema_revision_invalid": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Revision message not valid",
+        "The revision message is a text of 1 to 200 characters on one line, without control characters.",
+        "Enter a short message for the revision.",
+    ),
+    "studio.schema_revision_head_unknown": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Revision head unknown",
+        "The new revision follows the single head of the project's revisions, and Studio could not read exactly one: "
+        "the project has several heads or none, its code is not trusted, or its revisions could not be read. "
+        "Nothing was written.",
+        "Merge the heads or trust the project's code, then preview again.",
+    ),
+    "studio.schema_revision_folder": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Revision folder not usable",
+        "The revision folder (versions under the script_location) must be a folder inside the project, reached "
+        "without a link at any level. Nothing was written.",
+        "Check the project's revision folder.",
+    ),
+    "studio.schema_revision_exists": Entry(
+        409,
+        ProblemKind.REQUEST,
+        "Revision file exists",
+        "A file of the new revision's name exists already; Studio never overwrites a file. Nothing was written.",
+        "Preview again to get a new revision id.",
+    ),
+    "studio.schema_revision_failed": Entry(
+        500,
+        ProblemKind.INTERNAL,
+        "Revision not written",
+        "The revision file could not be created or written.",
+        "Check that the revision folder is writable, then preview again.",
     ),
     "studio.schema_backup_required": Entry(
         400,

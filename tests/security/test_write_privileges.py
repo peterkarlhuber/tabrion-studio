@@ -10,9 +10,9 @@ D-2 counts it: a role a user created under a ``pg_`` name is not one (the rows h
 Owner decision 1A at G-S2: for ``kind="write"`` superuser, BYPASSRLS, REPLICATION and the server-file roles refuse the
 unlock (``studio.write_role_over_privileged``); every other finding stays a warning.
 
-Open point 1 of the PR #128 review (condition b): CREATEDB is ``admin.createdb`` (a warning, never refusing) on a write
-unlock the Data Editor may use and on any unlock outside DEV and TEST; for the Schema Designer on DEV or TEST it is
-the fact ``createdb`` only."""
+G-S4 (grant of 2026-11-18): database creation is the admin area's, so a ``kind="write"`` role never needs CREATEDB.
+It is ``admin.createdb`` (``dangerous``) on every write unlock, and :func:`write_refusals` refuses the unlock and every
+run. An admin role needs it on DEV and TEST to create databases (a fact only); elsewhere it is a warning."""
 
 from __future__ import annotations
 
@@ -27,6 +27,8 @@ from tabrion_studio.write.connection import (
     createdb_findings,
     privilege_findings,
     refusing_findings,
+    refusing_findings_now,
+    write_refusals,
 )
 
 pytestmark = pytest.mark.security
@@ -218,24 +220,47 @@ def test_createdb_is_a_fact_with_how_it_is_held(own: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    ("kind", "environment", "data_editor_on", "warned"),
+    ("kind", "environment", "data_editor_on", "severity"),
     [
-        ("write", "dev", False, False),  # the Schema Designer on DEV: needed, a fact only
-        ("write", "test", False, False),
-        ("write", "dev", True, True),  # the Data Editor may use the same unlock
-        ("write", "test", True, True),
-        ("write", "prod", False, True),
-        ("write", "stage", False, True),
-        ("admin", "dev", True, False),  # the Database Manager is not the Data Editor
-        ("admin", "prod", False, True),
+        ("write", "dev", False, "dangerous"),  # a write role never creates databases (G-S4)
+        ("write", "test", False, "dangerous"),
+        ("write", "dev", True, "dangerous"),
+        ("write", "prod", False, "dangerous"),
+        ("write", "stage", True, "dangerous"),
+        ("admin", "dev", True, None),  # the Database Manager creates databases on DEV and TEST: a fact only
+        ("admin", "test", False, None),
+        ("admin", "prod", False, "warning"),
+        ("admin", "stage", False, "warning"),
     ],
 )
-def test_createdb_where_it_is_not_needed_is_a_warning(
-    kind: str, environment: str, data_editor_on: bool, warned: bool
+def test_createdb_is_dangerous_for_a_write_role_and_needed_by_an_admin_role(
+    kind: str, environment: str, data_editor_on: bool, severity: str | None
 ) -> None:
     facts, _ = privilege_findings([_createdb_row(own=True)], 160000)
     found = createdb_findings(facts, kind=kind, environment=environment, data_editor_on=data_editor_on)
-    assert found == ([{"code": "admin.createdb", "via": "direct", "severity": "warning"}] if warned else [])
-    assert refusing_findings(found) == []  # a warning only, never a refusal
+    assert found == ([{"code": "admin.createdb", "via": "direct", "severity": severity}] if severity else [])
+    assert refusing_findings(found) == []  # not decision 1A's set: write_refusals adds it
     plain, _ = privilege_findings([_row(own=True)], 160000)
     assert createdb_findings(plain, kind=kind, environment=environment, data_editor_on=data_editor_on) == []
+
+
+@pytest.mark.parametrize("own", [True, False], ids=["direct", "inherited"])
+def test_a_write_role_with_createdb_is_refused(own: bool) -> None:
+    rows = [_createdb_row(own=True)] if own else [_row(own=True), _createdb_row(own=False)]
+    facts, findings = privilege_findings(rows, 160000)
+    assert write_refusals(facts, findings) == ["admin.createdb"]
+    plain, plain_findings = privilege_findings([_row(own=True)], 160000)
+    assert write_refusals(plain, plain_findings) == []
+    sup, sup_findings = privilege_findings([_row(own=True, superuser=True)], 160000)
+    assert write_refusals(sup, sup_findings) == refusing_findings(sup_findings)
+
+
+def test_a_write_role_that_gained_createdb_is_refused_at_the_run() -> None:
+    from tabrion_studio.write import connection
+
+    def fetch(statement: str) -> list[tuple[Any, ...]]:
+        if statement == connection._SERVER_VERSION:
+            return [("160000",)]
+        return [_createdb_row(own=True)]
+
+    assert refusing_findings_now(fetch) == ["admin.createdb"]

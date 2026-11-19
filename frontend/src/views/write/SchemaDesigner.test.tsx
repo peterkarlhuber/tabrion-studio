@@ -120,11 +120,31 @@ const PREVIEW = {
     backup: { required: true, engine: 'sqlite', opt_out_allowed: true, opt_out_text: 'parts.db' },
   },
   expires_in_s: 300,
+  revision_output: {
+    available: false,
+    blocked: ['no_alembic_project'],
+    checks_source: false,
+    max_message: 200,
+  },
 };
 const BLOCKED = {
   ...PREVIEW,
   executable: false,
   blocked: ['migration_managed', 'alembic_project'],
+  revision_output: { available: true, blocked: [], checks_source: false, max_message: 200 },
+};
+const WRITTEN = {
+  plan_hash: PREVIEW.plan_hash,
+  result: 'written',
+  revision: '0123456789ab',
+  down_revision: '0001',
+  path: 'migrations/versions/0123456789ab_add_qty.py',
+  source_fingerprint: PREVIEW.source_fingerprint,
+  checks_source: false,
+  steps: 1,
+  code_trust_changed: true,
+  audit_pending: false,
+  draft_revision: 1,
 };
 const OUTCOME = {
   plan_hash: PREVIEW.plan_hash,
@@ -152,6 +172,7 @@ interface Answers {
   edit?: { status: number; body: unknown };
   preview?: { status: number; body: unknown };
   run?: { status: number; body: unknown };
+  revision?: { status: number; body: unknown };
   /** Holds the run's answer until it resolves (the page's state while a run and its backup are under way). */
   runGate?: Promise<void>;
 }
@@ -256,6 +277,10 @@ function setup(answers: Answers = {}) {
         backup: 'make',
         expires_in_s: 280,
       });
+    if (url === '/api/write/schema-designer/revision')
+      return answers.revision === undefined
+        ? json(WRITTEN, 201)
+        : json(answers.revision.body, answers.revision.status);
     if (url === '/api/write/schema-designer/plan/run') {
       if (answers.runGate !== undefined) await answers.runGate;
       if (answers.run !== undefined) return json(answers.run.body, answers.run.status);
@@ -466,6 +491,71 @@ describe('SchemaDesignerSection (STU-CR-4)', () => {
     expect(blocked).toHaveTextContent('alembic.ini');
     expect(screen.queryByTestId('schema-designer-run')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull();
+  });
+
+  it('writes the plan as an Alembic revision and says the revision does not check its source (STU-XSD-3)', async () => {
+    const user = userEvent.setup();
+    const { calls, view } = setup({ preview: { status: 200, body: BLOCKED } });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const form = await screen.findByTestId('schema-designer-revision');
+    expect(within(form).getByTestId('schema-designer-revision-source')).toHaveTextContent(
+      PREVIEW.source_fingerprint,
+    );
+    const write = within(form).getByRole('button', { name: 'Write revision' });
+    expect(write).toBeDisabled();
+    await user.type(
+      within(form).getByLabelText('Revision message (at most 200 characters, one line)'),
+      'add qty',
+    );
+    expect(await serious(view.container)).toEqual([]);
+    await user.click(write);
+    const written = await screen.findByTestId('schema-designer-revision-written');
+    expect(written).toHaveTextContent(
+      'Revision 0123456789ab written to migrations/versions/0123456789ab_add_qty.py, after 0001.',
+    );
+    expect(written).toHaveTextContent('trust the code again');
+    expect(calls.find((c) => c.url.endsWith('/schema-designer/revision'))?.body).toEqual({
+      connection_id: 'c_1',
+      plan_hash: PREVIEW.plan_hash,
+      message: 'add qty',
+    });
+  });
+
+  it('says why no revision is written, before and after a refused write', async () => {
+    const user = userEvent.setup();
+    setup();
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    expect(await screen.findByTestId('schema-designer-revision-blocked')).toHaveTextContent(
+      'The project has no alembic.ini with a script_location.',
+    );
+    expect(screen.queryByRole('button', { name: 'Write revision' })).toBeNull();
+  });
+
+  it('shows a refused revision with its reason', async () => {
+    const user = userEvent.setup();
+    setup({
+      preview: { status: 200, body: BLOCKED },
+      revision: {
+        status: 400,
+        body: {
+          code: 'studio.schema_revision_not_allowed',
+          kind: 'request',
+          status: 400,
+          title: 'x',
+          detail: 'x',
+          issues: [{ pointer: 'plan.reason', code: 'plan.code_untrusted' }],
+        },
+      },
+    });
+    await user.click(await screen.findByRole('button', { name: 'Show plan' }));
+    const form = await screen.findByTestId('schema-designer-revision');
+    await user.type(
+      within(form).getByLabelText('Revision message (at most 200 characters, one line)'),
+      'x',
+    );
+    await user.click(within(form).getByRole('button', { name: 'Write revision' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('No revision was written');
+    expect(form).toHaveTextContent('code is not trusted');
   });
 
   it('confirms with what was typed and ticked, then runs once with the recorded hash', async () => {

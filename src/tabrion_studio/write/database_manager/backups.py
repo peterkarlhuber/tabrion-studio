@@ -63,13 +63,11 @@ from collections.abc import Callable, Iterable, Iterator
 import contextlib
 from dataclasses import dataclass
 import hashlib
-import ipaddress
 import logging
 import os
 from pathlib import Path
 import re
 import secrets
-import socket
 import stat
 from typing import Any
 import unicodedata
@@ -91,8 +89,12 @@ from tabrion.sqlite import restore as sqlite_restore
 from tabrion_studio.config.schema import Profile, WriteProfile
 from tabrion_studio.config.write_areas import Area
 from tabrion_studio.services.connections import ConnectionRegistry, read_only_database
+from tabrion_studio.write import prod_targets
 from tabrion_studio.write.audit import AuditError
 from tabrion_studio.write.backup_store import BackupStore, Loaded, metadata
+from tabrion_studio.write.connection import (
+    DriverFailure as DriverFailure,
+)
 from tabrion_studio.write.connection import (
     WriteConnection,
     WriteError,
@@ -115,7 +117,6 @@ RESTORE_ENVIRONMENTS = frozenset({"dev", "test"})
 #: The file name endings of a new SQLite restore target.
 SQLITE_SUFFIXES = (".db", ".sqlite", ".sqlite3")
 _SQLITE_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
-_SYSTEM_IDENTIFIER = "SELECT pg_catalog.pg_control_system().system_identifier::pg_catalog.text"
 _DATABASE_OID = (
     "SELECT d.oid::pg_catalog.int8 FROM pg_catalog.pg_database d"
     " WHERE d.datname OPERATOR(pg_catalog.=) CAST(:name AS pg_catalog.name)"
@@ -123,14 +124,6 @@ _DATABASE_OID = (
 _SERVER_VERSION_TEXT = "SELECT pg_catalog.current_setting('server_version')"
 #: Windows: no new SQLite file (its access lists are not read yet), as STU-CR-2 refuses creating one (owner, G-S4).
 _WINDOWS = os.name != "posix"
-
-
-class DriverFailure(Exception):
-    """A driver error of ``CREATE DATABASE`` (tabrion lets it through, I-191 b): answered as ``db.<kind>`` only."""
-
-    def __init__(self, classification: Any) -> None:
-        super().__init__("database error")
-        self.classification = classification
 
 
 @dataclass
@@ -348,13 +341,8 @@ def _connection(write: WriteProfile, read: Profile, password: str | None, databa
     )
 
 
-def _system_identifier(fetch: Callable[[str], list[tuple[Any, ...]]]) -> str | None:
-    try:
-        rows = fetch(_SYSTEM_IDENTIFIER)
-    except Exception:
-        return None  # the role may not read pg_control_system(): the addresses decide
-    value = rows[0][0] if rows and rows[0] else None
-    return value if isinstance(value, str) and value.isdigit() else None
+#: The server's ``system_identifier`` (shared with the Schema Designer, :mod:`tabrion_studio.write.prod_targets`).
+_system_identifier = prod_targets.system_identifier
 
 
 # --- backup ---------------------------------------------------------------------------------------------------------
@@ -488,29 +476,8 @@ def listing(manager: Manager) -> dict[str, Any]:
 # --- PROD targets (L-1) -----------------------------------------------------------------------------------------------
 
 
-def _addresses(host: str | None, port: int | None) -> frozenset[str]:
-    """``host`` as a set of addresses: ``local`` for this computer (no host, a socket folder, ``localhost``, a
-    loopback address or a name that resolves to one), else the resolved addresses (the name itself if it does not
-    resolve, compared as text)."""
-    if host is None or host.startswith("/") or host.lower().rstrip(".") == "localhost":
-        return frozenset({"local"})
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        try:
-            infos = socket.getaddrinfo(host, port or 5432, type=socket.SOCK_STREAM)
-        except (OSError, UnicodeError):
-            return frozenset({f"name:{host.lower().rstrip('.')}"})
-        found = set()
-        for info in infos:
-            text = str(info[4][0]).split("%", 1)[0]
-            try:
-                parsed = ipaddress.ip_address(text)
-            except ValueError:
-                continue
-            found.add("local" if parsed.is_loopback else str(parsed))
-        return frozenset(found) or frozenset({f"name:{host.lower().rstrip('.')}"})
-    return frozenset({"local" if address.is_loopback else str(address)})
+#: ``host`` as a set of addresses (shared with the Schema Designer, :mod:`tabrion_studio.write.prod_targets`).
+_addresses = prod_targets.addresses
 
 
 def _prod_profiles(manager: Manager, engine: str) -> list[Profile]:

@@ -64,10 +64,10 @@ role:
   ``pg_execute_server_program``, ``pg_read_server_files`` and ``pg_write_server_files`` are superuser-equivalent
   (``dangerous``); every other one, ``pg_read_all_data`` and ``pg_write_all_data`` among them, is a ``warning``.
 
-``admin.createdb`` (``warning``, :func:`createdb_findings`): CREATEDB, held directly or through a reachable role, on
-an unlock that does not need it: a ``kind="write"`` unlock while the Data Editor's flag is on (the same role then
-edits rows too), and any unlock outside DEV and TEST. The Schema Designer on DEV or TEST needs CREATEDB, so there it
-is the fact ``createdb`` only (open point 1 of the PR #128 review: accepted, with a separate role recommended).
+``admin.createdb`` (:func:`createdb_findings`): CREATEDB, held directly or through a reachable role. Creating a
+database belongs to the Database Manager's admin area (G-S4 grant of 2026-11-18, STU-ADR-0007 section 1 as amended),
+so a ``kind="write"`` role never needs it and is refused with it (below). On an admin unlock it is a ``warning``
+outside DEV and TEST only (an admin role creates databases on DEV and TEST).
 
 The only role names a finding carries are those of predefined roles (fixed names of PostgreSQL); a role of the
 database's own is never named.
@@ -77,7 +77,8 @@ database's own is never named.
 ``405 studio.write_role_over_privileged`` when the role holds, directly or through a reachable role, any of
 :data:`WRITE_REFUSING_FINDINGS`: ``admin.superuser``, ``admin.bypassrls``, ``admin.replication`` or membership in a
 server-file role (``admin.broad:pg_read_server_files``, ``admin.broad:pg_write_server_files``,
-``admin.broad:pg_execute_server_program``). The connection is closed before anything is unlocked. Every other finding
+``admin.broad:pg_execute_server_program``), or CREATEDB (``admin.createdb``, since database creation moved to the
+admin area; :func:`write_refusals`). The connection is closed before anything is unlocked. Every other finding
 (``admin.createrole``, ``admin.createrole_pre16``, every other ``admin.broad:<role>``, ``pg_read_all_data`` and
 ``pg_write_all_data`` among them) stays a warning shown in the write state. For ``admin`` the connection still
 opens and shows its findings (refusing the unlock itself, as STU-ADR-0008 section 6 proposes, is the owner's decision
@@ -131,12 +132,14 @@ __all__ = [
     "REQUIRE_AUTH_SCRAM",
     "WRITE_REFUSING_FINDINGS",
     "WRITE_SEARCH_PATH",
+    "DriverFailure",
     "WriteConnection",
     "WriteError",
     "admin_refusing_findings",
     "createdb_findings",
     "defensive_available",
     "file_identity",
+    "has_hidden_character",
     "open_write_connection",
     "privilege_findings",
     "privileges_now",
@@ -146,6 +149,7 @@ __all__ = [
     "require_auth_supported",
     "restore_role_refusals",
     "write_authorizer",
+    "write_refusals",
 ]
 
 #: The fixed ``search_path`` of every write and admin session (K-2), as PostgreSQL reports it back (the startup
@@ -372,16 +376,51 @@ def privilege_findings(
 def createdb_findings(
     facts: dict[str, Any], *, kind: str, environment: str, data_editor_on: bool
 ) -> list[dict[str, str]]:
-    """``admin.createdb`` (``warning``, never refusing) for a role with CREATEDB, held directly or through a reachable
-    role, where Studio does not need it: a ``kind="write"`` unlock that the Data Editor may use too (its flag is on),
-    and any unlock outside DEV and TEST (open point 1 of the PR #128 review, condition b). The Schema Designer on
-    DEV or TEST needs CREATEDB, so there it is a fact only; a separate role for it is recommended (security guide)."""
+    """``admin.createdb`` for a role with CREATEDB, held directly or through a reachable role. A ``kind="write"`` role
+    never needs it (database creation is the admin area's, G-S4): ``dangerous``, and :func:`write_refusals` refuses
+    the unlock. An admin role needs it on DEV and TEST to create databases: a fact there, a ``warning`` elsewhere.
+    ``data_editor_on`` is kept for the callers; it no longer changes the answer."""
+    del data_editor_on
     via = facts.get("createdb_via")
     if not facts.get("createdb") or not isinstance(via, str):
         return []
-    if environment in CREATEDB_ENVIRONMENTS and not (kind == "write" and data_editor_on):
+    if kind == "write":
+        return [{"code": "admin.createdb", "via": via, "severity": "dangerous"}]
+    if environment in CREATEDB_ENVIRONMENTS:
         return []
     return [{"code": "admin.createdb", "via": via, "severity": "warning"}]
+
+
+class DriverFailure(Exception):
+    """A driver error of a statement Studio does not map to a fixed refusal (tabrion lets it through, I-191 b):
+    answered as ``db.<kind>`` only (the classification of ``tabrion.errors.classify``)."""
+
+    def __init__(self, classification: Any) -> None:
+        super().__init__("database error")
+        self.classification = classification
+
+
+def has_hidden_character(text: str) -> bool:
+    """A control, format, surrogate, private-use or unassigned character, or a space other than U+0020 (a no-break
+    space and the other ``Zs`` characters, and the line and paragraph separators ``Zl``, ``Zp``), which look like a
+    blank or like nothing (review P128-03)."""
+    import unicodedata
+
+    return any(
+        unicodedata.category(char) in ("Cc", "Cf", "Cs", "Co", "Cn", "Zl", "Zp")
+        or (unicodedata.category(char) == "Zs" and char != " ")
+        for char in text
+    )
+
+
+def write_refusals(facts: dict[str, Any], findings: list[dict[str, str]]) -> list[str]:
+    """The codes that refuse a ``kind="write"`` unlock or run (owner decision 1A, and CREATEDB since database
+    creation moved to the admin area): :func:`refusing_findings` and ``admin.createdb`` when the role holds CREATEDB
+    directly or through a reachable role. Sorted."""
+    codes = set(refusing_findings(findings))
+    if facts.get("createdb"):
+        codes.add("admin.createdb")
+    return sorted(codes)
 
 
 def refusing_findings(findings: list[dict[str, str]]) -> list[str]:
@@ -392,10 +431,10 @@ def refusing_findings(findings: list[dict[str, str]]) -> list[str]:
 def refusing_findings_now(fetch: Callable[[str], list[tuple[Any, ...]]]) -> list[str]:
     """Decision 1A again at the start of a run (review L-1 of PR #127): the privilege check read through ``fetch``,
     which runs one of Studio's fixed statements on the very session the run uses, and the codes of
-    :data:`WRITE_REFUSING_FINDINGS` among its findings. A role that gained such a right after its unlock is caught
-    before the run's statement."""
-    _, findings = privilege_findings(fetch(_PRIVILEGES), _server_version(fetch(_SERVER_VERSION)))
-    return refusing_findings(findings)
+    :func:`write_refusals` (:data:`WRITE_REFUSING_FINDINGS` and CREATEDB). A role that gained such a right after its
+    unlock is caught before the run's statement."""
+    facts, findings = privilege_findings(fetch(_PRIVILEGES), _server_version(fetch(_SERVER_VERSION)))
+    return write_refusals(facts, findings)
 
 
 def privileges_now(fetch: Callable[[str], list[tuple[Any, ...]]]) -> tuple[dict[str, Any], list[dict[str, str]]]:
@@ -733,10 +772,11 @@ def open_write_connection(
             _check_session(connection)
             connection.verify()
             connection.check_privileges()
-        if kind == "write" and refusing_findings(connection.findings):
-            # Owner decision 1A (G-S2): an over-privileged write role is never unlocked. Fixed codes only, no role name.
+        if kind == "write" and write_refusals(connection.facts, connection.findings):
+            # Owner decision 1A (G-S2), and CREATEDB since database creation is the admin area's (G-S4): an
+            # over-privileged write role is never unlocked. Fixed codes only, no role name.
             logger.warning(
-                "the write role has superuser, BYPASSRLS, REPLICATION or server-file rights; the unlock is refused",
+                "the write role has superuser, BYPASSRLS, REPLICATION, CREATEDB or server-file rights; refused",
                 extra={"event": "studio.write_role_over_privileged", "code": "studio.write_role_over_privileged"},
             )
             raise WriteError("studio.write_role_over_privileged")

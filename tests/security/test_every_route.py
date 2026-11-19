@@ -217,10 +217,10 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/secret-confirmations/confirm": "confirms the pair: Studio's state file, audit log (flags)",
     "DELETE /api/write/secret-confirmations": "revokes a pair's confirmation and ends its unlocks (flags)",
     "POST /api/write/data-editor/table": "reads a table's columns and key on the write connection; no write (flags)",
-    # STU-CR-2, STU-CR-3 (G-S3): the Schema Designer's database creation, behind the schema_designer flag only (405
-    # and no import of the area while it is off; tests/security/test_schema_designer_create.py). Never on PROD.
-    "POST /api/write/schema-designer/create/sqlite": "creates a new, empty, private SQLite file (Schema Designer flag)",
-    "POST /api/write/schema-designer/create/postgresql": "CREATE DATABASE on an unlocked DEV/TEST write connection",
+    # STU-CR-2, STU-CR-3: database creation, the admin area's since the G-S4 grant: behind the database_manager flag
+    # only (405 and no import of the area while it is off; tests/security/test_dbm_create.py). Never on PROD.
+    "POST /api/write/database-manager/create/sqlite": "creates a new, empty, private SQLite file (admin area flag)",
+    "POST /api/write/database-manager/create/postgresql": "CREATE DATABASE on an unlocked DEV/TEST admin connection",
     # STU-CR-4 (G-S3): the Schema Designer's server-side draft and the read-only plan preview, behind the
     # schema_designer flag only (405 and no import of the area while it is off;
     # tests/security/test_schema_designer_draft.py). None writes to a database, a project or the disk; none runs a plan.
@@ -236,6 +236,9 @@ CHANGING_ROUTES: dict[str, str] = {
     # STU-XSD-2 (G-S3): the read-only schema comparison and its plan preview, never kept or run, behind the
     # schema_designer flag only (tests/security/test_schema_designer_compare.py).
     "POST /api/write/schema-designer/compare": "compares two schemas read-only; previews a plan, never kept (flag)",
+    # STU-XSD-3 (G-S3): writes the previewed plan as a new Alembic revision file into the trusted project, never run,
+    # behind the schema_designer flag only (tests/security/test_schema_designer_revision.py).
+    "POST /api/write/schema-designer/revision": "creates a revision file in the trusted project, never run (flag)",
     # STU-XDM-2 (G-S4): the Database Manager's backup and restore, behind the database_manager flag only (405 and no
     # import of the area while it is off; tests/security/test_dbm_backup_restore.py). Never on PROD.
     "POST /api/write/database-manager/backup": "verified pg_dump or SQLite backup into Studio's backup folder (flag)",

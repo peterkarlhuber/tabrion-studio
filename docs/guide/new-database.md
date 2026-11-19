@@ -1,9 +1,9 @@
 # New database (in development)
 
-!!! danger "In development, locked by G-S3"
-    Creating a database is part of the Schema Designer, which is **not usable or supported**. It exists only behind
-    the `schema_designer` switch in `write-areas.toml`, which is **off by default**, and it stays locked until the
-    security gate G-S3 is granted. G-S3 is not granted: no Studio version turns the switch on, and nothing in this
+!!! danger "In development, locked by G-S4"
+    Creating a database is part of the Database Manager (the admin area), which is **not usable or supported**. It
+    exists only behind the `database_manager` switch in `write-areas.toml`, which is **off by default**, and it stays
+    locked until the security gate G-S4 is in effect. No Studio version turns the switch on, and nothing in this
     page is a release of the feature. This page describes what the wizard does when a developer turns the switch on
     in a test setup, so that its behavior and its limits can be reviewed.
 
@@ -17,13 +17,14 @@ The switch is read once, when Studio starts, from `write-areas.toml` in Studio's
 
 ```bash
 mkdir -m 700 -p /tmp/studio-dev/state/config
-printf 'version = 1\n[areas]\nschema_designer = true\n' > /tmp/studio-dev/state/config/write-areas.toml
+printf 'version = 1\n[areas]\ndatabase_manager = true\n' > /tmp/studio-dev/state/config/write-areas.toml
 chmod 600 /tmp/studio-dev/state/config/write-areas.toml
 tabrion-studio ./my-project --state-dir /tmp/studio-dev/state
 ```
 
 Nothing else turns it on: no environment variable, project file, setting, URL, query parameter, header or profile,
-and the `data_editor` and `database_manager` switches do not open it. With the switch off, the wizard is not shown,
+and the `data_editor` and `schema_designer` switches do not open it (until 2026-11-18 the wizard was the Schema
+Designer's; the owner moved database creation to the admin area). With the switch off, the wizard is not shown,
 both of its routes answer `405` and their code is not even loaded.
 
 ## A SQLite file
@@ -55,31 +56,33 @@ Studio refuses, and creates nothing, when:
 - **the path is not plain**: relative, with `..`, with control characters or with a space other than the plain space
   (such as a no-break space), on a network share or a device path, or longer than 4096 characters.
 
+The SQLite file needs no unlock: a new file has no database role and no connection that an admin profile could
+check. Every check above still applies.
+
 **Not on Windows.** On Windows Studio does not create SQLite files (`studio.schema_create_platform`): it does not yet
 check a folder's access control list, so it cannot tell whether others may write the folder. Create the file with
 another tool and add it as a connection profile; PostgreSQL databases can be created on Windows as elsewhere.
 
 ## A PostgreSQL database
 
-A PostgreSQL database is created on the server of a connection you have open, through that connection's **write
-profile** ([Data Editor: before the first edit](data-editor.md#before-the-first-edit-a-write-profile)):
+A PostgreSQL database is created on the server of a connection you have open, through that connection's **admin
+profile** ([Database Manager](database-manager.md)), never through a write profile:
 
-1. Open a `DEV` or `TEST` PostgreSQL connection and couple a write profile to its profile under **Settings**. The
-   write profile's role needs the `CREATEDB` attribute, and nothing more: a role that is a superuser, has
-   `BYPASSRLS` or `REPLICATION`, or reaches a server-file role is refused at the unlock
-   (`studio.write_role_over_privileged`), as for the Data Editor. Use a **separate role** with `CREATEDB` for the
-   Schema Designer on `DEV` and `TEST` only, not the role you edit rows with (see
-   [CREATEDB below](#the-createdb-right)).
-2. In **New database**, choose **PostgreSQL database** and the connection, then **unlock** the write mode by typing
-   the write profile's name. The unlock is the Schema Designer's and ends after 15 minutes without use.
-3. Enter the **database name** and, if you want, the **owner** (empty: the write profile's role), the **template**
+1. Open a `DEV` or `TEST` PostgreSQL connection and couple an admin profile to its profile under **Settings**. The
+   admin profile's role needs the `CREATEDB` attribute: a role that is a superuser, has `BYPASSRLS` or
+   `REPLICATION`, reaches a server-file role or has `CREATEROLE` before PostgreSQL 16 is refused
+   (`studio.admin_over_privileged`), as for every Database Manager action. See [CREATEDB below](#the-createdb-right).
+2. In **New database**, choose **PostgreSQL database** and the connection, then **unlock** the admin profile by
+   typing its name. The unlock is the Database Manager's and ends after 15 minutes without use. A write unlock of
+   the same connection does not create databases.
+3. Enter the **database name** and, if you want, the **owner** (empty: the admin profile's role), the **template**
    (`template1` or `template0`), the **encoding** (default `UTF8`) and the **locale** (empty: the template's).
 4. Type the database name to confirm and press **Create database**.
 
 Studio checks the role's rights again at the start of every creation, on the session that runs it: a role that
 gained one of those rights since the unlock creates nothing, and the unlock ends. Studio checks then whether the
 database exists and refuses then without running anything. The owner must be a role
-the write profile's role is a member of (a role it cannot act as, such as `postgres`, is refused). If the role has no `CREATEDB`,
+the admin profile's role is a member of (a role it cannot act as, such as `postgres`, is refused). If the role has no `CREATEDB`,
 the wizard shows the steps an administrator takes outside Studio to give it, without SQL to copy: Studio builds no
 statement for that.
 
@@ -90,13 +93,13 @@ where it exists. A role with `CREATEDB` can create databases of its own and, as 
 may, including installing **trusted extensions**, which PostgreSQL installs with elevated rights. It gains nothing in
 the databases that exist already. So:
 
-- **Use a separate role** for the Schema Designer, with `CREATEDB` and nothing else, and only on `DEV` and `TEST`
-  servers. Do not give `CREATEDB` to the role you edit rows with in the Data Editor or to any role on a `PROD` server.
+- **Give `CREATEDB` only to the admin profile's role**, and only on `DEV` and `TEST` servers. A write profile's role
+  must not have it: Studio refuses to unlock a write profile whose role has or reaches `CREATEDB`
+  (`studio.write_role_over_privileged`), and checks again at the start of every run.
 - **Keep the server up to date.** Fixed security problems in extension scripts have let such a role gain more rights
   on servers that were not updated.
-- Studio shows **`admin.createdb`** as a warning in the write state when a write profile's role has `CREATEDB` and
-  the Data Editor's switch is on too (the same unlock then edits rows), and for any role outside `DEV` and `TEST`.
-  It is a warning only: nothing is refused because of it.
+- For an admin profile on `DEV` or `TEST`, `CREATEDB` is a fact (creating databases needs it); outside `DEV` and
+  `TEST` Studio shows it as the warning **`admin.createdb`**.
 
 ## Save a connection profile
 
@@ -108,10 +111,9 @@ profile is saved in your own `profiles.toml`, like one you add by hand, and you 
 
 These are refused on purpose, by the server, whatever the page shows:
 
-- **`PROD` is refused.** A database is created only through a write profile of a `DEV` or `TEST` connection; Studio
+- **`PROD` is refused.** A database is created only through an admin profile of a `DEV` or `TEST` connection; Studio
   re-checks the stored environment on every use (`studio.write_prod_locked`). There is no code path for `PROD`.
-- **Empty databases only.** The wizard creates no schema, table, role or grant and runs no migration. The rest of
-  the Schema Designer is not built yet.
+- **Empty databases only.** The wizard creates no schema, table, role or grant and runs no migration. Designing tables is the Schema Designer's.
 - **No overwrite and no link.** A SQLite file is created only as a new file, never through a link and never in a
   folder others may write to, or below a folder others may write to without the sticky bit.
 - **No SQLite file on Windows** (see above).
@@ -129,15 +131,18 @@ These are refused on purpose, by the server, whatever the page shows:
 | On Windows Studio does not create SQLite files yet. … | Create the file with another tool and add it as a connection profile. |
 | To create the database, type its name exactly as shown. | Type the file or database name exactly. |
 | The server has a database with this name already. | Choose another name. |
-| The write profile's role may not create databases (CREATEDB) on this server. | Follow the guided steps: an administrator gives the role `CREATEDB` outside Studio. |
-| The write profile's role may not act as the owner role … | Leave the owner empty, or name a role the write profile's role is a member of. |
+| The admin profile's role may not create databases (CREATEDB) on this server. | Follow the guided steps: an administrator gives the admin role `CREATEDB` outside Studio. |
+| The admin profile's role may not act as the owner role … | Leave the owner empty, or name a role the admin profile's role is a member of. |
 | The server has no role with the owner's name. | Check the name, or leave the owner empty. |
-| The write role is a superuser, has BYPASSRLS or REPLICATION, or is a member of a server-file role … | Use a role with only `CREATEDB` (and the owner roles it needs); the administrator removes the other rights outside Studio. |
+| The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before PostgreSQL 16. … | Use a leaner admin role; the administrator removes the other rights outside Studio. |
+| The write profile's role is a superuser, has BYPASSRLS, REPLICATION or CREATEDB … | A write profile never creates databases: remove `CREATEDB` from the write role outside Studio, and use an admin profile here. |
 | The write mode is locked. Unlock it again. | The unlock ended (15 minutes without use, or the connection closed); unlock again. |
 
 ## Related pages
 
 - [How Studio protects your data](security.md#write-areas-are-off-unless-you-turn-them-on): the write switches, write
   profiles and the unlock.
-- [Schema Designer threat model](../architecture/schema-designer-threat-model.md) and
-  [STU-ADR-0007](../adr/0007-schema-designer-plans-and-revisions.md): the rules the Schema Designer follows.
+- [Database Manager threat model](../architecture/database-manager-threat-model.md) and
+  [STU-ADR-0008 section 10](../adr/0008-database-manager-backup-restore-roles.md#10-creating-a-database-stu-cr-2-stu-cr-3):
+  the rules database creation follows (TX-29 of the
+  [Schema Designer threat model](../architecture/schema-designer-threat-model.md)).
