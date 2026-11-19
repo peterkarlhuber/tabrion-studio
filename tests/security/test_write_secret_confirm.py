@@ -12,6 +12,7 @@ for a clear-text or MD5 password is in ``test_write_postgres.py`` (``TABRION_STU
 from __future__ import annotations
 
 from collections.abc import Iterator
+import dataclasses
 import io
 import json
 import logging
@@ -43,6 +44,8 @@ from tabrion_studio.write.secret_confirm import (
     CONFIRMATION_FILE,
     PREVIEW_TTL_SECONDS,
     SecretConfirmations,
+    SecretPair,
+    check_local_transport,
     secret_pair,
 )
 from tests.support.plans import RowExecutor
@@ -409,6 +412,7 @@ def test_the_preview_names_the_pair_and_never_the_secret(env: WriteEnv) -> None:
         "reference": {"source": "env", "target": ENV_NAME},
         "requirepeer": None,
         "foreign": False,
+        "local_unverified": True,  # localhost without verify-full (G-S2 decision 2A)
     }
     assert doc["confirm_text"] == "localhost" and doc["confirmed"] is False
     assert doc["write_profile_id"] == "write:pg-write" and len(doc["confirmation_hash"]) == 64
@@ -875,3 +879,150 @@ def test_the_module_is_part_of_the_write_package() -> None:
 
     assert module.__name__.startswith("tabrion_studio.write.")
     assert write_connection.REQUIRE_AUTH == REQUIRE_AUTH
+
+
+# --- G-S2 decision 2A: a server on this computer, loopback_tls in write-areas.toml ------------------------------------
+
+
+def _local_pair(host: str, sslmode: str | None, requirepeer: str | None = None) -> SecretPair:
+    return SecretPair("w", "write", host, 5432, "parts", sslmode, "app_writer", "env", ENV_NAME, requirepeer)
+
+
+@pytest.mark.parametrize(
+    ("host", "sslmode", "requirepeer", "unverified"),
+    [
+        ("localhost", "prefer", None, True),
+        ("127.0.0.1", "disable", None, True),
+        ("127.0.0.1", "require", None, True),
+        ("127.0.0.1", "verify-ca", None, True),  # verify-ca does not check the name: any local certificate passes
+        ("[::1]", "verify-full", None, False),
+        ("localhost", "verify-full", None, False),
+        ("/var/run/postgresql", "prefer", None, True),
+        ("/var/run/postgresql", "prefer", "postgres", False),
+        ("db.example.org", "verify-full", None, False),  # foreign: check_transport's rule, not this one
+    ],
+)
+def test_which_pairs_reach_an_unverified_local_server(
+    host: str, sslmode: str, requirepeer: str | None, unverified: bool
+) -> None:
+    pair = _local_pair(host, sslmode, requirepeer)
+    assert pair.local_unverified is unverified
+    assert pair.to_dict()["local_unverified"] is unverified
+    check_local_transport(pair, required=False)  # "accept" (the G-S2 default) never refuses
+    if unverified:
+        with pytest.raises(WriteError) as refused:
+            check_local_transport(pair, required=True)
+        assert refused.value.code == "studio.write_loopback_tls_required"
+    else:
+        check_local_transport(pair, required=True)
+
+
+def test_local_unverified_is_not_part_of_the_digest() -> None:
+    """It follows from the pair; the confirmations of every existing pair stay valid."""
+    pair = _local_pair("localhost", "prefer")
+    fields = [f.name for f in dataclasses.fields(SecretPair)]
+    assert "local_unverified" not in fields
+    assert pair.digest == _local_pair("localhost", "prefer").digest
+
+
+def _require(env: WriteEnv) -> None:
+    """``loopback_tls = "require"`` as ``write-areas.toml`` would give it (the areas stay as they are)."""
+    env.unlocks.areas = dataclasses.replace(env.unlocks.areas, loopback_tls="require")
+
+
+def test_require_refuses_a_password_to_an_unverified_local_server_before_it_is_read(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, resolved: list[object], captured: list[dict[str, Any]]
+) -> None:
+    _require(env)
+    connection_id = _stand_in_connection(env, monkeypatch)
+    assert env.confirm_pair("write:pg-write").status_code == 200
+    refused = env.unlock(connection_id, "write:pg-write", "pg-write")
+    assert _code(refused) == (400, "studio.write_loopback_tls_required")
+    assert resolved == [] and captured == []
+    assert CANARY_SECRET not in refused.text and "localhost" not in refused.text
+
+
+def test_require_refuses_a_password_without_a_reference_before_it_is_sent(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, captured: list[dict[str, Any]]
+) -> None:
+    """A password that comes without a reference (resolved by the secret store) is refused before any connection."""
+    created = env.create_write(name="bare-write", read="pg", user="app_bare")
+    assert created.status_code == 201, created.text
+    _require(env)
+    monkeypatch.setattr(env.config.secrets, "resolve", lambda target: CANARY_SECRET)
+    connection_id = _stand_in_connection(env, monkeypatch)
+    assert env.confirm_pair("write:bare-write").status_code == 200
+    refused = env.unlock(connection_id, "write:bare-write", "bare-write")
+    assert _code(refused) == (400, "studio.write_loopback_tls_required")
+    assert captured == [] and CANARY_SECRET not in refused.text
+
+
+def test_require_lets_verify_full_on_loopback_through(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, resolved: list[object], captured: list[dict[str, Any]]
+) -> None:
+    current = env.send("GET", "/api/profiles").json()["user_file"]["digest"]
+    profile = {
+        "name": "pg",
+        "engine": "postgresql",
+        "host": "localhost",
+        "port": 5432,
+        "database": "parts",
+        "user": "app_reader",
+        "environment": "dev",
+        "sslmode": "verify-full",
+    }
+    assert env.send("PUT", "/api/profiles", {"id": "user:pg", "profile": profile, "digest": current}).status_code == 200
+    _require(env)
+    preview = _preview(env)
+    assert preview.status_code == 200 and preview.json()["pair"]["local_unverified"] is False
+    connection_id = _stand_in_connection(env, monkeypatch)
+    assert env.confirm_pair("write:pg-write").status_code == 200
+    with pytest.raises(_Stop):
+        env.unlocks.unlock(env.session(), connection_id, "write:pg-write", "pg-write")
+    (options,) = captured
+    assert options["connect_args"]["require_auth"] == REQUIRE_AUTH_SCRAM and len(resolved) == 1
+
+
+def test_require_lets_a_socket_with_requirepeer_through(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, captured: list[dict[str, Any]]
+) -> None:
+    assert _move_to_socket(env).status_code == 200
+    _require(env)
+    connection_id = _stand_in_connection(env, monkeypatch)
+    assert env.confirm_pair("write:pg-write").status_code == 200
+    with pytest.raises(_Stop):
+        env.unlocks.unlock(env.session(), connection_id, "write:pg-write", "pg-write")
+    (options,) = captured
+    assert options["connect_args"]["requirepeer"] == "postgres"
+
+
+def test_require_refuses_a_socket_without_requirepeer(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, resolved: list[object], captured: list[dict[str, Any]]
+) -> None:
+    assert _move_to_socket(env, None).status_code == 200
+    _require(env)
+    connection_id = _stand_in_connection(env, monkeypatch)
+    assert env.confirm_pair("write:pg-write").status_code == 200
+    refused = env.unlock(connection_id, "write:pg-write", "pg-write")
+    assert _code(refused) == (400, "studio.write_loopback_tls_required")
+    assert resolved == [] and captured == []
+
+
+def test_accept_unlocks_and_says_the_local_server_is_unverified(
+    env: WriteEnv, monkeypatch: pytest.MonkeyPatch, logs: LogSetup
+) -> None:
+    """The G-S2 default: the unlock goes on, its state and the log say that nothing checks the server."""
+    assert env.unlocks.areas.loopback_tls == "accept"
+    connection_id, _fake = _unlocked(env, monkeypatch)
+    (state,) = env.send("GET", "/api/write/unlocks").json()["unlocks"]
+    assert state["connection_id"] == connection_id and state["local_unverified"] is True
+    assert state["findings"] == []  # a transport note, never a privilege finding
+    assert logs.file is not None
+    assert "studio.write_loopback_unverified" in logs.file.read_text(encoding="utf-8")
+
+
+def test_accept_says_nothing_for_a_socket_with_requirepeer(env: WriteEnv, monkeypatch: pytest.MonkeyPatch) -> None:
+    assert _move_to_socket(env).status_code == 200
+    _connection_id, _fake = _unlocked(env, monkeypatch)
+    (state,) = env.send("GET", "/api/write/unlocks").json()["unlocks"]
+    assert state["local_unverified"] is False

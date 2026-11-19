@@ -1065,6 +1065,7 @@
     "secret_confirmation_not_needed": "Ein SQLite-Schreibprofil hat kein Secret.",
     "secret_confirmation_unavailable": "Studio konnte die Bestätigung nicht in seinem Statusordner ablegen; nichts wurde bestätigt.",
     "write_tls_required": "Studio sendet ein Schreib- oder Admin-Secret an einen Server, der nicht auf diesem Computer läuft, nur mit dem TLS-Modus verify-full oder verify-ca. Ändern Sie den TLS-Modus des gekoppelten Profils.",
+    "write_loopback_tls_required": "Studio ist so eingestellt, dass es ein Schreib- oder Admin-Passwort an einen Server auf diesem Computer nur sendet, wenn dessen Identität geprüft wird: TLS-Modus verify-full oder der Unix-Socket des Servers mit requirepeer. Ändern Sie das gekoppelte Profil oder das Schreibprofil.",
     "require_auth_unavailable": "Schreib- und Admin-Verbindungen brauchen libpq 16 oder neuer (es kann Klartext- und MD5-Passwörter ablehnen). Installieren Sie psycopg[binary] oder eine neuere libpq.",
     "plan_target_no_primary_key": "Die Tabelle hat keinen Primärschlüssel, daher kann Studio ihre Zeilen nicht bearbeiten.",
     "data_editor_conflict": "Eine Zeile wurde seit dem Laden von jemand anderem geändert oder gelöscht. Es wurde nichts gespeichert. Lade die Zeilen neu und versuche es erneut.",
@@ -1696,6 +1697,7 @@
       },
       "requirepeer": "Betriebssystem-Benutzer des Servers",
       "foreign": "Dieser Server läuft nicht auf diesem Computer. Studio verbindet sich nur mit geprüftem Zertifikat und SCRAM-Anmeldung.",
+      "localUnverified": "Dieser Server läuft auf diesem Computer, aber niemand prüft, wer dort antwortet (kein TLS verify-full, kein Unix-Socket mit requirepeer). Ein Programm, das den Port zuerst belegt hat, erfährt kein Passwort, könnte aber ein schwaches erraten. Verwenden Sie ein langes Zufallspasswort oder TLS verify-full oder den Socket mit requirepeer.",
       "typeHost": "Geben Sie zur Bestätigung den Host ein: {{host}}",
       "confirm": "Bestätigen",
       "cancel": "Abbrechen"

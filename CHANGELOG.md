@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- G-S2 follow-up 2A (the recheck before G-R; no default changes, the write flags stay off by default):
+  `loopback_tls` in `write-areas.toml`. `"accept"`, the default, keeps the G-S2 decision. `"require"` sends a
+  PostgreSQL write or admin password to a server on this computer only over TLS `verify-full` or a Unix socket with
+  `requirepeer`, and refuses any other unlock before the password is read or sent
+  (`400 studio.write_loopback_tls_required`); an unknown value counts as `"require"`. The D-15 dialog and the unlock
+  state (`local_unverified`) say when nothing checks a local server, and such an unlock is logged
+  (`studio.write_loopback_unverified`). The security guide, the write threat model (residual risk 4) and the TODO
+  are updated; the default at G-R is the owner's choice.
 - STU-XSD-1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's graphical mode. "Show the draft as: Diagram" draws the draft as an ER diagram with
   each table's status (the explorer's layout and @xyflow/react, no new dependency, loaded only when shown); the table

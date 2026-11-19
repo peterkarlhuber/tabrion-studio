@@ -201,6 +201,8 @@ export interface SecretPairPreview {
     /** The server's OS user libpq checks on a Unix socket; null when the profile names none. */
     requirepeer?: string | null;
     foreign: boolean;
+    /** A server on this computer whose identity libpq does not check (G-S2 decision 2A). */
+    local_unverified?: boolean;
   };
 }
 

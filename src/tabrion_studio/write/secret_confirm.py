@@ -38,6 +38,14 @@ is missing, unreadable, malformed, of another version or behind a link confirms 
 connection that sends a password uses libpq ``require_auth=scram-sha-256``, there and on loopback alike (I-109 j,
 review N-2 of PR #116). A write or admin connection without a password uses ``require_auth=!password,!md5``
 (:mod:`tabrion_studio.write.connection`). The optional ``requirepeer`` of the write profile is part of the pair.
+
+**A server on this computer (G-S2 decision 2A, residual risk 4).** A loopback host is not foreign, but libpq checks
+who answers there only with TLS ``verify-full`` or, on a Unix socket, with ``requirepeer``. Without either, the pair
+is :attr:`SecretPair.local_unverified`: a process that took the port or the socket first gets the SCRAM exchange
+(no password, but an offline guess at a weak one). The D-15 dialog says so. With ``loopback_tls = "require"`` in
+``write-areas.toml`` (:mod:`tabrion_studio.config.write_areas`; off by default) :func:`check_local_transport`
+refuses to send a password over such a pair (``studio.write_loopback_tls_required``), before the secret is read
+where the profile names a reference and in any case before it is sent.
 """
 
 from __future__ import annotations
@@ -64,6 +72,7 @@ __all__ = [
     "STRICT_SSLMODES",
     "SecretConfirmations",
     "SecretPair",
+    "check_local_transport",
     "check_transport",
     "secret_pair",
 ]
@@ -108,6 +117,16 @@ class SecretPair:
         return not is_loopback(self.host)
 
     @property
+    def local_unverified(self) -> bool:
+        """A server on this computer whose identity libpq does not check (G-S2 decision 2A): a loopback address or
+        ``localhost`` without TLS ``verify-full``, or a Unix socket folder without ``requirepeer``."""
+        if self.foreign:
+            return False
+        if self.host.startswith("/"):
+            return self.requirepeer is None
+        return self.sslmode != "verify-full"
+
+    @property
     def digest(self) -> str:
         doc = [
             CONFIRMATION_VERSION,
@@ -138,6 +157,7 @@ class SecretPair:
             "reference": {"source": self.ref_source, "target": self.ref_target},
             "requirepeer": self.requirepeer,
             "foreign": self.foreign,
+            "local_unverified": self.local_unverified,
         }
 
 
@@ -167,6 +187,14 @@ def check_transport(pair: SecretPair) -> None:
     """A foreign host needs ``verify-ca`` or ``verify-full`` (I-109 j, TX-07); ``studio.write_tls_required`` else."""
     if pair.foreign and pair.sslmode not in STRICT_SSLMODES:
         raise WriteError("studio.write_tls_required")
+
+
+def check_local_transport(pair: SecretPair, *, required: bool) -> None:
+    """With ``loopback_tls = "require"`` (``required``), a password never goes to a server on this computer whose
+    identity libpq does not check (:attr:`SecretPair.local_unverified`): ``studio.write_loopback_tls_required``.
+    The caller calls it only for a connection that sends a password (G-S2 decision 2A)."""
+    if required and pair.local_unverified:
+        raise WriteError("studio.write_loopback_tls_required")
 
 
 @dataclass(frozen=True)

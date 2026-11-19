@@ -97,7 +97,13 @@ STRIDE as in 03 section 7.3. "Tests" names what the work package must add; the g
    Mitigation: a long random password for write roles, the socket with `requirepeer`, or TLS with `verify-full` also
    on this computer. At G-S2 (2026-11-15, decision 2A) the owner accepted this risk for local DEV, TEST and STAGE
    use; whether loopback TCP must use TLS with `verify-full` (or a socket with `requirepeer`) is checked again
-   before G-R (docs/TODO.md).
+   before G-R (docs/TODO.md). Prepared for that recheck (G-S2 2A follow-up): `loopback_tls` in `write-areas.toml`,
+   `"accept"` by default (the G-S2 decision, unchanged); `"require"` refuses a write or admin password to a server on
+   this computer unless TLS `verify-full` or a socket with `requirepeer` lets libpq check who answers
+   (`studio.write_loopback_tls_required`, before a referenced secret is read and before any password is sent). With
+   `"accept"` the D-15 dialog and the unlock state (`local_unverified`) say that the server is not checked, and the
+   unlock is logged (`studio.write_loopback_unverified`). Whether the default becomes `"require"` is the owner's
+   decision at G-R.
 5. **The value checks are about form, not about every rule (TX-17).** Studio checks a value's type, length,
    range, NULL and an enum's labels; a CHECK constraint, a domain's own constraints, uniqueness, foreign keys and
    triggers are left to the database, which refuses such a value inside the run's transaction (nothing is saved;

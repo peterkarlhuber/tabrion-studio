@@ -78,6 +78,39 @@ def test_a_malformed_file_or_value_is_off(tmp_path: Path, text: str) -> None:
     assert load_write_areas(tmp_path) == ALL_OFF
 
 
+def test_loopback_tls_is_accept_by_default(tmp_path: Path) -> None:
+    """G-S2 decision 2A: the owner accepted loopback TCP without TLS for local use; the default keeps that."""
+    assert ALL_OFF.loopback_tls == "accept" and not ALL_OFF.loopback_tls_required
+    _flag_file(tmp_path / "c")
+    assert load_write_areas(tmp_path / "c").loopback_tls == "accept"
+
+
+@pytest.mark.parametrize(("value", "expected"), [("'accept'", "accept"), ("'require'", "require")])
+def test_loopback_tls_takes_its_two_values(tmp_path: Path, value: str, expected: str) -> None:
+    _flag_file(tmp_path, f"version = 1\nloopback_tls = {value}\n[areas]\ndata_editor = true")
+    areas = load_write_areas(tmp_path)
+    assert areas.loopback_tls == expected and areas.enabled == frozenset({Area.DATA_EDITOR})
+
+
+@pytest.mark.parametrize("value", ["'Require'", "'off'", "''", "true", "false", "1", "['require']"])
+def test_an_unknown_loopback_tls_is_require(tmp_path: Path, value: str, caplog: pytest.LogCaptureFixture) -> None:
+    """Fail closed: a value Studio does not know is the stricter rule, and the value is never logged."""
+    _flag_file(tmp_path, f"version = 1\nloopback_tls = {value}\n[areas]\ndata_editor = true")
+    with caplog.at_level(logging.WARNING, logger="tabrion_studio.write_areas"):
+        areas = load_write_areas(tmp_path)
+    assert areas.loopback_tls == "require" and areas.loopback_tls_required
+    assert areas.enabled == frozenset({Area.DATA_EDITOR})
+    assert [(getattr(r, "event", None), r.getMessage()) for r in caplog.records] == [
+        ("studio.write_areas_invalid", "write areas file has an unknown loopback_tls; require is used")
+    ]
+
+
+def test_loopback_tls_turns_no_area_on(tmp_path: Path) -> None:
+    _flag_file(tmp_path, "version = 1\nloopback_tls = 'require'")
+    areas = load_write_areas(tmp_path)
+    assert areas.enabled == frozenset() and areas.loopback_tls == "require"
+
+
 @pytest.mark.skipif(not POSIX, reason="POSIX file modes")
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o604, 0o660, 0o606])
 def test_a_file_others_can_read_or_write_is_off(tmp_path: Path, mode: int) -> None:

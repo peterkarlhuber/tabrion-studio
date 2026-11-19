@@ -120,6 +120,7 @@ const PROBLEMS = new Set([
   'secret_confirmation_not_needed',
   'secret_confirmation_unavailable',
   'write_tls_required',
+  'write_loopback_tls_required',
   'require_auth_unavailable',
   // The Schema Designer's database creation (STU-CR-2, STU-CR-3).
   'schema_create_invalid',

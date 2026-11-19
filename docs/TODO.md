@@ -904,7 +904,11 @@ Follow-ups as TODO items:
 - [ ] **G-S2 1A (binding):** independent review, merge and green CI of the over-privileged write role refusal
   (branch `claude/project-thread-rdo6g3-gs2-1a`); until then the `data_editor` flag stays off everywhere.
 - [ ] **G-S2 2A, before G-R:** recheck loopback TCP without TLS for a write or admin password: require TLS with
-  `verify-full` or a Unix socket with `requirepeer` (residual risk 4 of the write threat model).
+  `verify-full` or a Unix socket with `requirepeer` (residual risk 4 of the write threat model). Prepared (branch
+  `claude/project-thread-rdo6g3-gs2-2a`): `loopback_tls = "accept" | "require"` in `write-areas.toml`, `"accept"`
+  by default (the G-S2 decision); `"require"` refuses such an unlock (`400 studio.write_loopback_tls_required`);
+  `"accept"` shows `local_unverified` in the D-15 dialog and the unlock state. Open: the owner's choice of the
+  default at G-R (recheck note `g-s2/2a-recheck.md` in the planning documents).
 - [ ] **G-S2 3A, before G-R:** audit-log anchor in the keyring (the last `(seq, hash)`), with a "log missing or
   reset" notice when a new chain starts while an anchor exists. Unlimited retention is documented in the security
   guide now (done).
