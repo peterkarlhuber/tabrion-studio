@@ -14,6 +14,9 @@
  * again and run it: the column is gone, the backup file is in Studio's backup folder (0600) with the old column, and
  * the audit log holds the dry run and the run. The page sends the recorded hash and what was typed, never a plan.
  *
+ * STU-CR-7: the focus after a confirmation and after a run (GS3-14: on the status, never on Run), and the read-only
+ * schema comparison of STU-XSD-2 (a connection with itself, its plan preview empty) with axe in both themes.
+ *
  * STU-XSD-1: the diagram of the draft: a table chosen with the keyboard, a foreign key drawn with the pointer and
  * applied through the table view's form (the same edit to the same route), the plan preview; axe and the CSP.
  *
@@ -366,8 +369,11 @@ for (const theme of ['light', 'dark'] as Theme[]) {
 
     // Draw a line from bins.part_id (the second row) to parts.id (the first row): the form opens filled in.
     const before = sent.length;
-    const from = canvas.locator('.react-flow__node[data-id="bins"] [data-handleid="from:1"]');
-    const to = canvas.locator('.react-flow__node[data-id="parts"] [data-handleid="to:0"]');
+    // A node's id is its index (review I-1 of #148); the box carries the table's name.
+    const node = (name: string) =>
+      canvas.locator('.react-flow__node').filter({ has: page.locator(`[data-table="${name}"]`) });
+    const from = node('bins').locator('[data-handleid="from:1"]');
+    const to = node('parts').locator('[data-handleid="to:0"]');
     // The card took the focus (and the page scrolled to it): the canvas comes back into view for the pointer.
     await canvas.scrollIntoViewIfNeeded();
     const start = await middle(from);
@@ -449,7 +455,9 @@ async function confirm(preview: ReturnType<Page['getByTestId']>) {
   );
   await form.getByRole('button', { name: 'Confirm' }).click();
   await expect(form.getByTestId('schema-designer-confirmed')).toBeVisible();
-  // Neither the run nor the dry run has the focus by default.
+  // GS3-14: the Confirm button is gone; the focus is on the confirmation's status. Neither the run nor the dry run
+  // has the focus by default.
+  await expect(form.getByTestId('schema-designer-confirmed')).toBeFocused();
   await expect(form.getByRole('button', { name: 'Run the plan' })).not.toBeFocused();
   await expect(form.getByRole('button', { name: 'Dry run' })).not.toBeFocused();
   return form;
@@ -477,6 +485,7 @@ test('drop a column: confirm, dry run, then run with its backup (light)', async 
   expect(await seriousViolations(page)).toEqual([]);
   await form.getByRole('button', { name: 'Dry run' }).click();
   await expect(designer.getByTestId('schema-designer-outcome')).toContainText('rolled back');
+  await expect(designer.getByTestId('schema-designer-outcome')).toBeFocused();
   expect(
     sqlite("print(json.dumps([r[1] for r in db.execute('pragma table_info(parts)')]))").trim(),
   ).toBe('["id", "name"]');
@@ -488,6 +497,7 @@ test('drop a column: confirm, dry run, then run with its backup (light)', async 
   await form.getByRole('button', { name: 'Run the plan' }).click();
   const outcome = designer.getByTestId('schema-designer-outcome');
   await expect(outcome).toContainText('run and committed');
+  await expect(outcome).toBeFocused();
   await expect(outcome.getByTestId('schema-designer-backup-path')).toContainText('schema-designer');
   expect(await seriousViolations(page)).toEqual([]);
   expect(
@@ -541,3 +551,33 @@ test('drop a column: confirm, dry run, then run with its backup (light)', async 
   await expectNoViolations(page, violations);
   expect(foreign).toEqual([]);
 });
+
+for (const theme of ['light', 'dark'] as Theme[]) {
+  test(`compare a schema read-only and preview the plan; nothing runs (${theme})`, async ({
+    page,
+  }) => {
+    const foreign = foreignRequests(page, () => base);
+    const violations = await signIn(page, theme);
+    const sent = writes(page);
+    await openDesigner(page);
+    const compare = page.getByTestId('schema-compare');
+    await expect(compare).toBeVisible();
+    await expect(compare.getByTestId('schema-compare-actual-connection')).toContainText(
+      'e2e-designer (DEV)',
+    );
+    await compare.getByTestId('schema-compare-plan').check();
+    await compare.getByRole('button', { name: 'Compare', exact: true }).click();
+    const result = compare.getByTestId('schema-compare-result');
+    await expect(result).toHaveAttribute('data-verdict', 'same');
+    await expect(compare.getByTestId('schema-compare-verdict')).toContainText(
+      'The schemas are the same.',
+    );
+    await expect(result).toContainText('The compared side already matches the reference');
+    expect(await seriousViolations(page)).toEqual([]);
+    // Only the comparison was sent: no plan confirmation, no run.
+    const posted = sent.map((s) => s.path).filter((path) => path.includes('/schema-designer/'));
+    expect(posted).toEqual(['/api/write/schema-designer/compare']);
+    await expectNoViolations(page, violations);
+    expect(foreign).toEqual([]);
+  });
+}

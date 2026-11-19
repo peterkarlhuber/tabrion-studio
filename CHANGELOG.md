@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-7 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's focus, guide and browser tests. After a plan is confirmed the focus moves to the
+  confirmation's status, and after a run or dry run to its outcome, never to Run (GS3-14); the guide's "Its limits at
+  a glance" states revision only for Alembic projects, the PROD lock, direct runs only on DEV and TEST without
+  migration management, the backup rule with what `pg_dump` leaves out, the preview warnings and that the designer
+  changes no role (GS3-24, doc 15 section 3.1). New e2e of the read-only comparison in both themes with axe (three
+  browsers in CI). From the review of #148: the diagram's node ids are the boxes' indexes, mapped back to the table
+  names, so a table name with `"` or `\` no longer breaks drawing (I-1), and the diagram draws at most 300 foreign
+  keys as lines with a note when the bound applies (I-2; `buildScene` takes the bound, the explorer is unchanged).
 - STU-XSD-1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's graphical mode. "Show the draft as: Diagram" draws the draft as an ER diagram with
   each table's status (the explorer's layout and @xyflow/react, no new dependency, loaded only when shown); the table

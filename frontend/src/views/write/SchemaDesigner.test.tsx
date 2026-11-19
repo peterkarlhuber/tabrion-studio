@@ -584,8 +584,12 @@ describe('SchemaDesignerSection (STU-CR-4)', () => {
     const go = screen.getByRole('button', { name: 'Run the plan' });
     expect(go).not.toHaveFocus();
     expect(screen.getByRole('button', { name: 'Dry run' })).not.toHaveFocus();
+    // GS3-14: the Confirm button is gone; the focus is on the confirmation's status, not lost and not on Run.
+    expect(screen.getByTestId('schema-designer-confirmed')).toHaveFocus();
     await user.click(go);
     const outcome = await screen.findByTestId('schema-designer-outcome');
+    // The run's form is gone too: the focus is on what the run did.
+    expect(outcome).toHaveFocus();
     expect(outcome).toHaveTextContent('Done: 1 step run and committed.');
     expect(screen.getByTestId('schema-designer-backup-path')).toHaveTextContent(
       OUTCOME.backup_path,
