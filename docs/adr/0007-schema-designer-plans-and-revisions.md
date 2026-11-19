@@ -4,8 +4,8 @@
 accepted it on master `4b9fb7c` with conditions A-1..A-4, which this version takes in). It records owner decisions that are
 already binding (E-X3, E-X4 with its refinement, E-X7, E-X9, W-9, D-5 of tabrion ADR 0015 section 10) and the
 conditions tabrion's reviews set for Studio (tabrion contract I-124 a, e, j; ADR 0015 sections 2 to 4), and adds the
-rules that make them testable. **G-S3 is not granted and this record grants nothing:** the `schema_designer` flag stays off by default,
-no code of the area exists yet, and no default changes. It builds on [STU-ADR-0006](0006-per-area-write-kill-switches.md)
+rules that make them testable. This record grants nothing. G-S3 is effective since 2026-11-19 by the owner's conditional grant
+of 2026-11-18, for local DEV, TEST and STAGE only; the `schema_designer` flag still stays off by default and no default changes. It builds on [STU-ADR-0006](0006-per-area-write-kill-switches.md)
 (one flag and one gate per area, the PROD lock, write profiles, the kill-switch proof), which applies unchanged. The
 threat model is [Schema Designer threat model](../architecture/schema-designer-threat-model.md) (TX-18..TX-31); the
 gate is defined in [G-S3 definition](../architecture/security-review-prep.md#g-s3-definition-schema-designer).

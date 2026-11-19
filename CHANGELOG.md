@@ -7,6 +7,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- STU-CR-8 (G-S3 gate): the independent G-S3 gate review accepted the Schema Designer area on `be8e794` with no code
+  finding. The owner decisions for G-S3 are recorded as decided per the owner's grant of 2026-11-18 (a snapshot never
+  starts a draft, drafts are never saved to disk, no non-transactional steps in a direct run, no revision output for
+  PROD or a PROD alias, no release exception as Tabrion's names are stable), the package rows show their merged PRs,
+  and the docs say that G-S3 is effective for local DEV, TEST and STAGE only. No code or default changes: the
+  `schema_designer` flag stays off and nothing turns it on; H-2 and G-R stay mandatory before any publication.
 - STU-CR-6 part 2 (in development, locked by G-S3 and G-S4; neither granted, the flags stay off, no default changes):
   the runtime-role wizard. "Runtime role for an application" in the Database Manager creates a login role (or takes
   an existing one again) and grants it the rows of one schema through Tabrion's `create_role` and
