@@ -57,7 +57,7 @@ from tabrion.schema import (
 )
 
 from tabrion_studio.write.connection import WriteError
-from tabrion_studio.write.schema_designer.create import _has_control
+from tabrion_studio.write.connection import has_hidden_character as _has_control
 
 if TYPE_CHECKING:
     from tabrion_studio.write.schema_designer.execute import RunPlan

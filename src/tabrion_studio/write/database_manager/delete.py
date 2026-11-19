@@ -62,9 +62,15 @@ import sqlalchemy
 from tabrion.errors import DatabaseInUse, TabrionError, UnsafePath, UsageError, classify, safe_message
 
 from tabrion_studio.config.schema import Profile
-from tabrion_studio.write.connection import WriteError, admin_refusing_findings, file_identity, privileges_now
+from tabrion_studio.write.connection import (
+    DriverFailure,
+    WriteError,
+    admin_refusing_findings,
+    file_identity,
+    privileges_now,
+)
 from tabrion_studio.write.database_manager import backups
-from tabrion_studio.write.database_manager.backups import DriverFailure, Manager
+from tabrion_studio.write.database_manager.backups import Manager
 from tabrion_studio.write.unlock import Unlock
 
 logger = logging.getLogger("tabrion_studio.write")

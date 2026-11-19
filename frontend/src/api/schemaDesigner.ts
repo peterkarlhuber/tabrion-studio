@@ -82,13 +82,13 @@ const UNREADABLE: Result<never> = {
   problem: { code: 'studio.answer_invalid', kind: 'internal', status: 0, logId: null },
 };
 
-/** `POST /api/write/schema-designer/create/sqlite`: a new, empty, private SQLite file (STU-CR-2). */
+/** `POST /api/write/database-manager/create/sqlite`: a new, empty, private SQLite file (STU-CR-2). */
 export async function createSqliteFile(
   fetcher: typeof fetch,
   path: string,
   typed: string,
 ): Promise<Result<CreatedSqliteFile>> {
-  const result = await send<unknown>(fetcher, 'POST', '/api/write/schema-designer/create/sqlite', {
+  const result = await send<unknown>(fetcher, 'POST', '/api/write/database-manager/create/sqlite', {
     path,
     typed,
   });
@@ -98,7 +98,7 @@ export async function createSqliteFile(
 }
 
 /**
- * `POST /api/write/schema-designer/create/postgresql`: a new database on this session's unlocked write connection of
+ * `POST /api/write/database-manager/create/postgresql`: a new database on this session's unlocked admin connection of
  * a DEV or TEST server (STU-CR-3). Empty optional fields are left out, so the server's defaults apply.
  */
 export async function createPostgresDatabase(
@@ -119,7 +119,7 @@ export async function createPostgresDatabase(
   const result = await send<unknown>(
     fetcher,
     'POST',
-    '/api/write/schema-designer/create/postgresql',
+    '/api/write/database-manager/create/postgresql',
     body,
   );
   if (!result.ok) return result;

@@ -40,8 +40,7 @@ from tabrion.errors import TabrionError, UsageError, classify, safe_message
 from tabrion.schema import SchemaSnapshot, fingerprint, snapshot
 
 from tabrion_studio.config.write_areas import Area
-from tabrion_studio.write.connection import WriteConnection, WriteError
-from tabrion_studio.write.schema_designer.create import DriverFailure
+from tabrion_studio.write.connection import DriverFailure, WriteConnection, WriteError
 from tabrion_studio.write.schema_designer.draft import (
     Draft,
     Drafts,
