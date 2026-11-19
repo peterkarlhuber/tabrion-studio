@@ -11,6 +11,7 @@ write connection's own limits, which use its ``transaction()`` hook directly.
 from __future__ import annotations
 
 from collections.abc import Iterator
+import contextlib
 import io
 import json
 import logging
@@ -211,6 +212,71 @@ def test_an_over_privileged_write_role_is_not_unlocked(
     assert digest(env.db) == before
     unlocks = [r["fields"] for r in _audit_records(env.audit_dir) if r["event"] == "unlock"]
     assert [u["result"] for u in unlocks] == ["studio.write_role_over_privileged"]
+
+
+def _journal_mode(database: Path) -> str:
+    """The file's journal mode, as the read connection reports it at unlock."""
+    with contextlib.closing(sqlite3.connect(database)) as raw:
+        return str(raw.execute("PRAGMA journal_mode").fetchone()[0])
+
+
+@needs_defensive
+@pytest.mark.parametrize(
+    "code",
+    [
+        "admin.superuser",
+        "admin.bypassrls",
+        "admin.replication",
+        "admin.broad:pg_read_server_files",
+        "admin.broad:pg_write_server_files",
+        "admin.broad:pg_execute_server_program",
+        "admin.createrole_pre16",
+    ],
+)
+def test_an_over_privileged_admin_role_is_not_unlocked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
+    """STU-ADR-0008 section 6, decided at G-S4: an admin role with superuser, BYPASSRLS, REPLICATION, a server-file
+    role or CREATEROLE before PostgreSQL 16 is never unlocked (``studio.admin_over_privileged``); the connection is
+    closed first and the error names no finding and no role."""
+    database = tmp_path / "admin.db"
+    make_database(database)
+    closed = _findings(monkeypatch, [{"code": code, "via": "inherited", "severity": "warning"}])
+    stat = os.stat(database)
+    with pytest.raises(WriteError) as caught:
+        open_write_connection(
+            "admin",
+            Profile("a", "sqlite", "dev", path=str(database)),
+            Settings(),
+            database_file=database,
+            journal_mode=_journal_mode(database),
+            identity=(stat.st_dev, stat.st_ino),
+        )
+    assert caught.value.code == "studio.admin_over_privileged"
+    assert len(closed) == 1
+
+
+@needs_defensive
+@pytest.mark.parametrize("code", ["admin.createrole", "admin.createdb", "admin.broad:pg_read_all_data"])
+def test_other_findings_of_an_admin_role_still_open(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: str) -> None:
+    """The other findings of an admin role stay warnings: CREATEROLE on 16 and later is what role management needs."""
+    database = tmp_path / "admin.db"
+    make_database(database)
+    closed = _findings(monkeypatch, [{"code": code, "via": "direct", "severity": "warning"}])
+    stat = os.stat(database)
+    connection = open_write_connection(
+        "admin",
+        Profile("a", "sqlite", "dev", path=str(database)),
+        Settings(),
+        database_file=database,
+        journal_mode=_journal_mode(database),
+        identity=(stat.st_dev, stat.st_ino),
+    )
+    try:
+        assert connection.findings == [{"code": code, "via": "direct", "severity": "warning"}]
+        assert closed == []
+    finally:
+        connection.close()
 
 
 @needs_defensive

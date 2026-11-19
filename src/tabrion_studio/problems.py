@@ -1476,7 +1476,7 @@ CATALOG: dict[str, Entry] = {
         ProblemKind.REQUEST,
         "Admin role has too many rights",
         "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before "
-        "PostgreSQL 16. The Database Manager does nothing with it, and the unlock ended.",
+        "PostgreSQL 16. Studio does not unlock it, or ends the unlock, and the Database Manager does nothing with it.",
         "Use an admin role with only the rights the Database Manager needs, set up outside Studio.",
     ),
     # Data viewer (STU-013).

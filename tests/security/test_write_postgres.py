@@ -90,6 +90,25 @@ def _profile(user: str) -> Profile:
     )
 
 
+def _refused_admin_findings(monkeypatch: pytest.MonkeyPatch, user: str, password: str) -> list[dict[str, str]]:
+    """Open an ``admin`` connection of ``user`` that the G-S4 decision refuses (STU-ADR-0008 section 6,
+    ``studio.admin_over_privileged``) and return the findings the real privilege check made before the refusal."""
+    seen: list[dict[str, str]] = []
+    real = write_connection.WriteConnection.check_privileges
+
+    def check(self: write_connection.WriteConnection) -> None:
+        real(self)
+        seen.extend(self.findings)
+
+    monkeypatch.setattr(write_connection.WriteConnection, "check_privileges", check)
+    with pytest.raises(WriteError) as refused:
+        open_write_connection("admin", _profile(user), Settings(), password=password)
+    assert refused.value.code == "studio.admin_over_privileged"
+    assert user not in str(refused.value)
+    monkeypatch.undo()
+    return seen
+
+
 def test_the_write_session_has_the_fixed_catalog_first_search_path(roles: dict[str, Any]) -> None:
     """The role's own search_path puts a hostile schema first; the write session ignores it, so neither the
     shadowing function nor the shadowing operator takes part (K-2, TX-09)."""
@@ -119,10 +138,16 @@ def test_the_write_session_has_the_fixed_catalog_first_search_path(roles: dict[s
     ],
 )
 def test_the_privilege_check_reports_over_privilege(
-    roles: dict[str, Any], suffix: str, expected: list[tuple[str, str]]
+    roles: dict[str, Any], suffix: str, expected: list[tuple[str, str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """TX-11: attributes held directly or through a reachable role are findings; never a role name."""
+    """TX-11: attributes held directly or through a reachable role are findings; never a role name. A superuser
+    admin role is refused at the unlock (G-S4), after the check made its findings."""
     prefix = roles["prefix"]
+    if suffix == "_su":
+        found = [(f["code"], f["via"]) for f in _refused_admin_findings(monkeypatch, f"{prefix}_su", roles["password"])]
+        for item in expected:
+            assert item in found, found
+        return
     admin = open_write_connection("admin", _profile(f"{prefix}{suffix}"), Settings(), password=roles["password"])
     try:
         found = [(f["code"], f["via"]) for f in admin.findings]
@@ -151,17 +176,23 @@ def test_the_privilege_check_reports_over_privilege(
     ],
 )
 def test_membership_in_a_predefined_role_is_a_finding(
-    roles: dict[str, Any], suffix: str, expected: dict[str, tuple[str, str]]
+    roles: dict[str, Any], suffix: str, expected: dict[str, tuple[str, str]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Review I-1 of PR #111 (tabrion ADR 0015 D-2): a predefined role reached directly or through another role is
     ``admin.broad:<role>``; the server-file roles are ``dangerous``. The test's own roles are never named."""
     prefix = roles["prefix"]
     for kind in ("write", "admin"):
         if kind == "write" and suffix == "_files":
-            # Owner decision 1A (G-S2): a server-file role refuses a write connection; the admin one shows it.
+            # Owner decision 1A (G-S2): a server-file role refuses a write connection.
             with pytest.raises(WriteError) as refused:
                 open_write_connection(kind, _profile(f"{prefix}{suffix}"), Settings(), password=roles["password"])
             assert refused.value.code == "studio.write_role_over_privileged"
+            continue
+        if kind == "admin" and suffix == "_files":
+            # G-S4 (STU-ADR-0008 section 6): the admin one is refused too, after the check made its findings.
+            refused_findings = _refused_admin_findings(monkeypatch, f"{prefix}{suffix}", roles["password"])
+            assert {f["code"]: (f["via"], f["severity"]) for f in refused_findings} == expected
+            assert prefix not in repr(refused_findings)
             continue
         connection = open_write_connection(kind, _profile(f"{prefix}{suffix}"), Settings(), password=roles["password"])
         try:
@@ -262,7 +293,7 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
             assert (
                 env.send("PUT", "/api/profiles/user:pg/secret", {"secret": url.password, "store": "session"})
             ).status_code == 204
-        for name, kind, user in (("pg-write", "write", f"{prefix}_w"), ("pg-admin", "admin", f"{prefix}_su")):
+        for name, kind, user in (("pg-write", "write", f"{prefix}_w"), ("pg-admin", "admin", f"{prefix}_member")):
             created = env.create_write(name=name, read="pg", kind=kind, user=user, password="keyring:")
             assert created.status_code == 201, created.text
             stored = env.send(
@@ -281,7 +312,7 @@ def test_an_unlock_through_the_api_uses_the_write_role(roles: dict[str, Any], tm
         assert unlocked.json()["role"] == f"{prefix}_w" and unlocked.json()["findings"] == []
         admin = env.unlock(connection_id, "write:pg-admin", "pg-admin")
         assert admin.status_code == 200, admin.text
-        assert {f["code"] for f in admin.json()["findings"]} >= {"admin.superuser"}
+        assert {f["code"] for f in admin.json()["findings"]} >= {"admin.createrole"}
         for answer in (unlocked, admin):
             assert roles["password"] not in answer.text and CANARY_SECRET not in answer.text
         write = env.unlocks.require(env.session(), connection_id, Area.DATABASE_MANAGER)
@@ -372,22 +403,21 @@ def privileged() -> Iterator[dict[str, Any]]:
 
 
 @pytest.mark.parametrize("suffix", sorted(REFUSED))
-def test_an_over_privileged_write_role_is_refused(privileged: dict[str, Any], suffix: str) -> None:
+def test_an_over_privileged_write_role_is_refused(
+    privileged: dict[str, Any], suffix: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Superuser, BYPASSRLS, REPLICATION or a server-file role, held directly or through a group role, refuse a
-    ``write`` connection (``studio.write_role_over_privileged``); an ``admin`` connection of the same role still opens
-    and reports the finding (STU-XDM-1 decides it at G-S4)."""
+    ``write`` connection (``studio.write_role_over_privileged``) and, since G-S4 (STU-ADR-0008 section 6), an
+    ``admin`` connection of the same role (``studio.admin_over_privileged``), after the check found it."""
     prefix = privileged["prefix"]
     profile = _profile(f"{prefix}{suffix}")
     with pytest.raises(WriteError) as refused:
         open_write_connection("write", profile, Settings(), password=privileged["password"])
     assert refused.value.code == "studio.write_role_over_privileged"
     assert prefix not in str(refused.value)
-    admin = open_write_connection("admin", profile, Settings(), password=privileged["password"])
-    try:
-        via = "inherited" if suffix.startswith("_via_") else "direct"
-        assert (REFUSED[suffix], via) in [(f["code"], f["via"]) for f in admin.findings], admin.findings
-    finally:
-        admin.close()
+    findings = _refused_admin_findings(monkeypatch, f"{prefix}{suffix}", privileged["password"])
+    via = "inherited" if suffix.startswith("_via_") else "direct"
+    assert (REFUSED[suffix], via) in [(f["code"], f["via"]) for f in findings], findings
 
 
 @pytest.mark.parametrize("suffix", sorted(WARNED))

@@ -1163,7 +1163,7 @@
     "dbm_role_object_missing": "An object of the privilege change does not exist in the connected database. Nothing was changed.",
     "dbm_role_denied": "The admin role may not grant this privilege (it does not own the object or hold it with the grant option). Nothing was changed.",
     "dbm_role_failed": "The role change could not be done and was rolled back. Nothing was changed.",
-    "admin_over_privileged": "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before PostgreSQL 16. The unlock ended; use a leaner admin role."
+    "admin_over_privileged": "The admin role has or reaches SUPERUSER, BYPASSRLS, REPLICATION, a server-file role, or CREATEROLE before PostgreSQL 16. Studio does not unlock it, or ends the unlock; use a leaner admin role."
   },
   "keyboard": {
     "palette": {

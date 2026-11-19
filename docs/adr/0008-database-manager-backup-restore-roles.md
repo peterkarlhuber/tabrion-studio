@@ -52,7 +52,8 @@ relate (a port forward, a proxy) and whose identity Studio cannot read.
 A backup of a PROD database runs with the read profile's role; such a backup follows the same connection rules as a
 write or admin profile (review L-2 b: `require_auth` SCRAM for a password, `verify-full` for a host that is not this
 computer, nothing weakened), or it is refused. STU-XDM-2 does not build it yet: every Database Manager action needs
-an admin unlock, which a PROD connection never gets, so a PROD backup is refused (fail closed; an open point).
+an admin unlock, which a PROD connection never gets, so a PROD backup is refused (fail closed; decided at G-S4 as
+the safest option, section 12: no Database Manager action on PROD in 1.3).
 
 ### 3. PostgreSQL backup and restore only through verified tools (E-X5, R-X5)
 
@@ -117,7 +118,7 @@ an admin unlock, which a PROD connection never gets, so a PROD backup is refused
   secret, no value. Studio never deletes a backup of its own accord. STU-XDM-2 uses the layout of the Schema
   Designer's backups (STU-CR-5): `backups/database-manager` next to `write-areas.toml`, beside
   `backups/schema-designer`. The page lists the backups with their count and total size and says that Studio never
-  deletes one (review I-3: the same rule as STU-CR-5; retention stays the owner's decision).
+  deletes one (review I-3: the same rule as STU-CR-5; retention decided at G-S4, section 12).
 - **Which backups can be restored:** only a backup from Studio's own backup folder whose metadata matches its file
   (SHA-256, size) and the target's engine. An archive from elsewhere is not restored in 1.3 (a custom-format archive
   holds SQL that runs with the restoring role).
@@ -185,9 +186,10 @@ an admin unlock, which a PROD connection never gets, so a PROD backup is refused
   - For `kind = "write"` the owner decided at G-S2 (decision 1A, PR #127): `studio.write_role_over_privileged`,
     GS3-28. Since section 10 a write role that has or reaches CREATEDB is refused the same way (`admin.createdb`,
     `dangerous`), at the unlock and again at the start of every run: no write area creates databases.
-  - STU-XDM-2: until the owner decides this section at G-S4, the admin unlock still opens and shows its findings, but
-    every Database Manager action reads the check again on its own session and refuses these findings with
-    `studio.admin_over_privileged`, which ends the unlock.
+  - **Decided at G-S4** (owner grant of 2026-11-18: over-privileged admin profiles are refused; section 12): the
+    admin unlock itself is refused with 405 `studio.admin_over_privileged` and its connection closed (STU-XDM-7,
+    review B-1 of the G-S4 gate review). Every Database Manager action still reads the check again on its own
+    session and refuses these findings, which ends the unlock (STU-XDM-2).
     STU-XDM-4 applies the same check to every role request and once more on the changing session.
 - **Checks around every change (E-X6):** Tabrion checks before and after the statement in the change's transaction
   (I-182). Studio in addition:
@@ -275,6 +277,31 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
    the file's device and inode), not the content.
 8. A SQLite restore into a new file is refused on Windows (`restore.platform`) until a reviewed check of the
    folder's ACL exists (the grant's Windows condition).
+
+### 12. Owner points of G-S4: decided per G-S3/G-S4 grant 2026-11-18, safest option
+
+The open G-S4 decisions are closed by the safest practical option, as the grant asks; the independent G-S4 gate
+review (STU-XDM-7, `reviews/gs4-gate-review.md`) found none of them a new material risk:
+
+1. **Over-privileged admin profile (section 6):** SUPERUSER, BYPASSRLS, REPLICATION, a server-access role or
+   CREATEROLE before PostgreSQL 16, on the role or a role it reaches, refuse the admin unlock
+   (`studio.admin_over_privileged`) and every action; the other findings are shown.
+2. **Tool paths** (`pg_dump`, `pg_restore`) only from the owner's local `database-tools.toml`, never from the page's
+   settings (E-X5 says "from the settings"; a path set from the page would let whoever controls the page choose the
+   program).
+3. **PostgreSQL restore only into a new database** in 1.3, as the lean restore role (review M-1 of STU-XDM-1).
+4. **Retention:** Studio never deletes a backup of its own accord; the page shows their count and total size. A
+   backup is a full copy of the data, as sensitive as the database: the user removes old backups by hand (guide).
+5. **No release exception** for Tabrion's names: every name Studio uses is stable (`S`) since tabrion #94 and the
+   0.3.0 release commit Studio pins.
+6. **PROD:** no Database Manager action on PROD in 1.3, the backup with the read profile included (fail closed;
+   E-X7 would allow a PROD backup; building it is later work with its own review).
+7. **Windows:** the PostgreSQL tools, database creation, the SQLite delete, a SQLite restore into a new file and
+   the profile import and export are refused; a SQLite
+   backup and a restore over the connection's own file stay allowed, protected by the access list of the
+   configuration folder.
+8. The owner points recorded under "As built" for STU-XDM-4 and STU-XDM-5, and section 11 for STU-XDM-3, stand as
+   decided.
 
 ## Consequences
 
