@@ -494,7 +494,7 @@ def test_a_failed_write_leaves_no_file(env: WriteEnv, tmp_path: Path, monkeypatc
             raise OSError(28, "No space left on device")
         return real_write(descriptor, data)
 
-    monkeypatch.setattr(folders.os, "write", full)
+    monkeypatch.setattr(os, "write", full)  # the os module folders.py writes with
     response = _export(env, ["user:parts"], target)
     monkeypatch.undo()
     assert _code(response) == (500, "studio.profile_export_failed")
