@@ -11,7 +11,10 @@ review L-1 and I-2 of PR #136). Studio's own folders are compared by device and 
 profile export of STU-XDM-5): an absolute, normalized local path; a folder of this user that only this user may write,
 reached through no link, below safe folders only and outside Studio's own folders (by device and inode); the file
 created relative to the held folder with ``O_CREAT|O_EXCL|O_NOFOLLOW`` and mode ``0600``, so an existing file or link
-is never overwritten. They are the rules of the SQLite file of STU-CR-2 (``database_manager/create.py``), raising
+is never overwritten. :func:`read_user_file` reads a file the user names (the profile import of STU-XDM-5) under
+the same folder rules: opened relative to the held folder without following a link, a regular file of this user that
+neither group nor others may write, with one name only (no hard link) and at most a given size. They are the rules of
+the SQLite file of STU-CR-2 (``database_manager/create.py``), raising
 :class:`FolderRefused` with a reason instead of an area's problem, so each caller names its own problems. POSIX only:
 the caller refuses Windows first (no ``dir_fd``, no check of a folder's access list).
 
@@ -50,6 +53,7 @@ __all__ = [
     "folders_up",
     "held_folder",
     "identity",
+    "read_user_file",
     "remove_stale_runs",
     "reserved_identities",
 ]
@@ -126,13 +130,14 @@ def remove_stale_runs(state: Path | None) -> int:
 MAX_PATH = 4096
 _REPARSE = 0x400  # FILE_ATTRIBUTE_REPARSE_POINT
 
-Reason = Literal["path", "unsafe", "reserved", "exists"]
+Reason = Literal["path", "unsafe", "reserved", "exists", "missing", "too_large"]
 
 
 class FolderRefused(Exception):
-    """Why Studio does not create the file: ``path`` (with a ``code``: the path text is not valid), ``unsafe`` (the
-    folder or one above it), ``reserved`` (one of Studio's own folders) or ``exists`` (a file or link of that name).
-    Holds no path."""
+    """Why Studio does not create (or read) the file: ``path`` (with a ``code``: the path text is not valid),
+    ``unsafe`` (the folder or one above it; for a read also the file itself), ``reserved`` (one of Studio's own
+    folders), ``exists`` (a file or link of that name), ``missing`` (no file of that name to read) or ``too_large``
+    (a file to read above its limit). Holds no path."""
 
     def __init__(self, reason: Reason, code: str | None = None) -> None:
         super().__init__(reason if code is None else f"{reason}:{code}")
@@ -263,3 +268,46 @@ def create_new_file(descriptor: int, name: str, data: bytes) -> tuple[int, int]:
         raise
     os.close(handle)
     return created
+
+
+def read_user_file(descriptor: int, name: str, limit: int) -> bytes:
+    """The bytes of the file ``name`` in the held folder (:func:`held_folder`), read under the folder rules.
+
+    Refused (:class:`FolderRefused`): no such name (``missing``); a link (a dangling one included), a folder, a
+    device, a pipe or any other non-regular file, a file of another user, a file group or others may write, a file
+    with a second name (a hard link, which could name a file elsewhere) or one that is not the file looked at
+    (``unsafe``); more than ``limit`` bytes (``too_large``). The file is opened relative to the folder with
+    ``O_NOFOLLOW|O_NONBLOCK`` (a pipe never blocks) and checked again on the open descriptor."""
+    try:
+        info = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+    except FileNotFoundError:
+        raise FolderRefused("missing") from None
+    except OSError:
+        raise FolderRefused("unsafe") from None
+    if _is_link(info) or not stat.S_ISREG(info.st_mode):
+        raise FolderRefused("unsafe")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+    try:
+        handle = os.open(name, flags, dir_fd=descriptor)
+    except OSError:
+        raise FolderRefused("unsafe") from None
+    try:
+        opened = os.fstat(handle)
+        if identity(opened) != identity(info) or not stat.S_ISREG(opened.st_mode):
+            raise FolderRefused("unsafe")  # replaced between the look and the open
+        if opened.st_uid != os.geteuid() or opened.st_mode & GROUP_OTHER_WRITE or opened.st_nlink != 1:
+            raise FolderRefused("unsafe")
+        if opened.st_size > limit:
+            raise FolderRefused("too_large")
+        chunks: list[bytes] = []
+        size = 0
+        while chunk := os.read(handle, 64 * 1024):
+            size += len(chunk)
+            if size > limit:
+                raise FolderRefused("too_large")  # grew while it was read
+            chunks.append(chunk)
+        return b"".join(chunks)
+    except OSError:
+        raise FolderRefused("unsafe") from None
+    finally:
+        os.close(handle)

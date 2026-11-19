@@ -254,6 +254,10 @@ CHANGING_ROUTES: dict[str, str] = {
     "POST /api/write/database-manager/roles": "lists the server's non-predefined roles; changes nothing (flag)",
     "POST /api/write/database-manager/roles/preview": "reads a role's privileges, the refusals; changes nothing (flag)",
     "POST /api/write/database-manager/roles/apply": "one role change through tabrion's role DDL, typed name (flag)",
+    "POST /api/write/database-manager/profiles/export/preview": "checks a profile export's file; writes nothing (flag)",
+    "POST /api/write/database-manager/profiles/export": "writes read profiles to a new 0600 file, typed name (flag)",
+    "POST /api/write/database-manager/profiles/import/preview": "reads a profile file; changes nothing (flag)",
+    "POST /api/write/database-manager/profiles/import": "adds read profiles to the user's store, never over one (flag)",
 }
 
 
