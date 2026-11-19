@@ -16,7 +16,8 @@ export interface Problem {
    * of a refused Schema Designer edit or plan (STU-CR-4): `edit.<field>` with `edit.*` codes, `plan.<part>` with
    * tabrion's fixed reason or code (`plan.*`, `ddl.*`, `schema.*`), and (STU-CR-5) the table such a refusal is
    * about, by its position on the page only: `tables.<n>` or `dropped.<n>`; or the side or the plan preview of a
-   * refused schema comparison (STU-XSD-2): `compare.<side>[.<field>]` or `compare.plan` with a `compare.*` code.
+   * refused schema comparison (STU-XSD-2): `compare.<side>[.<field>]` or `compare.plan` with a `compare.*` code;
+   * or the field of a refused profile export (STU-CR-6): `export.profiles` or `export.path` with an `export.*` code.
    */
   issues?: ProblemIssue[];
   /** The SQLSTATE of a `db.<kind>` problem (five characters), when the database gave one. */
@@ -29,9 +30,9 @@ export interface ProblemIssue {
 }
 
 const ISSUE_POINTER =
-  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}(?:\.\d{1,4})?|(?:create|edit|plan)\.[a-z_]{1,32}|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete|role)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2})$/;
+  /^(?:(?:profile|settings)(?:\.[a-z_]{1,32}){0,2}|changes\.\d{1,4}(?:\.\d{1,4})?|(?:create|edit|plan)\.[a-z_]{1,32}|(?:tables|dropped)\.\d{1,4}|(?:tool|backup|restore|delete|role|export)\.[a-z_]{1,32}|compare(?:\.[a-z_]{1,32}){1,2})$/;
 const ISSUE_CODE =
-  /^(?:config|value|constraint|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare|role)\.[a-z_]{1,48}$/;
+  /^(?:config|value|constraint|create|edit|plan|ddl|schema|tool|backup|restore|delete|compare|role|export)\.[a-z_]{1,48}$/;
 
 /** The well-formed issues of a problem document (others are dropped); undefined when there is no list. */
 export function issues(value: unknown): ProblemIssue[] | undefined {

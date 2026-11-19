@@ -17,6 +17,18 @@ All notable changes to this project are documented here. The format follows
   management, not copied; the wizard adds `role.not_owner`, `role.security_definer` and `role.system_object`. Preview,
   `state` binding, typed name and the audit record `dbm.role.runtime` (no password); a grant Tabrion refuses after the
   role was created drops the role again. en and de; the Database Manager guide and ADR 0007 are updated.
+- STU-CR-6 part 1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
+  default changes): the profile export, `POST /api/write/schema-designer/profile-export` with the ids of read
+  profiles, the new file's path (`*.tabrion-profile.toml`) and its typed name. The shared module
+  `tabrion_studio.write.profile_export` (STU-XDM-5 will call it) writes each profile from an allowlist of its fields
+  with `mode = "read_only"` through `tabrion.profilefile.dump`; write and admin profiles cannot be named and are never
+  read, no secret is resolved, an `env:` reference is kept and any other becomes `prompt` (TX-30, N-5). A profile with
+  a host list is refused, never cut to one host (W-10, TB-148). The file is created with the folder rules now shared in
+  `tabrion_studio.write.folders` (the user's own folder, no link, not one of Studio's folders; `O_EXCL|O_NOFOLLOW`,
+  `0600`, never over a file); Windows is refused. Audit `run.start`/`run.result` with action
+  `schema_designer.profile_export`. New problems `studio.profile_export_invalid`, `_unconfirmed`, `_multi_host`,
+  `_folder`, `_reserved`, `_exists`, `_platform` and `_failed`, with `export.*` field issues; the "Export profiles"
+  section in English and German; the guide's "Export profiles" section. The runtime-role wizard is part 2 (above).
 - G-S2 follow-up 3A (before G-R; the write flags stay off by default): the audit log's anchor in the OS keyring.
   Studio keeps the last record's number and hash in the keyring (one entry per audit folder, nothing secret) and
   moves it on with every record. A log that no longer reaches it at start (the folder removed or moved aside, cut,

@@ -149,6 +149,9 @@ _PLAN_CONFIRM_KEYS = frozenset(
 _PLAN_RUN_KEYS = frozenset({"connection_id", "plan_hash", "dry_run"})
 #: STU-XSD-3: write the previewed plan as an Alembic revision into the trusted project.
 _REVISION_KEYS = frozenset({"connection_id", "plan_hash", "message"})
+#: The keys of the profile export (STU-CR-6 part 1): the read profiles' ids, the new file's path and its typed name;
+#: never a profile, a secret or a mode.
+_PROFILE_EXPORT_KEYS = frozenset({"profiles", "path", "typed"})
 #: The keys of the Database Manager's routes (STU-XDM-2): never a path, a tool, an environment or a server.
 _DBM_BACKUP_KEYS = frozenset({"connection_id"})
 _DBM_PREVIEW_KEYS = frozenset({"connection_id", "backup_id"})
@@ -667,6 +670,28 @@ def add_enabled_write_routes(
             return JSONResponse(created.to_dict(), status_code=201)
 
         return await plan_call(request, _CREATE_POSTGRES_KEYS, _MAX_BODY, create)
+
+    # --- the profile export (STU-CR-6 part 1) -----------------------------------------------------------------------
+
+    @route("/api/write/schema-designer/profile-export", "POST")
+    async def post_profile_export(request: Request) -> Response:
+        if not areas.on(Area.SCHEMA_DESIGNER):
+            return problem_response("studio.method_not_allowed")  # W-9: another area's flag never opens it
+        # Imported only now: with the Schema Designer flag off the export is not loaded (GS3-01).
+        from tabrion_studio.write.profile_export import export_profiles
+
+        def export(_session: str, doc: dict[str, Any]) -> Response:
+            exported = export_profiles(
+                config.entries(),
+                audit,
+                reserved,
+                doc,
+                area=Area.SCHEMA_DESIGNER.value,
+                action="schema_designer.profile_export",
+            )
+            return JSONResponse(exported.to_dict(), status_code=201)
+
+        return await plan_call(request, _PROFILE_EXPORT_KEYS, _MAX_CREATE_BODY, export)
 
     # --- the Schema Designer's comparison (STU-XSD-2) ---------------------------------------------------------------
 

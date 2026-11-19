@@ -86,7 +86,7 @@ for _path, _methods in WRITE_ROUTES:
 
 def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> None:
     methods = {f"{method} {path}" for method, path, _ in CALLS}
-    assert len(methods) == 40
+    assert len(methods) == 41
     for expected in (
         "POST /api/write/profiles",
         "POST /api/write/unlocks",
@@ -110,6 +110,7 @@ def test_the_route_table_covers_profiles_secrets_unlocks_and_the_audit_log() -> 
         "POST /api/write/schema-designer/plan/run",
         "POST /api/write/schema-designer/compare",  # STU-XSD-2: the read-only comparison (G-S3)
         "POST /api/write/schema-designer/revision",  # STU-XSD-3: the Alembic revision output (G-S3)
+        "POST /api/write/schema-designer/profile-export",  # STU-CR-6 part 1: the profile export (G-S3)
         "GET /api/write/database-manager/backups",  # STU-XDM-2: backup and restore (G-S4)
         "POST /api/write/database-manager/backup",
         "POST /api/write/database-manager/restore/preview",
