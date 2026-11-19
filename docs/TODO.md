@@ -743,7 +743,7 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
   record error never hides an unlock refusal.
 - **G-S2 items (STU-XW-2, notes of the PR #114 review; anchor and retention decided 3A, refusals 4A on 2026-11-15,
   see [G-S2 readiness](#g-s2-readiness)):**
-  - **Anchor outside the folder (N-1):** without a key, removing the whole `audit` folder goes unnoticed (Studio
+  - **Anchor outside the folder (N-1)** (built, see 3A below): without a key, removing the whole `audit` folder goes unnoticed (Studio
     starts a new chain from GENESIS), and someone who can write its folder can rebuild a consistent chain
     (residual risk 3). Options: keep the last `(seq, hash)` also in the keyring or in a 0600 file outside
     the `audit` folder and report "log missing or reset" when a new chain starts while an anchor exists; a keyed HMAC
@@ -843,7 +843,7 @@ Every item that a plan or a review asked for "before G-S2":
 | STU-ADR-0006 names no flag and source in its own text (STU-XW-1 open point) | docs/TODO.md | Done in this branch ("As built") |
 | I-3 of the PR #111 review: which privilege findings refuse a write unlock | `pr111-stuxw1-review.md`, `pr112-stuxw1b-review.md` | Decided 1A; implemented in branch `claude/project-thread-rdo6g3-gs2-1a`; **binding before the flag is switched on:** independent review, merge, CI green |
 | Loopback TCP without TLS for a write password (residual risk 4) | `pr116-stuxw4-review.md` N-2, `pr117-stuxwh-review.md` | Decided 2A: risk accepted for G-S2; recheck before G-R (TODO below) |
-| Audit anchor outside the folder / unkeyed chain (N-1) and retention (N-4) | `pr114-stuxw2-review.md` | Decided 3A: anchor before G-R (TODO below); unlimited retention, documented in the security guide |
+| Audit anchor outside the folder / unkeyed chain (N-1) and retention (N-4) | `pr114-stuxw2-review.md` | Decided 3A: anchor before G-R (built, branch `claude/project-thread-rdo6g3-gs2-3a`); unlimited retention, documented in the security guide |
 | Audit of refusals before a run (an unlock of an area that is off, a refused plan) | STU-XW-2, STU-XW-3 open points | Decided 4A: no change |
 | Enum labels reach the page | STU-XDE-1 open points | Decided 6A: confirmed |
 | Partitioned tables stay refused | N-1 of the PR #115 review | Decided 5A: confirmed (built as a refusal) |
@@ -912,9 +912,14 @@ Follow-ups as TODO items:
   (branch `claude/project-thread-rdo6g3-gs2-1a`); until then the `data_editor` flag stays off everywhere.
 - [ ] **G-S2 2A, before G-R:** recheck loopback TCP without TLS for a write or admin password: require TLS with
   `verify-full` or a Unix socket with `requirepeer` (residual risk 4 of the write threat model).
-- [ ] **G-S2 3A, before G-R:** audit-log anchor in the keyring (the last `(seq, hash)`), with a "log missing or
+- [x] **G-S2 3A, before G-R:** audit-log anchor in the keyring (the last `(seq, hash)`), with a "log missing or
   reset" notice when a new chain starts while an anchor exists. Unlimited retention is documented in the security
-  guide now (done).
+  guide now (done). Built (branch `claude/project-thread-rdo6g3-gs2-3a`, draft PR; review pending):
+  `AuditAnchor` in `tabrion_studio.write.audit`, the event `audit.reset` with `anchor_seq`, `anchor_hash` and
+  `found`, `anchor` and `resets` in `GET /api/write/audit`, the notice in the write profile section (en, de);
+  `tests/security/test_write_audit_anchor.py`. Decided with the safest practical option: a reset is recorded and
+  shown, writes go on (the reset is part of the chain); no usable keyring or a failing one never stops the log;
+  an anchor entry that is not one reads as a reset.
 - [ ] **G-S2 4A (optional, no deadline):** `plan.refused` and `unlock.refused` audit events, only if the audit log
   must serve as evidence for third parties.
 - [x] **G-S2 5A:** partitioned tables and partitions stay refused (`studio.plan_target_partitioned`); full support
