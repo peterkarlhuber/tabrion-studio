@@ -16,6 +16,33 @@ step with its risk classes, whether it runs in a transaction, its exact SQL, and
 Designing and previewing never write to the database, the project folder or the disk. Only a confirmed run changes
 the database, and only after Studio made its backup where one is needed.
 
+## Its limits at a glance
+
+These rules hold for every change the Schema Designer makes; the sections below say how each is checked.
+
+- **Alembic projects get a revision, never a run.** When the project has an `alembic.ini`, or the database has a
+  migration version table (Alembic, Nodestro, Axentra, Levuvo, or a SQLite `user_version` above 0), Studio never
+  changes the database itself. For an Alembic project it can only write the plan as a new revision file into the
+  trusted project, which you apply with your own tooling; it never runs `env.py`, project code or an Alembic command
+  ([Write an Alembic revision](#write-an-alembic-revision)).
+- **PROD is locked.** A PROD connection is never unlocked: Studio designs, plans, runs and writes revisions only for
+  DEV and TEST. A PROD schema can only be compared, read-only ([Compare schemas](#compare-schemas)).
+- **A direct run only on DEV or TEST without migration management**, only from your own profiles, only after the
+  preview, the confirmation and a drift check right before the run; everything runs in one transaction
+  ([Run a plan](#run-a-plan)).
+- **The backup rule.** Before a plan that removes, rebuilds or changes data, Studio makes a backup and runs nothing
+  when the backup fails: a copy of the SQLite file, or on PostgreSQL a checked `pg_dump` archive. Only on DEV may a
+  SQLite backup be left out, typed and recorded. **`pg_dump` is not a complete backup**: global roles, role
+  memberships, tablespaces and other cluster objects are not in it ([The backup](#the-backup)).
+- **Read the preview's warnings** before you confirm: views, triggers, policies and functions are not in the draft,
+  the fingerprint does not cover everything, a rebuilt SQLite table may get new `rowid` values, and a locking step
+  waits at most 5 seconds ([The plan](#the-plan)). A rename is planned as a drop and an add: its data is lost.
+- **No role is changed here.** The Schema Designer creates no role and grants nothing. Role changes need a separate
+  admin profile with the least rights it needs, set up outside Studio, under the Database Manager and its gate;
+  Studio never grants `SUPERUSER`, `BYPASSRLS`, `CREATEROLE` or `REPLICATION`
+  ([Database Manager](database-manager.md)). On PostgreSQL, the write role a run uses is checked for too many rights
+  before each run.
+
 ## Turn it on for development
 
 The switch is read once, when Studio starts, from `write-areas.toml` in Studio's configuration folder, as for
@@ -71,7 +98,8 @@ The diagram is another view of the draft, not another way to change it: every ch
 the same route as in the table view, the server checks each one in the same way, and the plan, the confirmation, the
 backup and the run are the same. Drawing a key needs a pointer; with the keyboard, use **Add constraint** in the
 table's card or the table view, which offers every change. The diagram shows the first 150 tables of a draft (the
-table view shows all) and the first 20 columns of each box.
+table view shows all), the first 20 columns of each box and the first 300 foreign keys among those tables as
+lines; a note says when a bound applies.
 
 !!! warning "A rename is a drop and an add"
     Tabrion matches tables and columns by name. A renamed table or column is therefore planned as dropping the old
@@ -309,6 +337,9 @@ file** (`*.tabrion-profile.toml`, Tabrion's profile file format v1) that other T
    project's. Each line says what the file will hold for its password.
 2. Enter the full path of the new file, ending in `.tabrion-profile.toml`.
 3. Type the file's name to confirm, then **Export profiles**.
+
+The file holds no secret, but it names hosts, users, databases and environments (PROD too, if you chose such a
+profile): share it only with people who may know your database layout.
 
 What the file holds, and what it never holds:
 

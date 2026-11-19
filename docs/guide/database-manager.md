@@ -225,6 +225,12 @@ role with dangerous grants in any database), and also a system schema, a schema 
 table, sequence or function in it) the admin role cannot act as, and a schema with a SECURITY DEFINER function.
 Run the wizard with an admin role that owns the schema, usually the role that runs the migrations. Tables a
 migration adds later get the role's rights only when the admin role creates them: run the wizard again after a
-migration. If Tabrion refuses the grant after a new role was created (for example because every role may still
+migration. The grant also sets the admin role's default privileges in the schema, so the runtime role can run every
+function the admin role creates there later, also a SECURITY DEFINER function, which then runs with its owner's
+rights: check the new functions after each migration and run the wizard again, or take the default back for
+functions (`ALTER DEFAULT PRIVILEGES IN SCHEMA <schema> REVOKE EXECUTE ON FUNCTIONS FROM <role>`). The wizard looks
+only inside the schema: a SECURITY DEFINER trigger function in another schema, fired by a trigger on one of the
+schema's tables, runs with its owner's rights while the runtime role changes rows, so check the triggers' functions
+too. If Tabrion refuses the grant after a new role was created (for example because every role may still
 write a protected table), Studio drops the new role again. Every run is written to the audit log
 (`dbm.role.runtime`).

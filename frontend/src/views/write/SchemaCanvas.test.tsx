@@ -13,10 +13,17 @@ import userEvent from '@testing-library/user-event';
 import axe from 'axe-core';
 
 import { parseDraft } from '../../api/schemaDesigner';
-import { MAX_BOX_COLUMNS, MAX_DIAGRAM_TABLES } from '../explorer/er/layout';
+import { buildScene, MAX_BOX_COLUMNS, MAX_DIAGRAM_TABLES } from '../explorer/er/layout';
 import type * as CanvasModule from './SchemaCanvas';
 import type { SchemaCanvasProps } from './SchemaCanvas';
-import { diagramTables, drawnKey, handleId } from './schemaCanvasModel';
+import {
+  diagramTables,
+  drawnKey,
+  handleId,
+  lineCount,
+  MAX_DIAGRAM_LINES,
+  nodeId,
+} from './schemaCanvasModel';
 import { SchemaDesignerSection } from './SchemaDesigner';
 
 const fake = vi.hoisted(() => ({ on: false }));
@@ -114,6 +121,30 @@ const LINKED = table('orders', 'new', {
     },
   ],
 });
+
+function key(column: string, referred: string) {
+  return {
+    name: null,
+    columns: [column],
+    referred_table: referred,
+    referred_columns: ['id'],
+    on_delete: null,
+    on_update: null,
+  };
+}
+
+/** `count` tables that each hold `keys` foreign keys to `parts`: more lines than the canvas draws. */
+function manyKeys(count: number, keys: number) {
+  return [
+    table('parts', 'unchanged'),
+    ...Array.from({ length: count }, (_, n) =>
+      table(`k${n}`, 'unchanged', {
+        columns: [column('id'), column('part_id')],
+        foreign_keys: Array.from({ length: keys }, () => key('part_id', 'parts')),
+      }),
+    ),
+  ];
+}
 
 function draft(revision: number, tables: unknown[]) {
   return {
@@ -273,6 +304,21 @@ describe('schemaCanvasModel (STU-XSD-1)', () => {
     expect(drawnKey(parsed, line(handleId('from', MAX_BOX_COLUMNS), handleId('to', 0)))).toBeNull();
     expect(drawnKey(parsed, line('from:1x', handleId('to', 0)))).toBeNull();
   });
+
+  it('bounds the lines it draws; the keys after the bound are not laid out (review I-2 of #148)', () => {
+    const many = parseDraft(draft(0, manyKeys(4, 80)));
+    if (many === null) throw new Error('fixture');
+    const tables = diagramTables(many);
+    expect(lineCount(tables)).toBe(320);
+    const scene = buildScene(many.schema, tables, MAX_DIAGRAM_LINES);
+    expect(scene.lines).toHaveLength(MAX_DIAGRAM_LINES);
+    expect(scene.outside).toHaveLength(320 - MAX_DIAGRAM_LINES);
+    // The keys stay on their boxes: the column is still marked as a foreign key.
+    expect(scene.boxes[4]?.columns[1]?.key).toBe('fk');
+    // Without the bound (the explorer) every key is a line.
+    expect(buildScene(many.schema, tables).lines).toHaveLength(320);
+    expect(nodeId(3)).toBe('t3');
+  });
 });
 
 describe('the Schema Designer diagram (STU-XSD-1)', () => {
@@ -403,6 +449,54 @@ describe('the Schema Designer diagram (STU-XSD-1)', () => {
     expect(await within(form).findByText('No such column in the table.')).toBeVisible();
     expect(screen.getByTestId('schema-designer-form')).toBeInTheDocument();
     expect(designerWrites(calls)).toHaveLength(1);
+  });
+
+  it('gives the boxes index ids, so names with quotes and backslashes keep working (review I-1 of #148)', async () => {
+    const user = userEvent.setup();
+    const quoted = 'pa"rts';
+    const slashed = 'or\\ders"]';
+    setup({
+      tables: [
+        table(quoted, 'unchanged'),
+        table(slashed, 'new', {
+          columns: [column('id'), column('part_id')],
+          foreign_keys: [key('part_id', quoted)],
+        }),
+      ],
+    });
+    await showDiagram(user);
+    const canvas = await screen.findByTestId('schema-canvas');
+    const boxes = await within(canvas).findAllByTestId('schema-canvas-box');
+    expect(boxes.map((box) => box.dataset.table)).toEqual([quoted, slashed]);
+    const nodes = Array.from(canvas.querySelectorAll<HTMLElement>('.react-flow__node'));
+    expect(nodes.map((node) => node.dataset.id)).toEqual(['t0', 't1']);
+    const handles = Array.from(canvas.querySelectorAll<HTMLElement>('.react-flow__handle'));
+    expect(handles.length).toBeGreaterThan(0);
+    for (const handle of handles) {
+      expect(handle.dataset.nodeid).toMatch(/^t\d+$/);
+      // The selector xyflow builds from the ids while a line is drawn (isValidHandle): valid for every handle.
+      const selector = `.react-flow__handle[data-id="${handle.dataset.id ?? ''}"]`;
+      expect(() => document.querySelector(selector)).not.toThrow();
+      expect(document.querySelector(selector)).toBe(handle);
+    }
+    // The same selector built from a name would not even parse.
+    expect(() => document.querySelector(`[data-id="1-${quoted}-from:0-source"]`)).toThrow();
+    // Choosing a table still names it (shown escaped, U-1): its card shows below.
+    await user.click(within(boxes[1] as HTMLElement).getByRole('button'));
+    expect(screen.getByTestId('schema-canvas-chosen')).toHaveTextContent(
+      'Editing table or\\\\ders"].',
+    );
+    expect(await serious(document.body)).toEqual([]);
+  });
+
+  it('says when the diagram draws only the first 300 foreign keys', async () => {
+    const user = userEvent.setup();
+    setup({ tables: manyKeys(4, 80) });
+    await showDiagram(user);
+    expect(await screen.findByTestId('schema-canvas-lines-capped')).toHaveTextContent(
+      'The diagram draws the first 300 of 320 foreign keys as lines. The table view lists all of them.',
+    );
+    expect(screen.queryByTestId('schema-canvas-capped')).toBeNull();
   });
 
   it('says when the diagram shows only the first 150 tables', async () => {

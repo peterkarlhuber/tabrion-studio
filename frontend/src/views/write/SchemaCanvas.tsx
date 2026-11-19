@@ -12,7 +12,10 @@
  *   server checks it like every other edit (TX-31).
  * - **Keyboard and screen readers:** drawing needs a pointer; the table view is the accessible alternative with the
  *   same edits (08 section 4.7), and the chosen table's card offers every edit with the keyboard.
- * - **Size:** the first 150 tables of the draft (the diagram's bound); the table view shows all (at most 500).
+ * - **Size:** the first 150 tables of the draft (the diagram's bound) and the first 300 foreign keys among them as
+ *   lines (review I-2 of #148), each with a note when it applies; the table view shows all (at most 500 tables).
+ * - **Node ids:** a box's index (`t<i>`), never the table's name (review I-1 of #148): xyflow puts the id unescaped
+ *   into a CSS selector while a line is drawn, so a name with `"` or `\\` would break drawing.
  * - **CSP:** as in the explorer's diagram (`ErDiagram.tsx`): styles go through the CSSOM, the style sheet is bundled.
  *   The page loads this module with a state update after the import, not `React.lazy` (TD-052); it holds no `<select>`.
  */
@@ -58,7 +61,15 @@ import {
 } from '../explorer/er/layout';
 import styles from './SchemaCanvas.module.css';
 import designer from './SchemaDesigner.module.css';
-import { diagramTables, drawnKey, handleId, type DrawnKey } from './schemaCanvasModel';
+import {
+  diagramTables,
+  drawnKey,
+  handleId,
+  lineCount,
+  MAX_DIAGRAM_LINES,
+  nodeId,
+  type DrawnKey,
+} from './schemaCanvasModel';
 
 interface BoxTexts {
   keys: Record<'pk' | 'fk' | 'pkfk', string>;
@@ -257,6 +268,16 @@ function Flow({
     () => new Map(draft.tables.map((table) => [table.name, table.status])),
     [draft],
   );
+  // Review I-1 of #148: a node's id is its index (`t<i>`), never the table's name: xyflow puts the id unescaped into
+  // a CSS selector while a line is drawn. The names come back through this map.
+  const names = useMemo(
+    () => new Map(scene.boxes.map((box, index) => [nodeId(index), box.id])),
+    [scene],
+  );
+  const ids = useMemo(
+    () => new Map(scene.boxes.map((box, index) => [box.id, nodeId(index)])),
+    [scene],
+  );
   const nodes = useMemo<BoxNode[]>(() => {
     const texts: BoxTexts = {
       keys: { pk: t('explorer.er.pk'), fk: t('explorer.er.fk'), pkfk: t('explorer.er.pkfk') },
@@ -267,10 +288,10 @@ function Flow({
         zoom: Math.max(getZoom(), 0.8),
         duration: 0,
       });
-    return scene.boxes.map((box) => {
+    return scene.boxes.map((box, index) => {
       const status = statusOf.get(box.id) ?? 'unchanged';
       return {
-        id: box.id,
+        id: nodeId(index),
         type: 'draftBox',
         position: { x: box.x, y: box.y },
         width: box.width,
@@ -297,14 +318,14 @@ function Flow({
       scene.lines.map((line) => ({
         id: line.id,
         type: 'draftLine',
-        source: line.from,
-        target: line.to,
+        source: ids.get(line.from) ?? '',
+        target: ids.get(line.to) ?? '',
         data: { line },
         selectable: false,
         focusable: false,
         markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16 },
       })),
-    [scene],
+    [scene, ids],
   );
   const aria = useMemo(
     () => ({
@@ -323,29 +344,38 @@ function Flow({
     [t],
   );
   const chooseNode = useCallback(
-    (_event: ReactMouseEvent, node: BoxNode) => onChoose(node.id),
+    (_event: ReactMouseEvent, node: BoxNode) => onChoose(node.data.box.id),
     [onChoose],
   );
   const chooseLine = useCallback(
-    (_event: ReactMouseEvent, edge: LineEdge) => onChoose(edge.source),
-    [onChoose],
+    (_event: ReactMouseEvent, edge: LineEdge) => {
+      const name = names.get(edge.source);
+      if (name !== undefined) onChoose(name);
+    },
+    [onChoose, names],
   );
-  const valid = useCallback(
-    (connection: Connection | Edge) =>
-      drawnKey(draft, {
-        source: connection.source,
-        target: connection.target,
+  /** The key a drawn line proposes, with the nodes' ids read back as the tables' names. */
+  const keyOf = useCallback(
+    (connection: Connection | Edge) => {
+      const source = names.get(connection.source);
+      const target = names.get(connection.target);
+      if (source === undefined || target === undefined) return null;
+      return drawnKey(draft, {
+        source,
+        target,
         sourceHandle: connection.sourceHandle,
         targetHandle: connection.targetHandle,
-      }) !== null,
-    [draft],
+      });
+    },
+    [draft, names],
   );
+  const valid = useCallback((connection: Connection | Edge) => keyOf(connection) !== null, [keyOf]);
   const connect = useCallback(
     (connection: Connection) => {
-      const key = drawnKey(draft, connection);
+      const key = keyOf(connection);
       if (key !== null) onDraw(key);
     },
-    [draft, onDraw],
+    [keyOf, onDraw],
   );
   const tables = scene.boxes.map((box) => box.id).join('\n');
   return (
@@ -390,7 +420,13 @@ export interface SchemaCanvasProps {
 
 export function SchemaCanvas({ draft, chosen, onChoose, onDraw }: SchemaCanvasProps) {
   const { t } = useTranslation();
-  const scene = useMemo(() => buildScene(draft.schema, diagramTables(draft)), [draft]);
+  const { scene, lines } = useMemo(() => {
+    const tables = diagramTables(draft);
+    return {
+      scene: buildScene(draft.schema, tables, MAX_DIAGRAM_LINES),
+      lines: lineCount(tables),
+    };
+  }, [draft]);
   return (
     <div className={styles.wrap} data-testid="schema-canvas-panel">
       <p className={designer.meta}>{t('schemaDesigner.canvas.hint')}</p>
@@ -400,6 +436,11 @@ export function SchemaCanvas({ draft, chosen, onChoose, onDraw }: SchemaCanvasPr
             max: MAX_DIAGRAM_TABLES,
             total: draft.tables.length,
           })}
+        </p>
+      ) : null}
+      {lines > MAX_DIAGRAM_LINES ? (
+        <p className={designer.meta} data-testid="schema-canvas-lines-capped">
+          {t('schemaDesigner.canvas.linesCapped', { max: MAX_DIAGRAM_LINES, total: lines })}
         </p>
       ) : null}
       {scene.boxes.length === 0 ? (

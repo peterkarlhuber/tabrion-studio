@@ -16,7 +16,21 @@ All notable changes to this project are documented here. The format follows
   Designer gets none of its own, ADR 0007 section 12). The role rules of ADR 0008 section 6 are reused from the role
   management, not copied; the wizard adds `role.not_owner`, `role.security_definer` and `role.system_object`. Preview,
   `state` binding, typed name and the audit record `dbm.role.runtime` (no password); a grant Tabrion refuses after the
-  role was created drops the role again. en and de; the Database Manager guide and ADR 0007 are updated.
+  role was created drops the role again. en and de; the Database Manager guide and ADR 0007 are updated. From the
+  review of #154: the guide says that the grant's default privileges let the runtime role run functions the admin
+  role creates later, SECURITY DEFINER ones included, and how to take that default back (I-1); the Schema Designer
+  threat model names that and SECURITY DEFINER trigger functions outside the schema as residual risk 5 (I-2).
+- STU-CR-7 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
+  changes): the Schema Designer's focus, guide and browser tests. After a plan is confirmed the focus moves to the
+  confirmation's status, and after a run or dry run to its outcome, never to Run (GS3-14); the guide's "Its limits at
+  a glance" states revision only for Alembic projects, the PROD lock, direct runs only on DEV and TEST without
+  migration management, the backup rule with what `pg_dump` leaves out, the preview warnings and that the designer
+  changes no role (GS3-24, doc 15 section 3.1). New e2e of the read-only comparison in both themes with axe (three
+  browsers in CI). From the review of #148: the diagram's node ids are the boxes' indexes, mapped back to the table
+  names, so a table name with `"` or `\` no longer breaks drawing (I-1), and the diagram draws at most 300 foreign
+  keys as lines with a note when the bound applies (I-2; `buildScene` takes the bound, the explorer is unchanged).
+  From the review of #150: ADR 0007 section 12 says why the profile export needs no unlock (I-1), and the guide asks
+  to share an exported file with care, as it names hosts, users and environments (I-2).
 - STU-CR-6 part 1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no
   default changes): the profile export, `POST /api/write/schema-designer/profile-export` with the ids of read
   profiles, the new file's path (`*.tabrion-profile.toml`) and its typed name. The shared module
