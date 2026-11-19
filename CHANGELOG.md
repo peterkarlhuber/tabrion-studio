@@ -12,8 +12,10 @@ All notable changes to this project are documented here. The format follows
   moves it on with every record. A log that no longer reaches it at start (the folder removed or moved aside, cut,
   or rebuilt) is recorded as an `audit.reset` record (`anchor_seq`, `anchor_hash`, `found`) and writes go on;
   `GET /api/write/audit` reports `anchor` (`ok`, `none`, `unavailable`, `failed`, `reset`) and `resets`, and the
-  write profile section shows "found missing or reset" (en, de). Without a usable keyring the log works as before
-  and says so. The security guide and the write threat model (TX-12, residual risk 3) are updated.
+  write profile section says that the log was found missing or reset (en, de). Without a usable keyring the log
+  works as before and says so. The security guide and the write threat model (TX-12, residual risk 3) are updated.
+  The Database Manager guide now says to leave `createrole_self_grant` unset for the admin role: with `set,inherit`
+  the admin role reaches every role it creates, and Studio refuses later changes to them (`own_role_reached`).
 - STU-XSD-1 (in development, locked by G-S3; G-S3 not granted, the `schema_designer` flag stays off, no default
   changes): the Schema Designer's graphical mode. "Show the draft as: Diagram" draws the draft as an ER diagram with
   each table's status (the explorer's layout and @xyflow/react, no new dependency, loaded only when shown); the table
