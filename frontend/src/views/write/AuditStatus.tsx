@@ -1,7 +1,9 @@
 /**
  * The audit log of write and admin actions (STU-XW-2): whether it verifies, whether records are pending (review N-4:
  * a record after an action that could not be written is kept and shown here, never lost silently), and the newest
- * records. Read only; shown inside the write profile section, so only while a write area is on.
+ * records. Read only; shown inside the write profile section, so only while a write area is on. G-S2 3A: a log
+ * found missing or reset (its chain no longer reached the anchor kept in the OS keyring) is reported for as long as
+ * its `audit.reset` records are in the chain, and a missing or failing keyring anchor is said.
  */
 import { useEffect, useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -47,6 +49,21 @@ export function AuditStatus({ fetcher }: { fetcher: typeof fetch }) {
           {t('write.audit.broken')}
         </p>
       )}
+      {state !== null && (state.resets > 0 || state.anchor === 'reset') ? (
+        <div role="alert" className={connectionStyles.warning} data-testid="write-audit-reset">
+          <p>{t('write.audit.reset', { count: Math.max(state.resets, 1) })}</p>
+        </div>
+      ) : null}
+      {state !== null && state.anchor === 'unavailable' ? (
+        <p className={connectionStyles.hint} data-testid="write-audit-anchor">
+          {t('write.audit.anchorUnavailable')}
+        </p>
+      ) : null}
+      {state !== null && state.anchor === 'failed' ? (
+        <p className={connectionStyles.warning} data-testid="write-audit-anchor">
+          {t('write.audit.anchorFailed')}
+        </p>
+      ) : null}
       {state !== null && state.pending > 0 ? (
         <div role="alert" className={connectionStyles.warning}>
           <p>{t('write.audit.pending', { count: state.pending })}</p>
