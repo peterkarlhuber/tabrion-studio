@@ -79,11 +79,12 @@ is used.
 | `tabrion.postgres.revoke_membership` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.revoke_privileges` | `src/tabrion_studio/write/database_manager/roles.py` |
 | `tabrion.postgres.role_privileges` | `src/tabrion_studio/write/database_manager/roles.py` |
-| `tabrion.profilefile.ConnectionProfile` | `src/tabrion_studio/write/profile_export.py` |
-| `tabrion.profilefile.ProfileFileError` | `src/tabrion_studio/write/profile_export.py` |
-| `tabrion.profilefile.SecretRef` | `src/tabrion_studio/write/profile_export.py` |
+| `tabrion.profilefile.ConnectionProfile` | `src/tabrion_studio/write/database_manager/profiles.py`, `src/tabrion_studio/write/profile_export.py`, `tests/unit/test_dbm_profile_files.py` |
+| `tabrion.profilefile.ProfileFileError` | `src/tabrion_studio/write/database_manager/profiles.py`, `src/tabrion_studio/write/profile_export.py` |
+| `tabrion.profilefile.SecretRef` | `src/tabrion_studio/write/profile_export.py`, `tests/unit/test_dbm_profile_files.py` |
 | `tabrion.profilefile.dump` | `src/tabrion_studio/write/profile_export.py` |
-| `tabrion.profilefile.load` | `tests/security/test_profile_export.py` |
+| `tabrion.profilefile.load` | `tests/security/test_dbm_profiles.py`, `tests/security/test_profile_export.py` |
+| `tabrion.profilefile.parse` | `src/tabrion_studio/write/database_manager/profiles.py` |
 | `tabrion.rowedit.delete_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.insert_row` | `src/tabrion_studio/write/data_editor.py` |
 | `tabrion.rowedit.update_row` | `src/tabrion_studio/write/data_editor.py` |

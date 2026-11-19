@@ -12,7 +12,9 @@ The **Database Manager** section on the **Connections** page backs up a DEV or T
 folder, restores a backup into a new database or file and deletes a DEV or TEST database after a verified backup.
 The **New database** wizard on the same page, which creates an empty SQLite file or PostgreSQL database, belongs to
 the Database Manager too (see [New database](new-database.md)): on PostgreSQL it runs on the admin profile, whose
-role then needs `CREATEDB`. It also manages the roles of a PostgreSQL DEV or TEST server (below).
+role then needs `CREATEDB`. It also manages the roles of a PostgreSQL DEV or TEST server (below). Its **Profile pairs, import and export** part shows
+which write or admin profile is coupled to each of your read profiles and moves read profiles to and from profile
+files (below).
 
 !!! warning "A PostgreSQL backup is not a complete backup"
     A `pg_dump` archive holds **one database**. Global roles, role memberships, tablespaces and other cluster objects
@@ -206,3 +208,59 @@ After every change Studio reads the role again and shows any difference to what 
 have changed it meanwhile). Every change is written to the audit log (`dbm.role.<change>`). The admin role needs
 CREATEROLE on PostgreSQL 16 or later for this; it must not have SUPERUSER, BYPASSRLS, REPLICATION or a server-file
 role, or the unlock ends.
+
+## Profile pairs, import and export
+
+### Profile pairs
+
+A **pair** is one of your own read profiles with a write or admin profile coupled to it (see
+[What you need](#what-you-need)). The part lists your read profiles and, for each, its write and admin profiles and
+whether the pair of server and password reference is confirmed. A PROD profile is never paired. Studio reads the
+password of a PostgreSQL pair only after you have confirmed that pair once, and again after the pair changes; an
+imported profile is no exception. Pairs are made and changed on the **Settings** page under **Write and admin profiles**, not here.
+
+### Export read profiles
+
+1. Tick the read profiles to export and enter the full path of the new file, ending in `.tabrion-profile.toml`.
+2. **Preview the export**. This writes nothing. It shows what the file will hold for each profile (read only, and
+   whether its password comes from an environment variable, is asked for when used, or there is none) and names the
+   write and admin profiles coupled to them, which are **not** exported.
+3. Type the file's name to confirm, then **Export**. If anything changed since the preview, nothing is written:
+   preview again.
+
+The file is the same as one from the Schema Designer's [Export profiles](schema-designer.md#export-profiles): only
+connection fields, `mode = "read_only"`, no secret ever (an `env:NAME` reference is kept, any other password is
+written as `prompt`), one host per profile, a new file readable and writable only by you that never replaces a file.
+
+### Import read profiles
+
+1. Enter the full path of a profile file (`*.tabrion-profile.toml`) and **Preview the import**. This changes nothing.
+   It lists each profile of the file with its server or file, where its password will come from, the keys Studio does
+   not import, and why a profile cannot be imported.
+2. Tick the profiles to import. A profile whose name you have already must get another name in its **Import ... as**
+   field: Studio never replaces a profile.
+3. Type the file's name to confirm, then **Import**. If the file or your profiles changed since the preview, nothing
+   is imported: preview again.
+
+What an import does and never does:
+
+- **Read profiles only.** Every imported profile is a read profile and keeps its environment: an imported PROD
+  profile stays PROD. A profile whose `mode` is not `read_only`, or that names no environment, is not imported. Nor is
+  a profile that is not PROD but names the database of one of your PROD profiles (also under another host name such
+  as `localhost`).
+- **No secret.** A password from an environment variable keeps that reference (`env:NAME`); any other becomes one you
+  enter when you connect. Studio reads no password during an import.
+- **The whole file is refused** when it is not a valid profile file (format version 1), holds a password, a key
+  Studio does not know (such as a write or admin key) or a profile with several hosts (`db1,db2`): Studio never
+  shortens it to one host and never imports part of such a file. At most 64 profiles per file.
+- A relative SQLite path in the file is taken relative to the file's folder.
+- `allow`, `schema_fingerprint`, `application_name` and `description` are shown as not imported: Studio's profiles do
+  not have them.
+
+The file must be your own regular file, writable only by you, with one name only (no link, no second hard link), at
+most 256 KiB, in a folder that belongs to you, is writable only by you and is given by its real path; it must not be
+in one of Studio's own folders. On Windows Studio does not import or export profile files yet.
+
+Every export and import is written to the audit log (`dbm.profile_export`, `dbm.profile_import`) with the profile
+names and the file's name, never its folder, a host or a password reference. If the audit log cannot be written,
+nothing is done.

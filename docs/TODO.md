@@ -174,6 +174,10 @@
 > backup, the routes under `/api/write/database-manager/` (405 and no import with the flag off), audit, and the page
 > section (en, de). The conditions of the STU-XDM-1 review (M-1, L-1..L-3, A-1, I-1..I-4) are folded into STU-ADR-0008,
 > the threat model and the G-S4 definition. Open: see [STU-XDM-2 open points](#stu-xdm-2-open-points).
+>
+> STU-XDM-5 (2026-11-19, branch `claude/project-thread-rdo6g3-stuxdm5`, draft), **locked by G-S4, which is not
+> granted;** the `database_manager` flag stays off by default: profile pairs, import and export of read profiles.
+> Open: see [STU-XDM-5 open points](#stu-xdm-5-open-points).
 
 ## Summary
 
@@ -667,7 +671,7 @@ kill-switch pull request must bring) is [STU-ADR-0006](adr/0006-per-area-write-k
 | 1.3 | Delete a database: SQLite `delete_database_file`, PostgreSQL `drop_database`, backup and typed name first, `force` only explicit | TABRION STU-XDM-3 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm3`, draft PR; review pending): `tabrion_studio.write.database_manager.delete`, the routes `POST /api/write/database-manager/delete/preview` and `.../delete`, the audit fields `force` and `sessions`, the page's delete part (en, de). Evidence: GS4-03, GS4-10, GS4-17 (refusal), GS4-20, GS4-22 in `tests/security/test_dbm_delete.py`, `test_dbm_delete_postgres.py`, `DatabaseManager.test.tsx`. Open: [STU-XDM-3 open points](#stu-xdm-3-open-points) |
 | 1.3 | Database creation in the admin area (owner grant of 2026-11-18: database creation and role management belong to G-S4 with separate permissions) | TABRION STU-CR-2, STU-CR-3 (moved) | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stucreateadmin`, draft PR; review pending): `tabrion_studio.write.database_manager.create`, routes `POST /api/write/database-manager/create/sqlite` and `.../create/postgresql` behind `database_manager` (the `schema_designer` flag alone answers 405 and imports nothing), PostgreSQL on the admin unlock with the admin check before `CREATE DATABASE`, SQLite without an unlock (no role exists), a write role with `CREATEDB` refused at the unlock and at each run (`studio.write_role_over_privileged`), audit `dbm.create_*`, the page offers the admin profile (en, de). Evidence: GS4-27, GS3-28 in `tests/security/test_dbm_create.py`, `test_dbm_create_postgres.py`, `test_write_privileges.py`, `CreateDatabase.test.tsx`, `e2e/create-database-backend.spec.ts`. Decided: [Owner points decided per the G-S3/G-S4 grant](#owner-points-decided-per-the-g-s3g-s4-grant) |
 | 1.3 | PostgreSQL roles through the admin profile (E-X6) with the TB-149 obligations: re-read after commit, per-database K-2 check, `public_definers` and CREATE-on-database warnings, escaped names, admin rules at least those of a write profile | TABRION STU-XDM-4 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm4`, draft PR; review pending): `tabrion_studio.write.database_manager.roles` on tabrion's stable role DDL, the routes `POST /api/write/database-manager/roles`, `.../roles/preview` and `.../roles/apply`, the audit fields `member`, `options_set`, `password_set`, `on`, `privileges`, `grant_objects`, `differences`, the page's role part (en, de). Evidence: GS4-01, GS4-03, GS4-11..18, GS4-20 in `tests/security/test_dbm_roles.py`, `test_dbm_roles_postgres.py`, `DatabaseManager.test.tsx`. Open: [STU-XDM-4 open points](#stu-xdm-4-open-points) |
-| 1.3 | Profile pairs, import and export (I-109 j per imported pair, single-host only) | TABRION STU-XDM-5 | G-S4 | Open; needs STU-XW-4. Acceptance: GS4-19, GS4-21 |
+| 1.3 | Profile pairs, import and export (I-109 j per imported pair, single-host only) | TABRION STU-XDM-5 | G-S4 | Built, locked by G-S4 (branch `claude/project-thread-rdo6g3-stuxdm5`, draft PR; review pending): `tabrion_studio.write.database_manager.profiles`, the routes `POST /api/write/database-manager/profiles/export/preview`, `.../profiles/export`, `.../profiles/import/preview` and `.../profiles/import` (405 and no import with the flag off), the export through the shared `tabrion_studio.write.profile_export` (preview with the coupled write and admin profiles left out, bound by its `state`), the import of read profiles only through `tabrion.profilefile` with an allowlist on the way in, a host list, a password or an unknown key refusing the whole file, name clashes refused unless a new name is given, the file read by `tabrion_studio.write.folders.read_user_file`; pairs stay the `[[write_profile]]` coupling with the I-109 j confirmation; audit `dbm.profile_export` and `dbm.profile_import`; the page's profiles part (en, de). Evidence: GS4-01, GS4-19, GS4-21, GS4-22 in `tests/security/test_dbm_profiles.py`, `tests/unit/test_dbm_profile_files.py`, `DatabaseManagerProfiles.test.tsx`, `e2e/database-manager-profiles-backend.spec.ts`. Open: [STU-XDM-5 open points](#stu-xdm-5-open-points) |
 | 1.3 | i18n, docs, E2E in three browsers and axe (D-11..D-14) | TABRION STU-XDM-6 | G-S4 | Open; needs STU-XDM-2..5. Acceptance: GS4-23, GS4-24 |
 | 1.3 | G-S4 review and fixes | TABRION STU-XDM-7 | G-S4 | Open; needs STU-XDM-6. Acceptance: GS4-25 |
 
@@ -715,7 +719,9 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
     by hand (the rule is not limited to imported profiles, since Studio cannot tell them apart yet).
   - **Every PostgreSQL write profile needs the confirmation**, also one the user created in Studio's form; the
     profile import of STU-XDM-5 and STU-CR-6 has to call the same confirmation for each imported pair. The guide
-    says so, and that a changed pair needs a new one (N-4 of PR #116, done).
+    says so, and that a changed pair needs a new one (N-4 of PR #116, done). Done in STU-XDM-5: an imported profile
+    is a read profile without a write or admin profile; a pair made with it later needs the same confirmation before
+    any secret is read (`tests/security/test_dbm_profiles.py`).
   - **Several Studio processes:** the confirmation file is written atomically, but two processes that confirm at
     the same moment can lose one confirmation (fail closed: the user confirms again). A lock across processes as for
     the audit log is possible if needed.
@@ -812,8 +818,9 @@ Binding boundaries (owner, 2026-11-13; details in STU-ADR-0005):
 - **W-10:** the multi-host `host = "db1,db2"` that schema v1 accepts and `tabrion.profilefile` refuses (tabrion
   TB-148) is decided with STU-CR-6 and the profile import and export of STU-XDM-5. Decided for the export (STU-CR-6
   part 1): a profile with a host list is refused (`studio.profile_export_multi_host`), never cut to one host; Studio's
-  validator refuses such a profile already (`config.host_list`), and the export checks again. The import of STU-XDM-5
-  is still open.
+  validator refuses such a profile already (`config.host_list`), and the export checks again. Decided for the import
+  (STU-XDM-5): a file with a host list in any profile is refused as a whole
+  (`studio.dbm_profile_import_multi_host`), never cut to one host and never partly imported.
 - **STU-CR-6 part 1 follow-ups:** the database creation of STU-CR-2 (`write/database_manager/create.py`) keeps its
   own copies of the folder checks that `write/folders.py` now shares (`check_new_file_path`, `check_folder`,
   `held_folder`, `create_new_file`); moving it onto them is a refactor without a behavior change, left for its own
@@ -1282,6 +1289,30 @@ flag stays off by default. Each point needs the independent review or the owner.
    Studio's own roles refused (`own_role_reached`), profiles without a user counted by their OS user or refused
    (`own_role_unknown`), the residual window documented.
 4. **No E2E yet** for the role part (unit tests and axe in `DatabaseManager.test.tsx`); STU-XDM-6.
+
+### STU-XDM-5 open points
+
+Built 2026-11-19 (branch `claude/project-thread-rdo6g3-stuxdm5`). **G-S4 is not granted;** the `database_manager`
+flag stays off by default. Each point needs the independent review or the owner.
+
+1. **Owner points, decided with the safest practical option** (STU-ADR-0008 "As built (STU-XDM-5)"; the owner may
+   revisit them at G-S4): (a) pairs stay the `[[write_profile]]` coupling with the I-109 j confirmation, no new pair
+   route or store; (b) an import adds read profiles only and never replaces one: a name clash needs a new name or the
+   profile is left out, and the clash is checked again inside the save; (c) a profile whose `mode` is not `read_only`,
+   or which names no environment, is not importable; (d) a profile that is not PROD but names the database of a PROD
+   profile is not importable; (e) an `env:` reference is kept, any other becomes Studio's empty keyring entry (asked
+   for when used), a SQLite profile gets none; (f) a host list, a password or an unknown key refuses the whole file;
+   (g) a relative SQLite path is resolved against the file's folder; (h) the file must be the user's own regular file
+   with one name, not writable by others, at most 256 KiB and 64 profiles, in a folder that passes the folder rules;
+   (i) no admin unlock is needed, since no database is touched; (j) both operations are bound to their preview's
+   `state`; (k) refused on Windows; (l) a name with a hidden character is refused.
+2. **Shared with STU-CR-6:** the Schema Designer's export and the Database Manager's export are one module
+   (`tabrion_studio.write.profile_export`) with one allowlist; only the area and the audit action differ.
+3. **Not imported:** `allow`, `schema_fingerprint`, `application_name` and `description` of a profile file are named
+   in the preview and dropped; Studio's profile has no place for them.
+4. **Several Studio processes:** the clash is checked again under the profiles file's lock, so a profile another
+   process saved in between is never replaced (fail closed: the import is refused).
+5. **Firefox and WebKit** run in CI only; locally only Chromium was available.
 
 ## Cross-repository checks still to add
 

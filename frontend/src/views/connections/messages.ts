@@ -171,6 +171,19 @@ const PROBLEMS = new Set([
   'profile_export_exists',
   'profile_export_platform',
   'profile_export_failed',
+  'profile_export_changed',
+  // The Database Manager's profile import (STU-XDM-5).
+  'dbm_profile_import_invalid',
+  'dbm_profile_import_multi_host',
+  'dbm_profile_import_folder',
+  'dbm_profile_import_reserved',
+  'dbm_profile_import_missing',
+  'dbm_profile_import_too_large',
+  'dbm_profile_import_platform',
+  'dbm_profile_import_unconfirmed',
+  'dbm_profile_import_changed',
+  'dbm_profile_import_exists',
+  'dbm_profile_import_refused',
   // The Database Manager's backup and restore (STU-XDM-2).
   'backup_tool_unavailable',
   'backup_tool_failed',
@@ -379,7 +392,45 @@ const EXPORT_ISSUES = new Set([
   'suffix',
 ]);
 
+/** The `import.*` codes of a refused profile import or a profile it leaves out (STU-XDM-5), each with its text. */
+const IMPORT_ISSUES = new Set([
+  'required',
+  'type',
+  'too_many',
+  'duplicate',
+  'unknown',
+  'too_long',
+  'control_character',
+  'network_path',
+  'not_absolute',
+  'not_normalized',
+  'no_file_name',
+  'suffix',
+  'host_list',
+  'syntax',
+  'encoding',
+  'version',
+  'empty',
+  'value',
+  'range',
+  'plain_password',
+  'other_engine',
+  'unknown_key',
+  'mode',
+  'environment_required',
+  'prod_target',
+  'name_hidden',
+  'name_taken',
+  'not_valid',
+]);
+
 export function issueText(t: TFunction, issue: ProblemIssue): string {
+  if (issue.code.startsWith('import.')) {
+    const code = issue.code.slice('import.'.length);
+    return IMPORT_ISSUES.has(code)
+      ? t(`dbmProfiles.issues.${code}`)
+      : t('issues.other', { code: issue.code });
+  }
   if (issue.code.startsWith('export.')) {
     const code = issue.code.slice('export.'.length);
     return EXPORT_ISSUES.has(code)

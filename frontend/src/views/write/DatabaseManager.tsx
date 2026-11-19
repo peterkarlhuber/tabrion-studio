@@ -12,6 +12,7 @@
  *   connection's own file, backed up first) and its name typed to confirm. The restore button is never the default
  *   focus.
  * - **Roles (STU-XDM-4, PostgreSQL only):** see `DatabaseManagerRoles.tsx`.
+ * - **Profile pairs, import and export (STU-XDM-5):** see `DatabaseManagerProfiles.tsx`; they need no connection.
  * - **Delete (STU-XDM-3):** a preview first (changes nothing): on PostgreSQL another database of the server by its name
  *   (never a maintenance database or the connected one) with the number of other sessions on it; on SQLite this
  *   connection's own file. Then its name typed to confirm. Ending the other sessions (`force`, PostgreSQL 13 or later)
@@ -50,6 +51,7 @@ import { Field } from '../connections/Field';
 import { problemText } from '../connections/messages';
 import styles from '../Views.module.css';
 import { UnlockForm } from './DataEditor';
+import { ProfilesPart } from './DatabaseManagerProfiles';
 import { RolesPart } from './DatabaseManagerRoles';
 
 export function DatabaseManagerSection({ fetcher = fetch }: { fetcher?: typeof fetch }) {
@@ -207,6 +209,7 @@ function DatabaseManager({ fetcher }: { fetcher: typeof fetch }) {
           />
         </>
       )}
+      <ProfilesPart fetcher={fetcher} />
     </section>
   );
 }

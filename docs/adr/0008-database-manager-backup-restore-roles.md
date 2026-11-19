@@ -223,6 +223,7 @@ reasons; never `str()` of an exception, the server's message or a path from a Ta
 Write and admin profiles and their couplings stay in the user's own profile store (K-1). An import calls the I-109 j
 confirmation for every imported pair before any secret is read. Import and export take single-host profiles only
 (W-10, TB-148): a multi-host profile is refused, never cut short. Write and admin secrets are never exported (N-5).
+As built in STU-XDM-5: see [As built (STU-XDM-5)](#as-built-stu-xdm-5).
 
 ### 9. Audit
 
@@ -418,6 +419,67 @@ G-S3/G-S4 grant 2026-11-18, safest option**:
   8. A role whose name holds a hidden character is refused for every action, not only for destructive ones.
   9. Alter needs every option named (no silent defaults).
   10. Windows: not refused (no file or tool is involved).
+
+## As built (STU-XDM-5)
+
+- Routes behind `database_manager` (405 and no import with the flag off, which is the default):
+  `POST /api/write/database-manager/profiles/export/preview` (writes nothing), `POST .../profiles/export`,
+  `POST .../profiles/import/preview` (changes nothing) and `POST .../profiles/import`. Module
+  `tabrion_studio.write.database_manager.profiles`.
+- **Pairs** stay what K-1 and STU-XW-4 made them: a `[[write_profile]]` of the user's store coupled to one of the
+  user's read profiles by `read_profile`, never to a PROD one, with the I-109 j confirmation of server and secret
+  reference before a PostgreSQL pair's secret is read. No pair route, store or unlock of its own: the page shows the
+  pairs from `/api/profiles` and `/api/write/profiles`. An imported profile is a read profile without a partner; a
+  pair made with it later needs the same confirmation (`studio.secret_unconfirmed` before any secret is resolved).
+- **Export** reuses `tabrion_studio.write.profile_export` of STU-CR-6 (one allowlist of fields, `mode = "read_only"`,
+  `env:` kept, any other reference written as `prompt`, a host list refused, the folder rules of
+  `tabrion_studio.write.folders`, `O_EXCL|O_NOFOLLOW`, `0600`), with area `database_manager` and audit action
+  `dbm.profile_export`. Only read profiles can be named. The preview names the profiles and what the file will say
+  about each password, and the write and admin profiles coupled to them as left out; their fields and secrets are
+  never read. The export carries the preview's `state` (a SHA-256 over the path and the text to be written) and the
+  typed file name; any change in between refuses (`studio.profile_export_changed`).
+- **Import** reads a `*.tabrion-profile.toml` with `tabrion.profilefile.parse` after
+  `tabrion_studio.write.folders.read_user_file`: the folder passes `check_folder` and is not one of Studio's own
+  folders; the file is opened relative to the held folder with `O_NOFOLLOW|O_NONBLOCK` and must be a regular file of
+  the user, not writable by group or others, with one name only (no hard link), at most 256 KiB. The whole file is
+  refused (`studio.dbm_profile_import_invalid` with `import.<code>`, or `_multi_host`, `_folder`, `_reserved`,
+  `_missing`, `_too_large`, `_platform`) when it is not valid TOML or UTF-8, not format version 1, holds no profile or
+  more than 64, holds a password, a key Tabrion warns about (a write or admin key among them), or a host list in any
+  profile (W-10, TB-148: never cut, never partly imported).
+- **What is taken:** only the fields of the export's allowlist; a relative SQLite path is resolved against the file's
+  folder. `allow`, `schema_fingerprint`, `application_name` and `description` are named in the preview as not imported.
+  Each profile is checked again by Studio's own validator. A profile is not importable when its `mode` is not
+  `read_only`, when it names no environment, or when it is not PROD but names the database of a PROD profile (in the
+  user's store, a trusted project or the same file; PostgreSQL by database, port and overlapping addresses, SQLite by
+  device and inode). An imported PROD profile stays PROD.
+- **Secrets:** an imported profile never carries one. An `env:NAME` reference is kept as that reference (the value is
+  not read); any other becomes Studio's empty keyring entry, asked for when used; a SQLite profile has none.
+- **Names:** an import never replaces a profile. A name that a read or write profile of the user's store has already
+  needs a new name in the request (`as`) or the profile is left out; otherwise `studio.dbm_profile_import_exists`
+  (409). The clash is checked again inside the store's save, so a profile saved in between is not replaced. A name
+  with a hidden character is refused (`import.name_hidden`).
+- **Binding:** the import carries the preview's `state` (the file's SHA-256) and the store's digest; a changed file is
+  `studio.dbm_profile_import_changed`, a changed store `studio.config_stale`, and a store written by hand needs
+  `overwrite` as every save does.
+- **Audit:** `run.start`/`run.result` with action `dbm.profile_export` or `dbm.profile_import`, the profile names in
+  `objects` and the file's name (never its folder) as `target`; never a host, a path, a reference or a secret. A start
+  record that cannot be written stops the action.
+- **Windows:** export and import are refused (no `dir_fd`, no check of a folder's access list), as for the STU-CR-6
+  export.
+- **Owner points, decided with the safest practical option** (STU-XDM-5; the owner may revisit them at G-S4):
+  1. Pairs stay the existing coupling and confirmation; no new pair model.
+  2. An import adds read profiles only and never replaces one; a clash needs an explicit new name.
+  3. A profile whose `mode` is not `read_only` is not importable (not silently made read only).
+  4. A profile without an environment is not importable (no default label).
+  5. A non-PROD profile of a PROD database is not importable (no second label for a PROD target).
+  6. Any reference other than `env:` becomes a prompt; nothing is resolved during an import.
+  7. A host list, a password or an unknown key refuses the whole file.
+  8. A relative SQLite path is resolved against the file's folder.
+  9. The file must be the user's own, private, single-named regular file of at most 256 KiB and 64 profiles.
+  10. No admin unlock is needed: neither operation touches a database.
+  11. Both operations are bound to their preview by `state`.
+  12. Windows: refused.
+  13. A name with a hidden character is refused.
 
 ## Tests
 
