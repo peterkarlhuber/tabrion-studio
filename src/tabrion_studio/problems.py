@@ -760,6 +760,16 @@ CATALOG: dict[str, Entry] = {
         "verified certificate (sslmode verify-ca or verify-full).",
         "Set the TLS mode of the coupled profile to verify-full or verify-ca.",
     ),
+    "studio.write_loopback_tls_required": Entry(
+        400,
+        ProblemKind.REQUEST,
+        "Checked local server required",
+        "Studio is set to send a write or admin password to a server on this computer only when libpq checks who "
+        "answers: over TLS with sslmode verify-full, or over a Unix socket with requirepeer (loopback_tls = "
+        "require in write-areas.toml).",
+        "Set the TLS mode of the coupled profile to verify-full, or connect over the server's Unix socket and name "
+        "its operating system user in the write profile (requirepeer).",
+    ),
     "studio.require_auth_unavailable": Entry(
         405,
         ProblemKind.REQUEST,

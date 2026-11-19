@@ -128,6 +128,11 @@ export function SecretConfirmations({
               {t('write.pair.foreign')}
             </p>
           ) : null}
+          {pair.local_unverified === true ? (
+            <p role="note" className={connectionStyles.warning} data-testid="secret-pair-local">
+              {t('write.pair.localUnverified')}
+            </p>
+          ) : null}
           <Field label={t('write.pair.typeHost', { host: open.preview.confirm_text })}>
             {(props) => (
               <input
