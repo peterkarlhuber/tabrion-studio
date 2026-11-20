@@ -1,4 +1,4 @@
-// Adapted from axentra-studio src/components/ui/IconButton.tsx at caa52b5 (MIT, © Peter Karlhuber): --tb- tokens;
+// Adapted from axentra-studio src/components/ui/IconButton.tsx at caa52b5 (proprietary, © Levuvo): --tb- tokens;
 // the tooltip is CSS only (Radix Tooltip is not used yet), the label is the accessible name.
 import type { ComponentProps, ReactNode } from 'react';
 

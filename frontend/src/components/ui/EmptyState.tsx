@@ -1,4 +1,4 @@
-// Adapted from axentra-studio src/components/ui/EmptyState.tsx at caa52b5 (MIT, © Peter Karlhuber): --tb- tokens,
+// Adapted from axentra-studio src/components/ui/EmptyState.tsx at caa52b5 (proprietary, © Levuvo): --tb- tokens,
 // no hexagon motif and no route focus.
 import type { ReactNode } from 'react';
 

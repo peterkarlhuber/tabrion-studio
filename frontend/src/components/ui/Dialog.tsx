@@ -9,8 +9,8 @@
  * - Escape and the close button mean "Cancel" (`onCancel`); a click outside does nothing;
  * - on close, the focus returns to the element that had it before (the opener).
  *
- * Layout and styles are adapted from axentra-studio src/components/ui/Dialog.tsx at caa52b5 (MIT, © Peter
- * Karlhuber). Planning document 08 names Radix Dialog; it is not used because its scroll lock injects a <style>
+ * Layout and styles are adapted from axentra-studio src/components/ui/Dialog.tsx at caa52b5 (proprietary,
+ * © Levuvo, the owner of this repository). Planning document 08 names Radix Dialog; it is not used because its scroll lock injects a <style>
  * element, which the strict Content-Security-Policy of STU-003 (`style-src 'self'`) refuses. The native element
  * gives the modality, and this component adds the focus rules on top (tested in Dialog.test.tsx and
  * e2e/dialogs.spec.ts).
