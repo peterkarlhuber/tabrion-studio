@@ -163,3 +163,14 @@ def test_nothing_to_check_fails(tmp_path: Path) -> None:
     empty = tmp_path / "empty.json"
     empty.write_text("[]")
     assert run("--python", str(empty)).returncode == 1
+
+
+def test_code_copied_from_in_house_repositories_keeps_its_proprietary_license() -> None:
+    """Code copied from other Levuvo repositories is proprietary like them; a source comment must not call it MIT."""
+    in_house = ("axentra-studio", "axentra", "nodestro", "orkexa", "tabrion ")
+    offenders = []
+    for path in sorted((ROOT / "frontend" / "src").rglob("*.ts*")):
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if any(name in line for name in in_house) and "(MIT" in line:
+                offenders.append(f"{path.relative_to(ROOT)}:{number}")
+    assert offenders == []

@@ -1,4 +1,4 @@
-// Copied from axentra-studio src/lib/contrast.ts at caa52b5 (MIT, © Peter Karlhuber); unchanged.
+// Copied from axentra-studio src/lib/contrast.ts at caa52b5 (proprietary, © Levuvo); unchanged.
 
 /** WCAG 2.x relative luminance and contrast ratio for #rrggbb colors. */
 export function relativeLuminance(hex: string): number {

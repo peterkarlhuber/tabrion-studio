@@ -1,4 +1,4 @@
-// Adapted from axentra-studio src/components/ui/Button.tsx at caa52b5 (MIT, © Peter Karlhuber): --tb- tokens, no
+// Adapted from axentra-studio src/components/ui/Button.tsx at caa52b5 (proprietary, © Levuvo): --tb- tokens, no
 // router link variant, no loading state yet.
 import type { ComponentProps, ReactNode } from 'react';
 
