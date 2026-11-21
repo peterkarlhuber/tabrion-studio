@@ -40,10 +40,11 @@ not turn ``/api/control/../x`` into a route outside the control prefix (F-8). Th
 matched case-insensitively (and after Unicode normalization), so such a path is only ever classified more strictly.
 
 A refusal is a problem document (``application/problem+json``, :mod:`tabrion_studio.problems`, STU-004) with the
-code named above and fixed texts. Every answer, including refusals and errors of the routes, gets the security
-headers: a strict ``Content-Security-Policy`` (T-07, SQ-08), ``Cache-Control: no-store`` (T-15),
-``X-Content-Type-Options: nosniff``, ``Referrer-Policy: no-referrer``, ``X-Frame-Options: DENY`` and same-origin
-opener and resource policies.
+code named above and fixed texts. A refusal code the library adds later and :data:`REFUSAL_CODES` does not know yet
+is still refused, as ``access.refused`` with the library's status (403 if that is not a 4xx). Every answer,
+including refusals and errors of the routes, gets the security headers: a strict ``Content-Security-Policy`` (T-07,
+SQ-08), ``Cache-Control: no-store`` (T-15), ``X-Content-Type-Options: nosniff``, ``Referrer-Policy: no-referrer``,
+``X-Frame-Options: DENY`` and same-origin opener and resource policies.
 
 This middleware is not a user login: it keeps other web pages, other local users and DNS rebinding away from a
 single-user tool on loopback (STU-ADR-0002).
@@ -52,6 +53,7 @@ single-user tool on loopback (STU-ADR-0002).
 from __future__ import annotations
 
 from collections.abc import Callable
+import dataclasses
 
 from nodestro_session import FORWARDING_HEADERS, Refusal, SessionGuard
 from nodestro_session import SECURITY_HEADERS as _LIBRARY_SECURITY_HEADERS
@@ -61,7 +63,7 @@ from nodestro_session.guard import SAFE_METHODS
 from nodestro_session.guard import with_security_headers as _with_security_headers
 from starlette.types import ASGIApp, Scope, Send
 
-from tabrion_studio.problems import problem, send_problem
+from tabrion_studio.problems import Problem, problem, send_problem
 from tabrion_studio.security.sessions import CSRF_HEADER, Sessions, cookie_name
 
 __all__ = [
@@ -73,8 +75,10 @@ __all__ = [
     "REFUSAL_CODES",
     "SAFE_METHODS",
     "SECURITY_HEADERS",
+    "UNKNOWN_REFUSAL_CODE",
     "AccessMiddleware",
     "loopback_origin",
+    "refusal_problem",
     "session_cookie",
     "with_security_headers",
 ]
@@ -128,9 +132,25 @@ def with_security_headers(send: Send) -> Send:
     return _with_security_headers(send, SECURITY_HEADERS)
 
 
+#: The generic refusal for a library code that :data:`REFUSAL_CODES` does not map (a newer nodestro-session).
+UNKNOWN_REFUSAL_CODE = "access.refused"
+
+
+def refusal_problem(refusal: Refusal) -> Problem:
+    """The problem document for a refusal of the library (fixed texts, STU-004).
+
+    A known code gets its Studio code and the status of Studio's catalog. An unknown one fails closed: the generic
+    :data:`UNKNOWN_REFUSAL_CODE` with the library's status (403 if that is not a client error), never an error.
+    """
+    code = REFUSAL_CODES.get(refusal.code)
+    if code is not None:
+        return problem(code)
+    status = refusal.status if type(refusal.status) is int and 400 <= refusal.status < 500 else 403
+    return dataclasses.replace(problem(UNKNOWN_REFUSAL_CODE), status=status)
+
+
 async def _refuse(scope: Scope, send: Send, refusal: Refusal) -> None:
-    # A problem document with fixed texts (STU-004); the status comes from Studio's catalog.
-    await send_problem(send, problem(REFUSAL_CODES[refusal.code]))
+    await send_problem(send, refusal_problem(refusal))
 
 
 class AccessMiddleware(SessionGuard):

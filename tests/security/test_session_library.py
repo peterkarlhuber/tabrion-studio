@@ -61,6 +61,21 @@ def test_every_neutral_refusal_maps_to_a_studio_code_with_the_same_status() -> N
     assert access.REFUSAL_CODES["not_found"] == "studio.not_found"
 
 
+@pytest.mark.parametrize(("status", "sent"), [(429, 429), (401, 401), (404, 404), (200, 403), (500, 403)])
+def test_an_unknown_library_refusal_fails_closed(monkeypatch: pytest.MonkeyPatch, status: int, sent: int) -> None:
+    """A refusal code a newer nodestro-session adds is refused as ``access.refused``, never a KeyError (a 500)."""
+    monkeypatch.setitem(nodestro_session.REFUSALS, "brand_new_refusal", (status, "A refusal Studio does not know."))
+    assert "brand_new_refusal" not in access.REFUSAL_CODES
+    monkeypatch.setattr(AccessMiddleware, "refusal", lambda self, scope: "brand_new_refusal")
+    answer = _answer(OWN, "/api/health")
+    assert answer[:2] == (sent, access.UNKNOWN_REFUSAL_CODE)
+    doc = access.refusal_problem(nodestro_session.Refusal.of("brand_new_refusal"))
+    assert (doc.code, doc.kind, doc.status) == ("access.refused", "access", sent)
+    assert (doc.title, doc.detail) == (CATALOG["access.refused"].title, CATALOG["access.refused"].detail)
+    # A known code keeps Studio's code and status.
+    assert access.refusal_problem(nodestro_session.Refusal.of("csrf_invalid")).code == "access.csrf_invalid"
+
+
 @pytest.mark.parametrize(
     ("path", "method", "headers", "status", "code"),
     [

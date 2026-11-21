@@ -1442,16 +1442,20 @@ All notable changes to this project are documented here. The format follows
   with the code of Studio's own order and `studio.not_found` otherwise); `/api` and `/api/control/` are matched
   case-insensitively; a state, log or config directory below a parent that another user (not root) owns, or that
   others may write without the sticky bit, is refused; at most 32 launch tokens wait at once. Some `UnsafePathError`
-  and `PortUnavailableError` messages say "the directory" instead of "the state directory".
+  and `PortUnavailableError` messages say "the directory" instead of "the state directory". A refusal code the
+  library adds later and Studio does not map is refused as the new `access.refused` with the library's status (403 if
+  that is not a 4xx) instead of ending in a 500.
 - Dependencies (NS-003): `nodestro-session<0.2` in `pyproject.toml` (no lower bound: its only version is the
-  pre-release 0.1.0.dev0, which RC-8 does not allow as a specifier), its commit `2d06f0a` pinned by full SHA in the
+  pre-release 0.1.0.dev0, which RC-8 does not allow as a specifier), its commit `15e0724` pinned by full SHA in the
   new `constraints/nodestro-session.txt`, kept out of the hashed runtime lock like tabrion. Every CI install, the
   install guide, the README, `scripts/smoke_wheel.py` (`--nodestro-session-pin`) and `scripts/release_bom.py`
   (`--git-pin`, used by the nightly) take that pin; `runtime_lock.py check-installed` checks its source (DC-TS-1) and
-  `install (poisoned index)` runs each install a second time with a poisoned `nodestro-session`. The license policy
+  `install (poisoned index)` runs each install a second time with a poisoned `nodestro-session`; the poisoned release
+  of each name has its own version inside Studio's range (tabrion 0.2.99, nodestro-session 0.1.99), so the copy of
+  `scripts/check_tabrion_source.py` is ahead of nodestro-studio's and its SHA-256 pin is updated. The license policy
   lists it as first-party. The pin-file test allows a full-SHA pin of nodestro-session from its own repository, and
   the import contract and the prefix scan allow exactly `nodestro_session`; every other `nodestro*` package stays
-  forbidden (new probes). The dependency-policy copy is refreshed from nodestro-studio.
+  forbidden (new probes). The dependency-policy copy is refreshed from nodestro-studio (merge `133ec1e` of #225).
 
 - Database creation moved to the admin area (G-S4; owner grant of 2026-11-18, which assigns database creation and
   role management to the admin area with separate permissions; all flags stay off by default). The STU-CR-2 and

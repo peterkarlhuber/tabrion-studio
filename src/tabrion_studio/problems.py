@@ -170,6 +170,10 @@ CATALOG: dict[str, Entry] = {
     "access.control_denied": Entry(
         401, ProblemKind.ACCESS, "Control token missing", "The control endpoint needs the instance's control token."
     ),
+    # A refusal of nodestro-session that Studio has no code for yet; sent with the library's status.
+    "access.refused": Entry(
+        403, ProblemKind.ACCESS, "Request refused", "Studio's access protection refused this request."
+    ),
     # Studio's own errors.
     "studio.not_found": Entry(404, ProblemKind.NOT_FOUND, "Not found", "There is nothing at this address."),
     "studio.method_not_allowed": Entry(
