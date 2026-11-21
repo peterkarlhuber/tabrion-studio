@@ -18,7 +18,7 @@ met in Chromium; Firefox and WebKit are met since PR #63 (B-2) and required sinc
 ## How to run it
 
 ```bash
-python scripts/build_frontend.py && pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+python scripts/build_frontend.py && pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
 cd frontend
 TABRION_STUDIO_E2E_PYTHON=../.venv/bin/python \
 TABRION_STUDIO_E2E_EXAMPLES=<tabrion checkout at the pinned commit>/examples \

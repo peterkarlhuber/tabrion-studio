@@ -33,7 +33,7 @@ python scripts/build_frontend.py      # npm ci + npm run build; copies the front
 python -m venv ~/.venvs/tabrion-studio
 ~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
 ~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-~/.venvs/tabrion-studio/bin/python -m pip install --no-deps . -r constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --no-deps . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
 ~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 
@@ -48,7 +48,7 @@ python -m venv $env:USERPROFILE\.venvs\tabrion-studio
 $py = "$env:USERPROFILE\.venvs\tabrion-studio\Scripts\python.exe"
 & $py -m pip install --upgrade "pip>=26.1"
 & $py -m pip install --require-hashes --no-deps --only-binary :all: -r constraints\runtime-lock.txt
-& $py -m pip install --no-deps . -r constraints\tabrion-integration.txt
+& $py -m pip install --no-deps . -r constraints\tabrion-integration.txt -r constraints\nodestro-session.txt
 & $py -m pip check
 ```
 
@@ -58,12 +58,16 @@ computer). The second installs Studio and Tabrion without dependencies, so the r
 the lock, and `pip check` confirms that the lock was complete. pip still builds Studio and Tabrion themselves from
 source, with their build backends fetched from PyPI without hashes (build time only; nothing of it is installed). CI installs the same way and tests exactly these versions (security review F-6,
 [CI](../development/ci.md#hashed-runtime-pins)). The lock is one tested set inside the ranges of `pyproject.toml`;
-`pip install . -c constraints/tabrion-integration.txt` works too, but resolves the dependencies afresh from PyPI,
+`pip install . -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt` works too, but resolves the dependencies afresh from PyPI,
 without hashes.
 
 Tabrion is not on PyPI either. `constraints/tabrion-integration.txt` pins the Tabrion commit this Studio commit is
 built and tested against (Tabrion 0.3.0, a commit not tagged yet) by its full SHA (pip cannot hash a Git checkout, so Tabrion is not in the
 lock), so always install with that file. A plain `pip install .` fails, because pip cannot find Tabrion.
+
+The same holds for nodestro-session, the shared library that protects Studio's local session (launch link, session
+cookie, the access checks): it is not on PyPI, and `constraints/nodestro-session.txt` pins the commit Studio is tested
+against by its full SHA. Always install with both pin files.
 
 The install needs pip 26.1 or later. Older pip versions (24.0 to 26.0, for example the pip 24.0 of a fresh
 Ubuntu 24.04 virtual environment) stop with `AssertionError: Candidate is not for this requirement`, because they
@@ -91,7 +95,7 @@ PIP_CONSTRAINT=build-constraints.txt PIP_REQUIRE_HASHES=1 ~/.venvs/tabrion-build
 python -m venv ~/.venvs/tabrion-studio
 ~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
 ~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-~/.venvs/tabrion-studio/bin/python -m pip install --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
 ~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 
@@ -109,7 +113,7 @@ python -m venv $env:USERPROFILE\.venvs\tabrion-studio
 $py = "$env:USERPROFILE\.venvs\tabrion-studio\Scripts\python.exe"
 & $py -m pip install --upgrade "pip>=26.1"
 & $py -m pip install --require-hashes --no-deps --only-binary :all: -r constraints\runtime-lock.txt
-& $py -m pip install --no-deps dist\<wheel file name> -r constraints\tabrion-integration.txt
+& $py -m pip install --no-deps dist\<wheel file name> -r constraints\tabrion-integration.txt -r constraints\nodestro-session.txt
 & $py -m pip check
 ```
 
@@ -133,7 +137,7 @@ PowerShell they stay set, so the block removes them before installing (the insta
 pin.
 
 ```bash
-uv tool install dist/tabrion_studio-*.whl -c constraints/runtime-lock.txt -c constraints/tabrion-integration.txt
+uv tool install dist/tabrion_studio-*.whl -c constraints/runtime-lock.txt -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
 ```
 
 `uv tool install` reads the lock only as version constraints: with uv 0.11.32 it installed a file even when every
@@ -146,15 +150,15 @@ the lock); so do not pass `constraints/runtime-lock.txt` to pipx. pipx then reso
 the ranges of `pyproject.toml`, without the lock's versions and without hashes.
 
 ```bash
-pipx install dist/tabrion_studio-*.whl --pip-args "-c constraints/tabrion-integration.txt"
+pipx install dist/tabrion_studio-*.whl --pip-args "-c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt"
 ```
 
 On Windows, in PowerShell, name the wheel's full file name (PowerShell does not expand `*` for these tools either,
 see above):
 
 ```powershell
-uv tool install dist\<wheel file name> -c constraints\runtime-lock.txt -c constraints\tabrion-integration.txt
-pipx install dist\<wheel file name> --pip-args "-c constraints\tabrion-integration.txt"
+uv tool install dist\<wheel file name> -c constraints\runtime-lock.txt -c constraints\tabrion-integration.txt -c constraints\nodestro-session.txt
+pipx install dist\<wheel file name> --pip-args "-c constraints\tabrion-integration.txt -c constraints\nodestro-session.txt"
 ```
 
 Both commands (the bash form) were run on Linux on 2026-11-13: uv, and pipx with pip as its installer (no uv on
@@ -184,7 +188,7 @@ Check out the new commit, build the frontend again and reinstall:
 git fetch && git checkout <new commit SHA>
 python scripts/build_frontend.py
 ~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-~/.venvs/tabrion-studio/bin/python -m pip install --force-reinstall --no-deps . -r constraints/tabrion-integration.txt
+~/.venvs/tabrion-studio/bin/python -m pip install --force-reinstall --no-deps . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
 ~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 

@@ -8,7 +8,8 @@ name: CI
 # the same suites in the job "e2e (<browser>)" (STU-050, TD-047), required like "e2e" since both are green (PR #63).
 # Nothing here releases or publishes anything (G-R).
 # tabrion is not published on PyPI (ADR 0009 amendment, tabrion PR #20): every install of Studio takes the tabrion
-# commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py).
+# commit from constraints/tabrion-integration.txt (a full-SHA Git pin, tests/security/test_dependencies.py), and
+# nodestro-session (NS-003, the shared local-session library, not on PyPI either) from constraints/nodestro-session.txt.
 # TD-031 (security review F-6): every other runtime dependency comes from the hashed lock constraints/runtime-lock.txt
 # (pip --require-hashes --no-deps, wheels only), the same file docs/guide/installation.md installs from; after the
 # development tools, `pip check` and `scripts/runtime_lock.py check-installed` prove that the runtime closure is
@@ -49,7 +50,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       - run: ruff check .
@@ -113,7 +114,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       - run: pip list
@@ -148,7 +149,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
@@ -178,7 +179,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       - run: >-
@@ -270,7 +271,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       - name: Create the test role and its database
@@ -387,7 +388,7 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/studio"
           "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
           "$RUNNER_TEMP/studio/bin/python" -m pip check
       # explorer-reference.spec.ts (TD-041) creates tabrion's reference apps with their own code: the examples of the
       # very tabrion commit the constraints pin, so they match the tabrion installed above.
@@ -498,7 +499,7 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/studio"
           "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/studio/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
           "$RUNNER_TEMP/studio/bin/python" -m pip check
       - name: The tabrion commit the constraints pin
         id: tabrion
@@ -617,7 +618,7 @@ jobs:
         env:
           TABRION_STUDIO_DIST: dist
       # Fresh venv from the wheel, then run with every Node folder removed from PATH. The script installs the hashed
-      # runtime lock, then the wheel and the tabrion pin with --no-deps (tabrion is not on PyPI, ADR 0009 amendment).
+      # runtime lock, then the wheel and the tabrion and nodestro-session pins with --no-deps (neither is on PyPI).
       - run: python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
       - if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -653,7 +654,7 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/runtime"
           "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt
+          "$RUNNER_TEMP/runtime/bin/python" -m pip install --quiet --no-deps dist/tabrion_studio-*.whl -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
           "$RUNNER_TEMP/runtime/bin/python" -m pip check
       - run: mkdir -p sbom && "$RUNNER_TEMP/runtime/bin/python" -I scripts/collect_licenses.py > sbom/licenses-python.json
       - name: License policy (Python runtime closure and npm lockfile)
@@ -717,7 +718,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install "pip-audit==2.10.1" -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install "pip-audit==2.10.1" -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       - run: pip-audit --skip-editable --progress-spinner off
@@ -734,11 +735,13 @@ jobs:
   # proof; direct_url.json checks only detect an accidental index install), when an install never used the index or an
   # index option would bypass it, when poisoned code ran, or when tabrion's direct_url.json is not the pin's; a positive
   # control first shows that a plain "pip install tabrion" would take the poisoned release. No pip cache, so every
-  # request reaches the index.
+  # request reaches the index. NS-003: nodestro-session, the second package that only a full-SHA Git pin may supply
+  # (constraints/nodestro-session.txt), gets the same check: each step runs the same install a second time, in a fresh
+  # environment, with the poisoned index serving nodestro-session (the script takes one pin file per run).
   install-poisoned-index:
     name: install (poisoned index)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -754,7 +757,16 @@ jobs:
             py="$RUNNER_TEMP/dev/bin/python"
             "$py" -m pip install --no-cache-dir "pip>=26.1"
             "$py" -m pip install --no-cache-dir --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-            "$py" -m pip install --no-cache-dir -e ".[dev]" -c constraints/tabrion-integration.txt
+            "$py" -m pip install --no-cache-dir -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
+            "$py" -m pip check
+            "$py" scripts/runtime_lock.py check-installed'
+          python -m venv "$RUNNER_TEMP/dev-ns"
+          python -I scripts/check_tabrion_source.py --lock constraints/nodestro-session.txt --name nodestro-session \
+            --python "$RUNNER_TEMP/dev-ns/bin/python" -- bash -euo pipefail -c '
+            py="$RUNNER_TEMP/dev-ns/bin/python"
+            "$py" -m pip install --no-cache-dir "pip>=26.1"
+            "$py" -m pip install --no-cache-dir --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+            "$py" -m pip install --no-cache-dir -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
             "$py" -m pip check
             "$py" scripts/runtime_lock.py check-installed'
       # README and docs/guide/installation.md install "--no-deps . -r the pin"; "." needs the built frontend (Node),
@@ -767,7 +779,15 @@ jobs:
             py="$RUNNER_TEMP/runtime/bin/python"
             "$py" -m pip install --no-cache-dir "pip>=26.1"
             "$py" -m pip install --no-cache-dir --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-            "$py" -m pip install --no-cache-dir --no-deps -e . -r constraints/tabrion-integration.txt
+            "$py" -m pip install --no-cache-dir --no-deps -e . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
+            "$py" -m pip check'
+          python -m venv "$RUNNER_TEMP/runtime-ns"
+          python -I scripts/check_tabrion_source.py --lock constraints/nodestro-session.txt --name nodestro-session \
+            --python "$RUNNER_TEMP/runtime-ns/bin/python" -- bash -euo pipefail -c '
+            py="$RUNNER_TEMP/runtime-ns/bin/python"
+            "$py" -m pip install --no-cache-dir "pip>=26.1"
+            "$py" -m pip install --no-cache-dir --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
+            "$py" -m pip install --no-cache-dir --no-deps -e . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
             "$py" -m pip check'
 
   docs:
@@ -785,7 +805,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       - run: mkdocs build --strict

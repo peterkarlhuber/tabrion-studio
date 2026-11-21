@@ -3,8 +3,9 @@
 
 ``pyproject.toml`` keeps the supported ranges (``fastapi>=0.115,<1``, ...). ``constraints/runtime-lock.txt`` pins the
 whole runtime closure for Python 3.11 to 3.14 on Linux, macOS and Windows to exact versions with the SHA-256 hash of
-every file, so ``pip install --require-hashes`` installs only reviewed files. tabrion is the one exception: it is not on
-PyPI and is pinned by its full commit SHA in ``constraints/tabrion-integration.txt`` (pip cannot hash a Git checkout).
+every file, so ``pip install --require-hashes`` installs only reviewed files. tabrion and nodestro-session are the
+exceptions: they are not on PyPI and are pinned by their full commit SHA in ``constraints/tabrion-integration.txt``
+and ``constraints/nodestro-session.txt`` (NS-003; pip cannot hash a Git checkout).
 
     python scripts/runtime_lock.py check            # the lock is well formed and inside the pyproject.toml ranges
     python scripts/runtime_lock.py check-installed  # this environment's runtime closure is exactly the lock
@@ -19,7 +20,8 @@ to another version in ``build-constraints.txt`` (the second hashed pin set, the 
 pull in, with the markers of this interpreter, and refuses a distribution that is not in the lock or installed at
 another version, and a lock entry that applies here but is not part of the closure (a stale pin). tabrion, which the
 lock cannot pin, must come from the commit of ``constraints/tabrion-integration.txt``: its ``direct_url.json`` must
-name that Git URL and that full commit (``vcs_info.commit_id``). A tabrion without ``direct_url.json`` came from a
+name that Git URL and that full commit (``vcs_info.commit_id``); nodestro-session likewise from the commit of
+``constraints/nodestro-session.txt``. A tabrion without ``direct_url.json`` came from a
 package index, where the name is not ours (dependency confusion, DC-TS-1); a local directory or another commit is
 refused too. This detects an accidental index install; it is no proof of origin, because a wheel can ship a forged
 ``direct_url.json``. The protection is the Git pin of the install command (``-c``/``-r``
@@ -57,11 +59,15 @@ from packaging.version import Version
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = Path("constraints/runtime-lock.txt")
 TABRION_PIN = Path("constraints/tabrion-integration.txt")
+#: NS-003: the shared local-session library, not on PyPI either; pinned by its full commit SHA like tabrion.
+NODESTRO_SESSION_PIN = Path("constraints/nodestro-session.txt")
+#: The packages that only a full-SHA Git pin may supply, and the file of each pin (DC-TS-1).
+GIT_PINS = {"tabrion": TABRION_PIN, "nodestro-session": NODESTRO_SESSION_PIN}
 BUILD_CONSTRAINTS = Path("build-constraints.txt")
 #: The oldest supported Python (``requires-python``); a universal lock covers it and every newer one.
 LOWEST_PYTHON = "3.11"
-#: Not pinned in the lock: Studio itself and tabrion (a full-SHA Git pin, TABRION_PIN).
-UNLOCKED = frozenset({"tabrion-studio", "tabrion"})
+#: Not pinned in the lock: Studio itself and the packages of GIT_PINS.
+UNLOCKED = frozenset({"tabrion-studio", *GIT_PINS})
 #: Extras of pyproject.toml whose package must be pinned too (the lock cannot read extras from metadata offline).
 EXTRA_PACKAGES = {("psycopg", "binary"): "psycopg-binary"}
 
@@ -77,11 +83,12 @@ HEADER = """\
 #
 # Every runtime dependency of tabrion-studio and of tabrion, for Python 3.11 to 3.14 on Linux, macOS and Windows,
 # pinned exactly with the SHA-256 of every file on PyPI. pyproject.toml keeps the supported ranges; this file is one
-# tested set inside them. tabrion is not here: pip cannot hash a Git checkout, so constraints/tabrion-integration.txt
-# pins it by its full commit SHA. Install (docs/guide/installation.md, the CI jobs do the same):
+# tested set inside them. tabrion and nodestro-session are not here: pip cannot hash a Git checkout, so
+# constraints/tabrion-integration.txt and constraints/nodestro-session.txt pin them by their full commit SHA. Install
+# (docs/guide/installation.md, the CI jobs do the same):
 #
 #   python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-#   python -m pip install --no-deps . -r constraints/tabrion-integration.txt
+#   python -m pip install --no-deps . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
 #   python -m pip check
 #
 # Do not edit by hand. To update: python scripts/runtime_lock.py update (needs uv), then
@@ -176,8 +183,11 @@ Lookup = Callable[[str], "tuple[str, list[str]] | None"]
 
 #: The text of an installed distribution's ``direct_url.json`` (PEP 610), or None when it has none or is not installed.
 Source = Callable[[str], "str | None"]
-#: ``tabrion @ git+<url>@<full commit>``, the one requirement line of TABRION_PIN.
-_TABRION_PIN = re.compile(r"tabrion\s*@\s*git\+(?P<url>https://\S+?)@(?P<commit>[0-9a-f]{40})")
+
+
+def _git_pin_line(name: str) -> re.Pattern[str]:
+    """``<name> @ git+<url>@<full commit>``, the one requirement line of the pin file of ``name``."""
+    return re.compile(rf"{re.escape(name)}\s*@\s*git\+(?P<url>https://\S+?)@(?P<commit>[0-9a-f]{{40}})")
 
 
 def installed_direct_url(name: str) -> str | None:
@@ -187,14 +197,21 @@ def installed_direct_url(name: str) -> str | None:
         return None
 
 
-def tabrion_pin(root: Path = ROOT) -> tuple[str, str] | None:
-    """The Git URL and full commit that TABRION_PIN pins, or None when it has no single such line."""
+def git_pin(name: str, root: Path = ROOT) -> tuple[str, str] | None:
+    """The Git URL and full commit that the pin file of ``name`` (GIT_PINS) pins, or None when it has no single such
+    line."""
+    pattern = _git_pin_line(name)
     found = [
         match
-        for raw in (root / TABRION_PIN).read_text(encoding="utf-8").splitlines()
-        if (match := _TABRION_PIN.fullmatch(raw.strip())) is not None
+        for raw in (root / GIT_PINS[name]).read_text(encoding="utf-8").splitlines()
+        if (match := pattern.fullmatch(raw.strip())) is not None
     ]
     return (found[0]["url"], found[0]["commit"]) if len(found) == 1 else None
+
+
+def tabrion_pin(root: Path = ROOT) -> tuple[str, str] | None:
+    """The Git URL and full commit that TABRION_PIN pins, or None when it has no single such line."""
+    return git_pin("tabrion", root)
 
 
 def _same_repository(a: str, b: str) -> bool:
@@ -205,35 +222,42 @@ def _same_repository(a: str, b: str) -> bool:
     return norm(a) == norm(b)
 
 
-def check_tabrion_source(root: Path = ROOT, source: Source = installed_direct_url) -> list[str]:
-    """Problems with where the installed tabrion came from (empty list = the commit TABRION_PIN pins)."""
-    pin = tabrion_pin(root)
+def check_git_source(name: str, root: Path = ROOT, source: Source = installed_direct_url) -> list[str]:
+    """Problems with where the installed ``name`` (a package of GIT_PINS) came from (empty list = the pinned
+    commit)."""
+    pin_file = GIT_PINS[name]
+    pin = git_pin(name, root)
     if pin is None:
-        return [f"{TABRION_PIN} has no single 'tabrion @ git+https://...@<full commit>' line"]
+        return [f"{pin_file} has no single '{name} @ git+https://...@<full commit>' line"]
     url, commit = pin
-    text = source("tabrion")
+    text = source(name)
     if text is None:
         return [
-            f"tabrion has no direct_url.json: it was not installed from {TABRION_PIN} (for example from a package "
-            "index, where the name tabrion is not ours); reinstall with -c or -r constraints/tabrion-integration.txt"
+            f"{name} has no direct_url.json: it was not installed from {pin_file} (for example from a package "
+            f"index, where the name {name} is not ours); reinstall with -c or -r {pin_file.as_posix()}"
         ]
     try:
         data = json.loads(text)
     except ValueError:
-        return ["tabrion's direct_url.json is not valid JSON"]
+        return [f"{name}'s direct_url.json is not valid JSON"]
     if not isinstance(data, dict):
-        return ["tabrion's direct_url.json is not a JSON object"]
+        return [f"{name}'s direct_url.json is not a JSON object"]
     vcs = data.get("vcs_info")
     if not isinstance(vcs, dict):
         kind = next((key for key in ("dir_info", "archive_info") if key in data), "no vcs_info")
-        origin = f"tabrion was installed from {data.get('url')!r} ({kind})"
-        return [f"{origin}, not from the Git commit {commit} of {TABRION_PIN}"]
+        origin = f"{name} was installed from {data.get('url')!r} ({kind})"
+        return [f"{origin}, not from the Git commit {commit} of {pin_file}"]
     problems: list[str] = []
     if vcs.get("vcs") != "git" or not _same_repository(str(data.get("url", "")), url):
-        problems.append(f"tabrion was installed from {data.get('url')!r}, {TABRION_PIN} pins {url}")
+        problems.append(f"{name} was installed from {data.get('url')!r}, {pin_file} pins {url}")
     if vcs.get("commit_id") != commit:
-        problems.append(f"tabrion is installed at commit {vcs.get('commit_id')!r}, {TABRION_PIN} pins {commit}")
+        problems.append(f"{name} is installed at commit {vcs.get('commit_id')!r}, {pin_file} pins {commit}")
     return problems
+
+
+def check_tabrion_source(root: Path = ROOT, source: Source = installed_direct_url) -> list[str]:
+    """Problems with where the installed tabrion came from (empty list = the commit TABRION_PIN pins)."""
+    return check_git_source("tabrion", root, source)
 
 
 def installed_distribution(name: str) -> tuple[str, list[str]] | None:
@@ -276,7 +300,7 @@ def check_installed(
     root: Path = ROOT, lookup: Lookup = installed_distribution, source: Source = installed_direct_url
 ) -> list[str]:
     """Problems between this environment's runtime closure of tabrion-studio and the lock, and with the source of the
-    installed tabrion (empty list = equal)."""
+    installed tabrion and nodestro-session (empty list = equal)."""
     pins, problems = read_lock((root / LOCK).read_text(encoding="utf-8"))
     applicable = {pin.name: pin for pin in pins if pin.applies()}
     installed, missing = _closure("tabrion-studio", lookup)
@@ -293,8 +317,9 @@ def check_installed(
         # A required pin that is not installed is reported above, not as stale (review L-5).
         if name not in installed and name not in missing:
             problems.append(f"{LOCK}:{pin.line}: {name} applies here but nothing requires it (stale pin)")
-    if "tabrion" in installed:
-        problems += check_tabrion_source(root, source)
+    for name in GIT_PINS:
+        if name in installed:
+            problems += check_git_source(name, root, source)
     return problems
 
 

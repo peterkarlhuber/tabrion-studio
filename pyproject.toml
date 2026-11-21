@@ -31,6 +31,12 @@ dependencies = [
     # 0.3: Transaction.execute_checked and tabrion.rowedit for the Data Editor (STU-026, TAB-XW-6).
     # migrations: Alembic read only, for tabrion.migrations.status (STU-015), run in a worker process.
     "tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.4",
+    # NS-003: the shared protection of the local session (launch tokens, sessions, the access guard, loopback
+    # binding, private files; K-33 edge tabrion-studio -> nodestro-session). Not on PyPI: the range is here, the
+    # commit is pinned by its full SHA in constraints/nodestro-session.txt. No lower bound: its only version is the
+    # pre-release 0.1.0.dev0 and RC-8 refuses a pre-release specifier (tests/security/test_dependencies.py); the
+    # pinned commit is the one tested, and the range becomes >=0.1,<0.2 once 0.1.0 is final.
+    "nodestro-session<0.2",
     "psycopg[binary]>=3.2,<4",
     "fastapi>=0.115,<1",
     # Without [standard]: no uvloop/httptools/websockets requirement (05 section 3.2).
@@ -163,6 +169,10 @@ id = "no-levuvo-platform"
 name = "Tabrion Studio depends on no Levuvo platform (K-33)"
 type = "forbidden"
 source_modules = ["tabrion_studio"]
+# NS-003: nodestro_session (the brand-neutral shared library of the local session, K-33 edge tabrion-studio ->
+# nodestro-session) is deliberately not listed: "nodestro" forbids only the package nodestro and its submodules.
+# Every other nodestro* package stays forbidden, here and in the prefix scan of
+# tests/architecture/test_forbidden_probe.py, which allows exactly the name nodestro_session.
 forbidden_modules = [
     "orkexa",
     "axentra",

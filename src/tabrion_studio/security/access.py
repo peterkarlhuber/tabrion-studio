@@ -1,5 +1,9 @@
 """The access middleware: every request passes these checks before any route sees it (STU-003).
 
+The checks are :class:`nodestro_session.SessionGuard` of the shared library (NS-003), configured with Studio's
+prefixes, header, cookie and codes; this module maps the library's neutral refusal codes to Studio's ``access.*``
+codes (``not_found`` to ``studio.not_found``).
+
 Threats (03 section 7.3) and review findings, in the order of the checks:
 
 1. **Host allowlist (T-01, DNS rebinding; F-05, F-08, A-01).** Exactly one ``Host`` header, equal to
@@ -29,9 +33,11 @@ Threats (03 section 7.3) and review findings, in the order of the checks:
    (``access.control_denied``, 401), checked here in constant time and again by the route. A route added under the
    prefix later is therefore never reachable without the token, and the prefix is never a way around the session.
 
-Right after the Origin check, an ``/api/*`` path with a ``.`` or ``..`` segment (also percent-encoded, as the
-server decodes it) is refused as ``studio.not_found`` (404): no route has one, and a later mount or path
-normalization must not turn ``/api/control/../x`` into a route outside the control prefix (F-8).
+Right after the Origin check, an unusual path is refused as ``studio.not_found`` (404): a ``.`` or ``..`` segment
+(also percent-encoded, as the server decodes it), an empty segment, a backslash, a NUL or a still-encoded dot,
+slash, backslash, percent sign or NUL, on every path. No route has one, and a later mount or path normalization must
+not turn ``/api/control/../x`` into a route outside the control prefix (F-8). The ``/api`` and control prefixes are
+matched case-insensitively (and after Unicode normalization), so such a path is only ever classified more strictly.
 
 A refusal is a problem document (``application/problem+json``, :mod:`tabrion_studio.problems`, STU-004) with the
 code named above and fixed texts. Every answer, including refusals and errors of the routes, gets the security
@@ -46,58 +52,70 @@ single-user tool on loopback (STU-ADR-0002).
 from __future__ import annotations
 
 from collections.abc import Callable
-import hashlib
-import hmac
 
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from nodestro_session import CONTENT_SECURITY_POLICY, FORWARDING_HEADERS, SECURITY_HEADERS, Refusal, SessionGuard
+from nodestro_session import cookie_values as _cookie_values
+from nodestro_session import loopback_origin as _loopback_origin
+from nodestro_session.guard import SAFE_METHODS, with_security_headers
+from starlette.types import ASGIApp, Scope, Send
 
 from tabrion_studio.problems import problem, send_problem
 from tabrion_studio.security.sessions import CSRF_HEADER, Sessions, cookie_name
 
-SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
-FORWARDING_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-real-ip")
+__all__ = [
+    "CONTENT_SECURITY_POLICY",
+    "CONTROL_PREFIX",
+    "CONTROL_PROOF_PATH",
+    "FORWARDING_HEADERS",
+    "OPEN_API_PATHS",
+    "REFUSAL_CODES",
+    "SAFE_METHODS",
+    "SECURITY_HEADERS",
+    "AccessMiddleware",
+    "loopback_origin",
+    "session_cookie",
+    "with_security_headers",
+]
+
 CONTROL_PREFIX = "/api/control/"
 #: The one control path without the control token: a second start proves the server knows the token (review F-01).
 CONTROL_PROOF_PATH = "/api/control/proof"
 #: API routes that need no session: the health check (the CLI and the page use it) and the launch exchange.
 OPEN_API_PATHS = frozenset({"/api/health", "/api/session"})
-
-CONTENT_SECURITY_POLICY = (
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
-    "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-)
-SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
-    ("content-security-policy", CONTENT_SECURITY_POLICY),
-    ("cache-control", "no-store"),
-    ("x-content-type-options", "nosniff"),
-    ("referrer-policy", "no-referrer"),
-    ("x-frame-options", "DENY"),
-    ("cross-origin-opener-policy", "same-origin"),
-    ("cross-origin-resource-policy", "same-origin"),
-)
-_REPLACED = frozenset(name.encode() for name, _ in SECURITY_HEADERS) | {b"pragma", b"expires"}
-_CSRF = CSRF_HEADER.lower()
+#: The library's neutral refusal codes and Studio's problem codes for them (:mod:`tabrion_studio.problems`).
+REFUSAL_CODES: dict[str, str] = {
+    "host_not_allowed": "access.host_not_allowed",
+    "forwarded_not_allowed": "access.forwarded_not_allowed",
+    "origin_not_allowed": "access.origin_not_allowed",
+    "not_found": "studio.not_found",
+    "browser_not_allowed": "access.browser_not_allowed",
+    "cross_site": "access.cross_site",
+    "origin_required": "access.origin_required",
+    "json_only": "access.json_only",
+    "control_denied": "access.control_denied",
+    "session_required": "access.session_required",
+    "csrf_invalid": "access.csrf_invalid",
+}
+#: Where the write unlocks (STU-XW-1) find the session's digest: routes get it, never the cookie value.
+SESSION_STATE_KEY = "studio_session"
 
 
 def loopback_origin(port: int, host: str = "127.0.0.1") -> str:
     """The only origin and ``Host`` Studio answers: ``http://<host>:<port>``, ``host`` a ``127.a.b.c`` (A-01)."""
-    return f"http://{host}:{port}"
+    return _loopback_origin(port, host)
 
 
 def session_cookie(headers: list[tuple[str, str]], name: str) -> list[str]:
     """Every value of the cookie ``name`` in the ``Cookie`` headers (another local server may have set a second one)."""
-    values = []
-    for key, value in headers:
-        if key != "cookie":
-            continue
-        for part in value.split(";"):
-            cookie, sep, content = part.strip().partition("=")
-            if sep and cookie == name:
-                values.append(content.strip().strip('"'))
-    return values
+    return _cookie_values(headers, name)
 
 
-class AccessMiddleware:
+async def _refuse(scope: Scope, send: Send, refusal: Refusal) -> None:
+    # A problem document with fixed texts (STU-004); the status comes from Studio's catalog.
+    await send_problem(send, problem(REFUSAL_CODES[refusal.code]))
+
+
+class AccessMiddleware(SessionGuard):
     """Applies the checks of this module to every HTTP request and the security headers to every answer."""
 
     def __init__(
@@ -110,96 +128,63 @@ class AccessMiddleware:
         control_token: str,
         on_activity: Callable[[], None] = lambda: None,
     ) -> None:
-        self.app = app
         # An empty token opens nothing: every control path but the proof is then refused.
-        self.control_token = control_token.encode("utf-8")
+        super().__init__(
+            app,
+            origin=loopback_origin(port, host),
+            sessions=sessions,
+            cookie=cookie_name(port),
+            csrf_header=CSRF_HEADER,
+            api_prefix="/api",
+            open_paths=OPEN_API_PATHS,
+            control_prefix=CONTROL_PREFIX,
+            control_token=control_token,
+            control_open_paths={CONTROL_PROOF_PATH},
+            security_headers=SECURITY_HEADERS,
+            refuse=_refuse,
+            on_activity=on_activity,
+            state_key=SESSION_STATE_KEY,
+        )
         self.port = port
-        self.origin = loopback_origin(port, host)
-        self.host = self.origin.removeprefix("http://")
-        self.sessions = sessions
-        self.cookie = cookie_name(port)
-        self.on_activity = on_activity
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "websocket":
-            # Studio serves no WebSocket (Uvicorn runs with ws="none"); refuse one that arrives anyway.
-            await send({"type": "websocket.close", "code": 1008})
-            return
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-        send = with_security_headers(send)
-        refusal = self._refusal(scope)
-        if refusal is not None:
-            # A problem document with fixed texts (STU-004); the status comes from the catalog.
-            await send_problem(send, problem(refusal))
-            return
-        await self.app(scope, receive, send)
+    def refusal(self, scope: Scope) -> str | None:
+        """The library's verdict; for an odd path, refused with the code of Studio's own checks where they refuse it.
 
-    def _refusal(self, scope: Scope) -> str | None:
-        headers = [(key.decode("latin-1").lower(), value.decode("latin-1")) for key, value in scope["headers"]]
+        Studio checked one path rule of its own, right after the Origin: a ``.`` or ``..`` segment under ``/api``
+        (``studio.not_found``), and it matched ``/api`` and ``/api/control/`` case-sensitively. The library refuses
+        more paths (an empty segment, a backslash, a NUL, a still-encoded dot or slash, also outside ``/api``) and
+        matches the prefixes case-insensitively and after Unicode normalization. For such an odd path (refused as
+        unusual, or with an upper-case or non-ASCII character) Studio's checks are run as well, on a plain path of the
+        area Studio gave it (a control path needs the control token, an API path the session): when they refuse, their
+        code answers, as before; otherwise the library's verdict stands (``not_found`` for an unusual path). So a
+        request that Studio refused keeps its code, and every request that the library refuses stays refused.
+        """
+        code = super().refusal(scope)
         path: str = scope.get("path", "")
-        method: str = scope.get("method", "GET")
-        hosts = [value.strip().lower() for key, value in headers if key == "host"]
-        if hosts != [self.host]:
-            return "access.host_not_allowed"
-        if any(key in FORWARDING_HEADERS for key, _ in headers):
-            return "access.forwarded_not_allowed"
-        origins = [value.strip().lower() for key, value in headers if key == "origin"]
-        if any(origin != self.origin for origin in origins):
-            return "access.origin_not_allowed"
-        api = path == "/api" or path.startswith("/api/")
-        control = path.startswith(CONTROL_PREFIX)
-        if api and any(segment in (".", "..") for segment in path.split("/")):
-            return "studio.not_found"
-        unsafe = method not in SAFE_METHODS
-        if control:
-            if origins or any(key.startswith("sec-fetch-") for key, _ in headers):
-                return "access.browser_not_allowed"
-        else:
-            if api:
-                sites = {value.strip().lower() for key, value in headers if key == "sec-fetch-site"}
-                if sites - {"same-origin", "none"}:
-                    return "access.cross_site"
-            if unsafe and not origins:
-                return "access.origin_required"
-        if api and unsafe:
-            content_types = [value.split(";", 1)[0].strip().lower() for key, value in headers if key == "content-type"]
-            if content_types != ["application/json"]:
-                return "access.json_only"
-        proof = path == CONTROL_PROOF_PATH and method in ("GET", "HEAD")
-        if control and not proof and not self._control_authorized(headers):
-            return "access.control_denied"
-        if api and not control and path not in OPEN_API_PATHS:
-            candidates = session_cookie(headers, self.cookie)
-            known = [value for value in candidates if self.sessions.known(value)]
-            if not known:
-                return "access.session_required"
-            csrf = [value for key, value in headers if key == _CSRF]
-            matched = [value for value in known if len(csrf) == 1 and self.sessions.check(value, csrf[0])]
-            if not matched:
-                return "access.csrf_invalid"
-            # The write unlocks (STU-XW-1) are bound to the session: routes get its digest, never the cookie value.
-            scope.setdefault("state", {})["studio_session"] = hashlib.sha256(matched[0].encode("utf-8")).hexdigest()
-            self.on_activity()
-        return None
+        if _studio_not_found(path) or not (code == "not_found" or not path.isascii() or path != path.lower()):
+            return code
+        studio = self._studio_refusal(scope, path)
+        return studio if studio is not None else code
 
-    def _control_authorized(self, headers: list[tuple[str, str]]) -> bool:
-        values = [value for key, value in headers if key == "authorization"]
-        if len(values) != 1 or not self.control_token:
-            return False
-        scheme, _, token = values[0].partition(" ")
-        return scheme.lower() == "bearer" and hmac.compare_digest(token.encode("utf-8"), self.control_token)
+    def _studio_refusal(self, scope: Scope, path: str) -> str | None:
+        """Studio's checks for ``path``, on a plain path of its area, without counting activity or touching state."""
+        on_activity, self.on_activity = self.on_activity, lambda: None
+        try:
+            return super().refusal({**scope, "path": _plain_path(path), "state": {}})
+        finally:
+            self.on_activity = on_activity
 
 
-def with_security_headers(send: Send) -> Send:
-    """``send`` that replaces the security headers of every answer with :data:`SECURITY_HEADERS`."""
+def _studio_not_found(path: str) -> bool:
+    """Studio's own path rule (F-8): an ``/api`` path with a ``.`` or ``..`` segment."""
+    api = path == "/api" or path.startswith("/api/")
+    return api and any(segment in (".", "..") for segment in path.split("/"))
 
-    async def wrapped(message: Message) -> None:
-        if message["type"] == "http.response.start":
-            kept = [(key, value) for key, value in message.get("headers", []) if key.lower() not in _REPLACED]
-            added = [(name.encode(), value.encode()) for name, value in SECURITY_HEADERS]
-            message = {**message, "headers": kept + added}
-        await send(message)
 
-    return wrapped
+def _plain_path(path: str) -> str:
+    """A plain path of the area Studio gives ``path`` (case-sensitive prefixes), that is no route and is not open."""
+    if path.startswith(CONTROL_PREFIX):
+        return CONTROL_PREFIX + "-"
+    if path == "/api" or path.startswith("/api/"):
+        return "/api/-"
+    return "/-"

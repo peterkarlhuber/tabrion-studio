@@ -8,6 +8,9 @@ The template is tabrion's ``tests/architecture/test_import_contracts.py``:
 * The edge Tabrion Studio -> tabrion is allowed (K-33): a copy with ``import tabrion`` stays green.
 * The K-33 contract names every known Levuvo platform, and an AST scan catches any ``orkexa*``, ``axentra*``,
   ``nodestro*`` or ``levuvo*`` package, prefixes import-linter cannot express.
+* NS-003: the one exception is ``nodestro_session``, the brand-neutral shared library of the local session (K-33 edge
+  tabrion-studio -> nodestro-session). It is allowed by its exact name only; every other ``nodestro*`` name stays
+  forbidden, and probes show it.
 """
 
 from __future__ import annotations
@@ -26,6 +29,9 @@ ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "src"
 PYPROJECT = ROOT / "pyproject.toml"
 LEVUVO_PREFIXES = ("orkexa", "axentra", "nodestro", "levuvo")
+#: NS-003 (K-33 edge tabrion-studio -> nodestro-session): the only Levuvo-prefixed top-level package Studio may import,
+#: by its exact name. The owner named this library and keeps it brand-neutral and shared; nothing else of the platform.
+ALLOWED_LEVUVO = frozenset({"nodestro_session"})
 
 NO_LEVUVO = "Tabrion Studio depends on no Levuvo platform (K-33)"
 NO_CLI = "The process model and the app never import the CLI"
@@ -117,6 +123,26 @@ def test_the_edge_to_tabrion_is_allowed(tmp_path: Path) -> None:
     assert "0 broken" in result.stdout
 
 
+def test_the_edge_to_nodestro_session_is_allowed(tmp_path: Path) -> None:
+    """NS-003: tabrion-studio -> nodestro-session is a required K-33 edge, so no contract may forbid it."""
+    root = _copy(tmp_path)
+    _inject(root / "src" / "tabrion_studio" / "cli.py", "import nodestro_session.guard")
+    result = _lint_imports(root, root / "src")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "0 broken" in result.stdout
+
+
+@pytest.mark.parametrize("line", ["import nodestro", "import nodestro_api", "from nodestro_runtime import x"])
+def test_the_rest_of_the_platform_stays_forbidden_next_to_nodestro_session(tmp_path: Path, line: str) -> None:
+    """NS-003: allowing nodestro_session opens nothing else; a module that already imports it may not add another
+    Levuvo platform package."""
+    root = _copy(tmp_path)
+    _inject(root / "src" / "tabrion_studio" / "security" / "access.py", line)
+    result = _lint_imports(root, root / "src")
+    assert result.returncode != 0, f"{line!r} next to nodestro_session went unnoticed:\n{result.stdout}"
+    assert f"{NO_LEVUVO} BROKEN" in " ".join(result.stdout.split()), result.stdout
+
+
 def _contracts() -> list[dict[str, object]]:
     data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     contracts: list[dict[str, object]] = data["tool"]["importlinter"]["contracts"]
@@ -142,6 +168,9 @@ def test_levuvo_contract_names_every_known_platform() -> None:
         "levuvo_nextcloud_mcp",
     } <= forbidden
     assert "tabrion" not in forbidden
+    # NS-003: the shared library is allowed (no entry names it or a parent of it); "nodestro" alone covers only the
+    # package nodestro and its submodules, never nodestro_session.
+    assert not {name for name in forbidden if name == "nodestro_session" or name.startswith("nodestro_session.")}
 
 
 def test_no_contract_ignores_imports() -> None:
@@ -160,14 +189,52 @@ def _imported_top_levels(path: Path) -> set[str]:
     return names
 
 
+def _levuvo(name: str) -> bool:
+    """A Levuvo package Studio may not import: any of LEVUVO_PREFIXES, except the exact names of ALLOWED_LEVUVO."""
+    return name.startswith(LEVUVO_PREFIXES) and name not in ALLOWED_LEVUVO
+
+
 def test_no_levuvo_import_by_prefix() -> None:
-    """Covers any future Levuvo package, also in ``TYPE_CHECKING`` blocks."""
+    """Covers any future Levuvo package, also in ``TYPE_CHECKING`` blocks; only ALLOWED_LEVUVO is let through."""
     offenders = []
     for path in sorted((SRC / "tabrion_studio").rglob("*.py")):
         for name in _imported_top_levels(path):
-            if name.startswith(LEVUVO_PREFIXES):
+            if _levuvo(name):
                 offenders.append(f"{path.relative_to(SRC)}: {name}")
     assert not offenders
+
+
+def test_studio_uses_the_allowed_library() -> None:
+    """The exception is in use (NS-003), so a stale entry would show: Studio imports nodestro_session."""
+    imported = {name for path in (SRC / "tabrion_studio").rglob("*.py") for name in _imported_top_levels(path)}
+    assert imported >= ALLOWED_LEVUVO
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "nodestro",
+        "nodestro_sessions",
+        "nodestro_session_extra",
+        "nodestro_sessionx",
+        "nodestrosession",
+        "nodestro_api",
+        "nodestro_runtime",
+        "nodestro_server",
+        "nodestro_studio",
+        "levuvo_session",
+        "axentra_session",
+    ],
+)
+def test_the_exception_is_the_exact_name_only(tmp_path: Path, name: str) -> None:
+    """NS-003: the allowance is narrow; a name that only resembles nodestro_session is still caught by the scan."""
+    probe = tmp_path / "probe.py"
+    probe.write_text(
+        f"import nodestro_session\nimport {name}.x\nfrom nodestro_session.guard import y\n", encoding="utf-8"
+    )
+    names = _imported_top_levels(probe)
+    assert [n for n in sorted(names) if _levuvo(n)] == [name]
+    assert {"nodestro_session"} == ALLOWED_LEVUVO
 
 
 def test_prefix_scan_detects_a_probe(tmp_path: Path) -> None:

@@ -8,7 +8,8 @@ The bill of materials comes from the lockfiles, not from one machine's environme
 computer for one commit:
 
 * Python: every pin of ``constraints/runtime-lock.txt`` (TD-031; name, version, environment marker, the SHA-256 of
-  every file) and the Tabrion commit of ``constraints/tabrion-integration.txt``;
+  every file), the Tabrion commit of ``constraints/tabrion-integration.txt`` and the commit of every further Git pin
+  file given with ``--git-pin`` (the release runs pass ``constraints/nodestro-session.txt``, NS-003);
 * frontend: every package of ``frontend/package-lock.json`` that is not ``dev`` (what can end up in the bundled
   frontend; build and test tools never ship).
 
@@ -30,10 +31,11 @@ The policy is the one of ``scripts/check_licenses.py`` (STU-031). Exit code 1 wh
 * a lock pin without a marker has no license record;
 * the license records of a name are for a version that no pin of that name has (whatever the marker: a record
   exists, so the package was installed there, at another version than the lock's);
-* the Git pin (Tabrion) has no record of the pinned commit: the record must carry the commit of its PEP 610
-  ``direct_url.json`` (``vcs_commit``, written by ``collect_licenses.py``) and it must equal the pinned SHA.
+* a Git pin (Tabrion, nodestro-session) has no record of the pinned commit: the record must carry the commit of its
+  PEP 610 ``direct_url.json`` (``vcs_commit``, written by ``collect_licenses.py``) and it must equal the pinned SHA.
 * a license record names a package that the lock does not pin (other than ``tabrion-studio`` itself): that
-  environment had more installed than the lock, the Tabrion pin and the wheel (re-check R-1).
+  environment had more installed than the lock, the Git pins and the wheel (re-check R-1). So a run without
+  ``--git-pin constraints/nodestro-session.txt`` over records of a Studio environment fails closed.
 
 A pin with a marker that no ``--licenses`` file covers is reported as "not verified" (the same for a pin whose name
 was recorded only at the version of another pin of that name); ``--strict`` (the release run) fails on it too. Exit
@@ -150,7 +152,7 @@ def read_lock(text: str) -> list[Component]:
 
 
 def read_git_pins(text: str) -> list[Component]:
-    """``name @ git+https://...@<40 hex>`` lines of the Tabrion pin file."""
+    """``name @ git+https://...@<40 hex>`` lines of the Git pin files (Tabrion, nodestro-session)."""
     components = []
     for raw in text.splitlines():
         line = raw.split("#", 1)[0].strip()
@@ -423,7 +425,8 @@ def report(version: str, python: list[Component], npm: list[Component], dev_coun
         f"# Third-party licenses of Tabrion Studio {version}",
         "",
         "Written by `scripts/release_bom.py` from `constraints/runtime-lock.txt`,",
-        "`constraints/tabrion-integration.txt` and `frontend/package-lock.json`, with the Python license records of",
+        "the Git pins (`constraints/tabrion-integration.txt`, `constraints/nodestro-session.txt`) and",
+        "`frontend/package-lock.json`, with the Python license records of",
         "`scripts/collect_licenses.py`. Policy: `scripts/check_licenses.py` (STU-031). Tabrion Studio itself is",
         "proprietary (LICENSE, Levuvo); its names and logos: TRADEMARKS.md.",
         "",
@@ -509,6 +512,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--licenses", type=Path, action="append", default=[], help="collect_licenses.py output")
     parser.add_argument("--lock", type=Path, default=LOCK)
     parser.add_argument("--tabrion-pin", type=Path, default=TABRION_PIN)
+    parser.add_argument(
+        "--git-pin",
+        type=Path,
+        action="append",
+        default=[],
+        help="another full-SHA Git pin file (repeatable; the release runs pass constraints/nodestro-session.txt)",
+    )
     parser.add_argument("--npm-lock", type=Path, default=NPM_LOCK)
     parser.add_argument("--version", default=None, help="Studio version (default: src/tabrion_studio/_version.py)")
     parser.add_argument("--strict", action="store_true", help="fail on pins no license record covers")
@@ -520,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         bom, text, failures = build(
             batches,
             read_text(args.lock),
-            read_text(args.tabrion_pin),
+            "\n".join(read_text(path) for path in [args.tabrion_pin, *args.git_pin]),
             read_npm_lock(args.npm_lock),
             version,
             args.strict,

@@ -2,11 +2,12 @@
 #
 # Every runtime dependency of tabrion-studio and of tabrion, for Python 3.11 to 3.14 on Linux, macOS and Windows,
 # pinned exactly with the SHA-256 of every file on PyPI. pyproject.toml keeps the supported ranges; this file is one
-# tested set inside them. tabrion is not here: pip cannot hash a Git checkout, so constraints/tabrion-integration.txt
-# pins it by its full commit SHA. Install (docs/guide/installation.md, the CI jobs do the same):
+# tested set inside them. tabrion and nodestro-session are not here: pip cannot hash a Git checkout, so
+# constraints/tabrion-integration.txt and constraints/nodestro-session.txt pin them by their full commit SHA. Install
+# (docs/guide/installation.md, the CI jobs do the same):
 #
 #   python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-#   python -m pip install --no-deps . -r constraints/tabrion-integration.txt
+#   python -m pip install --no-deps . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
 #   python -m pip check
 #
 # Do not edit by hand. To update: python scripts/runtime_lock.py update (needs uv), then
