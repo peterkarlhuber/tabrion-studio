@@ -53,10 +53,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from nodestro_session import CONTENT_SECURITY_POLICY, FORWARDING_HEADERS, SECURITY_HEADERS, Refusal, SessionGuard
+from nodestro_session import FORWARDING_HEADERS, Refusal, SessionGuard
+from nodestro_session import SECURITY_HEADERS as _LIBRARY_SECURITY_HEADERS
 from nodestro_session import cookie_values as _cookie_values
 from nodestro_session import loopback_origin as _loopback_origin
-from nodestro_session.guard import SAFE_METHODS, with_security_headers
+from nodestro_session.guard import SAFE_METHODS
+from nodestro_session.guard import with_security_headers as _with_security_headers
 from starlette.types import ASGIApp, Scope, Send
 
 from tabrion_studio.problems import problem, send_problem
@@ -77,6 +79,17 @@ __all__ = [
     "with_security_headers",
 ]
 
+#: Studio's Content-Security-Policy (T-07, SQ-08), spelled out here: Studio owns its policy, and the e2e CSP probe
+#: (frontend/e2e/csp.spec.ts) reads it from this file. It equals the library's default today.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; "
+    "connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+#: The security headers of every answer: the library's set, with Studio's Content-Security-Policy.
+SECURITY_HEADERS: tuple[tuple[str, str], ...] = tuple(
+    (name, CONTENT_SECURITY_POLICY if name == "content-security-policy" else value)
+    for name, value in _LIBRARY_SECURITY_HEADERS
+)
 CONTROL_PREFIX = "/api/control/"
 #: The one control path without the control token: a second start proves the server knows the token (review F-01).
 CONTROL_PROOF_PATH = "/api/control/proof"
@@ -108,6 +121,11 @@ def loopback_origin(port: int, host: str = "127.0.0.1") -> str:
 def session_cookie(headers: list[tuple[str, str]], name: str) -> list[str]:
     """Every value of the cookie ``name`` in the ``Cookie`` headers (another local server may have set a second one)."""
     return _cookie_values(headers, name)
+
+
+def with_security_headers(send: Send) -> Send:
+    """``send`` that replaces the security headers of every answer with :data:`SECURITY_HEADERS`."""
+    return _with_security_headers(send, SECURITY_HEADERS)
 
 
 async def _refuse(scope: Scope, send: Send, refusal: Refusal) -> None:

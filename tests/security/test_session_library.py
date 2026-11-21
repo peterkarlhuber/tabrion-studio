@@ -128,3 +128,10 @@ def test_new_secrets_are_registered_for_redaction(monkeypatch: pytest.MonkeyPatc
     # Bound at construction: the module attribute is read when the store or the tokens are made.
     assert registered[:2] == [session_id, csrf]
     assert registered[2] == issued.url.rsplit("#", 1)[1]
+
+
+def test_studios_security_headers_are_the_librarys_with_studios_policy() -> None:
+    """The CSP stays spelled out in ``security/access.py`` (the e2e CSP probe reads it there); today it equals the
+    library's, so every answer carries the same headers through the guard and through the request log."""
+    assert access.SECURITY_HEADERS == nodestro_session.SECURITY_HEADERS
+    assert dict(access.SECURITY_HEADERS)["content-security-policy"] == access.CONTENT_SECURITY_POLICY
