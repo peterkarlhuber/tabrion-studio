@@ -10,6 +10,8 @@ import signal
 import socket
 import sys
 
+# The socket helpers moved to the shared library (NS-003); the fallback tests patch its private _bind_v4 there.
+from nodestro_session import bind as loopback_bind
 import pytest
 import uvicorn
 
@@ -123,14 +125,14 @@ def test_a_fixed_port_taken_on_one_random_address_tries_another() -> None:
 
 def test_without_other_loopback_addresses_studio_uses_127_0_0_1(monkeypatch: pytest.MonkeyPatch) -> None:
     # macOS: binding an address that is not configured fails with EADDRNOTAVAIL; Studio then uses 127.0.0.1.
-    real_bind = server._bind_v4
+    real_bind = loopback_bind._bind_v4
 
     def bind(host: str, port: int) -> socket.socket:
         if host != "127.0.0.1":
             raise OSError(errno.EADDRNOTAVAIL, "Can't assign requested address")
         return real_bind(host, port)
 
-    monkeypatch.setattr(server, "_bind_v4", bind)
+    monkeypatch.setattr(loopback_bind, "_bind_v4", bind)
     sockets = server.bind_loopback(0)
     try:
         assert sockets.host == "127.0.0.1"
@@ -139,14 +141,14 @@ def test_without_other_loopback_addresses_studio_uses_127_0_0_1(monkeypatch: pyt
 
 
 def test_a_busy_fixed_port_is_reported_on_the_fallback_address(monkeypatch: pytest.MonkeyPatch) -> None:
-    real_bind = server._bind_v4
+    real_bind = loopback_bind._bind_v4
 
     def bind(host: str, port: int) -> socket.socket:
         if host != "127.0.0.1":
             raise OSError(errno.EADDRNOTAVAIL, "Can't assign requested address")
         return real_bind(host, port)
 
-    monkeypatch.setattr(server, "_bind_v4", bind)
+    monkeypatch.setattr(loopback_bind, "_bind_v4", bind)
     with socket.create_server(("127.0.0.1", 0)) as busy:
         port = busy.getsockname()[1]
         with pytest.raises(server.PortUnavailableError, match=f"cannot listen on 127.0.0.1:{port}"):

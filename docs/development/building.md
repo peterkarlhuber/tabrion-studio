@@ -9,7 +9,7 @@ python -m venv .venv
 . .venv/bin/activate                 # Windows: .venv\Scripts\activate
 python -m pip install "pip>=26.1"
 pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
 python scripts/runtime_lock.py check-installed
 (cd frontend && npm ci)
 ```
@@ -19,7 +19,8 @@ Always pass `-c constraints/tabrion-integration.txt`: tabrion is not on PyPI, an
 package index for `tabrion` and take whatever a third party registered under that name (dependency confusion).
 `check-installed` fails when the installed tabrion's `direct_url.json` is not the pinned Git commit; that detects an
 accidental index install, but it is no proof (a wheel can forge the file), so never skip the `-c`. pip 24.0 to 26.0 crash on the
-constraint with extras, hence the floor.
+constraint with extras, hence the floor. The same goes for `-c constraints/nodestro-session.txt` (NS-003): the shared
+local-session library is not on PyPI either, and `check-installed` checks its source the same way.
 
 ## Frontend
 
@@ -80,7 +81,8 @@ python scripts/smoke_wheel.py dist/tabrion_studio-*.whl   # fresh venv, runs wit
 
 `smoke_wheel.py` is the automated clean-install test (STU-018, STU-017): it installs the wheel into a fresh virtual
 environment: the runtime dependencies from the hashed lock `constraints/runtime-lock.txt` (`--lock`, TD-031), then the
-wheel and the Tabrion pin of `constraints/tabrion-integration.txt` (`--tabrion-pin`) with `--no-deps`, and `pip check`; it starts
+wheel, the Tabrion pin of `constraints/tabrion-integration.txt` (`--tabrion-pin`) and the nodestro-session pin of
+`constraints/nodestro-session.txt` (`--nodestro-session-pin`) with `--no-deps`, and `pip check`; it starts
 `tabrion-studio --no-browser --print-url` without Node.js on `PATH`, checks the health endpoint and the served page,
 signs in with the printed one-time link, saves a SQLite profile, connects it read-only and reads its catalog and the
 rows of a table, then checks the second start and `--stop`. CI runs it in the `packaging` job on Linux, macOS and

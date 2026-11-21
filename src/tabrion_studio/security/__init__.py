@@ -5,6 +5,8 @@
 * :mod:`.access`: the ASGI middleware that applies the Host allowlist, the Origin and ``Sec-Fetch-*`` rules, JSON-only
   bodies, the session check and the security headers to every request (T-01, T-02, F-05, F-08, T-07, T-15).
 
-This package depends on nothing above it (no app, server or CLI; import-linter contract ``security-below-app``) and
-the launch and session modules use the standard library only, so the CLI can use them without loading the server.
+The checks themselves come from the shared library ``nodestro-session`` (NS-003): these modules configure it with
+Studio's names, codes and log redaction. This package depends on nothing above it (no app, server or CLI;
+import-linter contract ``security-below-app``) and the launch and session modules use only the standard library and
+that library (itself standard library only), so the CLI can use them without loading the server.
 """

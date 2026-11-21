@@ -13,7 +13,7 @@ python -m venv .venv
 . .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install --upgrade "pip>=26.1"   # older pip fails on the constraint plus extras
 # tabrion is not on PyPI; the constraints file pins the tabrion 0.3.0 commit.
-pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
 (cd frontend && npm ci)
 ```
 

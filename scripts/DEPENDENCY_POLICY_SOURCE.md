@@ -7,10 +7,11 @@ tabrion-studio's outgoing edges. `python scripts/check_dependency_policy.py` che
 checks the copies against the SHA-256 below, runs the checker and probes forbidden requirements.
 
 Origin: `https://github.com/peterkarlhuber/nodestro-studio`, files `scripts/check_dependency_policy.py` and the output
-of `python scripts/check_dependency_policy.py --copy tabrion-studio`, at commit `a0c5762ffd360b9d7d8f66c8e62e1a9c88bca368`
+of `python scripts/check_dependency_policy.py --copy tabrion-studio`, at commit `133ec1e7f67fc9c81c2bc330441a262b19aaef73` (master, the merge of nodestro-studio PR #225, NS-003: the edge
+`tabrion-studio -> nodestro-session`)
 
 - `check_dependency_policy.py`: `9c790533d9bc7e34927b48f532dfcb311f6841984430bf501e05304816ff386e`
-- `dependency-policy.json`: `782c1f79026b304dacaa29ed09569d48484b165d7535b2b10cffd62b001d2763`
+- `dependency-policy.json`: `9de19bd34d50b9576542d9bb453e0d962d7bc5ea3cd173562228411cfa6a46cc`
 
 ## Updating the copies
 

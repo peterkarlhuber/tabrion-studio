@@ -7,8 +7,9 @@ Usage::
 
 The script
 
-1. writes a poisoned ``NAME`` (default ``tabrion``, version ``0.2.99``: plausible, inside every consumer's range
-   ``>=0.2,<0.3`` and above the locked 0.2.1, so an install by range picks it) into a temporary directory: a wheel
+1. writes a poisoned ``NAME`` (default ``tabrion``) at its own plausible version (``POISON_VERSIONS``: tabrion
+   ``0.2.99``, inside every consumer's ``>=0.2,<0.3`` and above the locked 0.2.1; nodestro-session ``0.1.99``, inside
+   ``<0.2`` and above 0.1.0, so an install by range picks it) into a temporary directory: a wheel
    that ships a forged ``direct_url.json`` naming ``LOCK``'s git URL and commit, and whose ``.pth`` file and package
    write a marker file when Python starts or imports it, and an sdist whose build writes the marker and then fails,
 2. serves a PEP 503/691 index on ``127.0.0.1`` with that release for ``NAME``; every other project is redirected to
@@ -64,10 +65,13 @@ from typing import Any
 import zipfile
 
 PREFIX = "check_tabrion_source:"
-#: A plausible version inside every consumer's range (``>=0.2,<0.3``) and above the locked tabrion (0.2.1), so an
-#: install by range picks it: only the zero-request assertion tells it from the pin. Same minor as the lock (a test
-#: checks it against platform/versions.json), so a new tabrion minor needs a new value here.
+#: The poisoned release of each pinned name: a plausible version inside every consumer's range and above the locked
+#: one, so an install by range picks it and only the zero-request assertion tells it from the pin. tabrion: inside
+#: ``>=0.2,<0.3``, above 0.2.1 (same minor as the lock; a test checks it against platform/versions.json, so a new
+#: tabrion minor needs a new value here). nodestro-session: inside ``<0.2``, above 0.1.0. A name not listed gets
+#: ``POISON_VERSION``; the check fails on any index request for a pinned name, whatever its version.
 POISON_VERSION = "0.2.99"
+POISON_VERSIONS = {"tabrion": POISON_VERSION, "nodestro-session": "0.1.99"}
 #: Extras the consumers request; the poisoned release declares them so no installer refuses it for a missing extra.
 POISON_EXTRAS = ("all", "dev", "migrations", "postgres", "sqlalchemy", "testing")
 UPLOAD_TIME = "2020-01-01T00:00:00Z"  # before every --uploaded-prior-to cutoff
@@ -188,8 +192,14 @@ def _record_line(path: str, data: bytes) -> str:
     return f"{path},sha256={digest},{len(data)}"
 
 
+def poison_version(name: str) -> str:
+    """The poisoned release's version of ``name`` (see ``POISON_VERSIONS``)."""
+    return POISON_VERSIONS.get(normalize(name), POISON_VERSION)
+
+
 def _metadata(name: str) -> str:
-    lines = ["Metadata-Version: 2.1", f"Name: {name}", f"Version: {POISON_VERSION}", "Summary: POISONED test release"]
+    lines = ["Metadata-Version: 2.1", f"Name: {name}", f"Version: {poison_version(name)}"]
+    lines.append("Summary: POISONED test release")
     lines += [f"Provides-Extra: {extra}" for extra in POISON_EXTRAS]
     return "\n".join(lines) + "\n\n"
 
@@ -206,7 +216,7 @@ def build_wheel(name: str, marker: Path, directory: Path, pin: Pin | None = None
     With ``pin`` it ships a forged ``dist-info/direct_url.json`` naming the pin's URL and commit (pip keeps it).
     """
     module = normalize(name).replace("-", "_")
-    dist_info = f"{module}-{POISON_VERSION}.dist-info"
+    dist_info = f"{module}-{poison_version(name)}.dist-info"
     files: dict[str, bytes] = {
         f"{module}/__init__.py": f"POISONED = True\n{_marker_code(marker, f'import {name}')}\n".encode(),
         f"{module}_poison.pth": f"import builtins; {_marker_code(marker, f'{name} .pth')}\n".encode(),
@@ -219,7 +229,7 @@ def build_wheel(name: str, marker: Path, directory: Path, pin: Pin | None = None
         files[f"{dist_info}/direct_url.json"] = json.dumps(forged).encode()
     record = [_record_line(path, data) for path, data in files.items()] + [f"{dist_info}/RECORD,,"]
     files[f"{dist_info}/RECORD"] = ("\n".join(record) + "\n").encode()
-    path = directory / f"{module}-{POISON_VERSION}-py3-none-any.whl"
+    path = directory / f"{module}-{poison_version(name)}-py3-none-any.whl"
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as wheel:
         for member, data in files.items():
             wheel.writestr(member, data)
@@ -229,7 +239,7 @@ def build_wheel(name: str, marker: Path, directory: Path, pin: Pin | None = None
 def build_sdist(name: str, marker: Path, directory: Path) -> Path:
     """A poisoned sdist of ``name`` whose in-tree build backend writes ``marker`` and then fails (no build deps)."""
     module = normalize(name).replace("-", "_")
-    root = f"{module}-{POISON_VERSION}"
+    root = f"{module}-{poison_version(name)}"
     backend = (
         f"{_marker_code(marker, f'{name} sdist build')}\n"
         "def _refuse(*args, **kwargs):\n"
@@ -244,7 +254,7 @@ def build_sdist(name: str, marker: Path, directory: Path) -> Path:
         ),
         f"{root}/poison_backend.py": backend.encode(),
     }
-    path = directory / f"{module}-{POISON_VERSION}.tar.gz"
+    path = directory / f"{module}-{poison_version(name)}.tar.gz"
     with tarfile.open(path, "w:gz") as sdist:
         for member, data in files.items():
             info = tarfile.TarInfo(member)
@@ -302,7 +312,7 @@ class PoisonedIndex:
             body = {
                 "meta": {"api-version": "1.1"},
                 "name": name,
-                "versions": [POISON_VERSION],
+                "versions": [poison_version(name)],
                 "files": [
                     {
                         "filename": file,
@@ -470,9 +480,10 @@ def control(index: PoisonedIndex, name: str, env: Mapping[str, str], workdir: Pa
         chosen = [item["metadata"]["version"] for item in json.loads(report.read_text(encoding="utf-8"))["install"]]
     except (OSError, ValueError, KeyError, TypeError):
         chosen = []
-    if result.returncode != 0 or chosen != [POISON_VERSION]:
+    expected = poison_version(name)
+    if result.returncode != 0 or chosen != [expected]:
         tail = (result.stderr or result.stdout).strip().splitlines()[-1:] or [""]
-        problems.append(f"control: pip chose {chosen or 'nothing'} for {name}, expected {POISON_VERSION} ({tail[0]})")
+        problems.append(f"control: pip chose {chosen or 'nothing'} for {name}, expected {expected} ({tail[0]})")
     if not index.hits:
         problems.append(f"control: the index logged no request for {name}")
     return problems
@@ -501,13 +512,13 @@ def run(
         }
         with PoisonedIndex(files, upstream) as index:
             env = child_environment(index.url)
-            say(f"poisoned index {index.url} serves {', '.join(f'{n} {POISON_VERSION}' for n in names)}")
+            say(f"poisoned index {index.url} serves {', '.join(f'{n} {poison_version(n)}' for n in names)}")
             if with_control:
                 for name in names:
                     found = control(index, name, env, workdir)
                     problems += found
                     if not found:
-                        say(f"ok   control: pip install --dry-run {name} chooses the poisoned {POISON_VERSION}")
+                        say(f"ok   control: pip install --dry-run {name} chooses the poisoned {poison_version(name)}")
                     index.reset()
                 if marker.exists():
                     problems.append("control: the marker exists before the command ran")

@@ -4,9 +4,10 @@
   tabrion only as a final range ``>=0.N,<0.(N+1)``.
 * A requirements or constraints file (``requirements*``/``constraints*`` ``.txt`` or ``.in``, or a file in a
   ``requirements``/``constraints`` folder, at any depth) may pin tabrion to a **full commit SHA** of its repository,
-  ``tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex digits>``. Every other line is a plain
-  requirement from the index; pip options, paths, wheel files, other URLs and fragments are refused (no branch, tag
-  or short SHA: a tag can be moved; R-L2 of the STU-009 re-review).
+  ``tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex digits>``, and likewise nodestro-session (NS-003,
+  the shared local-session library, not on PyPI either) to a full commit SHA of its own repository. Every other line
+  is a plain requirement from the index; pip options, paths, wheel files, other URLs and fragments are refused (no
+  branch, tag or short SHA: a tag can be moved; R-L2 of the STU-009 re-review).
 """
 
 from __future__ import annotations
@@ -67,7 +68,9 @@ def test_probes_are_caught(toml: str) -> None:
 
 
 ROOT = PYPROJECT.parent
-_SHA_PIN = re.compile(r"tabrion @ git\+https://github\.com/peterkarlhuber/tabrion@[0-9a-f]{40}")
+#: NS-003 adds nodestro-session, the second package of the owner that is not on PyPI: the same form, the name equal to
+#: its repository's name (a package can never be pinned to another package's repository).
+_SHA_PIN = re.compile(r"(tabrion|nodestro-session) @ git\+https://github\.com/peterkarlhuber/\1@[0-9a-f]{40}")
 #: ``name[extras] <op> version, ...`` with an optional marker and ``--hash`` options: a requirement from the index.
 _VERSION = r"(?:===|==|!=|~=|>=|<=|>|<)\s*[A-Za-z0-9.*+!_-]+"
 _NAMED = re.compile(
@@ -90,7 +93,8 @@ def pin_problems(text: str) -> list[str]:
     """Lines of a requirements or constraints file that are neither a plain requirement nor the full-SHA tabrion pin.
 
     Two forms only (R-L2 of the STU-009 re-review): ``name[extras] <op> version`` (with an optional marker and
-    ``--hash=``), or exactly ``tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>``. So every pip option
+    ``--hash=``), or exactly ``tabrion @ git+https://github.com/peterkarlhuber/tabrion@<40 hex>`` (or the same for
+    nodestro-session and its repository, NS-003). So every pip option
     (``-e``, ``-r``, ``-c``, ``-f``/``--find-links``, ``--index-url``, ``--extra-index-url``, ``--trusted-host``, ...),
     every path or wheel file, every other URL and a fragment after the SHA are refused; a line continuation as well.
     """
@@ -183,6 +187,21 @@ SHA = "a" * 40
         "foo==1; python_version > '3' --global-option=x",
         "foo==1; python_version > '3' -e x",
         "foo==1; python_version > '3' --install-option x",
+        # NS-003: the nodestro-session pin is held to the same rules, and to its own repository.
+        "nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session@v0.1.0",
+        "nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session@2d06f0a",
+        "nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session@master",
+        "nodestro-session @ git+https://github.com/someone-else/nodestro-session@" + SHA,
+        "nodestro-session @ git+http://github.com/peterkarlhuber/nodestro-session@" + SHA,
+        "nodestro-session[x] @ git+https://github.com/peterkarlhuber/nodestro-session@" + SHA,
+        "nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session@" + SHA + "#subdirectory=x",
+        "nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session.git@" + SHA,
+        "nodestro-session @ git+https://github.com/peterkarlhuber/tabrion@" + SHA,
+        "tabrion @ git+https://github.com/peterkarlhuber/nodestro-session@" + SHA,
+        "nodestro-api @ git+https://github.com/peterkarlhuber/nodestro-api@" + SHA,
+        "nodestro @ git+https://github.com/peterkarlhuber/nodestro@" + SHA,
+        "nodestro-session @ file:///home/user/nodestro-session",
+        "-e ../nodestro-session",
     ],
 )
 def test_pin_probes_are_caught(line: str) -> None:
@@ -200,6 +219,7 @@ def test_pin_probes_are_caught(line: str) -> None:
         "tomli>=2; python_version < '3.11'\n",
         "pywin32>=306; sys_platform == 'win32' and platform_machine != 'arm-64'\n",
         "\n   \n# only comments\n",
+        "nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session@" + SHA + "\n",
     ],
 )
 def test_allowed_lines_pass(text: str) -> None:
@@ -225,3 +245,23 @@ def test_the_constraints_file_pins_tabrion_0_3_0() -> None:
     assert lines == ["tabrion @ git+https://github.com/peterkarlhuber/tabrion@7488c764327ae428718ffc9492a6aaed73a06cef"]
     deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
     assert [d for d in deps if d.startswith("tabrion")] == ["tabrion[migrations,postgres,sqlalchemy]>=0.2,<0.4"]
+
+
+NODESTRO_SESSION_PIN = PYPROJECT.parent / "constraints" / "nodestro-session.txt"
+
+
+def test_the_nodestro_session_pin_is_a_full_commit_and_the_range_has_no_direct_reference() -> None:
+    """NS-003: nodestro-session comes from a full-SHA Git pin of its own repository (it is not on PyPI), in a pin file
+    of its own next to tabrion's; pyproject.toml carries only a range (RC-8 above refuses a direct reference)."""
+    lines = [
+        line
+        for line in NODESTRO_SESSION_PIN.read_text(encoding="utf-8").splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert len(lines) == 1
+    assert re.fullmatch(
+        r"nodestro-session @ git\+https://github\.com/peterkarlhuber/nodestro-session@[0-9a-f]{40}", lines[0]
+    )
+    assert NODESTRO_SESSION_PIN in pin_files()
+    deps = requirements(dict(tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))["project"]))
+    assert [d for d in deps if d.startswith("nodestro")] == ["nodestro-session<0.2"]

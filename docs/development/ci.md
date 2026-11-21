@@ -114,14 +114,15 @@ wait for the jobs of the other systems and would be skipped, so NOT OK for `ci-o
 Security review F-6 (TD-031): `pyproject.toml` declares ranges (`fastapi>=0.115,<1`, ...), so a plain install takes
 whatever PyPI serves that day, unhashed. `constraints/runtime-lock.txt` pins the whole runtime closure of Studio and
 Tabrion (Python 3.11 to 3.14, Linux, macOS and Windows, with environment markers) to exact versions with the SHA-256
-of every file. Tabrion itself stays in `constraints/tabrion-integration.txt`, pinned by its full commit SHA, because
-pip cannot hash a Git checkout. The [installation guide](../guide/installation.md) installs from the lock, and so
+of every file. Tabrion itself stays in `constraints/tabrion-integration.txt`, and nodestro-session (NS-003, the shared
+local-session library) in `constraints/nodestro-session.txt`, each pinned by its full commit SHA, because pip cannot
+hash a Git checkout. The [installation guide](../guide/installation.md) installs from the lock, and so
 does every CI job that installs Studio:
 
 ```bash
 python -m pip install "pip>=26.1"                                  # jobs that use -c (DC-TS-1)
 pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-pip install -e ".[dev]" -c constraints/tabrion-integration.txt   # or --no-deps <wheel> -r constraints/tabrion-integration.txt
+pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt   # or --no-deps <wheel> -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
 pip check
 python scripts/runtime_lock.py check-installed                     # jobs with the development tools
 ```
@@ -134,7 +135,8 @@ python scripts/runtime_lock.py check-installed                     # jobs with t
   pin applies but nothing needs it (stale). It also fails when the installed tabrion is not the Git commit of
   `constraints/tabrion-integration.txt` (its `direct_url.json`: no file means it came from a package index, where
   the name `tabrion` is not ours; a local directory, an archive or another commit fail too; DC-TS-1). This detects
-  an accidental index install, it does not prove the origin: a wheel can ship a forged `direct_url.json`.
+  an accidental index install, it does not prove the origin: a wheel can ship a forged `direct_url.json`. The
+  installed nodestro-session is checked the same way against `constraints/nodestro-session.txt` (NS-003).
 - **pip floor:** pip 24.0 to 26.0 crash on a `-c` Git pin once the requirement has extras (`.[dev]`); every job that
   installs with `-c constraints/tabrion-integration.txt` raises pip to `>=26.1` first
   (`tests/security/test_workflows.py`).
@@ -145,8 +147,10 @@ python scripts/runtime_lock.py check-installed                     # jobs with t
   other name to PyPI; the job fails when pip asks it for `tabrion` at all, when an install never used it or an index
   option would bypass it, when the poisoned code ran, or when the installed tabrion's `direct_url.json` is not the
   pin's. A positive control shows first that a plain install would take the poisoned release. The zero-request
-  assertion is the proof that the Git pin keeps a foreign `tabrion` out. The job is listed in
-  `.github/ci-manifest.json`, so ci-ok reports it.
+  assertion is the proof that the Git pin keeps a foreign `tabrion` out. Each step runs its install a second time,
+  in a fresh environment, with the poisoned index serving `nodestro-session` instead (`--lock
+  constraints/nodestro-session.txt --name nodestro-session`; NS-003), so the same proof holds for that pin. The job is
+  listed in `.github/ci-manifest.json`, so ci-ok reports it.
 - The wheel jobs (`e2e`, `e2e (<browser>)`, `license and supply chain`, the
   smoke test of `build and install`) install the wheel with `--no-deps` after the lock, so `pip check` proves the lock
   complete for that platform.

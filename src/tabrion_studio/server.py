@@ -44,6 +44,12 @@ from typing import TextIO
 
 # h11 is Uvicorn's own HTTP/1.1 parser (a required dependency of uvicorn, which Studio runs with http="h11").
 import h11
+from nodestro_session import LoopbackSockets
+
+# Re-exported: the CLI catches PortUnavailableError from here, and random_loopback is the default address choice.
+from nodestro_session import PortUnavailableError as PortUnavailableError
+from nodestro_session import bind_loopback as _bind_loopback
+from nodestro_session import random_loopback as random_loopback
 import uvicorn
 from uvicorn.protocols.http.h11_impl import H11Protocol
 
@@ -88,10 +94,6 @@ from tabrion_studio.services.state import StateStore
 from tabrion_studio.services.viewer import Viewer
 
 
-class PortUnavailableError(RuntimeError):
-    """The requested port cannot be bound on the loopback address."""
-
-
 @dataclass
 class ServeOptions:
     project: Path
@@ -122,22 +124,6 @@ if sys.platform == "win32":
     STOP_SIGNALS += (signal.SIGBREAK,)
 else:
     STOP_SIGNALS += (signal.SIGHUP,)
-
-LOOPBACK_V6 = "::1"
-_PORT_ATTEMPTS = 20
-#: How many random ``127.a.b.c`` addresses are tried when one is taken with a fixed port (A-01).
-_ADDRESS_ATTEMPTS = 8
-#: "Cannot assign requested address": the address is not configured on this host (macOS: only 127.0.0.1).
-_NOT_CONFIGURED_ERRNOS = frozenset({errno.EADDRNOTAVAIL, 10049})  # 10049 = WSAEADDRNOTAVAIL
-
-
-def random_loopback() -> str:
-    """A random IPv4 loopback address ``127.a.b.c`` other than ``127.0.0.1``, with ``c`` in 1..254 (A-01)."""
-    while True:
-        a, b, c = secrets.randbelow(256), secrets.randbelow(256), 1 + secrets.randbelow(254)
-        address = f"127.{a}.{b}.{c}"
-        if address != LOOPBACK:
-            return address
 
 
 class _StudioServer(uvicorn.Server):
@@ -230,125 +216,20 @@ class RequestTimeoutProtocol(H11Protocol):
             self.transport.close()
 
 
-@dataclass
-class LoopbackSockets:
-    """The listening IPv4 socket and, if IPv6 is available, the bound but not listening ``[::1]`` socket."""
-
-    listener: socket.socket
-    v6_guard: socket.socket | None
-
-    @property
-    def host(self) -> str:
-        return str(self.listener.getsockname()[0])
-
-    @property
-    def port(self) -> int:
-        return int(self.listener.getsockname()[1])
-
-    def close(self) -> None:
-        for sock in (self.listener, self.v6_guard):
-            if sock is not None:
-                with contextlib.suppress(OSError):
-                    sock.close()
-
-
-def _exclusive_socket(family: socket.AddressFamily) -> socket.socket:
-    sock = socket.socket(family, socket.SOCK_STREAM)
-    sock.set_inheritable(False)
-    if sys.platform == "win32":
-        # Without it, another program could bind the same address with SO_REUSEADDR and take over connections.
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
-    return sock
-
-
-def _bind_v4(host: str, port: int) -> socket.socket:
-    sock = _exclusive_socket(socket.AF_INET)
-    try:
-        if sys.platform != "win32":
-            # POSIX only: lets a restart reuse a port in TIME_WAIT; never lets two listeners share it.
-            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        sock.bind((host, port))
-        sock.listen(128)
-    except BaseException:
-        sock.close()
-        raise
-    return sock
-
-
-_NO_IPV6 = {errno.EAFNOSUPPORT, errno.EADDRNOTAVAIL, getattr(errno, "EPROTONOSUPPORT", errno.EAFNOSUPPORT)}
-
-
-def _guard_v6(port: int) -> socket.socket | None:
-    """Bind ``[::1]:port`` without listening; None if this host has no IPv6 loopback. Raises if the port is taken."""
-    if not socket.has_ipv6:
-        return None
-    try:
-        sock = _exclusive_socket(socket.AF_INET6)
-    except OSError as exc:
-        if exc.errno in _NO_IPV6 or getattr(exc, "winerror", None) == 10047:  # WSAEAFNOSUPPORT
-            return None
-        raise
-    try:
-        sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
-        sock.bind((LOOPBACK_V6, port))
-    except OSError as exc:
-        sock.close()
-        if exc.errno in _NO_IPV6 or getattr(exc, "winerror", None) in (10047, 10049):  # WSAEADDRNOTAVAIL
-            return None
-        raise
-    return sock
-
-
-def _not_configured(exc: OSError) -> bool:
-    return exc.errno in _NOT_CONFIGURED_ERRNOS or getattr(exc, "winerror", None) == 10049
-
-
-def _listen_v4(port: int, choose: Callable[[], str]) -> socket.socket:
-    """Listen on a random loopback address (A-01), or on ``127.0.0.1`` where only that one is configured."""
-    for attempt in range(1, _ADDRESS_ATTEMPTS + 1):
-        try:
-            return _bind_v4(choose(), port)
-        except OSError as exc:
-            if _not_configured(exc):
-                break  # macOS and others: only 127.0.0.1 exists; fall back to it below
-            if port and attempt < _ADDRESS_ATTEMPTS:
-                continue  # the fixed port is taken on this random address only: try another address
-            raise PortUnavailableError(
-                f"cannot listen on 127.0.0.0/8 port {port or 'any'}: {exc.strerror or exc}"
-            ) from exc
-    try:
-        listener = _bind_v4(LOOPBACK, port)
-    except OSError as exc:
-        raise PortUnavailableError(f"cannot listen on {LOOPBACK}:{port}: {exc.strerror or exc}") from exc
-    logging.getLogger("tabrion_studio.server").info(
-        "only %s is available as a loopback address", LOOPBACK, extra={"event": "studio.loopback_fallback"}
-    )
-    return listener
-
-
 def bind_loopback(port: int, choose: Callable[[], str] = random_loopback) -> LoopbackSockets:
     """Listen on ``127.a.b.c:port`` and hold ``[::1]:port`` (``port`` 0 = a free port that is free on both).
 
     ``127.a.b.c`` is a fresh random loopback address (``choose``), or ``127.0.0.1`` where no other one is configured
-    (finding A-01).
+    (finding A-01). The binding is :func:`nodestro_session.bind_loopback` (exclusive sockets, the ``[::1]`` guard
+    without listening, review F-08); Studio logs the fallback to ``127.0.0.1`` as ``studio.loopback_fallback``.
     """
-    attempts = 1 if port else _PORT_ATTEMPTS
-    last: OSError | None = None
-    for _ in range(attempts):
-        listener = _listen_v4(port, choose)
-        chosen = int(listener.getsockname()[1])
-        try:
-            guard = _guard_v6(chosen)
-        except OSError as exc:
-            listener.close()
-            last = exc
-            continue  # [::1] has this port in use by another program: with port 0, try another free port
-        return LoopbackSockets(listener, guard)
-    detail = last.strerror if last is not None and last.strerror else last
-    raise PortUnavailableError(
-        f"port {port or 'any'}: [{LOOPBACK_V6}] is used by another program ({detail}); "
-        "Studio holds both loopback addresses so that no other program can answer for localhost"
-    )
+    sockets = _bind_loopback(port, choose)
+    if choose is random_loopback and sockets.host == LOOPBACK:
+        # random_loopback never returns 127.0.0.1: the library fell back to it (only that address is configured).
+        logging.getLogger("tabrion_studio.server").info(
+            "only %s is available as a loopback address", LOOPBACK, extra={"event": "studio.loopback_fallback"}
+        )
+    return sockets
 
 
 def remove_redirect_files(paths: InstancePaths) -> None:

@@ -1,0 +1,8 @@
+# The nodestro-session commit Studio is built and tested against (NS-003): nodestro-session 0.1.0.dev0, master
+# 15e0724 (the merge of nodestro-session PR #5: Python 3.14 in CI). Since 2d06f0a (PR #3, after the N-02 review, the
+# commit nodestro-studio's locks pin) only CI, docs and one docstring changed.
+# nodestro-session is not published on PyPI: a constraints file with a full commit SHA is how Studio pins it, as for
+# tabrion (constraints/tabrion-integration.txt). pyproject.toml carries the range <0.2 with no direct reference
+# (tests/security/test_dependencies.py).
+# Install: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
+nodestro-session @ git+https://github.com/peterkarlhuber/nodestro-session@15e0724a35182c17c9d26f0605db21c0a7d82906

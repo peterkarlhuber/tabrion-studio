@@ -138,14 +138,15 @@ report). Standard library only.
 # in the fresh runtime environment of each system and Python version (wheel + lock, as in the guide):
 <venv>/bin/python -I scripts/collect_licenses.py > licenses-<system>-py<version>.json
 # then, on any computer, with every record file:
-python -I scripts/release_bom.py --strict \
+python -I scripts/release_bom.py --strict --git-pin constraints/nodestro-session.txt \
   --licenses licenses-linux-py3.13.json --licenses licenses-linux-py3.11.json \
   --licenses licenses-macos-py3.13.json --licenses licenses-windows-py3.13.json \
   --out release/
 ```
 
 - **Contents:** every pin of `constraints/runtime-lock.txt` (version, marker, the SHA-256 of every file), Tabrion
-  from `constraints/tabrion-integration.txt` (purl with the Git commit), every frontend package that is not `dev` in
+  from `constraints/tabrion-integration.txt` and nodestro-session from `constraints/nodestro-session.txt` (NS-003; each
+  a purl with the Git commit), every frontend package that is not `dev` in
   `frontend/package-lock.json` (with its npm integrity hashes; a package at several nested paths once, with every
   path). Build and test tools are checked but not listed. Packages marked `devOptional` (such as `typescript` and
   the React type packages) count as shipped, conservatively, as in STU-031.

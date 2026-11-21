@@ -51,7 +51,7 @@ jobs:
       # DC-TS-1: pip 24.0 to 26.0 crash on a "-c" Git pin with extras; 26.1 and newer never ask an index for tabrion.
       - run: python -m pip install "pip>=26.1"
       - run: pip install --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - name: Collect the test IDs (test-ids.txt)
         run: python -m pytest --collect-only -q -p no:cacheprovider > "$GITHUB_WORKSPACE/test-ids.txt" || true
       - name: Count the test IDs and write the job summary
@@ -90,7 +90,7 @@ jobs:
       # only Tabrion stays at the commit of constraints/tabrion-integration.txt (it is not on PyPI).
       # DC-TS-1: the newest pip is above the floor 26.1 (pip 24.0 to 26.0 crash on a "-c" Git pin with extras).
       - run: python -m pip install --upgrade pip
-      - run: pip install --upgrade --upgrade-strategy eager -e ".[dev]" -c constraints/tabrion-integration.txt
+      - run: pip install --upgrade --upgrade-strategy eager -e ".[dev]" -c constraints/tabrion-integration.txt -c constraints/nodestro-session.txt
       - run: pip check
       - name: The versions under test (pip freeze, also in the job summary)
         run: |
@@ -132,7 +132,7 @@ jobs:
           python -m venv runtime-env
           if [ "$RUNNER_OS" = Windows ]; then py=runtime-env/Scripts/python.exe; else py=runtime-env/bin/python; fi
           "$py" -m pip install --quiet --require-hashes --no-deps --only-binary ":all:" -r constraints/runtime-lock.txt
-          "$py" -m pip install --quiet --no-deps -r constraints/tabrion-integration.txt
+          "$py" -m pip install --quiet --no-deps -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt
           "$py" -m pip check
           "$py" -I scripts/collect_licenses.py > "licenses-${{ matrix.label }}.json"
           echo "$(grep -c '"name"' "licenses-${{ matrix.label }}.json") license records"
@@ -171,7 +171,7 @@ jobs:
             args+=(--licenses "release/licenses/licenses-$label.json")
           done
           status=0
-          python -I scripts/release_bom.py --strict "${args[@]}" --out release || status=$?
+          python -I scripts/release_bom.py --strict --git-pin constraints/nodestro-session.txt "${args[@]}" --out release || status=$?
           { echo "### Release SBOM (strict)"; echo; head -n 20 release/third-party-licenses.md; } >> "$GITHUB_STEP_SUMMARY" || true
           exit "$status"
       - if: ${{ !cancelled() }}

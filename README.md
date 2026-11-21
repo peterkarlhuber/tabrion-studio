@@ -48,7 +48,7 @@ python scripts/build_frontend.py        # npm ci + npm run build, copies the res
 python -m venv ~/.venvs/tabrion-studio
 ~/.venvs/tabrion-studio/bin/python -m pip install --upgrade "pip>=26.1"
 ~/.venvs/tabrion-studio/bin/python -m pip install --require-hashes --no-deps --only-binary :all: -r constraints/runtime-lock.txt
-~/.venvs/tabrion-studio/bin/python -m pip install --no-deps . -r constraints/tabrion-integration.txt   # Tabrion's pin
+~/.venvs/tabrion-studio/bin/python -m pip install --no-deps . -r constraints/tabrion-integration.txt -r constraints/nodestro-session.txt   # Tabrion's pin
 ~/.venvs/tabrion-studio/bin/python -m pip check
 ```
 

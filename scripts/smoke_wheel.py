@@ -4,9 +4,10 @@
     python scripts/smoke_wheel.py dist/tabrion_studio-*.whl
 
 Steps: create a venv in a temporary folder, upgrade pip, install the runtime dependencies from the hashed lock
-``constraints/runtime-lock.txt`` (``--lock``; ``pip --require-hashes --no-deps``, TD-031), then the wheel and the
-Tabrion pin of ``constraints/tabrion-integration.txt`` (``--tabrion-pin``; Tabrion is not on PyPI) with ``--no-deps``,
-so nothing outside the lock is installed, and ``pip check`` that the lock was complete; then
+``constraints/runtime-lock.txt`` (``--lock``; ``pip --require-hashes --no-deps``, TD-031), then the wheel, the
+Tabrion pin of ``constraints/tabrion-integration.txt`` (``--tabrion-pin``; Tabrion is not on PyPI) and the
+nodestro-session pin of ``constraints/nodestro-session.txt`` (``--nodestro-session-pin``; NS-003, not on PyPI either)
+with ``--no-deps``, so nothing outside the lock is installed, and ``pip check`` that the lock was complete; then
 run the installed ``tabrion-studio`` with a PATH from which every folder containing ``node`` is removed:
 ``--version``, a start with ``--no-browser --print-url``, the health endpoint, the served ``index.html`` and its
 script asset, the sign-in with the printed one-time link, a SQLite profile saved, connected (read-only) and read
@@ -34,6 +35,7 @@ import urllib.request
 WINDOWS = sys.platform == "win32"
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _TABRION_PIN = Path(__file__).resolve().parents[1] / "constraints" / "tabrion-integration.txt"
+_NODESTRO_SESSION_PIN = Path(__file__).resolve().parents[1] / "constraints" / "nodestro-session.txt"
 _LOCK = Path(__file__).resolve().parents[1] / "constraints" / "runtime-lock.txt"
 _LINK = re.compile(r"do not share\): (http://127\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d+/launch#[A-Za-z0-9_-]+)")
 
@@ -135,6 +137,13 @@ def main(argv: list[str] | None = None) -> int:
         "(default: constraints/tabrion-integration.txt)",
     )
     parser.add_argument(
+        "--nodestro-session-pin",
+        type=Path,
+        default=_NODESTRO_SESSION_PIN,
+        help="the file with the full-SHA nodestro-session pin, installed with -r and --no-deps "
+        "(default: constraints/nodestro-session.txt)",
+    )
+    parser.add_argument(
         "--lock",
         type=Path,
         default=_LOCK,
@@ -166,8 +175,12 @@ def main(argv: list[str] | None = None) -> int:
             [*pip, "--require-hashes", "--only-binary", ":all:", "-r", str(args.lock.resolve())],
             check=True,
         )
-        _step(f"installing {wheel.name} and the Tabrion pin of {args.tabrion_pin.name}")
-        subprocess.run([*pip, str(wheel), "-r", str(args.tabrion_pin.resolve())], check=True)
+        _step(
+            f"installing {wheel.name}, the Tabrion pin of {args.tabrion_pin.name} and the nodestro-session pin of "
+            f"{args.nodestro_session_pin.name}"
+        )
+        pins = ["-r", str(args.tabrion_pin.resolve()), "-r", str(args.nodestro_session_pin.resolve())]
+        subprocess.run([*pip, str(wheel), *pins], check=True)
         subprocess.run([str(python), "-m", "pip", "check"], check=True)
 
         env = {**os.environ, "PATH": node_free_path(), "PYTHONUNBUFFERED": "1"}

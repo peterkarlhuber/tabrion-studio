@@ -1,4 +1,4 @@
-"""Browser sessions (STU-003, SQ-03, review F-09).
+"""Browser sessions (STU-003, SQ-03, review F-09), on :class:`nodestro_session.SessionStore` (NS-003).
 
 ``POST /api/session`` exchanges a one-time launch token for a session. A session has two random values:
 
@@ -11,67 +11,33 @@
 Every request with a session needs both. A program on another local port that the browser visits receives the
 Studio cookie (the browser sends cookies to every port of a host), but never the CSRF value, so the cookie alone is
 useless. Only SHA-256 digests of the session IDs are kept, and the CSRF value is compared in constant time.
+
+The store itself is the shared library's; this module keeps Studio's names (cookie prefix, CSRF header, bound) and
+registers every new value with the log redaction (STU-004). Studio's sessions have no idle time or maximum age of
+their own: the server's idle timeout ends them with the process.
 """
 
 from __future__ import annotations
 
-from collections import OrderedDict
-import hashlib
-import hmac
-import secrets
-import threading
+from nodestro_session import SessionStore
+from nodestro_session import cookie_name as _cookie_name
 
 from tabrion_studio.logs import register_secret
 
 CSRF_HEADER = "X-Tabrion-CSRF"
 COOKIE_PREFIX = "tabrion_studio_session_"
 MAX_SESSIONS = 32
-_MAX_VALUE_LENGTH = 128
 
 
 def cookie_name(port: int) -> str:
     """The session cookie of the instance on ``port``."""
-    return f"{COOKIE_PREFIX}{port}"
+    return _cookie_name(COOKIE_PREFIX, port)
 
 
-def _digest(value: str) -> bytes:
-    return hashlib.sha256(value.encode("utf-8")).digest()
-
-
-class Sessions:
+class Sessions(SessionStore):
     """The open sessions of this process (in memory only; a restart ends them). The oldest is dropped beyond
     ``max_sessions``."""
 
     def __init__(self, max_sessions: int = MAX_SESSIONS) -> None:
-        self._max = max_sessions
-        self._csrf: OrderedDict[bytes, bytes] = OrderedDict()
-        self._lock = threading.Lock()
-
-    def __len__(self) -> int:
-        return len(self._csrf)
-
-    def create(self) -> tuple[str, str]:
-        """Open a session; returns (session ID for the cookie, CSRF value for the page)."""
-        session_id, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-        register_secret(session_id)  # never in a log record (STU-004)
-        register_secret(csrf)
-        with self._lock:
-            self._csrf[_digest(session_id)] = csrf.encode("ascii")
-            while len(self._csrf) > self._max:
-                self._csrf.popitem(last=False)
-        return session_id, csrf
-
-    def known(self, session_id: str | None) -> bool:
-        """Whether ``session_id`` names an open session (the CSRF value is not checked)."""
-        if not session_id or len(session_id) > _MAX_VALUE_LENGTH:
-            return False
-        with self._lock:
-            return _digest(session_id) in self._csrf
-
-    def check(self, session_id: str | None, csrf: str | None) -> bool:
-        """Whether ``session_id`` names an open session and ``csrf`` is its CSRF value."""
-        if not session_id or not csrf or len(session_id) > _MAX_VALUE_LENGTH or len(csrf) > _MAX_VALUE_LENGTH:
-            return False
-        with self._lock:
-            expected = self._csrf.get(_digest(session_id))
-        return expected is not None and hmac.compare_digest(expected, csrf.encode("utf-8"))
+        # Every new session ID and CSRF value is never written to a log record (STU-004).
+        super().__init__(max_sessions, on_secret=register_secret)

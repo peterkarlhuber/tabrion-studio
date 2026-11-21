@@ -13,7 +13,7 @@
     "tabrion": {
       "kind": "foundation",
       "no_direct_url": true,
-      "comment": "RC-1: libraries require it by a version range; runtime extras and api dev carry the git pin (V-B0, RC-2)"
+      "comment": "RC-1: every component requires it by one version range; the studio lock holds its commit (RC-2)"
     },
     "axentra": {
       "kind": "library"
@@ -37,6 +37,10 @@
       "kind": "platform",
       "distribution": "nodestro-client"
     },
+    "nodestro-session": {
+      "kind": "library",
+      "comment": "N-02: the shared protection of the local session (standard library only)"
+    },
     "nodestro-studio": {
       "kind": "studio",
       "distribution": "nodestro",
@@ -50,7 +54,8 @@
     "tabrion-studio": {
       "kind": "studio",
       "studio_of": [
-        "tabrion"
+        "tabrion",
+        "nodestro-session"
       ]
     },
     "axentra-studio": {
@@ -64,6 +69,13 @@
     {
       "from": "tabrion-studio",
       "to": "tabrion[postgres,sqlalchemy,migrations]",
+      "kind": "required",
+      "extra": null,
+      "status": "active"
+    },
+    {
+      "from": "tabrion-studio",
+      "to": "nodestro-session",
       "kind": "required",
       "extra": null,
       "status": "active"

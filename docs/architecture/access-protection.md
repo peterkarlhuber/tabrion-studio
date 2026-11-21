@@ -141,7 +141,9 @@ navigation. Every other unknown path is
 404.
 
 Every refusal is a problem document (`application/problem+json`) with the code of the table and fixed texts; it never
-repeats a header or other request data (STU-004, [Errors and logging](errors-and-logging.md)).
+repeats a header or other request data (STU-004, [Errors and logging](errors-and-logging.md)). A refusal code that a
+newer `nodestro-session` adds and Studio does not map yet is still refused: `access.refused` with the library's status
+(403 if that is not a 4xx), never an error.
 
 ## Request body limits
 

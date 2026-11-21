@@ -257,3 +257,73 @@ def test_check_installed_needs_one_full_commit_pin(tmp_path: Path, pin: str) -> 
 def test_the_repository_pin_is_read() -> None:
     pin = lock.tabrion_pin(ROOT)
     assert pin is not None and pin[0] == REPO and len(pin[1]) == 40
+
+
+# NS-003: nodestro-session, the second package that only a full-SHA Git pin may supply, is checked like tabrion.
+
+NS_COMMIT = "2d06f0ae7c81e91be008ad3fd1f6f92a853d15ab"
+NS_REPO = "https://github.com/peterkarlhuber/nodestro-session"
+NS_FAKE = {
+    **FAKE,
+    "tabrion-studio": ("0.1.0", [*FAKE["tabrion-studio"][1], "nodestro-session<0.2"]),
+    "nodestro-session": ("0.1.0.dev0", []),
+}
+
+
+def _ns_root(tmp_path: Path, pin: str = f"nodestro-session @ git+{NS_REPO}@{NS_COMMIT}\n") -> Path:
+    root = _fake_root(tmp_path, CLEAN)
+    (root / lock.NODESTRO_SESSION_PIN).write_text(pin, encoding="utf-8")
+    return root
+
+
+def _sources(nodestro_session: object | None) -> Callable[[str], str | None]:
+    """tabrion from its pinned commit; nodestro-session's ``direct_url.json`` as given (None: it has none)."""
+    tabrion = json.dumps({"url": REPO, "vcs_info": {"vcs": "git", "commit_id": COMMIT}})
+    ns = None if nodestro_session is None else json.dumps(nodestro_session)
+    return lambda name: tabrion if name == "tabrion" else ns if name == "nodestro-session" else None
+
+
+def test_nodestro_session_is_not_locked_but_pinned() -> None:
+    assert "nodestro-session" in lock.UNLOCKED
+    assert lock.GIT_PINS["nodestro-session"] == lock.NODESTRO_SESSION_PIN
+    pin = lock.git_pin("nodestro-session", ROOT)
+    assert pin is not None and pin[0] == NS_REPO and len(pin[1]) == 40
+
+
+def test_check_installed_accepts_nodestro_session_from_the_pinned_commit(tmp_path: Path) -> None:
+    source = _sources({"url": NS_REPO + ".git", "vcs_info": {"vcs": "git", "commit_id": NS_COMMIT}})
+    assert lock.check_installed(_ns_root(tmp_path), _lookup(NS_FAKE), source) == []
+
+
+def test_check_installed_refuses_nodestro_session_from_an_index(tmp_path: Path) -> None:
+    """DC-TS-1 for nodestro-session: an index install has no direct_url.json."""
+    problems = lock.check_installed(_ns_root(tmp_path), _lookup(NS_FAKE), _sources(None))
+    assert len(problems) == 1 and problems[0].startswith("nodestro-session has no direct_url.json"), problems
+    assert "reinstall with -c or -r constraints/nodestro-session.txt" in problems[0]
+
+
+@pytest.mark.parametrize(
+    ("data", "expected"),
+    [
+        ({"url": NS_REPO, "vcs_info": {"vcs": "git", "commit_id": "0" * 40}}, "is installed at commit '0000"),
+        (
+            {"url": "https://github.com/someone/nodestro-session", "vcs_info": {"vcs": "git", "commit_id": NS_COMMIT}},
+            "was installed from 'https://github.com/someone/",
+        ),
+        (
+            {"url": "file:///src/nodestro-session", "dir_info": {"editable": True}},
+            "(dir_info), not from the Git commit",
+        ),
+    ],
+)
+def test_check_installed_refuses_nodestro_session_from_elsewhere(tmp_path: Path, data: object, expected: str) -> None:
+    problems = lock.check_installed(_ns_root(tmp_path), _lookup(NS_FAKE), _sources(data))
+    assert len(problems) == 1 and problems[0].startswith("nodestro-session ") and expected in problems[0], problems
+
+
+def test_check_installed_needs_one_full_commit_nodestro_session_pin(tmp_path: Path) -> None:
+    source = _sources({"url": NS_REPO, "vcs_info": {"vcs": "git", "commit_id": NS_COMMIT}})
+    root = _ns_root(tmp_path, f"nodestro-session @ git+{NS_REPO}@master\n")
+    assert lock.check_installed(root, _lookup(NS_FAKE), source) == [
+        f"{lock.NODESTRO_SESSION_PIN} has no single 'nodestro-session @ git+https://...@<full commit>' line"
+    ]
