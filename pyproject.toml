@@ -50,6 +50,9 @@ dependencies = [
 dev = [
     "pytest>=9",
     "pytest-cov>=5",
+    # The backend suite runs on every CPU of the runner (CI-FAST AP6, as in nodestro-runtime); its tests are I/O and
+    # process bound, so the serial run took 17 to 20+ minutes.
+    "pytest-xdist>=3.6",
     # The FastAPI test client; Starlette 1.x prefers httpx2 over httpx (05 section 3.2 names httpx).
     "httpx2>=2.16",
     "ruff>=0.8",

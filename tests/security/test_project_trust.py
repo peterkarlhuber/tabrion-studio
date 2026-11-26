@@ -350,6 +350,8 @@ def test_links_are_not_followed(env: Env, tmp_path: Path) -> None:
         (f'version = 1\nname = "{CANARY}\n'.encode(), "config.syntax"),
         (b"version = 3\n", "config.unsupported_version"),
     ],
+    # The same test ID in every collection (pytest-xdist compares them across workers), the canary stays random.
+    ids=["too_large", "encoding", "syntax", "unsupported_version"],
 )
 def test_unusable_files_are_invalid_without_echo(env: Env, content: bytes, code: str) -> None:
     env.write(content)

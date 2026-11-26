@@ -297,7 +297,12 @@ def test_other_findings_of_a_write_role_unlock_with_a_warning(
 
 
 @needs_defensive
-@pytest.mark.parametrize("typed", ["Parts-Write", "parts-write ", "", None, 1, "parts", f"{CANARY_VALUE}"])
+@pytest.mark.parametrize(
+    "typed",
+    ["Parts-Write", "parts-write ", "", None, 1, "parts", f"{CANARY_VALUE}"],
+    # The same test ID in every collection (pytest-xdist compares them across workers), the canary stays random.
+    ids=lambda typed: "CANARY_VALUE" if typed == CANARY_VALUE else None,
+)
 def test_a_wrong_typed_name_does_not_unlock(env: WriteEnv, typed: Any) -> None:
     connection_id = env.open()
     response = env.unlock(connection_id, typed=typed)
