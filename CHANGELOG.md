@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- CI: the backend suite runs on every CPU of the runner (`pytest -n auto --dist loadfile`, pytest-xdist in the dev
+  extra). The nightly `newest dependencies` job no longer hits its 20-minute limit (TD-075). `backend test (<leg>)` is one
+  job per leg again and `security tests` one job, replacing the 18 + 2 serial shards (22 instead of 35 jobs per pull
+  request head, TD-076). Every test still runs and no timeout changed. Three parametrizations with a random canary in
+  their test ID now have fixed IDs.
 - G-S3 and G-S4 status (docs only, no code or default changes): the gate texts in the guides, module docstrings,
   threat models, the gate definitions, TODO and the ADR index now say that G-S3 and G-S4 are effective since
   2026-11-19 for local DEV, TEST and STAGE only (evidence `g-s3-nachweis.md`, `g-s4-nachweis.md`), STU-ADR-0008 is
