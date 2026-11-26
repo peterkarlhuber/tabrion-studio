@@ -487,9 +487,36 @@ jobs:
           path: tabrion
           sparse-checkout: examples
           persist-credentials: false
+      # The browsers' system libraries come from the Ubuntu mirror, which at times serves them at a crawl: the WebKit
+      # install on master e7ce476 took 20 minutes and the job hit its timeout (median install 30 s, p90 5 min over
+      # 117 installs, 2026-11-19..26). The downloaded packages are kept per runner image, so apt installs them from
+      # the local archive; apt still verifies each package against the signed index, and a new image or a newer
+      # package simply downloads again.
+      - name: Runner image
+        id: image
+        run: echo "id=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/apt-archives
+          key: e2e-apt-${{ matrix.browser }}-${{ steps.image.outputs.id }}
+          restore-keys: e2e-apt-${{ matrix.browser }}-
+      - name: Seed apt with the cached packages
+        run: |
+          mkdir -p "$RUNNER_TEMP/apt-archives"
+          echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/99keep-downloaded-packages
+          shopt -s nullglob
+          debs=("$RUNNER_TEMP"/apt-archives/*.deb)
+          echo "cached packages: ${#debs[@]}"
+          if (( ${#debs[@]} )); then sudo cp "${debs[@]}" /var/cache/apt/archives/; fi
       # The browser build of the locked @playwright/test (node_modules from `npm ci` above), with its system libraries.
       - run: npx playwright install --with-deps "${{ matrix.browser }}"
         working-directory: frontend
+      - name: Keep the downloaded packages for the cache
+        run: |
+          shopt -s nullglob
+          debs=(/var/cache/apt/archives/*.deb)
+          echo "downloaded packages: ${#debs[@]}"
+          if (( ${#debs[@]} )); then cp "${debs[@]}" "$RUNNER_TEMP/apt-archives/"; fi
       - run: npm run e2e -- --reporter=list,json
         working-directory: frontend
         env:
