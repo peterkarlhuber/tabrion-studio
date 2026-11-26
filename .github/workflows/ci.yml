@@ -100,7 +100,10 @@ jobs:
       - run: python scripts/runtime_lock.py check-installed
       - run: pip list
       # Unit, process-model (STU-002: start < 2 s, reuse, idle exit, shutdown), security and supply-chain tests.
-      - run: pytest -n auto --dist loadfile -m "not packaging" --cov=tabrion_studio --cov-report=term-missing
+      # The tests with a time bound (marker timing) run afterwards, serially: under xdist they share the CPUs with
+      # the other workers (#168, Python 3.12), and their bounds stay as they are. Coverage adds up over both calls.
+      - run: pytest -n auto --dist loadfile -m "not packaging and not timing" --cov=tabrion_studio --cov-report=
+      - run: pytest -m "timing and not packaging" --cov=tabrion_studio --cov-append --cov-report=term-missing
 
   security:
     # One job on every CPU of the runner (pytest-xdist); before, two serial shards (#138).
@@ -122,7 +125,9 @@ jobs:
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
-      - run: pytest -n auto --dist loadfile -m security -v -p no:cacheprovider
+      # Time-bounded tests serially afterwards, as in backend-test.
+      - run: pytest -n auto --dist loadfile -m "security and not timing" -v -p no:cacheprovider
+      - run: pytest -m "security and timing" -v -p no:cacheprovider
       # ruff's flake8-bandit rules (S) over the package and the scripts.
       - run: ruff check --select S src scripts hatch_build.py
 
