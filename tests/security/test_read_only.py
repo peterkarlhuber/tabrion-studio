@@ -678,6 +678,7 @@ LONG_COMMENT_TEXTS = {
 }
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("name", list(LONG_COMMENT_TEXTS))
 def test_r2_l1_line_comments_are_lexed_in_linear_time(name: str) -> None:
     sql = LONG_COMMENT_TEXTS[name]

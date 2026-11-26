@@ -30,6 +30,7 @@ def _stop(project: Path, state_dir: Path) -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+@pytest.mark.timing
 def test_start_is_ready_within_two_seconds(project: Path, state_dir: Path) -> None:
     # STU-002: "Start < 2 s". A first start compiles the bytecode caches (as any first run after installation);
     # the measured start is the next one: from spawning the process to the first health answer.
@@ -68,6 +69,7 @@ def test_binds_loopback_only(project: Path, state_dir: Path) -> None:
         assert studio.wait_exit() == 0
 
 
+@pytest.mark.timing
 def test_second_start_reuses_the_running_instance(project: Path, state_dir: Path) -> None:
     with start_studio(project, state_dir) as first:
         info, _ = first.wait_ready()
@@ -157,6 +159,7 @@ def test_activity_postpones_the_idle_exit(project: Path, state_dir: Path) -> Non
         assert studio.wait_exit(timeout=30) == 0
 
 
+@pytest.mark.timing
 def test_health_checks_do_not_postpone_the_idle_exit(project: Path, state_dir: Path) -> None:
     # Review F-06: only requests with a valid session and authenticated control requests count as activity.
     with start_studio(project, state_dir, "--idle-timeout", "0.05") as studio:

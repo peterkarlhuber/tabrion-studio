@@ -219,6 +219,7 @@ def test_the_worker_refuses_files_that_changed_after_the_check(shop: Shop) -> No
     assert shop.ran() is None
 
 
+@pytest.mark.timing
 @posix
 def test_a_slow_revision_file_is_killed_with_its_children(shop: Shop) -> None:
     slow = (
@@ -493,6 +494,7 @@ def test_nothing_of_the_project_code_runs_after_the_answer(shop: Shop) -> None:
     assert not marker.exists()
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("ending", ["line", "no_line_end"])
 def test_the_answer_is_capped_while_it_is_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: str) -> None:
     assert migrations_module.MAX_ANSWER_BYTES < 20_000 * 100
@@ -525,6 +527,7 @@ ESCAPE = (
 )
 
 
+@pytest.mark.timing
 @posix
 @pytest.mark.parametrize("worker", ["answers", "hangs"])
 def test_a_child_that_left_the_process_group_does_not_hold_studio(shop: Shop, worker: str) -> None:
@@ -569,6 +572,7 @@ def record_exchanges(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     return used
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("worker", ["answers", "hangs", "too_big"])
 def test_the_reader_thread_used_on_windows(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, worker: str) -> None:
     write = {
@@ -637,6 +641,7 @@ def test_the_worker_pipes_are_closed_on_every_platform(
     assert [str(warning.message) for warning in caught if issubclass(warning.category, ResourceWarning)] == []
 
 
+@pytest.mark.timing
 @posix
 @pytest.mark.parametrize("worker", ["hangs", "exits"])
 def test_an_escaped_child_does_not_hold_the_windows_exchange(

@@ -222,6 +222,7 @@ def test_the_drain_discards_and_is_bounded(studio: Studio) -> None:
         assert peak < limit.max_bytes + 1024 * 1024, (path, peak)  # not the 4 MiB drained
 
 
+@pytest.mark.timing
 def test_the_drain_waits_only_briefly(monkeypatch: pytest.MonkeyPatch) -> None:
     """A client that stops sending in the middle of an over-cap body gets its 413 after DRAIN_SECONDS."""
     monkeypatch.setattr(body_module, "DRAIN_SECONDS", 0.05)
@@ -388,6 +389,7 @@ HEAD = (
 ).encode()
 
 
+@pytest.mark.timing
 def test_uvicorn_answers_a_declared_huge_body_at_once_and_closes(studio: Studio) -> None:
     with _server(studio.client.app) as port, socket.create_connection(("127.0.0.1", port)) as conn:
         # 400 MB announced, none sent: the answer comes without waiting for the body.
@@ -402,6 +404,7 @@ CHUNK = b"400\r\n" + b"x" * 1024 + b"\r\n"  # one chunk of 1 KiB in chunked enco
 ROUNDS = 20
 
 
+@pytest.mark.timing
 def test_uvicorn_answers_a_chunked_body_over_the_cap_with_413(studio: Studio) -> None:
     """8 KiB, twice the 4 KiB cap, in many small writes, then the end of the body: every time the client reads a 413,
     never a reset (review C-1: the server drains the body before it answers and closes)."""
@@ -418,6 +421,7 @@ def test_uvicorn_answers_a_chunked_body_over_the_cap_with_413(studio: Studio) ->
             assert b"\r\nconnection: close\r\n" in answer.lower()
 
 
+@pytest.mark.timing
 def test_uvicorn_answers_a_statement_over_the_cap_with_413(studio: Studio) -> None:
     """The page's case: a 3 MB body to /api/queries (cap 2 MB) with Content-Length, sent in full, then read."""
     signed_in = "".join(f"{key}: {value}\r\n" for key, value in _signed_in(studio))
@@ -438,6 +442,7 @@ def test_uvicorn_answers_a_statement_over_the_cap_with_413(studio: Studio) -> No
             assert b"studio.query_too_large" in answer
 
 
+@pytest.mark.timing
 def test_uvicorn_stops_reading_an_endless_chunked_body(studio: Studio) -> None:
     """A client that never stops sending: after the bounded drain the server answers and closes, so the client's
     writes fail long before the bound. Without the cap the route would buffer all of it.

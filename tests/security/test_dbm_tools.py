@@ -410,6 +410,7 @@ def test_an_unreadable_table_of_contents_leaves_no_backup(fakes: Fakes) -> None:
     assert list(folder.iterdir()) == []
 
 
+@pytest.mark.timing
 @posix_only
 def test_a_timeout_kills_the_tools_process_group_and_removes_the_passfile(fakes: Fakes) -> None:
     started = time.monotonic()

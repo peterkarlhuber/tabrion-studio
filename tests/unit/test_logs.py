@@ -202,6 +202,7 @@ def test_scrub_patterns_of_the_review(text: str, expected: str) -> None:
     assert scrub(text) == expected
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("unit", ["y", "a:", "a://", "a://b:c", "-", "a_", "password", "password='", "x@"])
 def test_scrub_takes_linear_time_on_hostile_text(unit: str) -> None:
     """Bounded repetitions: 200 KB of a repeated pattern is scrubbed quickly (the scrub runs before the caps)."""

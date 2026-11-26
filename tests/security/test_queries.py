@@ -259,6 +259,7 @@ def test_stu_t_018_bytes_and_cells_are_capped(sqlite_file: Path) -> None:
         registry.close_all()
 
 
+@pytest.mark.timing
 def test_stu_t_019_the_profile_timeout_stops_an_endless_query(lite: tuple[QueryEngine, str, Source]) -> None:
     engine, connection_id, _ = lite
     started = time.monotonic()
@@ -267,6 +268,7 @@ def test_stu_t_019_the_profile_timeout_stops_an_endless_query(lite: tuple[QueryE
     assert query.state == "failed" and query.problem is not None and query.problem.code == "db.timeout"
 
 
+@pytest.mark.timing
 def test_stu_t_020_cancel_stops_a_query_within_a_second(lite: tuple[QueryEngine, str, Source]) -> None:
     engine, connection_id, source = lite
     source.profiles["project:parts"] = replace(source.profiles["project:parts"], statement_timeout_ms=None)
@@ -493,6 +495,7 @@ def test_pg_types_parameters_and_literals(pg: tuple[QueryEngine, str, Source]) -
     assert [c.type_name for c in query.columns] == ["int4", "text", "text", "date", "jsonb", "int4[]", "numeric"]
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_pg_stu_t_018_a_server_side_cursor_stops_the_transfer(pg: tuple[QueryEngine, str, Source]) -> None:
@@ -543,6 +546,7 @@ def test_pg_f1_the_editor_route_refuses_statements_that_create_a_table(
             admin.dispose()
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_pg_stu_t_019_the_statement_timeout(pg: tuple[QueryEngine, str, Source]) -> None:
@@ -553,6 +557,7 @@ def test_pg_stu_t_019_the_statement_timeout(pg: tuple[QueryEngine, str, Source])
     assert query.state == "failed" and query.problem is not None and query.problem.code == "db.timeout"
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_pg_stu_t_020_cancel_within_a_second(pg: tuple[QueryEngine, str, Source]) -> None:

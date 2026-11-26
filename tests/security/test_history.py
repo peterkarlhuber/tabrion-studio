@@ -342,6 +342,7 @@ def test_saving_the_settings_purges_expired_entries(static_dir: Path, state_dir:
         store.close()
 
 
+@pytest.mark.timing
 def test_recording_waits_only_briefly_for_another_writer(env: Env, state_dir: Path) -> None:
     """F-8: another instance's write lock keeps no query from ending; the entry is left out instead."""
     _record(env.history, "SELECT 'first'")
@@ -407,6 +408,7 @@ def test_any_other_state_error_keeps_its_warning(state_dir: Path, caplog: pytest
     assert all(record.levelno == logging.WARNING and record.exc_info is not None for record in errors)
 
 
+@pytest.mark.timing
 def test_a_reader_holds_up_neither_a_query_nor_the_history(
     env: Env, state_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -442,6 +444,7 @@ def test_a_reader_holds_up_neither_a_query_nor_the_history(
     assert marker.encode() not in _state_bytes(state_dir)
 
 
+@pytest.mark.timing
 def test_the_settings_purge_runs_off_the_event_loop_and_waits_only_briefly(
     static_dir: Path, state_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

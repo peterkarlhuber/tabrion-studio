@@ -114,6 +114,7 @@ markers = [
     "process: starts real tabrion-studio processes (STU-002)",
     "security: workflow pins, supply chain and other security regressions",
     "packaging: needs a built wheel (TABRION_STUDIO_DIST)",
+    "timing: asserts a wall-clock or CPU-time bound; CI runs these serially after the parallel run (pytest-xdist workers share the CPUs)",
     "postgres: needs a PostgreSQL server (TABRION_STUDIO_TEST_POSTGRES, a libpq URL of a database it may change)",
     "postgres_superuser: needs TABRION_STUDIO_TEST_POSTGRES and TABRION_STUDIO_TEST_POSTGRES_SUPERUSER (a superuser of the same server; makes and drops its own roles)",
     "pgvector: needs TABRION_STUDIO_TEST_PGVECTOR (a superuser URL of a database whose server has pgvector; creates and drops the extension; run in the CI PostgreSQL job)",

@@ -81,6 +81,7 @@ def lite(tmp_path: Path) -> Iterator[tuple[Explorer, str, Source]]:
         registry.close_all()
 
 
+@pytest.mark.timing
 def test_the_catalog_of_500_tables_in_under_a_second(lite: tuple[Explorer, str, Source]) -> None:
     explorer, connection_id, _ = lite
     started = time.monotonic()
@@ -317,6 +318,7 @@ def pg() -> Iterator[tuple[Explorer, str]]:
         admin.dispose()
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_pg_catalog_of_500_tables_in_under_a_second(pg: tuple[Explorer, str]) -> None:
