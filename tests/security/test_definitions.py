@@ -359,6 +359,7 @@ def test_the_routes(lite: tuple[Definitions, str, Path], tmp_path: Path) -> None
         assert client.get(f"{base}/{path}").status_code in (401, 403)
 
 
+@pytest.mark.timing
 def test_the_count_route_answers_db_timeout(lite: tuple[Definitions, str, Path], tmp_path: Path) -> None:
     """The route's own ``Definitions`` counts under the shorter of its timeout and the profile's."""
     definitions, connection_id, _ = lite

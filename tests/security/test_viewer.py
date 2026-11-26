@@ -285,6 +285,7 @@ def test_the_cell_detail_loads_a_value_in_full(lite: tuple[Viewer, str, Path], s
     assert gone.value.code == "studio.viewer_row_gone"
 
 
+@pytest.mark.timing
 def test_the_profile_timeout_stops_a_statement(lite: tuple[Viewer, str, Path]) -> None:
     viewer, connection_id, _ = lite
     started = time.monotonic()
@@ -475,6 +476,7 @@ def test_pg_composite_keys_ctid_offset_and_cells(pg: tuple[Viewer, str]) -> None
     assert [row[0] for row in odd["rows"]] == [1]
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_pg_the_statement_timeout(pg: tuple[Viewer, str]) -> None:

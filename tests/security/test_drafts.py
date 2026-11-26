@@ -453,6 +453,7 @@ def test_a_closed_tab_leaves_no_text_in_any_state_file(env: Env, state_dir: Path
     assert not wal.exists() or marker.encode() not in wal.read_bytes()
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("history_enabled", [True, False], ids=["history-on", "history-off"])
 @pytest.mark.parametrize("access", ["save", "read"])
 def test_a_text_deleted_while_another_connection_reads_leaves_the_log_at_the_next_drafts_call(
@@ -558,6 +559,7 @@ ADVERSARIAL = {
 }
 
 
+@pytest.mark.timing
 @pytest.mark.parametrize("raw", ADVERSARIAL.values(), ids=ADVERSARIAL.keys())
 def test_the_scan_of_a_body_at_the_cap_is_linear(raw: bytes) -> None:
     """Delta N-1: an unterminated string of escaped quotes took time growing with the square of its size (a week at
@@ -568,6 +570,7 @@ def test_the_scan_of_a_body_at_the_cap_is_linear(raw: bytes) -> None:
     assert time.process_time() - started < 2.0
 
 
+@pytest.mark.timing
 def test_a_body_at_the_cap_through_the_route_is_refused_quickly(env: Env) -> None:
     raw = ADVERSARIAL["escaped quotes in an unterminated string"]
     started = time.process_time()
@@ -579,6 +582,7 @@ def test_a_body_at_the_cap_through_the_route_is_refused_quickly(env: Env) -> Non
     assert answer.json()["code"] == "access.bad_request"
 
 
+@pytest.mark.timing
 def test_a_valid_document_at_the_cap_is_scanned_quickly_and_parsed() -> None:
     raw = b'{"tabs":"' + b'\\"' * ((MAX_BODY - 11) // 2) + b'"}'
     assert len(raw) <= MAX_BODY

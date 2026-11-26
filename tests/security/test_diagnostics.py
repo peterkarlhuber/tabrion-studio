@@ -545,6 +545,7 @@ def big_sqlite(path: Path, rows: int = 400_000) -> Path:
     return path
 
 
+@pytest.mark.timing
 @posix
 def test_sqlite_diagnosis_stops_at_the_time_limit(tmp_path: Path) -> None:
     path = big_sqlite(tmp_path / "big.db")
@@ -568,6 +569,7 @@ def test_sqlite_diagnosis_stops_at_the_time_limit(tmp_path: Path) -> None:
     assert "TAB-SQ-006" in found["STU-DX-008"]["detail"] and "tabrion's checks" not in found["STU-DX-008"]["detail"]
 
 
+@pytest.mark.timing
 @posix
 def test_sqlite_diagnosis_can_be_canceled(tmp_path: Path) -> None:
     path = big_sqlite(tmp_path / "big.db", rows=1_500_000)
@@ -742,6 +744,7 @@ def test_n1_the_cancel_stops_only_the_integrity_check(tmp_path: Path) -> None:
         connection.close()
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_t1_a_cancel_during_tabrions_postgres_check_stops_it_and_discards_the_connection(
@@ -782,6 +785,7 @@ def test_t1_a_cancel_during_tabrions_postgres_check_stops_it_and_discards_the_co
         registry.close_all()
 
 
+@pytest.mark.timing
 @pytest.mark.postgres
 @postgres
 def test_t1_a_cancel_stops_studios_own_postgres_queries(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -825,6 +829,7 @@ def slow_fk(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(OpenConnection, "tabrion_findings", lambda self, cancel=None: [])
 
 
+@pytest.mark.timing
 @posix
 def test_t1_the_limit_stops_the_foreign_key_check(tmp_path: Path, slow_fk: None) -> None:
     """T-1 (STU-DX-005 gets the cancel): the limit ends the foreign key check itself."""

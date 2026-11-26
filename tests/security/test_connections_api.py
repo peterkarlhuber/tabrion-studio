@@ -360,6 +360,7 @@ def test_td034_a_lost_database_is_a_db_problem_and_open_replaces_the_connection(
     assert env.send("GET", f"/api/connections/{second}/health").json()["state"] == "open"
 
 
+@pytest.mark.timing
 def test_td034_a_full_pool_is_busy_not_lost(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
     """Every session lent out (a long query, an export): the check would only wait for a session (the pool timeout,
     10 s) and learn nothing about the database. It does not run: the answer is "busy" at once, the page offers no

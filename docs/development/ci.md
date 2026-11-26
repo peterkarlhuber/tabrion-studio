@@ -178,8 +178,10 @@ only at the next lock update. The nightly job `newest dependencies (Python <vers
 2, option A; Linux with Python 3.11 and 3.14) therefore installs Studio with its development tools **without**
 `constraints/runtime-lock.txt` and without the pip cache (`pip install --upgrade --upgrade-strategy eager -e ".[dev]"
 -c constraints/tabrion-integration.txt`: the newest releases inside the ranges, Tabrion at its pinned commit), runs
-`pip check`, writes `pip freeze` into the log and the job summary, and runs `pytest -m "not packaging"` (the selection
-of `backend test`). It is not a pull request check and is not in `.github/ci-manifest.json`; when it fails, the
+`pip check`, writes `pip freeze` into the log and the job summary, and runs `pytest -n auto --dist loadfile -m "not packaging and not timing"` and then `pytest -m "timing and not
+packaging"` (the selection of `backend test`: the bulk on every CPU of the runner with pytest-xdist, because on one CPU
+it hit the 20-minute limit on 7 of 10 runs, TD-075; the tests that assert a time bound, marker `timing`, serially
+afterwards, because under xdist they share the CPUs with the other workers; their bounds are unchanged). It is not a pull request check and is not in `.github/ci-manifest.json`; when it fails, the
 nightly issue names it. Then either fix Studio or narrow the range in `pyproject.toml`, and refresh the lock ([Hashed runtime pins](#hashed-runtime-pins)).
 
 ## Reproducible builds

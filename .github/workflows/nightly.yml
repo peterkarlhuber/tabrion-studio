@@ -97,8 +97,12 @@ jobs:
           set -euo pipefail
           pip freeze --exclude-editable | tee freeze.txt
           { echo "### Newest dependencies (Python ${{ matrix.python }})"; echo; echo '```'; cat freeze.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      # The same selection as the job "backend test" of ci.yml.
-      - run: pytest -m "not packaging" -p no:cacheprovider
+      # The same selection as the job "backend test" of ci.yml, on every CPU of the runner (pytest-xdist, one file
+      # per worker at a time): run serially it took 19 to 20+ minutes and hit the time limit on 7 of 10 runs
+      # (2026-11-21..25, K6). The tests with a time bound (marker timing) run afterwards on their own, serially:
+      # under xdist they share the CPUs with the other workers, and their bounds are not loosened.
+      - run: pytest -n auto --dist loadfile -m "not packaging and not timing" -p no:cacheprovider
+      - run: pytest -m "timing and not packaging" -p no:cacheprovider
 
   license-records:
     # TD-061: the license records (scripts/collect_licenses.py) of a fresh runtime environment on every system the

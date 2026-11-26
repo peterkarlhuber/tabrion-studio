@@ -289,6 +289,7 @@ def _hostile(repeats: int) -> str:
     return "CREATE VIRTUAL TABLE x USING vec0(" + "USING vec0(a) " * repeats + "b) /*z*/"
 
 
+@pytest.mark.timing
 def test_vec0_parsing_is_linear_on_a_hostile_text() -> None:
     long_row, short_row = _hostile(20_000), _hostile(MAX_TEXT // 15)  # 280 KB, and just under the cap
     assert len(long_row) > 280_000 and len(short_row) <= MAX_TEXT
@@ -302,6 +303,7 @@ def test_vec0_parsing_is_linear_on_a_hostile_text() -> None:
     assert vec0_body('CREATE VIRTUAL TABLE "open USING vec0(a float[1])') is None
 
 
+@pytest.mark.timing
 def test_a_hostile_file_is_classified_fast_and_long_values_are_cut(lite: Any, tmp_path: Path) -> None:
     path = _make(tmp_path / "v.db", *ORKEXA_SQLITE)
     connection = sqlite3.connect(path)

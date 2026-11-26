@@ -196,6 +196,8 @@ def test_tokens_of_the_process_never_reach_a_log_line(static_dir: Path, logs: Lo
         f"api_key={CANARY}&x=1",
         f"Authorization: Bearer {CANARY}",
     ],
+    # The same test ID in every collection (pytest-xdist compares them across workers), the canary stays random.
+    ids=lambda message: message.replace(CANARY, "CANARY"),
 )
 def test_credentials_in_messages_are_masked(logs: Logs, message: str) -> None:
     logging.getLogger("tabrion_studio.test").warning("connecting with %s", message)
