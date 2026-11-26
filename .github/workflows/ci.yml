@@ -74,34 +74,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Every leg runs in two shards, tests/security and the rest: the whole suite took 17 to 20 minutes on
-          # Linux and Windows (timeout 20) and was cancelled after its tests had passed. The security leg is split
-          # once more on every system, because it alone reached 19 to 20 of its 20 minutes on Linux (#143 cancelled
-          # at 96 %). The ignore globs are complements (as in the security job, #138, and Windows, #141), so every
-          # test runs exactly once: shard 1 every file but tests/security/test_[r-z]*, shard 2 only those. Quoted
-          # for bash, which runs these legs.
-          - { label: "Python 3.11, security", os: ubuntu-latest, python: "3.11", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
-          - { label: "Python 3.11, security 2 of 2", os: ubuntu-latest, python: "3.11", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
-          - { label: "Python 3.11, other", os: ubuntu-latest, python: "3.11", tests: "tests --ignore=tests/security" }
-          - { label: "Python 3.12, security", os: ubuntu-latest, python: "3.12", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
-          - { label: "Python 3.12, security 2 of 2", os: ubuntu-latest, python: "3.12", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
-          - { label: "Python 3.12, other", os: ubuntu-latest, python: "3.12", tests: "tests --ignore=tests/security" }
-          - { label: "Python 3.13, security", os: ubuntu-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
-          - { label: "Python 3.13, security 2 of 2", os: ubuntu-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
-          - { label: "Python 3.13, other", os: ubuntu-latest, python: "3.13", tests: "tests --ignore=tests/security" }
-          - { label: "Python 3.14, security", os: ubuntu-latest, python: "3.14", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
-          - { label: "Python 3.14, security 2 of 2", os: ubuntu-latest, python: "3.14", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
-          - { label: "Python 3.14, other", os: ubuntu-latest, python: "3.14", tests: "tests --ignore=tests/security" }
-          - { label: "macos-latest, security", os: macos-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[r-z]*'" }
-          - { label: "macos-latest, security 2 of 2", os: macos-latest, python: "3.13", tests: "tests/security --ignore-glob='tests/security/test_[!r-z]*'" }
-          - { label: "macos-latest, other", os: macos-latest, python: "3.13", tests: "tests --ignore=tests/security" }
-          # Windows' security leg runs in two shards too: it took 17 to 20 of its 20 minutes. The ignore globs are
-          # complements (as in the security job, #138), so every test runs exactly once: shard 1 every file but
-          # tests/security/test_[r-z]*, shard 2 only those. Unquoted: pwsh expands no wildcard for a native
-          # command.
-          - { label: "windows-latest, security", os: windows-latest, python: "3.13", tests: "tests/security --ignore-glob=tests/security/test_[r-z]*" }
-          - { label: "windows-latest, security 2 of 2", os: windows-latest, python: "3.13", tests: "tests/security --ignore-glob=tests/security/test_[!r-z]*" }
-          - { label: "windows-latest, other", os: windows-latest, python: "3.13", tests: "tests --ignore=tests/security" }
+          # One job per leg, the whole suite on every CPU of the runner (pytest-xdist, CI-FAST AP6; K2 of
+          # docs/architecture/ci-fast/criteria.md in nodestro-studio): the suite is I/O and process bound, so the 18
+          # shards of the serial run (#121, #124, #141, #143) paid 18 setups for what 6 parallel jobs do faster.
+          - { label: "Python 3.11", os: ubuntu-latest, python: "3.11" }
+          - { label: "Python 3.12", os: ubuntu-latest, python: "3.12" }
+          - { label: "Python 3.13", os: ubuntu-latest, python: "3.13" }
+          - { label: "Python 3.14", os: ubuntu-latest, python: "3.14" }
+          - { label: "macos-latest", os: macos-latest, python: "3.13" }
+          - { label: "windows-latest", os: windows-latest, python: "3.13" }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -119,25 +100,13 @@ jobs:
       - run: python scripts/runtime_lock.py check-installed
       - run: pip list
       # Unit, process-model (STU-002: start < 2 s, reuse, idle exit, shutdown), security and supply-chain tests.
-      - run: pytest -m "not packaging" --cov=tabrion_studio --cov-report=term-missing ${{ matrix.tests }}
+      - run: pytest -n auto --dist loadfile -m "not packaging" --cov=tabrion_studio --cov-report=term-missing
 
   security:
-    name: ${{ matrix.name }}
+    # One job on every CPU of the runner (pytest-xdist); before, two serial shards (#138).
+    name: security tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Two shards (as backend-test, #124): the whole job took about 14 of its 15 minutes. The ignore globs are
-          # complements, so every test marked security runs exactly once: shard 1 is every collected path except the
-          # files tests/security/test_[n-z]*, shard 2 only those files. The first keeps the old check name.
-          - name: security tests
-            shard: 1
-            tests: "tests --ignore-glob='tests/security/test_[n-z]*'"
-          - name: security tests (2 of 2)
-            shard: 2
-            tests: "tests/security --ignore-glob='tests/security/test_[!n-z]*'"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -153,10 +122,9 @@ jobs:
       - run: pip check
       - run: python scripts/runtime_lock.py check-installed
       # Workflow pins, read-only tokens, no publishing, license policy, the STU-T access tests of STU-003.
-      - run: pytest -m security -v -p no:cacheprovider ${{ matrix.tests }}
-      # ruff's flake8-bandit rules (S) over the package and the scripts (once, in the first shard).
-      - if: matrix.shard == 1
-        run: ruff check --select S src scripts hatch_build.py
+      - run: pytest -n auto --dist loadfile -m security -v -p no:cacheprovider
+      # ruff's flake8-bandit rules (S) over the package and the scripts.
+      - run: ruff check --select S src scripts hatch_build.py
 
   windows-t2:
     name: T-2 path checks (windows-latest)
